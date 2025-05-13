@@ -113,6 +113,25 @@ inline auto read_recursive_file_in_directory(const std::filesystem::path& direct
     return files;
 }
 
+inline auto read_folders_in_directory(const std::filesystem::path& directory) -> std::vector<std::string> {
+
+    // Check if the given directory exists and it is a directory.
+    if (!std::filesystem::exists(directory)) throw std::runtime_error(fmt::format("Directory '{}' does not exist", directory.string()));
+    if (!std::filesystem::is_directory(directory)) throw std::runtime_error(fmt::format("Path '{}' is not a directory", directory.string()));
+
+    std::vector<std::string> files;
+    //  Iterate recursively over the directory. Only add regular files with the ".hipo" extension to the list.
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if(entry.is_directory()) files.push_back(entry.path().string());
+    }
+
+    std::ranges::sort(files);
+
+    return files;
+}
+
+
+
 /**
  * @brief Finds the first trigger electron from a list of electrons.
  *
