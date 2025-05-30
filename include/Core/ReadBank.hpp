@@ -2,17 +2,18 @@
 
 // C++ headers
 #include <string>
+#include <map>
+#include <vector>
 
 // <fmt> headers
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
-// C++ headers
-#include <map>
-#include <vector>
-
 // Project headers
 #include <hipo4/bank.h>
+#include <Core/bankdefs.hpp>
+#include <Core/clas12def.hpp>
+
 
 namespace Core {
 inline static auto load_bank_by_index(const hipo::bank& from_bank, const std::string& idx) -> std::map<int, std::vector<int>> {
@@ -36,19 +37,7 @@ inline static auto load_bank_by_index(const hipo::bank& from_bank, const std::st
     return map;
 }
 
-struct CherenkovBank {
-    int sector = std::numeric_limits<int>::quiet_NaN();
-    float nphe = std::numeric_limits<float>::quiet_NaN();
-    float time = std::numeric_limits<float>::quiet_NaN();
-    float path = std::numeric_limits<float>::quiet_NaN();
-    float chi2 = std::numeric_limits<float>::quiet_NaN();
-    float x = std::numeric_limits<float>::quiet_NaN();
-    float y = std::numeric_limits<float>::quiet_NaN();
-    float z = std::numeric_limits<float>::quiet_NaN();
-    float dtheta = std::numeric_limits<float>::quiet_NaN();
-    float dphi = std::numeric_limits<float>::quiet_NaN();
-    int status = std::numeric_limits<int>::quiet_NaN();
-};
+
 
 inline auto read_Cherenkov_bank(const hipo::bank& REC_Cherenkov, const int pindex) -> CherenkovBank {
     auto map = load_bank_by_index(REC_Cherenkov, "pindex");
@@ -57,7 +46,7 @@ inline auto read_Cherenkov_bank(const hipo::bank& REC_Cherenkov, const int pinde
     if (!map.contains(pindex)) return output;
 
     for (int i : map.at(pindex)) {
-        if (REC_Cherenkov.get<int>("detector", i) != 15) continue;
+        if (REC_Cherenkov.get<int>("detector", i) != HTCC) continue;
         output.sector = REC_Cherenkov.get<int>("sector", i);
         output.nphe = REC_Cherenkov.get<float>("nphe", i);
         output.time = REC_Cherenkov.get<float>("time", i);
@@ -74,26 +63,7 @@ inline auto read_Cherenkov_bank(const hipo::bank& REC_Cherenkov, const int pinde
     return output;
 }
 
-struct CalorimeterBank {
-    struct CalorimeterStruct {
-        int sector = std::numeric_limits<int>::quiet_NaN();
-        int layer = std::numeric_limits<int>::quiet_NaN();
-        float energy = std::numeric_limits<float>::quiet_NaN();
-        float time = std::numeric_limits<float>::quiet_NaN();
-        float path = std::numeric_limits<float>::quiet_NaN();
-        float chi2 = std::numeric_limits<float>::quiet_NaN();
-        float x = std::numeric_limits<float>::quiet_NaN();
-        float y = std::numeric_limits<float>::quiet_NaN();
-        float z = std::numeric_limits<float>::quiet_NaN();
-        float lu = std::numeric_limits<float>::quiet_NaN();
-        float lv = std::numeric_limits<float>::quiet_NaN();
-        float lw = std::numeric_limits<float>::quiet_NaN();
-    };
 
-    CalorimeterStruct pcal;
-    CalorimeterStruct inner;
-    CalorimeterStruct outer;
-};
 
 /**
  * @brief Reads and extracts calorimeter data for a given particle index from the REC_Calorimeter bank.
@@ -126,7 +96,6 @@ inline auto read_Calorimeter_bank(const hipo::bank& REC_Calorimeter, const int p
 
     if (!map.contains(pindex)) return output;
 
-    // Helper lambda to populate CalorimeterStruct
     auto populate_calorimeter_struct = [&](CalorimeterBank::CalorimeterStruct& cal_struct, int i) {
         cal_struct.sector = REC_Calorimeter.get<int>("sector", i);
         cal_struct.layer = REC_Calorimeter.get<int>("layer", i);
@@ -142,19 +111,15 @@ inline auto read_Calorimeter_bank(const hipo::bank& REC_Calorimeter, const int p
         cal_struct.lw = REC_Calorimeter.get<float>("lw", i);
     };
 
-    // Layer numbers to their respective calorimeter types for clarity:
-    // 1 -> preshower calorimeter (PCAL)
-    // 4 -> inner calorimeter (ECin)
-    // 7 -> outer calorimeter (ECout)
     for (int i : map.at(pindex)) {
-        if (REC_Calorimeter.get<int>("detector", i) != 7) continue;
+        if (REC_Calorimeter.get<int>("detector", i) != ECAL) continue;
 
         int layer = REC_Calorimeter.get<int>("layer", i);
-        if (layer == 1) {
+        if (layer == PCAL) {
             populate_calorimeter_struct(output.pcal, i);
-        } else if (layer == 4) {
+        } else if (layer == ECIN) {
             populate_calorimeter_struct(output.inner, i);
-        } else if (layer == 7) {
+        } else if (layer == ECOUT) {
             populate_calorimeter_struct(output.outer, i);
         }
     }
@@ -162,26 +127,15 @@ inline auto read_Calorimeter_bank(const hipo::bank& REC_Calorimeter, const int p
     return output;
 }
 
-struct DCTrackBank {
-    int index = std::numeric_limits<int>::quiet_NaN();
-    int pindex = std::numeric_limits<int>::quiet_NaN();
-    int detector = std::numeric_limits<int>::quiet_NaN();
-    int sector = std::numeric_limits<int>::quiet_NaN();
-    int status = std::numeric_limits<int>::quiet_NaN();
-    int q = std::numeric_limits<int>::quiet_NaN();
-    float chi2 = std::numeric_limits<int>::quiet_NaN();
-    int ndf = std::numeric_limits<int>::quiet_NaN();
-    int hbindex = std::numeric_limits<int>::quiet_NaN();
-};
 
-inline auto read_Track_bank(const hipo::bank& REC_Track, const int pindex) -> DCTrackBank {
+inline auto read_Track_bank(const hipo::bank& REC_Track, const int pindex) -> TrackBank {
     auto map = load_bank_by_index(REC_Track, "pindex");
-    DCTrackBank output;
+    TrackBank output;
 
     if (!map.contains(pindex)) return output;
 
     for (int i : map.at(pindex)) {
-        if (REC_Track.get<int>("detector", i) == 6) {
+        if (REC_Track.get<int>("detector", i) == DC) {
             output.index = REC_Track.get<int>("index", i);
             output.pindex = REC_Track.get<int>("pindex", i);
             output.detector = REC_Track.get<int>("detector", i);
@@ -196,27 +150,6 @@ inline auto read_Track_bank(const hipo::bank& REC_Track, const int pindex) -> DC
 
     return output;
 }
-
-struct TrajBank {
-    int pindex = std::numeric_limits<int>::quiet_NaN();
-    int index = std::numeric_limits<int>::quiet_NaN();
-    int detector = std::numeric_limits<int>::quiet_NaN();
-    int layer = std::numeric_limits<int>::quiet_NaN();
-    double x = std::numeric_limits<double>::quiet_NaN();
-    double y = std::numeric_limits<double>::quiet_NaN();
-    double z = std::numeric_limits<double>::quiet_NaN();
-    double cx = std::numeric_limits<double>::quiet_NaN();
-    double cy = std::numeric_limits<double>::quiet_NaN();
-    double cz = std::numeric_limits<double>::quiet_NaN();
-    double path = std::numeric_limits<double>::quiet_NaN();
-    double edge = std::numeric_limits<double>::quiet_NaN();
-};
-
-struct DCTrajBank {
-    TrajBank region1;
-    TrajBank region2;
-    TrajBank region3;
-};
 
 inline auto read_Traj_bank(const hipo::bank& REC_Traj, const int pindex) -> DCTrajBank {
     auto map = load_bank_by_index(REC_Traj, "pindex");
@@ -240,13 +173,13 @@ inline auto read_Traj_bank(const hipo::bank& REC_Traj, const int pindex) -> DCTr
     };
 
     for (int i : map.at(pindex)) {
-        if (REC_Traj.get<int>("detector", i) == 6 and REC_Traj.get<int>("layer", i) == 6)
+        if (REC_Traj.get<int>("detector", i) == DC and REC_Traj.get<int>("layer", i) == DC1)
             populate_traj_struct(output.region1, i);
 
-        if (REC_Traj.get<int>("detector", i) == 6 and REC_Traj.get<int>("layer", i) == 18)
+        if (REC_Traj.get<int>("detector", i) == DC and REC_Traj.get<int>("layer", i) == DC3)
             populate_traj_struct(output.region2, i);
 
-        if (REC_Traj.get<int>("detector", i) == 6 and REC_Traj.get<int>("layer", i) == 36)
+        if (REC_Traj.get<int>("detector", i) == DC and REC_Traj.get<int>("layer", i) == DC5)
             populate_traj_struct(output.region3, i);
     }
 
