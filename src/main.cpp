@@ -34,17 +34,13 @@ int main() {
 
     auto start_time = std::chrono::high_resolution_clock::now();
 
-    // Read the configuration file
-    const toml::table config = toml::parse_file("../config/study1.toml");
-
     // Read the files
     // std::vector<std::string> files = Core::read_recursive_file_in_directory("../data/");
-    std::vector<std::string> files = {"../data/rec_dn_10k_D_0_merged.hipo"};
+    std::vector<std::string> files = {"../data/data2.hipo"};
 
     // Process the data
     study1::Histograms histograms;
-    study1::Reader reader(histograms, config);
-    reader.set_pids({11, 22, 211, 2212});
+    study1::Reader reader(histograms);
 
     multithread_reader(reader, files, 1);
 

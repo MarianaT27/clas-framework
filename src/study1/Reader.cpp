@@ -1,26 +1,21 @@
 #include <study1/Reader.hpp>
+#include "Core/PIDs.hpp"
 
 namespace study1 {
 
-Reader::Reader(Histograms& histograms, const toml::parse_result& config, const std::vector<int>& pids)
-    : m_histograms(histograms), m_config(config), m_pids(pids) {
+Reader::Reader(Histograms& histograms) : m_histograms(histograms) {
+    // Configure particles that we want
+    m_pids = {
+        Core::PIDs::Electron,
+        Core::PIDs::PionPlus,
+        Core::PIDs::PionMinus
+    };
 }
 
 Reader::~Reader() = default;
 
 auto Reader::operator()(const std::string& file) -> void {
-
-    particles_map_t particle_collections;
-    for (const auto& pid : m_pids) {
-        particle_collections[pid] = std::vector<Core::Particle>();
-    }
-
     for (hipo::hipoeventfile events(file); auto& event : events) {
-
-        // Clear the particle collections for each event
-        for (auto& [key, vec] : particle_collections) {
-            vec.clear();
-        }
 
         hipo::bank& REC_Particle = event.get_bank("REC::Particle");
         hipo::bank& REC_Calorimeter = event.get_bank("REC::Calorimeter");
@@ -29,30 +24,24 @@ auto Reader::operator()(const std::string& file) -> void {
 
         if (REC_Particle.getRows() == 0) continue;
 
-        get_topology(REC_Particle, particle_collections);
+        particles_map_t map = get_topology(REC_Particle);
 
-        auto electron = Core::find_trigger_electron(particle_collections[11], {2000, 4000}).value_or(Core::Particle{});
+        auto electron = Core::find_trigger_electron(map[Core::PIDs::Electron], {2000, 4000}).value_or(Core::Particle{});
         if (!electron.is_valid()) continue;
-
-        bool pass_electron_cuts = select_electron(electron, REC_Calorimeter, REC_Cherenkov);
-        if (!pass_electron_cuts) continue;
+ 
+        // bool pass_electron_cuts = select_electron(electron, REC_Calorimeter, REC_Cherenkov);
+        // if (!pass_electron_cuts) continue;
     }
 }
 
-auto Reader::get_topology(const hipo::bank& REC_Particle, particles_map_t& particle_collections) -> void {
+auto Reader::get_topology(const hipo::bank& REC_Particle) -> particles_map_t {
     const int rows = REC_Particle.getRows();
 
-    // Pre-allocate for each particle types
-    for (auto& [key, vec] : particle_collections) {
-        vec.reserve(rows);
-    }
+    particles_map_t map = {};
 
-    for (int i = 0; i < REC_Particle.getRows(); i++) {
+    for (int i = 0; i < rows; i++) {
         const int pid = REC_Particle.get<int>("pid", i);
-
-        if (!particle_collections.contains(pid)) continue;
-
-        // Get particle properties only after we know we want this particle
+        if (!(std::find(m_pids.begin(), m_pids.end(), static_cast<Core::PIDs>(pid)) != m_pids.end())) continue;
         const int status = REC_Particle.get<int>("status", i);
         const int charge = REC_Particle.get<int>("charge", i);
         const double px = REC_Particle.get<double>("px", i);
@@ -64,13 +53,12 @@ auto Reader::get_topology(const hipo::bank& REC_Particle, particles_map_t& parti
         const double vt = REC_Particle.get<double>("vt", i);
         const double beta = REC_Particle.get<double>("beta", i);
         const double chi2pid = REC_Particle.get<double>("chi2pid", i);
-
         const double mass = Core::get_mass(pid);
         const double E = Core::compute_energy(px, py, pz, pid);
-
-        // Add particle to the appropriate collection
-        particle_collections[pid].emplace_back(pid, status, i, charge, mass, px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
+        map[static_cast<Core::PIDs>(pid)].emplace_back(pid, status, i, charge, mass, px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
     }
+
+    return map;
 }
 
 auto Reader::select_electron(const Core::Particle& electron, const hipo::bank& REC_Calorimeter, const hipo::bank& REC_Cherenkov) const -> bool {
@@ -83,10 +71,6 @@ auto Reader::select_electron(const Core::Particle& electron, const hipo::bank& R
     double SF = ETot / electron.p();
 
     // Cuts ---------------------------------------------------------------------------------------
-    const double vz_min_e = m_config["electron"]["vz_min"].value_or(NaN);
-    const double vz_max_e = m_config["electron"]["vz_max"].value_or(NaN);
-    const double chi2_min_e = m_config["electron"]["chi2_min"].value_or(NaN);
-    const double chi2_max_e = m_config["electron"]["chi2_max"].value_or(NaN);
     //---------------------------------------------------------------------------------------------
 
     // Get variables for electrons kinematics to apply the cuts -----------------------------------
@@ -98,9 +82,9 @@ auto Reader::select_electron(const Core::Particle& electron, const hipo::bank& R
     //---------------------------------------------------------------------------------------------
 
     // Cuts ---------------------------------------------------------------------------------------
-    const bool cut_chi2 = chi2_min_e < chi2_e && chi2_e < chi2_max_e;
-    const bool cut_vz = vz_min_e <= vz_e && vz_e <= vz_max_e;
-    const bool cuts = cut_chi2 && cut_vz;
+    // const bool cut_chi2 = chi2_min_e < chi2_e && chi2_e < chi2_max_e;
+    // const bool cut_vz = vz_min_e <= vz_e && vz_e <= vz_max_e;
+    // const bool cuts = cut_chi2 && cut_vz;
     // --------------------------------------------------------------------------------------------
 
     // Fill the histograms before any cuts are applied --------------------------------------------
@@ -113,15 +97,15 @@ auto Reader::select_electron(const Core::Particle& electron, const hipo::bank& R
     //---------------------------------------------------------------------------------------------
 
     // Fill histograms after cuts: ----------------------------------------------------------------
-    if (cut_chi2) m_histograms.electron.hist1D_vz_cut->Get()->Fill(vz_e);
-    if (cut_vz) m_histograms.electron.hist1D_chi2_cut->Get()->Fill(chi2_e);
+    // if (cut_chi2) m_histograms.electron.hist1D_vz_cut->Get()->Fill(vz_e);
+    // if (cut_vz) m_histograms.electron.hist1D_chi2_cut->Get()->Fill(chi2_e);
 
-    if (cuts) {
-        m_histograms.electron.hist1D_p_cut->Get()->Fill(p_e);
-        m_histograms.electron.hist1D_phi_cut->Get()->Fill(phi_e);
-        m_histograms.electron.hist1D_theta_cut->Get()->Fill(theta_e);
-        pass = true;
-    }
+    // if (cuts) {
+    //     m_histograms.electron.hist1D_p_cut->Get()->Fill(p_e);
+    //     m_histograms.electron.hist1D_phi_cut->Get()->Fill(phi_e);
+    //     m_histograms.electron.hist1D_theta_cut->Get()->Fill(theta_e);
+    //     pass = true;
+    // }
     //---------------------------------------------------------------------------------------------
 
     return pass;
