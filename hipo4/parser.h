@@ -82,9 +82,9 @@ class Parser
       symbols_ ["pi"] = 3.1415926535897932385;
       symbols_ ["e"]  = 2.7182818284590452354;      
       }
-
-  double Evaluate();  // get result
-  double Evaluate(const std::string &program);  // get result
+  
+  const double Evaluate ();  // get result
+  const double Evaluate (const std::string & program);  // get result
 
   // access symbols with operator []
   double & operator[] (const std::string & key) { return symbols_ [key]; }
@@ -93,20 +93,16 @@ class Parser
   std::map<std::string, double> symbols_;
 
   private:
-  TokenType GetToken(bool ignoreSign = false);
 
-  double CommaList(bool get);
+  const TokenType GetToken (const bool ignoreSign = false);  
+  const double CommaList (const bool get);
+  const double Expression (const bool get);
+  const double Comparison (const bool get);
+  const double AddSubtract (const bool get);
+  const double Term (const bool get);      // multiply and divide
+  const double Primary (const bool get);   // primary (base) tokens
 
-  double Expression(bool get);
-
-  double Comparison(bool get);
-
-  double AddSubtract(bool get);
-
-  double Term(bool get);      // multiply and divide
-  double Primary(bool get);   // primary (base) tokens
-
-  void CheckToken (const TokenType wanted)
+  inline void CheckToken (const TokenType wanted)
     {
     if (type_ != wanted)
       {

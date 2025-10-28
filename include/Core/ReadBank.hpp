@@ -1,8 +1,8 @@
 #pragma once
 
 // C++ headers
-#include <string>
 #include <map>
+#include <string>
 #include <vector>
 
 // <fmt> headers
@@ -11,9 +11,8 @@
 
 // Project headers
 #include <hipo4/bank.h>
-#include <Core/bankdefs.hpp>
-#include <Core/clas12def.hpp>
-
+#include <Core/Detectors.hpp>
+#include <Core/Banks.hpp>
 
 namespace Core {
 inline static auto load_bank_by_index(const hipo::bank& from_bank, const std::string& idx) -> std::map<int, std::vector<int>> {
@@ -36,8 +35,6 @@ inline static auto load_bank_by_index(const hipo::bank& from_bank, const std::st
 
     return map;
 }
-
-
 
 inline auto read_Cherenkov_bank(const hipo::bank& REC_Cherenkov, const int pindex) -> CherenkovBank {
     auto map = load_bank_by_index(REC_Cherenkov, "pindex");
@@ -63,21 +60,19 @@ inline auto read_Cherenkov_bank(const hipo::bank& REC_Cherenkov, const int pinde
     return output;
 }
 
-
-
 /**
  * @brief Reads and extracts calorimeter data for a given particle index from the REC_Calorimeter bank.
- * 
+ *
  * This function processes the REC_Calorimeter bank to retrieve calorimeter information
- * for a specific particle identified by its `pindex`. It organizes the data into a 
+ * for a specific particle identified by its `pindex`. It organizes the data into a
  * `CalorimeterBank` structure, which contains information about the preshower calorimeter (PCAL),
  * inner calorimeter (ECin), and outer calorimeter (ECout).
- * 
+ *
  * @param REC_Calorimeter The input hipo::bank containing calorimeter data.
  * @param pindex The particle index for which the calorimeter data is to be retrieved.
  * @return A `CalorimeterBank` structure containing the extracted calorimeter data. If no data
  *         is found for the given `pindex`, an empty `CalorimeterBank` is returned.
- * 
+ *
  * @details
  * - The function uses a helper lambda to populate the `CalorimeterStruct` fields for each
  *   calorimeter type.
@@ -126,7 +121,6 @@ inline auto read_Calorimeter_bank(const hipo::bank& REC_Calorimeter, const int p
 
     return output;
 }
-
 
 inline auto read_Track_bank(const hipo::bank& REC_Track, const int pindex) -> TrackBank {
     auto map = load_bank_by_index(REC_Track, "pindex");
@@ -179,8 +173,66 @@ inline auto read_Traj_bank(const hipo::bank& REC_Traj, const int pindex) -> DCTr
         if (REC_Traj.get<int>("detector", i) == DC and REC_Traj.get<int>("layer", i) == DC3)
             populate_traj_struct(output.region2, i);
 
-        if (REC_Traj.get<int>("detector", i) == DC and REC_Traj.get<int>("layer", i) == DC5)
+        if (REC_Traj.get<int>("detector", i) == DC and REC_Traj.get<int>("layer", i) == DC6)
             populate_traj_struct(output.region3, i);
+    }
+
+    return output;
+}
+
+inline auto read_Scintillator_bank(const hipo::bank& REC_Scintillator, const int pindex) -> ScintillatorBank {
+    auto map = load_bank_by_index(REC_Scintillator, "pindex");
+    ScintillatorBank output;
+
+    if (!map.contains(pindex)) return output;
+
+    for (int i : map.at(pindex)) {
+        // Flags to track if we've found a valid layer
+        bool found_FTOF1B = false;
+        bool found_FTOF1A = false;
+        bool found_FTOF2 = false;
+        int idx_FTOF1B = -1, idx_FTOF1A = -1, idx_FTOF2 = -1;
+
+        for (int i : map.at(pindex)) {
+            if (REC_Scintillator.get<int>("detector", i) == FTOF) {
+                int layer = REC_Scintillator.get<int>("layer", i);
+                if (layer == FTOF1B && !found_FTOF1B) {
+                    found_FTOF1B = true;
+                    idx_FTOF1B = i;
+                } else if (layer == FTOF1A && !found_FTOF1A) {
+                    found_FTOF1A = true;
+                    idx_FTOF1A = i;
+                } else if (layer == FTOF2 && !found_FTOF2) {
+                    found_FTOF2 = true;
+                    idx_FTOF2 = i;
+                }
+            }
+        }
+
+        int use_idx = -1;
+        if (found_FTOF1B) use_idx = idx_FTOF1B;
+        else if (found_FTOF1A) use_idx = idx_FTOF1A;
+        else if (found_FTOF2) use_idx = idx_FTOF2;
+
+        if (use_idx != -1) {
+            output.index = REC_Scintillator.get<int>("index", use_idx);
+            output.pindex = REC_Scintillator.get<int>("pindex", use_idx);
+            output.detector = REC_Scintillator.get<int>("detector", use_idx);
+            output.sector = REC_Scintillator.get<int>("sector", use_idx);
+            output.layer = REC_Scintillator.get<int>("layer", use_idx);
+            output.component = REC_Scintillator.get<int>("component", use_idx);
+            output.energy = REC_Scintillator.get<float>("energy", use_idx);
+            output.time = REC_Scintillator.get<float>("time", use_idx);
+            output.path = REC_Scintillator.get<float>("path", use_idx);
+            output.chi2 = REC_Scintillator.get<float>("chi2", use_idx);
+            output.x = REC_Scintillator.get<float>("x", use_idx);
+            output.y = REC_Scintillator.get<float>("y", use_idx);
+            output.z = REC_Scintillator.get<float>("z", use_idx);
+            output.hx = REC_Scintillator.get<float>("hx", use_idx);
+            output.hy = REC_Scintillator.get<float>("hy", use_idx);
+            output.hz = REC_Scintillator.get<float>("hz", use_idx);
+            output.status = REC_Scintillator.get<int>("status", use_idx);
+        }
     }
 
     return output;

@@ -2,6 +2,8 @@
 
 // std includes
 #include <iostream>
+#include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -14,330 +16,63 @@
 #include <TColor.h>
 #include <TF1.h>
 #include <TFile.h>
-#include <TH1D.h>
-#include <TH2D.h>
+#include <TH1.h>
+#include <TH2.h>
 #include <THStack.h>
 #include <TLegend.h>
 #include <TLine.h>
 #include <TMath.h>
 #include <TPaveStats.h>
 #include <TStyle.h>
+#include <ROOT/TThreadedObject.hxx>
 
 // Project headers
 #include <Plotting/Colors.hpp>
+#include "fmt/base.h"
 
 namespace Plotting {
 
+using TTO_TH1D = ROOT::TThreadedObject<TH1D>;
+using TTO_TH2D = ROOT::TThreadedObject<TH2D>;
+using up_TTO_TH1D = std::unique_ptr<TTO_TH1D>;
+using up_TTO_TH2D = std::unique_ptr<TTO_TH2D>;
+
 /**
- * @brief Generates a linearly spaced vector of values.
- * 
- * This function creates a vector containing `num` evenly spaced values 
- * starting from `start` and ending at `end`.
- * 
- * @tparam T The type of the start and end values.
- * @param start The starting value of the sequence.
- * @param end The ending value of the sequence.
- * @param num The number of values to generate.
- * @return std::vector<T> A vector containing the linearly spaced values.
- * 
- * @note If `num` is 0, an empty vector is returned. If `num` is 1, a vector 
- * containing only the `start` value is returned.
+ * @brief Saves a ROOT object into an open ROOT file.
+ *
+ * This function writes the provided object to the specified ROOT file.
+ * The file must be open and valid; otherwise, an exception is thrown.
+ *
+ * @tparam T Type of the ROOT object to be saved (e.g., TH1, TTree).
+ * @param file A unique pointer to an open TFile where the object will be saved.
+ * @param object Reference to the ROOT object to be written into the file.
+ *
+ * @throws std::invalid_argument If the file is not open or is invalid.
  */
 template <typename T>
-auto linspace(T start, T end, const int num) -> std::vector<T> {
-    if (num == 0) return {};
-    if (num == 1) return {start};
-
-    std::vector<T> v;
-    v.reserve(num);
-
-    double delta = static_cast<double>(end - start) / (num - 1);
-    for (int i = 0; i < num - 1; ++i) {
-        v.push_back(start + delta * i);
-    }
-    v.push_back(end);
-    return v;
-}
-
-struct Figsize {
-    const uint32_t width;
-    const uint32_t height;
-};
-
-/**
- * @brief Creates a shared pointer to a TCanvas object with specified dimensions.
- * 
- * @param figsize The dimensions of the canvas, specified as a Figsize object. 
- *                Default is {800, 600}.
- * @return std::shared_ptr<TCanvas> A shared pointer to the created TCanvas object.
- */
-inline auto make_canvas(const Figsize figsize = {800, 600}, const std::array<float, 4>& margins = {0.12f, 0.12f, 0.12f, 0.12f}) -> std::shared_ptr<TCanvas> {
-    auto canvas = std::make_shared<TCanvas>("", "", figsize.width, figsize.height);
-    canvas->SetLeftMargin(margins[0]);
-    canvas->SetRightMargin(margins[1]);
-    canvas->SetTopMargin(margins[2]);
-    canvas->SetBottomMargin(margins[3]);
-
-    return canvas;
+inline auto save_in_root_file(const std::unique_ptr<TFile>& file, T& object) -> void {
+    if (!file || !file->IsOpen()) throw std::invalid_argument("File is not open or is invalid");
+    object->Write();
 }
 
 /**
- * @brief Saves the given canvas in multiple formats.
- *
- * This function saves the provided TCanvas object in PDF, C, TeX, and ROOT file formats.
- * The files are saved in respective subdirectories under the specified path.
- *
- * @param canvas A shared pointer to the TCanvas object to be saved.
- * @param path The directory path where the files will be saved. The function assumes
- *             that subdirectories "pdf", "C", "tex", and "root" exist under this path.
- * @param file_name The base name for the saved files. The function appends the appropriate
- *                 file extension for each format.
+ * @brief Options for drawing 1D histograms with styling controls.
  */
-inline auto save_canvas(const std::shared_ptr<TCanvas>& canvas, const std::string& path, const std::string& file_name) -> void {
-    if (!canvas) throw std::invalid_argument("Canvas pointer cannot be null");
-    if (path.empty() || file_name.empty()) throw std::invalid_argument("Path and filename cannot be empty");
-
-    canvas->SaveAs((path + "pdf/" + file_name + ".pdf").c_str());
-
-    std::unique_ptr<TFile> output_file(TFile::Open((path + "root/" + file_name + ".root").c_str(), "RECREATE"));
-    if (!output_file || output_file->IsZombie()) throw std::runtime_error("Failed to create ROOT file: " + path + "root/");
-    canvas->Write("canvas");
-    auto list = canvas->GetListOfPrimitives();
-    for (int i = 1; i < list->GetSize(); ++i) {
-        output_file->WriteObject(list->At(i), list->At(i)->GetName());
-    }
-    output_file->Close();
-}
-
-/**
- * @brief Represents a position of a box in normalized coordinates.
- */
-struct Position {
-    const double x1;  ///< Left position (0.0-1.0)
-    const double y1;  ///< Bottom position (0.0-1.0)
-    const double x2;  ///< Right position (0.0-1.0)
-    const double y2;  ///< Top position (0.0-1.0)
-
-    /**
-     * @brief Constructor with validation.
-     * 
-     * @param x1_ Left position (0.0-1.0)
-     * @param y1_ Bottom position (0.0-1.0)
-     * @param x2_ Right position (0.0-1.0)
-     * @param y2_ Top position (0.0-1.0)
-     * @throws std::invalid_argument If coordinates are invalid (not in [0,1] or x1>=x2 or y1>=y2)
-     */
-    Position(double x1_, double y1_, double x2_, double y2_) : x1(x1_), y1(y1_), x2(x2_), y2(y2_) {
-        const bool valid_range =
-            x1 >= 0.0 && x1 <= 1.0 &&
-            y1 >= 0.0 && y1 <= 1.0 &&
-            x2 >= 0.0 && x2 <= 1.0 &&
-            y2 >= 0.0 && y2 <= 1.0;
-        const bool valid_order = (x1 < x2) && (y1 < y2);
-
-        if (!valid_range || !valid_order) throw std::invalid_argument("Invalid position coordinates");
-    }
-
-    /**
-     * @brief Get the width of the box.
-     * @return Width in NDC units
-     */
-    double width() const { return x2 - x1; }
-
-    /**
-     * @brief Get the height of the box.
-     * @return Height in NDC units
-     */
-    double height() const { return y2 - y1; }
-};
-
-/**
- * @brief Layout options for arranging statistics boxes.
- */
-enum class StatsLayout {
-    Stack,       ///< Stack boxes vertically
-    Grid,        ///< Arrange boxes in a grid
-    Horizontal,  ///< Arrange boxes horizontally
-    Fixed        ///< Keep original positions
-};
-
-/**
- * @brief Move the statistics boxes to the specified layout.
- *
- * This function updates the position of the statistics boxes according to the specified layout.
- *
- * @param boxes A reference to TObjArray that contains the stats boxes.
- * @param layout The layout style to apply (defaults to Stack).
- * @param numColumns Number of columns for Grid layout (defaults to 2).
- * @param spacing Spacing between boxes as fraction of canvas (defaults to 0.01).
- * @param startPosition Starting position for first box (defaults to upper right).
- * @throws std::invalid_argument If boxes array is empty or contains invalid objects.
- */
-inline auto update_stats_layout(
-    const TObjArray& boxes,
-    StatsLayout layout = StatsLayout::Stack,
-    int numColumns = 2,
-    double spacing = 0.01,
-    const Position& startPosition = Position(0.65, 0.6, 0.95, 0.9)) -> void {
-    if (boxes.GetEntries() <= 0) throw std::invalid_argument("Stats boxes array is empty");
-    if (numColumns < 1) throw std::invalid_argument("Number of columns must be positive");
-
-    std::vector<TPaveStats*> statBoxes;
-    std::vector<Position> originalPositions;
-
-    for (int i = 0; i < boxes.GetEntries(); i++) {
-        auto statBox = dynamic_cast<TPaveStats*>(boxes.At(i));
-        if (!statBox) continue;
-        originalPositions.emplace_back(statBox->GetX1NDC(), statBox->GetY1NDC(), statBox->GetX2NDC(), statBox->GetY2NDC());
-        statBoxes.push_back(statBox);
-    }
-
-    if (statBoxes.empty()) throw std::invalid_argument("No valid stats boxes found");
-
-    const double boxWidth = originalPositions[0].width();
-    const double boxHeight = originalPositions[0].height();
-
-    switch (layout) {
-        case StatsLayout::Fixed:
-            // Do nothing, keep original positions
-            break;
-
-        case StatsLayout::Stack: {
-            // Stack boxes vertically starting from the top
-            double currentY = startPosition.y2;
-
-            for (size_t i = 0; i < statBoxes.size(); i++) {
-                statBoxes[i]->SetX1NDC(startPosition.x1);
-                statBoxes[i]->SetX2NDC(startPosition.x2);
-
-                const double yBottom = currentY - boxHeight;
-                statBoxes[i]->SetY2NDC(currentY);
-                statBoxes[i]->SetY1NDC(yBottom);
-
-                currentY = yBottom - spacing;
-            }
-            break;
-        }
-
-        case StatsLayout::Horizontal: {
-            // Arrange boxes horizontally
-            double currentX = startPosition.x1;
-
-            for (size_t i = 0; i < statBoxes.size(); i++) {
-                const double xRight = currentX + boxWidth;
-
-                statBoxes[i]->SetX1NDC(currentX);
-                statBoxes[i]->SetX2NDC(xRight);
-                statBoxes[i]->SetY1NDC(startPosition.y1);
-                statBoxes[i]->SetY2NDC(startPosition.y2);
-                currentX = xRight + spacing;
-            }
-            break;
-        }
-
-        case StatsLayout::Grid: {
-            // Arrange boxes in a grid pattern
-            for (size_t i = 0; i < statBoxes.size(); i++) {
-                const int row = i / numColumns;
-                const int col = i % numColumns;
-
-                const double x1 = startPosition.x1 + col * (boxWidth + spacing);
-                const double x2 = x1 + boxWidth;
-                const double y2 = startPosition.y2 - row * (boxHeight + spacing);
-                const double y1 = y2 - boxHeight;
-
-                statBoxes[i]->SetX1NDC(x1);
-                statBoxes[i]->SetX2NDC(x2);
-                statBoxes[i]->SetY1NDC(y1);
-                statBoxes[i]->SetY2NDC(y2);
-            }
-            break;
-        }
-    }
-}
-
-/**
- * @brief Set up and position statistics boxes for histograms on a canvas.
- *
- * This function finds stat boxes for the given histograms, updates their appearance,
- * and arranges them according to the specified layout.
- *
- * @tparam Args Variadic template for multiple histogram pointers.
- * @param canvas Shared pointer to the TCanvas containing the histograms.
- * @param layout Layout style to apply to the stat boxes (defaults to Stack).
- * @param histograms Pack of histogram pointers to process.
- * @throws std::runtime_error If canvas is null.
- */
-template <typename... Args>
-inline auto set_stat_boxes(
-    const std::shared_ptr<TCanvas>& canvas,
-    StatsLayout layout,
-    Args&&... histograms) -> void {
-    if (!canvas) throw std::runtime_error("Canvas pointer is null");
-
-    canvas->Update();
-    TObjArray boxes;
-
-    for (const auto& h : {histograms...}) {
-        if (!h) continue;
-
-        auto statBox = dynamic_cast<TPaveStats*>(h->GetListOfFunctions()->FindObject("stats"));
-        if (!statBox) {
-            h->SetStats(true);
-            canvas->Update();
-            statBox = dynamic_cast<TPaveStats*>(h->GetListOfFunctions()->FindObject("stats"));
-
-            if (!statBox) {
-                fmt::print(stderr, "Warning: Could not create stats box for histogram\n");
-                continue;
-            }
-        }
-
-        statBox->SetTextColor(h->GetLineColor());
-        statBox->SetBorderSize(1);
-        statBox->SetFillColor(0);
-        statBox->Draw();
-
-        boxes.Add(statBox);
-    }
-
-    if (boxes.GetEntries() > 0) {
-        update_stats_layout(boxes, layout);
-        canvas->Modified();
-    }
-}
-
-#include <fmt/core.h>
-
-/**
- * @brief Options for drawing 1D histograms with comprehensive styling controls.
- */
-class OptionTH1 {
-   public:
-    // File and canvas options
-    std::string file_name = "";
+struct OptionTH1 {
+    // Pad options
     bool log_x = false;
     bool log_y = false;
 
     // Histogram style options
     int16_t color1 = Color::kBlack;
     float alpha_color1 = 0.0;
-    int16_t color2 = Color::kBlue;
-    float alpha_color2 = 0.0;
     std::string draw_option = "histo";
     std::string opt_stat = "emr";
 
     // Scaling and range options
-    std::pair<double, double> x_range = {};
-    std::pair<double, double> y_range = {};
-    double scale1 = 0;
-    double scale2 = 0;
-
-    // Visual markers
-    std::vector<double> cuts = {};
-    int cut_color = Color::kRed;
-    int cut_width = 2;
-    double cut_height_fraction = 0.8;
+    std::pair<double, double> x_range = {0.0, 0.0};  // {0,0} means auto-range
+    std::pair<double, double> y_range = {0.0, 0.0};  // {0,0} means auto-range
+    double scale1 = 0.0;                             // 0 means no scaling
 
     // Legend and labeling
     std::string legend1 = "";
@@ -351,184 +86,123 @@ class OptionTH1 {
     std::string y_label = "";
     float y_label_offset = 0.8f;
     float y_label_size = 0.05f;
-
-    // Legend positioning
-    double legend_x1 = 0.65;
-    double legend_y1 = 0.75;
-    double legend_x2 = 0.89;
-    double legend_y2 = 0.89;
-
-    // Additional options
-    StatsLayout stats_layout = StatsLayout::Stack;
 };
 
 /**
- * @brief Draw a single 1D histogram with the specified options.
+ * @brief Draws a 1D histogram with full styling and feature implementation.
  *
- * @param h Shared pointer to the histogram to draw.
- * @param path Directory path where the output will be saved.
- * @param args Drawing options.
- * @throws std::invalid_argument If histogram pointer is null.
+ * This function merges the input histogram, applies scaling, sets ranges,
+ * draws cut lines, adds legends, and saves the result to a ROOT file.
+ *
+ * @param h Unique pointer to the histogram object to be merged and drawn.
+ * @param file Unique pointer to the ROOT file where the histogram will be saved.
+ * @param args Optional drawing and styling parameters (see OptionTH1).
+ *
+ * @throws std::invalid_argument if the merged histogram pointer is null.
  */
-inline auto draw_hist1D(
-    const std::shared_ptr<TH1>& h,
-    const std::string& path,
-    const OptionTH1& args = {}) -> void {
-    if (!h) throw std::invalid_argument("Histogram pointer is null");
+inline auto draw_hist1D(const up_TTO_TH1D& h, const std::unique_ptr<TFile>& file, const OptionTH1& args = {}) -> void {
+    const std::shared_ptr<TH1D> h_merged = h->Merge();
+    if (!h_merged) {
+        fmt::println("Histogram pointer is null, cannot draw {}", h->Get()->GetName());
+        return;
+    }
+    gStyle->SetOptStat(args.opt_stat.data());  // Set statistics display options
 
-    auto canvas = make_canvas();
-    std::string file_name = args.file_name.empty() ? h->GetName() : args.file_name;
+    if (args.scale1 > 0.0) h_merged->Scale(args.scale1);  // Apply scaling if specified
+    h_merged->SetLineColor(args.color1);                  // Set histogram style
+    h_merged->SetFillColorAlpha(args.color1, args.alpha_color1);
+    if (!args.title.empty()) h_merged->SetTitle(args.title.data());  // Set title
 
-    // Set up global style
-    gStyle->SetOptStat(args.opt_stat.data());
+    // Configure X-axis
+    h_merged->GetXaxis()->SetTitle(args.x_label.data());
+    h_merged->GetXaxis()->SetTitleOffset(args.x_label_offset);
+    h_merged->GetXaxis()->SetTitleSize(args.x_label_size);
 
-    // Configure and draw histogram
-    h->Draw(args.draw_option.data());
-    h->SetLineColor(args.color1);
-    h->SetFillColorAlpha(args.color1, args.alpha_color1);
-    h->GetXaxis()->SetTitle(args.x_label.data());
-    h->GetXaxis()->SetTitleOffset(args.x_label_offset);
-    h->GetXaxis()->SetTitleSize(args.x_label_size);
+    // Set X-axis range if specified
+    if (args.x_range.first != 0.0 || args.x_range.second != 0.0) {
+        h_merged->GetXaxis()->SetRangeUser(args.x_range.first, args.x_range.second);
+    }
 
+    // Configure Y-axis
     if (!args.y_label.empty()) {
-        h->GetYaxis()->SetTitle(args.y_label.data());
-        h->GetYaxis()->SetTitleOffset(args.y_label_offset);
-        h->GetYaxis()->SetTitleSize(args.y_label_size);
+        h_merged->GetYaxis()->SetTitle(args.y_label.data());
+        h_merged->GetYaxis()->SetTitleOffset(args.y_label_offset);
+        h_merged->GetYaxis()->SetTitleSize(args.y_label_size);
     }
 
-    if (!args.title.empty()) h->SetTitle(args.title.data());
-    if (args.x_range.first < args.x_range.second) h->GetXaxis()->SetRangeUser(args.x_range.first, args.x_range.second);
-    if (args.y_range.first < args.y_range.second) h->GetYaxis()->SetRangeUser(args.y_range.first, args.y_range.second);
-    if (args.scale1 != 0) h->Scale(args.scale1);
-    if (args.log_x) canvas->SetLogx();
-    if (args.log_y) canvas->SetLogy();
+    if (args.y_range.first != 0.0 || args.y_range.second != 0.0) h_merged->GetYaxis()->SetRangeUser(args.y_range.first, args.y_range.second);  // Set Y-axis range if specified
+    h_merged->Draw(args.draw_option.data());                                                                                                   // Draw histogram
 
-    for (double cut : args.cuts) {
-        auto line = std::make_unique<TLine>();
-        line->SetLineColor(args.cut_color);
-        line->SetLineWidth(args.cut_width);
-        line->DrawLine(cut, 0, cut, args.cut_height_fraction * h->GetMaximum());
-    }
+    if (args.log_x) gPad->SetLogx();  // Set logarithmic scales if requested
+    if (args.log_y) gPad->SetLogy();
 
-    if (!args.legend1.empty()) {
-        auto legend = std::make_unique<TLegend>(args.legend_x1, args.legend_y1, args.legend_x2, args.legend_y2);
-        legend->AddEntry(h.get(), args.legend1.data(), "l");
-        legend->Draw();
-    }
-
-    if (args.opt_stat != "0") set_stat_boxes(canvas, args.stats_layout, h);
-
-    save_canvas(canvas, path, file_name);
+    save_in_root_file(file, h_merged);
 }
 
 /**
- * @brief Draw two 1D histograms on the same canvas with the specified options.
- *
- * @param h1 Shared pointer to the first histogram.
- * @param h2 Shared pointer to the second histogram.
- * @param path Directory path where the output will be saved.
- * @param args Drawing options.
- * @throws std::invalid_argument If either histogram pointer is null.
+ * @brief Options for drawing 2D histograms with styling controls.
  */
-inline auto draw_hist1D(
-    const std::shared_ptr<TH1>& h1,
-    const std::shared_ptr<TH1>& h2,
-    const std::string& path,
-    const OptionTH1& args = {}) -> void {
-    if (!h1 || !h2) throw std::invalid_argument("One or both histogram pointers are null");
-
-    auto canvas = make_canvas();
-    std::string file_name = args.file_name.empty() ? h1->GetName() : args.file_name;
-    auto hStack = std::make_shared<THStack>("hs", "");
-
-    // Set up global style
-    gStyle->SetOptStat(args.opt_stat.data());
-
-    // Configure first histogram
-    h1->SetLineColor(args.color1);
-    h1->SetFillColorAlpha(args.color1, args.alpha_color1);
-    if (args.scale1 != 0) h1->Scale(args.scale1);
-
-    // Configure second histogram
-    h2->SetLineColor(args.color2);
-    h2->SetFillColorAlpha(args.color2, args.alpha_color2);  // Fixed: now using color2
-    if (args.scale2 != 0) h2->Scale(args.scale2);
-
-    hStack->Add(h1.get(), "hist");
-    hStack->Add(h2.get(), "hist");
-    hStack->Draw("nostack");
-
-    hStack->GetXaxis()->SetTitle(args.x_label.data());
-    hStack->GetXaxis()->SetTitleOffset(args.x_label_offset);
-    hStack->GetXaxis()->SetTitleSize(args.x_label_size);
-
-    if (!args.y_label.empty()) {
-        hStack->GetYaxis()->SetTitle(args.y_label.data());
-        hStack->GetYaxis()->SetTitleOffset(args.y_label_offset);
-        hStack->GetYaxis()->SetTitleSize(args.y_label_size);
-    }
-
-    if (!args.title.empty()) hStack->SetTitle(args.title.data());
-    if (args.x_range.first < args.x_range.second) hStack->GetXaxis()->SetRangeUser(args.x_range.first, args.x_range.second);
-    if (args.y_range.first < args.y_range.second) hStack->GetYaxis()->SetRangeUser(args.y_range.first, args.y_range.second);
-    if (args.log_x) canvas->SetLogx();
-    if (args.log_y) canvas->SetLogy();
-
-    double max_y = std::max(h1->GetMaximum(), h2->GetMaximum());
-    for (double cut : args.cuts) {
-        auto line = std::make_unique<TLine>();
-        line->SetLineColor(args.cut_color);
-        line->SetLineWidth(args.cut_width);
-        line->DrawLine(cut, 0, cut, args.cut_height_fraction * max_y);
-    }
-
-    if (!args.legend1.empty() || !args.legend2.empty()) {
-        auto legend = std::make_unique<TLegend>(args.legend_x1, args.legend_y1, args.legend_x2, args.legend_y2);
-        if (!args.legend1.empty()) legend->AddEntry(h1.get(), args.legend1.data(), "l");
-        if (!args.legend2.empty()) legend->AddEntry(h2.get(), args.legend2.data(), "l");
-        legend->Draw();
-    }
-
-    if (args.opt_stat != "0") set_stat_boxes(canvas, args.stats_layout, h1, h2);
-
-    save_canvas(canvas, path, file_name);
-}
-
 struct OptionTH2 {
-    const std::string& file_name = "";
+    bool log_x = false;
+    bool log_y = false;
+    bool log_z = false;
 
-    const bool log_x = false;
-    const bool log_y = false;
-    const bool log_z = false;
+    std::string x_label = "";
+    float x_label_offset = 0.8f;
+    float x_label_size = 0.05f;
 
-    const std::string label_x;
-    const float label_x_offset = 0.8f;
-    const float label_x_size = 0.05f;
+    std::string y_label = "";
+    float y_label_offset = 1.0f;
+    float y_label_size = 0.05f;
 
-    const std::string label_y;
-    const float label_y_offset = 1.0f;
-    const float label_y_size = 0.05f;
+    std::string z_label = "";
+    float z_label_offset = 1.0f;
+    float z_label_size = 0.05f;
+
+    std::string title = "";
+    std::string draw_option = "COLZ";
 };
 
-inline auto draw_hist2D(const std::shared_ptr<TH2D>& h, const std::string& path, const OptionTH2& args = {}) -> void {
-    const auto canvas = make_canvas();
-    const auto myFileName = args.file_name.empty() ? h->GetName() : args.file_name;
+/**
+ * @brief Draws a 2D histogram using ROOT and saves it to a ROOT file.
+ *
+ * This function merges the provided histogram, draws it with the specified options,
+ * sets axis labels, applies logarithmic scales if requested, and saves the result.
+ *
+ * @param h Unique pointer to a TTO_TH2D histogram object to be merged and drawn.
+ * @param file Unique pointer to an open ROOT TFile where the histogram will be saved.
+ * @param args Optional drawing and axis formatting options.
+ *
+ * @throws std::invalid_argument if the merged histogram pointer is null.
+ */
+inline auto draw_hist2D(const up_TTO_TH2D& h, const std::unique_ptr<TFile>& file, const OptionTH2& args = {}) -> void {
+    const std::shared_ptr<TH2D> h_merged = h->Merge();
+    if (!h_merged) {
+        fmt::println("Histogram pointer is null, cannot draw {}", h->Get()->GetName());
+        return;
+    }
 
-    h->Draw("COLZ");
+    if (!args.title.empty()) h_merged->SetTitle(args.title.data());  // Set title
+    h_merged->Draw(args.draw_option.data());                         // Draw histogram
 
-    h->GetXaxis()->SetTitle(args.label_x.data());
-    h->GetXaxis()->SetTitleOffset(args.label_x_offset);
-    h->GetXaxis()->SetTitleSize(args.label_x_size);
+    if (!args.x_label.empty()) h_merged->GetXaxis()->SetTitle(args.x_label.data());  // Configure X-axis
+    h_merged->GetXaxis()->SetTitleOffset(args.x_label_offset);
+    h_merged->GetXaxis()->SetTitleSize(args.x_label_size);
 
-    h->GetYaxis()->SetTitle(args.label_y.data());
-    h->GetYaxis()->SetTitleOffset(args.label_y_offset);
-    h->GetYaxis()->SetTitleSize(args.label_y_size);
+    if (!args.y_label.empty()) h_merged->GetYaxis()->SetTitle(args.y_label.data());  // Configure Y-axis
+    h_merged->GetYaxis()->SetTitleOffset(args.y_label_offset);
+    h_merged->GetYaxis()->SetTitleSize(args.y_label_size);
 
-    if (args.log_x) canvas->SetLogx();
-    if (args.log_y) canvas->SetLogy();
-    if (args.log_z) canvas->SetLogz();
+    if (!args.z_label.empty()) h_merged->GetZaxis()->SetTitle(args.z_label.data());  // Configure Z-axis
+    h_merged->GetZaxis()->SetTitleOffset(args.z_label_offset);
+    h_merged->GetZaxis()->SetTitleSize(args.z_label_size);
 
-    save_canvas(canvas, path, myFileName);
+    // Set logarithmic scales if requested
+    if (args.log_x) gPad->SetLogx();
+    if (args.log_y) gPad->SetLogy();
+    if (args.log_z) gPad->SetLogz();
+
+    save_in_root_file(file, h_merged);
 }
 
 }  // namespace Plotting

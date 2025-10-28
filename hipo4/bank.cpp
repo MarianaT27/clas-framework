@@ -37,6 +37,8 @@
 #include "bank.h"
 #include "parser.h"
 
+#include <algorithm>
+
 namespace hipo {
 
   //==============================================================
@@ -47,7 +49,7 @@ namespace hipo {
   structure::structure(int __group, int __item, std::string &str){
     int length = str.length();
     initStructureBySize(__group,__item, 6, length);
-    putStringAt(str);
+    putStringAt(0,str);
   }
 
   bool structure::allocate(int size){
@@ -102,7 +104,7 @@ namespace hipo {
       auto item = (int) (*reinterpret_cast<uint8_t *>(structureAddress+2));
       return item;
     }
-    void         structure::initNoCopy(const char *buffer){
+    void         structure::initNoCopy(const char *buffer, int size){
         structureAddress = const_cast<char*>(buffer);
     }
 
@@ -117,7 +119,7 @@ namespace hipo {
          getGroup(),getItem(),getType(),getHeaderSize(), getSize(), getDataSize(), dataOffset, structureBuffer.size());
     }
 
-    std::string  structure::getStringAt(){
+    std::string  structure::getStringAt(int index){
         int length = getSize();
         auto *string_ch = (char *) malloc(length+1);
         std::memcpy(string_ch, &structureBuffer[8],length);
@@ -127,7 +129,7 @@ namespace hipo {
         return result;
     }
 
-    void         structure::putStringAt(std::string &str){
+    void         structure::putStringAt(int index, std::string &str){
       int strLen = str.length();
       std::memcpy(&structureBuffer[8],&str[0],strLen);
     }
@@ -558,6 +560,13 @@ void bank::printValue(int schemaEntry, int row) const {
       printf("%14ld ", getLong(schemaEntry, row));
       break;
   }
+}
+
+banklist::size_type getBanklistIndex(banklist& banks, std::string const& bankName) noexcept(false) {
+  auto predicate = [&bankName](auto& bank) { return bank.getSchema().getName() == bankName; };
+  if(auto it{std::find_if(banks.begin(), banks.end(), predicate)}; it != banks.end())
+    return std::distance(banks.begin(), it);
+  throw std::runtime_error("bank named '" + bankName + "' not found in banklist");
 }
 
 }

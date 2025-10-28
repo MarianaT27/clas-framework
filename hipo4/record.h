@@ -38,145 +38,129 @@
 #ifndef HIPORECORD_H
 #define HIPORECORD_H
 
+#include <iostream>
+#include <vector>
+#include <string>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
-#include <iostream>
-#include <string>
-#include <vector>
 
 #include "event.h"
 #include "utils.h"
 
 namespace hipo {
 
-typedef struct recordHeader_t {
-    int signatureString{};             // 1) identifier string is HREC (int = 0x43455248
-    int recordLength{};                // 2) TOTAL Length of the RECORD, includes INDEX array
-    int recordDataLength{};            // 3) Length of the DATA uncompressed
-    int recordDataLengthCompressed{};  // 4) compressed length of the DATA buffer
-    int numberOfEvents{};              // 5) number of event, data buckets in DATA buffer
-    int headerLength{};                // 6) Length of the buffer represengin HEADER for the record
-    int indexDataLength{};             // 7) Length of the index buffer (in bytes)
-    int userHeaderLength{};            // user header length in bytes
-    int userHeaderLengthPadding{};     // the padding added to user header Length
-    int bitInfo{};
-    int compressionType{};
-    int compressedLengthPadding{};
-    int dataEndianness{};
-} recordHeader_t;
+    typedef struct recordHeader_t {
+      int signatureString{}; // 1) identifier string is HREC (int = 0x43455248
+      int recordLength{}; // 2) TOTAL Length of the RECORD, includes INDEX array
+      int recordDataLength{}; // 3) Length of the DATA uncompressed
+      int recordDataLengthCompressed{}; // 4) compressed length of the DATA buffer
+      int numberOfEvents{} ; // 5) number of event, data buckets in DATA buffer
+      int headerLength{} ; // 6) Length of the buffer represengin HEADER for the record
+      int indexDataLength{} ; // 7) Length of the index buffer (in bytes)
+      int userHeaderLength{}; // user header length in bytes
+      int userHeaderLengthPadding{}; // the padding added to user header Length
+      int bitInfo{};
+      int compressionType{};
+      int compressedLengthPadding{};
+      int dataEndianness{};
+    } recordHeader_t;
 
-class data {
-   private:
-    const char* data_ptr{};
-    int data_size{};
-    int data_endianness{};
-    int data_offset{};
-    int data_type;
+    class data {
+      private:
+      const char  *data_ptr{};
+      int          data_size{};
+      int          data_endianness{};
+      int          data_offset{};
+      int          data_type;
+      
+      public:
+        data(){ data_ptr = nullptr; data_size = 0;}
+        ~data()= default;
 
-   public:
-    data() {
-        data_ptr = nullptr;
-        data_size = 0;
-    }
+        void setDataPtr(const char *__ptr){ data_ptr = __ptr;}
+        void setDataSize(int __size){ data_size = __size;}
+        void setDataOffset(int __offset) { data_offset = __offset;}
+        void setDataEndianness(int __endianness) { data_endianness = __endianness;}
+        void setDataType(int __type){ data_type = __type;}
+        const uint32_t   *getEvioPtr(){ return reinterpret_cast<const uint32_t *>(data_ptr);}
+        int         getEvioSize(){ return (int) data_size/4 ;}
+        const char *getDataPtr(){ return data_ptr;}
+        int         getDataSize(){ return data_size;}
+        int         getDataType(){ return data_type;}
+        int         getDataEndianness(){ return data_endianness;}
+        int         getDataOffset(){ return data_offset;}
+    };
 
-    ~data() = default;
+    class dataframe {
+       private:
+         std::vector<char>  dataBuffer;
+         recordHeader_t     recordHeader{};
+         int                maxEvents = 50;
+         int                maxSize   = 512*1024;
 
-    void setDataPtr(const char* __ptr) { data_ptr = __ptr; }
+       public:
+         dataframe(){};
+         dataframe(int max_events, int max_size);
+         ~dataframe(){};
+         
+         void         init(const char *ptr);
+         bool         addEvent(hipo::event &event);
+         int          getEventAt(int pos, hipo::event &event);
+         int          count();
+         int          size();
+         void         reset();
+         const char  *buffer(){ return &dataBuffer[0];}
+         
+         void summary();
+    };
 
-    void setDataSize(int __size) { data_size = __size; }
+    class record {
 
-    void setDataOffset(int __offset) { data_offset = __offset; }
+      private:
 
-    void setDataEndianness(int __endianness) { data_endianness = __endianness; }
+        //std::vector< std::vector<char> > eventBuffer;
+        std::vector<char>  recordHeaderBuffer;
+        recordHeader_t     recordHeader{};
 
-    void setDataType(int __type) { data_type = __type; }
+        std::vector<char>  recordBuffer;
+        std::vector<char>  recordCompressedBuffer;
 
-    const uint32_t* getEvioPtr() { return reinterpret_cast<const uint32_t*>(data_ptr); }
+        hipo::benchmark                 readBenchmark;
+        hipo::benchmark                 unzipBenchmark;
+        hipo::benchmark                 indexBenchmark;
 
-    int getEvioSize() { return (int)data_size / 4; }
+        char *getUncompressed(const char *data, int dataLength, int dataLengthUncompressed);
+        int   getUncompressed(const char *data, char *dest, int dataLength, int dataLengthUncompressed);
+        void  showBuffer(const char *data, int wrapping, int maxsize);
 
-    const char* getDataPtr() { return data_ptr; }
+    public:
 
-    int getDataSize() { return data_size; }
+        record();
+        ~record();
 
-    int getDataType() { return data_type; }
+        void   read(hipo::bank &b, int event);
+        void   readRecord(std::ifstream &stream, long position, int dataOffset);
+        void   readRecord__(std::ifstream &stream, long position, long recordLength);
+        bool   readRecord(std::ifstream &stream, long position, int dataOffset, long inputSize);
+        int    getEventCount();
+        int    getRecordSizeCompressed();
+        
+        void   getColumn(hipo::data &data,int column, hipo::bank &bank, int event);
+        void   getColumn(hipo::data &data,const char* column, hipo::bank &bank, int event);
+        
+        void   readEvent( std::vector<char> &vec, int index);
+        void   readHipoEvent(hipo::event &event, int index);
+        
+        void   getData(   hipo::data &data, int index);
+        //void   getBank(   hipo::bank &bank, int index);
 
-    int getDataEndianness() { return data_endianness; }
+        void   getEventsMap(std::vector<std::pair<int,int>> &emap);
 
-    int getDataOffset() { return data_offset; }
-};
-
-class dataframe {
-   private:
-    std::vector<char> dataBuffer;
-    recordHeader_t recordHeader{};
-    int maxEvents = 50;
-    int maxSize = 512 * 1024;
-
-   public:
-    dataframe() {};
-    dataframe(int max_events, int max_size);
-    ~dataframe() {};
-
-    void init(const char* ptr);
-    bool addEvent(hipo::event& event);
-    int getEventAt(int pos, hipo::event& event);
-    int count();
-    int size();
-    void reset();
-
-    const char* buffer() { return &dataBuffer[0]; }
-
-    void summary();
-};
-
-class record {
-
-   private:
-    //std::vector< std::vector<char> > eventBuffer;
-    std::vector<char> recordHeaderBuffer;
-    recordHeader_t recordHeader{};
-
-    std::vector<char> recordBuffer;
-    std::vector<char> recordCompressedBuffer;
-
-    hipo::benchmark readBenchmark;
-    hipo::benchmark unzipBenchmark;
-    hipo::benchmark indexBenchmark;
-
-    char* getUncompressed(const char* data, int dataLength, int dataLengthUncompressed);
-    int getUncompressed(const char* data, char* dest, int dataLength, int dataLengthUncompressed);
-    void showBuffer(const char* data, int wrapping, int maxsize);
-
-   public:
-    record();
-    ~record();
-
-    void read(hipo::bank& b, int event);
-    void readRecord(std::ifstream& stream, long position, int dataOffset);
-    void readRecord__(std::ifstream& stream, long position, long recordLength);
-    bool readRecord(std::ifstream& stream, long position, int dataOffset, long inputSize);
-    int getEventCount();
-    int getRecordSizeCompressed();
-
-    void getColumn(hipo::data& data, int column, hipo::bank& bank, int event);
-    void getColumn(hipo::data& data, const char* column, hipo::bank& bank, int event);
-
-    void readEvent(std::vector<char>& vec, int index);
-    void readHipoEvent(hipo::event& event, int index);
-
-    void getData(hipo::data& data, int index);
-    //void   getBank(   hipo::bank &bank, int index);
-
-    void getEventsMap(std::vector<std::pair<int, int>>& emap);
-
-    hipo::benchmark& getReadBenchmark() { return readBenchmark; }
-
-    hipo::benchmark& getUnzipBenchmark() { return unzipBenchmark; }
-
-    hipo::benchmark& getIndexBenchmark() { return indexBenchmark; }
-};
-}  // namespace hipo
+        hipo::benchmark  &getReadBenchmark(){ return readBenchmark;}
+        hipo::benchmark  &getUnzipBenchmark(){ return unzipBenchmark;}
+        hipo::benchmark  &getIndexBenchmark(){ return indexBenchmark;}
+    };
+}
 #endif /* HIPORECORD_H */

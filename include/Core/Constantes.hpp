@@ -18,4 +18,8 @@ static constexpr double Rho0MassSquare = Rho0Mass * Rho0Mass;
 static constexpr double KaonMass = 0.493677;
 static constexpr double KaonMassSquare = KaonMass * KaonMass;
 
+
+static constexpr double deg_to_rad = std::numbers::pi / 180.0;
+static constexpr double rad_to_deg = 180.0 / std::numbers::pi;
+
 }  // namespace Core::Constantes

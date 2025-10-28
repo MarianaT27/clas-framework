@@ -17,6 +17,9 @@ fmt_dep = fmt.get_variable('fmt_dep')
 toml = subproject('tomlplusplus')
 toml_dep = toml.get_variable('tomlplusplus_dep')
 
+lz4 = subproject('lz4')
+lz4_dep = lz4.get_variable('liblz4_dep')
+
 subdir('hipo4')
 
 #── ROOT via root-config ─────────────────────────────────────────────────────#

@@ -30,7 +30,7 @@
 /*
  *This sowftware was developed at Jefferson National Laboratory.
  */
-/**
+ /**
   * <pre>
   *
   * FILE HEADER STRUCTURE ( 56 bytes, 14 integers (32 bit) )
@@ -97,42 +97,44 @@
 #ifndef HIPOWRITER_H
 #define HIPOWRITER_H
 
+
+#define HIPO_FILE_HEADER_SIZE 72
 /* Constants for endianness of the file */
 #ifndef BIG_ENDIAN
-#define BIG_ENDIAN 0
+#define BIG_ENDIAN     0
 #endif
 #ifndef LITTLE_ENDIAN
-#define LITTLE_ENDIAN 1
+#define LITTLE_ENDIAN  1
 #endif
 
+#include <iostream>
+#include <vector>
+#include <fstream>
 #include <stdio.h>
 #include <stdlib.h>
-#include <climits>
-#include <fstream>
-#include <iostream>
 #include <memory>
-#include <vector>
-#include "reader.h"
+#include <climits>
 #include "recordbuilder.h"
+#include "reader.h"
 
 namespace hipo {
 
-struct hipoFileHeader_t {
-    int uniqueid;
-    int filenumber;
-    int headerLength;  // in words (usually 14)
-    int recordCount;
-    int indexArrayLength;  // in bytes
-    int bitInfoVersion;
-    int userHeaderLength;
-    int magicNumber;
+  typedef struct {
+    int  uniqueid;
+    int  filenumber;
+    int  headerLength; // in words (usually 14)
+    int  recordCount;
+    int  indexArrayLength; // in bytes
+    int  bitInfoVersion;
+    int  userHeaderLength;
+    int  magicNumber;
     long userRegister;
     long trailerPosition;
-    int userIntegerOne;
-    int userIntegerTwo;
-};
+    int  userIntegerOne;
+    int  userIntegerTwo;
+  } hipoFileHeader_t;
 
-/**
+  /**
 * READER index class is used to construct entire events
 * sequence from all records, and provides ability to canAdvance
 * through events where record number is automatically calculated
@@ -140,44 +142,39 @@ struct hipoFileHeader_t {
 * record are exhausted.
 */
 class writer {
-
-   private:
-    std::ofstream outputStream;
-    hipo::recordbuilder recordBuilder;
-    hipo::dictionary writerDictionary;
-    std::vector<hipo::recordInfo_t> writerRecordInfo;
-    std::map<std::string, std::string> userConfig;
-
-    std::map<int, hipo::recordbuilder> extendedBuilder;
+  
+  private:
+    std::ofstream         outputStream;
+    hipo::recordbuilder   recordBuilder;
+    hipo::dictionary      writerDictionary;
+    std::vector<hipo::recordInfo_t>   writerRecordInfo;
+    std::map<std::string,std::string> userConfig;
+    
+    std::map<int,hipo::recordbuilder> extendedBuilder;
 
     void writeIndexTable();
-    int verbose = 0;
+    int  verbose = 0;
+  
+  public:
 
-   public:
-    writer() = default;
-    virtual ~writer() = default;
+     writer(){};
+     virtual ~writer(){};
 
-    void addEvent(hipo::event& hevent);
-    void addEvent(std::vector<char>& vec, int size = -1);
-
-    void addUserConfig(const std::string& key, const std::string_view value) { userConfig[key] = value; }
-
-    void addUserConfig(const char* key, const char* value) { userConfig[std::string(key)] = std::string(value); }
-
-    void writeRecord(recordbuilder& builder);
-    void open(const char* filename);
-    void close();
-    void showSummary();
-    void addDictionary(hipo::dictionary& dict);
-
-    hipo::dictionary& getDictionary() { return writerDictionary; }
-
-    void setUserIntegerOne(long userIntOne);
-    void setUserIntegerTwo(long userIntTwo);
-    void flush();
-
-    void setVerbose(int level) { verbose = level; }
+     void addEvent(hipo::event &hevent);
+     void addEvent(std::vector<char> &vec, int size = -1);
+     void addUserConfig(std::string key, std::string value){ userConfig[key] = value;}
+     void addUserConfig(const char *key, const char *value){ userConfig[std::string(key)] = std::string(value);}
+     void writeRecord(recordbuilder &builder);
+     void open(const char *filename);
+     void close();
+     void showSummary();
+     void addDictionary(hipo::dictionary &dict);
+     hipo::dictionary &getDictionary(){ return writerDictionary;}
+     void setUserIntegerOne(long userIntOne);
+     void setUserIntegerTwo(long userIntTwo);
+     void flush();
+     void setVerbose(int level){ verbose = level;}
 };
 
-};  // namespace hipo
+};
 #endif /* HIPOFILE_H */

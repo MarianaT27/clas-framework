@@ -3,14 +3,7 @@
 
 namespace study1 {
 
-Reader::Reader(Histograms& histograms) : m_histograms(histograms) {
-    // Configure particles that we want
-    m_pids = {
-        Core::PIDs::Electron,
-        Core::PIDs::PionPlus,
-        Core::PIDs::PionMinus
-    };
-}
+Reader::Reader(Histograms& histograms) : m_histograms(histograms) { }
 
 Reader::~Reader() = default;
 
@@ -28,20 +21,14 @@ auto Reader::operator()(const std::string& file) -> void {
 
         auto electron = Core::find_trigger_electron(map[Core::PIDs::Electron], {2000, 4000}).value_or(Core::Particle{});
         if (!electron.is_valid()) continue;
- 
-        // bool pass_electron_cuts = select_electron(electron, REC_Calorimeter, REC_Cherenkov);
-        // if (!pass_electron_cuts) continue;
     }
 }
 
-auto Reader::get_topology(const hipo::bank& REC_Particle) -> particles_map_t {
-    const int rows = REC_Particle.getRows();
+auto Reader::get_topology(const hipo::bank& REC_Particle) -> Topology {
+    Topology topology;
 
-    particles_map_t map = {};
-
-    for (int i = 0; i < rows; i++) {
+    for (int i = 0; i < REC_Particle.getRows(); i++) {
         const int pid = REC_Particle.get<int>("pid", i);
-        if (!(std::find(m_pids.begin(), m_pids.end(), static_cast<Core::PIDs>(pid)) != m_pids.end())) continue;
         const int status = REC_Particle.get<int>("status", i);
         const int charge = REC_Particle.get<int>("charge", i);
         const double px = REC_Particle.get<double>("px", i);
@@ -55,10 +42,12 @@ auto Reader::get_topology(const hipo::bank& REC_Particle) -> particles_map_t {
         const double chi2pid = REC_Particle.get<double>("chi2pid", i);
         const double mass = Core::get_mass(pid);
         const double E = Core::compute_energy(px, py, pz, pid);
-        map[static_cast<Core::PIDs>(pid)].emplace_back(pid, status, i, charge, mass, px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
-    }
 
-    return map;
+        if (pid == static_cast<int>(Core::PIDs::Electron))
+            topology.electrons.emplace_back(pid, status, i, charge, mass, px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
+    
+    }
+    return topology;
 }
 
 auto Reader::select_electron(const Core::Particle& electron, const hipo::bank& REC_Calorimeter, const hipo::bank& REC_Cherenkov) const -> bool {
