@@ -161,67 +161,6 @@ inline Cut Forward(double max_theta = 40.0) {
 
 }  // namespace Cuts
 
-/**
- * @brief Advanced cut for electron ID using calorimeter
- */
-class ElectronIDCut {
-   public:
-    struct Config {
-        double min_sampling_fraction = 0.18;
-        double max_sampling_fraction = 0.30;
-        double min_nphe = 2.0;
-        double min_pcal_energy = 0.06;  // GeV
-        bool require_htcc = true;
-        bool require_pcal = true;
-    };
-
-    explicit ElectronIDCut(Config config = {}) : m_config(config) {}
-
-    /**
-     * @brief Apply electron ID cuts
-     *
-     * @param particle The particle to check
-     * @param calorimeter Calorimeter bank data
-     * @param cherenkov Cherenkov bank data
-     * @return true if particle passes electron ID cuts
-     */
-    bool operator()(const Core::Particle& particle,
-                    const Core::CalorimeterBank& calorimeter,
-                    const Core::CherenkovBank& cherenkov) const {
-
-        // Total calorimeter energy
-        double E_tot = calorimeter.pcal.energy +
-                       calorimeter.inner.energy +
-                       calorimeter.outer.energy;
-
-        // Sampling fraction
-        double SF = E_tot / particle.p();
-
-        // Check HTCC
-        if (m_config.require_htcc) {
-            if (std::isnan(cherenkov.nphe) || cherenkov.nphe < m_config.min_nphe) {
-                return false;
-            }
-        }
-
-        // Check PCAL energy
-        if (m_config.require_pcal) {
-            if (calorimeter.pcal.energy < m_config.min_pcal_energy) {
-                return false;
-            }
-        }
-
-        // Check sampling fraction
-        if (SF < m_config.min_sampling_fraction || SF > m_config.max_sampling_fraction) {
-            return false;
-        }
-
-        return true;
-    }
-
-   private:
-    Config m_config;
-};
 
 /**
  * @brief Apply a cut to a vector of particles and return survivors

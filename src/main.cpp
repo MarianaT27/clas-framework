@@ -35,14 +35,13 @@ int main() {
     auto start_time = std::chrono::high_resolution_clock::now();
 
     // Read the files
-    // std::vector<std::string> files = Core::read_recursive_file_in_directory("../data/");
-    std::vector<std::string> files = {"../data/data2.hipo"};
+    std::vector<std::string> files = Core::read_recursive_file_in_directory("/volatile/clas12/ouillon/RGD/rgd_simulation_pion_7/recon/");
 
     // Process the data
     study1::Histograms histograms;
     study1::Reader reader(histograms);
 
-    multithread_reader(reader, files, 1);
+    multithread_reader(reader, files, 10);
 
     // Draw the histograms
     // study1::Drawing drawing(histograms, config);
