@@ -40,6 +40,8 @@ sources = files(
   'src/main.cpp',
   'src/study1/Drawing.cpp',
   'src/study1/Reader.cpp',
+  'src/thread_pool/ThreadPool.cpp',
+  'src/thread_pool/ProgressTracker.cpp',
 )
 
 executable(
