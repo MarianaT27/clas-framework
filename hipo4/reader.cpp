@@ -39,6 +39,7 @@
 #include "hipoexceptions.h"
 #include "record.h"
 
+#include <cstdio>
 #include <cstdlib>
 /**
  * HIPO namespace is used for the classes that read/write
@@ -56,9 +57,17 @@ namespace hipo {
   }
 
   /**
-   * Default destructor. Does nothing
+   * Default destructor. Cleans up mmap if used
    */
   reader::~reader(){
+    if(mmapped_data != nullptr){
+      munmap(mmapped_data, mmapped_size);
+      mmapped_data = nullptr;
+    }
+    if(file_descriptor >= 0){
+      ::close(file_descriptor);
+      file_descriptor = -1;
+    }
     if(inputStream.is_open()==true){
       inputStream.close();
     }
@@ -80,26 +89,60 @@ namespace hipo {
       inputStream.close();
     }
 
-    inputStream.open(filename, std::ios::binary);
-    inputStream.seekg(0,std::ios_base::end);
-    inputStreamSize = inputStream.tellg();
-    inputStream.seekg(0,std::ios_base::beg);
-    
-    if(inputStream.is_open()==false){
-      printf("[ERROR] something went wrong with openning file : %s\n",
-            filename);
-      return ErrorCode::FILE_OPEN_ERROR;
+    if(use_mmap){
+      file_descriptor = ::open(filename, O_RDONLY);
+      if(file_descriptor >= 0){
+        struct stat sb;
+        if(fstat(file_descriptor, &sb) == 0){
+          mmapped_size = sb.st_size;
+          inputStreamSize = mmapped_size;
+          mmapped_data = mmap(nullptr, mmapped_size, PROT_READ, MAP_PRIVATE, file_descriptor, 0);
+          if(mmapped_data != MAP_FAILED){
+            madvise(mmapped_data, mmapped_size, MADV_SEQUENTIAL);
+            if(_verbose) printf("[INFO] Successfully memory-mapped file: %s (%lu bytes)\n", filename, mmapped_size);
+          } else {
+            mmapped_data = nullptr;
+            ::close(file_descriptor);
+            file_descriptor = -1;
+            if(_verbose){
+              printf("[WARNING] mmap failed, falling back to ifstream\n");
+            }
+          }
+        } else {
+          ::close(file_descriptor);
+          file_descriptor = -1;
+        }
+      }
     }
-    
+
+    if(mmapped_data == nullptr){
+      printf("[INFO] Using standard file I/O for file: %s\n", filename);
+      inputStream.open(filename, std::ios::binary);
+      inputStream.seekg(0,std::ios_base::end);
+      inputStreamSize = inputStream.tellg();
+      inputStream.seekg(0,std::ios_base::beg);
+
+      if(inputStream.is_open()==false){
+        printf("[ERROR] something went wrong with openning file : %s\n", filename);
+        return ErrorCode::FILE_OPEN_ERROR;
+      }
+    }
+
     readHeader();
-    
+
     if(header.headerLength <= 0){
       printf("[ERROR] invalid header length (%d) in file : %s\n",
             header.headerLength, filename);
-      inputStream.close();
+      if(mmapped_data != nullptr){
+        munmap(mmapped_data, mmapped_size);
+        mmapped_data = nullptr;
+        ::close(file_descriptor);
+        file_descriptor = -1;
+      }
+      if(inputStream.is_open()) inputStream.close();
       return ErrorCode::INVALID_HEADER_LENGTH;
     }
-    
+
     readIndex();
     return ErrorCode::NO_ERROR;
   }
@@ -112,7 +155,14 @@ namespace hipo {
 
     std::vector<char>               headerBuffer;
     headerBuffer.resize(80);
-    inputStream.read(&headerBuffer[0],80);
+
+    if(mmapped_data != nullptr){
+      // Read from mmap
+      memcpy(&headerBuffer[0], (const char*)mmapped_data, 80);
+    } else {
+      // Read from ifstream
+      inputStream.read(&headerBuffer[0],80);
+    }
 
     std::memcpy(&header.uniqueid, &headerBuffer[0], sizeof(int));
     std::memcpy(&header.filenumber, &headerBuffer[4], sizeof(int));
@@ -168,7 +218,11 @@ namespace hipo {
  */
 void  reader::readIndex(){
 
-    inputRecord.readRecord(inputStream,header.trailerPosition,0);
+    if(mmapped_data != nullptr){
+      inputRecord.readRecordMmap((const char*)mmapped_data, header.trailerPosition, 0);
+    } else {
+      inputRecord.readRecord(inputStream, header.trailerPosition, 0);
+    }
     if(_verbose)printf("*** reader:: trailer record event count : %d\n",inputRecord.getEventCount());
 
     //a catch for broken files
@@ -228,10 +282,11 @@ bool  reader::next(hipo::event &dataevent){
     int recordToBeRead = readerEventIndex.getRecordNumber();
     if(recordToBeRead!=recordNumber){
       long position = readerEventIndex.getPosition(recordToBeRead);
-      inputRecord.readRecord(inputStream,position,0);
-      /*printf(" record changed from %d to %d at event %d total event # %d\n",
-        recordNumber, recordToBeRead,readerEventIndex.getEventNumber(),
-        readerEventIndex.getMaxEvents());*/
+      if(mmapped_data != nullptr){
+        inputRecord.readRecordMmap((const char*)mmapped_data, position, 0);
+      } else {
+        inputRecord.readRecord(inputStream, position, 0);
+      }
     }
     int eventNumberInRecord = readerEventIndex.getRecordEventNumber();
     inputRecord.readHipoEvent(dataevent,eventNumberInRecord);
@@ -299,16 +354,20 @@ std::vector<hipo::bank> reader::getBanks(std::vector<std::string> names){
 }
 
   void reader::readUserConfig(std::map<std::string,std::string> &mapConfig){
-  
-  if(inputStream.is_open()==false){
+
+  if(inputStream.is_open()==false && mmapped_data == nullptr){
     printf("\n\nhipo::reader (ERROR) file is not open.... exiting...\n\n");
     exit(1);
   }
   long position = header.headerLength*4;
   hipo::record  dictRecord;
-  dictRecord.readRecord(inputStream,position,0);
+  if(mmapped_data != nullptr){
+    dictRecord.readRecordMmap((const char*)mmapped_data, position, 0);
+  } else {
+    dictRecord.readRecord(inputStream, position, 0);
+  }
   int nevents = dictRecord.getEventCount();
-  /* printf(" reading record at position %8lu, number of entries = %5d\n", 
+  /* printf(" reading record at position %8lu, number of entries = %5d\n",
       position,dictRecord.getEventCount()); */
   hipo::structure sKey;
   hipo::structure sConfig;
@@ -331,13 +390,17 @@ std::vector<hipo::bank> reader::getBanks(std::vector<std::string> names){
  * @param dict - reference to dictionary object.
  */
 void  reader::readDictionary(hipo::dictionary &dict){
-  if(inputStream.is_open()==false){
+  if(inputStream.is_open()==false && mmapped_data == nullptr){
     printf("\n\nhipo::reader (ERROR) file is not open.... exiting...\n\n");
     exit(1);
   }
   long position = header.headerLength*4;
   hipo::record  dictRecord;
-  dictRecord.readRecord(inputStream,position,0);
+  if(mmapped_data != nullptr){
+    dictRecord.readRecordMmap((const char*)mmapped_data, position, 0);
+  } else {
+    dictRecord.readRecord(inputStream, position, 0);
+  }
   int nevents = dictRecord.getEventCount();
   /* printf(" reading record at position %8lu, number of entries = %5d\n",
       position,dictRecord.getEventCount()); */
@@ -363,10 +426,11 @@ bool  reader::next(){
     int recordToBeRead = readerEventIndex.getRecordNumber();
     if(recordToBeRead!=recordNumber){
       long position = readerEventIndex.getPosition(recordToBeRead);
-      inputRecord.readRecord(inputStream,position,0);
-      /*printf(" record changed from %d to %d at event %d total event # %d\n",
-        recordNumber, recordToBeRead,readerEventIndex.getEventNumber(),
-        readerEventIndex.getMaxEvents());*/
+      if(mmapped_data != nullptr){
+        inputRecord.readRecordMmap((const char*)mmapped_data, position, 0);
+      } else {
+        inputRecord.readRecord(inputStream, position, 0);
+      }
     }
     return true;
 }
@@ -392,7 +456,11 @@ bool reader::gotoEvent(int eventNumber){
   if(recordToBeRead!=recordNumber){
     //readerEventIndex.show(); - commented out by gg, this was for debugging
     long position = readerEventIndex.getPosition(recordToBeRead);
-    inputRecord.readRecord(inputStream,position,0);
+    if(mmapped_data != nullptr){
+      inputRecord.readRecordMmap((const char*)mmapped_data, position, 0);
+    } else {
+      inputRecord.readRecord(inputStream, position, 0);
+    }
     /*printf(" record changed from %d to %d at event %d total event # %d\n",
       recordNumber, recordToBeRead,readerEventIndex.getEventNumber(),
       readerEventIndex.getMaxEvents());*/
@@ -409,7 +477,11 @@ bool reader::gotoRecord(int irec){
   bool status = readerEventIndex.gotoRecord(irec);
   if(status==false) return false;
   long position = readerEventIndex.getPosition(irec);
-  inputRecord.readRecord(inputStream,position,0);
+  if(mmapped_data != nullptr){
+    inputRecord.readRecordMmap((const char*)mmapped_data, position, 0);
+  } else {
+    inputRecord.readRecord(inputStream, position, 0);
+  }
   return true;
 }
 
@@ -418,13 +490,21 @@ bool reader::gotoRecord(int irec){
 // Use gotoRecord instead, since it checks first if record exists.
 bool  reader::loadRecord(int irec){
     long position = readerEventIndex.getPosition(irec);
-    inputRecord.readRecord(inputStream,position,0);
+    if(mmapped_data != nullptr){
+      inputRecord.readRecordMmap((const char*)mmapped_data, position, 0);
+    } else {
+      inputRecord.readRecord(inputStream, position, 0);
+    }
     return readerEventIndex.loadRecord(irec);
 }
 
   bool  reader::loadRecord(hipo::record &record, int irec){
     long position = readerEventIndex.getPosition(irec);
-    record.readRecord(inputStream,position,0);
+    if(mmapped_data != nullptr){
+      record.readRecordMmap((const char*)mmapped_data, position, 0);
+    } else {
+      record.readRecord(inputStream, position, 0);
+    }
     return true;
 }
 

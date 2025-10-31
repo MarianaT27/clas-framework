@@ -69,6 +69,14 @@ namespace hipo {
         event(int size);
         virtual ~event();
 
+        // Move semantics for optimization
+        event(event&& other) noexcept = default;
+        event& operator=(event&& other) noexcept = default;
+
+        // Copy operations (keep existing behavior)
+        event(const event& other) = default;
+        event& operator=(const event& other) = default;
+
         void   show();
         void   init(std::vector<char> &buffer);
         void   init(const char *buffer, int size);

@@ -18,7 +18,7 @@
 #include <TStyle.h>
 
 // Project headers
-#include <Core/Constantes.hpp>
+#include <Core/Constants.hpp>
 #include <Core/Particle.hpp>
 #include <Core/Runs.hpp>
 
@@ -184,21 +184,21 @@ inline auto find_most_energetic_electron(const std::vector<Core::Particle>& elec
 inline auto get_mass(const int pid) -> double {
     switch (pid) {
         case 11:
-            return Core::Constantes::ElectronMass;
+            return Core::Constants::ElectronMass;
         case 22:
             return 0.0;
         case 211:
         case -211:
-            return Core::Constantes::PionMass;
+            return Core::Constants::PionMass;
         case 321:
         case -321:
-            return Core::Constantes::KaonMass;
+            return Core::Constants::KaonMass;
         case 2212:
         case -2212:
-            return Core::Constantes::ProtonMass;
+            return Core::Constants::ProtonMass;
         case 2112:
         case -2112:
-            return Core::Constantes::NeutronMass;
+            return Core::Constants::NeutronMass;
         default:
             return std::numeric_limits<double>::quiet_NaN();
     }

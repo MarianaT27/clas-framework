@@ -238,4 +238,45 @@ inline auto read_Scintillator_bank(const hipo::bank& REC_Scintillator, const int
     return output;
 }
 
+
+inline auto get_mc_particle_index(const hipo::bank& MC_RecMatch, const int particle_idx, const float min_quality = 0.92f) -> int {
+    const int rows = MC_RecMatch.getRows();
+    if (rows == 0) return -1;
+
+    for (int i = 0; i < rows; ++i) {
+        int pindex = MC_RecMatch.get<int>("pindex", i);
+        if (pindex == particle_idx) {
+            int mcindex = MC_RecMatch.get<int>("mcindex", i);
+            float quality = MC_RecMatch.get<float>("quality", i);
+            
+            if (quality >= min_quality && mcindex >= 0) {
+                return mcindex;
+            }
+            break;
+        }
+    }
+
+    return -1;
+}
+
+inline auto get_rec_particle_index(const hipo::bank& MC_GenMatch, const int particle_idx, const float min_quality = 0.92f) -> int {
+    const int rows = MC_GenMatch.getRows();
+    if (rows == 0) return -1;
+
+    for (int i = 0; i < rows; ++i) {
+        int mcindex = MC_GenMatch.get<int>("mcindex", i);
+        if (mcindex == particle_idx) {
+            int pindex = MC_GenMatch.get<int>("pindex", i);
+            float quality = MC_GenMatch.get<float>("quality", i);
+
+            if (quality >= min_quality && pindex >= 0) {
+                return pindex;
+            }
+            break;
+        }
+    }
+
+    return -1;
+}
+
 }  // namespace Core

@@ -115,6 +115,10 @@
 #include <thread>
 #include <climits>
 #include <mutex>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "record.h"
 #include "utils.h"
 #include "bank.h"
@@ -238,6 +242,23 @@ namespace hipo {
       std::ifstream     inputStream;
       long              inputStreamSize{};
 
+      // Memory-mapped file support
+      void*             mmapped_data{nullptr};
+      size_t            mmapped_size{0};
+      int               file_descriptor{-1};
+      bool              use_mmap{true};  // Enable mmap by default
+
+      // Batch reading optimization
+      std::vector<hipo::event> eventCache;
+      size_t            cacheIndex{0};
+      size_t            batchSize{50};  // Number of events to read at once
+      bool              use_batch_reading{false};
+
+      // Event pool optimization
+      std::vector<hipo::event> eventPool;
+      size_t            poolIndex{0};
+      bool              use_event_pool{false};
+
       hipo::record       inputRecord;
       hipo::readerIndex  readerEventIndex;
       std::vector<long>  tagsToRead;
@@ -252,6 +273,10 @@ namespace hipo {
 
       void  readHeader();
       void  readIndex();
+
+      // Helper methods for optimizations
+      bool  nextBatched(hipo::event &dataevent);
+      hipo::event& acquireEventFromPool();
 
       
    public:
@@ -279,10 +304,22 @@ namespace hipo {
       //std::string getUserConfig(const char *key);
 
       ErrorCode open(const char *filename);
-      bool  is_open(){ return inputStream.is_open();}
+      bool  is_open(){ return inputStream.is_open() || mmapped_data != nullptr;}
       void  setTags(int tag){ tagsToRead.push_back(tag);}
       void  setTags(std::vector<long> tags){ tagsToRead=std::move(tags);}
       void  setVerbose(short level=1){_verbose=level;}
+      void  setUseMmap(bool enable){use_mmap=enable;}  // Enable/disable mmap
+      void  setUseBatchReading(bool enable, size_t batch_size=50){
+          use_batch_reading=enable;
+          batchSize=batch_size;
+          if(enable) eventCache.reserve(batch_size);
+      }
+      void  setUseEventPool(bool enable, size_t pool_size=100){
+          use_event_pool=enable;
+          if(enable && eventPool.empty()){
+              eventPool.resize(pool_size);
+          }
+      }
 
       bool  hasNext();
       bool  next();

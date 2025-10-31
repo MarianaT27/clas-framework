@@ -13,7 +13,8 @@ enum class PIDs {
     PionPlus = 211,
     PionMinus = -211,
     KaonPlus = 321,
-    KaonMinus = -321
+    KaonMinus = -321,
+    Photon = 22
 };
 
 /**

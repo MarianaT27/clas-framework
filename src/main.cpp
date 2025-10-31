@@ -21,7 +21,7 @@
 #include <TStyle.h>
 
 // Project headers
-#include <Core/Constantes.hpp>
+#include <Core/Constants.hpp>
 #include <Core/Helpers.hpp>
 #include <study1/Drawing.hpp>
 #include <study1/Histograms.hpp>
@@ -29,13 +29,11 @@
 #include <thread_pool/multi_thread.hpp>
 
 int main() {
-    ROOT::EnableThreadSafety();  // To stop random errors in multithread mode
-
-
-    auto start_time = std::chrono::high_resolution_clock::now();
+    ROOT::EnableThreadSafety(); 
 
     // Read the files
-    std::vector<std::string> files = Core::read_recursive_file_in_directory("/volatile/clas12/ouillon/RGD/rgd_simulation_pion_7/recon/");
+    // std::vector<std::string> files = Core::read_recursive_file_in_directory("/volatile/clas12/ouillon/RGD/rgd_simulation_pion_7/recon/", 100);
+    std::vector<std::string> files = Core::read_recursive_file_in_directory("/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/", 100);
 
     // Process the data
     study1::Histograms histograms;
@@ -44,13 +42,8 @@ int main() {
     multithread_reader(reader, files, 10);
 
     // Draw the histograms
-    // study1::Drawing drawing(histograms, config);
-    // drawing.draw_electron_kinematics();
-
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
-
-    fmt::println("Time take: {} microseconds", duration.count());
+    study1::Drawing drawing(histograms);
+    drawing.draw_pion_minus();
 
     return EXIT_SUCCESS;
 }

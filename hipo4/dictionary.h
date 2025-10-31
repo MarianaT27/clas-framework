@@ -103,7 +103,13 @@ class schema {
 
     int   getOffset(const char *name, int order, int rows) const  {
       int item = schemaEntriesMap.at(name);
-      return getOffset(item,order,rows);  
+      return getOffset(item,order,rows);
+    }
+
+    // Get offset parts separately for caching (avoids repeated multiplication)
+    inline std::pair<int, int> getOffsetParts(int item) const noexcept {
+      const auto &sch = schemaEntries[item];
+      return {sch.offset, sch.typeSize};
     }
     
     int   getEntryType(int item) const noexcept {

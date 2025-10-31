@@ -3,6 +3,7 @@
 #include <TH1.h>
 #include <TH2.h>
 #include <ROOT/TThreadedObject.hxx>
+#include <atomic>
 
 using TTO_TH1D = ROOT::TThreadedObject<TH1D>;
 using TTO_TH2D = ROOT::TThreadedObject<TH2D>;
@@ -25,8 +26,60 @@ struct Electron {
     up_TTO_TH1D hist1D_vz_cut = std::make_unique<TTO_TH1D>("vz_e_cut", "", 200, -30, 20);
 };
 
+struct PionMinus {
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_pim = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_pi_minus", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_km = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_k_minus", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_electron = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_electron", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_photon = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_photon", "", 200, 0, 11, 200, -1, 1);
+
+    up_TTO_TH2D hist2D_delta_t_vs_p_reconstructed_pim = std::make_unique<TTO_TH2D>("delta_t_vs_p_reconstructed_pi_minus", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_pim_in_recon = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_pi_minus_in_recon", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_km_in_recon = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_k_minus_in_recon", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_electron_in_recon = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_electron_in_recon", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_photon_in_recon = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_photon_in_recon", "", 200, 0, 11, 200, -1, 1);
+
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_pim_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_pi_minus_cut", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_km_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_k_minus_cut", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_electron_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_electron_cut", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_photon_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_photon_cut", "", 200, 0, 11, 200, -1, 1);
+
+    up_TTO_TH2D hist2D_delta_t_vs_p_reconstructed_pim_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_reconstructed_pi_minus_cut", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_pim_in_recon_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_pi_minus_in_recon_cut", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_km_in_recon_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_k_minus_in_recon_cut", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_electron_in_recon_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_electron_in_recon_cut", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_photon_in_recon_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_photon_in_recon_cut", "", 200, 0, 11, 200, -1, 1);
+};
+
+
+struct PionPlus {
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_pip = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_pi_plus", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_kp = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_k_plus", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_proton = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_proton", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_positron = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_positron", "", 200, 0, 11, 200, -1, 1);
+
+    up_TTO_TH2D hist2D_delta_t_vs_p_reconstructed_pip = std::make_unique<TTO_TH2D>("delta_t_vs_p_reconstructed_pi_plus", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_pip_in_recon_pip = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_pi_plus_in_recon_pip", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_kp_in_recon_pip = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_k_plus_in_recon_pip", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_proton_in_recon_pip = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_proton_in_recon_pip", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_positron_in_recon_pip = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_positron_in_recon_pip", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_photon_in_recon_pip = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_photon_in_recon_pip", "", 200, 0, 11, 200, -1, 1);
+
+};
+
+struct NegativeTracks {
+    up_TTO_TH2D hist2D_delta_t_vs_p_reconstructed_neg_tracks = std::make_unique<TTO_TH2D>("delta_t_vs_p_reconstructed_negative_tracks", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_pim_in_recon_neg_tracks = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_pi_minus_in_recon_negative_tracks", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_km_in_recon_neg_tracks = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_k_minus_in_recon_negative_tracks", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_electron_in_recon_neg_tracks = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_electron_in_recon_negative_tracks", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_matched_photon_in_recon_neg_tracks = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_photon_in_recon_negative_tracks", "", 200, 0, 11, 200, -1, 1);
+};
+
+
 struct Histograms {
     Electron electron;
+    PionMinus pion_minus;
+    PionPlus pion_plus;
+    NegativeTracks negative_tracks;
 };
 
 }  // namespace study1

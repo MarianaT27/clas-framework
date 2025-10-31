@@ -7,6 +7,7 @@
 
 // HIPO headers
 #include <hipo4/reader.h>
+#include <hipo4/hipoeventiterator.h>
 
 // Project headers
 #include <Core/Particle.hpp>
@@ -46,8 +47,7 @@ public:
      * @param types Vector of particle types to extract (empty = extract all known types)
      * @return ParticleMap containing particles grouped by their PID
      */
-    static auto extract_particles(const hipo::bank& REC_Particle,
-                                   const std::vector<Core::PIDs>& types = {}) -> ParticleMap {
+    static auto extract_particles(hipo::bank_map& REC_Particle, const std::vector<Core::PIDs>& types = {}) -> ParticleMap {
         ParticleMap particle_map;
 
         // If no types specified, extract all common particle types
@@ -59,16 +59,12 @@ public:
                 Core::PIDs::KaonPlus, Core::PIDs::KaonMinus
             } : types;
 
-        // Initialize empty vectors for each type
         for (const auto& type : target_types) {
             particle_map[type] = std::vector<Core::Particle>();
         }
 
-        // Loop through all particles in the bank
-        for (int i = 0; i < REC_Particle.getRows(); i++) {
-            const int pid = REC_Particle.get<int>("pid", i);
-
-            // Check if this PID is one we're looking for
+        for (int i = 0; i < REC_Particle.get_rows(); i++) {
+            const int pid = REC_Particle.get_as<int>("pid", i);
             Core::PIDs particle_type;
             bool found = false;
             for (const auto& type : target_types) {
@@ -81,23 +77,21 @@ public:
 
             if (!found) continue;
 
-            // Extract particle properties
-            const int status = REC_Particle.get<int>("status", i);
-            const int charge = REC_Particle.get<int>("charge", i);
-            const double px = REC_Particle.get<double>("px", i);
-            const double py = REC_Particle.get<double>("py", i);
-            const double pz = REC_Particle.get<double>("pz", i);
-            const double vx = REC_Particle.get<double>("vx", i);
-            const double vy = REC_Particle.get<double>("vy", i);
-            const double vz = REC_Particle.get<double>("vz", i);
-            const double vt = REC_Particle.get<double>("vt", i);
-            const double beta = REC_Particle.get<double>("beta", i);
-            const double chi2pid = REC_Particle.get<double>("chi2pid", i);
+            const int status = REC_Particle.get_as<int>("status", i);
+            const int charge = REC_Particle.get_as<int>("charge", i);
+            const double px = REC_Particle.get_as<double>("px", i);
+            const double py = REC_Particle.get_as<double>("py", i);
+            const double pz = REC_Particle.get_as<double>("pz", i);
+            const double vx = REC_Particle.get_as<double>("vx", i);
+            const double vy = REC_Particle.get_as<double>("vy", i);
+            const double vz = REC_Particle.get_as<double>("vz", i);
+            const double vt = REC_Particle.get_as<double>("vt", i);
+            const double beta = REC_Particle.get_as<double>("beta", i);
+            const double chi2pid = REC_Particle.get_as<double>("chi2pid", i);
 
             const double mass = Core::get_mass(pid);
             const double E = Core::compute_energy(px, py, pz, pid);
 
-            // Add to the appropriate vector
             particle_map[particle_type].emplace_back(
                 pid, status, i, charge, mass,
                 px, py, pz, E, vx, vy, vz, vt, beta, chi2pid

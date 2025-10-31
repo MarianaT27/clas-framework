@@ -21,6 +21,7 @@ class Drawing {
 
     // ****** public methods
     auto draw_electron_kinematics() -> void;
+    auto draw_pion_minus() -> void;
 };
 
 }  // namespace study1

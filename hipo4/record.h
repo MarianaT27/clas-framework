@@ -144,6 +144,7 @@ namespace hipo {
         void   readRecord(std::ifstream &stream, long position, int dataOffset);
         void   readRecord__(std::ifstream &stream, long position, long recordLength);
         bool   readRecord(std::ifstream &stream, long position, int dataOffset, long inputSize);
+        void   readRecordMmap(const char* mmapped_data, long position, int dataOffset);  // mmap version
         int    getEventCount();
         int    getRecordSizeCompressed();
         

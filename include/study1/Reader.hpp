@@ -1,6 +1,7 @@
 #pragma once
 
 // C++ headers
+#include <atomic>
 #include <map>
 #include <string>
 #include <vector>
@@ -15,13 +16,12 @@
 #include <hipo4/hipoeventiterator.h>
 #include <hipo4/reader.h>
 
-#include <Core/Constantes.hpp>
+#include <Core/Constants.hpp>
 #include <Core/Helpers.hpp>
 #include <Core/Particle.hpp>
 #include <Core/PIDs.hpp>
 #include <Core/ParticleSelector.hpp>
 #include <Core/ReadBank.hpp>
-#include <Core/EventData.hpp>
 #include <Core/Cuts.hpp>
 #include <Core/SamplingFractionCut.hpp>
 #include <Core/Target.hpp>
@@ -39,10 +39,12 @@ class Reader {
     Core::SamplingFractionCut m_sf_cut;
     Core::Target m_target = Core::Target::LD2;
     Core::Polarity m_polarity = Core::Polarity::Outbending;
+    std::atomic_int64_t m_event_count{0};
 
     // ****** private methods
     auto select_electron(const Core::Particle& electron, const hipo::bank& REC_Calorimeter, const hipo::bank& REC_Cherenkov) const -> bool;
-
+    double third_order_poly(double x, double a, double b, double c, double d) const;
+    bool cut_delta_t(double p, double delta_t) const;
    public:
     // ****** constructors and destructor
     explicit Reader(Histograms& histograms);

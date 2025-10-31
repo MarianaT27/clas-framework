@@ -275,6 +275,76 @@ namespace hipo {
       return recordHeader.recordLength;
     }
 
+    /**
+     * Reads a record from memory-mapped data (zero-copy from mmap)
+     * This is much faster than reading from ifstream
+     */
+    void record::readRecordMmap(const char* mmapped_data, long position, int dataOffset){
+        const char* header_ptr = mmapped_data + position;
+
+        recordHeader.recordLength     = *(reinterpret_cast<const int*>(header_ptr + 0));
+        recordHeader.headerLength     = *(reinterpret_cast<const int*>(header_ptr + 8));
+        recordHeader.numberOfEvents   = *(reinterpret_cast<const int*>(header_ptr + 12));
+        recordHeader.bitInfo          = *(reinterpret_cast<const int*>(header_ptr + 20));
+        recordHeader.signatureString  = *(reinterpret_cast<const int*>(header_ptr + 28));
+        recordHeader.recordDataLength = *(reinterpret_cast<const int*>(header_ptr + 32));
+        recordHeader.userHeaderLength = *(reinterpret_cast<const int*>(header_ptr + 24));
+        int compressedWord            = *(reinterpret_cast<const int*>(header_ptr + 36));
+
+        if(recordHeader.signatureString==0xc0da0100) recordHeader.dataEndianness = 0;
+        if(recordHeader.signatureString==0x0001dac0) recordHeader.dataEndianness = 1;
+
+        if(recordHeader.signatureString==0x0001dac0){
+          recordHeader.recordLength     = __builtin_bswap32(recordHeader.recordLength);
+          recordHeader.headerLength     = __builtin_bswap32(recordHeader.headerLength);
+          recordHeader.numberOfEvents   = __builtin_bswap32(recordHeader.numberOfEvents);
+          recordHeader.recordDataLength = __builtin_bswap32(recordHeader.recordDataLength);
+          recordHeader.userHeaderLength = __builtin_bswap32(recordHeader.userHeaderLength);
+          recordHeader.bitInfo          = __builtin_bswap32(recordHeader.bitInfo);
+          compressedWord                = __builtin_bswap32(compressedWord);
+        }
+
+        int compressedDataLengthPadding = (recordHeader.bitInfo>>24)&0x00000003;
+        int headerLengthBytes     = recordHeader.headerLength*4;
+        int dataBufferLengthBytes = recordHeader.recordLength * 4 - headerLengthBytes;
+
+        recordHeader.userHeaderLengthPadding    = (recordHeader.bitInfo>>20)&0x00000003;
+        recordHeader.recordDataLengthCompressed = compressedWord&0x0FFFFFFF;
+        recordHeader.compressionType            = (compressedWord>>28)&0x0000000F;
+        recordHeader.indexDataLength            = 4*recordHeader.numberOfEvents;
+
+        const char* compressed_data_ptr = mmapped_data + position + headerLengthBytes;
+
+        int decompressedLength = recordHeader.indexDataLength +
+                                 recordHeader.userHeaderLength +
+                                 recordHeader.userHeaderLengthPadding +
+                                 recordHeader.recordDataLength;
+
+        if(recordBuffer.size()<decompressedLength){
+          recordBuffer.resize(decompressedLength+1024);
+        }
+
+        if(recordHeader.compressionType==0){
+          // Uncompressed: direct memcpy from mmap
+          memcpy((&recordBuffer[0]), compressed_data_ptr, decompressedLength);
+        } else {
+          // Compressed: decompress from mmap (still saves one copy vs stream read)
+          int unc_result = getUncompressed(compressed_data_ptr, (&recordBuffer[0]),
+                                          dataBufferLengthBytes-compressedDataLengthPadding,
+                                          decompressedLength);
+        }
+
+        // Convert index array
+        int eventPosition = 0;
+        for(int i = 0; i < recordHeader.numberOfEvents; i++){
+            auto *ptr = reinterpret_cast<int*>(&recordBuffer[i*4]);
+            int size = *ptr;
+            if(recordHeader.dataEndianness==1) size = __builtin_bswap32(size);
+            eventPosition += size;
+            *ptr = eventPosition;
+        }
+    }
+
     void  record::readRecord__(std::ifstream &stream, long position, long recordLength){
 
       stream.seekg(position,std::ios::beg);
@@ -503,16 +573,14 @@ void record::getEventsMap(std::vector<std::pair<int,int>> &emap){
     int  record::getUncompressed(const char *data,  char *dest, int dataLength, int dataLengthUncompressed){
       #ifdef __LZ4__
         int result = LZ4_decompress_safe(data,dest,dataLength,dataLengthUncompressed);
-        //int result = LZ4_decompress_fast(data,dest,dataLengthUncompressed);
         return result;
-        #endif
-
-        #ifndef __LZ4__
-          printf("\n   >>>>> LZ4 compression is not supported.");
-          printf("\n   >>>>> check if libz4 is installed on your system.");
-          printf("\n   >>>>> recompile the library with liblz4 installed.\n");
-          return NULL;
-        #endif
+      #endif
+      #ifndef __LZ4__
+        printf("\n   >>>>> LZ4 compression is not supported.");
+        printf("\n   >>>>> check if libz4 is installed on your system.");
+        printf("\n   >>>>> recompile the library with liblz4 installed.\n");
+        return NULL;
+      #endif
 
     }
     /**

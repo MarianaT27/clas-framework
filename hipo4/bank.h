@@ -221,6 +221,31 @@ namespace hipo {
 
     class bank : public structure {
 
+    private:
+      // Performance optimization: Cache column metadata to avoid repeated lookups
+      struct ColumnInfo {
+        int type_id;       // Type of the column (kByte, kShort, kInt, etc.)
+        int row_offset;    // Pre-computed: bankRows * schema.offset
+        int type_size;     // Size of the type in bytes
+      };
+      mutable std::vector<ColumnInfo> column_info_cache;
+      mutable bool cache_initialized{false};
+
+      // Build the column info cache on first access
+      inline void ensure_cache() const noexcept {
+        if (__builtin_expect(cache_initialized, 1)) return;
+
+        int n_cols = bankSchema.getEntries();
+        column_info_cache.resize(n_cols);
+        for (int i = 0; i < n_cols; i++) {
+          column_info_cache[i].type_id = bankSchema.getEntryType(i);
+          auto parts = bankSchema.getOffsetParts(i);
+          column_info_cache[i].row_offset = bankRows * parts.first;
+          column_info_cache[i].type_size = parts.second;
+        }
+        cache_initialized = true;
+      }
+
     public:
 
       /// `rowlist` encapsulates a list of rows for this `bank`, providing a way to iterate over them
@@ -317,6 +342,21 @@ namespace hipo {
           switch(type) {
             case kByte:   return (int) getByteAt(offset);
             case kShort:  return (int) getShortAt(offset);
+            case kInt:    return getIntAt(offset);
+            case kFloat:  return getFloatAt(offset);
+            case kDouble: return getDoubleAt(offset);
+            case kLong:   return getLongAt(offset);
+            default:
+              printf("---> error(get) : unknown type for [%s] type = %d\n", bankSchema.getEntryName(item).c_str(), type);
+          }
+          return 0;
+        }
+
+        template<typename T = double>
+        T get(int item, int index, int type, int offset) const noexcept {
+          switch(type) {
+            case kByte:   return getByteAt(offset);
+            case kShort:  return getShortAt(offset);
             case kInt:    return getIntAt(offset);
             case kFloat:  return getFloatAt(offset);
             case kDouble: return getDoubleAt(offset);
