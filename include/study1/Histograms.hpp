@@ -48,6 +48,44 @@ struct PionMinus {
     up_TTO_TH2D hist2D_delta_t_vs_p_matched_km_in_recon_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_k_minus_in_recon_cut", "", 200, 0, 11, 200, -1, 1);
     up_TTO_TH2D hist2D_delta_t_vs_p_matched_electron_in_recon_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_electron_in_recon_cut", "", 200, 0, 11, 200, -1, 1);
     up_TTO_TH2D hist2D_delta_t_vs_p_matched_photon_in_recon_cut = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_photon_in_recon_cut", "", 200, 0, 11, 200, -1, 1);
+
+    up_TTO_TH2D hist2D_delta_t_vs_p_rich_matched_pim = std::make_unique<TTO_TH2D>("delta_t_vs_p_rich_matched_pi_minus", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_rich_matched_km = std::make_unique<TTO_TH2D>("delta_t_vs_p_rich_matched_k_minus", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_rich_matched_electron = std::make_unique<TTO_TH2D>("delta_t_vs_p_rich_matched_electron", "", 200, 0, 11, 200, -1, 1);
+
+    up_TTO_TH1D hist1D_p_electron = std::make_unique<TTO_TH1D>("p_electron", "", 200, 0, 11);
+    up_TTO_TH1D hist1D_p_pim = std::make_unique<TTO_TH1D>("p_pi_minus", "", 200, 0, 11);
+    up_TTO_TH1D hist1D_p_km = std::make_unique<TTO_TH1D>("p_k_minus", "", 200, 0, 11);
+    up_TTO_TH1D hist1D_p_matched_pim = std::make_unique<TTO_TH1D>("p_matched_pi_minus", "", 200, 0, 11);
+    up_TTO_TH1D hist1D_p_matched_km = std::make_unique<TTO_TH1D>("p_matched_k_minus", "", 200, 0, 11);
+
+    up_TTO_TH1D hist1D_rich_rq_pim = std::make_unique<TTO_TH1D>("rich_rq_pi_minus", "", 200, 0, 1);
+
+
+    up_TTO_TH2D hist2D_delta_beta_vs_p_matched_pim = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_pi_minus", "", 200, 0, 11, 200, -0.005, 0.005);
+    up_TTO_TH2D hist2D_delta_beta_vs_p_matched_km = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_k_minus", "", 200, 0, 11, 200, -0.005, 0.005);
+    up_TTO_TH2D hist2D_delta_beta_vs_p_matched_electron = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_electron", "", 200, 0, 11, 200, -0.005, 0.005);
+    up_TTO_TH2D hist2D_delta_beta_vs_p_matched_photon = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_photon", "", 200, 0, 11, 200, -0.005, 0.005);
+
+    up_TTO_TH2D hist2D_delta_beta_vs_p_reconstructed_pim = std::make_unique<TTO_TH2D>("delta_beta_vs_p_reconstructed_pi_minus", "", 200, 0, 11, 200, -0.005, 0.005);
+    up_TTO_TH2D hist2D_delta_beta_vs_p_matched_pim_in_reconstructed_pim = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_pi_minus_in_reconstructed_pi_minus", "", 200, 0, 11, 200, -0.005, 0.005);
+    up_TTO_TH2D hist2D_delta_beta_vs_p_matched_km_in_reconstructed_pim = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_k_minus_in_reconstructed_pi_minus", "", 200, 0, 11, 200, -0.005, 0.005);
+    up_TTO_TH2D hist2D_delta_beta_vs_p_matched_electron_in_reconstructed_pim = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_electron_in_reconstructed_pi_minus", "", 200, 0, 11, 200, -0.005, 0.005);
+    up_TTO_TH2D hist2D_delta_beta_vs_p_matched_photon_in_reconstructed_pim = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_photon_in_reconstructed_pi_minus", "", 200, 0, 11, 200, -0.005, 0.005);
+
+
+
+
+    up_TTO_TH2D hist2D_beta_vs_p_matched_pim = std::make_unique<TTO_TH2D>("beta_vs_p_matched_pi_minus", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_matched_km = std::make_unique<TTO_TH2D>("beta_vs_p_matched_k_minus", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_matched_electron = std::make_unique<TTO_TH2D>("beta_vs_p_matched_electron", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_matched_photon = std::make_unique<TTO_TH2D>("beta_vs_p_matched_photon", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_reconstructed_pim = std::make_unique<TTO_TH2D>("beta_vs_p_reconstructed_pim", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_matched_pim_in_reconstructed_pim = std::make_unique<TTO_TH2D>("beta_vs_p_matched_pim_in_reconstructed_pim", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_matched_km_in_reconstructed_pim = std::make_unique<TTO_TH2D>("beta_vs_p_matched_km_in_reconstructed_pim", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_matched_electron_in_reconstructed_pim = std::make_unique<TTO_TH2D>("beta_vs_p_matched_electron_in_reconstructed_pim", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_matched_photon_in_reconstructed_pim = std::make_unique<TTO_TH2D>("beta_vs_p_matched_photon_in_reconstructed_pim", "", 200, 0, 11, 200, 0.9, 1.05);
+
 };
 
 
@@ -72,6 +110,22 @@ struct NegativeTracks {
     up_TTO_TH2D hist2D_delta_t_vs_p_matched_km_in_recon_neg_tracks = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_k_minus_in_recon_negative_tracks", "", 200, 0, 11, 200, -1, 1);
     up_TTO_TH2D hist2D_delta_t_vs_p_matched_electron_in_recon_neg_tracks = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_electron_in_recon_negative_tracks", "", 200, 0, 11, 200, -1, 1);
     up_TTO_TH2D hist2D_delta_t_vs_p_matched_photon_in_recon_neg_tracks = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_photon_in_recon_negative_tracks", "", 200, 0, 11, 200, -1, 1);
+    up_TTO_TH2D hist2D_delta_t_vs_p_reconstructed_pos_tracks = std::make_unique<TTO_TH2D>("delta_t_vs_p_reconstructed_positive_tracks", "", 200, 0, 11, 200, -1, 1);
+
+    up_TTO_TH2D hist2D_beta_vs_p_reconstructed_negative_tracks = std::make_unique<TTO_TH2D>("beta_vs_p_reconstructed_negative_tracks", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_matched_pim_in_negative_tracks = std::make_unique<TTO_TH2D>("beta_vs_p_matched_pim_in_negative_tracks", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_matched_km_in_negative_tracks = std::make_unique<TTO_TH2D>("beta_vs_p_matched_km_in_negative_tracks", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_matched_electron_in_negative_tracks = std::make_unique<TTO_TH2D>("beta_vs_p_matched_electron_in_negative_tracks", "", 200, 0, 11, 200, 0.9, 1.05);
+    up_TTO_TH2D hist2D_beta_vs_p_matched_photon_in_negative_tracks = std::make_unique<TTO_TH2D>("beta_vs_p_matched_photon_in_negative_tracks", "", 200, 0, 11, 200, 0.9, 1.05);
+
+};
+
+struct RICHHistograms {
+    up_TTO_TH1D hist1D_p_pim = std::make_unique<TTO_TH1D>("rich_p_pi_minus", "", 200, 0, 11);
+    up_TTO_TH1D hist1D_p_km = std::make_unique<TTO_TH1D>("rich_p_k_minus", "", 200, 0, 11);
+    up_TTO_TH1D hist1D_rich_rq_pim = std::make_unique<TTO_TH1D>("rich_rq_pim", "", 200, 0, 1);
+    up_TTO_TH1D hist1D_rich_rq_km = std::make_unique<TTO_TH1D>("rich_rq_km", "", 200, 0, 1);
+
 };
 
 
@@ -80,6 +134,7 @@ struct Histograms {
     PionMinus pion_minus;
     PionPlus pion_plus;
     NegativeTracks negative_tracks;
+    RICHHistograms rich;
 };
 
 }  // namespace study1

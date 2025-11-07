@@ -17,7 +17,7 @@ Reader::Reader(Histograms& histograms)
 Reader::~Reader() = default;
 
 auto Reader::operator()(const std::string& file) -> void {
-    for (hipo::hipoeventfile events(file); auto& event : events) {
+    for (hipo::hipoeventfile events(file); auto event : events) {
         hipo::bank_map REC_Event = event.get_bank_map("REC::Event");
         if (REC_Event.get_rows() == 0) continue;
         double start_time = REC_Event.get_as<double>("startTime", 0);
@@ -39,15 +39,15 @@ auto Reader::operator()(const std::string& file) -> void {
             double pz = MC_Particle.get_as<double>("pz", i);
             double p = std::sqrt(px * px + py * py + pz * pz);
 
-            int pindex = Core::get_rec_particle_index(*MC_GenMatch.get_bank(), i);
+            int pindex = Core::get_rec_particle_index(MC_GenMatch.get_bank(), i);
             if (pindex >= 0) {
                 Core::ScintillatorBank scintillator = Core::read_Scintillator_bank(*REC_Scintillator.get_bank(), pindex);
                 Core::CalorimeterBank calorimeter = Core::read_Calorimeter_bank(*REC_Calorimeter.get_bank(), pindex);
 
-                int rec_pid = REC_Particle.get("pid", pindex);
-                double rec_px = REC_Particle.get("px", pindex);
-                double rec_py = REC_Particle.get("py", pindex);
-                double rec_pz = REC_Particle.get("pz", pindex);
+                int rec_pid = REC_Particle.get_as<int>("pid", pindex);
+                double rec_px = REC_Particle.get_as<double>("px", pindex);
+                double rec_py = REC_Particle.get_as<double>("py", pindex);
+                double rec_pz = REC_Particle.get_as<double>("pz", pindex);
                 double rec_p = std::sqrt(rec_px * rec_px + rec_py * rec_py + rec_pz * rec_pz);
 
                 double measured_time = scintillator.time - start_time;
@@ -103,9 +103,9 @@ auto Reader::operator()(const std::string& file) -> void {
             m_histograms.pion_minus.hist2D_delta_t_vs_p_reconstructed_pim->Get()->Fill(p, delta_t);
             if (cut_delta_t(p, delta_t)) m_histograms.pion_minus.hist2D_delta_t_vs_p_reconstructed_pim_cut->Get()->Fill(p, delta_t);
 
-            int mc_index = Core::get_mc_particle_index(*MC_RecMatch.get_bank(), pion.index());
+            int mc_index = Core::get_mc_particle_index(MC_RecMatch.get_bank(), pion.index());
             if (mc_index >= 0) {
-                int mc_pid = MC_Particle.get("pid", mc_index);
+                int mc_pid = MC_Particle.get_as<int>("pid", mc_index);
 
                 if (mc_pid == static_cast<int>(Core::PIDs::PionMinus)) m_histograms.pion_minus.hist2D_delta_t_vs_p_matched_pim_in_recon->Get()->Fill(p, delta_t);
                 if (mc_pid == static_cast<int>(Core::PIDs::KaonMinus)) m_histograms.pion_minus.hist2D_delta_t_vs_p_matched_km_in_recon->Get()->Fill(p, delta_t);

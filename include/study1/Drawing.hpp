@@ -22,6 +22,7 @@ class Drawing {
     // ****** public methods
     auto draw_electron_kinematics() -> void;
     auto draw_pion_minus() -> void;
+    auto draw_rich_histograms() -> void;
 };
 
 }  // namespace study1

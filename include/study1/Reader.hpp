@@ -40,6 +40,10 @@ class Reader {
     Core::Target m_target = Core::Target::LD2;
     Core::Polarity m_polarity = Core::Polarity::Outbending;
     std::atomic_int64_t m_event_count{0};
+    std::atomic_int64_t m_nb_trigger_electron{0};
+    std::atomic_int64_t m_nb_pims{0};
+    std::atomic_int64_t m_nb_kms{0};
+
 
     // ****** private methods
     auto select_electron(const Core::Particle& electron, const hipo::bank& REC_Calorimeter, const hipo::bank& REC_Cherenkov) const -> bool;
@@ -52,6 +56,10 @@ class Reader {
 
     // ****** public methods
     auto operator()(const std::string& file) -> void;
+    auto get_event_count() const -> int64_t { return m_event_count.load(); }
+    auto get_nb_trigger_electron() const -> int64_t { return m_nb_trigger_electron.load(); }
+    auto get_nb_pims() const -> int64_t { return m_nb_pims.load(); }
+    auto get_nb_kms() const -> int64_t { return m_nb_kms.load(); }
 };
 
 }  // namespace study1
