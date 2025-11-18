@@ -184,21 +184,21 @@ inline auto find_most_energetic_electron(const std::vector<Core::Particle>& elec
 inline auto get_mass(const int pid) -> double {
     switch (pid) {
         case 11:
-            return Core::Constants::ElectronMass;
+            return Core::Constants::ELECTRONMASS;
         case 22:
             return 0.0;
         case 211:
         case -211:
-            return Core::Constants::PionMass;
+            return Core::Constants::PIMASS;
         case 321:
         case -321:
-            return Core::Constants::KaonMass;
+            return Core::Constants::KMASS;
         case 2212:
         case -2212:
-            return Core::Constants::ProtonMass;
+            return Core::Constants::PROTONMASS;
         case 2112:
         case -2112:
-            return Core::Constants::NeutronMass;
+            return Core::Constants::NEUTRONMASS;
         default:
             return std::numeric_limits<double>::quiet_NaN();
     }

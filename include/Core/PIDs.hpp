@@ -6,16 +6,30 @@
 namespace Core {
 
 enum class PIDs {
-    Electron = 11,
-    Positron = -11,
-    Proton = 2212,
-    Neutron = 2112,
-    PionPlus = 211,
-    PionMinus = -211,
-    KaonPlus = 321,
-    KaonMinus = -321,
-    Photon = 22
+    ELECTRON = 11,
+    POSITRON = -11,
+    PROTON = 2212,
+    NEUTRON = 2112,
+    PIPLUS = 211,
+    PIMINUS = -211,
+    KPLUS = 321,
+    KMINUS = -321,
+    PHOTON = 22
 };
+
+/**
+ * @brief Overload == operator to compare PIDs enum with int
+ */
+inline auto operator==(PIDs pid, int value) -> bool {
+    return static_cast<int>(pid) == value;
+}
+
+/**
+ * @brief Overload == operator to compare int with PIDs enum
+ */
+inline auto operator==(int value, PIDs pid) -> bool {
+    return value == static_cast<int>(pid);
+}
 
 /**
  * @brief Convert integer PID to enum (if valid)
@@ -25,14 +39,14 @@ enum class PIDs {
  */
 inline auto to_pid_enum(int pid) -> std::optional<PIDs> {
     switch (pid) {
-        case 11: return PIDs::Electron;
-        case -11: return PIDs::Positron;
-        case 2212: return PIDs::Proton;
-        case 2112: return PIDs::Neutron;
-        case 211: return PIDs::PionPlus;
-        case -211: return PIDs::PionMinus;
-        case 321: return PIDs::KaonPlus;
-        case -321: return PIDs::KaonMinus;
+        case 11: return PIDs::ELECTRON;
+        case -11: return PIDs::POSITRON;
+        case 2212: return PIDs::PROTON;
+        case 2112: return PIDs::NEUTRON;
+        case 211: return PIDs::PIPLUS;
+        case -211: return PIDs::PIMINUS;
+        case 321: return PIDs::KPLUS;
+        case -321: return PIDs::KMINUS;
         default: return std::nullopt;
     }
 }
@@ -49,14 +63,14 @@ inline auto matches(int pid, PIDs type) -> bool {
  */
 inline auto pid_name(PIDs pid) -> std::string {
     switch (pid) {
-        case PIDs::Electron: return "Electron";
-        case PIDs::Positron: return "Positron";
-        case PIDs::Proton: return "Proton";
-        case PIDs::Neutron: return "Neutron";
-        case PIDs::PionPlus: return "PionPlus";
-        case PIDs::PionMinus: return "PionMinus";
-        case PIDs::KaonPlus: return "KaonPlus";
-        case PIDs::KaonMinus: return "KaonMinus";
+        case PIDs::ELECTRON: return "Electron";
+        case PIDs::POSITRON: return "Positron";
+        case PIDs::PROTON: return "Proton";
+        case PIDs::NEUTRON: return "Neutron";
+        case PIDs::PIPLUS: return "PionPlus";
+        case PIDs::PIMINUS: return "PionMinus";
+        case PIDs::KPLUS: return "KaonPlus";
+        case PIDs::KMINUS: return "KaonMinus";
         default: return "Unknown";
     }
 }

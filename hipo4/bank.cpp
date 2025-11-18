@@ -453,8 +453,6 @@ void bank::notify(){
   int size = bankSchema.getRowLength();
   bankRows = getSize()/size;
   bankRowList.reset(bankRows);
-  // Invalidate column info cache when bank structure changes
-  cache_initialized = false;
   //printf("---> bank notify called structure size = %8d (size = %5d)  rows = %d\n",
   //    getSize(),size, bankRows);
 }

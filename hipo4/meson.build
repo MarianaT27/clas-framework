@@ -1,4 +1,3 @@
-# dependencies
 lz4_minver = '1.9'
 lz4_dep = dependency(
   'liblz4',
@@ -9,7 +8,6 @@ lz4_dep = dependency(
 
 lz4_preproc_def = '-D__LZ4__'
 add_project_arguments(lz4_preproc_def, language: ['cpp'])
-
 
 hipo_sources = files(
   'bank.cpp',
@@ -49,13 +47,15 @@ hipo_headers = files(
   'utils.h',
   'writer.h',
   'hipoeventiterator.h',
+  'threadpool.hpp',
+  'progresstracker.hpp',
+  'chain.h',
 )
-
 
 hipo_lib = library(
   meson.project_name(),
   hipo_sources,
-  dependencies: [ lz4_dep ],
+  dependencies: [ lz4_dep, fmt_dep ],
   cpp_args: [ # FIXME: fix the warnings; they are suppressed by these args
     '-Wno-sign-compare',
     '-Wno-unused-variable',

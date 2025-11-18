@@ -188,8 +188,6 @@ namespace hipo {
 
       composite(){};
       composite(int size){ allocate(size);};
-      composite(int group, int item, int size){ /*initStructureBySize(group, item, 10, size);*/};
-      composite(const char *format){}
       composite(int group, int item, const char *format, int capacity);
       
       void       parse(std::string format);
@@ -220,31 +218,6 @@ namespace hipo {
   //typedef std::auto_ptr<hipo::generic_node> node_pointer;
 
     class bank : public structure {
-
-    private:
-      // Performance optimization: Cache column metadata to avoid repeated lookups
-      struct ColumnInfo {
-        int type_id;       // Type of the column (kByte, kShort, kInt, etc.)
-        int row_offset;    // Pre-computed: bankRows * schema.offset
-        int type_size;     // Size of the type in bytes
-      };
-      mutable std::vector<ColumnInfo> column_info_cache;
-      mutable bool cache_initialized{false};
-
-      // Build the column info cache on first access
-      inline void ensure_cache() const noexcept {
-        if (__builtin_expect(cache_initialized, 1)) return;
-
-        int n_cols = bankSchema.getEntries();
-        column_info_cache.resize(n_cols);
-        for (int i = 0; i < n_cols; i++) {
-          column_info_cache[i].type_id = bankSchema.getEntryType(i);
-          auto parts = bankSchema.getOffsetParts(i);
-          column_info_cache[i].row_offset = bankRows * parts.first;
-          column_info_cache[i].type_size = parts.second;
-        }
-        cache_initialized = true;
-      }
 
     public:
 

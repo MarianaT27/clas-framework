@@ -199,8 +199,8 @@ namespace hipo {
 
    public:
 
-      readerIndex()= default;;
-      ~readerIndex()= default;;
+      readerIndex()= default;
+      ~readerIndex()= default;
 
       bool canAdvance();
       bool advance();
@@ -289,8 +289,6 @@ namespace hipo {
 	for(auto tag : tags) setTags(tag);
          open(file);
       }
-
-      reader(const reader &r){}
 
       ~reader();
 

@@ -53,10 +53,10 @@ public:
         // If no types specified, extract all common particle types
         std::vector<Core::PIDs> target_types = types.empty() ?
             std::vector<Core::PIDs>{
-                Core::PIDs::Electron, Core::PIDs::Positron,
-                Core::PIDs::Proton, Core::PIDs::Neutron,
-                Core::PIDs::PionPlus, Core::PIDs::PionMinus,
-                Core::PIDs::KaonPlus, Core::PIDs::KaonMinus
+                Core::PIDs::ELECTRON, Core::PIDs::POSITRON,
+                Core::PIDs::PROTON, Core::PIDs::NEUTRON,
+                Core::PIDs::PIPLUS, Core::PIDs::PIMINUS,
+                Core::PIDs::KPLUS, Core::PIDs::KMINUS
             } : types;
 
         for (const auto& type : target_types) {

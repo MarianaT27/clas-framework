@@ -386,9 +386,6 @@ class ElectronCuts {
      * @param target Target type
      * @param polarity Torus polarity
      * @param sf_cut Reference to SamplingFractionCut object
-     * @param theta1 Local theta in DC region 1 (degrees)
-     * @param theta2 Local theta in DC region 2 (degrees)
-     * @param theta3 Local theta in DC region 3 (degrees)
      * @return CutResults structure with individual cut results
      */
     static auto apply_all_cuts(

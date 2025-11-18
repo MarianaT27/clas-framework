@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Particle.hpp>
-#include <Core/Constantes.hpp>
+#include <Core/Constants.hpp>
 #include <cmath>
 #include <vector>
 
@@ -16,10 +16,10 @@ namespace Kinematics {
      * @brief Beam energy (default CLAS12 RG-A: 10.6 GeV)
      */
     struct BeamConfig {
-        double energy = 10.6;  // GeV
+        double energy = 10.53;  // GeV
         double px = 0.0;
         double py = 0.0;
-        double pz = 10.6;
+        double pz = 10.53;
     };
 
     /**
@@ -44,7 +44,6 @@ namespace Kinematics {
         double qz = beam.pz - pz_e;
         double q0 = E_beam - E_e;
 
-        // Q² = -q²= -(q0² - qx² - qy² - qz²)
         return -(q0 * q0 - qx * qx - qy * qy - qz * qz);
     }
 
@@ -64,7 +63,7 @@ namespace Kinematics {
         double py_e = electron.py();
         double pz_e = electron.pz();
 
-        double M_p = Core::Constantes::ProtonMass;
+        double M_p = Core::Constants::PROTONMASS;
 
         // Virtual photon four-momentum
         double qx = beam.px - px_e;
@@ -104,7 +103,7 @@ namespace Kinematics {
     inline double x_bjorken(const Core::Particle& electron, const BeamConfig& beam = {}) {
         double q2 = Q2(electron, beam);
         double nu_val = nu(electron, beam);
-        double M_p = Core::Constantes::ProtonMass;
+        double M_p = Core::Constants::PROTONMASS;
 
         return q2 / (2.0 * M_p * nu_val);
     }
@@ -133,7 +132,7 @@ namespace Kinematics {
     inline double missing_mass(const Core::Particle& electron,
                                const Core::Particle& proton,
                                const BeamConfig& beam = {}) {
-        double M_p = Core::Constantes::ProtonMass;
+        double M_p = Core::Constants::PROTONMASS;
 
         // Initial state: beam + target
         double E_init = beam.energy + M_p;
@@ -223,7 +222,7 @@ namespace Kinematics {
         // Clamp to [-1, 1] for numerical stability
         cos_angle = std::max(-1.0, std::min(1.0, cos_angle));
 
-        return std::acos(cos_angle) * Core::Constantes::rad_to_deg;
+        return std::acos(cos_angle) * Core::Constants::RAD_TO_DEG;
     }
 
 
@@ -268,7 +267,7 @@ namespace Kinematics {
     inline double missing_energy(const Core::Particle& electron,
                                   const std::vector<Core::Particle>& detected_particles,
                                   const BeamConfig& beam = {}) {
-        double M_p = Core::Constantes::ProtonMass;
+        double M_p = Core::Constants::PROTONMASS;
         double E_init = beam.energy + M_p;
 
         double E_final = electron.E();

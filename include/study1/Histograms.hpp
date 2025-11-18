@@ -7,10 +7,18 @@
 
 using TTO_TH1D = ROOT::TThreadedObject<TH1D>;
 using TTO_TH2D = ROOT::TThreadedObject<TH2D>;
-using up_TTO_TH1D = const std::unique_ptr<TTO_TH1D>;
-using up_TTO_TH2D = const std::unique_ptr<TTO_TH2D>;
+using up_TTO_TH1D = std::unique_ptr<TTO_TH1D>;
+using up_TTO_TH2D = std::unique_ptr<TTO_TH2D>;
 
 namespace study1 {
+
+inline up_TTO_TH1D make_hist1d(const std::string& name, const std::string& title, int bins, double xmin, double xmax) {
+    return std::make_unique<TTO_TH1D>(name.c_str(), title.c_str(), bins, xmin, xmax);
+}
+
+inline up_TTO_TH2D make_hist2d(const std::string& name, const std::string& title, int xbins, double xmin, double xmax, int ybins, double ymin, double ymax) {
+    return std::make_unique<TTO_TH2D>(name.c_str(), title.c_str(), xbins, xmin, xmax, ybins, ymin, ymax);
+}
 
 struct Electron {
     up_TTO_TH1D hist1D_p = std::make_unique<TTO_TH1D>("p_e", "", 200, 0, 11);
@@ -61,7 +69,6 @@ struct PionMinus {
 
     up_TTO_TH1D hist1D_rich_rq_pim = std::make_unique<TTO_TH1D>("rich_rq_pi_minus", "", 200, 0, 1);
 
-
     up_TTO_TH2D hist2D_delta_beta_vs_p_matched_pim = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_pi_minus", "", 200, 0, 11, 200, -0.005, 0.005);
     up_TTO_TH2D hist2D_delta_beta_vs_p_matched_km = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_k_minus", "", 200, 0, 11, 200, -0.005, 0.005);
     up_TTO_TH2D hist2D_delta_beta_vs_p_matched_electron = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_electron", "", 200, 0, 11, 200, -0.005, 0.005);
@@ -73,9 +80,6 @@ struct PionMinus {
     up_TTO_TH2D hist2D_delta_beta_vs_p_matched_electron_in_reconstructed_pim = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_electron_in_reconstructed_pi_minus", "", 200, 0, 11, 200, -0.005, 0.005);
     up_TTO_TH2D hist2D_delta_beta_vs_p_matched_photon_in_reconstructed_pim = std::make_unique<TTO_TH2D>("delta_beta_vs_p_matched_photon_in_reconstructed_pi_minus", "", 200, 0, 11, 200, -0.005, 0.005);
 
-
-
-
     up_TTO_TH2D hist2D_beta_vs_p_matched_pim = std::make_unique<TTO_TH2D>("beta_vs_p_matched_pi_minus", "", 200, 0, 11, 200, 0.9, 1.05);
     up_TTO_TH2D hist2D_beta_vs_p_matched_km = std::make_unique<TTO_TH2D>("beta_vs_p_matched_k_minus", "", 200, 0, 11, 200, 0.9, 1.05);
     up_TTO_TH2D hist2D_beta_vs_p_matched_electron = std::make_unique<TTO_TH2D>("beta_vs_p_matched_electron", "", 200, 0, 11, 200, 0.9, 1.05);
@@ -86,8 +90,18 @@ struct PionMinus {
     up_TTO_TH2D hist2D_beta_vs_p_matched_electron_in_reconstructed_pim = std::make_unique<TTO_TH2D>("beta_vs_p_matched_electron_in_reconstructed_pim", "", 200, 0, 11, 200, 0.9, 1.05);
     up_TTO_TH2D hist2D_beta_vs_p_matched_photon_in_reconstructed_pim = std::make_unique<TTO_TH2D>("beta_vs_p_matched_photon_in_reconstructed_pim", "", 200, 0, 11, 200, 0.9, 1.05);
 
-};
 
+
+
+    up_TTO_TH2D hist2D_MM_vs_p_reconstructed_pim = std::make_unique<TTO_TH2D>("MM_vs_p_reconstructed_pi_minus", "", 200, 0, 11, 200, 0, 2);
+    up_TTO_TH2D hist2D_MM_vs_p_pim_in_reconstructed_pim = std::make_unique<TTO_TH2D>("MM_vs_p_pim_in_reconstructed_pi_minus", "", 200, 0, 11, 200, 0, 2);
+    up_TTO_TH2D hist2D_MM_vs_p_km_in_reconstructed_pim = std::make_unique<TTO_TH2D>("MM_vs_p_km_in_reconstructed_pi_minus", "", 200, 0, 11, 200, 0, 2);
+    up_TTO_TH2D hist2D_MM_vs_p_electron_in_reconstructed_pim = std::make_unique<TTO_TH2D>("MM_vs_p_electron_in_reconstructed_pi_minus", "", 200, 0, 11, 200, 0, 2);
+    up_TTO_TH2D hist2D_MM_vs_p_photon_in_reconstructed_pim = std::make_unique<TTO_TH2D>("MM_vs_p_photon_in_reconstructed_pi_minus", "", 200, 0, 11, 200, 0, 2);
+
+
+
+};
 
 struct PionPlus {
     up_TTO_TH2D hist2D_delta_t_vs_p_matched_pip = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_pi_plus", "", 200, 0, 11, 200, -1, 1);
@@ -101,7 +115,6 @@ struct PionPlus {
     up_TTO_TH2D hist2D_delta_t_vs_p_matched_proton_in_recon_pip = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_proton_in_recon_pip", "", 200, 0, 11, 200, -1, 1);
     up_TTO_TH2D hist2D_delta_t_vs_p_matched_positron_in_recon_pip = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_positron_in_recon_pip", "", 200, 0, 11, 200, -1, 1);
     up_TTO_TH2D hist2D_delta_t_vs_p_matched_photon_in_recon_pip = std::make_unique<TTO_TH2D>("delta_t_vs_p_matched_photon_in_recon_pip", "", 200, 0, 11, 200, -1, 1);
-
 };
 
 struct NegativeTracks {
@@ -118,6 +131,9 @@ struct NegativeTracks {
     up_TTO_TH2D hist2D_beta_vs_p_matched_electron_in_negative_tracks = std::make_unique<TTO_TH2D>("beta_vs_p_matched_electron_in_negative_tracks", "", 200, 0, 11, 200, 0.9, 1.05);
     up_TTO_TH2D hist2D_beta_vs_p_matched_photon_in_negative_tracks = std::make_unique<TTO_TH2D>("beta_vs_p_matched_photon_in_negative_tracks", "", 200, 0, 11, 200, 0.9, 1.05);
 
+
+    up_TTO_TH2D hist2D_MM_vs_p_reconstructed_negative_tracks = std::make_unique<TTO_TH2D>("MM_vs_p_reconstructed_negative_tracks", "", 200, 0, 11, 200, 0, 2);
+
 };
 
 struct RICHHistograms {
@@ -125,9 +141,56 @@ struct RICHHistograms {
     up_TTO_TH1D hist1D_p_km = std::make_unique<TTO_TH1D>("rich_p_k_minus", "", 200, 0, 11);
     up_TTO_TH1D hist1D_rich_rq_pim = std::make_unique<TTO_TH1D>("rich_rq_pim", "", 200, 0, 1);
     up_TTO_TH1D hist1D_rich_rq_km = std::make_unique<TTO_TH1D>("rich_rq_km", "", 200, 0, 1);
-
 };
 
+struct PiTrack {
+    struct Sector {
+        // Histograms to extract the DC fiducial cuts for regions 1 and 2
+        up_TTO_TH2D hist2D_edge_vs_chi2ndf_region1;
+        up_TTO_TH2D hist2D_edge_vs_chi2ndf_region2;
+        up_TTO_TH2D hist2D_edge_vs_chi2ndf_region3;
+
+        // Histograms to extract the CAL fiducial cuts
+        up_TTO_TH2D hist2D_u_vs_SF;
+        up_TTO_TH2D hist2D_v_vs_SF;
+        up_TTO_TH2D hist2D_w_vs_SF;
+        up_TTO_TH2D hist2D_u_vs_SF_zoom;
+        up_TTO_TH2D hist2D_v_vs_SF_zoom;
+        up_TTO_TH2D hist2D_w_vs_SF_zoom;
+        up_TTO_TH2D hist2D_u_vs_SF_end_zoom;
+        up_TTO_TH2D hist2D_v_vs_SF_end_zoom;
+        up_TTO_TH2D hist2D_w_vs_SF_end_zoom;
+        up_TTO_TH2D hist2D_u_vs_SF_zoom_cut;
+        up_TTO_TH2D hist2D_u_vs_SF_end_zoom_cut;
+
+
+        Sector(int sector, std::string prefix) {
+            hist2D_edge_vs_chi2ndf_region1 = make_hist2d(prefix + "edge_vs_chi2ndf_region1_S" + std::to_string(sector), "", 1000, 0, 60, 200, 0, 100);
+            hist2D_edge_vs_chi2ndf_region2 = make_hist2d(prefix + "edge_vs_chi2ndf_region2_S" + std::to_string(sector), "", 1000, 0, 60, 200, 0, 100);
+            hist2D_edge_vs_chi2ndf_region3 = make_hist2d(prefix + "edge_vs_chi2ndf_region3_S" + std::to_string(sector), "", 1000, 0, 60, 200, 0, 100);
+
+            hist2D_u_vs_SF = make_hist2d(prefix + "electron_u_vs_SF_S" + std::to_string(sector), "", 200, 0, 400, 200, 0, 0.4);
+            hist2D_v_vs_SF = make_hist2d(prefix + "electron_v_vs_SF_S" + std::to_string(sector), "", 200, 0, 400, 200, 0, 0.4);
+            hist2D_w_vs_SF = make_hist2d(prefix + "electron_w_vs_SF_S" + std::to_string(sector), "", 200, 0, 400, 200, 0, 0.4);
+            hist2D_u_vs_SF_zoom = make_hist2d(prefix + "electron_u_vs_SF_zoom_S" + std::to_string(sector), "", 200, 0, 110, 200, 0, 0.4);
+            hist2D_v_vs_SF_zoom = make_hist2d(prefix + "electron_v_vs_SF_zoom_S" + std::to_string(sector), "", 200, 0, 70, 200, 0, 0.4);
+            hist2D_w_vs_SF_zoom = make_hist2d(prefix + "electron_w_vs_SF_zoom_S" + std::to_string(sector), "", 200, 0, 70, 200, 0, 0.4);
+            hist2D_u_vs_SF_end_zoom = make_hist2d(prefix + "electron_u_vs_SF_end_zoom_S" + std::to_string(sector), "", 200, 300, 450, 200, 0, 0.4);
+            hist2D_v_vs_SF_end_zoom = make_hist2d(prefix + "electron_v_vs_SF_end_zoom_S" + std::to_string(sector), "", 200, 250, 400, 200, 0, 0.4);
+            hist2D_w_vs_SF_end_zoom = make_hist2d(prefix + "electron_w_vs_SF_end_zoom_S" + std::to_string(sector), "", 200, 250, 400, 200, 0, 0.4);
+            hist2D_u_vs_SF_zoom_cut = make_hist2d(prefix + "electron_u_vs_SF_zoom_cut_S" + std::to_string(sector), "", 200, 0, 110, 200, 0, 0.4);
+            hist2D_u_vs_SF_end_zoom_cut = make_hist2d(prefix + "electron_u_vs_SF_end_zoom_cut_S" + std::to_string(sector), "", 200, 300, 450, 200, 0, 0.4);
+
+        }
+    };
+
+    Sector sector_histograms[7];
+
+    PiTrack(std::string prefix)
+        : sector_histograms{Sector(1, prefix), Sector(2, prefix), Sector(3, prefix), Sector(4, prefix),
+                            Sector(5, prefix), Sector(6, prefix), Sector(0, prefix)} {
+    }
+};
 
 struct Histograms {
     Electron electron;
@@ -135,6 +198,8 @@ struct Histograms {
     PionPlus pion_plus;
     NegativeTracks negative_tracks;
     RICHHistograms rich;
+    PiTrack pim_track{"pim_track_"};
+    PiTrack pip_track{"pip_track_"};
 };
 
 }  // namespace study1

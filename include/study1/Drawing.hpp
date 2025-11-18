@@ -3,6 +3,7 @@
 // Project headers
 #include <Plotting/Draw.hpp>
 #include <study1/Histograms.hpp>
+#include "hipo4/hipoeventiterator.h"
 
 namespace study1 {
 class Drawing {
@@ -23,6 +24,8 @@ class Drawing {
     auto draw_electron_kinematics() -> void;
     auto draw_pion_minus() -> void;
     auto draw_rich_histograms() -> void;
+    auto draw_pion_tracks() -> void;
+
 };
 
 }  // namespace study1
