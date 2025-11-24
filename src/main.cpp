@@ -19,6 +19,8 @@
 #include <TStyle.h>
 
 // Hipo headers
+#include "Core/Target.hpp"
+#include "fmt/base.h"
 #include "hipo4/hipoeventiterator.h"
 #include "hipo4/chain.h"
 
@@ -31,28 +33,38 @@
 #include <study1/Reader.hpp>
 
 int main() {
-    ROOT::EnableThreadSafety(); 
+    ROOT::EnableThreadSafety();
 
     // Read the files
-    std::vector<std::string> files = Core::read_recursive_file_in_directory("/volatile/clas12/ouillon/RGD/rgd_simulation_pion_7/recon/", 10);
-    // std::vector<std::string> files = Core::read_recursive_file_in_directory("/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/", 100);
+    std::vector<std::string> files = Core::read_recursive_file_in_directory("/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/");
 
     // Process the data
+    Core::Target target = Core::Target::LD2;
+    Core::Polarity polarity = Core::Polarity::Outbending;
     study1::Histograms histograms;
-    study1::Reader reader(histograms);
+    study1::Reader reader(histograms, target, polarity);
 
     hipo::chain chain(10, true, false);
     chain.add(files);
     chain.open();
-
     chain.process([&reader](hipo::iter_event& event, int file_idx, long evt_idx_in_file) {
         reader(event);
-    }, 100.0);
+    }, 1);
 
     // Draw the histograms
     study1::Drawing drawing(histograms);
-    drawing.draw_pion_minus();
-    drawing.draw_pion_tracks();
+    drawing.draw_electron_kinematics();
+
+    // Print summary
+    fmt::print("===== Summary =====\n");
+    fmt::println("Target: {} | Polarity: {}", Core::to_string(target), Core::to_string(polarity));
+    fmt::print("Total number of events processed: {}\n", reader.get_event_count());
+    fmt::print("Number of trigger electrons found: {}\n", reader.get_nb_trigger_electron());
+    fmt::print("Number of survivors after momentum cut: {}\n", reader.get_mom_cut_survivors());
+    fmt::print("Number of survivors after sampling fraction cut: {}\n", reader.get_sf_cut_survivors());
+    fmt::print("Number of survivors after PCAL cut: {}\n", reader.get_pcal_cut_survivors());
+    fmt::print("Number of survivors after DC cut: {}\n", reader.get_dc_cut_survivors());
+    fmt::print("Number of survivors after Vz cut: {}\n", reader.get_vz_cut_survivors());
 
     return EXIT_SUCCESS;
 }

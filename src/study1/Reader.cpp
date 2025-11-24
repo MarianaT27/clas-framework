@@ -15,8 +15,8 @@
 
 namespace study1 {
 
-Reader::Reader(Histograms& histograms)
-    : m_histograms(histograms) {}
+Reader::Reader(Histograms& histograms, Core::Target target, Core::Polarity polarity)
+    : m_histograms(histograms), m_target(target), m_polarity(polarity) {}
 
 Reader::~Reader() = default;
 
@@ -24,16 +24,13 @@ auto Reader::operator()(hipo::iter_event& event) -> void {
     hipo::bank_map REC_Event = event.get_bank_map("REC::Event");
     if (REC_Event.get_rows() == 0) return;
     double start_time = REC_Event.get_as<double>("startTime", 0);
-
-    hipo::bank_map MC_Particle = event.get_bank_map("MC::Particle");
-    hipo::bank_map MC_RecMatch = event.get_bank_map("MC::RecMatch");
-    hipo::bank_map MC_GenMatch = event.get_bank_map("MC::GenMatch");
     hipo::bank_map REC_Particle = event.get_bank_map("REC::Particle");
     hipo::bank_map REC_Scintillator = event.get_bank_map("REC::Scintillator");
     hipo::bank_map REC_Traj = event.get_bank_map("REC::Traj");
+    hipo::bank_map REC_Track = event.get_bank_map("REC::Track");
     hipo::bank_map REC_Calorimeter = event.get_bank_map("REC::Calorimeter");
 
-    fill_mc_histograms(MC_Particle, MC_RecMatch, REC_Particle, REC_Scintillator, REC_Calorimeter, start_time);
+    m_event_count++;
 
     Core::ParticleMap particles = Core::ParticleSelector::extract_particles(REC_Particle, {Core::PIDs::ELECTRON, Core::PIDs::PIMINUS, Core::PIDs::PIPLUS, Core::PIDs::KMINUS, Core::PIDs::KPLUS});
 
@@ -41,261 +38,171 @@ auto Reader::operator()(hipo::iter_event& event) -> void {
     const auto& electrons = particles[Core::PIDs::ELECTRON];
     std::optional<Core::Particle> trigger_e = Core::find_trigger_electron(electrons, {2000, 4000});
     if (!trigger_e.has_value()) return;
+    m_nb_trigger_electron++;
 
     // Apply electron ID
     Core::CalorimeterBank calorimeter = Core::read_Calorimeter_bank(REC_Calorimeter.get_bank(), trigger_e->index());
     Core::DCTrajBank traj = Core::read_Traj_bank(REC_Traj.get_bank(), trigger_e->index());
-    Core::ElectronCuts::CutResults cuts_results = Core::ElectronCuts::apply_all_cuts(trigger_e.value(), calorimeter, traj, m_target, m_polarity, m_sf_cut);
-    if (!cuts_results.passes_all_required()) return;
+    Core::TrackBank track = Core::read_Track_bank(REC_Track.get_bank(), trigger_e->index());
+    // Core::ElectronCuts::CutResults cuts_results = Core::ElectronCuts::apply_all_cuts(trigger_e.value(), calorimeter, traj, m_target, m_polarity, m_sf_cut);
+    // if (!cuts_results.passes_all_required()) return;
 
-    m_histograms.pion_minus.hist1D_p_electron->Get()->Fill(trigger_e->p());
-    m_nb_trigger_electron++;
+    // Apply each electron cut individually for study the effects on the survival rates
+    auto electron = trigger_e.value();
+    auto target = m_target;
+    auto polarity = m_polarity;
+    auto& sf_cut = m_sf_cut;
+    Core::ElectronCuts::CutResults results;
 
-    std::vector<Core::Particle> pims = particles[Core::PIDs::PIMINUS];
-    
-    for (const auto& h : pims) {
-        double p = h.p();
-        
-        m_histograms.pion_minus.hist2D_beta_vs_p_reconstructed_pim->Get()->Fill(p, h.beta());
+    // Calculate derived quantities
+    const double E_tot = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;
+    const double SF = E_tot / electron.p();
+    const double p_e = electron.p();
+    const int sector = calorimeter.pcal.sector;
+    const double edge1 = traj.region1.edge;
+    const double edge2 = traj.region2.edge;
+    const double edge3 = traj.region3.edge;
 
-        int mc_index = Core::get_mc_particle_index(MC_RecMatch.get_bank(), h.index());
-        if (mc_index >= 0) {
-            int mc_pid = MC_Particle.get_as<int>("pid", mc_index);
+    // Apply individual cuts
+    results.chi2pid = Core::ElectronCuts::pass_chi2pid_cut(electron.chi2pid());
+    results.momentum = Core::ElectronCuts::pass_electron_momentum_cut(p_e);
+    results.vz = Core::ElectronCuts::pass_electron_vz_cut(electron.vz(), target);
+    results.sampling_fraction = Core::ElectronCuts::pass_sampling_fraction_cut(SF, p_e, sector, target, polarity, sf_cut);
+    results.pcal_fiducial = Core::ElectronCuts::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw);
+    results.dc_chi2ndf = Core::ElectronCuts::pass_chi2ndf_cut(edge1, edge2, edge3);
 
-            if (mc_pid == static_cast<int>(Core::PIDs::PIMINUS)) m_histograms.pion_minus.hist2D_beta_vs_p_matched_pim_in_reconstructed_pim->Get()->Fill(p, h.beta());
-            if (mc_pid == static_cast<int>(Core::PIDs::KMINUS)) m_histograms.pion_minus.hist2D_beta_vs_p_matched_km_in_reconstructed_pim->Get()->Fill(p, h.beta());
-            if (mc_pid == static_cast<int>(Core::PIDs::ELECTRON)) m_histograms.pion_minus.hist2D_beta_vs_p_matched_electron_in_reconstructed_pim->Get()->Fill(p, h.beta());
-            if (mc_pid == static_cast<int>(Core::PIDs::PHOTON)) m_histograms.pion_minus.hist2D_beta_vs_p_matched_photon_in_reconstructed_pim->Get()->Fill(p, h.beta());
+    // Apply electron cuts sequentially and use counters to track survival rates
+    if (results.chi2pid == true) {
+        if (results.momentum == true) {
+            m_mom_cut_survivors++;
+            if (results.sampling_fraction == true) {
+                m_sf_cut_survivors++;
+                if (results.pcal_fiducial == true) {
+                    m_pcal_cut_survivors++;
+                    if (results.dc_chi2ndf == true) {
+                        m_dc_cut_survivors++;
+                        if (results.vz == true) {
+                            m_vz_cut_survivors++;
+                        }
+                    }
+                }
+            }
         }
     }
 
+    // Check lu vs lw and lu and lw plots to find issues
+    m_histograms.electron.hist2D_lu_vs_lv_e_pcal->Get()->Fill(calorimeter.pcal.lu, calorimeter.pcal.lv);
+    m_histograms.electron.hist2D_lu_vs_lw_e_pcal->Get()->Fill(calorimeter.pcal.lu, calorimeter.pcal.lw);
+    m_histograms.electron.hist2D_lu_vs_lv_e_in->Get()->Fill(calorimeter.inner.lu, calorimeter.inner.lv);
+    m_histograms.electron.hist2D_lu_vs_lw_e_in->Get()->Fill(calorimeter.inner.lu, calorimeter.inner.lw);
+    m_histograms.electron.hist2D_lu_vs_lv_e_out->Get()->Fill(calorimeter.outer.lu, calorimeter.outer.lv);
+    m_histograms.electron.hist2D_lu_vs_lw_e_out->Get()->Fill(calorimeter.outer.lu, calorimeter.outer.lw);
 
-}
+    // Get the chi2/ndf vs edge 2d histogram as function of momentum
+    double chi2ndf = track.chi2 / track.ndf;
+    double p = electron.p();
+    double edge_r1 = traj.region1.edge;
+    double edge_r2 = traj.region2.edge;
+    double edge_r3 = traj.region3.edge;
 
-auto Reader::fill_mc_histograms(hipo::bank_map &MC_Particle, hipo::bank_map &MC_GenMatch, hipo::bank_map &REC_Particle, hipo::bank_map &REC_Scintillator, hipo::bank_map &REC_Calorimeter, double start_time) -> void{
-    for (int i = 0; i < MC_Particle.get_rows(); ++i) {
-        int pid = MC_Particle.get_as<int>("pid", i);
-        double px = MC_Particle.get_as<float>("px", i);
-        double py = MC_Particle.get_as<float>("py", i);
-        double pz = MC_Particle.get_as<float>("pz", i);
-        double p = std::sqrt(px * px + py * py + pz * pz);
-
-        int pindex = Core::get_rec_particle_index(MC_GenMatch.get_bank(), i);
-        if (pindex >= 0) {
-            Core::ScintillatorBank scintillator = Core::read_Scintillator_bank(REC_Scintillator.get_bank(), pindex);
-            Core::CalorimeterBank calorimeter = Core::read_Calorimeter_bank(REC_Calorimeter.get_bank(), pindex);
-
-            double rec_px = REC_Particle.get_as<float>("px", pindex);
-            double rec_py = REC_Particle.get_as<float>("py", pindex);
-            double rec_pz = REC_Particle.get_as<float>("pz", pindex);
-            double rec_p = std::sqrt(rec_px * rec_px + rec_py * rec_py + rec_pz * rec_pz);
-            double beta = REC_Particle.get_as<float>("beta", pindex);
-
-            if (pid == Core::PIDs::PIMINUS) m_histograms.pion_minus.hist2D_beta_vs_p_matched_pim->Get()->Fill(rec_p, beta);
-            if (pid == Core::PIDs::KMINUS) m_histograms.pion_minus.hist2D_beta_vs_p_matched_km->Get()->Fill(rec_p, beta);
-            if (pid == Core::PIDs::ELECTRON) m_histograms.pion_minus.hist2D_beta_vs_p_matched_electron->Get()->Fill(rec_p, beta);
-            if (pid == Core::PIDs::PHOTON) m_histograms.pion_minus.hist2D_beta_vs_p_matched_photon->Get()->Fill(rec_p, beta);
-            
-        }
+    if (1.0 <= p && p < 2.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_1_2->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_1_2->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_1_2->Get()->Fill(edge_r3, chi2ndf);
     }
-}
 
-double Reader::third_order_poly(double x, double a, double b, double c, double d) const {
-    return a + b * x + c * x * x + d * x * x * x;
-}
+    else if (2.0 <= p & p < 3.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_2_3->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_2_3->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_2_3->Get()->Fill(edge_r3, chi2ndf);
+    }
 
-bool Reader::cut_delta_t(double p, double delta_t) const {
-    const double popt_mean[4] = {-0.02872196, 0.00598219, 0.00158193, -0.00028493};
-    const double popt_sigma[4] = {0.25132972, -0.09788015, 0.01734634, -0.00103597};
+    else if (3.0 <= p & p < 4.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_3_4->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_3_4->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_3_4->Get()->Fill(edge_r3, chi2ndf);
+    }
 
-    double cut_low = third_order_poly(p, popt_mean[0], popt_mean[1], popt_mean[2], popt_mean[3]) -
-                     3 * third_order_poly(p, popt_sigma[0], popt_sigma[1], popt_sigma[2], popt_sigma[3]);
-    double cut_high = third_order_poly(p, popt_mean[0], popt_mean[1], popt_mean[2], popt_mean[3]) +
-                      3 * third_order_poly(p, popt_sigma[0], popt_sigma[1], popt_sigma[2], popt_sigma[3]);
+    else if (4.0 <= p & p < 5.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_4_5->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_4_5->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_4_5->Get()->Fill(edge_r3, chi2ndf);
+    }
 
-    return cut_low < delta_t && delta_t < cut_high;
+    else if (5.0 <= p & p < 6.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_5_6->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_5_6->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_5_6->Get()->Fill(edge_r3, chi2ndf);
+    }
+
+    else if (6.0 <= p & p < 7.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_6_7->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_6_7->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_6_7->Get()->Fill(edge_r3, chi2ndf);
+    }
+
+    else if (7.0 <= p & p < 8.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_7_8->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_7_8->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_7_8->Get()->Fill(edge_r3, chi2ndf);
+    }
+
+    else if (8.0 <= p & p < 9.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_8_9->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_8_9->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_8_9->Get()->Fill(edge_r3, chi2ndf);
+    }
+
+    else if (9.0 <= p & p < 10.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_9_10->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_9_10->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_9_10->Get()->Fill(edge_r3, chi2ndf);
+    }
+
+
+    // Theta binned
+    double theta = electron.theta();
+
+    if (5.0 <= theta && theta < 10.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_t5_10->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_t5_10->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t5_10->Get()->Fill(edge_r3, chi2ndf);
+    }
+
+    else if (10.0 <= theta & theta < 15.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_t10_15->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_t10_15->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t10_15->Get()->Fill(edge_r3, chi2ndf);
+    }
+
+    else if (15.0 <= theta & theta < 20.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_t15_20->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_t15_20->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t15_20->Get()->Fill(edge_r3, chi2ndf);
+    }
+
+    else if (20.0 <= theta & theta < 25.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_t20_25->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_t20_25->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t20_25->Get()->Fill(edge_r3, chi2ndf);
+    }
+
+    else if (25.0 <= theta & theta < 30.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_t25_30->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_t25_30->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t25_30->Get()->Fill(edge_r3, chi2ndf);
+    }
+
+    else if (30.0 <= theta & theta < 35.0) {
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_t30_35->Get()->Fill(edge_r1, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_t30_35->Get()->Fill(edge_r2, chi2ndf);
+        m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t30_35->Get()->Fill(edge_r3, chi2ndf);
+    }
+
+
+
+
+
 }
 
 }  // namespace study1
-
-
-/*
-std::vector<Core::Particle> negative_tracks;
-    std::vector<Core::Particle> positive_tracks;
-    for (int i = 0; i < REC_Particle.get_rows(); ++i) {
-        const int pid = REC_Particle.get_as<int>("pid", i);
-        const int status = REC_Particle.get_as<int>("status", i);
-        const int charge = REC_Particle.get_as<int>("charge", i);
-        const double px = REC_Particle.get_as<double>("px", i);
-        const double py = REC_Particle.get_as<double>("py", i);
-        const double pz = REC_Particle.get_as<double>("pz", i);
-        const double vx = REC_Particle.get_as<double>("vx", i);
-        const double vy = REC_Particle.get_as<double>("vy", i);
-        const double vz = REC_Particle.get_as<double>("vz", i);
-        const double vt = REC_Particle.get_as<double>("vt", i);
-        const double beta = REC_Particle.get_as<double>("beta", i);
-        const double chi2pid = REC_Particle.get_as<double>("chi2pid", i);
-
-        const double mass = Core::get_mass(pid);
-        const double E = Core::compute_energy(px, py, pz, pid);
-
-        Core::Particle particle(pid, status, i, charge, mass, px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
-        if (charge < 0 && pid != 11) negative_tracks.push_back(particle);
-        if (charge > 0 && pid != -11) positive_tracks.push_back(particle);
-    }
-
-    for (const auto& pim : pims) {
-        Core::ScintillatorBank scintillator = Core::read_Scintillator_bank(REC_Scintillator.get_bank(), pim.index());
-        Core::CalorimeterBank calorimeter = Core::read_Calorimeter_bank(REC_Calorimeter.get_bank(), pim.index());
-        double measured_time = scintillator.time - start_time;
-        double l_ftof = scintillator.path;
-        double p = pim.p();
-        double m = Core::Constants::PIMASS;
-        double beta_expected = p / std::sqrt(p * p + m * m);
-        double t_expected = l_ftof / (beta_expected * Core::Constants::SPEED_OF_LIGHT);
-        double delta_t = measured_time - t_expected;
-        double SF_PCal = calorimeter.pcal.energy / p;
-        double SF_inner = calorimeter.inner.energy / p;
-        double beta = pim.beta();
-        double delta_beta = beta - beta_expected;
-        m_histograms.pion_minus.hist2D_delta_t_vs_p_reconstructed_pim->Get()->Fill(p, delta_t);
-        m_histograms.pion_minus.hist2D_delta_beta_vs_p_reconstructed_pim->Get()->Fill(p, delta_beta);
-        m_histograms.pion_minus.hist2D_beta_vs_p_reconstructed_pim->Get()->Fill(p, beta);
-
-        if (cut_delta_t(p, delta_t) && (SF_inner < 0.2 - SF_PCal || SF_PCal < 0.02)) m_histograms.pion_minus.hist2D_delta_t_vs_p_reconstructed_pim_cut->Get()->Fill(p, delta_t);
-    }
-
-    for (const auto& track : negative_tracks) {
-        Core::ScintillatorBank scintillator = Core::read_Scintillator_bank(REC_Scintillator.get_bank(), track.index());
-        double measured_time = scintillator.time - start_time;
-        double l_ftof = scintillator.path;
-        double p = track.p();
-        double m = Core::Constants::PIMASS;
-        double beta_expected = p / std::sqrt(p * p + m * m);
-        double t_expected = l_ftof / (beta_expected * Core::Constants::SPEED_OF_LIGHT);
-        double delta_t = measured_time - t_expected;
-        double beta = track.beta();
-
-        m_histograms.negative_tracks.hist2D_delta_t_vs_p_reconstructed_neg_tracks->Get()->Fill(p, delta_t);
-        m_histograms.negative_tracks.hist2D_beta_vs_p_reconstructed_negative_tracks->Get()->Fill(p, beta);
-
-    }
-
-    for (const auto& track : positive_tracks) {
-        Core::ScintillatorBank scintillator = Core::read_Scintillator_bank(REC_Scintillator.get_bank(), track.index());
-        double measured_time = scintillator.time - start_time;
-        double l_ftof = scintillator.path;
-        double p = track.p();
-        double m = Core::Constants::PIMASS;
-        double beta_expected = p / std::sqrt(p * p + m * m);
-        double t_expected = l_ftof / (beta_expected * Core::Constants::SPEED_OF_LIGHT);
-        double delta_t = measured_time - t_expected;
-
-        m_histograms.negative_tracks.hist2D_delta_t_vs_p_reconstructed_pos_tracks->Get()->Fill(p, delta_t);
-    }
-
-    for (const auto& pip : pips) {
-        Core::ScintillatorBank scintillator = Core::read_Scintillator_bank(REC_Scintillator.get_bank(), pip.index());
-        double measured_time = scintillator.time - start_time;
-        double l_ftof = scintillator.path;
-        double p = pip.p();
-        double m = Core::Constants::PIMASS;
-        double beta_expected = p / std::sqrt(p * p + m * m);
-        double t_expected = l_ftof / (beta_expected * Core::Constants::SPEED_OF_LIGHT);
-        double delta_t = measured_time - t_expected;
-        
-        m_histograms.pion_plus.hist2D_delta_t_vs_p_reconstructed_pip->Get()->Fill(p, delta_t);
-    }
-    
-
-    /*
-    for (const Core::Particle& pion : pims) {
-        Core::ScintillatorBank scintillator = Core::read_Scintillator_bank(REC_Scintillator.get_bank(), pion.index());
-        double measured_time = scintillator.time - start_time;
-        double l_ftof = scintillator.path;
-        double p = pion.p();
-        double m = Core::Constants::PionMass;
-        double beta_expected = p / std::sqrt(p * p + m * m);
-        double t_expected = l_ftof / (beta_expected * Core::Constants::SPEED_OF_LIGHT);
-        double delta_t = measured_time - t_expected;
-
-        if (scintillator.sector != 1) continue;
-
-        m_histograms.pion_minus.hist2D_delta_t_vs_p_reconstructed_pim->Get()->Fill(p, delta_t);
-        m_histograms.pion_minus.hist1D_p_pim->Get()->Fill(p);
-        m_nb_pims++;
-
-        // Find the index of the particle in RICH::Particle bank
-        int rich_index = -1;
-        float number_of_rich_photons = -1;
-        for (int i = 0; i < RICH_Particle.get_rows(); ++i) {
-            int rich_pindex = RICH_Particle.get_as<int>("pindex", i);
-            if (rich_pindex == pion.index()) {
-                rich_index = i;
-                number_of_rich_photons = RICH_Particle.get_as<float>("best_ntot", i);
-                break;
-            }
-        }
-
-        if (rich_index != -1 && number_of_rich_photons > 2.5) {
-            int rich_pid = RICH_Particle.get_as<int>("best_PID", rich_index);
-            float rich_rq = RICH_Particle.get_as<float>("RQ", rich_index);
-            float rich_req = RICH_Particle.get_as<float>("ReQ", rich_index);
-            m_histograms.pion_minus.hist1D_rich_rq_pim->Get()->Fill(rich_rq);
-            if (rich_pid == static_cast<int>(Core::PIDs::PionMinus) && rich_rq > 0.1) m_histograms.pion_minus.hist2D_delta_t_vs_p_rich_matched_pim->Get()->Fill(p, delta_t);
-            if (rich_pid == static_cast<int>(Core::PIDs::KMINUS) && rich_rq > 0.1) m_histograms.pion_minus.hist2D_delta_t_vs_p_rich_matched_km->Get()->Fill(p, delta_t);
-            if (rich_pid == static_cast<int>(Core::PIDs::Electron) && rich_req > 0.1) m_histograms.pion_minus.hist2D_delta_t_vs_p_rich_matched_electron->Get()->Fill(p, delta_t);
-        }
-    }
-
-    for (const Core::Particle& km : kms) {
-        double p = km.p();
-        m_histograms.pion_minus.hist1D_p_km->Get()->Fill(p);
-        m_nb_kms++;
-    }
-
-    // Find π- and K- in the RICH bank
-    for (int i = 0; i < RICH_Particle.get_rows(); ++i) {
-        int id = RICH_Particle.get_as<int>("id", i);
-        int pindex = RICH_Particle.get_as<int>("pindex", i);
-        int hindex = RICH_Particle.get_as<int>("hindex", i);
-        int emilay = RICH_Particle.get_as<int>("emilay", i);
-        int emico = RICH_Particle.get_as<int>("emico", i);
-        int enico = RICH_Particle.get_as<int>("enico", i);
-        int emqua = RICH_Particle.get_as<int>("emqua", i);
-        float mchi2 = RICH_Particle.get_as<float>("mchi2", i);
-        float mass = RICH_Particle.get_as<float>("mass", i);
-
-        int best_PID = RICH_Particle.get_as<int>("best_PID", i);
-        float RQ = RICH_Particle.get_as<float>("RQ", i);
-        float ReQ = RICH_Particle.get_as<float>("ReQ", i);
-        float el_logl = RICH_Particle.get_as<float>("el_logl", i);
-        float pi_logl = RICH_Particle.get_as<float>("pi_logl", i);
-        float k_logl = RICH_Particle.get_as<float>("k_logl", i);
-        float pr_logl = RICH_Particle.get_as<float>("pr_logl", i);
-
-        float best_ch = RICH_Particle.get_as<float>("best_ch", i);
-        float best_c2 = RICH_Particle.get_as<float>("best_c2", i);
-        float best_RL = RICH_Particle.get_as<float>("best_RL", i);
-        float best_ntot = RICH_Particle.get_as<float>("best_ntot", i);
-        float best_mass = RICH_Particle.get_as<float>("best_mass", i);
-
-        // get the momentum of the particle from REC::Particle bank
-        double px = REC_Particle.get_as<float>("px", pindex);
-        double py = REC_Particle.get_as<float>("py", pindex);
-        double pz = REC_Particle.get_as<float>("pz", pindex);
-        double p = std::sqrt(px * px + py * py + pz * pz);
-
-        if (best_PID == static_cast<int>(Core::PIDs::PionMinus) && best_ntot > 2.5) {
-            m_histograms.rich.hist1D_rich_rq_pim->Get()->Fill(RQ);
-            if (RQ > 0.1) m_histograms.rich.hist1D_p_pim->Get()->Fill(p);
-        }
-        else if (best_PID == static_cast<int>(Core::PIDs::KMINUS) && best_ntot > 2.5) {
-            m_histograms.rich.hist1D_rich_rq_km->Get()->Fill(RQ);
-            if (RQ > 0.1) m_histograms.rich.hist1D_p_km->Get()->Fill(p);
-        }
-    }
-        */
-
-
-

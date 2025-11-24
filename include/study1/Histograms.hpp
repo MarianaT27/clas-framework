@@ -32,6 +32,67 @@ struct Electron {
     up_TTO_TH1D hist1D_theta_cut = std::make_unique<TTO_TH1D>("theta_e_cut", "", 200, 0, 35);
     up_TTO_TH1D hist1D_chi2_cut = std::make_unique<TTO_TH1D>("chi2_e_cut", "", 200, -6, 6);
     up_TTO_TH1D hist1D_vz_cut = std::make_unique<TTO_TH1D>("vz_e_cut", "", 200, -30, 20);
+
+    up_TTO_TH2D hist2D_lu_vs_lv_e_pcal = std::make_unique<TTO_TH2D>("lu_vs_lv_e_pcal", "", 200, 0, 450, 200, 0, 450);
+    up_TTO_TH2D hist2D_lu_vs_lw_e_pcal = std::make_unique<TTO_TH2D>("lu_vs_lw_e_pcal", "", 200, 0, 450, 200, 0, 450);
+    up_TTO_TH2D hist2D_lu_vs_lv_e_in = std::make_unique<TTO_TH2D>("lu_vs_lv_e_in", "", 200, 0, 450, 200, 0, 450);
+    up_TTO_TH2D hist2D_lu_vs_lw_e_in = std::make_unique<TTO_TH2D>("lu_vs_lw_e_in", "", 200, 0, 450, 200, 0, 450);
+    up_TTO_TH2D hist2D_lu_vs_lv_e_out = std::make_unique<TTO_TH2D>("lu_vs_lv_e_out", "", 200, 0, 450, 200, 0, 450);
+    up_TTO_TH2D hist2D_lu_vs_lw_e_out = std::make_unique<TTO_TH2D>("lu_vs_lw_e_out", "", 200, 0, 450, 200, 0, 450);
+
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_1_2 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_1_2", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_2_3 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_2_3", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_3_4 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_3_4", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_4_5 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_4_5", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_5_6 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_5_6", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_6_7 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_6_7", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_7_8 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_7_8", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_8_9 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_8_9", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_9_10 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_9_10", "", 200, 0, 50, 200, 0, 100);
+
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_1_2 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_1_2", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_2_3 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_2_3", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_3_4 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_3_4", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_4_5 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_4_5", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_5_6 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_5_6", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_6_7 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_6_7", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_7_8 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_7_8", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_8_9 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_8_9", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_9_10 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_9_10", "", 200, 0, 50, 200, 0, 100);
+
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_1_2 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_1_2", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_2_3 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_2_3", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_3_4 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_3_4", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_4_5 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_4_5", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_5_6 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_5_6", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_6_7 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_6_7", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_7_8 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_7_8", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_8_9 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_8_9", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_9_10 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_9_10", "", 200, 0, 50, 200, 0, 100);
+
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_t5_10 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_t5_10", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_t10_15 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_t10_15", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_t15_20 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_t15_20", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_t20_25 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_t20_25", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_t25_30 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_t25_30", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r1_t30_35 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r1_t30_35", "", 200, 0, 50, 200, 0, 100);
+
+
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_t5_10 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_t5_10", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_t10_15 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_t10_15", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_t15_20 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_t15_20", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_t20_25 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_t20_25", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_t25_30 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_t25_30", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r2_t30_35 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r2_t30_35", "", 200, 0, 50, 200, 0, 100);
+
+
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_t5_10 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_t5_10", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_t10_15 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_t10_15", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_t15_20 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_t15_20", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_t20_25 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_t20_25", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_t25_30 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_t25_30", "", 200, 0, 50, 200, 0, 100);
+    up_TTO_TH2D hist2D_chi2ndf_vs_edge_r3_t30_35 = std::make_unique<TTO_TH2D>("chi2ndf_vs_edge_r3_t30_35", "", 200, 0, 50, 200, 0, 100);
+
 };
 
 struct PionMinus {

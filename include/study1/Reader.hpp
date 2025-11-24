@@ -37,12 +37,15 @@ class Reader {
     // ****** private variables
     Histograms& m_histograms;
     Core::SamplingFractionCut m_sf_cut;
-    Core::Target m_target = Core::Target::LD2;
-    Core::Polarity m_polarity = Core::Polarity::Outbending;
+    Core::Target m_target;
+    Core::Polarity m_polarity;
     std::atomic_int64_t m_event_count{0};
     std::atomic_int64_t m_nb_trigger_electron{0};
-    std::atomic_int64_t m_nb_pims{0};
-    std::atomic_int64_t m_nb_kms{0};
+    std::atomic_int64_t m_mom_cut_survivors{0};
+    std::atomic_int64_t m_sf_cut_survivors{0};
+    std::atomic_int64_t m_pcal_cut_survivors{0};
+    std::atomic_int64_t m_dc_cut_survivors{0};
+    std::atomic_int64_t m_vz_cut_survivors{0};
     static constexpr double SECTOR_ANGLE = TMath::Pi() / 3.0;
 
     // ****** private methods
@@ -54,15 +57,18 @@ class Reader {
 
    public:
     // ****** constructors and destructor
-    explicit Reader(Histograms& histograms);
+    explicit Reader(Histograms& histograms, Core::Target target = Core::Target::LD2, Core::Polarity polarity = Core::Polarity::Outbending);
     ~Reader();
 
     // ****** public methods
     auto operator()(hipo::iter_event& event) -> void;
     auto get_event_count() const -> int64_t { return m_event_count.load(); }
     auto get_nb_trigger_electron() const -> int64_t { return m_nb_trigger_electron.load(); }
-    auto get_nb_pims() const -> int64_t { return m_nb_pims.load(); }
-    auto get_nb_kms() const -> int64_t { return m_nb_kms.load(); }
+    auto get_mom_cut_survivors() const -> int64_t { return m_mom_cut_survivors.load(); }
+    auto get_sf_cut_survivors() const -> int64_t { return m_sf_cut_survivors.load(); }
+    auto get_pcal_cut_survivors() const -> int64_t { return m_pcal_cut_survivors.load(); }
+    auto get_dc_cut_survivors() const -> int64_t { return m_dc_cut_survivors.load(); }
+    auto get_vz_cut_survivors() const -> int64_t { return m_vz_cut_survivors.load(); }
 };
 
 }  // namespace study1
