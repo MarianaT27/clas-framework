@@ -1,0 +1,291 @@
+#pragma once
+
+#include "Framework/IService.hpp"
+#include "TTree.h"
+#include "TFile.h"
+#include "TObjString.h"
+#include <fmt/format.h>
+#include <string>
+#include <map>
+#include <vector>
+#include <chrono>
+#include <ctime>
+
+namespace Framework {
+
+/**
+ * @brief Service for storing analysis metadata and provenance
+ *
+ * Stores critical information about the analysis for reproducibility:
+ * - Software version
+ * - Run number and conditions
+ * - Input file list
+ * - Command line arguments
+ * - Analysis parameters
+ * - Timestamps
+ * - Git commit hash
+ *
+ * Metadata is written to ROOT file as a TTree for easy access.
+ *
+ * Example:
+ * @code
+ * auto metadata = service<MetadataService>("MetadataService");
+ * metadata->set_version("2.1.0");
+ * metadata->set_run_number(5032);
+ * metadata->add_input_file("data1.hipo");
+ * metadata->add_parameter("cut_chi2pid", 3.0);
+ * @endcode
+ */
+class MetadataService : public Service {
+public:
+    explicit MetadataService(std::string name = "MetadataService")
+        : Service(std::move(name)) {}
+
+    auto initialize() -> StatusCode override {
+        m_start_time = std::chrono::system_clock::now();
+        return StatusCode::SUCCESS();
+    }
+
+    auto finalize() -> StatusCode override {
+        m_end_time = std::chrono::system_clock::now();
+        if (!m_output_file.empty()) {
+            write_metadata();
+        }
+        return StatusCode::SUCCESS();
+    }
+
+    /**
+     * @brief Set output ROOT file
+     */
+    auto set_output_file(const std::string& filename) -> void {
+        m_output_file = filename;
+    }
+
+    /**
+     * @brief Set software version
+     */
+    auto set_version(const std::string& version) -> void {
+        m_version = version;
+    }
+
+    /**
+     * @brief Set git commit hash
+     */
+    auto set_git_hash(const std::string& hash) -> void {
+        m_git_hash = hash;
+    }
+
+    /**
+     * @brief Set run number
+     */
+    auto set_run_number(int run) -> void {
+        m_run_number = run;
+    }
+
+    /**
+     * @brief Add input file
+     */
+    auto add_input_file(const std::string& filename) -> void {
+        m_input_files.push_back(filename);
+    }
+
+    /**
+     * @brief Set command line arguments
+     */
+    auto set_command_line(int argc, char** argv) -> void {
+        m_command_line.clear();
+        for (int i = 0; i < argc; ++i) {
+            m_command_line.push_back(argv[i]);
+        }
+    }
+
+    /**
+     * @brief Add analysis parameter
+     */
+    template<typename T>
+    auto add_parameter(const std::string& name, T value) -> void {
+        m_parameters[name] = fmt::format("{}", value);
+    }
+
+    /**
+     * @brief Add custom metadata
+     */
+    auto add_metadata(const std::string& key, const std::string& value) -> void {
+        m_custom_metadata[key] = value;
+    }
+
+    /**
+     * @brief Set number of events processed
+     */
+    auto set_events_processed(size_t count) -> void {
+        m_events_processed = count;
+    }
+
+    /**
+     * @brief Set target type
+     */
+    auto set_target(const std::string& target) -> void {
+        m_target = target;
+    }
+
+    /**
+     * @brief Set beam energy
+     */
+    auto set_beam_energy(double energy) -> void {
+        m_beam_energy = energy;
+    }
+
+    /**
+     * @brief Print metadata summary
+     */
+    auto print_summary() const -> void {
+        fmt::print("\n");
+        fmt::print("╔════════════════════════════════════════════════════════════════╗\n");
+        fmt::print("║                    Analysis Metadata                           ║\n");
+        fmt::print("╚════════════════════════════════════════════════════════════════╝\n");
+        fmt::print("\n");
+
+        fmt::print("Software:\n");
+        fmt::print("  Version: {}\n", m_version.empty() ? "unknown" : m_version);
+        if (!m_git_hash.empty()) {
+            fmt::print("  Git hash: {}\n", m_git_hash);
+        }
+
+        fmt::print("\nRun Information:\n");
+        fmt::print("  Run number: {}\n", m_run_number);
+        if (!m_target.empty()) {
+            fmt::print("  Target: {}\n", m_target);
+        }
+        if (m_beam_energy > 0) {
+            fmt::print("  Beam energy: {:.2f} GeV\n", m_beam_energy);
+        }
+
+        fmt::print("\nInput Files: {}\n", m_input_files.size());
+        if (m_input_files.size() <= 5) {
+            for (const auto& file : m_input_files) {
+                fmt::print("  - {}\n", file);
+            }
+        } else {
+            fmt::print("  - {} (showing first 3)\n", m_input_files[0]);
+            fmt::print("  - {}\n", m_input_files[1]);
+            fmt::print("  - {}\n", m_input_files[2]);
+            fmt::print("  - ... ({} more)\n", m_input_files.size() - 3);
+        }
+
+        if (!m_parameters.empty()) {
+            fmt::print("\nAnalysis Parameters:\n");
+            for (const auto& [name, value] : m_parameters) {
+                fmt::print("  {}: {}\n", name, value);
+            }
+        }
+
+        fmt::print("\nTiming:\n");
+        auto start_time_t = std::chrono::system_clock::to_time_t(m_start_time);
+        auto end_time_t = std::chrono::system_clock::to_time_t(m_end_time);
+        fmt::print("  Start: {}", std::ctime(&start_time_t));
+        fmt::print("  End: {}", std::ctime(&end_time_t));
+
+        auto duration = std::chrono::duration_cast<std::chrono::seconds>(
+            m_end_time - m_start_time);
+        fmt::print("  Duration: {} seconds\n", duration.count());
+        fmt::print("  Events processed: {}\n", m_events_processed);
+
+        fmt::print("\n");
+    }
+
+    /**
+     * @brief Write metadata to ROOT file
+     */
+    auto write_metadata() -> void {
+        if (m_output_file.empty()) {
+            return;
+        }
+
+        fmt::print("\nWriting metadata to: {}\n", m_output_file);
+
+        TFile file(m_output_file.c_str(), "UPDATE");
+        if (file.IsZombie() || !file.IsOpen()) {
+            fmt::print(stderr, "ERROR: Failed to open file for metadata\n");
+            return;
+        }
+
+        // Create metadata tree
+        TTree tree("metadata", "Analysis Metadata");
+
+        // Branch variables
+        std::string version = m_version;
+        std::string git_hash = m_git_hash;
+        int run_number = m_run_number;
+        std::string target = m_target;
+        double beam_energy = m_beam_energy;
+        Long64_t events_processed = m_events_processed;
+        Long64_t start_timestamp = std::chrono::system_clock::to_time_t(m_start_time);
+        Long64_t end_timestamp = std::chrono::system_clock::to_time_t(m_end_time);
+        Long64_t duration_sec = std::chrono::duration_cast<std::chrono::seconds>(
+            m_end_time - m_start_time).count();
+
+        // Register branches
+        tree.Branch("version", &version);
+        tree.Branch("git_hash", &git_hash);
+        tree.Branch("run_number", &run_number);
+        tree.Branch("target", &target);
+        tree.Branch("beam_energy", &beam_energy);
+        tree.Branch("events_processed", &events_processed);
+        tree.Branch("start_timestamp", &start_timestamp);
+        tree.Branch("end_timestamp", &end_timestamp);
+        tree.Branch("duration_sec", &duration_sec);
+
+        // Fill tree (single entry)
+        tree.Fill();
+
+        // Write tree
+        tree.Write();
+
+        // Write additional metadata as TObjStrings
+        file.cd();
+        file.mkdir("metadata_details");
+        file.cd("metadata_details");
+
+        // Input files
+        TObjString input_files_str(fmt::format("{}", fmt::join(m_input_files, "\n")).c_str());
+        input_files_str.Write("input_files");
+
+        // Command line
+        if (!m_command_line.empty()) {
+            TObjString cmd_str(fmt::format("{}", fmt::join(m_command_line, " ")).c_str());
+            cmd_str.Write("command_line");
+        }
+
+        // Parameters
+        for (const auto& [name, value] : m_parameters) {
+            TObjString param_str(value.c_str());
+            param_str.Write(fmt::format("param_{}", name).c_str());
+        }
+
+        // Custom metadata
+        for (const auto& [key, value] : m_custom_metadata) {
+            TObjString meta_str(value.c_str());
+            meta_str.Write(key.c_str());
+        }
+
+        file.Close();
+        fmt::print("✓ Wrote metadata tree and details\n");
+    }
+
+private:
+    std::string m_output_file;
+    std::string m_version;
+    std::string m_git_hash;
+    int m_run_number = 0;
+    std::string m_target;
+    double m_beam_energy = 0.0;
+    size_t m_events_processed = 0;
+    std::vector<std::string> m_input_files;
+    std::vector<std::string> m_command_line;
+    std::map<std::string, std::string> m_parameters;
+    std::map<std::string, std::string> m_custom_metadata;
+    std::chrono::system_clock::time_point m_start_time;
+    std::chrono::system_clock::time_point m_end_time;
+};
+
+}  // namespace Framework

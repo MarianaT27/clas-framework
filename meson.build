@@ -1,7 +1,7 @@
 project(
-  'starter',
+  'clas12-framework',
   'cpp',
-  version: '0.1',
+  version: '2.0',
   default_options: [
     'cpp_std=c++20',
     'warning_level=3',
@@ -35,16 +35,82 @@ root_dep = declare_dependency(
 
 inc = include_directories('include')
 
+# Original study1 executable (legacy)
 sources = files(
   'src/Core/Particle.cpp',
+  'src/Framework/Histogram.cpp',
   'src/main.cpp',
   'src/study1/Drawing.cpp',
   'src/study1/Reader.cpp',
 )
 
 executable(
-  meson.project_name(),
+  'starter',
   sources,
   include_directories: [inc],
   dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
 )
+
+# New framework example executable
+framework_example_sources = files(
+  'src/Core/Particle.cpp',
+  'src/Framework/Histogram.cpp',
+  'src/example_framework.cpp',
+)
+
+executable(
+  'framework_example',
+  framework_example_sources,
+  include_directories: [inc],
+  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+)
+
+# Improved main with Phase 3 features
+main_improved_sources = files(
+  'src/Core/Particle.cpp',
+  'src/Framework/Histogram.cpp',
+  'src/main_improved.cpp',
+)
+
+executable(
+  'main_improved',
+  main_improved_sources,
+  include_directories: [inc],
+  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+)
+
+# Advanced main with algorithm types demo
+main_advanced_sources = files(
+  'src/Core/Particle.cpp',
+  'src/Framework/Histogram.cpp',
+  'src/main_advanced.cpp',
+)
+
+executable(
+  'main_advanced',
+  main_advanced_sources,
+  include_directories: [inc],
+  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+)
+
+# Automatic histogram writing demo
+auto_histograms_sources = files(
+  'src/Core/Particle.cpp',
+  'src/Framework/Histogram.cpp',
+  'src/example_auto_histograms.cpp',
+)
+
+executable(
+  'example_auto_histograms',
+  auto_histograms_sources,
+  include_directories: [inc],
+  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+)
+
+#── Test suite ────────────────────────────────────────────────────────────────#
+# Note: Tests require Google Test. Uncomment to enable if gtest is available.
+# subdir('test')
+
+#── Python bindings (optional) ────────────────────────────────────────────────#
+# Uncomment to build Python bindings (requires Python 3 and pybind11)
+# subdir('python')

@@ -111,49 +111,49 @@ auto Reader::operator()(hipo::iter_event& event) -> void {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_1_2->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (2.0 <= p & p < 3.0) {
+    else if (2.0 <= p && p < 3.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_2_3->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_2_3->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_2_3->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (3.0 <= p & p < 4.0) {
+    else if (3.0 <= p && p < 4.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_3_4->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_3_4->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_3_4->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (4.0 <= p & p < 5.0) {
+    else if (4.0 <= p && p < 5.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_4_5->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_4_5->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_4_5->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (5.0 <= p & p < 6.0) {
+    else if (5.0 <= p && p < 6.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_5_6->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_5_6->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_5_6->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (6.0 <= p & p < 7.0) {
+    else if (6.0 <= p && p < 7.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_6_7->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_6_7->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_6_7->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (7.0 <= p & p < 8.0) {
+    else if (7.0 <= p && p < 8.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_7_8->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_7_8->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_7_8->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (8.0 <= p & p < 9.0) {
+    else if (8.0 <= p && p < 9.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_8_9->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_8_9->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_8_9->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (9.0 <= p & p < 10.0) {
+    else if (9.0 <= p && p < 10.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_9_10->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_9_10->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_9_10->Get()->Fill(edge_r3, chi2ndf);
@@ -169,31 +169,31 @@ auto Reader::operator()(hipo::iter_event& event) -> void {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t5_10->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (10.0 <= theta & theta < 15.0) {
+    else if (10.0 <= theta && theta < 15.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_t10_15->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_t10_15->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t10_15->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (15.0 <= theta & theta < 20.0) {
+    else if (15.0 <= theta && theta < 20.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_t15_20->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_t15_20->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t15_20->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (20.0 <= theta & theta < 25.0) {
+    else if (20.0 <= theta && theta < 25.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_t20_25->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_t20_25->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t20_25->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (25.0 <= theta & theta < 30.0) {
+    else if (25.0 <= theta && theta < 30.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_t25_30->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_t25_30->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t25_30->Get()->Fill(edge_r3, chi2ndf);
     }
 
-    else if (30.0 <= theta & theta < 35.0) {
+    else if (30.0 <= theta && theta < 35.0) {
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r1_t30_35->Get()->Fill(edge_r1, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r2_t30_35->Get()->Fill(edge_r2, chi2ndf);
         m_histograms.electron.hist2D_chi2ndf_vs_edge_r3_t30_35->Get()->Fill(edge_r3, chi2ndf);

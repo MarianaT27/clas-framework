@@ -1,0 +1,103 @@
+#pragma once
+
+#include "StatusCode.hpp"
+#include "IService.hpp"
+#include <string>
+#include <memory>
+#include <map>
+
+namespace Framework {
+
+// Forward declarations
+class Event;
+class ServiceManager;
+
+/**
+ * @brief Base interface for all algorithms in the framework
+ *
+ * Algorithms are the building blocks of analysis. They process events
+ * and can access services for common functionality. This follows the
+ * algorithm framework pattern used in Gaudi/Athena/CMSSW.
+ *
+ * Lifecycle:
+ * 1. Construction
+ * 2. initialize() - Called once at the beginning
+ * 3. execute() - Called for each event
+ * 4. finalize() - Called once at the end
+ */
+class IAlgorithm {
+public:
+    virtual ~IAlgorithm() = default;
+
+    /**
+     * @brief Initialize the algorithm
+     *
+     * Called once before event processing begins. Use this to book
+     * histograms, retrieve services, and set up resources.
+     *
+     * @return StatusCode indicating success or failure
+     */
+    virtual auto initialize() -> StatusCode = 0;
+
+    /**
+     * @brief Execute the algorithm for one event
+     *
+     * Called for each event in the input file(s). Perform event selection,
+     * fill histograms, and any per-event calculations here.
+     *
+     * @param event The current event data
+     * @return StatusCode indicating success or failure
+     */
+    virtual auto execute(Event& event) -> StatusCode = 0;
+
+    /**
+     * @brief Finalize the algorithm
+     *
+     * Called once after all events have been processed. Use this for
+     * cleanup, printing statistics, and writing output.
+     *
+     * @return StatusCode indicating success or failure
+     */
+    virtual auto finalize() -> StatusCode = 0;
+
+    /**
+     * @brief Get the algorithm name
+     * @return const std::string& Algorithm name
+     */
+    virtual auto name() const -> const std::string& = 0;
+
+    /**
+     * @brief Set the service manager for this algorithm
+     * @param svc_mgr Pointer to the service manager
+     */
+    virtual auto set_service_manager(ServiceManager* svc_mgr) -> void = 0;
+};
+
+/**
+ * @brief Base class for algorithm implementations
+ */
+class Algorithm : public IAlgorithm {
+public:
+    explicit Algorithm(std::string name) : m_name(std::move(name)) {}
+
+    auto name() const -> const std::string& override { return m_name; }
+
+    auto set_service_manager(ServiceManager* svc_mgr) -> void override {
+        m_svc_mgr = svc_mgr;
+    }
+
+protected:
+    std::string m_name;
+    ServiceManager* m_svc_mgr = nullptr;
+
+    /**
+     * @brief Retrieve a service by name
+     * @tparam T Service type
+     * @param service_name Name of the service
+     * @return T* Pointer to the service, or nullptr if not found
+     */
+    template<typename T>
+    auto service(const std::string& service_name) -> T*;
+};
+
+}  // namespace Framework
