@@ -1,0 +1,44 @@
+{
+  "job_name": "electron_analysis",
+  "executable": "./build/main_improved",
+  "system": "slurm",
+
+  "input_files": [
+    "/work/clas12/data/RG-A/run_*.hipo",
+    "/work/clas12/data/RG-B/run_*.hipo"
+  ],
+
+  "output_dir": "./batch_output",
+  "log_dir": "./batch_logs",
+
+  "files_per_job": 10,
+  "n_cores": 4,
+  "memory_gb": 8,
+  "time_limit": "12:00:00",
+  "partition": "production",
+
+  "root_setup": "source /apps/root/6.28/bin/thisroot.sh",
+  "modules": [
+    "gcc/11.2.0",
+    "python/3.9"
+  ],
+  "env_vars": [
+    "OMP_NUM_THREADS=4",
+    "ROOT_HIST=0"
+  ],
+
+  "extra_args": [
+    "--max-events", "100000",
+    "--num-threads", "4"
+  ],
+
+  "email": "user@university.edu",
+  "email_on_start": false,
+  "email_on_end": true,
+  "email_on_fail": true,
+
+  "comments": [
+    "Example batch configuration for SLURM cluster",
+    "Adjust paths and settings for your system"
+  ]
+}

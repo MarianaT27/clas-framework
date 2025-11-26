@@ -6,6 +6,8 @@
 #include "Framework/SystematicVariation.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/NTupleService.hpp"
 #include "Core/Cuts.hpp"
 #include "Core/ReadBank.hpp"
 #include "Core/Target.hpp"
@@ -40,13 +42,24 @@ public:
         , m_cutflow("Electron Selection") {}
 
     auto initialize() -> Framework::StatusCode override {
-        fmt::print("  {} - Initializing\n", name());
-
         // Get services
+        m_log_svc = service<Framework::LoggingService>("LoggingService");
         m_hist_svc = service<Framework::HistogramService>("HistogramService");
+        m_ntuple_svc = service<Framework::NTupleService>("NTupleService");
         m_cond_svc = service<Framework::ConditionsService>("ConditionsService");
 
+        if (m_log_svc) {
+            LOG_INFO(m_log_svc, "Initializing algorithm");
+            LOG_INFO(m_log_svc, "Target: {}, Polarity: {}, Systematics: {}",
+                     m_target == Core::Target::LD2 ? "LD2" : "Other",
+                     m_polarity == Core::Polarity::Outbending ? "Outbending" : "Inbending",
+                     m_enable_systematics ? "enabled" : "disabled");
+        }
+
         if (!m_hist_svc) {
+            if (m_log_svc) {
+                LOG_ERROR(m_log_svc, "Could not get HistogramService");
+            }
             fmt::print(stderr, "ERROR: Could not get HistogramService\n");
             return Framework::StatusCode::FAILURE();
         }
@@ -57,9 +70,19 @@ public:
         // Book histograms
         book_histograms();
 
+        // Setup N-tuple branches
+        if (m_ntuple_svc) {
+            setup_ntuple();
+        } else if (m_log_svc) {
+            LOG_WARNING(m_log_svc, "NTupleService not available - N-tuple output disabled");
+        }
+
         // Setup systematic variations if enabled
         if (m_enable_systematics) {
             setup_systematics();
+            if (m_log_svc) {
+                LOG_INFO(m_log_svc, "Systematic variations enabled");
+            }
         }
 
         return Framework::StatusCode::SUCCESS();
@@ -157,6 +180,19 @@ public:
         // All cuts passed - fill final histograms
         fill_final_histograms(electron, calorimeter, traj, track);
 
+        // Fill N-tuple if service is available
+        if (m_ntuple_svc) {
+            m_nt_e_p = electron.p();
+            m_nt_e_theta = electron.theta();
+            m_nt_e_phi = electron.phi();
+            m_nt_e_vz = electron.vz();
+            m_nt_e_chi2pid = electron.chi2pid();
+            m_nt_sampling_fraction = SF;
+            m_nt_sector = calorimeter.pcal.sector;
+
+            m_ntuple_svc->fill("electron_analysis");
+        }
+
         // Set decision flag for downstream algorithms
         event.set_decision("HasGoodElectron", true);
 
@@ -164,6 +200,17 @@ public:
     }
 
     auto finalize() -> Framework::StatusCode override {
+        if (m_log_svc) {
+            LOG_INFO(m_log_svc, "Finalizing algorithm");
+            auto final_count = m_cutflow.get_count("DC Chi2/NDF");
+            LOG_INFO(m_log_svc, "Events passing all cuts: {}", final_count);
+
+            if (m_ntuple_svc) {
+                auto entries = m_ntuple_svc->get_entries("electron_analysis");
+                LOG_INFO(m_log_svc, "N-tuple has {} entries", entries);
+            }
+        }
+
         fmt::print("\n");
         m_cutflow.print();
 
@@ -181,8 +228,19 @@ private:
     Framework::SystematicManager m_sys_mgr;
 
     // Services
+    Framework::LoggingService* m_log_svc = nullptr;
     Framework::HistogramService* m_hist_svc = nullptr;
+    Framework::NTupleService* m_ntuple_svc = nullptr;
     Framework::ConditionsService* m_cond_svc = nullptr;
+
+    // N-tuple variables
+    double m_nt_e_p = 0.0;
+    double m_nt_e_theta = 0.0;
+    double m_nt_e_phi = 0.0;
+    double m_nt_e_vz = 0.0;
+    double m_nt_e_chi2pid = 0.0;
+    double m_nt_sampling_fraction = 0.0;
+    int m_nt_sector = 0;
 
     // Histograms - organized by category
     struct {
@@ -262,6 +320,21 @@ private:
         m_sys_mgr.add_variation("EnergyScale_Down", Framework::VariationType::EnergyScale, -1.0);
         m_sys_mgr.add_variation("MomentumScale_Up", Framework::VariationType::MomentumScale, +1.0);
         m_sys_mgr.add_variation("MomentumScale_Down", Framework::VariationType::MomentumScale, -1.0);
+    }
+
+    auto setup_ntuple() -> void {
+        // Create and register branches for electron analysis
+        m_ntuple_svc->register_branch("electron_analysis", "e_p", &m_nt_e_p);
+        m_ntuple_svc->register_branch("electron_analysis", "e_theta", &m_nt_e_theta);
+        m_ntuple_svc->register_branch("electron_analysis", "e_phi", &m_nt_e_phi);
+        m_ntuple_svc->register_branch("electron_analysis", "e_vz", &m_nt_e_vz);
+        m_ntuple_svc->register_branch("electron_analysis", "e_chi2pid", &m_nt_e_chi2pid);
+        m_ntuple_svc->register_branch("electron_analysis", "sampling_fraction", &m_nt_sampling_fraction);
+        m_ntuple_svc->register_branch("electron_analysis", "sector", &m_nt_sector);
+
+        if (m_log_svc) {
+            LOG_INFO(m_log_svc, "N-tuple branches registered for electron analysis");
+        }
     }
 
     auto fill_after_cut([[maybe_unused]] const std::string& cut_name,

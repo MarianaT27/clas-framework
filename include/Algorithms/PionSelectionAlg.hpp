@@ -4,6 +4,8 @@
 #include "Framework/Event.hpp"
 #include "Framework/Cutflow.hpp"
 #include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/NTupleService.hpp"
 #include "Core/Cuts.hpp"
 #include "Core/ReadBank.hpp"
 #include "Core/Target.hpp"
@@ -38,12 +40,22 @@ public:
         , m_cutflow_piminus("π⁻ Selection") {}
 
     auto initialize() -> Framework::StatusCode override {
-        fmt::print("  {} - Initializing\n", name());
-
         // Get services
+        m_log_svc = service<Framework::LoggingService>("LoggingService");
         m_hist_svc = service<Framework::HistogramService>("HistogramService");
+        m_ntuple_svc = service<Framework::NTupleService>("NTupleService");
+
+        if (m_log_svc) {
+            LOG_INFO(m_log_svc, "Initializing pion selection algorithm");
+            LOG_INFO(m_log_svc, "Target: {}, Separate charges: {}",
+                     m_target == Core::Target::LD2 ? "LD2" : "Other",
+                     m_separate_charges ? "yes" : "no");
+        }
 
         if (!m_hist_svc) {
+            if (m_log_svc) {
+                LOG_ERROR(m_log_svc, "Could not get HistogramService");
+            }
             fmt::print(stderr, "ERROR: Could not get HistogramService\n");
             return Framework::StatusCode::FAILURE();
         }
@@ -53,6 +65,13 @@ public:
 
         // Book histograms
         book_histograms();
+
+        // Setup N-tuple branches
+        if (m_ntuple_svc) {
+            setup_ntuples();
+        } else if (m_log_svc) {
+            LOG_WARNING(m_log_svc, "NTupleService not available - N-tuple output disabled");
+        }
 
         return Framework::StatusCode::SUCCESS();
     }
@@ -91,6 +110,22 @@ public:
     }
 
     auto finalize() -> Framework::StatusCode override {
+        if (m_log_svc) {
+            LOG_INFO(m_log_svc, "Finalizing pion selection algorithm");
+
+            auto piplus_count = m_cutflow_piplus.get_count("Delta-t");
+            auto piminus_count = m_cutflow_piminus.get_count("Delta-t");
+
+            LOG_INFO(m_log_svc, "π⁺ passing all cuts: {}", piplus_count);
+            LOG_INFO(m_log_svc, "π⁻ passing all cuts: {}", piminus_count);
+
+            if (m_ntuple_svc) {
+                auto piplus_entries = m_ntuple_svc->get_entries("pion_plus");
+                auto piminus_entries = m_ntuple_svc->get_entries("pion_minus");
+                LOG_INFO(m_log_svc, "N-tuple entries: π⁺={}, π⁻={}", piplus_entries, piminus_entries);
+            }
+        }
+
         fmt::print("\n");
         m_cutflow_piplus.print();
         fmt::print("\n");
@@ -110,7 +145,27 @@ private:
     Framework::Cutflow m_cutflow_piminus;
 
     // Services
+    Framework::LoggingService* m_log_svc = nullptr;
     Framework::HistogramService* m_hist_svc = nullptr;
+    Framework::NTupleService* m_ntuple_svc = nullptr;
+
+    // N-tuple variables for π⁺
+    double m_nt_piplus_p = 0.0;
+    double m_nt_piplus_theta = 0.0;
+    double m_nt_piplus_phi = 0.0;
+    double m_nt_piplus_vz = 0.0;
+    double m_nt_piplus_chi2pid = 0.0;
+    double m_nt_piplus_beta = 0.0;
+    double m_nt_piplus_delta_t = 0.0;
+
+    // N-tuple variables for π⁻
+    double m_nt_piminus_p = 0.0;
+    double m_nt_piminus_theta = 0.0;
+    double m_nt_piminus_phi = 0.0;
+    double m_nt_piminus_vz = 0.0;
+    double m_nt_piminus_chi2pid = 0.0;
+    double m_nt_piminus_beta = 0.0;
+    double m_nt_piminus_delta_t = 0.0;
 
     // Histograms for π⁺
     struct {
@@ -206,6 +261,30 @@ private:
         h_piminus.p_vs_theta = m_hist_svc->book_hist2D(
             "/Pion/PiMinus/p_vs_theta", "π⁻ p vs #theta;#theta [deg];p [GeV/c]",
             180, 0, 180, 100, 0, 10);
+    }
+
+    auto setup_ntuples() -> void {
+        // Setup N-tuple for π⁺
+        m_ntuple_svc->register_branch("pion_plus", "p", &m_nt_piplus_p);
+        m_ntuple_svc->register_branch("pion_plus", "theta", &m_nt_piplus_theta);
+        m_ntuple_svc->register_branch("pion_plus", "phi", &m_nt_piplus_phi);
+        m_ntuple_svc->register_branch("pion_plus", "vz", &m_nt_piplus_vz);
+        m_ntuple_svc->register_branch("pion_plus", "chi2pid", &m_nt_piplus_chi2pid);
+        m_ntuple_svc->register_branch("pion_plus", "beta", &m_nt_piplus_beta);
+        m_ntuple_svc->register_branch("pion_plus", "delta_t", &m_nt_piplus_delta_t);
+
+        // Setup N-tuple for π⁻
+        m_ntuple_svc->register_branch("pion_minus", "p", &m_nt_piminus_p);
+        m_ntuple_svc->register_branch("pion_minus", "theta", &m_nt_piminus_theta);
+        m_ntuple_svc->register_branch("pion_minus", "phi", &m_nt_piminus_phi);
+        m_ntuple_svc->register_branch("pion_minus", "vz", &m_nt_piminus_vz);
+        m_ntuple_svc->register_branch("pion_minus", "chi2pid", &m_nt_piminus_chi2pid);
+        m_ntuple_svc->register_branch("pion_minus", "beta", &m_nt_piminus_beta);
+        m_ntuple_svc->register_branch("pion_minus", "delta_t", &m_nt_piminus_delta_t);
+
+        if (m_log_svc) {
+            LOG_INFO(m_log_svc, "N-tuple branches registered for π⁺ and π⁻");
+        }
     }
 
     /**
@@ -348,6 +427,18 @@ private:
             h_piplus.beta_vs_p->Fill(p, beta);
             h_piplus.delta_t_vs_p->Fill(p, delta_t);
             h_piplus.p_vs_theta->Fill(theta, p);
+
+            // Fill π⁺ N-tuple
+            if (m_ntuple_svc) {
+                m_nt_piplus_p = p;
+                m_nt_piplus_theta = theta;
+                m_nt_piplus_phi = phi;
+                m_nt_piplus_vz = vz;
+                m_nt_piplus_chi2pid = chi2pid;
+                m_nt_piplus_beta = beta;
+                m_nt_piplus_delta_t = delta_t;
+                m_ntuple_svc->fill("pion_plus");
+            }
         } else {
             // Fill π⁻ histograms
             h_piminus.momentum->Fill(p);
@@ -359,6 +450,18 @@ private:
             h_piminus.beta_vs_p->Fill(p, beta);
             h_piminus.delta_t_vs_p->Fill(p, delta_t);
             h_piminus.p_vs_theta->Fill(theta, p);
+
+            // Fill π⁻ N-tuple
+            if (m_ntuple_svc) {
+                m_nt_piminus_p = p;
+                m_nt_piminus_theta = theta;
+                m_nt_piminus_phi = phi;
+                m_nt_piminus_vz = vz;
+                m_nt_piminus_chi2pid = chi2pid;
+                m_nt_piminus_beta = beta;
+                m_nt_piminus_delta_t = delta_t;
+                m_ntuple_svc->fill("pion_minus");
+            }
         }
     }
 };

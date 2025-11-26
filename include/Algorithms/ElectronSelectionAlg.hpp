@@ -5,10 +5,11 @@
 #include "Framework/Cutflow.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/NTupleService.hpp"
 #include "Core/Cuts.hpp"
 #include "Core/Target.hpp"
 #include "TH1D.h"
-#include <memory>
 
 namespace Algorithms {
 
@@ -31,19 +32,37 @@ public:
         , m_cutflow("Electron Selection") {}
 
     auto initialize() -> Framework::StatusCode override {
-        fmt::print("  Initializing {}\n", name());
-
         // Get services
+        m_log_svc = service<Framework::LoggingService>("LoggingService");
         m_hist_svc = service<Framework::HistogramService>("HistogramService");
+        m_ntuple_svc = service<Framework::NTupleService>("NTupleService");
         m_cond_svc = service<Framework::ConditionsService>("ConditionsService");
 
+        if (m_log_svc) {
+            LOG_INFO(m_log_svc, "Initializing algorithm");
+        }
+
         if (!m_hist_svc) {
+            if (m_log_svc) {
+                LOG_ERROR(m_log_svc, "Could not get HistogramService");
+            }
             fmt::print(stderr, "ERROR: Could not get HistogramService\n");
             return Framework::StatusCode::FAILURE();
         }
 
+        if (!m_ntuple_svc) {
+            if (m_log_svc) {
+                LOG_WARNING(m_log_svc, "Could not get NTupleService - N-tuple output disabled");
+            }
+        }
+
         // Book histograms
         book_histograms();
+
+        // Setup N-tuple branches
+        if (m_ntuple_svc) {
+            setup_ntuple();
+        }
 
         // Setup cutflow
         m_cutflow.add_cut("All Events");
@@ -54,6 +73,10 @@ public:
         m_cutflow.add_cut("Sampling Fraction");
         m_cutflow.add_cut("PCAL Fiducial");
         m_cutflow.add_cut("DC Chi2/NDF");
+
+        if (m_log_svc) {
+            LOG_INFO(m_log_svc, "Initialized with 8 cuts in cutflow");
+        }
 
         return Framework::StatusCode::SUCCESS();
     }
@@ -93,10 +116,28 @@ public:
         h_phi->Fill(electron.phi());
         h_vz->Fill(electron.vz());
 
+        // Fill N-tuple if service is available
+        if (m_ntuple_svc) {
+            m_e_p = p;
+            m_e_theta = electron.theta();
+            m_e_phi = electron.phi();
+            m_e_vz = electron.vz();
+            m_e_chi2pid = electron.chi2pid();
+            m_ntuple_svc->fill("electron_kinematics");
+        }
+
         return Framework::StatusCode::SUCCESS();
     }
 
     auto finalize() -> Framework::StatusCode override {
+        if (m_log_svc) {
+            LOG_INFO(m_log_svc, "Finalizing algorithm");
+            if (m_ntuple_svc) {
+                auto entries = m_ntuple_svc->get_entries("electron_kinematics");
+                LOG_INFO(m_log_svc, "N-tuple has {} entries", entries);
+            }
+        }
+
         fmt::print("\n");
         m_cutflow.print();
         return Framework::StatusCode::SUCCESS();
@@ -108,7 +149,9 @@ private:
     Framework::Cutflow m_cutflow;
 
     // Services
+    Framework::LoggingService* m_log_svc = nullptr;
     Framework::HistogramService* m_hist_svc = nullptr;
+    Framework::NTupleService* m_ntuple_svc = nullptr;
     Framework::ConditionsService* m_cond_svc = nullptr;
 
     // Histograms (non-owning pointers managed by HistogramService)
@@ -116,6 +159,13 @@ private:
     TH1D* h_theta = nullptr;
     TH1D* h_phi = nullptr;
     TH1D* h_vz = nullptr;
+
+    // N-tuple variables
+    double m_e_p = 0.0;
+    double m_e_theta = 0.0;
+    double m_e_phi = 0.0;
+    double m_e_vz = 0.0;
+    double m_e_chi2pid = 0.0;
 
     auto book_histograms() -> void {
         h_momentum = m_hist_svc->book_hist1D(
@@ -141,6 +191,19 @@ private:
             "Electron Vertex Z;v_{z} [cm];Events",
             200, -20, 20
         );
+    }
+
+    auto setup_ntuple() -> void {
+        // Create and register branches for electron kinematics
+        m_ntuple_svc->register_branch("electron_kinematics", "e_p", &m_e_p);
+        m_ntuple_svc->register_branch("electron_kinematics", "e_theta", &m_e_theta);
+        m_ntuple_svc->register_branch("electron_kinematics", "e_phi", &m_e_phi);
+        m_ntuple_svc->register_branch("electron_kinematics", "e_vz", &m_e_vz);
+        m_ntuple_svc->register_branch("electron_kinematics", "e_chi2pid", &m_e_chi2pid);
+
+        if (m_log_svc) {
+            LOG_INFO(m_log_svc, "N-tuple branches registered for electron kinematics");
+        }
     }
 };
 

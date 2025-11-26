@@ -1,0 +1,28 @@
+{
+  "job_name": "test_analysis",
+  "executable": "./build/main_improved",
+  "system": "local",
+
+  "input_files": [
+    "./data/test_*.hipo"
+  ],
+
+  "output_dir": "./test_output",
+  "log_dir": "./test_logs",
+
+  "files_per_job": 2,
+  "n_cores": 1,
+  "memory_gb": 2,
+  "time_limit": "01:00:00",
+
+  "root_setup": "source /usr/local/root/bin/thisroot.sh",
+
+  "extra_args": [
+    "--max-events", "1000"
+  ],
+
+  "comments": [
+    "Local testing configuration",
+    "Use this to test your analysis before submitting to cluster"
+  ]
+}

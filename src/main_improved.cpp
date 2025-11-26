@@ -15,6 +15,8 @@
 #include "Framework/Application.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/NTupleService.hpp"
 #include "Algorithms/ElectronAnalysisAlg.hpp"
 #include "Algorithms/PionSelectionAlg.hpp"
 #include "Core/Helpers.hpp"
@@ -45,10 +47,21 @@ int main(int argc, char** argv) {
 
     fmt::print("Configuring Services:\n");
 
+    // Logging service
+    auto log_svc = std::make_unique<Framework::LoggingService>();
+    log_svc->set_log_level(Framework::LogLevel::INFO);
+    log_svc->set_log_file("particle_analysis.log");
+    fmt::print("  ✓ LoggingService → particle_analysis.log\n");
+
     // Histogram service
     auto hist_svc = std::make_unique<Framework::HistogramService>();
     hist_svc->set_output_file("particle_analysis_improved.root");
     fmt::print("  ✓ HistogramService → particle_analysis_improved.root\n");
+
+    // N-tuple service
+    auto ntuple_svc = std::make_unique<Framework::NTupleService>();
+    ntuple_svc->set_output_file("particle_analysis_improved.root");
+    fmt::print("  ✓ NTupleService → particle_analysis_improved.root\n");
 
     // Conditions service
     auto cond_svc = std::make_unique<Framework::ConditionsService>();
@@ -56,7 +69,9 @@ int main(int argc, char** argv) {
     fmt::print("  ✓ ConditionsService → Run 5032\n");
 
     // Add services to application
+    app.service_manager().add_service(std::move(log_svc));
     app.service_manager().add_service(std::move(hist_svc));
+    app.service_manager().add_service(std::move(ntuple_svc));
     app.service_manager().add_service(std::move(cond_svc));
 
     // ═══════════════════════════════════════════════════════════════════
@@ -171,18 +186,22 @@ int main(int argc, char** argv) {
     fmt::print("\n");
     fmt::print("Output:\n");
     fmt::print("  ROOT file: particle_analysis_improved.root\n");
+    fmt::print("  Log file: particle_analysis.log\n");
     fmt::print("  Contains: /Electron/ and /Pion/PiPlus/, /Pion/PiMinus/ directories\n");
     fmt::print("\n");
     fmt::print("Next steps:\n");
     fmt::print("  1. Open the ROOT file: root particle_analysis_improved.root\n");
     fmt::print("  2. Browse histograms: TBrowser b\n");
     fmt::print("  3. Check cutflow efficiency tables above\n");
+    fmt::print("  4. Review logs: cat particle_analysis.log\n");
     fmt::print("\n");
     fmt::print("Framework Features Used:\n");
     fmt::print("  ✓ Service-Oriented Architecture\n");
     fmt::print("  ✓ Algorithm Framework\n");
     fmt::print("  ✓ Automatic Cutflow Tracking\n");
     fmt::print("  ✓ Histogram Service\n");
+    fmt::print("  ✓ N-tuple Service\n");
+    fmt::print("  ✓ Logging Service\n");
     fmt::print("  ✓ Conditions Database (IOV)\n");
     fmt::print("  ✓ Event Data Model\n");
     fmt::print("  ✓ Multi-threading\n");

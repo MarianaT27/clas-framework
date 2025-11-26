@@ -1,0 +1,29 @@
+{
+  "job_name": "dis_analysis",
+  "executable": "./build/main_improved",
+  "system": "pbs",
+
+  "input_files": [
+    "/data/clas12/rg-a/*.hipo"
+  ],
+
+  "output_dir": "./output",
+  "log_dir": "./logs",
+
+  "files_per_job": 5,
+  "n_cores": 2,
+  "memory_gb": 4,
+  "time_limit": "24:00:00",
+  "queue": "standard",
+
+  "root_setup": "source $ROOTSYS/bin/thisroot.sh",
+  "modules": [],
+  "env_vars": [],
+
+  "extra_args": [],
+
+  "email": "analyst@lab.edu",
+  "email_on_start": false,
+  "email_on_end": true,
+  "email_on_fail": true
+}

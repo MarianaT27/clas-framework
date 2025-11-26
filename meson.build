@@ -35,21 +35,21 @@ root_dep = declare_dependency(
 
 inc = include_directories('include')
 
-# Original study1 executable (legacy)
-sources = files(
-  'src/Core/Particle.cpp',
-  'src/Framework/Histogram.cpp',
-  'src/main.cpp',
-  'src/study1/Drawing.cpp',
-  'src/study1/Reader.cpp',
-)
-
-executable(
-  'starter',
-  sources,
-  include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
-)
+# Original study1 executable (legacy) - COMMENTED OUT - source files deleted
+# sources = files(
+#   'src/Core/Particle.cpp',
+#   'src/Framework/Histogram.cpp',
+#   'src/main.cpp',
+#   'src/study1/Drawing.cpp',
+#   'src/study1/Reader.cpp',
+# )
+#
+# executable(
+#   'starter',
+#   sources,
+#   include_directories: [inc],
+#   dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+# )
 
 # New framework example executable
 framework_example_sources = files(
