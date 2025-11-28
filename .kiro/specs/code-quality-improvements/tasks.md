@@ -1,0 +1,158 @@
+# Implementation Plan
+
+- [x] 1. Implement Enhanced StatusCode with Error Messages
+  - [x] 1.1 Extend StatusCode class to store error message string
+    - Add `m_message` member and `message()` accessor
+    - Update `failure()` factory to accept message parameter
+    - Maintain backward compatibility with existing code
+    - _Requirements: 2.1, 2.2_
+  - [x] 1.2 Write property test for StatusCode error message preservation
+    - **Property 2: StatusCode Error Message Preservation**
+    - **Validates: Requirements 2.1, 2.2**
+
+- [x] 2. Implement Result<T> Type for Error Handling
+  - [x] 2.1 Create Result<T> template class in include/Framework/Result.hpp
+    - Implement `ok()` and `error()` factory methods
+    - Implement `is_ok()`, `is_error()`, `value()`, `value_or()`, `error_message()` accessors
+    - Use `std::variant<T, std::string>` for storage
+    - _Requirements: 2.1_
+  - [x] 2.2 Implement Result<void> specialization
+    - Handle void case for operations with no return value
+    - _Requirements: 2.1_
+  - [x] 2.3 Add monadic operations (map, and_then)
+    - Enable functional composition of Result operations
+    - _Requirements: 2.1_
+  - [x] 2.4 Write unit tests for Result type
+    - Test ok/error creation, value access, monadic operations
+    - _Requirements: 2.1_
+
+- [x] 3. Implement Configuration Service
+  - [x] 3.1 Create ConfigService class in include/Framework/Services/ConfigService.hpp
+    - Load TOML file using tomlplusplus library
+    - Implement `get<T>()` with Result return type
+    - Implement `get<T>(key, default)` for default values
+    - Implement `has()` for key existence check
+    - _Requirements: 1.1, 1.3, 1.4_
+  - [x] 3.2 Implement configuration validation
+    - Add `validate()` method for required fields
+    - Return descriptive errors for missing mandatory parameters
+    - _Requirements: 1.5_
+  - [x] 3.3 Add error handling for file not found and parse errors
+    - Report clear error messages with file path
+    - Include line numbers for parse errors where possible
+    - _Requirements: 1.2, 2.5_
+  - [x] 3.4 Write property test for configuration round-trip
+    - **Property 1: Configuration Round-Trip Consistency**
+    - **Validates: Requirements 1.1, 1.3, 1.4**
+  - [x] 3.5 Write unit tests for ConfigService
+    - Test file loading, type-safe access, defaults, validation
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
+
+- [ ] 4. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 5. Implement Typed Service Handles
+  - [x] 5.1 Create ServiceHandle<T> template in include/Framework/ServiceHandle.hpp
+    - Store service name and pointer
+    - Implement `initialize()` to retrieve and validate service
+    - Implement `operator->()`, `operator*()`, `get()`, `is_valid()`
+    - _Requirements: 3.1, 3.2_
+  - [x] 5.2 Update Algorithm base class to use ServiceHandle
+    - Add helper method for creating handles
+    - Update example algorithms to use new pattern
+    - _Requirements: 3.1_
+  - [x] 5.3 Write unit tests for ServiceHandle
+    - Test initialization, validation, access operators
+    - _Requirements: 3.1, 3.2_
+
+- [x] 6. Implement Service Dependency Management
+  - [x] 6.1 Extend ServiceManager to track dependencies
+    - Add `m_dependencies` map to store service dependencies
+    - Update `add_service()` to accept dependency list
+    - _Requirements: 3.3_
+  - [x] 6.2 Implement topological sort for initialization order
+    - Create `topological_sort()` method returning ordered service names
+    - Detect and report circular dependencies
+    - _Requirements: 3.3_
+  - [x] 6.3 Update initialize_all() to use dependency order
+    - Initialize services in topologically sorted order
+    - Report which service failed and why on error
+    - _Requirements: 2.4, 3.3_
+  - [x] 6.4 Write property test for service dependency ordering
+    - **Property 3: Service Dependency Ordering**
+    - **Validates: Requirements 3.1, 3.3**
+  - [x] 6.5 Write unit tests for ServiceManager dependencies
+    - Test dependency declaration, ordering, cycle detection
+    - _Requirements: 3.3_
+
+- [ ] 7. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 8. Enhance Event Store
+  - [x] 8.1 Update Event store to use std::any for type-safe storage
+    - Replace `std::shared_ptr<void>` with `std::any`
+    - Update `store()` and `retrieve()` methods
+    - _Requirements: 4.1, 4.2_
+  - [x] 8.2 Implement contains() method for key existence check
+    - Return bool indicating if key exists in store
+    - _Requirements: 4.3_
+  - [x] 8.3 Add particle collection storage helpers
+    - Implement `store_particles()` and `get_particles()` template methods
+    - Ensure downstream algorithms can access stored collections
+    - _Requirements: 4.4_
+  - [x] 8.4 Write property test for event store round-trip
+    - **Property 4: Event Store Round-Trip**
+    - **Validates: Requirements 4.1, 4.2, 4.3, 4.4**
+  - [x] 8.5 Write unit tests for Event store
+    - Test store/retrieve, type safety, missing keys, particle collections
+    - _Requirements: 4.1, 4.2, 4.3, 4.4_
+
+- [x] 9. Enhance Logging Service
+  - [x] 9.1 Verify log message format includes required fields
+    - Ensure timestamp, level, and source are in output
+    - Update format if needed
+    - _Requirements: 5.1_
+  - [x] 9.2 Verify log level filtering works correctly
+    - Ensure messages below threshold are suppressed
+    - _Requirements: 5.2_
+  - [x] 9.3 Ensure algorithm name is automatically included as source
+    - Verify LOG_* macros pass algorithm name correctly
+    - _Requirements: 5.3_
+  - [x] 9.4 Write property test for log level filtering
+    - **Property 5: Log Level Filtering**
+    - **Validates: Requirements 5.2**
+  - [x] 9.5 Write property test for log message format
+    - **Property 6: Log Message Format Completeness**
+    - **Validates: Requirements 5.1, 5.3**
+  - [x] 9.6 Write unit tests for LoggingService
+    - Test level filtering, file output, format
+    - _Requirements: 5.1, 5.2, 5.3, 5.4_
+
+- [ ] 10. Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [x] 11. Add Exception Handling in Application Event Loop
+  - [x] 11.1 Wrap algorithm execute() calls in try-catch
+    - Catch exceptions, log error with algorithm name
+    - Continue processing remaining events
+    - _Requirements: 2.3_
+  - [x] 11.2 Write unit test for exception handling
+    - Create algorithm that throws, verify processing continues
+    - _Requirements: 2.3_
+
+- [x] 12. Update Existing Algorithms to Use New Patterns
+  - [x] 12.1 Update ElectronSelectionAlg to use ServiceHandle
+    - Replace raw pointer service access with ServiceHandle
+    - _Requirements: 3.1_
+  - [x] 12.2 Update example_framework.cpp to use ConfigService
+    - Load configuration from TOML file
+    - Remove hardcoded values
+    - _Requirements: 1.1_
+
+- [ ] 13. Write Cutflow Unit Tests
+  - [ ] 13.1 Write unit tests for Cutflow class
+    - Test cut registration, passing, statistics, print output
+    - _Requirements: 6.4_
+
+- [ ] 14. Final Checkpoint - Ensure all tests pass
+  - Ensure all tests pass, ask the user if questions arise.

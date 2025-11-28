@@ -6,6 +6,7 @@
 #include <vector>
 #include <optional>
 #include <memory>
+#include <any>
 #include "hipoeventiterator.h"
 
 namespace Framework {
@@ -116,23 +117,62 @@ public:
      */
     template<typename T>
     auto store(const std::string& key, T value) -> void {
-        m_store[key] = std::make_shared<T>(std::move(value));
+        m_store[key] = std::any(std::move(value));
     }
 
     /**
      * @brief Retrieve a custom object from the event
      * @tparam T Object type
      * @param key Storage key
-     * @return std::optional<T> The stored object, or std::nullopt if not found
+     * @return std::optional<T> The stored object, or std::nullopt if not found or type mismatch
      */
     template<typename T>
-    auto retrieve(const std::string& key) -> std::optional<T> {
+    auto retrieve(const std::string& key) const -> std::optional<T> {
         auto it = m_store.find(key);
         if (it == m_store.end()) {
             return std::nullopt;
         }
-        auto ptr = std::static_pointer_cast<T>(it->second);
-        return *ptr;
+        try {
+            return std::any_cast<T>(it->second);
+        } catch (const std::bad_any_cast&) {
+            return std::nullopt;
+        }
+    }
+
+    /**
+     * @brief Check if a key exists in the event store
+     * @param key Storage key
+     * @return bool True if key exists, false otherwise
+     */
+    auto contains(const std::string& key) const -> bool {
+        return m_store.find(key) != m_store.end();
+    }
+
+    /**
+     * @brief Store a particle collection in the event
+     * @tparam ParticleType Particle type (e.g., Core::Particle)
+     * @param key Storage key
+     * @param particles Vector of particles to store
+     */
+    template<typename ParticleType>
+    auto store_particles(const std::string& key, std::vector<ParticleType> particles) -> void {
+        m_store[key] = std::any(std::move(particles));
+    }
+
+    /**
+     * @brief Retrieve a particle collection from the event
+     * @tparam ParticleType Particle type (e.g., Core::Particle)
+     * @param key Storage key
+     * @return const std::vector<ParticleType>* Pointer to particle vector, or nullptr if not found/type mismatch
+     */
+    template<typename ParticleType>
+    auto get_particles(const std::string& key) const -> const std::vector<ParticleType>* {
+        auto it = m_store.find(key);
+        if (it == m_store.end()) {
+            return nullptr;
+        }
+        // std::any_cast with pointer returns nullptr on type mismatch (doesn't throw)
+        return std::any_cast<std::vector<ParticleType>>(&it->second);
     }
 
     /**
@@ -165,8 +205,8 @@ private:
     long m_event_number = -1;
     int m_file_index = -1;
 
-    // Generic event store for algorithms to share data
-    std::map<std::string, std::shared_ptr<void>> m_store;
+    // Generic event store for algorithms to share data (type-safe with std::any)
+    std::map<std::string, std::any> m_store;
 
     auto load_particles() -> void {
         hipo::bank_map REC_Particle = m_hipo_event.get_bank_map("REC::Particle");

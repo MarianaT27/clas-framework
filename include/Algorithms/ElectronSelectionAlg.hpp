@@ -3,6 +3,7 @@
 #include "Framework/IAlgorithm.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/Cutflow.hpp"
+#include "Framework/ServiceHandle.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/ConditionsService.hpp"
 #include "Framework/Services/LoggingService.hpp"
@@ -32,27 +33,41 @@ public:
         , m_cutflow("Electron Selection") {}
 
     auto initialize() -> Framework::StatusCode override {
-        // Get services
-        m_log_svc = service<Framework::LoggingService>("LoggingService");
-        m_hist_svc = service<Framework::HistogramService>("HistogramService");
-        m_ntuple_svc = service<Framework::NTupleService>("NTupleService");
-        m_cond_svc = service<Framework::ConditionsService>("ConditionsService");
+        // Initialize service handles using the typed ServiceHandle pattern
+        // LoggingService is optional - we continue if it's not available
+        auto log_sc = initialize_handle(m_log_svc);
+        if (log_sc.is_failure()) {
+            // LoggingService is optional, just print a warning
+            fmt::print(stderr, "WARNING: LoggingService not available\n");
+        }
 
         if (m_log_svc) {
-            LOG_INFO(m_log_svc, "Initializing algorithm");
+            LOG_INFO(m_log_svc.get(), "Initializing algorithm");
         }
 
-        if (!m_hist_svc) {
+        // HistogramService is required
+        auto hist_sc = initialize_handle(m_hist_svc);
+        if (hist_sc.is_failure()) {
             if (m_log_svc) {
-                LOG_ERROR(m_log_svc, "Could not get HistogramService");
+                LOG_ERROR(m_log_svc.get(), "Could not get HistogramService: {}", hist_sc.message());
             }
-            fmt::print(stderr, "ERROR: Could not get HistogramService\n");
-            return Framework::StatusCode::FAILURE();
+            fmt::print(stderr, "ERROR: {}\n", hist_sc.message());
+            return hist_sc;
         }
 
-        if (!m_ntuple_svc) {
+        // NTupleService is optional
+        auto ntuple_sc = initialize_handle(m_ntuple_svc);
+        if (ntuple_sc.is_failure()) {
             if (m_log_svc) {
-                LOG_WARNING(m_log_svc, "Could not get NTupleService - N-tuple output disabled");
+                LOG_WARNING(m_log_svc.get(), "Could not get NTupleService - N-tuple output disabled");
+            }
+        }
+
+        // ConditionsService is optional
+        auto cond_sc = initialize_handle(m_cond_svc);
+        if (cond_sc.is_failure()) {
+            if (m_log_svc) {
+                LOG_WARNING(m_log_svc.get(), "Could not get ConditionsService");
             }
         }
 
@@ -75,7 +90,7 @@ public:
         m_cutflow.add_cut("DC Chi2/NDF");
 
         if (m_log_svc) {
-            LOG_INFO(m_log_svc, "Initialized with 8 cuts in cutflow");
+            LOG_INFO(m_log_svc.get(), "Initialized with 8 cuts in cutflow");
         }
 
         return Framework::StatusCode::SUCCESS();
@@ -87,7 +102,10 @@ public:
         // Get electrons from event
         const auto& electrons = event.particles(Core::PIDs::ELECTRON);
 
-        if (electrons.empty()) return Framework::StatusCode::SUCCESS();
+        if (electrons.empty()) {
+            event.set_decision("HasGoodElectron", false);
+            return Framework::StatusCode::SUCCESS();
+        }
         m_cutflow.pass("Has Electron");
 
         // Select first electron (could be improved with trigger selection)
@@ -95,20 +113,27 @@ public:
 
         // Apply cuts sequentially
         if (!Core::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
+            event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Chi2 PID");
 
         double p = electron.p();
         if (!Core::ElectronCuts::pass_electron_momentum_cut(p)) {
+            event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Momentum > 0.8 GeV");
 
         if (!Core::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) {
+            event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Vertex Z");
+
+        // Electron passed all cuts - set decision and store for downstream algorithms
+        event.set_decision("HasGoodElectron", true);
+        event.store_particles<Core::Particle>("SelectedElectrons", {electron});
 
         // Fill histograms after selection
         h_momentum->Fill(p);
@@ -131,10 +156,10 @@ public:
 
     auto finalize() -> Framework::StatusCode override {
         if (m_log_svc) {
-            LOG_INFO(m_log_svc, "Finalizing algorithm");
+            LOG_INFO(m_log_svc.get(), "Finalizing algorithm");
             if (m_ntuple_svc) {
                 auto entries = m_ntuple_svc->get_entries("electron_kinematics");
-                LOG_INFO(m_log_svc, "N-tuple has {} entries", entries);
+                LOG_INFO(m_log_svc.get(), "N-tuple has {} entries", entries);
             }
         }
 
@@ -148,11 +173,11 @@ private:
     Core::Polarity m_polarity;
     Framework::Cutflow m_cutflow;
 
-    // Services
-    Framework::LoggingService* m_log_svc = nullptr;
-    Framework::HistogramService* m_hist_svc = nullptr;
-    Framework::NTupleService* m_ntuple_svc = nullptr;
-    Framework::ConditionsService* m_cond_svc = nullptr;
+    // Services - using typed ServiceHandle pattern for validation at initialization
+    Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
+    Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
+    Framework::ServiceHandle<Framework::NTupleService> m_ntuple_svc{"NTupleService"};
+    Framework::ServiceHandle<Framework::ConditionsService> m_cond_svc{"ConditionsService"};
 
     // Histograms (non-owning pointers managed by HistogramService)
     TH1D* h_momentum = nullptr;
@@ -202,7 +227,7 @@ private:
         m_ntuple_svc->register_branch("electron_kinematics", "e_chi2pid", &m_e_chi2pid);
 
         if (m_log_svc) {
-            LOG_INFO(m_log_svc, "N-tuple branches registered for electron kinematics");
+            LOG_INFO(m_log_svc.get(), "N-tuple branches registered for electron kinematics");
         }
     }
 };

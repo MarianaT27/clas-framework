@@ -2,7 +2,6 @@
 
 #include "Framework/IService.hpp"
 #include <fmt/format.h>
-#include <fmt/color.h>
 #include <fstream>
 #include <string>
 #include <memory>
@@ -174,39 +173,38 @@ private:
         timestamp << std::put_time(std::localtime(&time_t), "%H:%M:%S")
                   << '.' << std::setfill('0') << std::setw(3) << ms.count();
 
-        // Get level string and color
+        // Get level string and ANSI color code
         std::string level_str;
-        fmt::color color;
+        std::string color_code;
         switch (level) {
             case LogLevel::DEBUG:
                 level_str = "DEBUG";
-                color = fmt::color::gray;
+                color_code = "\033[90m";  // Gray
                 break;
             case LogLevel::INFO:
                 level_str = "INFO ";
-                color = fmt::color::cyan;
+                color_code = "\033[36m";  // Cyan
                 break;
             case LogLevel::WARNING:
                 level_str = "WARN ";
-                color = fmt::color::yellow;
+                color_code = "\033[33m";  // Yellow
                 break;
             case LogLevel::ERROR:
                 level_str = "ERROR";
-                color = fmt::color::red;
+                color_code = "\033[31m";  // Red
                 break;
             case LogLevel::CRITICAL:
                 level_str = "CRIT ";
-                color = fmt::color::magenta;
+                color_code = "\033[35m";  // Magenta
                 break;
         }
 
         // Console output
         if (m_console_output) {
             if (m_colored_output) {
-                fmt::print(fg(fmt::color::dim_gray), "[{}] ", timestamp.str());
-                fmt::print(fg(color) | fmt::emphasis::bold, "{} ", level_str);
-                fmt::print(fg(fmt::color::white) | fmt::emphasis::bold, "{:<20} ", source);
-                fmt::print("{}\n", message);
+                // Use ANSI escape codes for colors
+                fmt::print("\033[90m[{}]\033[0m {}{}  \033[0m\033[1m{:<20}\033[0m {}\n",
+                          timestamp.str(), color_code, level_str, source, message);
             } else {
                 fmt::print("[{}] {} {:<20} {}\n",
                           timestamp.str(), level_str, source, message);

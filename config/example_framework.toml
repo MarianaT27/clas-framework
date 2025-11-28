@@ -1,0 +1,23 @@
+# Example Framework Configuration
+# This TOML file configures the CLAS12 analysis framework
+
+[application]
+name = "CLAS12 Example Analysis"
+max_events = 10000
+num_threads = 4
+
+[input]
+# Directory to search for input files
+data_directory = "data/"
+
+[output]
+histogram_file = "framework_example.root"
+
+[electron_selection]
+target = "LD2"
+polarity = "Outbending"
+momentum_cut = 0.8
+chi2pid_cut = 3.0
+
+[conditions]
+run_number = 5032

@@ -143,10 +143,22 @@ public:
 
             // Execute algorithm sequence
             for (auto& alg : m_algorithms) {
-                auto sc = alg->execute(event);
-                if (sc.is_failure()) {
-                    // Log error but continue processing
-                    // In production, you might want to skip the event
+                try {
+                    auto sc = alg->execute(event);
+                    if (sc.is_failure()) {
+                        // Log error but continue processing
+                        // In production, you might want to skip the event
+                    }
+                } catch (const std::exception& e) {
+                    // Log exception with algorithm name and continue processing
+                    fmt::print(stderr, "ERROR: Exception in algorithm '{}': {}\n",
+                              alg->name(), e.what());
+                    m_exception_count++;
+                } catch (...) {
+                    // Catch any non-standard exceptions
+                    fmt::print(stderr, "ERROR: Unknown exception in algorithm '{}'\n",
+                              alg->name());
+                    m_exception_count++;
                 }
             }
 
@@ -158,6 +170,9 @@ public:
         }, 1);
 
         fmt::print("\nProcessed {} events\n", events_processed);
+        if (m_exception_count > 0) {
+            fmt::print("WARNING: {} exception(s) caught during event processing\n", m_exception_count);
+        }
         return StatusCode::SUCCESS();
     }
 
@@ -191,6 +206,14 @@ public:
         return sc;
     }
 
+    /**
+     * @brief Get the number of exceptions caught during event processing
+     * @return Number of exceptions caught
+     */
+    auto exception_count() const -> long {
+        return m_exception_count;
+    }
+
 private:
     std::string m_name;
     ServiceManager m_svc_mgr;
@@ -198,6 +221,7 @@ private:
     std::vector<std::string> m_input_files;
     long m_max_events = -1;
     int m_num_threads = 1;
+    mutable long m_exception_count = 0;
 };
 
 }  // namespace Framework

@@ -107,9 +107,24 @@ executable(
   dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
 )
 
+# Pi0 reconstruction analysis executable
+main_pi0_sources = files(
+  'src/Core/Particle.cpp',
+  'src/Framework/Histogram.cpp',
+  'src/Algorithms/Pi0ReconstructionAlg.cpp',
+  'src/main_pi0.cpp',
+)
+
+executable(
+  'main_pi0',
+  main_pi0_sources,
+  include_directories: [inc],
+  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+)
+
 #── Test suite ────────────────────────────────────────────────────────────────#
-# Note: Tests require Google Test. Uncomment to enable if gtest is available.
-# subdir('test')
+# Tests require Google Test and RapidCheck for property-based testing
+subdir('test')
 
 #── Python bindings (optional) ────────────────────────────────────────────────#
 # Uncomment to build Python bindings (requires Python 3 and pybind11)

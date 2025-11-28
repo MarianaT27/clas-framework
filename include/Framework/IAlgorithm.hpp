@@ -11,6 +11,7 @@ namespace Framework {
 // Forward declarations
 class Event;
 class ServiceManager;
+template<typename T> class ServiceHandle;
 
 /**
  * @brief Base interface for all algorithms in the framework
@@ -98,6 +99,19 @@ protected:
      */
     template<typename T>
     auto service(const std::string& service_name) -> T*;
+
+    /**
+     * @brief Initialize a service handle
+     *
+     * Helper method to initialize a ServiceHandle during algorithm initialization.
+     * Reports errors with the algorithm name for better diagnostics.
+     *
+     * @tparam T Service type
+     * @param handle The service handle to initialize
+     * @return StatusCode SUCCESS if handle was initialized, FAILURE with message otherwise
+     */
+    template<typename T>
+    auto initialize_handle(ServiceHandle<T>& handle) -> StatusCode;
 };
 
 }  // namespace Framework
