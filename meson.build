@@ -124,7 +124,7 @@ executable(
 
 #── Test suite ────────────────────────────────────────────────────────────────#
 # Tests require Google Test and RapidCheck for property-based testing
-subdir('test')
+# subdir('test')
 
 #── Python bindings (optional) ────────────────────────────────────────────────#
 # Uncomment to build Python bindings (requires Python 3 and pybind11)

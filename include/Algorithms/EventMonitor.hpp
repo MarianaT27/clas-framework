@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Core/PIDs.hpp"
 #include "Framework/AlgorithmTypes.hpp"
 #include "Framework/ServiceHandle.hpp"
 #include "Framework/Services/HistogramService.hpp"
@@ -31,8 +32,7 @@ public:
 
     // Configuration methods
     void set_progress_interval(size_t interval) { m_progress_interval = interval; }
-    void set_particle_types(std::vector<int> pids) { m_monitored_pids = std::move(pids); }
-
+    void set_particle_types(std::vector<Core::PIDs> pids) { m_monitored_pids = std::move(pids); }
     auto initialize() -> Framework::StatusCode override {
         fmt::print("  {} - Initializing\n", name());
 
@@ -119,7 +119,7 @@ private:
      */
     void process_particle_statistics(Framework::Event& event) {
         auto& hipo_event = event.hipo_event();
-        const hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
+        hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
 
         const int n_particles = REC_Particle.get_rows();
         m_total_particles += n_particles;
@@ -198,6 +198,10 @@ private:
                    calculate_avg_particles());
     }
 
+    auto initialize_default_pids() const -> std::vector<Core::PIDs> {
+        return {Core::PIDs::ELECTRON};
+    }
+
     // Services (using ServiceHandle for type-safe access)
     Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
 
@@ -213,7 +217,7 @@ private:
 
     // Configuration
     size_t m_progress_interval = DEFAULT_PROGRESS_INTERVAL;
-    std::vector<int> m_monitored_pids;
+    std::vector<Core::PIDs> m_monitored_pids;
 };
 
 }  // namespace Algorithms

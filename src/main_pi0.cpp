@@ -8,17 +8,17 @@
  * Requirements: 3.1, 3.2, 4.4
  */
 
-#include "Framework/Application.hpp"
-#include "Framework/Services/HistogramService.hpp"
-#include "Framework/Services/NTupleService.hpp"
-#include "Framework/Services/LoggingService.hpp"
+#include <fmt/format.h>
+#include <cstdlib>
+#include <string>
 #include "Algorithms/ElectronSelectionAlg.hpp"
 #include "Algorithms/Pi0ReconstructionAlg.hpp"
 #include "Core/Helpers.hpp"
 #include "Core/Target.hpp"
-#include <fmt/format.h>
-#include <string>
-#include <cstdlib>
+#include "Framework/Application.hpp"
+#include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/NTupleService.hpp"
 
 void print_usage(const char* program_name) {
     fmt::print("Usage: {} [options]\n", program_name);
@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        
+
         if (arg == "--help" || arg == "-h") {
             print_usage(argv[0]);
             return 0;
@@ -83,15 +83,14 @@ int main(int argc, char* argv[]) {
     auto electron_alg = std::make_unique<Algorithms::ElectronSelectionAlg>(
         "ElectronSelection",
         Core::Target::LD2,
-        Core::Polarity::Outbending
-    );
+        Core::Polarity::Outbending);
     app.add_algorithm(std::move(electron_alg));
 
     // Requirements: 3.1, 3.2 - Add Pi0ReconstructionAlg as second algorithm
     auto pi0_alg = std::make_unique<Algorithms::Pi0ReconstructionAlg>(
         "Pi0Reconstruction",
-        0.1,   // min_photon_energy (GeV)
-        0.03   // pi0_mass_window (GeV)
+        0.1,  // min_photon_energy (GeV)
+        0.03  // pi0_mass_window (GeV)
     );
     app.add_algorithm(std::move(pi0_alg));
 
