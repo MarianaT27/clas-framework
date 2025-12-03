@@ -57,14 +57,15 @@ public:
     }
 
     auto finalize() -> StatusCode override {
-        if (!m_output_file.empty()) {
-            write_trees();
-        }
-
-        // Close incremental file if open
+        // Close incremental file if open BEFORE writing
+        // This ensures we use UPDATE mode to preserve histograms
         if (m_output_file_ptr && m_output_file_ptr->IsOpen()) {
             m_output_file_ptr->Close();
             m_output_file_ptr.reset();
+        }
+
+        if (!m_output_file.empty()) {
+            write_trees();
         }
 
         if (m_log) {

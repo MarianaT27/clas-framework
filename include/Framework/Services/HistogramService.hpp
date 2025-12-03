@@ -258,7 +258,7 @@ public:
             m_log->info(name(), "Writing {} histograms to: {}", total, m_output_file);
         }
 
-        TFile file(m_output_file.c_str(), "RECREATE");
+        TFile file(m_output_file.c_str(), "UPDATE");
 
         if (file.IsZombie() || !file.IsOpen()) {
             if (m_log) {
