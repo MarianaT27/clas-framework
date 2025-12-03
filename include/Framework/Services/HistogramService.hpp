@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Framework/IService.hpp"
+#include "Framework/Services/LoggingService.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
 #include "TProfile.h"
