@@ -95,7 +95,9 @@ public:
         m_cutflow.add_cut("PCAL Fiducial");
         m_cutflow.add_cut("DC Chi2/NDF");
 
+        // Inject logger into cutflow for structured output
         if (m_log_svc) {
+            m_cutflow.set_logger(m_log_svc.get());
             LOG_INFO(m_log_svc.get(), "Initialized with 8 cuts in cutflow");
         }
 

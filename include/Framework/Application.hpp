@@ -13,6 +13,9 @@
 
 namespace Framework {
 
+// Forward declaration
+class LoggingService;
+
 /**
  * @brief Main application class for running analyses
  *
@@ -69,36 +72,58 @@ public:
     }
 
     /**
+     * @brief Set logging service for structured output
+     */
+    auto set_logger(LoggingService* log) -> void {
+        m_log = log;
+    }
+
+    /**
      * @brief Initialize the application
      * @return StatusCode Success or failure
      */
     auto initialize() -> StatusCode {
-        fmt::print("═══════════════════════════════════════════════════════════════\n");
-        fmt::print("  Initializing Application: {}\n", m_name);
-        fmt::print("═══════════════════════════════════════════════════════════════\n");
+        if (m_log) {
+            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
+            m_log->info("Application", "  Initializing Application: {}", m_name);
+            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
+            m_log->info("Application", "");
+            m_log->info("Application", "Initializing Services:");
+        }
 
         // Initialize services
-        fmt::print("\nInitializing Services:\n");
         auto sc = m_svc_mgr.initialize_all();
         if (sc.is_failure()) {
             return sc;
         }
 
+        if (m_log) {
+            m_log->info("Application", "");
+            m_log->info("Application", "Initializing Algorithms:");
+        }
+
         // Initialize algorithms
-        fmt::print("\nInitializing Algorithms:\n");
         for (auto& alg : m_algorithms) {
             alg->set_service_manager(&m_svc_mgr);
-            fmt::print("  - {}\n", alg->name());
+            if (m_log) {
+                m_log->info("Application", "  - {}", alg->name());
+            }
             sc = alg->initialize();
             if (sc.is_failure()) {
-                fmt::print(stderr, "ERROR: Failed to initialize algorithm '{}'\n",
-                          alg->name());
+                if (m_log) {
+                    m_log->error("Application", "Failed to initialize algorithm '{}'", alg->name());
+                } else {
+                    fmt::print(stderr, "ERROR: Failed to initialize algorithm '{}'\n", alg->name());
+                }
                 return sc;
             }
         }
 
-        fmt::print("\nInitialization complete!\n");
-        fmt::print("═══════════════════════════════════════════════════════════════\n\n");
+        if (m_log) {
+            m_log->info("Application", "");
+            m_log->info("Application", "Initialization complete!");
+            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
+        }
         return StatusCode::SUCCESS();
     }
 
@@ -108,15 +133,21 @@ public:
      */
     auto run() -> StatusCode {
         if (m_input_files.empty()) {
-            fmt::print(stderr, "ERROR: No input files specified\n");
+            if (m_log) {
+                m_log->error("Application", "No input files specified");
+            } else {
+                fmt::print(stderr, "ERROR: No input files specified\n");
+            }
             return StatusCode::FAILURE();
         }
 
-        fmt::print("Starting event processing...\n");
-        fmt::print("  Input files: {}\n", m_input_files.size());
-        fmt::print("  Algorithms: {}\n", m_algorithms.size());
-        fmt::print("  Threads: {}\n", m_num_threads);
-        fmt::print("\n");
+        if (m_log) {
+            m_log->info("Application", "");
+            m_log->info("Application", "Starting event processing...");
+            m_log->info("Application", "  Input files: {}", m_input_files.size());
+            m_log->info("Application", "  Algorithms: {}", m_algorithms.size());
+            m_log->info("Application", "  Threads: {}", m_num_threads);
+        }
 
         // Create HIPO chain for parallel processing
         hipo::chain chain(m_num_threads, true, false);
@@ -162,28 +193,43 @@ public:
      * @return StatusCode Success or failure
      */
     auto finalize() -> StatusCode {
-        fmt::print("\n");
-        fmt::print("═══════════════════════════════════════════════════════════════\n");
-        fmt::print("  Finalizing Application\n");
-        fmt::print("═══════════════════════════════════════════════════════════════\n");
+        if (m_log) {
+            m_log->info("Application", "");
+            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
+            m_log->info("Application", "  Finalizing Application");
+            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
+            m_log->info("Application", "");
+            m_log->info("Application", "Finalizing Algorithms:");
+        }
 
         // Finalize algorithms
-        fmt::print("\nFinalizing Algorithms:\n");
         for (auto& alg : m_algorithms) {
-            fmt::print("  - {}\n", alg->name());
+            if (m_log) {
+                m_log->info("Application", "  - {}", alg->name());
+            }
             auto sc = alg->finalize();
             if (sc.is_failure()) {
-                fmt::print(stderr, "WARNING: Failed to finalize algorithm '{}'\n",
-                          alg->name());
+                if (m_log) {
+                    m_log->warning("Application", "Failed to finalize algorithm '{}'", alg->name());
+                } else {
+                    fmt::print(stderr, "WARNING: Failed to finalize algorithm '{}'\n", alg->name());
+                }
             }
         }
 
+        if (m_log) {
+            m_log->info("Application", "");
+            m_log->info("Application", "Finalizing Services:");
+        }
+
         // Finalize services
-        fmt::print("\nFinalizing Services:\n");
         auto sc = m_svc_mgr.finalize_all();
 
-        fmt::print("\nFinalization complete!\n");
-        fmt::print("═══════════════════════════════════════════════════════════════\n\n");
+        if (m_log) {
+            m_log->info("Application", "");
+            m_log->info("Application", "Finalization complete!");
+            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
+        }
         return sc;
     }
 
@@ -203,6 +249,7 @@ private:
     long m_percentage = 100;
     int m_num_threads = 1;
     mutable long m_exception_count = 0;
+    LoggingService* m_log = nullptr;
 };
 
 }  // namespace Framework

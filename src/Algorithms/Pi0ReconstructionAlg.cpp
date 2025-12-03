@@ -77,7 +77,11 @@ auto Pi0ReconstructionAlg::initialize() -> Framework::StatusCode {
     m_cutflow.add_cut("Has >= 2 Photons");
     m_cutflow.add_cut("Pi0 Found");
 
-    if (m_log_svc) LOG_INFO(m_log_svc.get(), "Initialized with 4 cuts in cutflow");
+    // Inject logger into cutflow for structured output
+    if (m_log_svc) {
+        m_cutflow.set_logger(m_log_svc.get());
+        LOG_INFO(m_log_svc.get(), "Initialized with 4 cuts in cutflow");
+    }
 
     return Framework::StatusCode::SUCCESS();
 }

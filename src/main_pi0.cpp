@@ -106,7 +106,8 @@ int main(int argc, char* argv[]) {
     app.service_manager().add_service(std::move(ntuple_svc));
     app.service_manager().add_service(std::move(log_svc));
 
-    // Inject logger into all services and ServiceManager
+    // Inject logger into all services, ServiceManager, and Application
+    app.set_logger(log_ptr);
     app.service_manager().set_logger(log_ptr);
     hist_ptr->set_logger(log_ptr);
     ntuple_ptr->set_logger(log_ptr);

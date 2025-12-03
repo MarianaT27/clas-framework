@@ -9,6 +9,9 @@
 
 namespace Framework {
 
+// Forward declaration
+class LoggingService;
+
 /**
  * @brief Cutflow manager for tracking event selection efficiency
  *
@@ -87,9 +90,57 @@ public:
     }
 
     /**
-     * @brief Print the cutflow table to stdout
+     * @brief Set logging service for structured output
+     */
+    auto set_logger(LoggingService* log) -> void {
+        m_log = log;
+    }
+
+    /**
+     * @brief Print the cutflow table to stdout or logger
      */
     auto print() const -> void {
+        if (m_log) {
+            print_with_logger();
+        } else {
+            print_legacy();
+        }
+    }
+
+private:
+    /**
+     * @brief Print cutflow using logger (one line per cut)
+     */
+    auto print_with_logger() const -> void {
+        if (m_cut_order.empty()) return;
+
+        // Calculate column widths for alignment
+        size_t initial_count = get_count(m_cut_order[0]);
+        size_t previous_count = initial_count;
+
+        // Print each cut as a single INFO line
+        for (size_t i = 0; i < m_cut_order.size(); ++i) {
+            const auto& cut_name = m_cut_order[i];
+            size_t count = get_count(cut_name);
+
+            if (i == 0) {
+                m_log->info(m_name, "{:<40} │ {:>10} events │ Abs: {:>6} │ Rel: {:>6}",
+                           cut_name, count, "100.0%", "100.0%");
+                previous_count = count;
+            } else {
+                double abs_eff = initial_count > 0 ? 100.0 * count / initial_count : 0.0;
+                double rel_eff = previous_count > 0 ? 100.0 * count / previous_count : 0.0;
+                m_log->info(m_name, "{:<40} │ {:>10} events │ Abs: {:>5.2f}% │ Rel: {:>5.2f}%",
+                           cut_name, count, abs_eff, rel_eff);
+                previous_count = count;
+            }
+        }
+    }
+
+    /**
+     * @brief Legacy print method (fallback when no logger)
+     */
+    auto print_legacy() const -> void {
         fmt::print("\n");
         fmt::print("═══════════════════════════════════════════════════════════════\n");
         fmt::print("  Cutflow: {}\n", m_name);
@@ -122,6 +173,8 @@ public:
         fmt::print("\n");
     }
 
+public:
+
     /**
      * @brief Get the cutflow name
      * @return const std::string& Name of this cutflow
@@ -135,6 +188,7 @@ private:
     std::vector<std::string> m_cut_names;
     std::vector<std::string> m_cut_order;  // Preserves order of cuts
     std::map<std::string, std::atomic<size_t>> m_counters;
+    LoggingService* m_log = nullptr;
 };
 
 /**
