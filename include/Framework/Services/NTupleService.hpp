@@ -304,9 +304,6 @@ public:
             // Critical: Flush all baskets before writing
             tree->FlushBaskets();
 
-            // Optimize baskets (compact and flush)
-            tree->OptimizeBaskets(1000000);  // Merge small baskets
-
             // Write the tree with explicit flush
             file_ptr->cd();
             tree->Write("", TObject::kOverwrite);
