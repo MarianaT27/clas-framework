@@ -59,7 +59,7 @@ public:
      * @brief Set percentage of events to process
      * @param percentage Percentage of events (0-100)
      */
-    auto set_percentage(long percentage) -> void {
+    auto set_percentage(double percentage) -> void {
         m_percentage = percentage;
     }
 
@@ -246,7 +246,7 @@ private:
     ServiceManager m_svc_mgr;
     std::vector<std::unique_ptr<IAlgorithm>> m_algorithms;
     std::vector<std::string> m_input_files;
-    long m_percentage = 100;
+    double m_percentage = 100;
     int m_num_threads = 1;
     mutable long m_exception_count = 0;
     LoggingService* m_log = nullptr;
