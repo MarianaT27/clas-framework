@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
     options.add_options() 
             ("target", "Target type (LD2, CxC, CuSn, Cu, Sn)", cxxopts::value<std::string>()->default_value("LD2"))
             ("polarity", "Magnetic field polarity (In, Out)", cxxopts::value<std::string>()->default_value("Outbending"))
-            ("percentage", "Percentage of events to process (0-100)", cxxopts::value<long>()->default_value("100"))
+            ("percentage", "Percentage of events to process (0-100)", cxxopts::value<double>()->default_value("100"))
             ("num_threads", "Number of threads", cxxopts::value<int>()->default_value("1"))
             ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("pi0_analysis_{target}_{polarity}.root"))
             ("help", "Show help");
@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
         return EXIT_SUCCESS;
     }
 
-    long percentage = args["percentage"].as<long>();
+    double percentage = args["percentage"].as<double>();
     int num_threads = args["num_threads"].as<int>();
     std::string output_file = args["output"].as<std::string>();
     std::string target_str = args["target"].as<std::string>();

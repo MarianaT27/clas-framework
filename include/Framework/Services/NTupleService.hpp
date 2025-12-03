@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Framework/IService.hpp"
+#include "Framework/Services/LoggingService.hpp"
 #include "TTree.h"
 #include "TFile.h"
 #include "TBranch.h"
