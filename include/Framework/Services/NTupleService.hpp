@@ -113,7 +113,15 @@ public:
 
         std::string tree_title = title.empty() ? name : title;
         auto tree = std::make_unique<TTree>(name.c_str(), tree_title.c_str());
-        tree->SetDirectory(nullptr);  // Don't let ROOT own it
+
+        // If incremental writing is enabled, attach to file immediately
+        if (m_incremental_enabled && m_output_file_ptr && m_output_file_ptr->IsOpen()) {
+            m_output_file_ptr->cd();
+            tree->SetDirectory(m_output_file_ptr.get());
+            tree->SetAutoSave(100000000);  // Auto-save every 100MB
+        } else {
+            tree->SetDirectory(nullptr);  // Don't let ROOT own it
+        }
 
         // Aggressive settings to prevent 1GB TBufferFile overflow with large datasets
         // Flush every 100KB (not 10MB) to minimize basket accumulation
@@ -226,8 +234,9 @@ public:
      *
      * Call this after setting output file but before filling trees.
      * Opens the file and associates trees with it for auto-saving.
+     * This is REQUIRED for very large datasets to avoid 1GB buffer overflow.
      */
-    auto enable_incremental_writing() -> void {
+    auto enable_incremental_writing(int autosave_bytes = 100000000) -> void {
         std::lock_guard<std::mutex> lock(m_tree_mutex_);
 
         if (m_output_file.empty()) {
@@ -237,7 +246,7 @@ public:
             return;
         }
 
-        // Open file in UPDATE mode
+        // Open file in RECREATE mode
         m_output_file_ptr = std::make_unique<TFile>(m_output_file.c_str(), "RECREATE", "", 9);
 
         if (m_output_file_ptr->IsZombie() || !m_output_file_ptr->IsOpen()) {
@@ -248,8 +257,18 @@ public:
             return;
         }
 
+        // Attach existing trees to the file for incremental writing
+        for (auto& [tree_name, tree] : m_trees) {
+            m_output_file_ptr->cd();
+            tree->SetDirectory(m_output_file_ptr.get());
+            tree->SetAutoSave(autosave_bytes);  // Auto-save every 100MB
+        }
+
+        m_incremental_enabled = true;
+
         if (m_log) {
-            m_log->info(name(), "Enabled incremental writing to: {}", m_output_file);
+            m_log->info(name(), "Enabled incremental writing to: {} (AutoSave every {} bytes)",
+                       m_output_file, autosave_bytes);
         }
     }
 
@@ -378,6 +397,7 @@ private:
     mutable std::mutex m_tree_mutex_;
     LoggingService* m_log = nullptr;
     std::unique_ptr<TFile> m_output_file_ptr;  // For incremental writing
+    bool m_incremental_enabled = false;  // Track if incremental writing is active
 };
 
 /**
