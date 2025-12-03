@@ -90,6 +90,13 @@ public:
         auto tree = std::make_unique<TTree>(name.c_str(), tree_title.c_str());
         tree->SetDirectory(nullptr);  // Don't let ROOT own it
 
+        // Set basket size to prevent 1GB buffer overflow
+        // 16KB per basket is a safe size for large datasets
+        tree->SetBasketSize("*", 16000);
+
+        // Set auto-flush to write baskets periodically (every 10MB)
+        tree->SetAutoFlush(-10000000);  // Negative = bytes, positive = entries
+
         if (auto_save > 0) {
             tree->SetAutoSave(auto_save);
         }
@@ -186,7 +193,8 @@ public:
         fmt::print("\nWriting {} TTrees to: {}\n", m_trees.size(), m_output_file);
 
         // Open file in UPDATE mode to preserve histograms if they exist
-        TFile file(m_output_file.c_str(), "UPDATE");
+        // Use compression level 9 to reduce file size
+        TFile file(m_output_file.c_str(), "UPDATE", "", 9);
 
         if (file.IsZombie() || !file.IsOpen()) {
             fmt::print(stderr, "ERROR: Failed to open output file: {}\n", m_output_file);
@@ -196,7 +204,13 @@ public:
         // Write all trees
         for (auto& [name, tree] : m_trees) {
             Long64_t entries = tree->GetEntries();
-            tree->Write();
+
+            // Flush baskets to disk before writing to avoid 1GB buffer overflow
+            tree->FlushBaskets();
+
+            // Write the tree
+            tree->Write("", TObject::kOverwrite);
+
             fmt::print("  ✓ Wrote tree '{}' ({} entries)\n", name, entries);
         }
 
