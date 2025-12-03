@@ -126,6 +126,18 @@ executable(
   dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
 )
 
+# Pi0 batch job submission executable
+main_pi0_batch_sources = files(
+  'src/main_pi0_batch.cpp',
+)
+
+executable(
+  'main_pi0_batch',
+  main_pi0_batch_sources,
+  include_directories: [inc],
+  dependencies: [hipo_dep, fmt_dep, root_dep, cxxopts_dep],
+)
+
 #── Test suite ────────────────────────────────────────────────────────────────#
 # Tests require Google Test and RapidCheck for property-based testing
 # subdir('test')

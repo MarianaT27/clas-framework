@@ -59,6 +59,13 @@ public:
         if (!m_output_file.empty()) {
             write_trees();
         }
+
+        // Close incremental file if open
+        if (m_output_file_ptr && m_output_file_ptr->IsOpen()) {
+            m_output_file_ptr->Close();
+            m_output_file_ptr.reset();
+        }
+
         if (m_log) {
             m_log->info(name(), "Finalized");
         }
@@ -106,8 +113,15 @@ public:
         auto tree = std::make_unique<TTree>(name.c_str(), tree_title.c_str());
         tree->SetDirectory(nullptr);  // Don't let ROOT own it
 
-        // Set auto-flush to write baskets periodically (every 10MB)
-        tree->SetAutoFlush(-10000000);  // Negative = bytes, positive = entries
+        // Aggressive settings to prevent 1GB TBufferFile overflow with large datasets
+        // Flush every 100KB (not 10MB) to minimize basket accumulation
+        tree->SetAutoFlush(-100000);  // Flush every 100KB
+
+        // Limit tree size in memory to 100MB before flushing
+        tree->SetMaxTreeSize(100000000LL);  // 100MB
+
+        // Use circular buffer to limit baskets kept in memory
+        tree->SetCircular(500000000LL);  // Keep max 500MB of baskets
 
         if (auto_save > 0) {
             tree->SetAutoSave(auto_save);
@@ -155,9 +169,9 @@ public:
             branch = tree->Branch(branch_name.c_str(), address, leaf_list.c_str());
         }
 
-        // Set basket size to 16KB per branch for safe multi-threaded operation
+        // Set basket size to 8KB per branch (reduced for very large datasets)
         if (branch) {
-            branch->SetBasketSize(16000);
+            branch->SetBasketSize(8000);
         }
     }
 
@@ -178,7 +192,7 @@ public:
         // Register branch and set basket size
         TBranch* branch = tree->Branch(branch_name.c_str(), address);
         if (branch) {
-            branch->SetBasketSize(16000);
+            branch->SetBasketSize(8000);  // 8KB for very large datasets
         }
     }
 
@@ -206,6 +220,38 @@ public:
     }
 
     /**
+     * @brief Enable incremental writing for very large datasets
+     *
+     * Call this after setting output file but before filling trees.
+     * Opens the file and associates trees with it for auto-saving.
+     */
+    auto enable_incremental_writing() -> void {
+        std::lock_guard<std::mutex> lock(m_tree_mutex_);
+
+        if (m_output_file.empty()) {
+            if (m_log) {
+                m_log->warning(name(), "Cannot enable incremental writing: no output file set");
+            }
+            return;
+        }
+
+        // Open file in UPDATE mode
+        m_output_file_ptr = std::make_unique<TFile>(m_output_file.c_str(), "RECREATE", "", 9);
+
+        if (m_output_file_ptr->IsZombie() || !m_output_file_ptr->IsOpen()) {
+            if (m_log) {
+                m_log->error(name(), "Failed to open file for incremental writing: {}", m_output_file);
+            }
+            m_output_file_ptr.reset();
+            return;
+        }
+
+        if (m_log) {
+            m_log->info(name(), "Enabled incremental writing to: {}", m_output_file);
+        }
+    }
+
+    /**
      * @brief Write all trees to output file (thread-safe)
      */
     auto write_trees() -> void {
@@ -229,25 +275,39 @@ public:
             m_log->info(name(), "Writing {} TTrees to: {}", m_trees.size(), m_output_file);
         }
 
-        // Open file in UPDATE mode to preserve histograms if they exist
-        // Use compression level 9 to reduce file size
-        TFile file(m_output_file.c_str(), "UPDATE", "", 9);
+        TFile* file_ptr = nullptr;
+        bool need_close = false;
 
-        if (file.IsZombie() || !file.IsOpen()) {
-            if (m_log) {
-                m_log->error(name(), "Failed to open output file: {}", m_output_file);
+        // If incremental writing is enabled, use the existing file
+        if (m_output_file_ptr && m_output_file_ptr->IsOpen()) {
+            file_ptr = m_output_file_ptr.get();
+            file_ptr->cd();
+        } else {
+            // Open file in UPDATE mode to preserve histograms if they exist
+            file_ptr = new TFile(m_output_file.c_str(), "UPDATE", "", 9);
+            need_close = true;
+
+            if (file_ptr->IsZombie() || !file_ptr->IsOpen()) {
+                if (m_log) {
+                    m_log->error(name(), "Failed to open output file: {}", m_output_file);
+                }
+                delete file_ptr;
+                return;
             }
-            return;
         }
 
         // Write all trees
         for (auto& [name, tree] : m_trees) {
             Long64_t entries = tree->GetEntries();
 
-            // Flush baskets to disk before writing to avoid 1GB buffer overflow
+            // Critical: Flush all baskets before writing
             tree->FlushBaskets();
 
-            // Write the tree
+            // Optimize baskets (compact and flush)
+            tree->OptimizeBaskets(1000000);  // Merge small baskets
+
+            // Write the tree with explicit flush
+            file_ptr->cd();
             tree->Write("", TObject::kOverwrite);
 
             if (m_log) {
@@ -255,7 +315,14 @@ public:
             }
         }
 
-        file.Close();
+        if (need_close) {
+            file_ptr->Close();
+            delete file_ptr;
+        } else {
+            // Just write to disk without closing
+            file_ptr->Write();
+        }
+
         if (m_log) {
             m_log->info(this->name(), "Successfully wrote {} TTrees", m_trees.size());
         }
@@ -311,6 +378,7 @@ private:
     std::map<std::string, std::unique_ptr<TTree>> m_trees;
     mutable std::mutex m_tree_mutex_;
     LoggingService* m_log = nullptr;
+    std::unique_ptr<TFile> m_output_file_ptr;  // For incremental writing
 };
 
 /**

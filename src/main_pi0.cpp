@@ -94,6 +94,7 @@ int main(int argc, char* argv[]) {
     // Configure output files for services
     hist_svc->set_output_file(output_file);
     ntuple_svc->set_output_file(output_file);
+    ntuple_svc->enable_incremental_writing();
 
     // Keep pointers before moving
     auto* log_ptr = log_svc.get();
