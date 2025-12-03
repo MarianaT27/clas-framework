@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IService.hpp"
+#include "Framework/Services/LoggingService.hpp"
 #include "StatusCode.hpp"
 #include "Result.hpp"
 #include <map>
