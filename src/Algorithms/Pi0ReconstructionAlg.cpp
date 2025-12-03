@@ -122,7 +122,7 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
     m_cutflow.pass("All Events");
 
     // Check for good electron decision from upstream algorithm
-    if (!event.passes_decision("HasGoodElectron")) return Framework::StatusCode::SUCCESS();
+    if (!event.passes_decision("HasGoodDISElectron")) return Framework::StatusCode::SUCCESS();
     m_cutflow.pass("Has Electron");
 
     const auto& photons = event.particles(Core::PIDs::PHOTON);
@@ -225,70 +225,6 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
 
     return Framework::StatusCode::SUCCESS();
 }
-
-/*
-
-// Find best π⁰ candidate
-    auto pi0_candidate = find_best_pi0(selected_photons);
-
-    if (!pi0_candidate.has_value()) return Framework::StatusCode::SUCCESS();
-    m_cutflow.pass("Pi0 Found");
-
-    const auto& [g1, g2, pi0_mass] = pi0_candidate.value();
-
-    auto p1 = g1.PxPyPzEVector();
-    auto p2 = g2.PxPyPzEVector();
-    auto p_pi0 = p1 + p2;
-
-    double pi0_p = std::sqrt(p_pi0.Px() * p_pi0.Px() + p_pi0.Py() * p_pi0.Py() + p_pi0.Pz() * p_pi0.Pz());
-    double pi0_theta = std::acos(p_pi0.Pz() / pi0_p) * 180.0 / M_PI;
-    double pi0_phi = std::atan2(p_pi0.Py(), p_pi0.Px()) * 180.0 / M_PI;
-
-    // Calculate opening angle between photons
-    auto p1_3 = g1.PxPyPzVector();
-    auto p2_3 = g2.PxPyPzVector();
-    double cos_angle = p1_3.Dot(p2_3) / (p1_3.R() * p2_3.R());
-    double opening_angle = std::acos(cos_angle) * 180.0 / M_PI;
-
-    // Fill histograms
-    if (h_gg_mass_selected) h_gg_mass_selected->Fill(pi0_mass);
-    if (h_pi0_momentum) h_pi0_momentum->Fill(pi0_p);
-    if (h_pi0_theta) h_pi0_theta->Fill(pi0_theta);
-    if (h_opening_angle) h_opening_angle->Fill(opening_angle);
-
-    // Fill N-tuple if service is available
-    if (m_ntuple_svc) {
-        // Get electron from event store (stored by ElectronSelectionAlg)
-        auto* electrons = event.get_particles<Core::Particle>("SelectedElectrons");
-        if (electrons && !electrons->empty()) {
-            const auto& electron = (*electrons)[0];
-            m_e_p = electron.p();
-            m_e_theta = electron.theta();
-            m_e_phi = electron.phi();
-            m_e_vz = electron.vz();
-        }
-
-        // Photon 1
-        m_g1_E = g1.E();
-        m_g1_theta = g1.theta();
-        m_g1_phi = g1.phi();
-
-        // Photon 2
-        m_g2_E = g2.E();
-        m_g2_theta = g2.theta();
-        m_g2_phi = g2.phi();
-
-        // π⁰
-        m_pi0_mass = pi0_mass;
-        m_pi0_p = pi0_p;
-        m_pi0_theta = pi0_theta;
-        m_pi0_phi = pi0_phi;
-
-        m_ntuple_svc->fill("pi0_events");
-    }
-
-
-*/
 
 auto Pi0ReconstructionAlg::finalize() -> Framework::StatusCode {
     if (m_log_svc) {

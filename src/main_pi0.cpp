@@ -13,6 +13,7 @@
 #include <cxxopts.hpp>
 #include <string>
 #include "Algorithms/ElectronSelectionAlg.hpp"
+#include "Algorithms/DISSelectionAlg.hpp"
 #include "Algorithms/Pi0ReconstructionAlg.hpp"
 #include "Algorithms/EventMonitor.hpp"
 #include "Core/Helpers.hpp"
@@ -121,6 +122,9 @@ int main(int argc, char* argv[]) {
     // Configure algorithm sequence
     auto electron_alg = std::make_unique<Algorithms::ElectronSelectionAlg>("ElectronSelection", target, polarity);
     app.add_algorithm(std::move(electron_alg));
+
+    auto dis_alg = std::make_unique<Algorithms::DISSelectionAlg>("DISSelection", Physics::DISAnalysis::standard_dis_region());
+    app.add_algorithm(std::move(dis_alg));
 
     auto pi0_alg = std::make_unique<Algorithms::Pi0ReconstructionAlg>("Pi0Reconstruction", 0.2, 0.3);
     app.add_algorithm(std::move(pi0_alg));

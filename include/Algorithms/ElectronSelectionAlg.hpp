@@ -5,7 +5,6 @@
 #include "Core/Detectors.hpp"
 #include "Core/Helpers.hpp"
 #include "Core/Particle.hpp"
-#include "Core/ParticleSelector.hpp"
 #include "Core/ReadBank.hpp"
 #include "Core/Target.hpp"
 #include "Framework/Cutflow.hpp"
@@ -16,7 +15,6 @@
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
-#include "TH1D.h"
 
 namespace Algorithms {
 
@@ -205,7 +203,6 @@ class ElectronSelectionAlg : public Framework::Algorithm {
             }
         }
 
-        fmt::print("\n");
         m_cutflow.print();
         return Framework::StatusCode::SUCCESS();
     }
@@ -214,7 +211,6 @@ class ElectronSelectionAlg : public Framework::Algorithm {
     Core::Target m_target;
     Core::Polarity m_polarity;
     Framework::Cutflow m_cutflow;
-
     Core::SamplingFractionCut sf;
 
     // Services - using typed ServiceHandle pattern for validation at initialization
@@ -237,38 +233,19 @@ class ElectronSelectionAlg : public Framework::Algorithm {
     double m_e_chi2pid = 0.0;
 
     auto book_histograms() -> void {
-        h_momentum = m_hist_svc->book_hist1D(
-            "/ElectronKinematics/momentum",
-            "Electron Momentum;p [GeV/c];Events",
-            120, 0, 12);
-
-        h_theta = m_hist_svc->book_hist1D(
-            "/ElectronKinematics/theta",
-            "Electron Theta;#theta [deg];Events",
-            180, 0, 180);
-
-        h_phi = m_hist_svc->book_hist1D(
-            "/ElectronKinematics/phi",
-            "Electron Phi;#phi [deg];Events",
-            180, -180, 180);
-
-        h_vz = m_hist_svc->book_hist1D(
-            "/ElectronKinematics/vz",
-            "Electron Vertex Z;v_{z} [cm];Events",
-            200, -20, 20);
+        h_momentum = m_hist_svc->book_hist1D("/ElectronKinematics/momentum", "Electron Momentum;p [GeV/c];Events", 120, 0, 12);
+        h_theta = m_hist_svc->book_hist1D("/ElectronKinematics/theta", "Electron Theta;#theta [deg];Events", 180, 0, 180);
+        h_phi = m_hist_svc->book_hist1D("/ElectronKinematics/phi", "Electron Phi;#phi [deg];Events", 180, -180, 180);
+        h_vz = m_hist_svc->book_hist1D("/ElectronKinematics/vz", "Electron Vertex Z;v_{z} [cm];Events", 200, -20, 20);
     }
 
     auto setup_ntuple() -> void {
-        // Create and register branches for electron kinematics
         m_ntuple_svc->register_branch("electron_kinematics", "e_p", &m_e_p);
         m_ntuple_svc->register_branch("electron_kinematics", "e_theta", &m_e_theta);
         m_ntuple_svc->register_branch("electron_kinematics", "e_phi", &m_e_phi);
         m_ntuple_svc->register_branch("electron_kinematics", "e_vz", &m_e_vz);
         m_ntuple_svc->register_branch("electron_kinematics", "e_chi2pid", &m_e_chi2pid);
-
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc.get(), "N-tuple branches registered for electron kinematics");
-        }
+        if (m_log_svc) LOG_INFO(m_log_svc.get(), "N-tuple branches registered for electron kinematics");
     }
 };
 

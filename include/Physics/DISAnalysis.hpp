@@ -1,6 +1,8 @@
 #pragma once
 
+#include "Core/Constants.hpp"
 #include "Core/Particle.hpp"
+#include "Core/Kinematics.hpp"
 #include "Physics/Kinematics.hpp"
 #include <optional>
 #include <vector>
@@ -38,6 +40,20 @@ public:
                    xb >= xb_min && xb <= xb_max;
         }
     };
+
+    /**
+     * @brief Full phase space region (No cuts)
+     */
+    static auto full_phase_space() -> KinematicRegion {
+        return KinematicRegion{
+            .q2_min = 0.0,
+            .q2_max = 100.0,
+            .w_min = 0.0,
+            .w_max = 50.0,
+            .y_min = 0.0,
+            .y_max = 10.0
+        };
+    }
 
     /**
      * @brief Standard DIS region (Q² > 1 GeV², W > 2 GeV)
@@ -120,9 +136,9 @@ public:
      */
     static auto calculate_kinematics(
         const Core::Particle& electron,
-        const Kinematics::BeamConfig& beam = Kinematics::BeamConfig()
+        const Core::Kinematics::BeamConfig& beam = Core::Kinematics::BeamConfig()
     ) -> DISKinematics {
-        using namespace Kinematics;
+        using namespace Core::Kinematics;
 
         double q2_val = Q2(electron, beam);
         double w_val = W(electron, beam);
@@ -134,7 +150,7 @@ public:
         double epsilon_val = calculate_epsilon(q2_val, nu_val, beam.energy);
 
         // Boost factor (γ = Q/M)
-        double gamma_val = std::sqrt(q2_val) / Constants::PROTON_MASS;
+        double gamma_val = std::sqrt(q2_val) / Core::Constants::PROTONMASS;
 
         return DISKinematics{
             .q2 = q2_val,
