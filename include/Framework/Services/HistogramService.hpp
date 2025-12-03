@@ -12,6 +12,9 @@
 
 namespace Framework {
 
+// Forward declaration
+class LoggingService;
+
 /**
  * @brief Service for managing ROOT histograms
  *
@@ -29,9 +32,13 @@ public:
         // Set default output file if none specified
         if (m_output_file.empty()) {
             m_output_file = "histograms.root";
-            fmt::print("HistogramService: Using default output file 'histograms.root'\n");
+            if (m_log) {
+                m_log->info(name(), "Using default output file 'histograms.root'");
+            }
         }
-        fmt::print("HistogramService: Initialized\n");
+        if (m_log) {
+            m_log->info(name(), "Initialized");
+        }
         return StatusCode::SUCCESS();
     }
 
@@ -40,12 +47,25 @@ public:
         if (m_auto_write && !m_output_file.empty()) {
             write_histograms();
         } else if (!m_auto_write) {
-            fmt::print("HistogramService: Auto-write disabled, histograms not written\n");
+            if (m_log) {
+                m_log->info(name(), "Auto-write disabled, histograms not written");
+            }
         } else {
-            fmt::print(stderr, "WARNING: No output file set, histograms not written\n");
+            if (m_log) {
+                m_log->warning(name(), "No output file set, histograms not written");
+            }
         }
-        fmt::print("HistogramService: Finalized\n");
+        if (m_log) {
+            m_log->info(name(), "Finalized");
+        }
         return StatusCode::SUCCESS();
+    }
+
+    /**
+     * @brief Set logging service for structured output
+     */
+    auto set_logger(LoggingService* log) -> void {
+        m_log = log;
     }
 
     /**
@@ -219,23 +239,30 @@ public:
      */
     auto write_histograms() -> void {
         if (m_output_file.empty()) {
-            fmt::print(stderr, "WARNING: No output file set\n");
+            if (m_log) {
+                m_log->warning(name(), "No output file set");
+            }
             return;
         }
 
         size_t total = m_hist1D.size() + m_hist2D.size() + m_profiles.size();
         if (total == 0) {
-            fmt::print("HistogramService: No histograms to write\n");
+            if (m_log) {
+                m_log->info(name(), "No histograms to write");
+            }
             return;
         }
 
-        fmt::print("\n");
-        fmt::print("Writing {} histograms to: {}\n", total, m_output_file);
+        if (m_log) {
+            m_log->info(name(), "Writing {} histograms to: {}", total, m_output_file);
+        }
 
         TFile file(m_output_file.c_str(), "RECREATE");
 
         if (file.IsZombie() || !file.IsOpen()) {
-            fmt::print(stderr, "ERROR: Failed to open output file: {}\n", m_output_file);
+            if (m_log) {
+                m_log->error(name(), "Failed to open output file: {}", m_output_file);
+            }
             return;
         }
 
@@ -258,8 +285,10 @@ public:
         }
 
         file.Close();
-        fmt::print("✓ Wrote {} 1D, {} 2D histograms, and {} profiles\n",
-                   m_hist1D.size(), m_hist2D.size(), m_profiles.size());
+        if (m_log) {
+            m_log->info(name(), "Wrote {} 1D, {} 2D histograms, and {} profiles",
+                       m_hist1D.size(), m_hist2D.size(), m_profiles.size());
+        }
 
         // Verify histograms were written correctly
         if (m_verify_output) {
@@ -282,11 +311,15 @@ public:
             return false;
         }
 
-        fmt::print("\nVerifying histograms in: {}\n", m_output_file);
+        if (m_log) {
+            m_log->info(name(), "Verifying histograms in: {}", m_output_file);
+        }
 
         TFile file(m_output_file.c_str(), "READ");
         if (file.IsZombie() || !file.IsOpen()) {
-            fmt::print(stderr, "✗ ERROR: Failed to open file for verification\n");
+            if (m_log) {
+                m_log->error(name(), "Failed to open file for verification");
+            }
             return false;
         }
 
@@ -300,7 +333,9 @@ public:
             std::string name = extract_name(path);
             TH1D* h = dynamic_cast<TH1D*>(file.Get(path.c_str()));
             if (!h) {
-                fmt::print("  ✗ Missing: {}\n", path);
+                if (m_log) {
+                    m_log->error(this->name(), "  Missing: {}", path);
+                }
                 missing_count++;
                 all_ok = false;
             } else if (h->GetEntries() == 0) {
@@ -314,7 +349,9 @@ public:
         for (const auto& [path, hist] : m_hist2D) {
             TH2D* h = dynamic_cast<TH2D*>(file.Get(path.c_str()));
             if (!h) {
-                fmt::print("  ✗ Missing: {}\n", path);
+                if (m_log) {
+                    m_log->error(this->name(), "  Missing: {}", path);
+                }
                 missing_count++;
                 all_ok = false;
             } else if (h->GetEntries() == 0) {
@@ -328,7 +365,9 @@ public:
         for (const auto& [path, prof] : m_profiles) {
             TProfile* p = dynamic_cast<TProfile*>(file.Get(path.c_str()));
             if (!p) {
-                fmt::print("  ✗ Missing: {}\n", path);
+                if (m_log) {
+                    m_log->error(this->name(), "  Missing: {}", path);
+                }
                 missing_count++;
                 all_ok = false;
             } else if (p->GetEntries() == 0) {
@@ -342,16 +381,19 @@ public:
 
         // Print summary
         if (all_ok) {
-            fmt::print("✓ Verification passed: All {} histograms found\n",
-                      found_count + empty_count);
-            if (empty_count > 0) {
-                fmt::print("  ⚠️  Warning: {} histogram(s) are empty\n", empty_count);
+            if (m_log) {
+                m_log->info(name(), "Verification passed: All {} histograms found",
+                           found_count + empty_count);
+                if (empty_count > 0) {
+                    m_log->warning(name(), "{} histogram(s) are empty", empty_count);
+                }
             }
         } else {
-            fmt::print("✗ Verification failed: {} histogram(s) missing\n", missing_count);
+            if (m_log) {
+                m_log->error(name(), "Verification failed: {} histogram(s) missing", missing_count);
+            }
         }
 
-        fmt::print("\n");
         return all_ok;
     }
 
@@ -362,6 +404,7 @@ private:
     std::map<std::string, std::unique_ptr<TH1D>> m_hist1D;
     std::map<std::string, std::unique_ptr<TH2D>> m_hist2D;
     std::map<std::string, std::unique_ptr<TProfile>> m_profiles;
+    LoggingService* m_log = nullptr;
 
     auto extract_name(const std::string& path) -> std::string {
         size_t pos = path.find_last_of('/');

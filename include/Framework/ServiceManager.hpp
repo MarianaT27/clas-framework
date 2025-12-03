@@ -13,6 +13,9 @@
 
 namespace Framework {
 
+// Forward declaration
+class LoggingService;
+
 /**
  * @brief Manager for framework services
  *
@@ -67,6 +70,13 @@ public:
     }
 
     /**
+     * @brief Set the logging service to use for service initialization/finalization
+     */
+    auto set_logger(LoggingService* log) -> void {
+        m_log = log;
+    }
+
+    /**
      * @brief Initialize all services in dependency order
      * @return StatusCode indicating success or failure
      *
@@ -76,7 +86,11 @@ public:
     auto initialize_all() -> StatusCode {
         auto sort_result = topological_sort();
         if (sort_result.is_error()) {
-            fmt::print(stderr, "ERROR: {}\n", sort_result.error_message());
+            if (m_log) {
+                m_log->error("ServiceManager", "{}", sort_result.error_message());
+            } else {
+                fmt::print(stderr, "ERROR: {}\n", sort_result.error_message());
+            }
             return StatusCode::failure(sort_result.error_message());
         }
 
@@ -86,13 +100,23 @@ public:
             if (it == m_services.end()) {
                 continue;  // Skip if service not found (shouldn't happen)
             }
-            fmt::print("Initializing service: {}\n", name);
+
+            if (m_log) {
+                m_log->info("ServiceManager", "Initializing service: {}", name);
+            } else {
+                fmt::print("Initializing service: {}\n", name);
+            }
+
             auto sc = it->second->initialize();
             if (sc.is_failure()) {
-                std::string error_msg = sc.message().empty() 
+                std::string error_msg = sc.message().empty()
                     ? fmt::format("Failed to initialize service '{}'", name)
                     : fmt::format("Failed to initialize service '{}': {}", name, sc.message());
-                fmt::print(stderr, "ERROR: {}\n", error_msg);
+                if (m_log) {
+                    m_log->error("ServiceManager", "{}", error_msg);
+                } else {
+                    fmt::print(stderr, "ERROR: {}\n", error_msg);
+                }
                 return StatusCode::failure(error_msg);
             }
         }
@@ -192,10 +216,18 @@ public:
      */
     auto finalize_all() -> StatusCode {
         for (auto& [name, service] : m_services) {
-            fmt::print("Finalizing service: {}\n", name);
+            if (m_log) {
+                m_log->info("ServiceManager", "Finalizing service: {}", name);
+            } else {
+                fmt::print("Finalizing service: {}\n", name);
+            }
             auto sc = service->finalize();
             if (sc.is_failure()) {
-                fmt::print(stderr, "WARNING: Failed to finalize service '{}'\n", name);
+                if (m_log) {
+                    m_log->warning("ServiceManager", "Failed to finalize service '{}'", name);
+                } else {
+                    fmt::print(stderr, "WARNING: Failed to finalize service '{}'\n", name);
+                }
             }
         }
         return StatusCode::SUCCESS();
@@ -212,6 +244,7 @@ public:
 private:
     std::map<std::string, std::unique_ptr<IService>> m_services;
     std::map<std::string, std::vector<std::string>> m_dependencies;
+    LoggingService* m_log = nullptr;
 };
 
 }  // namespace Framework

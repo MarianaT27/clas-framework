@@ -12,6 +12,9 @@
 
 namespace Framework {
 
+// Forward declaration
+class LoggingService;
+
 /**
  * @brief Interval of Validity for calibration constants
  *
@@ -47,13 +50,24 @@ public:
     auto initialize() -> StatusCode override {
         // Initialize default conditions
         load_default_conditions();
-        fmt::print("ConditionsService: Initialized\n");
+        if (m_log) {
+            m_log->info(name(), "Initialized");
+        }
         return StatusCode::SUCCESS();
     }
 
     auto finalize() -> StatusCode override {
-        fmt::print("ConditionsService: Finalized\n");
+        if (m_log) {
+            m_log->info(name(), "Finalized");
+        }
         return StatusCode::SUCCESS();
+    }
+
+    /**
+     * @brief Set logging service for structured output
+     */
+    auto set_logger(LoggingService* log) -> void {
+        m_log = log;
     }
 
     /**
@@ -165,6 +179,7 @@ private:
 
     int m_current_run = 0;
     std::map<std::string, ConditionData> m_conditions;
+    LoggingService* m_log = nullptr;
 
     auto load_default_conditions() -> void {
         // Load default time offsets, energy scales, etc.

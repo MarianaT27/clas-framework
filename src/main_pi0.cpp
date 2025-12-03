@@ -95,10 +95,22 @@ int main(int argc, char* argv[]) {
     hist_svc->set_output_file(output_file);
     ntuple_svc->set_output_file(output_file);
 
+    // Keep pointers before moving
+    auto* log_ptr = log_svc.get();
+    auto* hist_ptr = hist_svc.get();
+    auto* ntuple_ptr = ntuple_svc.get();
+    auto* conditions_ptr = conditions_svc.get();
+
     app.service_manager().add_service(std::move(conditions_svc));
     app.service_manager().add_service(std::move(hist_svc));
     app.service_manager().add_service(std::move(ntuple_svc));
     app.service_manager().add_service(std::move(log_svc));
+
+    // Inject logger into all services and ServiceManager
+    app.service_manager().set_logger(log_ptr);
+    hist_ptr->set_logger(log_ptr);
+    ntuple_ptr->set_logger(log_ptr);
+    conditions_ptr->set_logger(log_ptr);
 
     auto monitoring_alg = std::make_unique<Algorithms::EventMonitor>("EventMonitor");
     app.add_algorithm(std::move(monitoring_alg));
@@ -121,34 +133,32 @@ int main(int argc, char* argv[]) {
     app.set_num_threads(num_threads);
 
     // Print configuration
-    fmt::print("Pi0 Analysis Configuration:\n");
-    fmt::print("  Data directory: {}\n", data_dir);
-    fmt::print("  Percentage: {}\n", percentage);
-    fmt::print("  Threads: {}\n", num_threads);
-    fmt::print("  Output file: {}\n", output_file);
-    fmt::print("  Input files: {}\n", input_files.size());
-    fmt::print("\n");
+    log_ptr->info("Configuration", "Pi0 Analysis Configuration:");
+    log_ptr->info("Configuration", "  Data directory: {}", data_dir);
+    log_ptr->info("Configuration", "  Percentage: {}", percentage);
+    log_ptr->info("Configuration", "  Threads: {}", num_threads);
+    log_ptr->info("Configuration", "  Output file: {}", output_file);
+    log_ptr->info("Configuration", "  Input files: {}", input_files.size());
 
     // Run the analysis
     auto sc = app.initialize();
     if (sc.is_failure()) {
-        fmt::print(stderr, "ERROR: Initialization failed\n");
+        log_ptr->error("Application", "Initialization failed");
         return 1;
     }
 
     sc = app.run();
     if (sc.is_failure()) {
-        fmt::print(stderr, "ERROR: Event processing failed\n");
+        log_ptr->error("Application", "Event processing failed");
         return 1;
     }
 
     sc = app.finalize();
     if (sc.is_failure()) {
-        fmt::print(stderr, "WARNING: Finalization had issues\n");
+        log_ptr->warning("Application", "Finalization had issues");
     }
 
-    fmt::print("\n✓ Pi0 analysis complete!\n");
-    fmt::print("  Output: {}\n\n", output_file);
+    log_ptr->info("Application", "Pi0 analysis complete! Output: {}", output_file);
 
     return 0;
 }

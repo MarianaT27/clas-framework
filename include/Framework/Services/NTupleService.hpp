@@ -13,6 +13,9 @@
 
 namespace Framework {
 
+// Forward declaration
+class LoggingService;
+
 /**
  * @brief Service for managing ROOT TTrees/N-tuples
  *
@@ -46,7 +49,9 @@ public:
         : Service(std::move(name)) {}
 
     auto initialize() -> StatusCode override {
-        fmt::print("NTupleService: Initialized\n");
+        if (m_log) {
+            m_log->info(name(), "Initialized");
+        }
         return StatusCode::SUCCESS();
     }
 
@@ -54,8 +59,17 @@ public:
         if (!m_output_file.empty()) {
             write_trees();
         }
-        fmt::print("NTupleService: Finalized\n");
+        if (m_log) {
+            m_log->info(name(), "Finalized");
+        }
         return StatusCode::SUCCESS();
+    }
+
+    /**
+     * @brief Set logging service for structured output
+     */
+    auto set_logger(LoggingService* log) -> void {
+        m_log = log;
     }
 
     /**
@@ -198,23 +212,31 @@ public:
         std::lock_guard<std::mutex> lock(m_tree_mutex_);
 
         if (m_output_file.empty()) {
-            fmt::print(stderr, "WARNING: No output file set for TTrees\n");
+            if (m_log) {
+                m_log->warning(name(), "No output file set for TTrees");
+            }
             return;
         }
 
         if (m_trees.empty()) {
-            fmt::print("NTupleService: No TTrees to write\n");
+            if (m_log) {
+                m_log->info(name(), "No TTrees to write");
+            }
             return;
         }
 
-        fmt::print("\nWriting {} TTrees to: {}\n", m_trees.size(), m_output_file);
+        if (m_log) {
+            m_log->info(name(), "Writing {} TTrees to: {}", m_trees.size(), m_output_file);
+        }
 
         // Open file in UPDATE mode to preserve histograms if they exist
         // Use compression level 9 to reduce file size
         TFile file(m_output_file.c_str(), "UPDATE", "", 9);
 
         if (file.IsZombie() || !file.IsOpen()) {
-            fmt::print(stderr, "ERROR: Failed to open output file: {}\n", m_output_file);
+            if (m_log) {
+                m_log->error(name(), "Failed to open output file: {}", m_output_file);
+            }
             return;
         }
 
@@ -228,11 +250,15 @@ public:
             // Write the tree
             tree->Write("", TObject::kOverwrite);
 
-            fmt::print("  ✓ Wrote tree '{}' ({} entries)\n", name, entries);
+            if (m_log) {
+                m_log->info(this->name(), "  Wrote tree '{}' ({} entries)", name, entries);
+            }
         }
 
         file.Close();
-        fmt::print("✓ Successfully wrote {} TTrees\n", m_trees.size());
+        if (m_log) {
+            m_log->info(this->name(), "Successfully wrote {} TTrees", m_trees.size());
+        }
     }
 
     /**
@@ -284,6 +310,7 @@ private:
     std::string m_output_file;
     std::map<std::string, std::unique_ptr<TTree>> m_trees;
     mutable std::mutex m_tree_mutex_;
+    LoggingService* m_log = nullptr;
 };
 
 /**
