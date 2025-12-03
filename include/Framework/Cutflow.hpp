@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <fmt/format.h>
+#include "Framework/LoggingService.hpp"
 
 namespace Framework {
 
