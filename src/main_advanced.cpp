@@ -148,7 +148,7 @@ int main(int argc, char** argv) {
     fmt::print("  Threads: {}\n", num_threads);
 
     app.set_input_files(input_files);
-    app.set_max_events(max_events);
+    // app.set_max_events(max_events);
     app.set_num_threads(num_threads);
 
     // ═══════════════════════════════════════════════════════════════════

@@ -214,7 +214,7 @@ int main(int argc, char** argv) {
     fmt::print("  Max events: {}\n", max_events);
 
     app.set_input_files(input_files);
-    app.set_max_events(max_events);
+    // app.set_max_events(max_events);
 
     // Initialize
     fmt::print("\n");

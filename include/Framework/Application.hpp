@@ -53,11 +53,11 @@ public:
     }
 
     /**
-     * @brief Set maximum number of events to process
-     * @param max_events Maximum events (-1 for all)
+     * @brief Set percentage of events to process
+     * @param percentage Percentage of events (0-100)
      */
-    auto set_max_events(long max_events) -> void {
-        m_max_events = max_events;
+    auto set_percentage(long percentage) -> void {
+        m_percentage = percentage;
     }
 
     /**
@@ -124,17 +124,9 @@ public:
             chain.add(file);
         }
 
-        long events_processed = 0;
 
         // Process events
-        chain.process([this, &events_processed](hipo::iter_event& hipo_event,
-                                                 int file_idx,
-                                                 long evt_idx) {
-            // Check max events limit
-            if (m_max_events > 0 && events_processed >= m_max_events) {
-                return;
-            }
-            events_processed++;
+        chain.process([this](hipo::iter_event& hipo_event, int file_idx, long evt_idx) {
 
             // Create Event wrapper
             Event event(hipo_event);
@@ -146,30 +138,19 @@ public:
                 try {
                     auto sc = alg->execute(event);
                     if (sc.is_failure()) {
-                        // Log error but continue processing
-                        // In production, you might want to skip the event
+                        fmt::print(stderr, "ERROR: Algorithm '{}' failed on event {}\n", alg->name(), evt_idx);
+                        m_exception_count++;
                     }
                 } catch (const std::exception& e) {
-                    // Log exception with algorithm name and continue processing
-                    fmt::print(stderr, "ERROR: Exception in algorithm '{}': {}\n",
-                              alg->name(), e.what());
+                    fmt::print(stderr, "ERROR: Exception in algorithm '{}': {}\n", alg->name(), e.what());
                     m_exception_count++;
                 } catch (...) {
-                    // Catch any non-standard exceptions
-                    fmt::print(stderr, "ERROR: Unknown exception in algorithm '{}'\n",
-                              alg->name());
+                    fmt::print(stderr, "ERROR: Unknown exception in algorithm '{}'\n", alg->name());
                     m_exception_count++;
                 }
             }
+        }, m_percentage);
 
-            // Print progress
-            if (events_processed % 10000 == 0) {
-                fmt::print("  Processed {} events\r", events_processed);
-                std::cout.flush();
-            }
-        }, 1);
-
-        fmt::print("\nProcessed {} events\n", events_processed);
         if (m_exception_count > 0) {
             fmt::print("WARNING: {} exception(s) caught during event processing\n", m_exception_count);
         }
@@ -219,7 +200,7 @@ private:
     ServiceManager m_svc_mgr;
     std::vector<std::unique_ptr<IAlgorithm>> m_algorithms;
     std::vector<std::string> m_input_files;
-    long m_max_events = -1;
+    long m_percentage = 100;
     int m_num_threads = 1;
     mutable long m_exception_count = 0;
 };

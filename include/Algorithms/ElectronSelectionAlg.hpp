@@ -1,5 +1,10 @@
 #pragma once
 
+#include <optional>
+#include "Core/Detectors.hpp"
+#include "Core/Particle.hpp"
+#include "Core/ParticleSelector.hpp"
+#include "Core/ReadBank.hpp"
 #include "Framework/IAlgorithm.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/Cutflow.hpp"
@@ -10,6 +15,7 @@
 #include "Framework/Services/NTupleService.hpp"
 #include "Core/Cuts.hpp"
 #include "Core/Target.hpp"
+#include "Core/Helpers.hpp"
 #include "TH1D.h"
 
 namespace Algorithms {
@@ -102,6 +108,13 @@ public:
         // Get electrons from event
         const auto& electrons = event.particles(Core::PIDs::ELECTRON);
 
+        auto& hipo_event = event.hipo_event();
+        hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
+        hipo::bank_map REC_Scintillator = hipo_event.get_bank_map("REC::Scintillator");
+        hipo::bank_map REC_Traj = hipo_event.get_bank_map("REC::Traj");
+        hipo::bank_map REC_Track = hipo_event.get_bank_map("REC::Track");
+        hipo::bank_map REC_Calorimeter = hipo_event.get_bank_map("REC::Calorimeter");
+
         if (electrons.empty()) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::SUCCESS();
@@ -109,7 +122,12 @@ public:
         m_cutflow.pass("Has Electron");
 
         // Select first electron (could be improved with trigger selection)
-        const auto& electron = electrons[0];
+        const std::optional<Core::Particle>& possible_electron = Core::find_trigger_electron(electrons, {Core::FD, Core::BD});
+        if (!possible_electron.has_value()) {
+            event.set_decision("HasGoodElectron", false);
+            return Framework::StatusCode::SUCCESS();
+        }
+        const Core::Particle& electron = possible_electron.value();
 
         // Apply cuts sequentially
         if (!Core::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
@@ -130,6 +148,33 @@ public:
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Vertex Z");
+
+        // Get detector info for electron
+        Core::CalorimeterBank calorimeter = Core::read_Calorimeter_bank(REC_Calorimeter.get_bank(), electron.index());
+        Core::DCTrajBank traj = Core::read_Traj_bank(REC_Traj.get_bank(), electron.index());
+
+        // Calculate derived quantities
+        const double E_tot = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;
+        const double SF = E_tot / electron.p();
+        const int sector = calorimeter.pcal.sector;
+
+        if (!Core::ElectronCuts::pass_sampling_fraction_cut(SF, p, sector, m_target, m_polarity,sf)) {
+            event.set_decision("HasGoodElectron", false);
+            return Framework::StatusCode::SUCCESS();
+        }
+        m_cutflow.pass("Sampling Fraction");
+
+        if (!Core::ElectronCuts::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
+            event.set_decision("HasGoodElectron", false);
+            return Framework::StatusCode::SUCCESS();
+        }
+        m_cutflow.pass("PCAL Fiducial");
+
+        if (!Core::ElectronCuts::pass_chi2ndf_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
+            event.set_decision("HasGoodElectron", false);
+            return Framework::StatusCode::SUCCESS();
+        }
+        m_cutflow.pass("DC Chi2/NDF");
 
         // Electron passed all cuts - set decision and store for downstream algorithms
         event.set_decision("HasGoodElectron", true);
@@ -172,6 +217,8 @@ private:
     Core::Target m_target;
     Core::Polarity m_polarity;
     Framework::Cutflow m_cutflow;
+
+    Core::SamplingFractionCut sf;
 
     // Services - using typed ServiceHandle pattern for validation at initialization
     Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};

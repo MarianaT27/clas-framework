@@ -5,7 +5,6 @@
 #include "Framework/ServiceHandle.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Core/ParticleSelector.hpp"
-#include "TH1D.h"
 #include <chrono>
 #include <vector>
 
@@ -61,17 +60,9 @@ protected:
      */
     auto monitor(Framework::Event& event) -> Framework::StatusCode override {
         const auto event_start = std::chrono::high_resolution_clock::now();
-
         m_events_processed++;
-
-        // Process particle statistics
         process_particle_statistics(event);
-
-        // Measure and record processing time
         record_processing_time(event_start);
-
-        // Print periodic status updates
-        print_progress_update();
 
         return Framework::StatusCode::SUCCESS();
     }
@@ -155,21 +146,10 @@ private:
     }
 
     /**
-     * @brief Print progress update if interval reached
-     */
-    void print_progress_update() const {
-        if (m_events_processed % m_progress_interval == 0) {
-            fmt::print("  Processed {} events...\n", m_events_processed);
-        }
-    }
-
-    /**
      * @brief Calculate and return average event rate
      */
     [[nodiscard]] double calculate_event_rate(long duration_seconds) const {
-        return duration_seconds > 0
-            ? static_cast<double>(m_events_processed) / duration_seconds
-            : 0.0;
+        return duration_seconds > 0 ? static_cast<double>(m_events_processed) / duration_seconds : 0.0;
     }
 
     /**
@@ -186,23 +166,20 @@ private:
      */
     void print_statistics() const {
         const auto end_time = std::chrono::high_resolution_clock::now();
-        const auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-            end_time - m_start_time);
+        const auto duration = std::chrono::duration_cast<std::chrono::seconds>(end_time - m_start_time);
 
         fmt::print("\nEvent Monitor Statistics:\n");
         fmt::print("  Total events processed: {}\n", m_events_processed);
         fmt::print("  Total runtime: {} seconds\n", duration.count());
-        fmt::print("  Average rate: {:.1f} events/second\n",
-                   calculate_event_rate(duration.count()));
-        fmt::print("  Average particles/event: {:.2f}\n",
-                   calculate_avg_particles());
+        fmt::print("  Average rate: {:.1f} events/second\n", calculate_event_rate(duration.count()));
+        fmt::print("  Average particles/event: {:.2f}\n", calculate_avg_particles());
     }
 
     auto initialize_default_pids() const -> std::vector<Core::PIDs> {
         return {Core::PIDs::ELECTRON};
     }
 
-    // Services (using ServiceHandle for type-safe access)
+    // Services
     Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
 
     // Monitoring histograms

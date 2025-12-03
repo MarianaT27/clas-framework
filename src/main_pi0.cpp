@@ -10,88 +10,104 @@
 
 #include <fmt/format.h>
 #include <cstdlib>
+#include <cxxopts.hpp>
 #include <string>
 #include "Algorithms/ElectronSelectionAlg.hpp"
 #include "Algorithms/Pi0ReconstructionAlg.hpp"
+#include "Algorithms/EventMonitor.hpp"
 #include "Core/Helpers.hpp"
 #include "Core/Target.hpp"
 #include "Framework/Application.hpp"
+#include "Framework/Services/ConditionsService.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
-
-void print_usage(const char* program_name) {
-    fmt::print("Usage: {} [options]\n", program_name);
-    fmt::print("\nOptions:\n");
-    fmt::print("  --data_dir <path>     Input data directory (default: data/)\n");
-    fmt::print("  --max_events <n>      Maximum events to process (-1 for all, default: -1)\n");
-    fmt::print("  --num_threads <n>     Number of threads (default: 1)\n");
-    fmt::print("  --output <file>       Output ROOT file (default: pi0_analysis.root)\n");
-    fmt::print("  --help                Show this help message\n");
-}
+#include "fmt/base.h"
 
 int main(int argc, char* argv[]) {
-    // Default configuration
-    std::string data_dir = "data/";
-    long max_events = -1;
-    int num_threads = 1;
-    std::string output_file = "pi0_analysis.root";
+    ROOT::EnableThreadSafety();
+    ROOT::EnableImplicitMT();
+    
+    cxxopts::Options options("pi0_analysis", "Pi0 reconstruction analysis executable");
 
-    // Parse command line arguments
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
+    options.add_options() 
+            ("target", "Target type (LD2, CxC, CuSn, Cu, Sn)", cxxopts::value<std::string>()->default_value("LD2"))
+            ("polarity", "Magnetic field polarity (In, Out)", cxxopts::value<std::string>()->default_value("Outbending"))
+            ("percentage", "Percentage of events to process (0-100)", cxxopts::value<long>()->default_value("100"))
+            ("num_threads", "Number of threads", cxxopts::value<int>()->default_value("1"))
+            ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("pi0_analysis_{target}_{polarity}.root"))
+            ("help", "Show help");
 
-        if (arg == "--help" || arg == "-h") {
-            print_usage(argv[0]);
-            return 0;
-        } else if (arg == "--data_dir" && i + 1 < argc) {
-            data_dir = argv[++i];
-        } else if (arg == "--max_events" && i + 1 < argc) {
-            max_events = std::stol(argv[++i]);
-        } else if (arg == "--num_threads" && i + 1 < argc) {
-            num_threads = std::stoi(argv[++i]);
-        } else if (arg == "--output" && i + 1 < argc) {
-            output_file = argv[++i];
-        } else {
-            fmt::print(stderr, "ERROR: Unknown argument: {}\n", arg);
-            print_usage(argv[0]);
-            return 1;
+    // Parse command-line arguments
+    auto args = options.parse(argc, argv);
+
+    if (args.count("help")) {
+        fmt::print("{}\n", options.help());
+        return EXIT_SUCCESS;
+    }
+
+    long percentage = args["percentage"].as<long>();
+    int num_threads = args["num_threads"].as<int>();
+    std::string output_file = args["output"].as<std::string>();
+    std::string target_str = args["target"].as<std::string>();
+    std::string polarity_str = args["polarity"].as<std::string>();
+    Core::Target target = Core::string_to_target(target_str);
+    Core::Polarity polarity = Core::string_to_polarity(polarity_str);
+
+    output_file = Core::replace_all(output_file, "{target}", Core::to_string(target));
+    output_file = Core::replace_all(output_file, "{polarity}", Core::to_string(polarity));
+
+    std::array sources = (polarity == Core::Polarity::Outbending)
+                             ? std::array{std::tuple{Core::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/", &Core::outbending_runs_CuSn},
+                                          std::tuple{Core::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/", &Core::outbending_runs_CxC},
+                                          std::tuple{Core::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/", &Core::outbending_runs_LD2}}
+                             : std::array{std::tuple{Core::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &Core::inbending_runs_CuSn},
+                                          std::tuple{Core::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &Core::inbending_runs_CxC},
+                                          std::tuple{Core::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &Core::inbending_runs_LD2}};
+    
+    std::string data_dir;
+    if (target_str != "" && polarity_str != "") {
+        bool valid = false;
+        for (const auto& [src_target, src_dir, _] : sources) {
+            if (target == src_target) {
+                data_dir = src_dir;
+                valid = true;
+                break;
+            }
+        }
+        if (!valid) {
+            fmt::println(stderr, "ERROR: Invalid target '{}' for polarity '{}'", target_str, polarity_str);
+            fmt::println(stderr, "Valid targets are: LD2, CxC, CuSn, Cu, or Sn");
+            return EXIT_FAILURE;
         }
     }
 
     // Create application
     Framework::Application app("Pi0 Analysis");
 
-    // Configure services
-    // Requirements: 4.4 - Add HistogramService with output file
+    // Create services
     auto hist_svc = std::make_unique<Framework::HistogramService>();
-    hist_svc->set_output_file(output_file);
-
-    // Requirements: 4.4 - Add NTupleService with same output file
     auto ntuple_svc = std::make_unique<Framework::NTupleService>();
-    ntuple_svc->set_output_file(output_file);
-
-    // Add LoggingService (optional)
+    auto conditions_svc = std::make_unique<Framework::ConditionsService>();
     auto log_svc = std::make_unique<Framework::LoggingService>();
 
+    // Configure output files for services
+    hist_svc->set_output_file(output_file);
+    ntuple_svc->set_output_file(output_file);
+
+    app.service_manager().add_service(std::move(conditions_svc));
     app.service_manager().add_service(std::move(hist_svc));
     app.service_manager().add_service(std::move(ntuple_svc));
     app.service_manager().add_service(std::move(log_svc));
 
+    auto monitoring_alg = std::make_unique<Algorithms::EventMonitor>("EventMonitor");
+    app.add_algorithm(std::move(monitoring_alg));
+
     // Configure algorithm sequence
-    // Requirements: 3.1, 3.2 - Add ElectronSelectionAlg as first algorithm
-    auto electron_alg = std::make_unique<Algorithms::ElectronSelectionAlg>(
-        "ElectronSelection",
-        Core::Target::LD2,
-        Core::Polarity::Outbending);
+    auto electron_alg = std::make_unique<Algorithms::ElectronSelectionAlg>("ElectronSelection", target, polarity);
     app.add_algorithm(std::move(electron_alg));
 
-    // Requirements: 3.1, 3.2 - Add Pi0ReconstructionAlg as second algorithm
-    auto pi0_alg = std::make_unique<Algorithms::Pi0ReconstructionAlg>(
-        "Pi0Reconstruction",
-        0.1,  // min_photon_energy (GeV)
-        0.03  // pi0_mass_window (GeV)
-    );
+    auto pi0_alg = std::make_unique<Algorithms::Pi0ReconstructionAlg>("Pi0Reconstruction", 0.2, 0.3);
     app.add_algorithm(std::move(pi0_alg));
 
     // Configure input files
@@ -101,13 +117,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     app.set_input_files(input_files);
-    app.set_max_events(max_events);
+    app.set_percentage(percentage);
     app.set_num_threads(num_threads);
 
     // Print configuration
     fmt::print("Pi0 Analysis Configuration:\n");
     fmt::print("  Data directory: {}\n", data_dir);
-    fmt::print("  Max events: {}\n", max_events);
+    fmt::print("  Percentage: {}\n", percentage);
     fmt::print("  Threads: {}\n", num_threads);
     fmt::print("  Output file: {}\n", output_file);
     fmt::print("  Input files: {}\n", input_files.size());

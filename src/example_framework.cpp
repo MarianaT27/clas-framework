@@ -106,7 +106,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     app.set_input_files(input_files);
-    app.set_max_events(max_events);
+    // app.set_max_events(max_events);
     app.set_num_threads(num_threads);
 
     fmt::print("Configuration loaded from: {}\n", config_path);

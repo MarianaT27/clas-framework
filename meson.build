@@ -10,6 +10,7 @@ project(
   ],
 )
 
+
 #── Subprojects ───────────────────────────────────────────────────────────────#
 fmt = subproject('fmt')
 fmt_dep = fmt.get_variable('fmt_dep')
@@ -19,6 +20,9 @@ toml_dep = toml.get_variable('tomlplusplus_dep')
 
 lz4 = subproject('lz4')
 lz4_dep = lz4.get_variable('liblz4_dep')
+
+
+cxxopts_dep = dependency('cxxopts')
 
 subdir('hipo4')
 
@@ -62,7 +66,7 @@ executable(
   'framework_example',
   framework_example_sources,
   include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
 )
 
 # Improved main with Phase 3 features
@@ -76,7 +80,7 @@ executable(
   'main_improved',
   main_improved_sources,
   include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
 )
 
 # Advanced main with algorithm types demo
@@ -90,7 +94,7 @@ executable(
   'main_advanced',
   main_advanced_sources,
   include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
 )
 
 # Automatic histogram writing demo
@@ -104,7 +108,7 @@ executable(
   'example_auto_histograms',
   auto_histograms_sources,
   include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
 )
 
 # Pi0 reconstruction analysis executable
@@ -119,7 +123,7 @@ executable(
   'main_pi0',
   main_pi0_sources,
   include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
 )
 
 #── Test suite ────────────────────────────────────────────────────────────────#
