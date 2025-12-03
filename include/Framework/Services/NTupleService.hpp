@@ -3,11 +3,13 @@
 #include "Framework/IService.hpp"
 #include "TTree.h"
 #include "TFile.h"
+#include "TBranch.h"
 #include <fmt/format.h>
 #include <string>
 #include <map>
 #include <memory>
 #include <vector>
+#include <mutex>
 
 namespace Framework {
 
@@ -90,10 +92,6 @@ public:
         auto tree = std::make_unique<TTree>(name.c_str(), tree_title.c_str());
         tree->SetDirectory(nullptr);  // Don't let ROOT own it
 
-        // Set basket size to prevent 1GB buffer overflow
-        // 16KB per basket is a safe size for large datasets
-        tree->SetBasketSize("*", 16000);
-
         // Set auto-flush to write baskets periodically (every 10MB)
         tree->SetAutoFlush(-10000000);  // Negative = bytes, positive = entries
 
@@ -127,17 +125,25 @@ public:
                         const std::string& branch_name,
                         T* address,
                         const std::string& leaf_list = "") -> void {
+        std::lock_guard<std::mutex> lock(m_tree_mutex_);
+
         // Get or create tree
         TTree* tree = get_tree(tree_name);
         if (!tree) {
             tree = create_tree(tree_name);
         }
 
-        // Register branch
+        // Register branch with basket size limit to prevent 1GB buffer overflow
+        TBranch* branch = nullptr;
         if (leaf_list.empty()) {
-            tree->Branch(branch_name.c_str(), address);
+            branch = tree->Branch(branch_name.c_str(), address);
         } else {
-            tree->Branch(branch_name.c_str(), address, leaf_list.c_str());
+            branch = tree->Branch(branch_name.c_str(), address, leaf_list.c_str());
+        }
+
+        // Set basket size to 16KB per branch for safe multi-threaded operation
+        if (branch) {
+            branch->SetBasketSize(16000);
         }
     }
 
@@ -148,18 +154,26 @@ public:
     auto register_vector_branch(const std::string& tree_name,
                                const std::string& branch_name,
                                std::vector<T>* address) -> void {
+        std::lock_guard<std::mutex> lock(m_tree_mutex_);
+
         TTree* tree = get_tree(tree_name);
         if (!tree) {
             tree = create_tree(tree_name);
         }
 
-        tree->Branch(branch_name.c_str(), address);
+        // Register branch and set basket size
+        TBranch* branch = tree->Branch(branch_name.c_str(), address);
+        if (branch) {
+            branch->SetBasketSize(16000);
+        }
     }
 
     /**
-     * @brief Fill a tree
+     * @brief Fill a tree (thread-safe)
      */
     auto fill(const std::string& tree_name) -> void {
+        std::lock_guard<std::mutex> lock(m_tree_mutex_);
+
         TTree* tree = get_tree(tree_name);
         if (tree) {
             tree->Fill();
@@ -172,14 +186,17 @@ public:
      * @brief Get number of entries in a tree
      */
     auto get_entries(const std::string& tree_name) const -> Long64_t {
+        std::lock_guard<std::mutex> lock(m_tree_mutex_);
         auto it = m_trees.find(tree_name);
         return (it != m_trees.end()) ? it->second->GetEntries() : 0;
     }
 
     /**
-     * @brief Write all trees to output file
+     * @brief Write all trees to output file (thread-safe)
      */
     auto write_trees() -> void {
+        std::lock_guard<std::mutex> lock(m_tree_mutex_);
+
         if (m_output_file.empty()) {
             fmt::print(stderr, "WARNING: No output file set for TTrees\n");
             return;
@@ -219,9 +236,11 @@ public:
     }
 
     /**
-     * @brief Print tree summary
+     * @brief Print tree summary (thread-safe)
      */
     auto print_summary() const -> void {
+        std::lock_guard<std::mutex> lock(m_tree_mutex_);
+
         fmt::print("\nN-tuple Summary:\n");
         fmt::print("  Output file: {}\n", m_output_file);
         fmt::print("  Total trees: {}\n", m_trees.size());
@@ -251,9 +270,10 @@ public:
     }
 
     /**
-     * @brief Set basket size for optimization
+     * @brief Set basket size for optimization (thread-safe)
      */
     auto set_basket_size(const std::string& tree_name, int size) -> void {
+        std::lock_guard<std::mutex> lock(m_tree_mutex_);
         TTree* tree = get_tree(tree_name);
         if (tree) {
             tree->SetBasketSize("*", size);
