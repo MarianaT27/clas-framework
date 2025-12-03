@@ -46,6 +46,38 @@ auto Pi0ReconstructionAlg::find_best_pi0(const std::vector<Core::Particle>& phot
     return best;
 }
 
+auto Pi0ReconstructionAlg::find_all_unique_pi0_candidates(const std::vector<Core::Particle>& photons) const -> std::optional<std::vector<std::tuple<Core::Particle, Core::Particle, double>>> {
+    
+    if (photons.size() < 2) return std::nullopt;
+    
+    std::vector<std::tuple<Core::Particle, Core::Particle, double>> candidates;
+    auto photons_copy = photons;
+    
+    for (size_t i = 0; i < photons_copy.size(); ++i) {
+        for (size_t j = i + 1; j < photons_copy.size(); ++j) {
+            double mass = calculate_invariant_mass(photons_copy[i], photons_copy[j]);
+            double mass_diff = std::abs(mass - PI0_MASS);
+            
+            if (mass_diff < m_pi0_mass_window) {
+                candidates.emplace_back(photons_copy[i], photons_copy[j], mass);
+                
+                // Remove the pair from further consideration to ensure uniqueness
+                // Erase higher index first to maintain validity of indices
+                photons_copy.erase(photons_copy.begin() + j);
+                photons_copy.erase(photons_copy.begin() + i);
+                
+                // Adjust index: after removal, the next element is now at position i
+                // Decrement i so that after the loop's ++i, we stay at position i
+                --i;
+                break;
+            }
+        }
+    }
+    
+    return candidates.empty() ? std::nullopt : std::make_optional(candidates);
+}
+
+
 auto Pi0ReconstructionAlg::initialize() -> Framework::StatusCode {
     auto log_sc = initialize_handle(m_log_svc);
     if (log_sc.is_failure()) fmt::print(stderr, "WARNING: LoggingService not available\n");
@@ -125,7 +157,78 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
         }
     }
 
-    // Find best π⁰ candidate
+    std::vector<std::tuple<Core::Particle, Core::Particle, double>> pi0_candidates;
+    auto candidates_opt = find_all_unique_pi0_candidates(selected_photons);
+    if (!candidates_opt.has_value()) return Framework::StatusCode::SUCCESS();
+    pi0_candidates = candidates_opt.value();
+    m_cutflow.pass("Pi0 Founds");
+
+    for (const auto& [g1, g2, pi0_mass] : pi0_candidates) {
+        auto p1 = g1.PxPyPzEVector();
+        auto p2 = g2.PxPyPzEVector();
+        auto p_pi0 = p1 + p2;
+
+        double pi0_p = std::sqrt(p_pi0.Px() * p_pi0.Px() + p_pi0.Py() * p_pi0.Py() + p_pi0.Pz() * p_pi0.Pz());
+        double pi0_theta = std::acos(p_pi0.Pz() / pi0_p) * 180.0 / M_PI;
+        double pi0_phi = std::atan2(p_pi0.Py(), p_pi0.Px()) * 180.0 / M_PI;
+
+        // Calculate opening angle between photons
+        auto p1_3 = g1.PxPyPzVector();
+        auto p2_3 = g2.PxPyPzVector();
+        double cos_angle = p1_3.Dot(p2_3) / (p1_3.R() * p2_3.R());
+        double opening_angle = std::acos(cos_angle) * 180.0 / M_PI;
+
+        // Fill histograms
+        if (h_gg_mass_selected) h_gg_mass_selected->Fill(pi0_mass);
+        if (h_pi0_momentum) h_pi0_momentum->Fill(pi0_p);
+        if (h_pi0_theta) h_pi0_theta->Fill(pi0_theta);
+        if (h_opening_angle) h_opening_angle->Fill(opening_angle);
+
+        // Fill N-tuple if service is available
+        if (m_ntuple_svc) {
+            // Get electron from event store (stored by ElectronSelectionAlg)
+            auto* electrons = event.get_particles<Core::Particle>("SelectedElectrons");
+            if (electrons && !electrons->empty()) {
+                const auto& electron = (*electrons)[0];
+                m_e_p = electron.p();
+                m_e_theta = electron.theta();
+                m_e_phi = electron.phi();
+                m_e_vz = electron.vz();
+            }
+
+            // Photons 
+            mgs_E.push_back(g1.E());
+            mgs_theta.push_back(g1.theta());
+            mgs_phi.push_back(g1.phi());
+            mgs_E.push_back(g2.E());
+            mgs_theta.push_back(g2.theta());
+            mgs_phi.push_back(g2.phi());
+            // π⁰
+            mpi0_masses.push_back(pi0_mass);
+            mpi0_ps.push_back(pi0_p);
+            mpi0_thetas.push_back(pi0_theta);
+            mpi0_phis.push_back(pi0_phi);
+
+            m_ntuple_svc->fill("pi0_events");
+        }
+
+    }
+
+    // Clear vectors for next event
+    mgs_E.clear();
+    mgs_theta.clear();
+    mgs_phi.clear();
+    mpi0_masses.clear();
+    mpi0_ps.clear();
+    mpi0_thetas.clear();
+    mpi0_phis.clear();
+
+    return Framework::StatusCode::SUCCESS();
+}
+
+/*
+
+// Find best π⁰ candidate
     auto pi0_candidate = find_best_pi0(selected_photons);
 
     if (!pi0_candidate.has_value()) return Framework::StatusCode::SUCCESS();
@@ -184,8 +287,8 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
         m_ntuple_svc->fill("pi0_events");
     }
 
-    return Framework::StatusCode::SUCCESS();
-}
+
+*/
 
 auto Pi0ReconstructionAlg::finalize() -> Framework::StatusCode {
     if (m_log_svc) {
@@ -220,21 +323,16 @@ auto Pi0ReconstructionAlg::setup_ntuple() -> void {
     m_ntuple_svc->register_branch("pi0_events", "e_phi", &m_e_phi);
     m_ntuple_svc->register_branch("pi0_events", "e_vz", &m_e_vz);
 
-    // Photon 1 kinematics
-    m_ntuple_svc->register_branch("pi0_events", "g1_E", &m_g1_E);
-    m_ntuple_svc->register_branch("pi0_events", "g1_theta", &m_g1_theta);
-    m_ntuple_svc->register_branch("pi0_events", "g1_phi", &m_g1_phi);
-
-    // Photon 2 kinematics
-    m_ntuple_svc->register_branch("pi0_events", "g2_E", &m_g2_E);
-    m_ntuple_svc->register_branch("pi0_events", "g2_theta", &m_g2_theta);
-    m_ntuple_svc->register_branch("pi0_events", "g2_phi", &m_g2_phi);
-
-    // π⁰ kinematics
-    m_ntuple_svc->register_branch("pi0_events", "pi0_mass", &m_pi0_mass);
-    m_ntuple_svc->register_branch("pi0_events", "pi0_p", &m_pi0_p);
-    m_ntuple_svc->register_branch("pi0_events", "pi0_theta", &m_pi0_theta);
-    m_ntuple_svc->register_branch("pi0_events", "pi0_phi", &m_pi0_phi);
+    // Photon kinematics
+    m_ntuple_svc->register_branch("pi0_events", "mgs_E", &mgs_E);
+    m_ntuple_svc->register_branch("pi0_events", "mgs_theta", &mgs_theta);
+    m_ntuple_svc->register_branch("pi0_events", "mgs_phi", &mgs_phi);
+    
+    // Pi0 candidate properties
+    m_ntuple_svc->register_branch("pi0_events", "mpi0_masses", &mpi0_masses);
+    m_ntuple_svc->register_branch("pi0_events", "mpi0_ps", &mpi0_ps);
+    m_ntuple_svc->register_branch("pi0_events", "mpi0_thetas", &mpi0_thetas);
+    m_ntuple_svc->register_branch("pi0_events", "mpi0_phis", &mpi0_phis);
 
     if (m_log_svc) LOG_INFO(m_log_svc.get(), "N-tuple branches registered for pi0_events");
 }

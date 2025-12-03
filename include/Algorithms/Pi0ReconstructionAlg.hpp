@@ -51,7 +51,8 @@ class Pi0ReconstructionAlg : public Framework::Algorithm {
 
     auto find_best_pi0(const std::vector<Core::Particle>& photons) const -> std::optional<std::tuple<Core::Particle, Core::Particle, double>>;
 
-    // Accessors for configuration (useful for testing)
+    auto find_all_unique_pi0_candidates(const std::vector<Core::Particle>& photons) const -> std::optional<std::vector<std::tuple<Core::Particle, Core::Particle, double>>>;
+    
     auto min_photon_energy() const -> double { return m_min_photon_energy; }
 
     auto pi0_mass_window() const -> double { return m_pi0_mass_window; }
@@ -87,15 +88,13 @@ class Pi0ReconstructionAlg : public Framework::Algorithm {
     double m_e_phi = 0.0;
     double m_e_vz = 0.0;
     double m_g1_E = 0.0;
-    double m_g1_theta = 0.0;
-    double m_g1_phi = 0.0;
-    double m_g2_E = 0.0;
-    double m_g2_theta = 0.0;
-    double m_g2_phi = 0.0;
-    double m_pi0_mass = 0.0;
-    double m_pi0_p = 0.0;
-    double m_pi0_theta = 0.0;
-    double m_pi0_phi = 0.0;
+    std::vector<double> mgs_E;
+    std::vector<double> mgs_theta;
+    std::vector<double> mgs_phi;
+    std::vector<double> mpi0_masses;
+    std::vector<double> mpi0_ps;
+    std::vector<double> mpi0_thetas;
+    std::vector<double> mpi0_phis;
 
     // Private helper methods
     auto book_histograms() -> void;

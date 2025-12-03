@@ -1,21 +1,21 @@
 #pragma once
 
 #include <optional>
+#include "Core/Cuts.hpp"
 #include "Core/Detectors.hpp"
+#include "Core/Helpers.hpp"
 #include "Core/Particle.hpp"
 #include "Core/ParticleSelector.hpp"
 #include "Core/ReadBank.hpp"
-#include "Framework/IAlgorithm.hpp"
-#include "Framework/Event.hpp"
+#include "Core/Target.hpp"
 #include "Framework/Cutflow.hpp"
+#include "Framework/Event.hpp"
+#include "Framework/IAlgorithm.hpp"
 #include "Framework/ServiceHandle.hpp"
-#include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
-#include "Core/Cuts.hpp"
-#include "Core/Target.hpp"
-#include "Core/Helpers.hpp"
 #include "TH1D.h"
 
 namespace Algorithms {
@@ -29,14 +29,9 @@ namespace Algorithms {
  * - Separating concerns (selection logic vs. framework)
  */
 class ElectronSelectionAlg : public Framework::Algorithm {
-public:
-    explicit ElectronSelectionAlg(std::string name = "ElectronSelectionAlg",
-                                  Core::Target target = Core::Target::LD2,
-                                  Core::Polarity polarity = Core::Polarity::Outbending)
-        : Algorithm(std::move(name))
-        , m_target(target)
-        , m_polarity(polarity)
-        , m_cutflow("Electron Selection") {}
+   public:
+    explicit ElectronSelectionAlg(std::string name = "ElectronSelectionAlg", Core::Target target = Core::Target::LD2, Core::Polarity polarity = Core::Polarity::Outbending)
+        : Algorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow("Electron Selection") {}
 
     auto initialize() -> Framework::StatusCode override {
         // Initialize service handles using the typed ServiceHandle pattern
@@ -160,7 +155,7 @@ public:
         const double SF = E_tot / electron.p();
         const int sector = calorimeter.pcal.sector;
 
-        if (!Core::ElectronCuts::pass_sampling_fraction_cut(SF, p, sector, m_target, m_polarity,sf)) {
+        if (!Core::ElectronCuts::pass_sampling_fraction_cut(SF, p, sector, m_target, m_polarity, sf)) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::SUCCESS();
         }
@@ -215,7 +210,7 @@ public:
         return Framework::StatusCode::SUCCESS();
     }
 
-private:
+   private:
     Core::Target m_target;
     Core::Polarity m_polarity;
     Framework::Cutflow m_cutflow;
@@ -245,26 +240,22 @@ private:
         h_momentum = m_hist_svc->book_hist1D(
             "/ElectronKinematics/momentum",
             "Electron Momentum;p [GeV/c];Events",
-            120, 0, 12
-        );
+            120, 0, 12);
 
         h_theta = m_hist_svc->book_hist1D(
             "/ElectronKinematics/theta",
             "Electron Theta;#theta [deg];Events",
-            180, 0, 180
-        );
+            180, 0, 180);
 
         h_phi = m_hist_svc->book_hist1D(
             "/ElectronKinematics/phi",
             "Electron Phi;#phi [deg];Events",
-            180, -180, 180
-        );
+            180, -180, 180);
 
         h_vz = m_hist_svc->book_hist1D(
             "/ElectronKinematics/vz",
             "Electron Vertex Z;v_{z} [cm];Events",
-            200, -20, 20
-        );
+            200, -20, 20);
     }
 
     auto setup_ntuple() -> void {

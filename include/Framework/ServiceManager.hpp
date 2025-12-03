@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <set>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
@@ -195,6 +196,15 @@ public:
             );
         }
 
+        // SPECIAL CASE: NTupleService must finalize FIRST (initialize LAST)
+        // Move NTupleService to the end of initialization order
+        auto ntuple_it = std::find(result.begin(), result.end(), "NTupleService");
+        if (ntuple_it != result.end()) {
+            std::string ntuple_name = *ntuple_it;
+            result.erase(ntuple_it);
+            result.push_back(ntuple_name);
+        }
+
         return Result<std::vector<std::string>>::ok(result);
     }
 
@@ -216,13 +226,33 @@ public:
      * @return StatusCode indicating success or failure
      */
     auto finalize_all() -> StatusCode {
-        for (auto& [name, service] : m_services) {
+        // Get topological order
+        auto result = topological_sort();
+        if (!result.is_ok()) {
+            std::string error_msg = fmt::format("Failed to determine service order: {}", result.error_message());
+            if (m_log) {
+                m_log->error("ServiceManager", "{}", error_msg);
+            } else {
+                fmt::print(stderr, "ERROR: {}\n", error_msg);
+            }
+            return StatusCode::failure(error_msg);
+        }
+
+        // Finalize in REVERSE order (opposite of initialization)
+        std::vector<std::string> finalize_order = result.value();
+        std::reverse(finalize_order.begin(), finalize_order.end());
+
+        for (const auto& name : finalize_order) {
+            auto it = m_services.find(name);
+            if (it == m_services.end()) continue;
+
             if (m_log) {
                 m_log->info("ServiceManager", "Finalizing service: {}", name);
             } else {
                 fmt::print("Finalizing service: {}\n", name);
             }
-            auto sc = service->finalize();
+
+            auto sc = it->second->finalize();
             if (sc.is_failure()) {
                 if (m_log) {
                     m_log->warning("ServiceManager", "Failed to finalize service '{}'", name);

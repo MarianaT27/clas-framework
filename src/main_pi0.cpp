@@ -86,16 +86,16 @@ int main(int argc, char* argv[]) {
     Framework::Application app("Pi0 Analysis");
 
     // Create services
-    auto hist_svc = std::make_unique<Framework::HistogramService>();
     auto ntuple_svc = std::make_unique<Framework::NTupleService>();
+    auto hist_svc = std::make_unique<Framework::HistogramService>();
     auto conditions_svc = std::make_unique<Framework::ConditionsService>();
     auto log_svc = std::make_unique<Framework::LoggingService>();
 
     // Configure output files for services
-    hist_svc->set_output_file(output_file);
+    //hist_svc->set_output_file(output_file.substr(0, output_file.find_last_of('.')) + "_histograms.root");
     ntuple_svc->set_output_file(output_file);
-    // Note: Incremental writing disabled to avoid conflicts with HistogramService
-    // Trees are kept in memory with aggressive flush settings instead
+    hist_svc->set_output_file(output_file);
+    ntuple_svc->enable_incremental_writing();
 
     // Keep pointers before moving
     auto* log_ptr = log_svc.get();
@@ -105,14 +105,14 @@ int main(int argc, char* argv[]) {
 
     app.service_manager().add_service(std::move(conditions_svc));
     app.service_manager().add_service(std::move(hist_svc));
-    app.service_manager().add_service(std::move(ntuple_svc));
     app.service_manager().add_service(std::move(log_svc));
+    app.service_manager().add_service(std::move(ntuple_svc));
 
     // Inject logger into all services, ServiceManager, and Application
     app.set_logger(log_ptr);
     app.service_manager().set_logger(log_ptr);
-    hist_ptr->set_logger(log_ptr);
     ntuple_ptr->set_logger(log_ptr);
+    hist_ptr->set_logger(log_ptr);
     conditions_ptr->set_logger(log_ptr);
 
     auto monitoring_alg = std::make_unique<Algorithms::EventMonitor>("EventMonitor");

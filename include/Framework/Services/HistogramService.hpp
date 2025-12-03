@@ -123,8 +123,7 @@ public:
      * @param xmax Maximum x value
      * @return TH1D* Pointer to the histogram
      */
-    auto book_hist1D(const std::string& path, const std::string& title,
-                     int nbins, double xmin, double xmax) -> TH1D* {
+    auto book_hist1D(const std::string& path, const std::string& title, int nbins, double xmin, double xmax) -> TH1D* {
         if (m_hist1D.find(path) != m_hist1D.end()) {
             fmt::print(stderr, "WARNING: Histogram '{}' already exists\n", path);
             return m_hist1D[path].get();
@@ -261,9 +260,7 @@ public:
         TFile file(m_output_file.c_str(), "UPDATE");
 
         if (file.IsZombie() || !file.IsOpen()) {
-            if (m_log) {
-                m_log->error(name(), "Failed to open output file: {}", m_output_file);
-            }
+            if (m_log) m_log->error(name(), "Failed to open output file: {}", m_output_file);
             return;
         }
 
