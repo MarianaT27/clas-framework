@@ -242,6 +242,7 @@ public:
      * @brief Get all tree names
      */
     auto get_tree_names() const -> std::vector<std::string> {
+        std::lock_guard<std::mutex> lock(m_tree_mutex_);
         std::vector<std::string> names;
         for (const auto& [name, tree] : m_trees) {
             names.push_back(name);
@@ -262,6 +263,7 @@ public:
 private:
     std::string m_output_file;
     std::map<std::string, std::unique_ptr<TTree>> m_trees;
+    mutable std::mutex m_tree_mutex_;
 };
 
 /**
