@@ -13,7 +13,7 @@
 #include <fmt/core.h>
 #include <fmt/format.h>
 
-namespace Core {
+namespace CLAS {
 
 class Particle {
 
@@ -92,16 +92,16 @@ class Particle {
 
     auto operator>(const Particle& other) const -> bool { return m_index > other.m_index; }
 };
-}  // namespace Core
+}  // namespace CLAS
 
 namespace fmt {
 template <>
-class formatter<Core::Particle> {
+class formatter<CLAS::Particle> {
    public:
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
 
     template <typename Context>
-    constexpr auto format(Core::Particle const& foo, Context& ctx) const {
+    constexpr auto format(CLAS::Particle const& foo, Context& ctx) const {
         return format_to(ctx.out(), "(PDG: {}, Index: {}, Status: {}, px: {}, py: {}, pz: {}, vx: {}, vy: {}, vz: {})", foo.pdg(), foo.index(), foo.status(), foo.px(), foo.py(), foo.pz(), foo.vx(), foo.vy(), foo.vz());
     }
 };

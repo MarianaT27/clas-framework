@@ -10,10 +10,10 @@
 #include "Framework/Application.hpp"
 #include "Framework/IAlgorithm.hpp"
 #include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Histogram.hpp"
-#include "Core/Particle.hpp"
-#include "Core/ParticleSelector.hpp"
-#include "Core/Helpers.hpp"
+#include "CLAS/Particle.hpp"
+#include "CLAS/FileUtils.hpp"
 #include "TMath.h"
 #include <fmt/format.h>
 #include <chrono>
@@ -39,6 +39,13 @@ public:
         m_hist_svc = service<Framework::HistogramService>("HistogramService");
         if (!m_hist_svc) {
             fmt::print(stderr, "ERROR: Failed to get HistogramService\n");
+            return Framework::StatusCode::FAILURE();
+        }
+
+        // Get particle selector service
+        m_particle_svc = service<Framework::ParticleSelectorService>("ParticleSelectorService");
+        if (!m_particle_svc) {
+            fmt::print(stderr, "ERROR: Failed to get ParticleSelectorService\n");
             return Framework::StatusCode::FAILURE();
         }
 
@@ -101,12 +108,12 @@ public:
         // Fill individual histogram
         h_n_particles.fill(n_particles);
 
-        // Extract particles
-        Core::ParticleMap particles = Core::ParticleSelector::extract_particles(
+        // Extract particles using ParticleSelectorService
+        Framework::ParticleMap particles = m_particle_svc->extract_particles(
             REC_Particle,
-            {Core::PIDs::ELECTRON, Core::PIDs::POSITRON,
-             Core::PIDs::PIPLUS, Core::PIDs::PIMINUS,
-             Core::PIDs::PHOTON}
+            {CLAS::PIDs::ELECTRON, CLAS::PIDs::POSITRON,
+             CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS,
+             CLAS::PIDs::PHOTON}
         );
 
         // Fill histogram group
@@ -158,6 +165,7 @@ public:
 
 private:
     Framework::HistogramService* m_hist_svc = nullptr;
+    Framework::ParticleSelectorService* m_particle_svc = nullptr;
     size_t m_events_processed = 0;
 
     // Individual histogram
@@ -186,8 +194,15 @@ int main(int argc, char** argv) {
     // Create application
     Framework::Application app("Histogram Demo");
 
-    // Configure HistogramService
+    // Configure Services
     fmt::print("Configuring Services:\n");
+
+    // Add ParticleSelectorService
+    auto particle_svc = std::make_unique<Framework::ParticleSelectorService>();
+    fmt::print("  ✓ ParticleSelectorService\n");
+    app.service_manager().add_service(std::unique_ptr<Framework::IService>(std::move(particle_svc)));
+
+    // Add HistogramService
     auto hist_svc = std::make_unique<Framework::HistogramService>();
     hist_svc->set_output_file("demo_histograms.root");
     hist_svc->set_auto_write(true);  // Enable automatic writing (default)
@@ -203,7 +218,7 @@ int main(int argc, char** argv) {
 
     // Configure input
     fmt::print("\nConfiguring Input:\n");
-    std::vector<std::string> input_files = Core::read_recursive_file_in_directory(data_dir);
+    std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
         fmt::print(stderr, "ERROR: No .hipo files found in {}\n", data_dir);
         fmt::print("\nUsage: {} [data_dir] [max_events]\n", argv[0]);

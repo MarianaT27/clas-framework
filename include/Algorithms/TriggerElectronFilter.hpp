@@ -2,9 +2,10 @@
 
 #include "Framework/AlgorithmTypes.hpp"
 #include "Framework/Cutflow.hpp"
-#include "Core/Cuts.hpp"
-#include "Core/ReadBank.hpp"
-#include "Core/Target.hpp"
+#include "Framework/Services/ParticleSelectorService.hpp"
+#include "CLAS/ElectronCuts.hpp"
+#include "CLAS/ReadBank.hpp"
+#include "CLAS/Target.hpp"
 
 namespace Algorithms {
 
@@ -26,8 +27,8 @@ class TriggerElectronFilter : public Framework::FilterAlgorithm {
 public:
     explicit TriggerElectronFilter(
         std::string name = "TriggerElectronFilter",
-        Core::Target target = Core::Target::LD2,
-        Core::Polarity polarity = Core::Polarity::Outbending)
+        CLAS::Target target = CLAS::Target::LD2,
+        CLAS::Polarity polarity = CLAS::Polarity::Outbending)
         : FilterAlgorithm(std::move(name))
         , m_target(target)
         , m_polarity(polarity)
@@ -35,6 +36,9 @@ public:
 
     auto initialize() -> Framework::StatusCode override {
         fmt::print("  {} - Initializing\n", name());
+
+        // Get ParticleSelectorService
+        m_particle_svc = service<Framework::ParticleSelectorService>("ParticleSelectorService");
 
         // Setup cutflow
         m_cutflow.add_cut("All Events");
@@ -65,29 +69,29 @@ protected:
         auto& hipo_event = event.hipo_event();
         hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
 
-        // Extract electrons
-        Core::ParticleMap particles = Core::ParticleSelector::extract_particles(
-            REC_Particle, {Core::PIDs::ELECTRON});
+        // Extract electrons using ParticleSelectorService
+        Framework::ParticleMap particles = m_particle_svc->extract_particles(
+            REC_Particle, {CLAS::PIDs::ELECTRON});
 
-        const auto& electrons = particles[Core::PIDs::ELECTRON];
+        const auto& electrons = m_particle_svc->get_electrons(particles);
         if (electrons.empty()) return false;
         m_cutflow.pass("Has Electron");
 
         // Find trigger electron
-        auto trigger_e = Core::find_trigger_electron(electrons, {2000, 4000});
+        auto trigger_e = Physics::ParticleUtils::find_trigger_electron(electrons, {2000, 4000});
         if (!trigger_e.has_value()) return false;
         m_cutflow.pass("Trigger Status");
 
         auto electron = trigger_e.value();
 
         // Apply basic cuts
-        if (!Core::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) return false;
+        if (!CLAS::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) return false;
         m_cutflow.pass("Chi2 PID");
 
-        if (!Core::ElectronCuts::pass_electron_momentum_cut(electron.p())) return false;
+        if (!CLAS::ElectronCuts::pass_electron_momentum_cut(electron.p())) return false;
         m_cutflow.pass("Momentum");
 
-        if (!Core::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) return false;
+        if (!CLAS::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) return false;
         m_cutflow.pass("Vertex Z");
 
         // Store the trigger electron for downstream use
@@ -97,9 +101,10 @@ protected:
     }
 
 private:
-    Core::Target m_target;
-    Core::Polarity m_polarity;
+    CLAS::Target m_target;
+    CLAS::Polarity m_polarity;
     Framework::Cutflow m_cutflow;
+    Framework::ParticleSelectorService* m_particle_svc = nullptr;
 };
 
 }  // namespace Algorithms

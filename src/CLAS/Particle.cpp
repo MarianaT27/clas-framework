@@ -1,6 +1,6 @@
-#include <Core/Particle.hpp>
+#include <CLAS/Particle.hpp>
 
-namespace Core {
+namespace CLAS {
 
 Particle::Particle(int pdg, int status, int index, int charge, double mass, double px, double py, double pz, double E, double vx, double vy, double vz, double vt, double beta, double chi2pid)
     : m_pdgcode(pdg), m_status(status), m_index(index), m_charge(charge), m_mass(mass), m_px(px), m_py(py), m_pz(pz), m_E(E), m_vx(vx), m_vy(vy), m_vz(vz), m_vt(vt), m_beta(beta), m_chi2pid(chi2pid) {
@@ -113,4 +113,4 @@ auto Particle::mass() const -> double {
     return m_mass;
 }
 
-}  // namespace Core
+}  // namespace CLAS

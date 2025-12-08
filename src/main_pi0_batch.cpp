@@ -13,8 +13,8 @@
 #include <cxxopts.hpp>
 #include <string>
 #include <filesystem>
-#include "Core/Helpers.hpp"
-#include "Core/Target.hpp"
+#include "CLAS/FileUtils.hpp"
+#include "CLAS/Target.hpp"
 #include "Framework/BatchSystem.hpp"
 #include "fmt/base.h"
 
@@ -62,8 +62,8 @@ int main(int argc, char* argv[]) {
     bool dry_run = args["dry-run"].as<bool>();
 
     // Validate target and polarity
-    Core::Target target = Core::string_to_target(target_str);
-    Core::Polarity polarity = Core::string_to_polarity(polarity_str);
+    CLAS::Target target = CLAS::string_to_target(target_str);
+    CLAS::Polarity polarity = CLAS::string_to_polarity(polarity_str);
 
     // Determine batch system
     Framework::BatchSystem::System batch_system;
@@ -82,13 +82,13 @@ int main(int argc, char* argv[]) {
     }
 
     // Determine data directory based on target and polarity
-    std::array sources = (polarity == Core::Polarity::Outbending)
-                             ? std::array{std::tuple{Core::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/"},
-                                          std::tuple{Core::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/"},
-                                          std::tuple{Core::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/"}}
-                             : std::array{std::tuple{Core::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-                                          std::tuple{Core::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-                                          std::tuple{Core::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"}};
+    std::array sources = (polarity == CLAS::Polarity::Outbending)
+                             ? std::array{std::tuple{CLAS::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/"},
+                                          std::tuple{CLAS::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/"},
+                                          std::tuple{CLAS::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/"}}
+                             : std::array{std::tuple{CLAS::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
+                                          std::tuple{CLAS::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
+                                          std::tuple{CLAS::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"}};
 
     std::string data_dir;
     bool valid = false;
@@ -108,7 +108,7 @@ int main(int argc, char* argv[]) {
 
     // Read input files
     fmt::print("Reading input files from: {}\n", data_dir);
-    std::vector<std::string> input_files = Core::read_recursive_file_in_directory(data_dir);
+    std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
 
     if (input_files.empty()) {
         fmt::print(stderr, "ERROR: No input files found in {}\n", data_dir);
@@ -119,7 +119,7 @@ int main(int argc, char* argv[]) {
 
     // Configure batch job
     Framework::BatchSystem::JobConfig config;
-    config.job_name = fmt::format("pi0_{}_{}", Core::to_string(target), Core::to_string(polarity));
+    config.job_name = fmt::format("pi0_{}_{}", CLAS::to_string(target), CLAS::to_string(polarity));
     config.output_dir = output_dir;
     config.log_dir = log_dir;
     config.n_cores = num_threads;
@@ -162,8 +162,8 @@ int main(int argc, char* argv[]) {
     fmt::print("═══════════════════════════════════════════════════════════════\n");
     fmt::print("  Job name:        {}\n", config.job_name);
     fmt::print("  Batch system:    {}\n", Framework::BatchSystem::system_name(batch_system));
-    fmt::print("  Target:          {}\n", Core::to_string(target));
-    fmt::print("  Polarity:        {}\n", Core::to_string(polarity));
+    fmt::print("  Target:          {}\n", CLAS::to_string(target));
+    fmt::print("  Polarity:        {}\n", CLAS::to_string(polarity));
     fmt::print("  Data directory:  {}\n", data_dir);
     fmt::print("  Total files:     {}\n", input_files.size());
     fmt::print("  Files per job:   {}\n", files_per_job);

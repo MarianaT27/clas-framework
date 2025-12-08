@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Core/Particle.hpp"
+#include "CLAS/Particle.hpp"
 #include <vector>
 #include <string>
 #include <optional>
@@ -57,7 +57,7 @@ public:
      * @brief Rapidity calculation
      * y = 0.5 * ln[(E + p_z)/(E - p_z)]
      */
-    static auto rapidity(const Core::Particle& p) -> double {
+    static auto rapidity(const CLAS::Particle& p) -> double {
         double E = p.E();
         double pz = p.pz();
         return 0.5 * std::log((E + pz) / (E - pz));
@@ -67,7 +67,7 @@ public:
      * @brief Pseudorapidity calculation
      * η = -ln[tan(θ/2)]
      */
-    static auto pseudorapidity(const Core::Particle& p) -> double {
+    static auto pseudorapidity(const CLAS::Particle& p) -> double {
         double theta_rad = p.theta() * M_PI / 180.0;
         return -std::log(std::tan(theta_rad / 2.0));
     }
@@ -75,7 +75,7 @@ public:
     /**
      * @brief Transverse momentum
      */
-    static auto pt(const Core::Particle& p) -> double {
+    static auto pt(const CLAS::Particle& p) -> double {
         return std::sqrt(p.px() * p.px() + p.py() * p.py());
     }
 
@@ -83,7 +83,7 @@ public:
      * @brief Transverse mass
      * m_T = sqrt(m² + p_T²)
      */
-    static auto transverse_mass(const Core::Particle& p) -> double {
+    static auto transverse_mass(const CLAS::Particle& p) -> double {
         double pt_val = pt(p);
         double m = p.mass();
         return std::sqrt(m * m + pt_val * pt_val);
@@ -92,10 +92,10 @@ public:
     /**
      * @brief Sort particles by momentum
      */
-    static auto sort_by_momentum(std::vector<Core::Particle> particles, bool descending = true)
-        -> std::vector<Core::Particle> {
+    static auto sort_by_momentum(std::vector<CLAS::Particle> particles, bool descending = true)
+        -> std::vector<CLAS::Particle> {
         std::sort(particles.begin(), particles.end(),
-            [descending](const Core::Particle& a, const Core::Particle& b) {
+            [descending](const CLAS::Particle& a, const CLAS::Particle& b) {
                 return descending ? a.p() > b.p() : a.p() < b.p();
             });
         return particles;
@@ -104,10 +104,10 @@ public:
     /**
      * @brief Sort particles by energy
      */
-    static auto sort_by_energy(std::vector<Core::Particle> particles, bool descending = true)
-        -> std::vector<Core::Particle> {
+    static auto sort_by_energy(std::vector<CLAS::Particle> particles, bool descending = true)
+        -> std::vector<CLAS::Particle> {
         std::sort(particles.begin(), particles.end(),
-            [descending](const Core::Particle& a, const Core::Particle& b) {
+            [descending](const CLAS::Particle& a, const CLAS::Particle& b) {
                 return descending ? a.E() > b.E() : a.E() < b.E();
             });
         return particles;
@@ -128,7 +128,7 @@ public:
         }
     };
 
-    static auto total_four_momentum(const std::vector<Core::Particle>& particles) -> FourMomentum {
+    static auto total_four_momentum(const std::vector<CLAS::Particle>& particles) -> FourMomentum {
         FourMomentum total{0, 0, 0, 0};
 
         for (const auto& p : particles) {
@@ -146,7 +146,7 @@ public:
      * Simplified boost along z-axis
      */
     static auto boost_to_cm(
-        const Core::Particle& p,
+        const CLAS::Particle& p,
         double beta_z
     ) -> FourMomentum {
         double gamma = 1.0 / std::sqrt(1.0 - beta_z * beta_z);
@@ -197,8 +197,8 @@ public:
      * For A → B + C, calculate angle of B in A rest frame
      */
     static auto decay_angle_cm(
-        const Core::Particle& parent,
-        const Core::Particle& daughter
+        const CLAS::Particle& parent,
+        const CLAS::Particle& daughter
     ) -> double {
         // Get parent momentum direction
         double px_p = parent.px();
@@ -230,7 +230,7 @@ public:
 
         auto total() const -> int { return charged + neutral; }
 
-        static auto calculate(const std::vector<Core::Particle>& particles) -> Multiplicity {
+        static auto calculate(const std::vector<CLAS::Particle>& particles) -> Multiplicity {
             Multiplicity mult;
 
             for (const auto& p : particles) {
@@ -267,7 +267,7 @@ public:
      * @brief Sphericity tensor calculation for event shape
      * Sphericity: S = 3/2 (λ2 + λ3) where λi are eigenvalues
      */
-    static auto calculate_sphericity(const std::vector<Core::Particle>& particles) -> double {
+    static auto calculate_sphericity(const std::vector<CLAS::Particle>& particles) -> double {
         // Build momentum tensor
         double S_xx = 0, S_yy = 0, S_zz = 0;
         double S_xy = 0, S_xz = 0, S_yz = 0;
@@ -305,7 +305,7 @@ public:
      * @brief Thrust calculation for event shape
      * Thrust: max Σ|p·n| / Σ|p|
      */
-    static auto calculate_thrust(const std::vector<Core::Particle>& particles) -> double {
+    static auto calculate_thrust(const std::vector<CLAS::Particle>& particles) -> double {
         // Simplified calculation along z-axis
         // Full calculation requires optimization over all directions
         double thrust_z = 0;

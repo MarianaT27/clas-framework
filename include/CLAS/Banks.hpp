@@ -2,7 +2,7 @@
 
 #include <limits>
 
-namespace Core {
+namespace CLAS {
 
 struct CherenkovBank {
     int sector = std::numeric_limits<int>::quiet_NaN();
@@ -93,4 +93,4 @@ struct ScintillatorBank {
 };
 
 
-}  // namespace Core
+}  // namespace CLAS

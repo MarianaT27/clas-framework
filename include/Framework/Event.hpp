@@ -1,15 +1,23 @@
 #pragma once
 
-#include "Core/Particle.hpp"
-#include "Core/ParticleSelector.hpp"
-#include "Core/PIDs.hpp"
-#include <vector>
-#include <optional>
-#include <memory>
+#include <CLAS/Particle.hpp>
+#include <CLAS/PIDs.hpp>
+#include <Physics/ParticleUtils.hpp>
+#include <hipo4/hipoeventiterator.h>
+
 #include <any>
-#include "hipoeventiterator.h"
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace Framework {
+
+/**
+ * @brief Type alias for storing particles grouped by their PID type
+ */
+using ParticleMap = std::map<CLAS::PIDs, std::vector<CLAS::Particle>>;
 
 /**
  * @brief Event Data Model for CLAS12 analysis
@@ -40,9 +48,9 @@ public:
 
     /**
      * @brief Get all particles (lazy loading)
-     * @return const Core::ParticleMap& Map of PID to particle vectors
+     * @return const ParticleMap& Map of PID to particle vectors
      */
-    auto particles() -> const Core::ParticleMap& {
+    auto particles() -> const ParticleMap& {
         if (!m_particles_loaded) {
             load_particles();
         }
@@ -52,9 +60,9 @@ public:
     /**
      * @brief Get particles of a specific type
      * @param pid Particle ID
-     * @return const std::vector<Core::Particle>& Vector of particles
+     * @return const std::vector<CLAS::Particle>& Vector of particles
      */
-    auto particles(Core::PIDs pid) -> const std::vector<Core::Particle>& {
+    auto particles(CLAS::PIDs pid) -> const std::vector<CLAS::Particle>& {
         if (!m_particles_loaded) {
             load_particles();
         }
@@ -62,8 +70,17 @@ public:
         if (it != m_particles.end()) {
             return it->second;
         }
-        static const std::vector<Core::Particle> empty;
+        static const std::vector<CLAS::Particle> empty;
         return empty;
+    }
+
+    /**
+     * @brief Get a HIPO bank by name
+     * @param bank_name Name of the bank (e.g., "REC::Particle")
+     * @return hipo::bank_map The bank map
+     */
+    auto get_bank(const std::string& bank_name) -> hipo::bank_map {
+        return m_hipo_event.get_bank_map(bank_name.c_str());
     }
 
     /**
@@ -115,7 +132,7 @@ public:
      * @param key Storage key
      * @param value Object to store
      */
-    template<typename T>
+    template <typename T>
     auto store(const std::string& key, T value) -> void {
         m_store[key] = std::any(std::move(value));
     }
@@ -124,9 +141,9 @@ public:
      * @brief Retrieve a custom object from the event
      * @tparam T Object type
      * @param key Storage key
-     * @return std::optional<T> The stored object, or std::nullopt if not found or type mismatch
+     * @return std::optional<T> The stored object, or std::nullopt if not found
      */
-    template<typename T>
+    template <typename T>
     auto retrieve(const std::string& key) const -> std::optional<T> {
         auto it = m_store.find(key);
         if (it == m_store.end()) {
@@ -142,7 +159,7 @@ public:
     /**
      * @brief Check if a key exists in the event store
      * @param key Storage key
-     * @return bool True if key exists, false otherwise
+     * @return bool True if key exists
      */
     auto contains(const std::string& key) const -> bool {
         return m_store.find(key) != m_store.end();
@@ -150,38 +167,26 @@ public:
 
     /**
      * @brief Store a particle collection in the event
-     * @tparam ParticleType Particle type (e.g., Core::Particle)
-     * @param key Storage key
-     * @param particles Vector of particles to store
      */
-    template<typename ParticleType>
+    template <typename ParticleType>
     auto store_particles(const std::string& key, std::vector<ParticleType> particles) -> void {
         m_store[key] = std::any(std::move(particles));
     }
 
     /**
      * @brief Retrieve a particle collection from the event
-     * @tparam ParticleType Particle type (e.g., Core::Particle)
-     * @param key Storage key
-     * @return const std::vector<ParticleType>* Pointer to particle vector, or nullptr if not found/type mismatch
      */
-    template<typename ParticleType>
+    template <typename ParticleType>
     auto get_particles(const std::string& key) const -> const std::vector<ParticleType>* {
         auto it = m_store.find(key);
         if (it == m_store.end()) {
             return nullptr;
         }
-        // std::any_cast with pointer returns nullptr on type mismatch (doesn't throw)
         return std::any_cast<std::vector<ParticleType>>(&it->second);
     }
 
     /**
      * @brief Set an algorithm decision flag
-     * @param decision_name Name of the decision (e.g., "HasGoodElectron")
-     * @param passed Whether the event passed this decision
-     *
-     * This is a convenience method for algorithms to communicate selection
-     * decisions to downstream algorithms.
      */
     auto set_decision(const std::string& decision_name, bool passed) -> void {
         store(decision_name, passed);
@@ -189,8 +194,6 @@ public:
 
     /**
      * @brief Check if an algorithm decision was passed
-     * @param decision_name Name of the decision to check
-     * @return bool True if the decision exists and was passed, false otherwise
      */
     auto passes_decision(const std::string& decision_name) -> bool {
         auto result = retrieve<bool>(decision_name);
@@ -199,25 +202,69 @@ public:
 
 private:
     hipo::iter_event& m_hipo_event;
-    Core::ParticleMap m_particles;
+    ParticleMap m_particles;
     bool m_particles_loaded = false;
     std::optional<double> m_start_time;
     long m_event_number = -1;
     int m_file_index = -1;
-
-    // Generic event store for algorithms to share data (type-safe with std::any)
     std::map<std::string, std::any> m_store;
 
+    /**
+     * @brief Load particles from REC::Particle bank
+     */
     auto load_particles() -> void {
         hipo::bank_map REC_Particle = m_hipo_event.get_bank_map("REC::Particle");
-        m_particles = Core::ParticleSelector::extract_particles(
-            REC_Particle,
-            {Core::PIDs::ELECTRON, Core::PIDs::POSITRON,
-             Core::PIDs::PIMINUS, Core::PIDs::PIPLUS,
-             Core::PIDs::KMINUS, Core::PIDs::KPLUS,
-             Core::PIDs::PROTON, Core::PIDs::NEUTRON,
-             Core::PIDs::PHOTON}
-        );
+
+        // Initialize particle vectors for common types
+        std::vector<CLAS::PIDs> target_types = {
+            CLAS::PIDs::ELECTRON, CLAS::PIDs::POSITRON,
+            CLAS::PIDs::PHOTON,
+            CLAS::PIDs::PROTON,   CLAS::PIDs::NEUTRON,
+            CLAS::PIDs::PIPLUS,   CLAS::PIDs::PIMINUS,
+            CLAS::PIDs::KPLUS,    CLAS::PIDs::KMINUS
+        };
+
+        for (const auto& type : target_types) {
+            m_particles[type] = std::vector<CLAS::Particle>();
+        }
+
+        // Extract particles from bank
+        for (int i = 0; i < REC_Particle.get_rows(); i++) {
+            const int pid = REC_Particle.get_as<int>("pid", i);
+
+            // Find matching particle type
+            CLAS::PIDs particle_type;
+            bool found = false;
+            for (const auto& type : target_types) {
+                if (pid == static_cast<int>(type)) {
+                    particle_type = type;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) continue;
+
+            const int status = REC_Particle.get_as<int>("status", i);
+            const int charge = REC_Particle.get_as<int>("charge", i);
+            const double px = REC_Particle.get_as<double>("px", i);
+            const double py = REC_Particle.get_as<double>("py", i);
+            const double pz = REC_Particle.get_as<double>("pz", i);
+            const double vx = REC_Particle.get_as<double>("vx", i);
+            const double vy = REC_Particle.get_as<double>("vy", i);
+            const double vz = REC_Particle.get_as<double>("vz", i);
+            const double vt = REC_Particle.get_as<double>("vt", i);
+            const double beta = REC_Particle.get_as<double>("beta", i);
+            const double chi2pid = REC_Particle.get_as<double>("chi2pid", i);
+
+            const double mass = Physics::ParticleUtils::get_mass(pid);
+            const double E = Physics::ParticleUtils::compute_energy(px, py, pz, pid);
+
+            m_particles[particle_type].emplace_back(
+                pid, status, i, charge, mass,
+                px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
+        }
+
         m_particles_loaded = true;
     }
 

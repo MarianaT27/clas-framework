@@ -106,8 +106,8 @@ int main() {
     // Add electron selection algorithm
     auto electron_alg = std::make_unique<Algorithms::ElectronSelectionAlg>(
         "ElectronSelection",
-        Core::Target::LD2,
-        Core::Polarity::Outbending
+        CLAS::Target::LD2,
+        CLAS::Polarity::Outbending
     );
     app.add_algorithm(std::move(electron_alg));
 
@@ -286,7 +286,7 @@ public:
         m_cutflow.pass("All Events");
 
         // Get electrons
-        const auto& electrons = event.particles(Core::PIDs::ELECTRON);
+        const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
         if (electrons.empty()) return Framework::StatusCode::SUCCESS();
         m_cutflow.pass("Has Electron");
 
@@ -536,7 +536,7 @@ private:
 
     auto execute(Framework::Event& event) -> Framework::StatusCode override {
         // Get electron
-        const auto& electrons = event.particles(Core::PIDs::ELECTRON);
+        const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
         if (electrons.empty()) return Framework::StatusCode::SUCCESS();
 
         const auto& e = electrons[0];
@@ -545,8 +545,9 @@ private:
         m_e_p = e.p();
         m_e_theta = e.theta();
         m_e_phi = e.phi();
-        m_q2 = Core::Kinematics::Q2(e);
-        m_w = Core::Kinematics::W(e);
+        auto kin = Physics::DISAnalysis::calculate_kinematics(e);
+        m_q2 = kin.q2;
+        m_w = kin.w;
 
         // Fill N-tuple
         if (m_ntuple_svc) {
@@ -598,91 +599,95 @@ auto initialize() -> Framework::StatusCode override {
 
 ## 6. Particle Selection
 
-The `ParticleSelector` class provides easy particle extraction from HIPO banks.
+Particle selection is handled through the `ParticleSelectorService`, which provides a service-based, configurable approach that can be shared across algorithms.
 
-### Basic Usage
+### 6.1 ParticleSelectorService
 
-**OLD WAY (Manual, Error-Prone):**
+The service-based approach integrates with the framework architecture.
+
+**Setup:**
 ```cpp
-std::vector<Core::Particle> electrons;
-for (int i = 0; i < REC_Particle.getRows(); i++) {
-    const int pid = REC_Particle.get<int>("pid", i);
-    if (pid == static_cast<int>(Core::PIDs::Electron)) {
-        // Extract 15+ fields manually...
-        electrons.emplace_back(/*...*/);
+auto particle_svc = std::make_unique<Framework::ParticleSelectorService>();
+// Optionally configure default particle types
+particle_svc->set_default_types({
+    CLAS::PIDs::ELECTRON, CLAS::PIDs::PHOTON,
+    CLAS::PIDs::PROTON, CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS
+});
+app.service_manager().add_service(std::move(particle_svc));
+```
+
+**Usage in Algorithm:**
+```cpp
+#include <Framework/Services/ParticleSelectorService.hpp>
+
+class MyAlgorithm : public Framework::Algorithm {
+private:
+    Framework::ParticleSelectorService* m_particle_svc = nullptr;
+
+    auto initialize() -> Framework::StatusCode override {
+        m_particle_svc = service<Framework::ParticleSelectorService>("ParticleSelectorService");
+        return Framework::StatusCode::SUCCESS();
     }
-}
-```
 
-**NEW WAY (One Line):**
-```cpp
-#include <Core/ParticleSelector.hpp>
+    auto execute(Framework::Event& event) -> Framework::StatusCode override {
+        auto& bank = event.get_bank("REC::Particle");
 
-auto particles = Core::ParticleSelector::extract_particles(REC_Particle);
-auto& electrons = particles[Core::PIDs::ELECTRON];
-auto& protons = particles[Core::PIDs::PROTON];
-```
+        // Extract all particles
+        auto particles = m_particle_svc->extract_particles(bank);
 
-### Extract Specific Particle Types
+        // Get specific particle types
+        const auto& electrons = m_particle_svc->get_electrons(particles);
+        const auto& photons = m_particle_svc->get_photons(particles);
+        const auto& protons = m_particle_svc->get_protons(particles);
 
-```cpp
-// Extract only electrons and protons
-auto particles = Core::ParticleSelector::extract_particles(
-    REC_Particle,
-    {Core::PIDs::ELECTRON, Core::PIDs::PROTON}
-);
+        // Apply filters
+        auto good_electrons = m_particle_svc->with_momentum_range(electrons, 1.0, 10.0);
+        auto fd_electrons = m_particle_svc->get_forward_detector(good_electrons);
 
-auto& electrons = particles[Core::PIDs::ELECTRON];
-auto& protons = particles[Core::PIDs::PROTON];
-```
-
-### Built-in Filters
-
-```cpp
-auto& electrons = particles[Core::PIDs::ELECTRON];
-
-// Filter by momentum
-auto high_p = Core::ParticleSelector::with_momentum_range(electrons, 2.0, 10.0);
-
-// Filter by vertex z
-auto good_vz = Core::ParticleSelector::with_vz_range(electrons, -10.0, 10.0);
-
-// Filter by chi2pid
-auto good_pid = Core::ParticleSelector::with_chi2pid_range(electrons, -3.0, 3.0);
-
-// Get trigger particles
-auto triggers = Core::ParticleSelector::get_trigger_particles(electrons, {2000, 4000});
-```
-
-### Custom Filters
-
-```cpp
-// Lambda filter
-auto filtered = Core::ParticleSelector::filter(
-    electrons,
-    [](const Core::Particle& p) {
-        return p.E() > 5.0 &&      // Energy > 5 GeV
-               p.theta() < 30.0 && // Forward angle
-               p.p() > 2.0;        // Momentum > 2 GeV/c
+        return Framework::StatusCode::SUCCESS();
     }
-);
+};
 ```
 
-### Using with Event
+**Available Filters:**
+```cpp
+// Momentum range
+auto filtered = m_particle_svc->with_momentum_range(particles, min_p, max_p);
+
+// Vertex z range
+auto filtered = m_particle_svc->with_vz_range(particles, min_vz, max_vz);
+
+// Theta angle range
+auto filtered = m_particle_svc->with_theta_range(particles, min_theta, max_theta);
+
+// Chi2pid range
+auto filtered = m_particle_svc->with_chi2pid_range(particles, min_chi2, max_chi2);
+
+// Charge
+auto filtered = m_particle_svc->with_charge(particles, charge);
+
+// Detector regions
+auto fd = m_particle_svc->get_forward_detector(particles);   // Status 2000-4000
+auto cd = m_particle_svc->get_central_detector(particles);   // Status 4000-6000
+
+// Custom filter
+auto filtered = m_particle_svc->filter(particles, [](const CLAS::Particle& p) {
+    return p.E() > 5.0 && p.theta() < 30.0;
+});
+```
+
+### 6.2 Using with Event Store
+
+The `Event` class provides convenient particle access:
 
 ```cpp
 auto execute(Framework::Event& event) -> Framework::StatusCode override {
-    // Get all particles (lazy loaded)
-    const auto& all_particles = event.particles();
+    // Get particles by type (lazy loaded)
+    const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
+    const auto& pions = event.particles(CLAS::PIDs::PIPLUS);
 
-    // Get specific type
-    const auto& electrons = event.particles(Core::PIDs::ELECTRON);
-    const auto& pions = event.particles(Core::PIDs::PIPLUS);
-
-    // Filter
-    auto good_electrons = Core::ParticleSelector::with_momentum_range(
-        electrons, 1.0, 10.0
-    );
+    // Filter using service or static methods
+    auto good_electrons = m_particle_svc->with_momentum_range(electrons, 1.0, 10.0);
 
     return Framework::StatusCode::SUCCESS();
 }
@@ -696,48 +701,51 @@ The cuts system provides reusable, composable cuts for particle selection.
 
 ### Electron Cuts
 
-Complete electron identification cuts:
+Complete electron identification cuts using services:
 
 ```cpp
-#include <Core/Cuts.hpp>
+#include <CLAS/ElectronCuts.hpp>
+#include <Framework/Services/SamplingFractionService.hpp>
 
-// Apply all standard electron cuts
-bool passes = Core::ElectronCuts::select_electron(
-    electron,
-    calorimeter,
-    trajectory,
-    Core::Target::LD2
+// Get the SamplingFractionService
+auto sf_svc = service<Framework::SamplingFractionService>("SamplingFractionService");
+
+// Apply basic cuts (excluding sampling fraction)
+auto results = CLAS::ElectronCuts::apply_basic_cuts(
+    electron, calorimeter, trajectory, CLAS::Target::LD2
 );
+
+// Apply sampling fraction cut using the service
+bool pass_sf = sf_svc->passes_cut(SF, momentum, sector, CLAS::Target::LD2, CLAS::Polarity::Outbending);
 ```
 
 **Individual Cuts:**
 
 ```cpp
 // Chi2 PID
-bool pass_chi2 = Core::ElectronCuts::pass_chi2pid_cut(electron.chi2pid());
+bool pass_chi2 = CLAS::ElectronCuts::pass_chi2pid_cut(electron.chi2pid());
 
 // Momentum
-bool pass_p = Core::ElectronCuts::pass_electron_momentum_cut(electron.p());
+bool pass_p = CLAS::ElectronCuts::pass_electron_momentum_cut(electron.p());
 
 // Vertex Z (target-specific)
-bool pass_vz = Core::ElectronCuts::pass_electron_vz_cut(
+bool pass_vz = CLAS::ElectronCuts::pass_electron_vz_cut(
     electron.vz(),
-    Core::Target::LD2
+    CLAS::Target::LD2
 );
 
 // PCAL fiducial
-bool pass_pcal = Core::ElectronCuts::pass_pcal_fiducial_cut(
+bool pass_pcal = CLAS::ElectronCuts::pass_pcal_fiducial_cut(
     calorimeter.pcal.lv,
     calorimeter.pcal.lw
 );
 
-// Sampling fraction
-bool pass_sf = Core::ElectronCuts::pass_sampling_fraction_cut_eb(
-    SF, E_tot, sector
-);
+// Sampling fraction (using service)
+auto sf_svc = service<Framework::SamplingFractionService>("SamplingFractionService");
+bool pass_sf = sf_svc->passes_cut(SF, momentum, sector, CLAS::Target::LD2, CLAS::Polarity::Outbending);
 
 // DC chi2/ndf
-bool pass_dc = Core::ElectronCuts::pass_chi2ndf_cut(
+bool pass_dc = CLAS::ElectronCuts::pass_chi2ndf_cut(
     traj.region1.edge,
     traj.region2.edge,
     traj.region3.edge
@@ -747,11 +755,11 @@ bool pass_dc = Core::ElectronCuts::pass_chi2ndf_cut(
 **Detailed Cut Results:**
 
 ```cpp
-auto results = Core::ElectronCuts::apply_all_cuts(
+auto results = CLAS::ElectronCuts::apply_all_cuts(
     electron,
     calorimeter,
     trajectory,
-    Core::Target::LD2
+    CLAS::Target::LD2
 );
 
 // Check individual cuts
@@ -771,18 +779,18 @@ if (results.passes_all_required()) {
 ### Target Types
 
 ```cpp
-Core::Target::LD2     // Liquid Deuterium: vz ∈ (-15.0, 5.0) cm
-Core::Target::CxC     // Carbon: vz ∈ (-10.6, 5.0) cm
-Core::Target::Cu      // Copper: vz ∈ (-10.6, -6.5) cm
-Core::Target::Sn      // Tin: vz ∈ (-5.5, 5.0) cm
-Core::Target::CuSn    // Copper-Tin: vz ∈ (-10.6, 5.0) cm
+CLAS::Target::LD2     // Liquid Deuterium: vz ∈ (-15.0, 5.0) cm
+CLAS::Target::CxC     // Carbon: vz ∈ (-10.6, 5.0) cm
+CLAS::Target::Cu      // Copper: vz ∈ (-10.6, -6.5) cm
+CLAS::Target::Sn      // Tin: vz ∈ (-5.5, 5.0) cm
+CLAS::Target::CuSn    // Copper-Tin: vz ∈ (-10.6, 5.0) cm
 ```
 
 ### Polarity
 
 ```cpp
-Core::Polarity::Inbending    // "IB"
-Core::Polarity::Outbending   // "OB"
+CLAS::Polarity::Inbending    // "IB"
+CLAS::Polarity::Outbending   // "OB"
 ```
 
 ---
@@ -794,40 +802,43 @@ Standard DIS and exclusive kinematics calculations.
 ### DIS Kinematics
 
 ```cpp
-#include <Core/Kinematics.hpp>
+#include <Physics/Kinematics.hpp>
+#include <Physics/DISAnalysis.hpp>
 
-using namespace Core::Kinematics;
+// Create beam and target particles
+CLAS::Particle beam(11, 0, -1, -1, CLAS::Constants::ELECTRONMASS,
+                    0, 0, 10.53, 10.53, 0, 0, 0, 0, 1.0, 0);
+CLAS::Particle target(2212, 0, -1, 1, CLAS::Constants::PROTONMASS,
+                      0, 0, 0, CLAS::Constants::PROTONMASS, 0, 0, 0, 0, 0, 0);
 
-// Beam configuration (default: 10.6 GeV)
-BeamConfig beam;  // Uses RG-A defaults
-
-// Calculate DIS variables
-double q2 = Q2(electron, beam);
-double w = W(electron, beam);
-double xb = x_bjorken(electron, beam);
-double nu_val = nu(electron, beam);
-double y = inelasticity(electron, beam);
+// Calculate DIS variables using KinematicCalculator
+double q2 = Physics::KinematicCalculator::calculate_Q2(beam, electron);
+double w = Physics::KinematicCalculator::calculate_W(beam, electron, target);
+double y = Physics::KinematicCalculator::calculate_y(beam, electron);
+double nu_val = beam.E() - electron.E();
+double xb = Physics::KinematicCalculator::calculate_x_bjorken(q2, nu_val);
 
 std::cout << "Q² = " << q2 << " GeV²\n";
 std::cout << "W = " << w << " GeV\n";
 std::cout << "x_B = " << xb << "\n";
+
+// Or use DISAnalysis for convenience
+auto kin = Physics::DISAnalysis::calculate_kinematics(electron);
+std::cout << "Q² = " << kin.q2 << ", W = " << kin.w << "\n";
 ```
 
 ### Exclusive Reactions
 
 ```cpp
-// Missing mass for ep → e'pX
-double mm = missing_mass(electron, proton, beam);
+// Missing mass using KinematicCalculator
+double mm = Physics::KinematicCalculator::missing_mass(beam, target, {electron, proton});
 
-// Invariant mass
-double m_pipi = invariant_mass(pion1, pion2);
-double m_3particle = invariant_mass({proton, pion1, pion2});
+// Invariant mass using CompositeParticle
+Physics::CompositeParticle pi0({photon1, photon2});
+double m_gg = pi0.invariant_mass();
 
-// Momentum transfer
-double t = momentum_transfer_t(electron, meson, beam);
-
-// Missing energy and momentum
-double E_miss = missing_energy(electron, {proton, pion}, beam);
+// Opening angle
+double angle = Physics::KinematicCalculator::opening_angle(photon1, photon2);
 double p_miss = missing_momentum(electron, {proton, pion}, beam);
 ```
 
@@ -869,7 +880,7 @@ double dphi = delta_phi(particle1, particle2);  // [-180, 180]
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Algorithms/ElectronSelectionAlg.hpp"
-#include "Core/Target.hpp"
+#include "CLAS/Target.hpp"
 
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -893,8 +904,8 @@ int main(int argc, char** argv) {
     // Add algorithm
     auto electron_alg = std::make_unique<Algorithms::ElectronSelectionAlg>(
         "ElectronSelection",
-        Core::Target::LD2,
-        Core::Polarity::Outbending
+        CLAS::Target::LD2,
+        CLAS::Polarity::Outbending
     );
     app.add_algorithm(std::move(electron_alg));
 
@@ -919,7 +930,7 @@ int main(int argc, char** argv) {
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/NTupleService.hpp"
 #include "Algorithms/ElectronAnalysisAlg.hpp"
-#include "Core/Target.hpp"
+#include "CLAS/Target.hpp"
 
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -941,8 +952,8 @@ int main(int argc, char** argv) {
     // Algorithm with full cuts and kinematics
     auto analysis_alg = std::make_unique<Algorithms::ElectronAnalysisAlg>(
         "ElectronAnalysis",
-        Core::Target::LD2,
-        Core::Polarity::Outbending,
+        CLAS::Target::LD2,
+        CLAS::Polarity::Outbending,
         false  // systematics disabled
     );
     app.add_algorithm(std::move(analysis_alg));
@@ -986,15 +997,15 @@ int main(int argc, char** argv) {
     // 1. Electron selection (sets "HasGoodElectron" decision)
     auto electron_alg = std::make_unique<Algorithms::ElectronAnalysisAlg>(
         "ElectronAnalysis",
-        Core::Target::LD2,
-        Core::Polarity::Outbending
+        CLAS::Target::LD2,
+        CLAS::Polarity::Outbending
     );
     app.add_algorithm(std::move(electron_alg));
 
     // 2. Pion selection (runs only if HasGoodElectron)
     auto pion_alg = std::make_unique<Algorithms::PionSelectionAlg>(
         "PionSelection",
-        Core::Target::LD2,
+        CLAS::Target::LD2,
         true  // separate pi+ and pi-
     );
     app.add_algorithm(std::move(pion_alg));
@@ -1075,7 +1086,7 @@ Share data between algorithms:
 ```cpp
 // In first algorithm
 auto execute(Framework::Event& event) -> Framework::StatusCode override {
-    const auto& electrons = event.particles(Core::PIDs::ELECTRON);
+    const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
     auto trigger_e = find_trigger_electron(electrons);
 
     // Store for downstream algorithms
@@ -1093,7 +1104,7 @@ auto execute(Framework::Event& event) -> Framework::StatusCode override {
     }
 
     // Retrieve stored electron
-    auto electron = event.retrieve<Core::Particle>("trigger_electron");
+    auto electron = event.retrieve<CLAS::Particle>("trigger_electron");
 
     // Use electron...
 
@@ -1109,8 +1120,8 @@ Framework support for systematic uncertainties:
 // Enable systematics in algorithm constructor
 auto analysis_alg = std::make_unique<Algorithms::ElectronAnalysisAlg>(
     "ElectronAnalysis",
-    Core::Target::LD2,
-    Core::Polarity::Outbending,
+    CLAS::Target::LD2,
+    CLAS::Polarity::Outbending,
     true  // enable systematics
 );
 ```
@@ -1142,7 +1153,7 @@ The framework will produce separate histograms for each systematic variation.
 
 **Before:**
 ```cpp
-std::vector<Core::Particle> electrons;
+std::vector<CLAS::Particle> electrons;
 for (int i = 0; i < REC_Particle.getRows(); i++) {
     // Manual extraction...
 }
@@ -1150,7 +1161,7 @@ for (int i = 0; i < REC_Particle.getRows(); i++) {
 
 **After:**
 ```cpp
-const auto& electrons = event.particles(Core::PIDs::ELECTRON);
+const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
 ```
 
 **Step 3: Use Algorithm Framework**
@@ -1217,12 +1228,13 @@ double q2 = ...;
 **After:**
 ```cpp
 // Use ElectronCuts
-bool passes = Core::ElectronCuts::select_electron(
-    electron, calorimeter, trajectory, Core::Target::LD2
+bool passes = CLAS::ElectronCuts::select_electron(
+    electron, calorimeter, trajectory, CLAS::Target::LD2
 );
 
-// Use Kinematics
-double q2 = Core::Kinematics::Q2(electron);
+// Use Physics::DISAnalysis for kinematics
+auto kin = Physics::DISAnalysis::calculate_kinematics(electron);
+double q2 = kin.q2;
 ```
 
 ---

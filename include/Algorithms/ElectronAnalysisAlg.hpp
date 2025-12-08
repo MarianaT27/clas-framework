@@ -8,9 +8,11 @@
 #include "Framework/Services/ConditionsService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
-#include "Core/Cuts.hpp"
-#include "Core/ReadBank.hpp"
-#include "Core/Target.hpp"
+#include "Framework/Services/ParticleSelectorService.hpp"
+#include "Framework/Services/SamplingFractionService.hpp"
+#include "CLAS/ElectronCuts.hpp"
+#include "CLAS/ReadBank.hpp"
+#include "CLAS/Target.hpp"
 #include "Physics/Kinematics.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
@@ -32,8 +34,8 @@ namespace Algorithms {
 class ElectronAnalysisAlg : public Framework::Algorithm {
 public:
     explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis",
-                                Core::Target target = Core::Target::LD2,
-                                Core::Polarity polarity = Core::Polarity::Outbending,
+                                CLAS::Target target = CLAS::Target::LD2,
+                                CLAS::Polarity polarity = CLAS::Polarity::Outbending,
                                 bool enable_systematics = false)
         : Algorithm(std::move(name))
         , m_target(target)
@@ -47,12 +49,14 @@ public:
         m_hist_svc = service<Framework::HistogramService>("HistogramService");
         m_ntuple_svc = service<Framework::NTupleService>("NTupleService");
         m_cond_svc = service<Framework::ConditionsService>("ConditionsService");
+        m_particle_svc = service<Framework::ParticleSelectorService>("ParticleSelectorService");
+        m_sf_svc = service<Framework::SamplingFractionService>("SamplingFractionService");
 
         if (m_log_svc) {
             LOG_INFO(m_log_svc, "Initializing algorithm");
             LOG_INFO(m_log_svc, "Target: {}, Polarity: {}, Systematics: {}",
-                     m_target == Core::Target::LD2 ? "LD2" : "Other",
-                     m_polarity == Core::Polarity::Outbending ? "Outbending" : "Inbending",
+                     m_target == CLAS::Target::LD2 ? "LD2" : "Other",
+                     m_polarity == CLAS::Polarity::Outbending ? "Outbending" : "Inbending",
                      m_enable_systematics ? "enabled" : "disabled");
         }
 
@@ -61,6 +65,14 @@ public:
                 LOG_ERROR(m_log_svc, "Could not get HistogramService");
             }
             fmt::print(stderr, "ERROR: Could not get HistogramService\n");
+            return Framework::StatusCode::FAILURE();
+        }
+
+        if (!m_sf_svc) {
+            if (m_log_svc) {
+                LOG_ERROR(m_log_svc, "Could not get SamplingFractionService");
+            }
+            fmt::print(stderr, "ERROR: Could not get SamplingFractionService\n");
             return Framework::StatusCode::FAILURE();
         }
 
@@ -102,27 +114,27 @@ public:
         hipo::bank_map REC_Track = hipo_event.get_bank_map("REC::Track");
         hipo::bank_map REC_Calorimeter = hipo_event.get_bank_map("REC::Calorimeter");
 
-        // Extract electrons
-        Core::ParticleMap particles = Core::ParticleSelector::extract_particles(
+        // Extract electrons using ParticleSelectorService
+        Framework::ParticleMap particles = m_particle_svc->extract_particles(
             REC_Particle,
-            {Core::PIDs::ELECTRON, Core::PIDs::PIMINUS, Core::PIDs::PIPLUS,
-             Core::PIDs::KMINUS, Core::PIDs::KPLUS, Core::PIDs::PHOTON}
+            {CLAS::PIDs::ELECTRON, CLAS::PIDs::PIMINUS, CLAS::PIDs::PIPLUS,
+             CLAS::PIDs::KMINUS, CLAS::PIDs::KPLUS, CLAS::PIDs::PHOTON}
         );
 
-        const auto& electrons = particles[Core::PIDs::ELECTRON];
+        const auto& electrons = m_particle_svc->get_electrons(particles);
         if (electrons.empty()) return Framework::StatusCode::SUCCESS();
 
         // Select trigger electron
-        std::optional<Core::Particle> trigger_e = Core::find_trigger_electron(electrons, {2000, 4000});
+        std::optional<CLAS::Particle> trigger_e = Physics::ParticleUtils::find_trigger_electron(electrons, {2000, 4000});
         if (!trigger_e.has_value()) return Framework::StatusCode::SUCCESS();
         m_cutflow.pass("Trigger Electron");
 
         // Get detector info for electron
-        Core::CalorimeterBank calorimeter = Core::read_Calorimeter_bank(
+        CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(
             REC_Calorimeter.get_bank(), trigger_e->index());
-        Core::DCTrajBank traj = Core::read_Traj_bank(
+        CLAS::DCTrajBank traj = CLAS::read_Traj_bank(
             REC_Traj.get_bank(), trigger_e->index());
-        Core::TrackBank track = Core::read_Track_bank(
+        CLAS::TrackBank track = CLAS::read_Track_bank(
             REC_Track.get_bank(), trigger_e->index());
 
         // Apply cuts sequentially and fill histograms after each cut
@@ -135,43 +147,42 @@ public:
         const int sector = calorimeter.pcal.sector;
 
         // Chi2 PID cut
-        if (!Core::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
+        if (!CLAS::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Chi2 PID");
         fill_after_cut("Chi2PID", electron, calorimeter, traj, track);
 
         // Momentum cut
-        if (!Core::ElectronCuts::pass_electron_momentum_cut(p_e)) {
+        if (!CLAS::ElectronCuts::pass_electron_momentum_cut(p_e)) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Momentum > 0.8 GeV");
         fill_after_cut("Momentum", electron, calorimeter, traj, track);
 
         // Vertex Z cut
-        if (!Core::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) {
+        if (!CLAS::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Vertex Z");
         fill_after_cut("VertexZ", electron, calorimeter, traj, track);
 
         // Sampling fraction cut
-        Core::SamplingFractionCut sf_cut_obj;
-        if (!Core::ElectronCuts::pass_sampling_fraction_cut(SF, p_e, sector, m_target, m_polarity, sf_cut_obj)) {
+        if (!m_sf_svc->passes_cut(SF, p_e, sector, m_target, m_polarity)) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Sampling Fraction");
         fill_after_cut("SamplingFraction", electron, calorimeter, traj, track);
 
         // PCAL fiducial cut
-        if (!Core::ElectronCuts::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
+        if (!CLAS::ElectronCuts::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("PCAL Fiducial");
         fill_after_cut("PCALFiducial", electron, calorimeter, traj, track);
 
         // DC chi2/ndf cut
-        if (!Core::ElectronCuts::pass_chi2ndf_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
+        if (!CLAS::ElectronCuts::pass_chi2ndf_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("DC Chi2/NDF");
@@ -221,8 +232,8 @@ public:
     }
 
 private:
-    Core::Target m_target;
-    Core::Polarity m_polarity;
+    CLAS::Target m_target;
+    CLAS::Polarity m_polarity;
     bool m_enable_systematics;
     Framework::Cutflow m_cutflow;
     Framework::SystematicManager m_sys_mgr;
@@ -232,6 +243,8 @@ private:
     Framework::HistogramService* m_hist_svc = nullptr;
     Framework::NTupleService* m_ntuple_svc = nullptr;
     Framework::ConditionsService* m_cond_svc = nullptr;
+    Framework::ParticleSelectorService* m_particle_svc = nullptr;
+    Framework::SamplingFractionService* m_sf_svc = nullptr;
 
     // N-tuple variables
     double m_nt_e_p = 0.0;
@@ -338,18 +351,18 @@ private:
     }
 
     auto fill_after_cut([[maybe_unused]] const std::string& cut_name,
-                       [[maybe_unused]] const Core::Particle& electron,
-                       [[maybe_unused]] const Core::CalorimeterBank& calo,
-                       [[maybe_unused]] const Core::DCTrajBank& traj,
-                       [[maybe_unused]] const Core::TrackBank& track) -> void {
+                       [[maybe_unused]] const CLAS::Particle& electron,
+                       [[maybe_unused]] const CLAS::CalorimeterBank& calo,
+                       [[maybe_unused]] const CLAS::DCTrajBank& traj,
+                       [[maybe_unused]] const CLAS::TrackBank& track) -> void {
         // Could fill histograms specific to this cut stage
         // For now, just placeholder
     }
 
-    auto fill_final_histograms(const Core::Particle& electron,
-                              const Core::CalorimeterBank& calo,
-                              const Core::DCTrajBank& traj,
-                              const Core::TrackBank& track) -> void {
+    auto fill_final_histograms(const CLAS::Particle& electron,
+                              const CLAS::CalorimeterBank& calo,
+                              const CLAS::DCTrajBank& traj,
+                              const CLAS::TrackBank& track) -> void {
         // Fill electron kinematics
         h_electron.momentum->Fill(electron.p());
         h_electron.theta->Fill(electron.theta());

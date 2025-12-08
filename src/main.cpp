@@ -19,15 +19,15 @@
 #include <TStyle.h>
 
 // Hipo headers
-#include "Core/Target.hpp"
+#include "CLAS/Target.hpp"
 #include "fmt/base.h"
 #include "hipo4/hipoeventiterator.h"
 #include "hipo4/chain.h"
 
 
 // Project headers
-#include <Core/Constants.hpp>
-#include <Core/Helpers.hpp>
+#include <CLAS/Constants.hpp>
+#include <CLAS/FileUtils.hpp>
 #include <study1/Drawing.hpp>
 #include <study1/Histograms.hpp>
 #include <study1/Reader.hpp>
@@ -36,11 +36,11 @@ int main() {
     ROOT::EnableThreadSafety();
 
     // Read the files
-    std::vector<std::string> files = Core::read_recursive_file_in_directory("/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/");
+    std::vector<std::string> files = CLAS::FileUtils::read_recursive_hipo_files("/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/");
 
     // Process the data
-    Core::Target target = Core::Target::LD2;
-    Core::Polarity polarity = Core::Polarity::Outbending;
+    CLAS::Target target = CLAS::Target::LD2;
+    CLAS::Polarity polarity = CLAS::Polarity::Outbending;
     study1::Histograms histograms;
     study1::Reader reader(histograms, target, polarity);
 
@@ -57,7 +57,7 @@ int main() {
 
     // Print summary
     fmt::print("===== Summary =====\n");
-    fmt::println("Target: {} | Polarity: {}", Core::to_string(target), Core::to_string(polarity));
+    fmt::println("Target: {} | Polarity: {}", CLAS::to_string(target), CLAS::to_string(polarity));
     fmt::print("Total number of events processed: {}\n", reader.get_event_count());
     fmt::print("Number of trigger electrons found: {}\n", reader.get_nb_trigger_electron());
     fmt::print("Number of survivors after momentum cut: {}\n", reader.get_mom_cut_survivors());

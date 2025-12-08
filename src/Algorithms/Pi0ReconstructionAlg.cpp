@@ -7,8 +7,8 @@ namespace Algorithms {
 Pi0ReconstructionAlg::Pi0ReconstructionAlg(std::string name, double min_photon_energy, double pi0_mass_window)
     : Algorithm(std::move(name)), m_min_photon_energy(min_photon_energy), m_pi0_mass_window(pi0_mass_window), m_cutflow("Pi0 Reconstruction") {}
 
-auto Pi0ReconstructionAlg::select_photons(const std::vector<Core::Particle>& photons) const -> std::vector<Core::Particle> {
-    std::vector<Core::Particle> selected;
+auto Pi0ReconstructionAlg::select_photons(const std::vector<CLAS::Particle>& photons) const -> std::vector<CLAS::Particle> {
+    std::vector<CLAS::Particle> selected;
     selected.reserve(photons.size());
 
     for (const auto& photon : photons) {
@@ -18,18 +18,18 @@ auto Pi0ReconstructionAlg::select_photons(const std::vector<Core::Particle>& pho
     return selected;
 }
 
-auto Pi0ReconstructionAlg::select_photons_with_AI(hipo::bank& RUN_config, hipo::bank& REC_Particle, hipo::bank& REC_Calorimeter) const -> std::vector<Core::Particle> {
-    return Core::PhotonCuts::select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter, 2);
+auto Pi0ReconstructionAlg::select_photons_with_AI(hipo::bank& RUN_config, hipo::bank& REC_Particle, hipo::bank& REC_Calorimeter) const -> std::vector<CLAS::Particle> {
+    return m_photon_cuts_svc->select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
 }
 
-auto Pi0ReconstructionAlg::calculate_invariant_mass(const Core::Particle& g1, const Core::Particle& g2) -> double {
+auto Pi0ReconstructionAlg::calculate_invariant_mass(const CLAS::Particle& g1, const CLAS::Particle& g2) -> double {
     return (g1.PxPyPzEVector() + g2.PxPyPzEVector()).M();
 }
 
-auto Pi0ReconstructionAlg::find_best_pi0(const std::vector<Core::Particle>& photons) const -> std::optional<std::tuple<Core::Particle, Core::Particle, double>> {
+auto Pi0ReconstructionAlg::find_best_pi0(const std::vector<CLAS::Particle>& photons) const -> std::optional<std::tuple<CLAS::Particle, CLAS::Particle, double>> {
     if (photons.size() < 2) return std::nullopt;
 
-    std::optional<std::tuple<Core::Particle, Core::Particle, double>> best;
+    std::optional<std::tuple<CLAS::Particle, CLAS::Particle, double>> best;
     double best_mass_diff = std::numeric_limits<double>::max();
 
     for (size_t i = 0; i < photons.size(); ++i) {
@@ -46,11 +46,11 @@ auto Pi0ReconstructionAlg::find_best_pi0(const std::vector<Core::Particle>& phot
     return best;
 }
 
-auto Pi0ReconstructionAlg::find_all_unique_pi0_candidates(const std::vector<Core::Particle>& photons) const -> std::optional<std::vector<std::tuple<Core::Particle, Core::Particle, double>>> {
+auto Pi0ReconstructionAlg::find_all_unique_pi0_candidates(const std::vector<CLAS::Particle>& photons) const -> std::optional<std::vector<std::tuple<CLAS::Particle, CLAS::Particle, double>>> {
     
     if (photons.size() < 2) return std::nullopt;
     
-    std::vector<std::tuple<Core::Particle, Core::Particle, double>> candidates;
+    std::vector<std::tuple<CLAS::Particle, CLAS::Particle, double>> candidates;
     std::vector<bool> used(photons.size(), false);
     
     // Keep pairing until we can't find more valid pairs
@@ -113,6 +113,13 @@ auto Pi0ReconstructionAlg::initialize() -> Framework::StatusCode {
         if (m_log_svc) LOG_WARNING(m_log_svc.get(), "Could not get NTupleService - N-tuple output disabled");
     }
 
+    auto photon_cuts_sc = initialize_handle(m_photon_cuts_svc);
+    if (photon_cuts_sc.is_failure()) {
+        if (m_log_svc) LOG_ERROR(m_log_svc.get(), "Could not get PhotonCutsService: {}", photon_cuts_sc.message());
+        fmt::print(stderr, "ERROR: {}\n", photon_cuts_sc.message());
+        return photon_cuts_sc;
+    }
+
     book_histograms();
 
     if (m_ntuple_svc) setup_ntuple();
@@ -137,7 +144,7 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
     if (!event.passes_decision("HasGoodDISElectron")) return Framework::StatusCode::SUCCESS();
     m_cutflow.pass("Has Electron");
 
-    const auto& photons = event.particles(Core::PIDs::PHOTON);
+    const auto& photons = event.particles(CLAS::PIDs::PHOTON);
     if (h_n_photons) h_n_photons->Fill(static_cast<double>(photons.size()));
 
     auto& hipo_event = event.hipo_event();
@@ -147,10 +154,10 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
 
     auto selected_photons = select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
 
-    std::vector<Core::Particle> fiducial_photons;
+    std::vector<CLAS::Particle> fiducial_photons;
     for (const auto& photon : selected_photons) {
-        Core::CalorimeterBank calorimeter = Core::read_Calorimeter_bank(REC_Calorimeter, photon.index());
-        if (Core::PhotonCuts::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
+        CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(REC_Calorimeter, photon.index());
+        if (Framework::PhotonCutsService::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
             if (0.9 < photon.beta() && photon.beta() < 1.1) fiducial_photons.push_back(photon);
         }
     }
@@ -217,7 +224,7 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
     }
 
     if (m_ntuple_svc && !pi0_candidates.empty()) {
-        auto* electrons = event.get_particles<Core::Particle>("SelectedElectrons");
+        auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
         if (electrons && !electrons->empty()) {
             const auto& electron = (*electrons)[0];
             local_e_p = electron.p();

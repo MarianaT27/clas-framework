@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace Core {
+namespace CLAS {
 enum class Target {
     Undefined,
     LD2,
@@ -52,4 +52,4 @@ inline auto string_to_polarity(const std::string& str) -> Polarity {
     return Polarity::Inbending; // Default value
 }
 
-}  // namespace Core
+}  // namespace CLAS

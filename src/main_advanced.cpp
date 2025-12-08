@@ -15,13 +15,15 @@
 #include "Framework/AlgorithmTypes.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/ParticleSelectorService.hpp"
+#include "Framework/Services/SamplingFractionService.hpp"
 #include "Algorithms/TriggerElectronFilter.hpp"
 #include "Algorithms/Pi0Producer.hpp"
 #include "Algorithms/EventMonitor.hpp"
 #include "Algorithms/ElectronAnalysisAlg.hpp"
 #include "Algorithms/PionSelectionAlg.hpp"
-#include "Core/Helpers.hpp"
-#include "Core/Target.hpp"
+#include "CLAS/FileUtils.hpp"
+#include "CLAS/Target.hpp"
 #include <fmt/format.h>
 #include <string>
 
@@ -30,8 +32,8 @@ int main(int argc, char** argv) {
     std::string data_dir = (argc > 1) ? argv[1] : "data/";
     long max_events = (argc > 2) ? std::stol(argv[2]) : -1;
     int num_threads = (argc > 3) ? std::stoi(argv[3]) : 4;
-    Core::Target target = Core::Target::LD2;
-    Core::Polarity polarity = Core::Polarity::Outbending;
+    CLAS::Target target = CLAS::Target::LD2;
+    CLAS::Polarity polarity = CLAS::Polarity::Outbending;
 
     fmt::print("\n");
     fmt::print("╔════════════════════════════════════════════════════════════════╗\n");
@@ -56,8 +58,16 @@ int main(int argc, char** argv) {
     cond_svc->set_run_number(5032);
     fmt::print("  ✓ ConditionsService → Run 5032\n");
 
+    auto particle_svc = std::make_unique<Framework::ParticleSelectorService>();
+    fmt::print("  ✓ ParticleSelectorService\n");
+
+    auto sf_svc = std::make_unique<Framework::SamplingFractionService>();
+    fmt::print("  ✓ SamplingFractionService\n");
+
     app.service_manager().add_service(std::move(hist_svc));
     app.service_manager().add_service(std::move(cond_svc));
+    app.service_manager().add_service(std::move(particle_svc));
+    app.service_manager().add_service(std::move(sf_svc));
 
     // ═══════════════════════════════════════════════════════════════════
     // Configure Algorithm Workflow
@@ -135,7 +145,7 @@ int main(int argc, char** argv) {
 
     fmt::print("Configuring Input:\n");
 
-    std::vector<std::string> input_files = Core::read_recursive_file_in_directory(data_dir);
+    std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
         fmt::print(stderr, "ERROR: No .hipo files found in {}\n", data_dir);
         fmt::print("\nUsage: {} [data_dir] [max_events] [num_threads]\n", argv[0]);

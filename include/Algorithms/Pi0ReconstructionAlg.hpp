@@ -4,11 +4,11 @@
 #include <optional>
 #include <tuple>
 #include <vector>
-#include "Core/PIDs.hpp"
-#include "Core/Constants.hpp"
-#include "Core/Particle.hpp"
-#include "Core/Cuts.hpp"
-#include "Core/ReadBank.hpp"
+#include "CLAS/PIDs.hpp"
+#include "CLAS/Constants.hpp"
+#include "CLAS/Particle.hpp"
+#include "CLAS/ReadBank.hpp"
+#include "Framework/Services/PhotonCutsService.hpp"
 #include "Framework/Cutflow.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/IAlgorithm.hpp"
@@ -44,20 +44,20 @@ class Pi0ReconstructionAlg : public Framework::Algorithm {
     auto finalize() -> Framework::StatusCode override;
 
     // Public helper methods for testing
-    auto select_photons(const std::vector<Core::Particle>& photons) const -> std::vector<Core::Particle>;
-    auto select_photons_with_AI(hipo::bank& RUN_config, hipo::bank&  REC_Particle, hipo::bank& REC_Calorimeter) const -> std::vector<Core::Particle>;
+    auto select_photons(const std::vector<CLAS::Particle>& photons) const -> std::vector<CLAS::Particle>;
+    auto select_photons_with_AI(hipo::bank& RUN_config, hipo::bank&  REC_Particle, hipo::bank& REC_Calorimeter) const -> std::vector<CLAS::Particle>;
 
-    static auto calculate_invariant_mass(const Core::Particle& g1, const Core::Particle& g2) -> double;
+    static auto calculate_invariant_mass(const CLAS::Particle& g1, const CLAS::Particle& g2) -> double;
 
-    auto find_best_pi0(const std::vector<Core::Particle>& photons) const -> std::optional<std::tuple<Core::Particle, Core::Particle, double>>;
+    auto find_best_pi0(const std::vector<CLAS::Particle>& photons) const -> std::optional<std::tuple<CLAS::Particle, CLAS::Particle, double>>;
 
-    auto find_all_unique_pi0_candidates(const std::vector<Core::Particle>& photons) const -> std::optional<std::vector<std::tuple<Core::Particle, Core::Particle, double>>>;
+    auto find_all_unique_pi0_candidates(const std::vector<CLAS::Particle>& photons) const -> std::optional<std::vector<std::tuple<CLAS::Particle, CLAS::Particle, double>>>;
     
     auto min_photon_energy() const -> double { return m_min_photon_energy; }
 
     auto pi0_mass_window() const -> double { return m_pi0_mass_window; }
 
-    static constexpr double PI0_MASS = Core::Constants::PI0MASS;  // GeV/c²
+    static constexpr double PI0_MASS = CLAS::Constants::PI0MASS;  // GeV/c²
 
    private:
     // Configuration
@@ -68,6 +68,7 @@ class Pi0ReconstructionAlg : public Framework::Algorithm {
     Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
     Framework::ServiceHandle<Framework::NTupleService> m_ntuple_svc{"NTupleService"};
     Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
+    Framework::ServiceHandle<Framework::PhotonCutsService> m_photon_cuts_svc{"PhotonCutsService"};
 
     // Cutflow
     Framework::Cutflow m_cutflow;

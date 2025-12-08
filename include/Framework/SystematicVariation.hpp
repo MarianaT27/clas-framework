@@ -5,7 +5,7 @@
 #include <map>
 #include <memory>
 #include <cmath>
-#include "Core/Particle.hpp"
+#include "CLAS/Particle.hpp"
 
 namespace Framework {
 
@@ -79,7 +79,7 @@ public:
      * For now, uses simple scaling. In production, would use proper
      * smearing with random number generator for resolution effects.
      */
-    auto vary(const Core::Particle& particle, const SystematicVariation& variation) const -> Core::Particle {
+    auto vary(const CLAS::Particle& particle, const SystematicVariation& variation) const -> CLAS::Particle {
         double scale_factor = 1.0;
 
         switch (variation.type) {
@@ -103,7 +103,7 @@ public:
 
         // Create new particle with scaled momentum
         // Since Particle is immutable, we create a new one
-        return Core::Particle(
+        return CLAS::Particle(
             particle.pdg(),
             particle.status(),
             particle.index(),
@@ -126,14 +126,14 @@ public:
      * @brief Register custom variation function
      */
     auto register_custom_variation(const std::string& name,
-                                   std::function<Core::Particle(const Core::Particle&)> func) -> void {
+                                   std::function<CLAS::Particle(const CLAS::Particle&)> func) -> void {
         m_custom_variations[name] = std::move(func);
     }
 
     /**
      * @brief Apply custom variation
      */
-    auto apply_custom(const Core::Particle& particle, const std::string& name) const -> Core::Particle {
+    auto apply_custom(const CLAS::Particle& particle, const std::string& name) const -> CLAS::Particle {
         auto it = m_custom_variations.find(name);
         if (it != m_custom_variations.end()) {
             return it->second(particle);
@@ -164,7 +164,7 @@ public:
 
 private:
     std::vector<SystematicVariation> m_variations;
-    std::map<std::string, std::function<Core::Particle(const Core::Particle&)>> m_custom_variations;
+    std::map<std::string, std::function<CLAS::Particle(const CLAS::Particle&)>> m_custom_variations;
     std::string m_current_variation;  // Empty string means nominal
 };
 

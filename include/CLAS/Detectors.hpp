@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 
-namespace Core {
+namespace CLAS {
 
 //regions
 static constexpr uint16_t FT = 1000;
@@ -71,4 +71,4 @@ static constexpr uint16_t BTOF4 = 254;
 static constexpr uint16_t BTOF5 = 255;
 static constexpr uint16_t BVETO = 256;
 
-}  // namespace Core
+}  // namespace CLAS

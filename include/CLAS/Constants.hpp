@@ -2,7 +2,7 @@
 
 #include <numbers>
 
-namespace Core::Constants {
+namespace CLAS::Constants {
 static constexpr double ELECTRONMASS = 0.00051099891;
 static constexpr double PROTONMASS = 0.938272;
 static constexpr double PROTONMASS2 = PROTONMASS * PROTONMASS;
@@ -23,4 +23,4 @@ static constexpr double DEG_TO_RAD = std::numbers::pi / 180.0;
 static constexpr double RAD_TO_DEG = 180.0 / std::numbers::pi;
 static constexpr double SPEED_OF_LIGHT = 29.9792458;  // cm/ns
 
-}  // namespace Core::Constantes
+}  // namespace CLAS::Constantes

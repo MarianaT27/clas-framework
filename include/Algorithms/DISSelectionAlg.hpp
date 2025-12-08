@@ -69,7 +69,7 @@ class DISSelectionAlg : public Framework::Algorithm {
         if (!event.passes_decision("HasGoodElectron")) return Framework::StatusCode::SUCCESS();
         m_cutflow.pass("Has Electron");
 
-        Physics::DISAnalysis::DISKinematics kin = Physics::DISAnalysis::calculate_kinematics(event.get_particles<Core::Particle>("SelectedElectrons")->front());
+        Physics::DISAnalysis::DISKinematics kin = Physics::DISAnalysis::calculate_kinematics(event.get_particles<CLAS::Particle>("SelectedElectrons")->front());
         
         // Apply DIS region cuts one by one for cutflow
         if (kin.q2 < m_dis_region.q2_min || kin.q2 > m_dis_region.q2_max) return Framework::StatusCode::SUCCESS();
@@ -81,7 +81,7 @@ class DISSelectionAlg : public Framework::Algorithm {
 
         // Electron passed all cuts - set decision and store for downstream algorithms
         event.set_decision("HasGoodDISElectron", true);
-        event.store_particles<Core::Particle>("SelectedDISElectron", {event.get_particles<Core::Particle>("SelectedElectrons")->front()});
+        event.store_particles<CLAS::Particle>("SelectedDISElectron", {event.get_particles<CLAS::Particle>("SelectedElectrons")->front()});
         event.store("dis_Q2", kin.q2);
         event.store("dis_W", kin.w);
         event.store("dis_xB", kin.xb);
@@ -98,7 +98,7 @@ class DISSelectionAlg : public Framework::Algorithm {
         // Fill N-tuple if service is available
         if (m_ntuple_svc) {
             // Get electron from event store (stored by ElectronSelectionAlg)
-            auto* electrons = event.get_particles<Core::Particle>("SelectedElectrons");
+            auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
             if (electrons && !electrons->empty()) {
                 const auto& electron = (*electrons)[0];
                 m_e_p = electron.p();

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Core/Particle.hpp"
-#include "Core/PIDs.hpp"
+#include "CLAS/Particle.hpp"
+#include "CLAS/PIDs.hpp"
 #include <vector>
 #include <memory>
 
@@ -20,7 +20,7 @@ public:
      * @param daughters Vector of daughter particles
      * @param pid PDG ID of the composite particle
      */
-    CompositeParticle(std::vector<Core::Particle> daughters, int pid = 0)
+    CompositeParticle(std::vector<CLAS::Particle> daughters, int pid = 0)
         : m_daughters(std::move(daughters)), m_pid(pid) {
         calculate_four_momentum();
     }
@@ -78,7 +78,7 @@ public:
     /**
      * @brief Get daughter particles
      */
-    auto daughters() const -> const std::vector<Core::Particle>& {
+    auto daughters() const -> const std::vector<CLAS::Particle>& {
         return m_daughters;
     }
 
@@ -104,7 +104,7 @@ public:
     }
 
 private:
-    std::vector<Core::Particle> m_daughters;
+    std::vector<CLAS::Particle> m_daughters;
     int m_pid;
     double m_px = 0.0;
     double m_py = 0.0;
@@ -147,14 +147,14 @@ public:
      * @param photons Vector of photons
      * @return Vector of π⁰ candidates
      */
-    static auto reconstruct_pi0(const std::vector<Core::Particle>& photons)
+    static auto reconstruct_pi0(const std::vector<CLAS::Particle>& photons)
         -> std::vector<CompositeParticle> {
         std::vector<CompositeParticle> pi0_candidates;
 
         // Combine all photon pairs
         for (size_t i = 0; i < photons.size(); ++i) {
             for (size_t j = i + 1; j < photons.size(); ++j) {
-                std::vector<Core::Particle> daughters = {photons[i], photons[j]};
+                std::vector<CLAS::Particle> daughters = {photons[i], photons[j]};
                 pi0_candidates.emplace_back(daughters, 111);  // PDG ID for π⁰
             }
         }
@@ -168,14 +168,14 @@ public:
      * @param pions_minus Vector of π⁻
      * @return Vector of ρ candidates
      */
-    static auto reconstruct_rho(const std::vector<Core::Particle>& pions_plus,
-                                 const std::vector<Core::Particle>& pions_minus)
+    static auto reconstruct_rho(const std::vector<CLAS::Particle>& pions_plus,
+                                 const std::vector<CLAS::Particle>& pions_minus)
         -> std::vector<CompositeParticle> {
         std::vector<CompositeParticle> rho_candidates;
 
         for (const auto& pip : pions_plus) {
             for (const auto& pim : pions_minus) {
-                std::vector<Core::Particle> daughters = {pip, pim};
+                std::vector<CLAS::Particle> daughters = {pip, pim};
                 rho_candidates.emplace_back(daughters, 113);  // PDG ID for ρ⁰
             }
         }
@@ -189,14 +189,14 @@ public:
      * @param positrons Vector of positrons
      * @return Vector of J/ψ candidates
      */
-    static auto reconstruct_jpsi(const std::vector<Core::Particle>& electrons,
-                                  const std::vector<Core::Particle>& positrons)
+    static auto reconstruct_jpsi(const std::vector<CLAS::Particle>& electrons,
+                                  const std::vector<CLAS::Particle>& positrons)
         -> std::vector<CompositeParticle> {
         std::vector<CompositeParticle> jpsi_candidates;
 
         for (const auto& e_minus : electrons) {
             for (const auto& e_plus : positrons) {
-                std::vector<Core::Particle> daughters = {e_minus, e_plus};
+                std::vector<CLAS::Particle> daughters = {e_minus, e_plus};
                 jpsi_candidates.emplace_back(daughters, 443);  // PDG ID for J/ψ
             }
         }
@@ -211,15 +211,15 @@ public:
      * @param pid PDG ID of composite
      * @return Vector of candidates
      */
-    static auto reconstruct_two_body(const std::vector<Core::Particle>& particles1,
-                                     const std::vector<Core::Particle>& particles2,
+    static auto reconstruct_two_body(const std::vector<CLAS::Particle>& particles1,
+                                     const std::vector<CLAS::Particle>& particles2,
                                      int pid = 0)
         -> std::vector<CompositeParticle> {
         std::vector<CompositeParticle> candidates;
 
         for (const auto& p1 : particles1) {
             for (const auto& p2 : particles2) {
-                std::vector<Core::Particle> daughters = {p1, p2};
+                std::vector<CLAS::Particle> daughters = {p1, p2};
                 candidates.emplace_back(daughters, pid);
             }
         }

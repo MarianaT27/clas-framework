@@ -1,10 +1,10 @@
 #pragma once
 
-#include "Core/PIDs.hpp"
+#include "CLAS/PIDs.hpp"
 #include "Framework/AlgorithmTypes.hpp"
 #include "Framework/ServiceHandle.hpp"
 #include "Framework/Services/HistogramService.hpp"
-#include "Core/ParticleSelector.hpp"
+#include "Framework/Services/ParticleSelectorService.hpp"
 #include <chrono>
 #include <vector>
 
@@ -31,7 +31,7 @@ public:
 
     // Configuration methods
     void set_progress_interval(size_t interval) { m_progress_interval = interval; }
-    void set_particle_types(std::vector<Core::PIDs> pids) { m_monitored_pids = std::move(pids); }
+    void set_particle_types(std::vector<CLAS::PIDs> pids) { m_monitored_pids = std::move(pids); }
     auto initialize() -> Framework::StatusCode override {
         fmt::print("  {} - Initializing\n", name());
 
@@ -39,6 +39,9 @@ public:
         if (m_svc_mgr) {
             m_hist_svc.initialize(*m_svc_mgr);
         }
+
+        // Get ParticleSelectorService
+        m_particle_svc = service<Framework::ParticleSelectorService>("ParticleSelectorService");
 
         if (m_hist_svc) {
             book_histograms();
@@ -119,11 +122,11 @@ private:
             h_particles_per_event->Fill(n_particles);
         }
 
-        // Extract particles for detailed monitoring
-        const Core::ParticleMap particles = Core::ParticleSelector::extract_particles(
+        // Extract particles for detailed monitoring using ParticleSelectorService
+        const Framework::ParticleMap particles = m_particle_svc->extract_particles(
             REC_Particle, m_monitored_pids);
 
-        const int n_electrons = particles.at(Core::PIDs::ELECTRON).size();
+        const int n_electrons = m_particle_svc->get_electrons(particles).size();
 
         if (h_electrons_per_event) {
             h_electrons_per_event->Fill(n_electrons);
@@ -175,12 +178,13 @@ private:
         fmt::print("  Average particles/event: {:.2f}\n", calculate_avg_particles());
     }
 
-    auto initialize_default_pids() const -> std::vector<Core::PIDs> {
-        return {Core::PIDs::ELECTRON};
+    auto initialize_default_pids() const -> std::vector<CLAS::PIDs> {
+        return {CLAS::PIDs::ELECTRON};
     }
 
     // Services
     Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
+    Framework::ParticleSelectorService* m_particle_svc = nullptr;
 
     // Monitoring histograms
     TH1D* h_particles_per_event = nullptr;
@@ -194,7 +198,7 @@ private:
 
     // Configuration
     size_t m_progress_interval = DEFAULT_PROGRESS_INTERVAL;
-    std::vector<Core::PIDs> m_monitored_pids;
+    std::vector<CLAS::PIDs> m_monitored_pids;
 };
 
 }  // namespace Algorithms

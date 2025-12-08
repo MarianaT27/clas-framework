@@ -11,10 +11,10 @@
 
 // Project headers
 #include <hipo4/bank.h>
-#include <Core/Detectors.hpp>
-#include <Core/Banks.hpp>
+#include <CLAS/Detectors.hpp>
+#include <CLAS/Banks.hpp>
 
-namespace Core {
+namespace CLAS {
 inline static auto load_bank_by_index(const hipo::bank& from_bank, const std::string& idx) -> std::map<int, std::vector<int>> {
     std::map<int, std::vector<int>> map;
 
@@ -279,4 +279,4 @@ inline auto get_rec_particle_index(const hipo::bank& MC_GenMatch, const int part
     return -1;
 }
 
-}  // namespace Core
+}  // namespace CLAS

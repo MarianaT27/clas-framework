@@ -3,7 +3,7 @@
 #include <optional>
 #include <string>
 
-namespace Core {
+namespace CLAS {
 
 enum class PIDs {
     ELECTRON = 11,
@@ -75,4 +75,4 @@ inline auto pid_name(PIDs pid) -> std::string {
     }
 }
 
-}  // namespace Core
+}  // namespace CLAS

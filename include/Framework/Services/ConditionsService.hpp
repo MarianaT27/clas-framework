@@ -1,8 +1,7 @@
 #pragma once
 
 #include "Framework/IService.hpp"
-#include "Core/Target.hpp"
-#include "Core/SamplingFractionCut.hpp"
+#include "CLAS/Target.hpp"
 #include <map>
 #include <string>
 #include <vector>
@@ -94,8 +93,8 @@ public:
      * @param sector Detector sector (1-6)
      * @return std::vector<double> SF polynomial parameters
      */
-    auto get_sampling_fraction_params(Core::Target target,
-                                     Core::Polarity polarity,
+    auto get_sampling_fraction_params(CLAS::Target target,
+                                     CLAS::Polarity polarity,
                                      int sector) -> std::vector<double> {
         // For now, return empty vector - would be populated from conditions DB
         // In a full implementation, this would query by IOV and return

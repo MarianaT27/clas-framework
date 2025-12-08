@@ -14,8 +14,10 @@
 #include "Framework/Services/ConfigService.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/ParticleSelectorService.hpp"
+#include "Framework/Services/SamplingFractionService.hpp"
 #include "Algorithms/ElectronSelectionAlg.hpp"
-#include "Core/Helpers.hpp"
+#include "CLAS/FileUtils.hpp"
 #include <fmt/format.h>
 
 int main(int argc, char* argv[]) {
@@ -60,20 +62,20 @@ int main(int argc, char* argv[]) {
     std::string polarity_str = config_svc->get<std::string>("electron_selection.polarity", "Outbending");
     
     // Map target string to enum
-    Core::Target target = Core::Target::LD2;
+    CLAS::Target target = CLAS::Target::LD2;
     if (target_str == "CxC") {
-        target = Core::Target::CxC;
+        target = CLAS::Target::CxC;
     } else if (target_str == "CuSn") {
-        target = Core::Target::CuSn;
+        target = CLAS::Target::CuSn;
     } else if (target_str == "Cu") {
-        target = Core::Target::Cu;
+        target = CLAS::Target::Cu;
     } else if (target_str == "Sn") {
-        target = Core::Target::Sn;
+        target = CLAS::Target::Sn;
     }
     
-    Core::Polarity polarity = Core::Polarity::Outbending;
+    CLAS::Polarity polarity = CLAS::Polarity::Outbending;
     if (polarity_str == "Inbending") {
-        polarity = Core::Polarity::Inbending;
+        polarity = CLAS::Polarity::Inbending;
     }
 
     // Create application with name from config
@@ -86,10 +88,18 @@ int main(int argc, char* argv[]) {
     auto cond_svc = std::make_unique<Framework::ConditionsService>();
     cond_svc->set_run_number(run_number);
 
+    // Add ParticleSelectorService
+    auto particle_svc = std::make_unique<Framework::ParticleSelectorService>();
+
+    // Add SamplingFractionService
+    auto sf_svc = std::make_unique<Framework::SamplingFractionService>();
+
     // Add services (ConfigService is added for potential use by algorithms)
     app.service_manager().add_service(std::move(config_svc));
     app.service_manager().add_service(std::move(hist_svc));
     app.service_manager().add_service(std::move(cond_svc));
+    app.service_manager().add_service(std::move(particle_svc));
+    app.service_manager().add_service(std::move(sf_svc));
 
     // Add algorithms with configuration from TOML
     auto electron_alg = std::make_unique<Algorithms::ElectronSelectionAlg>(
@@ -100,7 +110,7 @@ int main(int argc, char* argv[]) {
     app.add_algorithm(std::move(electron_alg));
 
     // Configure input from config
-    std::vector<std::string> input_files = Core::read_recursive_file_in_directory(data_dir);
+    std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
         fmt::print(stderr, "ERROR: No input files found in {}\n", data_dir);
         return 1;

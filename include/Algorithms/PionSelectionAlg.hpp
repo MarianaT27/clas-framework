@@ -6,10 +6,11 @@
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
-#include "Core/Cuts.hpp"
-#include "Core/ReadBank.hpp"
-#include "Core/Target.hpp"
-#include "Core/Constants.hpp"
+#include "Framework/Services/ParticleSelectorService.hpp"
+#include "CLAS/ElectronCuts.hpp"
+#include "CLAS/ReadBank.hpp"
+#include "CLAS/Target.hpp"
+#include "CLAS/Constants.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
 #include <memory>
@@ -31,7 +32,7 @@ namespace Algorithms {
 class PionSelectionAlg : public Framework::Algorithm {
 public:
     explicit PionSelectionAlg(std::string name = "PionSelection",
-                             Core::Target target = Core::Target::LD2,
+                             CLAS::Target target = CLAS::Target::LD2,
                              bool separate_charges = true)
         : Algorithm(std::move(name))
         , m_target(target)
@@ -44,11 +45,12 @@ public:
         m_log_svc = service<Framework::LoggingService>("LoggingService");
         m_hist_svc = service<Framework::HistogramService>("HistogramService");
         m_ntuple_svc = service<Framework::NTupleService>("NTupleService");
+        m_particle_svc = service<Framework::ParticleSelectorService>("ParticleSelectorService");
 
         if (m_log_svc) {
             LOG_INFO(m_log_svc, "Initializing pion selection algorithm");
             LOG_INFO(m_log_svc, "Target: {}, Separate charges: {}",
-                     m_target == Core::Target::LD2 ? "LD2" : "Other",
+                     m_target == CLAS::Target::LD2 ? "LD2" : "Other",
                      m_separate_charges ? "yes" : "no");
         }
 
@@ -92,18 +94,18 @@ public:
         hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
         hipo::bank_map REC_Scintillator = hipo_event.get_bank_map("REC::Scintillator");
 
-        // Extract pions
-        Core::ParticleMap particles = Core::ParticleSelector::extract_particles(
+        // Extract pions using ParticleSelectorService
+        Framework::ParticleMap particles = m_particle_svc->extract_particles(
             REC_Particle,
-            {Core::PIDs::PIPLUS, Core::PIDs::PIMINUS}
+            {CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS}
         );
 
         // Process π⁺
-        const auto& pions_plus = particles[Core::PIDs::PIPLUS];
+        const auto& pions_plus = m_particle_svc->get_pions_plus(particles);
         process_pions(pions_plus, REC_Scintillator.get_bank(), start_time, true);
 
         // Process π⁻
-        const auto& pions_minus = particles[Core::PIDs::PIMINUS];
+        const auto& pions_minus = m_particle_svc->get_pions_minus(particles);
         process_pions(pions_minus, REC_Scintillator.get_bank(), start_time, false);
 
         return Framework::StatusCode::SUCCESS();
@@ -139,7 +141,7 @@ public:
     }
 
 private:
-    Core::Target m_target;
+    CLAS::Target m_target;
     bool m_separate_charges;
     Framework::Cutflow m_cutflow_piplus;
     Framework::Cutflow m_cutflow_piminus;
@@ -148,6 +150,7 @@ private:
     Framework::LoggingService* m_log_svc = nullptr;
     Framework::HistogramService* m_hist_svc = nullptr;
     Framework::NTupleService* m_ntuple_svc = nullptr;
+    Framework::ParticleSelectorService* m_particle_svc = nullptr;
 
     // N-tuple variables for π⁺
     double m_nt_piplus_p = 0.0;
@@ -290,7 +293,7 @@ private:
     /**
      * @brief Process pions (either π⁺ or π⁻)
      */
-    auto process_pions(const std::vector<Core::Particle>& pions,
+    auto process_pions(const std::vector<CLAS::Particle>& pions,
                       const hipo::bank& REC_Scintillator,
                       double start_time,
                       bool is_piplus) -> void {
@@ -322,7 +325,7 @@ private:
             cutflow.pass("Beta");
 
             // Get scintillator info for delta_t
-            Core::ScintillatorBank scintillator = Core::read_Scintillator_bank(
+            CLAS::ScintillatorBank scintillator = CLAS::read_Scintillator_bank(
                 REC_Scintillator, pion.index());
 
             // Calculate delta_t
@@ -341,19 +344,19 @@ private:
      * @brief Calculate time-of-flight difference (delta_t)
      * delta_t = measured_time - expected_time
      */
-    auto calculate_delta_t(const Core::Particle& pion,
-                          const Core::ScintillatorBank& scintillator,
+    auto calculate_delta_t(const CLAS::Particle& pion,
+                          const CLAS::ScintillatorBank& scintillator,
                           double start_time) -> double {
         double measured_time = scintillator.time - start_time;
         double path_length = scintillator.path;
         double p = pion.p();
-        double m = Core::Constants::PIMASS;
+        double m = CLAS::Constants::PIMASS;
 
         // Calculate expected beta
         double beta_expected = p / std::sqrt(p * p + m * m);
 
         // Calculate expected time of flight
-        double t_expected = path_length / (beta_expected * Core::Constants::SPEED_OF_LIGHT);
+        double t_expected = path_length / (beta_expected * CLAS::Constants::SPEED_OF_LIGHT);
 
         return measured_time - t_expected;
     }
@@ -376,13 +379,13 @@ private:
 
     auto pass_vz_cut(double vz) -> bool {
         // Use target-specific vertex cuts
-        auto vz_range = Core::ElectronCuts::get_vz_range(m_target);
+        auto vz_range = CLAS::ElectronCuts::get_vz_range(m_target);
         return vz_range.contains(vz);
     }
 
     auto pass_beta_cut(double beta, double p) -> bool {
         // Basic beta cut - could be refined
-        double m = Core::Constants::PIMASS;
+        double m = CLAS::Constants::PIMASS;
         double beta_expected = p / std::sqrt(p * p + m * m);
         double delta_beta = std::abs(beta - beta_expected);
         return delta_beta < 0.05;  // 5% tolerance
@@ -408,7 +411,7 @@ private:
         return cut_low < delta_t && delta_t < cut_high;
     }
 
-    auto fill_histograms(const Core::Particle& pion, double delta_t, bool is_piplus) -> void {
+    auto fill_histograms(const CLAS::Particle& pion, double delta_t, bool is_piplus) -> void {
         double p = pion.p();
         double theta = pion.theta();
         double phi = pion.phi();

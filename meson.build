@@ -41,7 +41,7 @@ inc = include_directories('include')
 
 # Original study1 executable (legacy) - COMMENTED OUT - source files deleted
 # sources = files(
-#   'src/Core/Particle.cpp',
+#   'src/CLAS/Particle.cpp',
 #   'src/Framework/Histogram.cpp',
 #   'src/main.cpp',
 #   'src/study1/Drawing.cpp',
@@ -57,7 +57,7 @@ inc = include_directories('include')
 
 # New framework example executable
 framework_example_sources = files(
-  'src/Core/Particle.cpp',
+  'src/CLAS/Particle.cpp',
   'src/Framework/Histogram.cpp',
   'src/example_framework.cpp',
 )
@@ -71,7 +71,7 @@ executable(
 
 # Improved main with Phase 3 features
 main_improved_sources = files(
-  'src/Core/Particle.cpp',
+  'src/CLAS/Particle.cpp',
   'src/Framework/Histogram.cpp',
   'src/main_improved.cpp',
 )
@@ -85,7 +85,7 @@ executable(
 
 # Advanced main with algorithm types demo
 main_advanced_sources = files(
-  'src/Core/Particle.cpp',
+  'src/CLAS/Particle.cpp',
   'src/Framework/Histogram.cpp',
   'src/main_advanced.cpp',
 )
@@ -99,7 +99,7 @@ executable(
 
 # Automatic histogram writing demo
 auto_histograms_sources = files(
-  'src/Core/Particle.cpp',
+  'src/CLAS/Particle.cpp',
   'src/Framework/Histogram.cpp',
   'src/example_auto_histograms.cpp',
 )
@@ -113,8 +113,9 @@ executable(
 
 # Pi0 reconstruction analysis executable
 main_pi0_sources = files(
-  'src/Core/Particle.cpp',
+  'src/CLAS/Particle.cpp',
   'src/Framework/Histogram.cpp',
+  'src/Framework/Services/PhotonCutsService.cpp',
   'src/Algorithms/Pi0ReconstructionAlg.cpp',
   'src/main_pi0.cpp',
 )

@@ -1,8 +1,9 @@
 #pragma once
 
 #include "Framework/AlgorithmTypes.hpp"
+#include "Framework/Services/ParticleSelectorService.hpp"
 #include "Physics/CompositeParticle.hpp"
-#include "Core/PIDs.hpp"
+#include "CLAS/PIDs.hpp"
 #include <vector>
 
 namespace Algorithms {
@@ -40,6 +41,10 @@ public:
     auto initialize() -> Framework::StatusCode override {
         fmt::print("  {} - Initializing\n", name());
         fmt::print("    π⁰ mass window: {:.3f} ± {:.3f} GeV/c²\n", m_mass_center, m_mass_width);
+
+        // Get ParticleSelectorService
+        m_particle_svc = service<Framework::ParticleSelectorService>("ParticleSelectorService");
+
         return Framework::StatusCode::SUCCESS();
     }
 
@@ -62,11 +67,11 @@ protected:
         auto& hipo_event = event.hipo_event();
         hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
 
-        // Extract photons
-        Core::ParticleMap particles = Core::ParticleSelector::extract_particles(
-            REC_Particle, {Core::PIDs::PHOTON});
+        // Extract photons using ParticleSelectorService
+        Framework::ParticleMap particles = m_particle_svc->extract_particles(
+            REC_Particle, {CLAS::PIDs::PHOTON});
 
-        const auto& photons = particles[Core::PIDs::PHOTON];
+        const auto& photons = m_particle_svc->get_photons(particles);
 
         // Reconstruct π⁰ candidates
         auto pi0_candidates = Physics::CompositeParticleBuilder::reconstruct_pi0(photons);
@@ -97,6 +102,7 @@ private:
     double m_mass_width;
     size_t m_events_processed = 0;
     size_t m_pi0_produced = 0;
+    Framework::ParticleSelectorService* m_particle_svc = nullptr;
 };
 
 }  // namespace Algorithms

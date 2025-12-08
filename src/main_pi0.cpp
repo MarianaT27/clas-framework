@@ -12,17 +12,25 @@
 #include <cstdlib>
 #include <cxxopts.hpp>
 #include <string>
+#include <TROOT.h>
 #include "Algorithms/ElectronSelectionAlg.hpp"
 #include "Algorithms/DISSelectionAlg.hpp"
 #include "Algorithms/Pi0ReconstructionAlg.hpp"
 #include "Algorithms/EventMonitor.hpp"
-#include "Core/Helpers.hpp"
-#include "Core/Target.hpp"
+#include "CLAS/FileUtils.hpp"
+#include "CLAS/Runs.hpp"
+#include "CLAS/StringUtils.hpp"
+#include "CLAS/Target.hpp"
 #include "Framework/Application.hpp"
 #include "Framework/Services/ConditionsService.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
+#include "Framework/Services/ParticleSelectorService.hpp"
+#include "Framework/Services/PhotonCutsService.hpp"
+#include "Framework/Services/MetadataService.hpp"
+#include "Framework/Services/ProfilingService.hpp"
+#include "Framework/Services/SamplingFractionService.hpp"
 #include "fmt/base.h"
 
 int main(int argc, char* argv[]) {
@@ -52,19 +60,19 @@ int main(int argc, char* argv[]) {
     std::string output_file = args["output"].as<std::string>();
     std::string target_str = args["target"].as<std::string>();
     std::string polarity_str = args["polarity"].as<std::string>();
-    Core::Target target = Core::string_to_target(target_str);
-    Core::Polarity polarity = Core::string_to_polarity(polarity_str);
+    CLAS::Target target = CLAS::string_to_target(target_str);
+    CLAS::Polarity polarity = CLAS::string_to_polarity(polarity_str);
 
-    output_file = Core::replace_all(output_file, "{target}", Core::to_string(target));
-    output_file = Core::replace_all(output_file, "{polarity}", Core::to_string(polarity));
+    output_file = CLAS::StringUtils::replace_all(output_file, "{target}", CLAS::to_string(target));
+    output_file = CLAS::StringUtils::replace_all(output_file, "{polarity}", CLAS::to_string(polarity));
 
-    std::array sources = (polarity == Core::Polarity::Outbending)
-                             ? std::array{std::tuple{Core::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/", &Core::outbending_runs_CuSn},
-                                          std::tuple{Core::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/", &Core::outbending_runs_CxC},
-                                          std::tuple{Core::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/", &Core::outbending_runs_LD2}}
-                             : std::array{std::tuple{Core::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &Core::inbending_runs_CuSn},
-                                          std::tuple{Core::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &Core::inbending_runs_CxC},
-                                          std::tuple{Core::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &Core::inbending_runs_LD2}};
+    std::array sources = (polarity == CLAS::Polarity::Outbending)
+                             ? std::array{std::tuple{CLAS::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/", &CLAS::outbending_runs_CuSn},
+                                          std::tuple{CLAS::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/", &CLAS::outbending_runs_CxC},
+                                          std::tuple{CLAS::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/", &CLAS::outbending_runs_LD2}}
+                             : std::array{std::tuple{CLAS::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CuSn},
+                                          std::tuple{CLAS::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CxC},
+                                          std::tuple{CLAS::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_LD2}};
     
     std::string data_dir;
     if (target_str != "" && polarity_str != "") {
@@ -91,12 +99,25 @@ int main(int argc, char* argv[]) {
     auto hist_svc = std::make_unique<Framework::HistogramService>();
     auto conditions_svc = std::make_unique<Framework::ConditionsService>();
     auto log_svc = std::make_unique<Framework::LoggingService>();
+    auto particle_svc = std::make_unique<Framework::ParticleSelectorService>();
+    auto photon_cuts_svc = std::make_unique<Framework::PhotonCutsService>();
+    auto metadata_svc = std::make_unique<Framework::MetadataService>();
+    auto profiling_svc = std::make_unique<Framework::ProfilingService>();
+    auto sf_svc = std::make_unique<Framework::SamplingFractionService>();
 
     // Configure output files for services
-    //hist_svc->set_output_file(output_file.substr(0, output_file.find_last_of('.')) + "_histograms.root");
     ntuple_svc->set_output_file(output_file);
     hist_svc->set_output_file(output_file);
+    metadata_svc->set_output_file(output_file);
     ntuple_svc->enable_incremental_writing();
+
+    // Configure metadata
+    metadata_svc->set_version("2.0");
+    metadata_svc->set_target(CLAS::to_string(target));
+    metadata_svc->set_command_line(argc, argv);
+    metadata_svc->add_parameter("polarity", CLAS::to_string(polarity));
+    metadata_svc->add_parameter("percentage", percentage);
+    metadata_svc->add_parameter("num_threads", num_threads);
 
     // Keep pointers before moving
     auto* log_ptr = log_svc.get();
@@ -108,6 +129,11 @@ int main(int argc, char* argv[]) {
     app.service_manager().add_service(std::move(hist_svc));
     app.service_manager().add_service(std::move(log_svc));
     app.service_manager().add_service(std::move(ntuple_svc));
+    app.service_manager().add_service(std::move(particle_svc));
+    app.service_manager().add_service(std::move(photon_cuts_svc));
+    app.service_manager().add_service(std::move(metadata_svc));
+    app.service_manager().add_service(std::move(profiling_svc));
+    app.service_manager().add_service(std::move(sf_svc));
 
     // Inject logger into all services, ServiceManager, and Application
     app.set_logger(log_ptr);
@@ -130,7 +156,7 @@ int main(int argc, char* argv[]) {
     app.add_algorithm(std::move(pi0_alg));
 
     // Configure input files
-    std::vector<std::string> input_files = Core::read_recursive_file_in_directory(data_dir);
+    std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
         fmt::print(stderr, "ERROR: No input files found in {}\n", data_dir);
         return 1;
