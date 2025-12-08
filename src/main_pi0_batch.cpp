@@ -15,7 +15,34 @@
 #include <filesystem>
 #include "CLAS/FileUtils.hpp"
 #include "CLAS/Target.hpp"
+#include "CLAS/Runs.hpp"
+#include "CLAS/StringUtils.hpp"
 #include "Framework/BatchSystem.hpp"
+#include "fmt/base.h"
+
+#include <fmt/format.h>
+#include <cstdlib>
+#include <cxxopts.hpp>
+#include <string>
+#include <TROOT.h>
+#include "Algorithms/ElectronSelectionAlg.hpp"
+#include "Algorithms/DISSelectionAlg.hpp"
+#include "Algorithms/Pi0ReconstructionAlg.hpp"
+#include "Algorithms/EventMonitor.hpp"
+#include "CLAS/FileUtils.hpp"
+#include "CLAS/Runs.hpp"
+#include "CLAS/StringUtils.hpp"
+#include "CLAS/Target.hpp"
+#include "Framework/Application.hpp"
+#include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/NTupleService.hpp"
+#include "Framework/Services/ParticleSelectorService.hpp"
+#include "Framework/Services/PhotonCutsService.hpp"
+#include "Framework/Services/MetadataService.hpp"
+#include "Framework/Services/ProfilingService.hpp"
+#include "Framework/Services/SamplingFractionService.hpp"
 #include "fmt/base.h"
 
 int main(int argc, char* argv[]) {
@@ -83,27 +110,28 @@ int main(int argc, char* argv[]) {
 
     // Determine data directory based on target and polarity
     std::array sources = (polarity == CLAS::Polarity::Outbending)
-                             ? std::array{std::tuple{CLAS::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/"},
-                                          std::tuple{CLAS::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/"},
-                                          std::tuple{CLAS::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/"}}
-                             : std::array{std::tuple{CLAS::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-                                          std::tuple{CLAS::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-                                          std::tuple{CLAS::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"}};
-
+                             ? std::array{std::tuple{CLAS::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/", &CLAS::outbending_runs_CuSn},
+                                          std::tuple{CLAS::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/", &CLAS::outbending_runs_CxC},
+                                          std::tuple{CLAS::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/", &CLAS::outbending_runs_LD2}}
+                             : std::array{std::tuple{CLAS::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CuSn},
+                                          std::tuple{CLAS::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CxC},
+                                          std::tuple{CLAS::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_LD2}};
+    
     std::string data_dir;
-    bool valid = false;
-    for (const auto& [src_target, src_dir] : sources) {
-        if (target == src_target) {
-            data_dir = src_dir;
-            valid = true;
-            break;
+    if (target_str != "" && polarity_str != "") {
+        bool valid = false;
+        for (const auto& [src_target, src_dir, _] : sources) {
+            if (target == src_target) {
+                data_dir = src_dir;
+                valid = true;
+                break;
+            }
         }
-    }
-
-    if (!valid) {
-        fmt::print(stderr, "ERROR: Invalid target '{}' for polarity '{}'\n", target_str, polarity_str);
-        fmt::print(stderr, "Valid targets are: LD2, CxC, CuSn\n");
-        return EXIT_FAILURE;
+        if (!valid) {
+            fmt::println(stderr, "ERROR: Invalid target '{}' for polarity '{}'", target_str, polarity_str);
+            fmt::println(stderr, "Valid targets are: LD2, CxC, CuSn, Cu, or Sn");
+            return EXIT_FAILURE;
+        }
     }
 
     // Read input files
