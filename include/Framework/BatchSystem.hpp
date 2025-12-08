@@ -175,26 +175,29 @@ public:
         script << "cd " << output_subdir << "\n";
         script << "\n";
 
-        // Run analysis for each input file
-        for (const auto& input_file : input_chunk) {
-            script << "echo \"Processing: " << input_file << "\"\n";
-            script << config.executable;
-
-            // Add input file
-            script << " " << input_file;
-
-            // Add extra arguments
-            for (const auto& arg : config.extra_args) {
-                script << " " << arg;
-            }
-
-            script << "\n";
-            script << "if [ $? -ne 0 ]; then\n";
-            script << "    echo \"ERROR: Failed to process " << input_file << "\"\n";
-            script << "    exit 1\n";
-            script << "fi\n";
-            script << "\n";
+        // Build comma-separated input file list
+        std::string input_list;
+        for (size_t i = 0; i < input_chunk.size(); ++i) {
+            if (i > 0) input_list += ",";
+            input_list += input_chunk[i];
         }
+
+        // Run analysis with all input files
+        script << "echo \"Processing " << input_chunk.size() << " files\"\n";
+        script << config.executable;
+        script << " --input=" << input_list;
+
+        // Add extra arguments
+        for (const auto& arg : config.extra_args) {
+            script << " " << arg;
+        }
+
+        script << "\n";
+        script << "if [ $? -ne 0 ]; then\n";
+        script << "    echo \"ERROR: Analysis failed\"\n";
+        script << "    exit 1\n";
+        script << "fi\n";
+        script << "\n";
 
         script << "echo \"Job completed at: $(date)\"\n";
 
@@ -273,23 +276,29 @@ public:
         script << "cd " << output_subdir << "\n";
         script << "\n";
 
-        // Run analysis for each input file
-        for (const auto& input_file : input_chunk) {
-            script << "echo \"Processing: " << input_file << "\"\n";
-            script << config.executable << " " << input_file;
-
-            // Add extra arguments
-            for (const auto& arg : config.extra_args) {
-                script << " " << arg;
-            }
-
-            script << "\n";
-            script << "if [ $? -ne 0 ]; then\n";
-            script << "    echo \"ERROR: Failed to process " << input_file << "\"\n";
-            script << "    exit 1\n";
-            script << "fi\n";
-            script << "\n";
+        // Build comma-separated input file list
+        std::string input_list;
+        for (size_t i = 0; i < input_chunk.size(); ++i) {
+            if (i > 0) input_list += ",";
+            input_list += input_chunk[i];
         }
+
+        // Run analysis with all input files
+        script << "echo \"Processing " << input_chunk.size() << " files\"\n";
+        script << config.executable;
+        script << " --input=" << input_list;
+
+        // Add extra arguments
+        for (const auto& arg : config.extra_args) {
+            script << " " << arg;
+        }
+
+        script << "\n";
+        script << "if [ $? -ne 0 ]; then\n";
+        script << "    echo \"ERROR: Analysis failed\"\n";
+        script << "    exit 1\n";
+        script << "fi\n";
+        script << "\n";
 
         script << "echo \"Job completed at: $(date)\"\n";
 
@@ -310,13 +319,17 @@ public:
         submit << "universe = vanilla\n";
         submit << "executable = " << config.executable << "\n";
 
-        // Arguments (input files)
-        submit << "arguments = ";
-        for (const auto& input : input_chunk) {
-            submit << input << " ";
+        // Build comma-separated input file list
+        std::string input_list;
+        for (size_t i = 0; i < input_chunk.size(); ++i) {
+            if (i > 0) input_list += ",";
+            input_list += input_chunk[i];
         }
+
+        // Arguments
+        submit << "arguments = --input=" << input_list;
         for (const auto& arg : config.extra_args) {
-            submit << arg << " ";
+            submit << " " << arg;
         }
         submit << "\n";
 

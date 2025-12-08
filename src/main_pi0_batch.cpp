@@ -51,10 +51,10 @@ int main(int argc, char* argv[]) {
     options.add_options()
             ("target", "Target type (LD2, CxC, CuSn)", cxxopts::value<std::string>()->default_value("LD2"))
             ("polarity", "Magnetic field polarity (In, Out)", cxxopts::value<std::string>()->default_value("Outbending"))
-            ("percentage", "Percentage of events to process (0-100)", cxxopts::value<long>()->default_value("100"))
+            ("percentage", "Percentage of events to process (0-100)", cxxopts::value<double>()->default_value("100"))
             ("system", "Batch system (slurm, pbs, condor, local)", cxxopts::value<std::string>()->default_value("slurm"))
             ("files-per-job", "Number of input files per job", cxxopts::value<int>()->default_value("10"))
-            ("num-threads", "Number of threads per job", cxxopts::value<int>()->default_value("8"))
+            ("num_threads", "Number of threads per job", cxxopts::value<int>()->default_value("8"))
             ("memory", "Memory per job in GB", cxxopts::value<int>()->default_value("16"))
             ("time", "Time limit per job (HH:MM:SS)", cxxopts::value<std::string>()->default_value("12:00:00"))
             ("partition", "SLURM partition or PBS queue", cxxopts::value<std::string>()->default_value("default"))
@@ -75,10 +75,10 @@ int main(int argc, char* argv[]) {
     // Parse arguments
     std::string target_str = args["target"].as<std::string>();
     std::string polarity_str = args["polarity"].as<std::string>();
-    long percentage = args["percentage"].as<long>();
+    double percentage = args["percentage"].as<double>();
     std::string system_str = args["system"].as<std::string>();
     int files_per_job = args["files-per-job"].as<int>();
-    int num_threads = args["num-threads"].as<int>();
+    int num_threads = args["num_threads"].as<int>();
     int memory_gb = args["memory"].as<int>();
     std::string time_limit = args["time"].as<std::string>();
     std::string partition = args["partition"].as<std::string>();

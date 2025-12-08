@@ -45,6 +45,7 @@ int main(int argc, char* argv[]) {
             ("percentage", "Percentage of events to process (0-100)", cxxopts::value<double>()->default_value("100"))
             ("num_threads", "Number of threads", cxxopts::value<int>()->default_value("1"))
             ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("pi0_analysis_{target}_{polarity}.root"))
+            ("input", "Input HIPO files (comma-separated or single file)", cxxopts::value<std::string>()->default_value(""))
             ("help", "Show help");
 
     // Parse command-line arguments
@@ -60,22 +61,30 @@ int main(int argc, char* argv[]) {
     std::string output_file = args["output"].as<std::string>();
     std::string target_str = args["target"].as<std::string>();
     std::string polarity_str = args["polarity"].as<std::string>();
+    std::string input_str = args["input"].as<std::string>();
     CLAS::Target target = CLAS::string_to_target(target_str);
     CLAS::Polarity polarity = CLAS::string_to_polarity(polarity_str);
 
     output_file = CLAS::StringUtils::replace_all(output_file, "{target}", CLAS::to_string(target));
     output_file = CLAS::StringUtils::replace_all(output_file, "{polarity}", CLAS::to_string(polarity));
 
-    std::array sources = (polarity == CLAS::Polarity::Outbending)
-                             ? std::array{std::tuple{CLAS::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/", &CLAS::outbending_runs_CuSn},
-                                          std::tuple{CLAS::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/", &CLAS::outbending_runs_CxC},
-                                          std::tuple{CLAS::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/", &CLAS::outbending_runs_LD2}}
-                             : std::array{std::tuple{CLAS::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CuSn},
-                                          std::tuple{CLAS::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CxC},
-                                          std::tuple{CLAS::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_LD2}};
+    // Determine input files - either from --input option or from target/polarity
+    std::vector<std::string> input_files;
     
-    std::string data_dir;
-    if (target_str != "" && polarity_str != "") {
+    if (!input_str.empty()) {
+        // Parse comma-separated input files
+        input_files = CLAS::StringUtils::split(input_str, ',');
+    } else {
+        // Determine data directory based on target and polarity
+        std::array sources = (polarity == CLAS::Polarity::Outbending)
+                                 ? std::array{std::tuple{CLAS::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/", &CLAS::outbending_runs_CuSn},
+                                              std::tuple{CLAS::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/", &CLAS::outbending_runs_CxC},
+                                              std::tuple{CLAS::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/", &CLAS::outbending_runs_LD2}}
+                                 : std::array{std::tuple{CLAS::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CuSn},
+                                              std::tuple{CLAS::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CxC},
+                                              std::tuple{CLAS::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_LD2}};
+        
+        std::string data_dir;
         bool valid = false;
         for (const auto& [src_target, src_dir, _] : sources) {
             if (target == src_target) {
@@ -89,6 +98,8 @@ int main(int argc, char* argv[]) {
             fmt::println(stderr, "Valid targets are: LD2, CxC, CuSn, Cu, or Sn");
             return EXIT_FAILURE;
         }
+        
+        input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
     }
 
     // Create application
@@ -145,9 +156,8 @@ int main(int argc, char* argv[]) {
     app.add_algorithm(std::move(pi0_alg));
 
     // Configure input files
-    std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
-        fmt::print(stderr, "ERROR: No input files found in {}\n", data_dir);
+        fmt::print(stderr, "ERROR: No input files found\n");
         return 1;
     }
     app.set_input_files(input_files);
