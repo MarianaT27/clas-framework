@@ -4,6 +4,9 @@
 
 namespace Algorithms {
 
+// Import Log singleton for convenient logging
+using Framework::Log;
+
 Pi0ReconstructionAlg::Pi0ReconstructionAlg(std::string name, double min_photon_energy, double pi0_mass_window)
     : Algorithm(std::move(name)), m_min_photon_energy(min_photon_energy), m_pi0_mass_window(pi0_mass_window), m_cutflow("Pi0 Reconstruction") {}
 
@@ -95,28 +98,26 @@ auto Pi0ReconstructionAlg::initialize() -> Framework::StatusCode {
     auto log_sc = initialize_handle(m_log_svc);
     if (log_sc.is_failure()) fmt::print(stderr, "WARNING: LoggingService not available\n");
 
-    if (m_log_svc) {
-        LOG_INFO(m_log_svc.get(), "Initializing Pi0ReconstructionAlg");
-        LOG_INFO(m_log_svc.get(), "  Min photon energy: {} GeV", m_min_photon_energy);
-        LOG_INFO(m_log_svc.get(), "  Pi0 mass window: ±{} GeV", m_pi0_mass_window);
+    {
+        Log::info(name(), "Initializing Pi0ReconstructionAlg");
+        Log::info(name(), "  Min photon energy: {} GeV", m_min_photon_energy);
+        Log::info(name(), "  Pi0 mass window: ±{} GeV", m_pi0_mass_window);
     }
 
     auto hist_sc = initialize_handle(m_hist_svc);
     if (hist_sc.is_failure()) {
-        if (m_log_svc) LOG_ERROR(m_log_svc.get(), "Could not get HistogramService: {}", hist_sc.message());
-        fmt::print(stderr, "ERROR: {}\n", hist_sc.message());
+        Log::error(name(), "Could not get HistogramService: {}", hist_sc.message());
         return hist_sc;
     }
 
     auto ntuple_sc = initialize_handle(m_ntuple_svc);
     if (ntuple_sc.is_failure()) {
-        if (m_log_svc) LOG_WARNING(m_log_svc.get(), "Could not get NTupleService - N-tuple output disabled");
+        Log::warning(name(), "Could not get NTupleService - N-tuple output disabled");
     }
 
     auto photon_cuts_sc = initialize_handle(m_photon_cuts_svc);
     if (photon_cuts_sc.is_failure()) {
-        if (m_log_svc) LOG_ERROR(m_log_svc.get(), "Could not get PhotonCutsService: {}", photon_cuts_sc.message());
-        fmt::print(stderr, "ERROR: {}\n", photon_cuts_sc.message());
+        Log::error(name(), "Could not get PhotonCutsService: {}", photon_cuts_sc.message());
         return photon_cuts_sc;
     }
 
@@ -130,10 +131,8 @@ auto Pi0ReconstructionAlg::initialize() -> Framework::StatusCode {
     m_cutflow.add_cut("Pi0 Found");
 
     // Inject logger into cutflow for structured output
-    if (m_log_svc) {
-        m_cutflow.set_logger(m_log_svc.get());
-        LOG_INFO(m_log_svc.get(), "Initialized with 4 cuts in cutflow");
-    }
+    m_cutflow.set_logger(m_log_svc.get());
+    Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
 
     return Framework::StatusCode::SUCCESS();
 }
@@ -256,7 +255,7 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
             
             // Sanity check
             if (mgs_E.size() % 2 != 0 && m_log_svc) {
-                LOG_WARNING(m_log_svc.get(), "Event has odd number of photons: {} candidates, {} photons", 
+                Log::warning(name(), "Event has odd number of photons: {} candidates, {} photons", 
                             pi0_candidates.size(), mgs_E.size());
             }
             
@@ -278,11 +277,11 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
     return Framework::StatusCode::SUCCESS();
 }
 auto Pi0ReconstructionAlg::finalize() -> Framework::StatusCode {
-    if (m_log_svc) {
-        LOG_INFO(m_log_svc.get(), "Finalizing Pi0ReconstructionAlg");
+    {
+        Log::info(name(), "Finalizing Pi0ReconstructionAlg");
         if (m_ntuple_svc) {
             auto entries = m_ntuple_svc->get_entries("pi0_events");
-            LOG_INFO(m_log_svc.get(), "N-tuple has {} entries", entries);
+            Log::info(name(), "N-tuple has {} entries", entries);
         }
     }
 
@@ -321,7 +320,7 @@ auto Pi0ReconstructionAlg::setup_ntuple() -> void {
     m_ntuple_svc->register_branch("pi0_events", "mpi0_thetas", &mpi0_thetas);
     m_ntuple_svc->register_branch("pi0_events", "mpi0_phis", &mpi0_phis);
 
-    if (m_log_svc) LOG_INFO(m_log_svc.get(), "N-tuple branches registered for pi0_events");
+    Log::info(name(), "N-tuple branches registered for pi0_events");
 }
 
 }  // namespace Algorithms

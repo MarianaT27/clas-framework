@@ -2,6 +2,7 @@
 
 #include "Framework/IAlgorithm.hpp"
 #include "Framework/ServiceManager.hpp"
+#include "Framework/Services/LoggingService.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/StatusCode.hpp"
 #include "hipoeventiterator.h"
@@ -12,9 +13,6 @@
 #include <fmt/format.h>
 
 namespace Framework {
-
-// Forward declaration
-class LoggingService;
 
 /**
  * @brief Main application class for running analyses
@@ -73,9 +71,12 @@ public:
 
     /**
      * @brief Set logging service for structured output
+     * Also sets the global Log singleton for easy access from anywhere
      */
     auto set_logger(LoggingService* log) -> void {
         m_log = log;
+        // Set the global logger singleton for easy access
+        Log::set_instance(log);
     }
 
     /**
@@ -83,18 +84,26 @@ public:
      * @return StatusCode Success or failure
      */
     auto initialize() -> StatusCode {
+        // Initialize services first
+        auto sc = m_svc_mgr.initialize_all();
+        if (sc.is_failure()) {
+            return sc;
+        }
+
+        // Auto-detect LoggingService if not manually set
+        if (!m_log) {
+            m_log = m_svc_mgr.get_service<LoggingService>("LoggingService");
+            if (m_log) {
+                Log::set_instance(m_log);
+            }
+        }
+
         if (m_log) {
             m_log->info("Application", "═══════════════════════════════════════════════════════════════");
             m_log->info("Application", "  Initializing Application: {}", m_name);
             m_log->info("Application", "═══════════════════════════════════════════════════════════════");
             m_log->info("Application", "");
-            m_log->info("Application", "Initializing Services:");
-        }
-
-        // Initialize services
-        auto sc = m_svc_mgr.initialize_all();
-        if (sc.is_failure()) {
-            return sc;
+            m_log->info("Application", "Services initialized");
         }
 
         if (m_log) {

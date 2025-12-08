@@ -19,6 +19,9 @@
 
 namespace Algorithms {
 
+// Import Log singleton for convenient logging
+using Framework::Log;
+
 /**
  * @brief Algorithm for electron selection and kinematics
  *
@@ -36,30 +39,29 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         // Initialize service handles using the typed ServiceHandle pattern
         // LoggingService is optional - we continue if it's not available
         auto log_sc = initialize_handle(m_log_svc);
-        if (log_sc.is_failure()) LOG_ERROR(m_log_svc.get(), "WARNING: LoggingService not available");
+        if (log_sc.is_failure()) Log::error(name(), "WARNING: LoggingService not available");
     
-        LOG_INFO(m_log_svc.get(), "Initializing algorithm");
+        Log::info(name(), "Initializing algorithm");
         
         // HistogramService is required
         auto hist_sc = initialize_handle(m_hist_svc);
         if (hist_sc.is_failure()) {
-            LOG_ERROR(m_log_svc.get(), "Could not get HistogramService: {}", hist_sc.message());
-            LOG_ERROR(m_log_svc.get(), "ERROR: {}", hist_sc.message());
+            Log::error(name(), "Could not get HistogramService: {}", hist_sc.message());
             return hist_sc;
         }
 
         // NTupleService is optional
         auto ntuple_sc = initialize_handle(m_ntuple_svc);
-        if (ntuple_sc.is_failure()) LOG_WARNING(m_log_svc.get(), "Could not get NTupleService - N-tuple output disabled");
+        if (ntuple_sc.is_failure()) Log::warning(name(), "Could not get NTupleService - N-tuple output disabled");
 
         // ConditionsService is optional
         auto cond_sc = initialize_handle(m_cond_svc);
-        if (cond_sc.is_failure()) LOG_WARNING(m_log_svc.get(), "Could not get ConditionsService");
+        if (cond_sc.is_failure()) Log::warning(name(), "Could not get ConditionsService");
 
         // SamplingFractionService is required for electron selection
         auto sf_sc = initialize_handle(m_sf_svc);
         if (sf_sc.is_failure()) {
-            LOG_ERROR(m_log_svc.get(), "Could not get SamplingFractionService: {}", sf_sc.message());
+            Log::error(name(), "Could not get SamplingFractionService: {}", sf_sc.message());
             return sf_sc;
         }
 
@@ -76,9 +78,9 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         m_cutflow.add_cut("PCAL Fiducial");
         m_cutflow.add_cut("DC Chi2/NDF");
 
-        if (m_log_svc) { // Inject logger into cutflow for structured output
+        { // Inject logger into cutflow for structured output
             m_cutflow.set_logger(m_log_svc.get());
-            LOG_INFO(m_log_svc.get(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
+            Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
         }
 
         return Framework::StatusCode::SUCCESS();
@@ -189,11 +191,11 @@ class ElectronSelectionAlg : public Framework::Algorithm {
     }
 
     auto finalize() -> Framework::StatusCode override {
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc.get(), "Finalizing algorithm");
+        {
+            Log::info(name(), "Finalizing algorithm");
             if (m_ntuple_svc) {
                 auto entries = m_ntuple_svc->get_entries("electron_kinematics");
-                LOG_INFO(m_log_svc.get(), "N-tuple has {} entries", entries);
+                Log::info(name(), "N-tuple has {} entries", entries);
             }
         }
 
@@ -238,7 +240,7 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         m_ntuple_svc->register_branch("electron_kinematics", "e_phi", &m_e_phi);
         m_ntuple_svc->register_branch("electron_kinematics", "e_vz", &m_e_vz);
         m_ntuple_svc->register_branch("electron_kinematics", "e_chi2pid", &m_e_chi2pid);
-        if (m_log_svc) LOG_INFO(m_log_svc.get(), "N-tuple branches registered for electron kinematics");
+        Log::info(name(), "N-tuple branches registered for electron kinematics");
     }
 };
 

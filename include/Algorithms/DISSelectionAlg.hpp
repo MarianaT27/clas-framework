@@ -11,10 +11,13 @@
 #include "Physics/DISAnalysis.hpp"
 
 namespace Algorithms {
+
+// Import Log singleton for convenient logging
+using Framework::Log;
+
 /**
  * @brief Algorithm for DIS event selection
  */
-
 class DISSelectionAlg : public Framework::Algorithm {
    public:
     explicit DISSelectionAlg(std::string name = "DISSelectionAlg", Physics::DISAnalysis::KinematicRegion dis_region = Physics::DISAnalysis::full_phase_space()) : Algorithm(std::move(name)), m_cutflow("DIS Selection"), m_dis_region(std::move(dis_region)) {}
@@ -22,27 +25,25 @@ class DISSelectionAlg : public Framework::Algorithm {
     auto set_dis_region(const Physics::DISAnalysis::KinematicRegion& region) -> void { m_dis_region = region; }
 
     auto initialize() -> Framework::StatusCode override {
-        if (m_log_svc) LOG_INFO(m_log_svc.get(), "Initializing DIS selection algorithm");
-
         auto log_sc = initialize_handle(m_log_svc);
         if (log_sc.is_failure()) fmt::print(stderr, "WARNING: LoggingService not available\n");
-        if (m_log_svc) LOG_INFO(m_log_svc.get(), "Initializing algorithm");
+        
+        Log::info(name(), "Initializing DIS selection algorithm");
 
         auto hist_sc = initialize_handle(m_hist_svc);
         if (hist_sc.is_failure()) {
-            if (m_log_svc) LOG_ERROR(m_log_svc.get(), "Could not get HistogramService: {}", hist_sc.message());
-            fmt::print(stderr, "ERROR: {}\n", hist_sc.message());
+            Log::error(name(), "Could not get HistogramService: {}", hist_sc.message());
             return hist_sc;
         }
 
         auto ntuple_sc = initialize_handle(m_ntuple_svc);
         if (ntuple_sc.is_failure()) {
-            if (m_log_svc) LOG_WARNING(m_log_svc.get(), "Could not get NTupleService - N-tuple output disabled");
+            Log::warning(name(), "Could not get NTupleService - N-tuple output disabled");
         }
 
         auto cond_sc = initialize_handle(m_cond_svc);
         if (cond_sc.is_failure()) {
-            if (m_log_svc) LOG_WARNING(m_log_svc.get(), "Could not get ConditionsService");
+            Log::warning(name(), "Could not get ConditionsService");
         }
 
         book_histograms();
@@ -54,10 +55,8 @@ class DISSelectionAlg : public Framework::Algorithm {
         m_cutflow.add_cut("W Cut");
         m_cutflow.add_cut("y Cut");
 
-        if (m_log_svc) {
-            m_cutflow.set_logger(m_log_svc.get());
-            LOG_INFO(m_log_svc.get(), "Initialized with 8 cuts in cutflow");
-        }
+        m_cutflow.set_logger(m_log_svc.get());
+        Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
 
         return Framework::StatusCode::SUCCESS();
     }
@@ -120,11 +119,11 @@ class DISSelectionAlg : public Framework::Algorithm {
 
     auto finalize() -> Framework::StatusCode override {
 
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc.get(), "Finalizing DIS selection algorithm");
+        {
+            Log::info(name(), "Finalizing DIS selection algorithm");
             if (m_ntuple_svc) {
                 auto entries = m_ntuple_svc->get_entries("dis_kinematics");
-                LOG_INFO(m_log_svc.get(), "N-tuple has {} entries", entries);
+                Log::info(name(), "N-tuple has {} entries", entries);
             }
         }
 
@@ -180,7 +179,7 @@ class DISSelectionAlg : public Framework::Algorithm {
         m_ntuple_svc->register_branch("dis_kinematics", "nu", &m_nu);
         m_ntuple_svc->register_branch("dis_kinematics", "xB", &m_xB);
         m_ntuple_svc->register_branch("dis_kinematics", "y", &m_y);
-        if (m_log_svc) LOG_INFO(m_log_svc.get(), "N-tuple branches registered for electron kinematics");
+        Log::info(name(), "N-tuple branches registered for electron kinematics");
     }
 };
 

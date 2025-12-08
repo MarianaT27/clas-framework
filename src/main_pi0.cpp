@@ -120,12 +120,7 @@ int main(int argc, char* argv[]) {
     metadata_svc->add_parameter("percentage", percentage);
     metadata_svc->add_parameter("num_threads", num_threads);
 
-    // Keep pointers before moving
-    auto* log_ptr = log_svc.get();
-    auto* hist_ptr = hist_svc.get();
-    auto* ntuple_ptr = ntuple_svc.get();
-    auto* conditions_ptr = conditions_svc.get();
-
+    // Add services to the application
     app.service_manager().add_service(std::move(conditions_svc));
     app.service_manager().add_service(std::move(hist_svc));
     app.service_manager().add_service(std::move(log_svc));
@@ -135,13 +130,6 @@ int main(int argc, char* argv[]) {
     app.service_manager().add_service(std::move(metadata_svc));
     app.service_manager().add_service(std::move(profiling_svc));
     app.service_manager().add_service(std::move(sf_svc));
-
-    // Inject logger into all services, ServiceManager, and Application
-    app.set_logger(log_ptr);
-    app.service_manager().set_logger(log_ptr);
-    ntuple_ptr->set_logger(log_ptr);
-    hist_ptr->set_logger(log_ptr);
-    conditions_ptr->set_logger(log_ptr);
 
     auto monitoring_alg = std::make_unique<Algorithms::EventMonitor>("EventMonitor");
     app.add_algorithm(std::move(monitoring_alg));
@@ -166,33 +154,33 @@ int main(int argc, char* argv[]) {
     app.set_percentage(percentage);
     app.set_num_threads(num_threads);
 
-    // Print configuration
-    log_ptr->info("Configuration", "Pi0 Analysis Configuration:");
-    log_ptr->info("Configuration", "  Data directory: {}", data_dir);
-    log_ptr->info("Configuration", "  Percentage: {}", percentage);
-    log_ptr->info("Configuration", "  Threads: {}", num_threads);
-    log_ptr->info("Configuration", "  Output file: {}", output_file);
-    log_ptr->info("Configuration", "  Input files: {}", input_files.size());
-
-    // Run the analysis
+    // Run the analysis (logger singleton is auto-detected during initialize)
     auto sc = app.initialize();
     if (sc.is_failure()) {
-        log_ptr->error("Application", "Initialization failed");
+        Framework::Log::error("Application", "Initialization failed");
         return 1;
     }
 
+    // Print configuration after initialization (logger is now available)
+    Framework::Log::info("Configuration", "Pi0 Analysis Configuration:");
+    Framework::Log::info("Configuration", "  Data directory: {}", data_dir);
+    Framework::Log::info("Configuration", "  Percentage: {}", percentage);
+    Framework::Log::info("Configuration", "  Threads: {}", num_threads);
+    Framework::Log::info("Configuration", "  Output file: {}", output_file);
+    Framework::Log::info("Configuration", "  Input files: {}", input_files.size());
+
     sc = app.run();
     if (sc.is_failure()) {
-        log_ptr->error("Application", "Event processing failed");
+        Framework::Log::error("Application", "Event processing failed");
         return 1;
     }
 
     sc = app.finalize();
     if (sc.is_failure()) {
-        log_ptr->warning("Application", "Finalization had issues");
+        Framework::Log::warning("Application", "Finalization had issues");
     }
 
-    log_ptr->info("Application", "Pi0 analysis complete! Output: {}", output_file);
+    Framework::Log::info("Application", "Pi0 analysis complete! Output: {}", output_file);
 
     return 0;
 }

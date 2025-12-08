@@ -247,16 +247,14 @@ public:
         , m_cutflow("My Cutflow") {}
 
     auto initialize() -> Framework::StatusCode override {
-        // Get services
-        m_log_svc = service<Framework::LoggingService>("LoggingService");
+        // Get histogram service
         m_hist_svc = service<Framework::HistogramService>("HistogramService");
 
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc, "Initializing algorithm");
-        }
+        // Use global Log singleton (no injection needed)
+        Framework::Log::info(name(), "Initializing algorithm");
 
         if (!m_hist_svc) {
-            fmt::print(stderr, "ERROR: Could not get HistogramService\n");
+            Framework::Log::error(name(), "Could not get HistogramService");
             return Framework::StatusCode::FAILURE();
         }
 
@@ -308,9 +306,7 @@ public:
     }
 
     auto finalize() -> Framework::StatusCode override {
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc, "Finalizing algorithm");
-        }
+        Framework::Log::info(name(), "Finalizing algorithm");
 
         fmt::print("\n");
         m_cutflow.print();
@@ -320,7 +316,6 @@ public:
 
 private:
     Framework::Cutflow m_cutflow;
-    Framework::LoggingService* m_log_svc = nullptr;
     Framework::HistogramService* m_hist_svc = nullptr;
 
     // Histograms
@@ -458,7 +453,7 @@ auto execute(Framework::Event& event) -> Framework::StatusCode override {
 
 ### 5.2 LoggingService
 
-Structured logging with levels and colors.
+Structured logging with levels and colors. The framework provides a global `Log` singleton that is automatically configured when you add a `LoggingService` to your application.
 
 **Setup:**
 ```cpp
@@ -466,25 +461,37 @@ auto log_svc = std::make_unique<Framework::LoggingService>();
 log_svc->set_log_level(Framework::LogLevel::INFO);
 log_svc->set_log_file("analysis.log");  // Optional file output
 app.service_manager().add_service(std::move(log_svc));
+// Logger is automatically available globally after app.initialize()
 ```
 
-**Usage:**
+**Usage (Global Log Singleton):**
 ```cpp
+// In any algorithm or service - no injection needed!
+// The Log singleton is automatically configured when LoggingService is added
+
 auto initialize() -> Framework::StatusCode override {
-    m_log_svc = service<Framework::LoggingService>("LoggingService");
-
-    if (m_log_svc) {
-        LOG_DEBUG(m_log_svc, "Debug message");
-        LOG_INFO(m_log_svc, "Info message");
-        LOG_WARNING(m_log_svc, "Warning message");
-        LOG_ERROR(m_log_svc, "Error message");
-        LOG_CRITICAL(m_log_svc, "Critical message");
-
-        // With formatting
-        LOG_INFO(m_log_svc, "Processing run {}, {} events", run, n_events);
-    }
-
+    // Use the global Log singleton
+    Framework::Log::info(name(), "Initializing algorithm");
+    Framework::Log::debug(name(), "Debug message");
+    Framework::Log::warning(name(), "Warning: value {} out of range", value);
+    Framework::Log::error(name(), "Error: failed to read bank");
+    
     return Framework::StatusCode::SUCCESS();
+}
+
+auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    Framework::Log::info(name(), "Processing event {}", event.event_number());
+    Framework::Log::debug(name(), "Found {} electrons", electrons.size());
+    
+    return Framework::StatusCode::SUCCESS();
+}
+```
+
+**Checking Logger Availability:**
+```cpp
+// Check if logger is available (useful for optional logging)
+if (Framework::Log::is_available()) {
+    Framework::Log::info(name(), "Logger is ready");
 }
 ```
 

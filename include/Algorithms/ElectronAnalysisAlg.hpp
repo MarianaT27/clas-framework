@@ -20,6 +20,9 @@
 
 namespace Algorithms {
 
+// Import Log singleton for convenient logging
+using Framework::Log;
+
 /**
  * @brief Full electron analysis algorithm (refactored from study1::Reader)
  *
@@ -52,27 +55,21 @@ public:
         m_particle_svc = service<Framework::ParticleSelectorService>("ParticleSelectorService");
         m_sf_svc = service<Framework::SamplingFractionService>("SamplingFractionService");
 
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc, "Initializing algorithm");
-            LOG_INFO(m_log_svc, "Target: {}, Polarity: {}, Systematics: {}",
+        if (Log::is_available()) {
+            Log::info(name(), "Initializing algorithm");
+            Log::info(name(), "Target: {}, Polarity: {}, Systematics: {}",
                      m_target == CLAS::Target::LD2 ? "LD2" : "Other",
                      m_polarity == CLAS::Polarity::Outbending ? "Outbending" : "Inbending",
                      m_enable_systematics ? "enabled" : "disabled");
         }
 
         if (!m_hist_svc) {
-            if (m_log_svc) {
-                LOG_ERROR(m_log_svc, "Could not get HistogramService");
-            }
-            fmt::print(stderr, "ERROR: Could not get HistogramService\n");
+            Log::error(name(), "Could not get HistogramService");
             return Framework::StatusCode::FAILURE();
         }
 
         if (!m_sf_svc) {
-            if (m_log_svc) {
-                LOG_ERROR(m_log_svc, "Could not get SamplingFractionService");
-            }
-            fmt::print(stderr, "ERROR: Could not get SamplingFractionService\n");
+            Log::error(name(), "Could not get SamplingFractionService");
             return Framework::StatusCode::FAILURE();
         }
 
@@ -85,15 +82,15 @@ public:
         // Setup N-tuple branches
         if (m_ntuple_svc) {
             setup_ntuple();
-        } else if (m_log_svc) {
-            LOG_WARNING(m_log_svc, "NTupleService not available - N-tuple output disabled");
+        } else {
+            Log::warning(name(), "NTupleService not available - N-tuple output disabled");
         }
 
         // Setup systematic variations if enabled
         if (m_enable_systematics) {
             setup_systematics();
-            if (m_log_svc) {
-                LOG_INFO(m_log_svc, "Systematic variations enabled");
+            if (Log::is_available()) {
+                Log::info(name(), "Systematic variations enabled");
             }
         }
 
@@ -211,14 +208,14 @@ public:
     }
 
     auto finalize() -> Framework::StatusCode override {
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc, "Finalizing algorithm");
+        if (Log::is_available()) {
+            Log::info(name(), "Finalizing algorithm");
             auto final_count = m_cutflow.get_count("DC Chi2/NDF");
-            LOG_INFO(m_log_svc, "Events passing all cuts: {}", final_count);
+            Log::info(name(), "Events passing all cuts: {}", final_count);
 
             if (m_ntuple_svc) {
                 auto entries = m_ntuple_svc->get_entries("electron_analysis");
-                LOG_INFO(m_log_svc, "N-tuple has {} entries", entries);
+                Log::info(name(), "N-tuple has {} entries", entries);
             }
         }
 
@@ -345,8 +342,8 @@ private:
         m_ntuple_svc->register_branch("electron_analysis", "sampling_fraction", &m_nt_sampling_fraction);
         m_ntuple_svc->register_branch("electron_analysis", "sector", &m_nt_sector);
 
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc, "N-tuple branches registered for electron analysis");
+        if (Log::is_available()) {
+            Log::info(name(), "N-tuple branches registered for electron analysis");
         }
     }
 

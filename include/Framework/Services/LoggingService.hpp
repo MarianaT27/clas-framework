@@ -223,21 +223,84 @@ private:
 };
 
 /**
- * @brief Helper macros for logging with automatic source name
+ * @brief Global logger singleton for easy access without injection
+ *
+ * This provides a global access point to the logging service.
+ * The LoggingService instance is set by the Application during initialization.
+ *
+ * Usage:
+ * @code
+ * // In any algorithm or service:
+ * Log::info("MyAlgorithm", "Processing event {}", event_num);
+ * Log::warning("MyService", "Value out of range: {}", value);
+ * @endcode
  */
-#define LOG_DEBUG(log_svc, ...) \
-    if (log_svc) log_svc->debug(this->name(), __VA_ARGS__)
+class Log {
+public:
+    /**
+     * @brief Set the global logger instance
+     * Called by Application during initialization
+     */
+    static auto set_instance(LoggingService* logger) -> void {
+        s_instance = logger;
+    }
 
-#define LOG_INFO(log_svc, ...) \
-    if (log_svc) log_svc->info(this->name(), __VA_ARGS__)
+    /**
+     * @brief Get the global logger instance
+     */
+    static auto instance() -> LoggingService* {
+        return s_instance;
+    }
 
-#define LOG_WARNING(log_svc, ...) \
-    if (log_svc) log_svc->warning(this->name(), __VA_ARGS__)
+    /**
+     * @brief Check if logger is available
+     */
+    static auto is_available() -> bool {
+        return s_instance != nullptr;
+    }
 
-#define LOG_ERROR(log_svc, ...) \
-    if (log_svc) log_svc->error(this->name(), __VA_ARGS__)
+    /**
+     * @brief Log debug message
+     */
+    template<typename... Args>
+    static auto debug(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
+        if (s_instance) s_instance->debug(source, fmt, std::forward<Args>(args)...);
+    }
 
-#define LOG_CRITICAL(log_svc, ...) \
-    if (log_svc) log_svc->critical(this->name(), __VA_ARGS__)
+    /**
+     * @brief Log info message
+     */
+    template<typename... Args>
+    static auto info(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
+        if (s_instance) s_instance->info(source, fmt, std::forward<Args>(args)...);
+    }
+
+    /**
+     * @brief Log warning message
+     */
+    template<typename... Args>
+    static auto warning(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
+        if (s_instance) s_instance->warning(source, fmt, std::forward<Args>(args)...);
+    }
+
+    /**
+     * @brief Log error message
+     */
+    template<typename... Args>
+    static auto error(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
+        if (s_instance) s_instance->error(source, fmt, std::forward<Args>(args)...);
+    }
+
+    /**
+     * @brief Log critical message
+     */
+    template<typename... Args>
+    static auto critical(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
+        if (s_instance) s_instance->critical(source, fmt, std::forward<Args>(args)...);
+    }
+
+private:
+    static inline LoggingService* s_instance = nullptr;
+};
 
 }  // namespace Framework

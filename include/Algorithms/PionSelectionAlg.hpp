@@ -18,6 +18,9 @@
 
 namespace Algorithms {
 
+// Import Log singleton for convenient logging
+using Framework::Log;
+
 /**
  * @brief Pion (π⁺/π⁻) selection and analysis algorithm
  *
@@ -47,18 +50,15 @@ public:
         m_ntuple_svc = service<Framework::NTupleService>("NTupleService");
         m_particle_svc = service<Framework::ParticleSelectorService>("ParticleSelectorService");
 
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc, "Initializing pion selection algorithm");
-            LOG_INFO(m_log_svc, "Target: {}, Separate charges: {}",
+        if (Log::is_available()) {
+            Log::info(name(), "Initializing pion selection algorithm");
+            Log::info(name(), "Target: {}, Separate charges: {}",
                      m_target == CLAS::Target::LD2 ? "LD2" : "Other",
                      m_separate_charges ? "yes" : "no");
         }
 
         if (!m_hist_svc) {
-            if (m_log_svc) {
-                LOG_ERROR(m_log_svc, "Could not get HistogramService");
-            }
-            fmt::print(stderr, "ERROR: Could not get HistogramService\n");
+            Log::error(name(), "Could not get HistogramService");
             return Framework::StatusCode::FAILURE();
         }
 
@@ -71,8 +71,8 @@ public:
         // Setup N-tuple branches
         if (m_ntuple_svc) {
             setup_ntuples();
-        } else if (m_log_svc) {
-            LOG_WARNING(m_log_svc, "NTupleService not available - N-tuple output disabled");
+        } else {
+            Log::warning(name(), "NTupleService not available - N-tuple output disabled");
         }
 
         return Framework::StatusCode::SUCCESS();
@@ -112,19 +112,19 @@ public:
     }
 
     auto finalize() -> Framework::StatusCode override {
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc, "Finalizing pion selection algorithm");
+        if (Log::is_available()) {
+            Log::info(name(), "Finalizing pion selection algorithm");
 
             auto piplus_count = m_cutflow_piplus.get_count("Delta-t");
             auto piminus_count = m_cutflow_piminus.get_count("Delta-t");
 
-            LOG_INFO(m_log_svc, "π⁺ passing all cuts: {}", piplus_count);
-            LOG_INFO(m_log_svc, "π⁻ passing all cuts: {}", piminus_count);
+            Log::info(name(), "π⁺ passing all cuts: {}", piplus_count);
+            Log::info(name(), "π⁻ passing all cuts: {}", piminus_count);
 
             if (m_ntuple_svc) {
                 auto piplus_entries = m_ntuple_svc->get_entries("pion_plus");
                 auto piminus_entries = m_ntuple_svc->get_entries("pion_minus");
-                LOG_INFO(m_log_svc, "N-tuple entries: π⁺={}, π⁻={}", piplus_entries, piminus_entries);
+                Log::info(name(), "N-tuple entries: π⁺={}, π⁻={}", piplus_entries, piminus_entries);
             }
         }
 
@@ -285,8 +285,8 @@ private:
         m_ntuple_svc->register_branch("pion_minus", "beta", &m_nt_piminus_beta);
         m_ntuple_svc->register_branch("pion_minus", "delta_t", &m_nt_piminus_delta_t);
 
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc, "N-tuple branches registered for π⁺ and π⁻");
+        if (Log::is_available()) {
+            Log::info(name(), "N-tuple branches registered for π⁺ and π⁻");
         }
     }
 
