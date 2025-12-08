@@ -112,7 +112,7 @@ public:
         std::lock_guard<std::mutex> lock(m_mutex);
 
         if (m_stats.empty()) {
-            fmt::print("\nNo profiling data available\n");
+            Framework::Log::info("ProfilingService", "No profiling data available");
             return;
         }
 

@@ -4,6 +4,7 @@
 #include "Framework/AlgorithmTypes.hpp"
 #include "Framework/ServiceHandle.hpp"
 #include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include <chrono>
 #include <vector>
@@ -33,7 +34,7 @@ public:
     void set_progress_interval(size_t interval) { m_progress_interval = interval; }
     void set_particle_types(std::vector<CLAS::PIDs> pids) { m_monitored_pids = std::move(pids); }
     auto initialize() -> Framework::StatusCode override {
-        fmt::print("  {} - Initializing\n", name());
+        Framework::Log::info("Event Monitor", "  {} - Initializing", name());
 
         // Initialize service handle (optional - histogram service may not be available)
         if (m_svc_mgr) {
@@ -171,11 +172,8 @@ private:
         const auto end_time = std::chrono::high_resolution_clock::now();
         const auto duration = std::chrono::duration_cast<std::chrono::seconds>(end_time - m_start_time);
 
-        fmt::print("\nEvent Monitor Statistics:\n");
-        fmt::print("  Total events processed: {}\n", m_events_processed);
-        fmt::print("  Total runtime: {} seconds\n", duration.count());
-        fmt::print("  Average rate: {:.1f} events/second\n", calculate_event_rate(duration.count()));
-        fmt::print("  Average particles/event: {:.2f}\n", calculate_avg_particles());
+        Framework::Log::info("EventMonitor", "Event Monitor Statistics:\n  Total events processed: {}\n  Total runtime: {} seconds\n  Average rate: {:.1f} events/second\n  Average particles/event: {:.2f}",
+            m_events_processed, duration.count(), calculate_event_rate(duration.count()), calculate_avg_particles());
     }
 
     auto initialize_default_pids() const -> std::vector<CLAS::PIDs> {

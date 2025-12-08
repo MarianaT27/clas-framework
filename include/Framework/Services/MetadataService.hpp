@@ -201,7 +201,7 @@ public:
             return;
         }
 
-        fmt::print("\nWriting metadata to: {}\n", m_output_file);
+        Framework::Log::info("MetadataService", "Writing metadata to: {}", m_output_file);
 
         TFile file(m_output_file.c_str(), "UPDATE");
         if (file.IsZombie() || !file.IsOpen()) {
@@ -269,7 +269,7 @@ public:
         }
 
         file.Close();
-        fmt::print("✓ Wrote metadata tree and details\n");
+        Framework::Log::info("MetadataService", "Metadata written successfully");
     }
 
 private:

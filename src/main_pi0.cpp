@@ -95,10 +95,10 @@ int main(int argc, char* argv[]) {
     Framework::Application app("Pi0 Analysis");
 
     // Create services
+    auto log_svc = std::make_unique<Framework::LoggingService>();
     auto ntuple_svc = std::make_unique<Framework::NTupleService>();
     auto hist_svc = std::make_unique<Framework::HistogramService>();
     auto conditions_svc = std::make_unique<Framework::ConditionsService>();
-    auto log_svc = std::make_unique<Framework::LoggingService>();
     auto particle_svc = std::make_unique<Framework::ParticleSelectorService>();
     auto photon_cuts_svc = std::make_unique<Framework::PhotonCutsService>();
     auto metadata_svc = std::make_unique<Framework::MetadataService>();
@@ -121,9 +121,9 @@ int main(int argc, char* argv[]) {
     metadata_svc->add_parameter("num_threads", num_threads);
 
     // Add services to the application
+    app.service_manager().add_service(std::move(log_svc));
     app.service_manager().add_service(std::move(conditions_svc));
     app.service_manager().add_service(std::move(hist_svc));
-    app.service_manager().add_service(std::move(log_svc));
     app.service_manager().add_service(std::move(ntuple_svc));
     app.service_manager().add_service(std::move(particle_svc));
     app.service_manager().add_service(std::move(photon_cuts_svc));

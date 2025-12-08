@@ -88,37 +88,23 @@ public:
     auto initialize_all() -> StatusCode {
         auto sort_result = topological_sort();
         if (sort_result.is_error()) {
-            if (m_log) {
-                m_log->error("ServiceManager", "{}", sort_result.error_message());
-            } else {
-                fmt::print(stderr, "ERROR: {}\n", sort_result.error_message());
-            }
+            Framework::Log::error("ServiceManager", "{}", sort_result.error_message());
             return StatusCode::failure(sort_result.error_message());
         }
 
         const auto& order = sort_result.value();
         for (const auto& name : order) {
             auto it = m_services.find(name);
-            if (it == m_services.end()) {
-                continue;  // Skip if service not found (shouldn't happen)
-            }
-
-            if (m_log) {
-                m_log->info("ServiceManager", "Initializing service: {}", name);
-            } else {
-                fmt::print("Initializing service: {}\n", name);
-            }
+            if (it == m_services.end()) continue;  
+            
+            Framework::Log::info("ServiceManager", "Initializing service: {}", name);
 
             auto sc = it->second->initialize();
             if (sc.is_failure()) {
                 std::string error_msg = sc.message().empty()
                     ? fmt::format("Failed to initialize service '{}'", name)
                     : fmt::format("Failed to initialize service '{}': {}", name, sc.message());
-                if (m_log) {
-                    m_log->error("ServiceManager", "{}", error_msg);
-                } else {
-                    fmt::print(stderr, "ERROR: {}\n", error_msg);
-                }
+                Framework::Log::error("ServiceManager", "{}", error_msg);
                 return StatusCode::failure(error_msg);
             }
         }
@@ -230,11 +216,7 @@ public:
         auto result = topological_sort();
         if (!result.is_ok()) {
             std::string error_msg = fmt::format("Failed to determine service order: {}", result.error_message());
-            if (m_log) {
-                m_log->error("ServiceManager", "{}", error_msg);
-            } else {
-                fmt::print(stderr, "ERROR: {}\n", error_msg);
-            }
+            Framework::Log::error("ServiceManager", "{}", error_msg);
             return StatusCode::failure(error_msg);
         }
 
@@ -246,20 +228,9 @@ public:
             auto it = m_services.find(name);
             if (it == m_services.end()) continue;
 
-            if (m_log) {
-                m_log->info("ServiceManager", "Finalizing service: {}", name);
-            } else {
-                fmt::print("Finalizing service: {}\n", name);
-            }
-
+            Framework::Log::info("ServiceManager", "Finalizing service: {}", name);
             auto sc = it->second->finalize();
-            if (sc.is_failure()) {
-                if (m_log) {
-                    m_log->warning("ServiceManager", "Failed to finalize service '{}'", name);
-                } else {
-                    fmt::print(stderr, "WARNING: Failed to finalize service '{}'\n", name);
-                }
-            }
+            if (sc.is_failure()) Framework::Log::warning("ServiceManager", "Failed to finalize service '{}'", name);
         }
         return StatusCode::SUCCESS();
     }
