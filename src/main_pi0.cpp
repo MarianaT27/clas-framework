@@ -112,7 +112,8 @@ int main(int argc, char* argv[]) {
     ntuple_svc->enable_incremental_writing();
 
     // Configure metadata
-    metadata_svc->set_version("2.0");
+    metadata_svc->set_version("1.0");
+    metadata_svc->set_beam_energy(10.53);
     metadata_svc->set_target(CLAS::to_string(target));
     metadata_svc->set_command_line(argc, argv);
     metadata_svc->add_parameter("polarity", CLAS::to_string(polarity));

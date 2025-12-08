@@ -1,7 +1,9 @@
 #pragma once
 
+#include "CLAS/Constants.hpp"
 #include "CLAS/Particle.hpp"
 #include "CompositeParticle.hpp"
+#include "fmt/base.h"
 #include <vector>
 #include <cmath>
 
@@ -84,15 +86,8 @@ public:
      * @param scattered Scattered electron
      * @return Q² in GeV²
      */
-    static auto calculate_Q2(const CLAS::Particle& beam,
-                            const CLAS::Particle& scattered) -> double {
-        double q_px = beam.px() - scattered.px();
-        double q_py = beam.py() - scattered.py();
-        double q_pz = beam.pz() - scattered.pz();
-        double q_E = beam.E() - scattered.E();
-
-        double q2 = (q_px * q_px + q_py * q_py + q_pz * q_pz) - q_E * q_E;
-        return -q2;  // Q² is defined as -q²
+    static auto calculate_Q2(const CLAS::Particle& beam, const CLAS::Particle& scattered) -> double {
+        return 4.0 * beam.E() * scattered.E() * std::pow(std::sin(scattered.theta() * CLAS::Constants::DEG_TO_RAD / 2.0), 2);
     }
 
     /**
