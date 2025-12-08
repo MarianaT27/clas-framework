@@ -70,6 +70,7 @@ int main(int argc, char* argv[]) {
 
     // Determine input files - either from --input option or from target/polarity
     std::vector<std::string> input_files;
+    std::string data_dir;
     
     if (!input_str.empty()) {
         // Parse comma-separated input files
@@ -84,7 +85,6 @@ int main(int argc, char* argv[]) {
                                               std::tuple{CLAS::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CxC},
                                               std::tuple{CLAS::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_LD2}};
         
-        std::string data_dir;
         bool valid = false;
         for (const auto& [src_target, src_dir, _] : sources) {
             if (target == src_target) {
