@@ -415,10 +415,22 @@ public:
         // Split input files
         auto chunks = split_input_files(config.input_files, config.files_per_job);
 
+        // Convert paths to absolute paths
+        auto abs_output_dir = std::filesystem::absolute(config.output_dir).string();
+        auto abs_log_dir = std::filesystem::absolute(config.log_dir).string();
+        auto abs_executable = std::filesystem::absolute(config.executable).string();
+        auto abs_batch_dir = std::filesystem::absolute("./batch_scripts").string();
+
+        // Create a config copy with absolute paths
+        JobConfig abs_config = config;
+        abs_config.output_dir = abs_output_dir;
+        abs_config.log_dir = abs_log_dir;
+        abs_config.executable = abs_executable;
+
         // Create directories
-        std::filesystem::create_directories(config.output_dir);
-        std::filesystem::create_directories(config.log_dir);
-        std::filesystem::create_directories("./batch_scripts");
+        std::filesystem::create_directories(abs_output_dir);
+        std::filesystem::create_directories(abs_log_dir);
+        std::filesystem::create_directories(abs_batch_dir);
 
         std::vector<std::string> job_ids;
 
@@ -430,27 +442,27 @@ public:
 
             switch (system) {
                 case System::SLURM:
-                    script_content = generate_slurm_script(config, i, chunks[i]);
-                    script_file = "./batch_scripts/job_" + std::to_string(i) + ".slurm";
+                    script_content = generate_slurm_script(abs_config, i, chunks[i]);
+                    script_file = abs_batch_dir + "/job_" + std::to_string(i) + ".slurm";
                     submit_command = "sbatch " + script_file;
                     break;
 
                 case System::PBS:
-                    script_content = generate_pbs_script(config, i, chunks[i]);
-                    script_file = "./batch_scripts/job_" + std::to_string(i) + ".pbs";
+                    script_content = generate_pbs_script(abs_config, i, chunks[i]);
+                    script_file = abs_batch_dir + "/job_" + std::to_string(i) + ".pbs";
                     submit_command = "qsub " + script_file;
                     break;
 
                 case System::Condor:
-                    script_content = generate_condor_submit(config, i, chunks[i]);
-                    script_file = "./batch_scripts/job_" + std::to_string(i) + ".condor";
+                    script_content = generate_condor_submit(abs_config, i, chunks[i]);
+                    script_file = abs_batch_dir + "/job_" + std::to_string(i) + ".condor";
                     submit_command = "condor_submit " + script_file;
                     break;
 
                 case System::Local:
                     // For local execution, just save the script
-                    script_content = generate_slurm_script(config, i, chunks[i]);
-                    script_file = "./batch_scripts/job_" + std::to_string(i) + ".sh";
+                    script_content = generate_slurm_script(abs_config, i, chunks[i]);
+                    script_file = abs_batch_dir + "/job_" + std::to_string(i) + ".sh";
                     submit_command = "bash " + script_file;
                     break;
             }
