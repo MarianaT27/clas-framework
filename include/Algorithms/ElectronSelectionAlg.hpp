@@ -35,49 +35,29 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         // Initialize service handles using the typed ServiceHandle pattern
         // LoggingService is optional - we continue if it's not available
         auto log_sc = initialize_handle(m_log_svc);
-        if (log_sc.is_failure()) {
-            // LoggingService is optional, just print a warning
-            fmt::print(stderr, "WARNING: LoggingService not available\n");
-        }
-
-        if (m_log_svc) {
-            LOG_INFO(m_log_svc.get(), "Initializing algorithm");
-        }
-
+        if (log_sc.is_failure()) LOG_ERROR(m_log_svc.get(), "WARNING: LoggingService not available");
+    
+        LOG_INFO(m_log_svc.get(), "Initializing algorithm");
+        
         // HistogramService is required
         auto hist_sc = initialize_handle(m_hist_svc);
         if (hist_sc.is_failure()) {
-            if (m_log_svc) {
-                LOG_ERROR(m_log_svc.get(), "Could not get HistogramService: {}", hist_sc.message());
-            }
-            fmt::print(stderr, "ERROR: {}\n", hist_sc.message());
+            LOG_ERROR(m_log_svc.get(), "Could not get HistogramService: {}", hist_sc.message());
+            LOG_ERROR(m_log_svc.get(), "ERROR: {}", hist_sc.message());
             return hist_sc;
         }
 
         // NTupleService is optional
         auto ntuple_sc = initialize_handle(m_ntuple_svc);
-        if (ntuple_sc.is_failure()) {
-            if (m_log_svc) {
-                LOG_WARNING(m_log_svc.get(), "Could not get NTupleService - N-tuple output disabled");
-            }
-        }
+        if (ntuple_sc.is_failure()) LOG_WARNING(m_log_svc.get(), "Could not get NTupleService - N-tuple output disabled");
 
         // ConditionsService is optional
         auto cond_sc = initialize_handle(m_cond_svc);
-        if (cond_sc.is_failure()) {
-            if (m_log_svc) {
-                LOG_WARNING(m_log_svc.get(), "Could not get ConditionsService");
-            }
-        }
+        if (cond_sc.is_failure()) LOG_WARNING(m_log_svc.get(), "Could not get ConditionsService");          
 
-        // Book histograms
         book_histograms();
-
-        // Setup N-tuple branches
-        if (m_ntuple_svc) {
-            setup_ntuple();
-        }
-
+        if (m_ntuple_svc) setup_ntuple();
+        
         // Setup cutflow
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Has Electron");
@@ -88,10 +68,9 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         m_cutflow.add_cut("PCAL Fiducial");
         m_cutflow.add_cut("DC Chi2/NDF");
 
-        // Inject logger into cutflow for structured output
-        if (m_log_svc) {
+        if (m_log_svc) { // Inject logger into cutflow for structured output
             m_cutflow.set_logger(m_log_svc.get());
-            LOG_INFO(m_log_svc.get(), "Initialized with 8 cuts in cutflow");
+            LOG_INFO(m_log_svc.get(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
         }
 
         return Framework::StatusCode::SUCCESS();

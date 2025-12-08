@@ -51,27 +51,40 @@ auto Pi0ReconstructionAlg::find_all_unique_pi0_candidates(const std::vector<Core
     if (photons.size() < 2) return std::nullopt;
     
     std::vector<std::tuple<Core::Particle, Core::Particle, double>> candidates;
-    auto photons_copy = photons;
+    std::vector<bool> used(photons.size(), false);
     
-    for (size_t i = 0; i < photons_copy.size(); ++i) {
-        for (size_t j = i + 1; j < photons_copy.size(); ++j) {
-            double mass = calculate_invariant_mass(photons_copy[i], photons_copy[j]);
-            double mass_diff = std::abs(mass - PI0_MASS);
+    // Keep pairing until we can't find more valid pairs
+    while (true) {
+        double best_mass_diff = std::numeric_limits<double>::max();
+        size_t best_i = 0, best_j = 0;
+        bool found_pair = false;
+        
+        // Find the best remaining pair (closest to PI0_MASS)
+        for (size_t i = 0; i < photons.size(); ++i) {
+            if (used[i]) continue;
             
-            if (mass_diff < m_pi0_mass_window) {
-                candidates.emplace_back(photons_copy[i], photons_copy[j], mass);
+            for (size_t j = i + 1; j < photons.size(); ++j) {
+                if (used[j]) continue;
                 
-                // Remove the pair from further consideration to ensure uniqueness
-                // Erase higher index first to maintain validity of indices
-                photons_copy.erase(photons_copy.begin() + j);
-                photons_copy.erase(photons_copy.begin() + i);
+                double mass = calculate_invariant_mass(photons[i], photons[j]);
+                double mass_diff = std::abs(mass - PI0_MASS);
                 
-                // Adjust index: after removal, the next element is now at position i
-                // Decrement i so that after the loop's ++i, we stay at position i
-                --i;
-                break;
+                if (mass_diff < m_pi0_mass_window && mass_diff < best_mass_diff) {
+                    best_mass_diff = mass_diff;
+                    best_i = i;
+                    best_j = j;
+                    found_pair = true;
+                }
             }
         }
+        
+        if (!found_pair) break;
+        
+        // Add the best pair and mark as used
+        double mass = calculate_invariant_mass(photons[best_i], photons[best_j]);
+        candidates.emplace_back(photons[best_i], photons[best_j], mass);
+        used[best_i] = true;
+        used[best_j] = true;
     }
     
     return candidates.empty() ? std::nullopt : std::make_optional(candidates);
@@ -117,7 +130,6 @@ auto Pi0ReconstructionAlg::initialize() -> Framework::StatusCode {
 
     return Framework::StatusCode::SUCCESS();
 }
-
 auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::StatusCode {
     m_cutflow.pass("All Events");
 
@@ -138,7 +150,9 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
     std::vector<Core::Particle> fiducial_photons;
     for (const auto& photon : selected_photons) {
         Core::CalorimeterBank calorimeter = Core::read_Calorimeter_bank(REC_Calorimeter, photon.index());
-        if (Core::PhotonCuts::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) fiducial_photons.push_back(photon);
+        if (Core::PhotonCuts::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
+            if (0.9 < photon.beta() && photon.beta() < 1.1) fiducial_photons.push_back(photon);
+        }
     }
     selected_photons = fiducial_photons;
 
@@ -157,12 +171,17 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
         }
     }
 
-    std::vector<std::tuple<Core::Particle, Core::Particle, double>> pi0_candidates;
     auto candidates_opt = find_all_unique_pi0_candidates(selected_photons);
     if (!candidates_opt.has_value()) return Framework::StatusCode::SUCCESS();
-    pi0_candidates = candidates_opt.value();
-    m_cutflow.pass("Pi0 Founds");
+    
+    auto pi0_candidates = candidates_opt.value();
+    m_cutflow.pass("Pi0 Found");
 
+    // Use local vectors to avoid holding the lock during calculations
+    std::vector<double> local_gs_E, local_gs_theta, local_gs_phi;
+    std::vector<double> local_pi0_masses, local_pi0_ps, local_pi0_thetas, local_pi0_phis;
+    double local_e_p{}, local_e_theta{}, local_e_phi{}, local_e_vz{};
+    
     for (const auto& [g1, g2, pi0_mass] : pi0_candidates) {
         auto p1 = g1.PxPyPzEVector();
         auto p2 = g2.PxPyPzEVector();
@@ -178,54 +197,79 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
         double cos_angle = p1_3.Dot(p2_3) / (p1_3.R() * p2_3.R());
         double opening_angle = std::acos(cos_angle) * 180.0 / M_PI;
 
-        // Fill histograms
+        // Fill histograms (if ROOT histograms are thread-safe with ROOT::EnableThreadSafety())
         if (h_gg_mass_selected) h_gg_mass_selected->Fill(pi0_mass);
         if (h_pi0_momentum) h_pi0_momentum->Fill(pi0_p);
         if (h_pi0_theta) h_pi0_theta->Fill(pi0_theta);
         if (h_opening_angle) h_opening_angle->Fill(opening_angle);
 
-        // Fill N-tuple if service is available
-        if (m_ntuple_svc) {
-            // Get electron from event store (stored by ElectronSelectionAlg)
-            auto* electrons = event.get_particles<Core::Particle>("SelectedElectrons");
-            if (electrons && !electrons->empty()) {
-                const auto& electron = (*electrons)[0];
-                m_e_p = electron.p();
-                m_e_theta = electron.theta();
-                m_e_phi = electron.phi();
-                m_e_vz = electron.vz();
-            }
-
-            // Photons 
-            mgs_E.push_back(g1.E());
-            mgs_theta.push_back(g1.theta());
-            mgs_phi.push_back(g1.phi());
-            mgs_E.push_back(g2.E());
-            mgs_theta.push_back(g2.theta());
-            mgs_phi.push_back(g2.phi());
-            // π⁰
-            mpi0_masses.push_back(pi0_mass);
-            mpi0_ps.push_back(pi0_p);
-            mpi0_thetas.push_back(pi0_theta);
-            mpi0_phis.push_back(pi0_phi);
-
-            m_ntuple_svc->fill("pi0_events");
-        }
-
+        // Fill local vectors
+        local_gs_E.push_back(g1.E());
+        local_gs_theta.push_back(g1.theta());
+        local_gs_phi.push_back(g1.phi());
+        local_gs_E.push_back(g2.E());
+        local_gs_theta.push_back(g2.theta());
+        local_gs_phi.push_back(g2.phi());
+        local_pi0_masses.push_back(pi0_mass);
+        local_pi0_ps.push_back(pi0_p);
+        local_pi0_thetas.push_back(pi0_theta);
+        local_pi0_phis.push_back(pi0_phi);
     }
 
-    // Clear vectors for next event
-    mgs_E.clear();
-    mgs_theta.clear();
-    mgs_phi.clear();
-    mpi0_masses.clear();
-    mpi0_ps.clear();
-    mpi0_thetas.clear();
-    mpi0_phis.clear();
+    if (m_ntuple_svc && !pi0_candidates.empty()) {
+        auto* electrons = event.get_particles<Core::Particle>("SelectedElectrons");
+        if (electrons && !electrons->empty()) {
+            const auto& electron = (*electrons)[0];
+            local_e_p = electron.p();
+            local_e_theta = electron.theta();
+            local_e_phi = electron.phi();
+            local_e_vz = electron.vz();
+        }
+        
+        // CRITICAL SECTION: Lock mutex before modifying shared vectors
+        {
+            std::lock_guard<std::mutex> lock(m_ntuple_mutex);
+            
+            // Copy electron data
+            m_e_p = local_e_p;
+            m_e_theta = local_e_theta;
+            m_e_phi = local_e_phi;
+            m_e_vz = local_e_vz;
+            
+            // Copy photon data
+            mgs_E = std::move(local_gs_E);
+            mgs_theta = std::move(local_gs_theta);
+            mgs_phi = std::move(local_gs_phi);
+            
+            // Copy pi0 data
+            mpi0_masses = std::move(local_pi0_masses);
+            mpi0_ps = std::move(local_pi0_ps);
+            mpi0_thetas = std::move(local_pi0_thetas);
+            mpi0_phis = std::move(local_pi0_phis);
+            
+            // Sanity check
+            if (mgs_E.size() % 2 != 0 && m_log_svc) {
+                LOG_WARNING(m_log_svc.get(), "Event has odd number of photons: {} candidates, {} photons", 
+                            pi0_candidates.size(), mgs_E.size());
+            }
+            
+            // Fill the ntuple while holding the lock
+            m_ntuple_svc->fill("pi0_events");
+            
+            // Clear vectors for next event (still inside lock)
+            mgs_E.clear();
+            mgs_theta.clear();
+            mgs_phi.clear();
+            mpi0_masses.clear();
+            mpi0_ps.clear();
+            mpi0_thetas.clear();
+            mpi0_phis.clear();
+        }
+        // Mutex automatically released here
+    }
 
     return Framework::StatusCode::SUCCESS();
 }
-
 auto Pi0ReconstructionAlg::finalize() -> Framework::StatusCode {
     if (m_log_svc) {
         LOG_INFO(m_log_svc.get(), "Finalizing Pi0ReconstructionAlg");

@@ -72,6 +72,9 @@ class Pi0ReconstructionAlg : public Framework::Algorithm {
     // Cutflow
     Framework::Cutflow m_cutflow;
 
+    // Add mutex for thread safety
+    mutable std::mutex m_ntuple_mutex;
+
     // Histograms (non-owning pointers managed by HistogramService)
     TH1D* h_photon_energy = nullptr;
     TH1D* h_photon_theta = nullptr;

@@ -52,6 +52,12 @@ public:
     explicit Cutflow(std::string name) : m_name(std::move(name)) {}
 
     /**
+     * @brief Get the number of cuts in the cutflow
+     * @return size_t Number of cuts
+     */
+    auto num_cuts() const -> size_t { return m_cut_names.size(); }
+
+    /**
      * @brief Add a cut to the cutflow
      * @param cut_name Name of the cut
      */
