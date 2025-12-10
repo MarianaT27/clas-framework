@@ -139,6 +139,20 @@ executable(
   dependencies: [hipo_dep, fmt_dep, root_dep, cxxopts_dep],
 )
 
+# Lambda reconstruction analysis executable
+main_lambda_sources = files(
+  'src/CLAS/Particle.cpp',
+  'src/Framework/Histogram.cpp',
+  'src/main_lambda.cpp',
+)
+
+executable(
+  'main_lambda',
+  main_lambda_sources,
+  include_directories: [inc],
+  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
+)
+
 #── Test suite ────────────────────────────────────────────────────────────────#
 # Tests require Google Test and RapidCheck for property-based testing
 # subdir('test')

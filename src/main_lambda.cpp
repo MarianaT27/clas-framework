@@ -1,0 +1,186 @@
+/**
+ * @file main_lambda.cpp
+ * @brief Lambda reconstruction analysis executable
+ *
+ * This executable chains electron selection with Λ → p + π⁻ reconstruction
+ * and writes results to an NTuple.
+ */
+
+#include <fmt/format.h>
+#include <cstdlib>
+#include <cxxopts.hpp>
+#include <string>
+#include <TROOT.h>
+#include "Algorithms/ElectronSelectionAlg.hpp"
+#include "Algorithms/LambdaReconstructionAlg.hpp"
+#include "Algorithms/EventMonitor.hpp"
+#include "CLAS/FileUtils.hpp"
+#include "CLAS/Runs.hpp"
+#include "CLAS/StringUtils.hpp"
+#include "CLAS/Target.hpp"
+#include "Framework/Application.hpp"
+#include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/NTupleService.hpp"
+#include "Framework/Services/MetadataService.hpp"
+#include "Framework/Services/ProfilingService.hpp"
+#include "Framework/Services/SamplingFractionService.hpp"
+#include "fmt/base.h"
+
+int main(int argc, char* argv[]) {
+    ROOT::EnableThreadSafety();
+    ROOT::EnableImplicitMT();
+    
+    cxxopts::Options options("lambda_analysis", "Lambda reconstruction analysis (Λ → p + π⁻)");
+
+    options.add_options() 
+            ("target", "Target type (LD2, CxC, CuSn)", cxxopts::value<std::string>()->default_value("LD2"))
+            ("polarity", "Magnetic field polarity (Inbending, Outbending)", cxxopts::value<std::string>()->default_value("Outbending"))
+            ("percentage", "Percentage of events to process (0-100)", cxxopts::value<double>()->default_value("100"))
+            ("num_threads", "Number of threads", cxxopts::value<int>()->default_value("1"))
+            ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("lambda_analysis_{target}_{polarity}.root"))
+            ("input", "Input HIPO files (comma-separated or single file)", cxxopts::value<std::string>()->default_value(""))
+            ("mass_window", "Lambda mass window in GeV", cxxopts::value<double>()->default_value("0.02"))
+            ("help", "Show help");
+
+    auto args = options.parse(argc, argv);
+
+    if (args.count("help")) {
+        fmt::print("{}\n", options.help());
+        return EXIT_SUCCESS;
+    }
+
+    double percentage = args["percentage"].as<double>();
+    int num_threads = args["num_threads"].as<int>();
+    std::string output_file = args["output"].as<std::string>();
+    std::string target_str = args["target"].as<std::string>();
+    std::string polarity_str = args["polarity"].as<std::string>();
+    std::string input_str = args["input"].as<std::string>();
+    double mass_window = args["mass_window"].as<double>();
+    
+    CLAS::Target target = CLAS::string_to_target(target_str);
+    CLAS::Polarity polarity = CLAS::string_to_polarity(polarity_str);
+
+    output_file = CLAS::StringUtils::replace_all(output_file, "{target}", CLAS::to_string(target));
+    output_file = CLAS::StringUtils::replace_all(output_file, "{polarity}", CLAS::to_string(polarity));
+
+    // Determine input files
+    std::vector<std::string> input_files;
+    std::string data_dir;
+    
+    if (!input_str.empty()) {
+        input_files = CLAS::StringUtils::split(input_str, ',');
+    } else {
+        std::array sources = (polarity == CLAS::Polarity::Outbending)
+                                 ? std::array{std::tuple{CLAS::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/", &CLAS::outbending_runs_CuSn},
+                                              std::tuple{CLAS::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/", &CLAS::outbending_runs_CxC},
+                                              std::tuple{CLAS::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/", &CLAS::outbending_runs_LD2}}
+                                 : std::array{std::tuple{CLAS::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CuSn},
+                                              std::tuple{CLAS::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CxC},
+                                              std::tuple{CLAS::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_LD2}};
+        
+        bool valid = false;
+        for (const auto& [src_target, src_dir, _] : sources) {
+            if (target == src_target) {
+                data_dir = src_dir;
+                valid = true;
+                break;
+            }
+        }
+        if (!valid) {
+            fmt::println(stderr, "ERROR: Invalid target '{}' for polarity '{}'", target_str, polarity_str);
+            return EXIT_FAILURE;
+        }
+        
+        input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
+    }
+
+    if (input_files.empty()) {
+        fmt::print(stderr, "ERROR: No input files found\n");
+        return EXIT_FAILURE;
+    }
+
+    // Create application
+    Framework::Application app("Lambda Analysis");
+
+    // Create services
+    auto log_svc = std::make_unique<Framework::LoggingService>();
+    auto ntuple_svc = std::make_unique<Framework::NTupleService>();
+    auto hist_svc = std::make_unique<Framework::HistogramService>();
+    auto conditions_svc = std::make_unique<Framework::ConditionsService>();
+    auto metadata_svc = std::make_unique<Framework::MetadataService>();
+    auto profiling_svc = std::make_unique<Framework::ProfilingService>();
+    auto sf_svc = std::make_unique<Framework::SamplingFractionService>();
+
+    // Configure output
+    ntuple_svc->set_output_file(output_file);
+    hist_svc->set_output_file(output_file);
+    metadata_svc->set_output_file(output_file);
+    ntuple_svc->enable_incremental_writing();
+
+    // Configure metadata
+    metadata_svc->set_version("1.0");
+    metadata_svc->set_beam_energy(10.53);
+    metadata_svc->set_target(CLAS::to_string(target));
+    metadata_svc->set_command_line(argc, argv);
+    metadata_svc->add_parameter("polarity", CLAS::to_string(polarity));
+    metadata_svc->add_parameter("percentage", percentage);
+    metadata_svc->add_parameter("num_threads", num_threads);
+    metadata_svc->add_parameter("mass_window", mass_window);
+
+    // Add services
+    app.service_manager().add_service(std::move(log_svc));
+    app.service_manager().add_service(std::move(conditions_svc));
+    app.service_manager().add_service(std::move(hist_svc));
+    app.service_manager().add_service(std::move(ntuple_svc));
+    app.service_manager().add_service(std::move(metadata_svc));
+    app.service_manager().add_service(std::move(profiling_svc));
+    app.service_manager().add_service(std::move(sf_svc));
+
+    // Add algorithms
+    auto monitoring_alg = std::make_unique<Algorithms::EventMonitor>("EventMonitor");
+    app.add_algorithm(std::move(monitoring_alg));
+
+    auto electron_alg = std::make_unique<Algorithms::ElectronSelectionAlg>("ElectronSelection", target, polarity);
+    app.add_algorithm(std::move(electron_alg));
+
+    auto lambda_alg = std::make_unique<Algorithms::LambdaReconstructionAlg>("LambdaReconstruction", mass_window);
+    app.add_algorithm(std::move(lambda_alg));
+
+    // Configure input
+    app.set_input_files(input_files);
+    app.set_percentage(percentage);
+    app.set_num_threads(num_threads);
+
+    // Run analysis
+    auto sc = app.initialize();
+    if (sc.is_failure()) {
+        Framework::Log::error("Application", "Initialization failed");
+        return EXIT_FAILURE;
+    }
+
+    Framework::Log::info("Configuration", "Lambda Analysis Configuration:");
+    Framework::Log::info("Configuration", "  Target: {}", CLAS::to_string(target));
+    Framework::Log::info("Configuration", "  Polarity: {}", CLAS::to_string(polarity));
+    Framework::Log::info("Configuration", "  Percentage: {}", percentage);
+    Framework::Log::info("Configuration", "  Threads: {}", num_threads);
+    Framework::Log::info("Configuration", "  Output file: {}", output_file);
+    Framework::Log::info("Configuration", "  Input files: {}", input_files.size());
+    Framework::Log::info("Configuration", "  Mass window: {} GeV", mass_window);
+
+    sc = app.run();
+    if (sc.is_failure()) {
+        Framework::Log::error("Application", "Event processing failed");
+        return EXIT_FAILURE;
+    }
+
+    sc = app.finalize();
+    if (sc.is_failure()) {
+        Framework::Log::warning("Application", "Finalization had issues");
+    }
+
+    Framework::Log::info("Application", "Lambda analysis complete! Output: {}", output_file);
+
+    return EXIT_SUCCESS;
+}
