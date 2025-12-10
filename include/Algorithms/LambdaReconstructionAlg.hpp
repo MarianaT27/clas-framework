@@ -58,7 +58,7 @@ class LambdaReconstructionAlg : public Framework::Algorithm {
 public:
     explicit LambdaReconstructionAlg(
         std::string name = "LambdaReconstructionAlg",
-        double mass_window = 0.02  // GeV (±20 MeV around 1.116 GeV)
+        double mass_window = 0.5  // GeV (±500 MeV around 1.116 GeV)
     ) : Algorithm(std::move(name)), m_mass_window(mass_window), m_cutflow("Lambda Reconstruction") {}
 
     void set_mass_window(double window) { m_mass_window = window; }
@@ -73,17 +73,19 @@ public:
      */
     static bool is_forward_detector(const CLAS::Particle& particle) {
         int abs_status = std::abs(particle.status());
-        return abs_status >= CLAS::FD && abs_status < CLAS::CD;
+        return 2000 <= abs_status && abs_status < 4000;
     }
     
     /**
      * @brief Calculate coplanarity angle between Lambda and electron
-     * Returns the angle deviation from 180 degrees (back-to-back in phi)
+     * Returns the azimuthal angle difference (should be 0 or 180 for coplanar events)
+     * This measures if the Lambda is in the electron scattering plane
      */
     static double calculate_coplanarity(const CLAS::Particle& electron, double lambda_phi) {
         double phi_diff = std::abs(electron.phi() - lambda_phi) * CLAS::Constants::RAD_TO_DEG;
         if (phi_diff > 180.0) phi_diff = 360.0 - phi_diff;
-        return std::abs(phi_diff - 180.0);
+        // Return the minimum angle to either 0° (same side) or 180° (opposite side)
+        return std::min(phi_diff, 180.0 - phi_diff);
     }
     
     /**
@@ -129,7 +131,7 @@ public:
 
         // Setup cutflow
         m_cutflow.add_cut("All Events");
-        m_cutflow.add_cut("Has Electron");
+        m_cutflow.add_cut("Has Good DIS Electron");
         m_cutflow.add_cut("Has Proton");
         m_cutflow.add_cut("Has PiMinus");
         m_cutflow.add_cut("Proton in FD");
@@ -150,10 +152,10 @@ public:
         m_cutflow.pass("All Events");
 
         // Check for good electron from upstream
-        if (!event.passes_decision("HasGoodElectron")) {
+        if (!event.passes_decision("HasGoodDISElectron")) {
             return Framework::StatusCode::SUCCESS();
         }
-        m_cutflow.pass("Has Electron");
+        m_cutflow.pass("Has Good DIS Electron");
 
         // Get protons and pions from event
         const auto& protons = event.particles(CLAS::PIDs::PROTON);
@@ -387,8 +389,8 @@ public:
 
 private:
     double m_mass_window;
-    double m_min_proton_p = 0.0;      // GeV
-    double m_min_pion_p = 0.0;        // GeV
+    double m_min_proton_p = 0.3;      // GeV
+    double m_min_pion_p = 0.3;        // GeV
     double m_max_delta_vz = 5.0;      // cm - vertex z difference cut
     double m_max_coplanarity = 0.0;   // deg - 0 means disabled
     double m_beam_energy = 10.6;      // GeV
