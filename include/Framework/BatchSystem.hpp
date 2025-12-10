@@ -57,7 +57,7 @@ public:
         std::vector<std::string> extra_args;
 
         // Environment
-        std::string root_setup = "source /path/to/root/bin/thisroot.sh";
+        std::string module_setup = "source /etc/profile.d/modules.sh\nmodule use /cvmfs/oasis.opensciencegrid.org/jlab/hallb/clas12/sw/modulefiles";
         std::vector<std::string> env_vars;
         std::vector<std::string> modules;  // For module load commands
 
@@ -115,12 +115,10 @@ public:
         std::ostringstream script;
 
         // SLURM directives
-        script << "#!/bin/bash\n";
+        script << "#!/usr/bin/bash\n";
         script << "#SBATCH --job-name=" << config.job_name << "_" << job_index << "\n";
-        script << "#SBATCH --output=" << config.log_dir << "/" << config.job_name
-               << "_" << job_index << "_%j.out\n";
-        script << "#SBATCH --error=" << config.log_dir << "/" << config.job_name
-               << "_" << job_index << "_%j.err\n";
+        script << "#SBATCH --output=" << config.log_dir << "/" << config.job_name << "_" << job_index << "_%j.out\n";
+        script << "#SBATCH --error=" << config.log_dir << "/" << config.job_name << "_" << job_index << "_%j.err\n";
         script << "#SBATCH --ntasks=1\n";
         script << "#SBATCH --cpus-per-task=" << config.n_cores << "\n";
         script << "#SBATCH --mem=" << config.memory_gb << "G\n";
@@ -145,14 +143,12 @@ public:
 
         script << "\n";
 
+        // Setup module environment
+        if (!config.module_setup.empty()) script << config.module_setup << "\n";
+        
         // Load modules
         for (const auto& module : config.modules) {
             script << "module load " << module << "\n";
-        }
-
-        // Setup ROOT
-        if (!config.root_setup.empty()) {
-            script << config.root_setup << "\n";
         }
 
         // Environment variables
@@ -250,11 +246,6 @@ public:
         // Load modules
         for (const auto& module : config.modules) {
             script << "module load " << module << "\n";
-        }
-
-        // Setup ROOT
-        if (!config.root_setup.empty()) {
-            script << config.root_setup << "\n";
         }
 
         // Environment variables

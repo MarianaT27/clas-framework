@@ -57,10 +57,10 @@ int main(int argc, char* argv[]) {
             ("num_threads", "Number of threads per job", cxxopts::value<int>()->default_value("8"))
             ("memory", "Memory per job in GB", cxxopts::value<int>()->default_value("16"))
             ("time", "Time limit per job (HH:MM:SS)", cxxopts::value<std::string>()->default_value("12:00:00"))
-            ("partition", "SLURM partition or PBS queue", cxxopts::value<std::string>()->default_value("default"))
+            ("partition", "SLURM partition or PBS queue", cxxopts::value<std::string>()->default_value("production"))
             ("output-dir", "Output directory for results", cxxopts::value<std::string>()->default_value("./output"))
             ("log-dir", "Log directory for job logs", cxxopts::value<std::string>()->default_value("./logs"))
-            ("executable", "Path to pi0 analysis executable", cxxopts::value<std::string>()->default_value("./build/main_pi0"))
+            ("executable", "Path to pi0 analysis executable", cxxopts::value<std::string>()->default_value("./main_pi0"))
             ("email", "Email for notifications", cxxopts::value<std::string>()->default_value(""))
             ("dry-run", "Generate scripts without submitting", cxxopts::value<bool>()->default_value("true"))
             ("help", "Show help");
@@ -172,11 +172,10 @@ int main(int argc, char* argv[]) {
 
     // Environment setup for JLab/CLAS12
     config.modules = {
-        "gcc/12.1.0",
-        "cmake/3.24.2"
+        "gcc/13.2.0",
+        "cmake/3.29.0",
+        "root/6.36.04"
     };
-
-    config.root_setup = "source /apps/root/6.28.04/bin/thisroot.sh";
 
     config.env_vars = {
         "OMP_NUM_THREADS=" + std::to_string(num_threads),
