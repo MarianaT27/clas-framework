@@ -36,6 +36,8 @@ int main(int argc, char* argv[]) {
             ("mass_window", "Lambda mass window in GeV", cxxopts::value<double>()->default_value("0.1"))
             ("min_momentum", "Minimum Lambda momentum in GeV", cxxopts::value<double>()->default_value("0.0"))
             ("min_decay_length", "Minimum decay length in cm (0=disabled)", cxxopts::value<double>()->default_value("0.0"))
+            ("min_vertex_detach", "Min vertex detachment z in cm (decay_vz - origin_vz)", cxxopts::value<double>()->default_value("-1000"))
+            ("max_vertex_detach", "Max vertex detachment z in cm (0=no limit)", cxxopts::value<double>()->default_value("0"))
             ("help", "Show help");
 
     auto args = options.parse(argc, argv);
@@ -52,6 +54,8 @@ int main(int argc, char* argv[]) {
     double mass_window = args["mass_window"].as<double>();
     double min_momentum = args["min_momentum"].as<double>();
     double min_decay_length = args["min_decay_length"].as<double>();
+    double min_vertex_detach = args["min_vertex_detach"].as<double>();
+    double max_vertex_detach = args["max_vertex_detach"].as<double>();
 
     // Determine input files
     std::vector<std::string> input_files = {"/work/clas12/skuditha/skims/phys_val/ana_v2/020082_lambda.hipo"};
@@ -80,6 +84,8 @@ int main(int argc, char* argv[]) {
     metadata_svc->add_parameter("mass_window", mass_window);
     metadata_svc->add_parameter("min_momentum", min_momentum);
     metadata_svc->add_parameter("min_decay_length", min_decay_length);
+    metadata_svc->add_parameter("min_vertex_detach", min_vertex_detach);
+    metadata_svc->add_parameter("max_vertex_detach", max_vertex_detach);
 
     // Add services
     app.service_manager().add_service(std::move(log_svc));
@@ -96,6 +102,8 @@ int main(int argc, char* argv[]) {
     decays_lambda_alg->set_mass_window(mass_window);
     decays_lambda_alg->set_min_momentum(min_momentum);
     decays_lambda_alg->set_min_decay_length(min_decay_length);
+    decays_lambda_alg->set_min_vertex_detach(min_vertex_detach);
+    decays_lambda_alg->set_max_vertex_detach(max_vertex_detach);
     app.add_algorithm(std::move(decays_lambda_alg));
 
     // Configure input
@@ -118,6 +126,8 @@ int main(int argc, char* argv[]) {
     Framework::Log::info("Configuration", "  Mass window: {} GeV", mass_window);
     Framework::Log::info("Configuration", "  Min momentum: {} GeV", min_momentum);
     Framework::Log::info("Configuration", "  Min decay length: {} cm", min_decay_length);
+    Framework::Log::info("Configuration", "  Min vertex detach: {} cm", min_vertex_detach);
+    Framework::Log::info("Configuration", "  Max vertex detach: {} cm", max_vertex_detach);
 
     sc = app.run();
     if (sc.is_failure()) {
