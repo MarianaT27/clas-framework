@@ -6,6 +6,7 @@
 #include <tuple>
 #include <vector>
 #include "CLAS/Constants.hpp"
+#include "CLAS/Detectors.hpp"
 #include "CLAS/PIDs.hpp"
 #include "CLAS/Particle.hpp"
 #include "Framework/Cutflow.hpp"
@@ -58,6 +59,14 @@ public:
     void set_mass_window(double window) { m_mass_window = window; }
     void set_min_proton_momentum(double p) { m_min_proton_p = p; }
     void set_min_pion_momentum(double p) { m_min_pion_p = p; }
+    
+    /**
+     * @brief Check if particle is in forward detector
+     */
+    static bool is_forward_detector(const CLAS::Particle& particle) {
+        int abs_status = std::abs(particle.status());
+        return abs_status >= CLAS::FD && abs_status < CLAS::CD;
+    }
 
     auto initialize() -> Framework::StatusCode override {
         auto log_sc = initialize_handle(m_log_svc);
@@ -87,6 +96,8 @@ public:
         m_cutflow.add_cut("Has Electron");
         m_cutflow.add_cut("Has Proton");
         m_cutflow.add_cut("Has PiMinus");
+        m_cutflow.add_cut("Proton in FD");
+        m_cutflow.add_cut("Pion in FD");
         m_cutflow.add_cut("Proton Momentum");
         m_cutflow.add_cut("Pion Momentum");
         m_cutflow.add_cut("Lambda Mass Window");
@@ -126,16 +137,26 @@ public:
 
         // Find Lambda candidates
         std::vector<LambdaCandidate> candidates;
-        bool passed_proton_cut = false;
-        bool passed_pion_cut = false;
+        bool passed_proton_fd = false;
+        bool passed_pion_fd = false;
+        bool passed_proton_p = false;
+        bool passed_pion_p = false;
 
         for (const auto& proton : protons) {
+            // Require proton in forward detector
+            if (!is_forward_detector(proton)) continue;
+            passed_proton_fd = true;
+            
             if (proton.p() < m_min_proton_p) continue;
-            passed_proton_cut = true;
+            passed_proton_p = true;
 
             for (const auto& pion : pions) {
+                // Require pion in forward detector
+                if (!is_forward_detector(pion)) continue;
+                passed_pion_fd = true;
+                
                 if (pion.p() < m_min_pion_p) continue;
-                passed_pion_cut = true;
+                passed_pion_p = true;
 
                 // Calculate invariant mass
                 double mass = calculate_invariant_mass(proton, pion);
@@ -164,10 +185,16 @@ public:
             }
         }
 
-        if (!passed_proton_cut) return Framework::StatusCode::SUCCESS();
+        if (!passed_proton_fd) return Framework::StatusCode::SUCCESS();
+        m_cutflow.pass("Proton in FD");
+
+        if (!passed_pion_fd) return Framework::StatusCode::SUCCESS();
+        m_cutflow.pass("Pion in FD");
+
+        if (!passed_proton_p) return Framework::StatusCode::SUCCESS();
         m_cutflow.pass("Proton Momentum");
 
-        if (!passed_pion_cut) return Framework::StatusCode::SUCCESS();
+        if (!passed_pion_p) return Framework::StatusCode::SUCCESS();
         m_cutflow.pass("Pion Momentum");
 
         if (candidates.empty()) {
