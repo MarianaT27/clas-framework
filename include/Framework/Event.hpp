@@ -247,15 +247,16 @@ private:
 
             const int status = REC_Particle.get_as<int>("status", i);
             const int charge = REC_Particle.get_as<int>("charge", i);
-            const double px = REC_Particle.get_as<double>("px", i);
-            const double py = REC_Particle.get_as<double>("py", i);
-            const double pz = REC_Particle.get_as<double>("pz", i);
-            const double vx = REC_Particle.get_as<double>("vx", i);
-            const double vy = REC_Particle.get_as<double>("vy", i);
-            const double vz = REC_Particle.get_as<double>("vz", i);
-            const double vt = REC_Particle.get_as<double>("vt", i);
-            const double beta = REC_Particle.get_as<double>("beta", i);
-            const double chi2pid = REC_Particle.get_as<double>("chi2pid", i);
+            // REC::Particle stores momentum and vertex as floats
+            const double px = static_cast<double>(REC_Particle.get_as<float>("px", i));
+            const double py = static_cast<double>(REC_Particle.get_as<float>("py", i));
+            const double pz = static_cast<double>(REC_Particle.get_as<float>("pz", i));
+            const double vx = static_cast<double>(REC_Particle.get_as<float>("vx", i));
+            const double vy = static_cast<double>(REC_Particle.get_as<float>("vy", i));
+            const double vz = static_cast<double>(REC_Particle.get_as<float>("vz", i));
+            const double vt = static_cast<double>(REC_Particle.get_as<float>("vt", i));
+            const double beta = static_cast<double>(REC_Particle.get_as<float>("beta", i));
+            const double chi2pid = static_cast<double>(REC_Particle.get_as<float>("chi2pid", i));
 
             const double mass = Physics::ParticleUtils::get_mass(pid);
             const double E = Physics::ParticleUtils::compute_energy(px, py, pz, pid);
