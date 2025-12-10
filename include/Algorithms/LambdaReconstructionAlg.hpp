@@ -171,17 +171,6 @@ public:
         const auto& all_protons = event.particles(CLAS::PIDs::PROTON);
         const auto& all_pions = event.particles(CLAS::PIDs::PIMINUS);
         
-        // Debug: print first event's particle info
-        static int debug_count = 0;
-        if (debug_count < 5 && !all_protons.empty() && !all_pions.empty()) {
-            const auto& p = all_protons[0];
-            const auto& pi = all_pions[0];
-            double mass = calculate_invariant_mass(p, pi);
-            Log::info(name(), "DEBUG Event {}: proton p=({:.3f},{:.3f},{:.3f}) |p|={:.3f}, pion p=({:.3f},{:.3f},{:.3f}) |p|={:.3f}, M(p,pi-)={:.4f} GeV",
-                debug_count, p.px(), p.py(), p.pz(), p.p(), pi.px(), pi.py(), pi.pz(), pi.p(), mass);
-            debug_count++;
-        }
-        
         // Fill raw mass distribution before ANY cuts (including electron)
         for (const auto& proton : all_protons) {
             for (const auto& pion : all_pions) {

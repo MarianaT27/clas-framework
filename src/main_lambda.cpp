@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
     output_file = CLAS::StringUtils::replace_all(output_file, "{polarity}", CLAS::to_string(polarity));
 
     // Determine input files
-    std::vector<std::string> input_files = {"/volatile/clas12/rg-e/production/dst/phys_val/dst/train/lambda/lambda_020082.hipo"};
+    std::vector<std::string> input_files = {"/work/clas12/skuditha/skims/phys_val/ana_v2/020082_lambda.hipo"};
     // std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files("/volatile/clas12/rg-e/production/dst/phys_val/dst/recon/020082/");
 
     // Create application
