@@ -42,6 +42,9 @@ int main(int argc, char* argv[]) {
             ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("lambda_analysis_{target}_{polarity}.root"))
             ("input", "Input HIPO files (comma-separated or single file)", cxxopts::value<std::string>()->default_value(""))
             ("mass_window", "Lambda mass window in GeV", cxxopts::value<double>()->default_value("0.02"))
+            ("max_delta_vz", "Max vertex z difference in cm", cxxopts::value<double>()->default_value("5.0"))
+            ("coplanarity", "Max coplanarity angle in deg (0=disabled)", cxxopts::value<double>()->default_value("0"))
+            ("beam_energy", "Beam energy in GeV", cxxopts::value<double>()->default_value("10.6"))
             ("help", "Show help");
 
     auto args = options.parse(argc, argv);
@@ -58,6 +61,9 @@ int main(int argc, char* argv[]) {
     std::string polarity_str = args["polarity"].as<std::string>();
     std::string input_str = args["input"].as<std::string>();
     double mass_window = args["mass_window"].as<double>();
+    double max_delta_vz = args["max_delta_vz"].as<double>();
+    double coplanarity = args["coplanarity"].as<double>();
+    double beam_energy = args["beam_energy"].as<double>();
     
     CLAS::Target target = CLAS::string_to_target(target_str);
     CLAS::Polarity polarity = CLAS::string_to_polarity(polarity_str);
@@ -96,6 +102,9 @@ int main(int argc, char* argv[]) {
     metadata_svc->add_parameter("percentage", percentage);
     metadata_svc->add_parameter("num_threads", num_threads);
     metadata_svc->add_parameter("mass_window", mass_window);
+    metadata_svc->add_parameter("max_delta_vz", max_delta_vz);
+    metadata_svc->add_parameter("coplanarity", coplanarity);
+    metadata_svc->add_parameter("beam_energy", beam_energy);
 
     // Add services
     app.service_manager().add_service(std::move(log_svc));
@@ -114,6 +123,9 @@ int main(int argc, char* argv[]) {
     app.add_algorithm(std::move(electron_alg));
 
     auto lambda_alg = std::make_unique<Algorithms::LambdaReconstructionAlg>("LambdaReconstruction", mass_window);
+    lambda_alg->set_max_delta_vz(max_delta_vz);
+    lambda_alg->set_coplanarity_cut(coplanarity);
+    lambda_alg->set_beam_energy(beam_energy);
     app.add_algorithm(std::move(lambda_alg));
 
     // Configure input
@@ -136,6 +148,9 @@ int main(int argc, char* argv[]) {
     Framework::Log::info("Configuration", "  Output file: {}", output_file);
     Framework::Log::info("Configuration", "  Input files: {}", input_files.size());
     Framework::Log::info("Configuration", "  Mass window: {} GeV", mass_window);
+    Framework::Log::info("Configuration", "  Max delta vz: {} cm", max_delta_vz);
+    Framework::Log::info("Configuration", "  Coplanarity cut: {} deg", coplanarity);
+    Framework::Log::info("Configuration", "  Beam energy: {} GeV", beam_energy);
 
     sc = app.run();
     if (sc.is_failure()) {

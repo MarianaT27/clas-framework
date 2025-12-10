@@ -28,7 +28,7 @@ using Framework::Log;
 constexpr double LAMBDA_MASS = 1.115683;  // GeV/c²
 
 /**
- * @brief Reconstructed Lambda candidate
+ * @brief Reconstructed Lambda candidate with full kinematics
  */
 struct LambdaCandidate {
     CLAS::Particle proton;
@@ -38,6 +38,11 @@ struct LambdaCandidate {
     double theta = 0.0;
     double phi = 0.0;
     double vertex_z = 0.0;
+    double delta_vz = 0.0;        // Vertex z difference between proton and pion
+    double coplanarity = 0.0;     // Coplanarity angle with electron [deg]
+    double opening_angle = 0.0;   // Opening angle between proton and pion [deg]
+    double decay_length = 0.0;    // Approximate decay length [cm]
+    double missing_mass = 0.0;    // Missing mass M(e,e'Λ)X
 };
 
 /**
@@ -59,6 +64,9 @@ public:
     void set_mass_window(double window) { m_mass_window = window; }
     void set_min_proton_momentum(double p) { m_min_proton_p = p; }
     void set_min_pion_momentum(double p) { m_min_pion_p = p; }
+    void set_max_delta_vz(double dz) { m_max_delta_vz = dz; }
+    void set_coplanarity_cut(double max_copla) { m_max_coplanarity = max_copla; }
+    void set_beam_energy(double E) { m_beam_energy = E; }
     
     /**
      * @brief Check if particle is in forward detector
@@ -66,6 +74,31 @@ public:
     static bool is_forward_detector(const CLAS::Particle& particle) {
         int abs_status = std::abs(particle.status());
         return abs_status >= CLAS::FD && abs_status < CLAS::CD;
+    }
+    
+    /**
+     * @brief Calculate coplanarity angle between Lambda and electron
+     * Returns the angle deviation from 180 degrees (back-to-back in phi)
+     */
+    static double calculate_coplanarity(const CLAS::Particle& electron, double lambda_phi) {
+        double phi_diff = std::abs(electron.phi() - lambda_phi) * CLAS::Constants::RAD_TO_DEG;
+        if (phi_diff > 180.0) phi_diff = 360.0 - phi_diff;
+        return std::abs(phi_diff - 180.0);
+    }
+    
+    /**
+     * @brief Calculate opening angle between two particles
+     */
+    static double calculate_opening_angle(const CLAS::Particle& p1, const CLAS::Particle& p2) {
+        double dot = p1.px() * p2.px() + p1.py() * p2.py() + p1.pz() * p2.pz();
+        double mag1 = p1.p();
+        double mag2 = p2.p();
+        if (mag1 > 0 && mag2 > 0) {
+            double cos_angle = dot / (mag1 * mag2);
+            cos_angle = std::clamp(cos_angle, -1.0, 1.0);
+            return std::acos(cos_angle) * CLAS::Constants::RAD_TO_DEG;
+        }
+        return 0.0;
     }
 
     auto initialize() -> Framework::StatusCode override {
@@ -76,6 +109,9 @@ public:
         Log::info(name(), "  Mass window: {} GeV", m_mass_window);
         Log::info(name(), "  Min proton momentum: {} GeV", m_min_proton_p);
         Log::info(name(), "  Min pion momentum: {} GeV", m_min_pion_p);
+        Log::info(name(), "  Max vertex dz: {} cm", m_max_delta_vz);
+        Log::info(name(), "  Max coplanarity: {} deg", m_max_coplanarity);
+        Log::info(name(), "  Beam energy: {} GeV", m_beam_energy);
 
         auto hist_sc = initialize_handle(m_hist_svc);
         if (hist_sc.is_failure()) {
@@ -100,7 +136,9 @@ public:
         m_cutflow.add_cut("Pion in FD");
         m_cutflow.add_cut("Proton Momentum");
         m_cutflow.add_cut("Pion Momentum");
+        m_cutflow.add_cut("Vertex dz");
         m_cutflow.add_cut("Lambda Mass Window");
+        m_cutflow.add_cut("Coplanarity");
 
         m_cutflow.set_logger(m_log_svc.get());
         Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
@@ -135,12 +173,20 @@ public:
         if (h_n_protons) h_n_protons->Fill(protons.size());
         if (h_n_pions) h_n_pions->Fill(pions.size());
 
+        // Get electron for coplanarity calculation
+        auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
+        const CLAS::Particle* electron = (electrons && !electrons->empty()) ? &electrons->front() : nullptr;
+
         // Find Lambda candidates
         std::vector<LambdaCandidate> candidates;
+        std::vector<LambdaCandidate> candidates_after_copla;
         bool passed_proton_fd = false;
         bool passed_pion_fd = false;
         bool passed_proton_p = false;
         bool passed_pion_p = false;
+        bool passed_vertex_dz = false;
+        bool passed_mass = false;
+        bool passed_coplanarity = false;
 
         for (const auto& proton : protons) {
             // Require proton in forward detector
@@ -158,6 +204,12 @@ public:
                 if (pion.p() < m_min_pion_p) continue;
                 passed_pion_p = true;
 
+                // Vertex z difference cut
+                double delta_vz = std::abs(proton.vz() - pion.vz());
+                if (h_delta_vz_precut) h_delta_vz_precut->Fill(delta_vz);
+                if (delta_vz > m_max_delta_vz) continue;
+                passed_vertex_dz = true;
+
                 // Calculate invariant mass
                 double mass = calculate_invariant_mass(proton, pion);
 
@@ -165,23 +217,54 @@ public:
                 if (h_ppim_mass_all) h_ppim_mass_all->Fill(mass);
 
                 // Check mass window
-                if (std::abs(mass - LAMBDA_MASS) < m_mass_window) {
-                    LambdaCandidate candidate;
-                    candidate.proton = proton;
-                    candidate.pion = pion;
-                    candidate.mass = mass;
-                    
-                    // Calculate Lambda 4-momentum
-                    double px = proton.px() + pion.px();
-                    double py = proton.py() + pion.py();
-                    double pz = proton.pz() + pion.pz();
-                    candidate.momentum = std::sqrt(px*px + py*py + pz*pz);
-                    candidate.theta = std::acos(pz / candidate.momentum);
-                    candidate.phi = std::atan2(py, px);
-                    candidate.vertex_z = (proton.vz() + pion.vz()) / 2.0;
+                if (std::abs(mass - LAMBDA_MASS) > m_mass_window) continue;
+                passed_mass = true;
 
-                    candidates.push_back(candidate);
+                // Build candidate with full kinematics
+                LambdaCandidate candidate;
+                candidate.proton = proton;
+                candidate.pion = pion;
+                candidate.mass = mass;
+                candidate.delta_vz = delta_vz;
+                
+                // Calculate Lambda 4-momentum
+                double px = proton.px() + pion.px();
+                double py = proton.py() + pion.py();
+                double pz = proton.pz() + pion.pz();
+                candidate.momentum = std::sqrt(px*px + py*py + pz*pz);
+                candidate.theta = std::acos(pz / candidate.momentum);
+                candidate.phi = std::atan2(py, px);
+                candidate.vertex_z = (proton.vz() + pion.vz()) / 2.0;
+                
+                // Opening angle between proton and pion
+                candidate.opening_angle = calculate_opening_angle(proton, pion);
+                
+                // Coplanarity with electron
+                if (electron) {
+                    candidate.coplanarity = calculate_coplanarity(*electron, candidate.phi);
+                    
+                    // Calculate missing mass M(e,e'Λ)X
+                    double E_beam = m_beam_energy;
+                    double E_e = electron->E();
+                    double E_lambda = std::sqrt(candidate.momentum * candidate.momentum + LAMBDA_MASS * LAMBDA_MASS);
+                    double px_miss = -electron->px() - px;
+                    double py_miss = -electron->py() - py;
+                    double pz_miss = E_beam - electron->pz() - pz;
+                    double E_miss = E_beam + CLAS::Constants::PROTONMASS - E_e - E_lambda;
+                    double mm2 = E_miss * E_miss - px_miss * px_miss - py_miss * py_miss - pz_miss * pz_miss;
+                    candidate.missing_mass = (mm2 > 0) ? std::sqrt(mm2) : -std::sqrt(-mm2);
                 }
+
+                // Fill pre-coplanarity histograms
+                if (h_coplanarity_precut) h_coplanarity_precut->Fill(candidate.coplanarity);
+                if (h_opening_angle) h_opening_angle->Fill(candidate.opening_angle);
+                
+                candidates.push_back(candidate);
+                
+                // Apply coplanarity cut
+                if (m_max_coplanarity > 0 && candidate.coplanarity > m_max_coplanarity) continue;
+                passed_coplanarity = true;
+                candidates_after_copla.push_back(candidate);
             }
         }
 
@@ -197,16 +280,24 @@ public:
         if (!passed_pion_p) return Framework::StatusCode::SUCCESS();
         m_cutflow.pass("Pion Momentum");
 
-        if (candidates.empty()) {
-            return Framework::StatusCode::SUCCESS();
-        }
+        if (!passed_vertex_dz) return Framework::StatusCode::SUCCESS();
+        m_cutflow.pass("Vertex dz");
+
+        if (!passed_mass) return Framework::StatusCode::SUCCESS();
         m_cutflow.pass("Lambda Mass Window");
+
+        if (m_max_coplanarity > 0 && !passed_coplanarity) return Framework::StatusCode::SUCCESS();
+        if (m_max_coplanarity > 0) m_cutflow.pass("Coplanarity");
+
+        // Use candidates after coplanarity cut if enabled, otherwise all mass-window candidates
+        auto& final_candidates = (m_max_coplanarity > 0) ? candidates_after_copla : candidates;
+        if (final_candidates.empty()) return Framework::StatusCode::SUCCESS();
 
         // Store results
         event.set_decision("HasLambda", true);
         
         // Find best candidate (closest to Lambda mass)
-        auto best_it = std::min_element(candidates.begin(), candidates.end(),
+        auto best_it = std::min_element(final_candidates.begin(), final_candidates.end(),
             [](const LambdaCandidate& a, const LambdaCandidate& b) {
                 return std::abs(a.mass - LAMBDA_MASS) < std::abs(b.mass - LAMBDA_MASS);
             });
@@ -215,14 +306,19 @@ public:
         event.store("lambda_mass", best_it->mass);
         event.store("lambda_p", best_it->momentum);
         event.store("lambda_theta", best_it->theta);
+        event.store("lambda_coplanarity", best_it->coplanarity);
+        event.store("lambda_missing_mass", best_it->missing_mass);
 
         // Fill histograms for all candidates
-        for (const auto& cand : candidates) {
+        for (const auto& cand : final_candidates) {
             if (h_ppim_mass_selected) h_ppim_mass_selected->Fill(cand.mass);
             if (h_lambda_momentum) h_lambda_momentum->Fill(cand.momentum);
             if (h_lambda_theta) h_lambda_theta->Fill(cand.theta * CLAS::Constants::RAD_TO_DEG);
             if (h_proton_momentum) h_proton_momentum->Fill(cand.proton.p());
             if (h_pion_momentum) h_pion_momentum->Fill(cand.pion.p());
+            if (h_coplanarity) h_coplanarity->Fill(cand.coplanarity);
+            if (h_delta_vz) h_delta_vz->Fill(cand.delta_vz);
+            if (h_missing_mass) h_missing_mass->Fill(cand.missing_mass);
         }
 
         // Fill N-tuple
@@ -230,12 +326,10 @@ public:
             std::lock_guard<std::mutex> lock(m_ntuple_mutex);
             
             // Get electron info
-            auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
-            if (electrons && !electrons->empty()) {
-                const auto& e = electrons->front();
-                m_e_p = e.p();
-                m_e_theta = e.theta();
-                m_e_phi = e.phi();
+            if (electron) {
+                m_e_p = electron->p();
+                m_e_theta = electron->theta();
+                m_e_phi = electron->phi();
             }
 
             // Store all Lambda candidates
@@ -244,13 +338,19 @@ public:
             m_lambda_thetas.clear();
             m_proton_ps.clear();
             m_pion_ps.clear();
+            m_coplanarities.clear();
+            m_missing_masses.clear();
+            m_delta_vzs.clear();
 
-            for (const auto& cand : candidates) {
+            for (const auto& cand : final_candidates) {
                 m_lambda_masses.push_back(cand.mass);
                 m_lambda_ps.push_back(cand.momentum);
                 m_lambda_thetas.push_back(cand.theta);
                 m_proton_ps.push_back(cand.proton.p());
                 m_pion_ps.push_back(cand.pion.p());
+                m_coplanarities.push_back(cand.coplanarity);
+                m_missing_masses.push_back(cand.missing_mass);
+                m_delta_vzs.push_back(cand.delta_vz);
             }
 
             m_ntuple_svc->fill("lambda_analysis");
@@ -287,8 +387,11 @@ public:
 
 private:
     double m_mass_window;
-    double m_min_proton_p = 0.0;  // GeV
-    double m_min_pion_p = 0.0;    // GeV
+    double m_min_proton_p = 0.0;      // GeV
+    double m_min_pion_p = 0.0;        // GeV
+    double m_max_delta_vz = 5.0;      // cm - vertex z difference cut
+    double m_max_coplanarity = 0.0;   // deg - 0 means disabled
+    double m_beam_energy = 10.6;      // GeV
     Framework::Cutflow m_cutflow;
 
     // Services
@@ -307,6 +410,12 @@ private:
     TH1D* h_ppim_mass_selected = nullptr;
     TH1D* h_lambda_momentum = nullptr;
     TH1D* h_lambda_theta = nullptr;
+    TH1D* h_coplanarity = nullptr;
+    TH1D* h_coplanarity_precut = nullptr;
+    TH1D* h_delta_vz = nullptr;
+    TH1D* h_delta_vz_precut = nullptr;
+    TH1D* h_opening_angle = nullptr;
+    TH1D* h_missing_mass = nullptr;
 
     // N-tuple variables
     double m_e_p = 0, m_e_theta = 0, m_e_phi = 0;
@@ -315,6 +424,9 @@ private:
     std::vector<double> m_lambda_thetas;
     std::vector<double> m_proton_ps;
     std::vector<double> m_pion_ps;
+    std::vector<double> m_coplanarities;
+    std::vector<double> m_missing_masses;
+    std::vector<double> m_delta_vzs;
 
     void book_histograms() {
         h_n_protons = m_hist_svc->book_hist1D("/Lambda/n_protons", "Number of protons;N_{p};Events", 10, 0, 10);
@@ -325,6 +437,12 @@ private:
         h_ppim_mass_selected = m_hist_svc->book_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 100, 1.08, 1.16);
         h_lambda_momentum = m_hist_svc->book_hist1D("/Lambda/lambda_p", "#Lambda momentum;p [GeV];Events", 100, 0, 6);
         h_lambda_theta = m_hist_svc->book_hist1D("/Lambda/lambda_theta", "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
+        h_coplanarity = m_hist_svc->book_hist1D("/Lambda/coplanarity", "Coplanarity;#Delta#phi [deg];Events", 90, 0, 90);
+        h_coplanarity_precut = m_hist_svc->book_hist1D("/Lambda/coplanarity_precut", "Coplanarity (pre-cut);#Delta#phi [deg];Events", 180, 0, 180);
+        h_delta_vz = m_hist_svc->book_hist1D("/Lambda/delta_vz", "Vertex #Deltaz;#Deltaz [cm];Events", 100, 0, 5);
+        h_delta_vz_precut = m_hist_svc->book_hist1D("/Lambda/delta_vz_precut", "Vertex #Deltaz (pre-cut);#Deltaz [cm];Events", 100, 0, 20);
+        h_opening_angle = m_hist_svc->book_hist1D("/Lambda/opening_angle", "Opening angle p-#pi^{-};#theta_{open} [deg];Events", 90, 0, 90);
+        h_missing_mass = m_hist_svc->book_hist1D("/Lambda/missing_mass", "Missing mass M(e,e'#Lambda)X;M_{X} [GeV];Events", 200, -1, 3);
     }
 
     void setup_ntuple() {
@@ -336,6 +454,9 @@ private:
         m_ntuple_svc->register_branch("lambda_analysis", "lambda_theta", &m_lambda_thetas);
         m_ntuple_svc->register_branch("lambda_analysis", "proton_p", &m_proton_ps);
         m_ntuple_svc->register_branch("lambda_analysis", "pion_p", &m_pion_ps);
+        m_ntuple_svc->register_branch("lambda_analysis", "coplanarity", &m_coplanarities);
+        m_ntuple_svc->register_branch("lambda_analysis", "missing_mass", &m_missing_masses);
+        m_ntuple_svc->register_branch("lambda_analysis", "delta_vz", &m_delta_vzs);
         Log::info(name(), "N-tuple branches registered for Lambda analysis");
     }
 };
