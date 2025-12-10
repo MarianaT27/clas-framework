@@ -54,13 +54,7 @@ int main(int argc, char* argv[]) {
     double min_decay_length = args["min_decay_length"].as<double>();
 
     // Determine input files
-    std::vector<std::string> input_files;
-    if (!input_str.empty()) {
-        input_files = CLAS::StringUtils::split(input_str, ',');
-    } else {
-        // Default input file - update this path as needed
-        input_files = {"data/data.hipo"};
-    }
+    std::vector<std::string> input_files = {"/work/clas12/skuditha/skims/phys_val/ana_v2/020082_lambda.hipo"};
 
     // Create application
     Framework::Application app("DECAYS Lambda Analysis");
