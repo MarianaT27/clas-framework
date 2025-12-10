@@ -66,40 +66,8 @@ int main(int argc, char* argv[]) {
     output_file = CLAS::StringUtils::replace_all(output_file, "{polarity}", CLAS::to_string(polarity));
 
     // Determine input files
-    std::vector<std::string> input_files;
-    std::string data_dir;
-    
-    if (!input_str.empty()) {
-        input_files = CLAS::StringUtils::split(input_str, ',');
-    } else {
-        std::array sources = (polarity == CLAS::Polarity::Outbending)
-                                 ? std::array{std::tuple{CLAS::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/", &CLAS::outbending_runs_CuSn},
-                                              std::tuple{CLAS::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/", &CLAS::outbending_runs_CxC},
-                                              std::tuple{CLAS::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/", &CLAS::outbending_runs_LD2}}
-                                 : std::array{std::tuple{CLAS::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CuSn},
-                                              std::tuple{CLAS::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CxC},
-                                              std::tuple{CLAS::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_LD2}};
-        
-        bool valid = false;
-        for (const auto& [src_target, src_dir, _] : sources) {
-            if (target == src_target) {
-                data_dir = src_dir;
-                valid = true;
-                break;
-            }
-        }
-        if (!valid) {
-            fmt::println(stderr, "ERROR: Invalid target '{}' for polarity '{}'", target_str, polarity_str);
-            return EXIT_FAILURE;
-        }
-        
-        input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
-    }
-
-    if (input_files.empty()) {
-        fmt::print(stderr, "ERROR: No input files found\n");
-        return EXIT_FAILURE;
-    }
+    // std::vector<std::string> input_files = {"/volatile/clas12/rg-e/production/dst/phys_val/dst/train/lambda/lambda_020082.hipo"};
+    std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files("/volatile/clas12/rg-e/production/dst/phys_val/dst/recon/020082/");
 
     // Create application
     Framework::Application app("Lambda Analysis");

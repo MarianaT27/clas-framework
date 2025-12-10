@@ -287,8 +287,8 @@ public:
 
 private:
     double m_mass_window;
-    double m_min_proton_p = 0.3;  // GeV
-    double m_min_pion_p = 0.1;    // GeV
+    double m_min_proton_p = 0.0;  // GeV
+    double m_min_pion_p = 0.0;    // GeV
     Framework::Cutflow m_cutflow;
 
     // Services
