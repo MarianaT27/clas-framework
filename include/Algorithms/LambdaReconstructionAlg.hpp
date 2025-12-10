@@ -175,8 +175,8 @@ public:
         if (h_n_protons) h_n_protons->Fill(protons.size());
         if (h_n_pions) h_n_pions->Fill(pions.size());
 
-        // Get electron for coplanarity calculation
-        auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
+        // Get electron for coplanarity calculation (from DIS selection)
+        auto* electrons = event.get_particles<CLAS::Particle>("SelectedDISElectron");
         const CLAS::Particle* electron = (electrons && !electrons->empty()) ? &electrons->front() : nullptr;
 
         // Find Lambda candidates
@@ -189,6 +189,14 @@ public:
         bool passed_vertex_dz = false;
         bool passed_mass = false;
         bool passed_coplanarity = false;
+
+        for (const auto& proton : protons) {
+            for (const auto& pion : pions) {
+                // Calculate invariant mass for ALL combinations (no cuts) for debugging
+                double mass_raw = calculate_invariant_mass(proton, pion);
+                if (h_ppim_mass_nocuts) h_ppim_mass_nocuts->Fill(mass_raw);
+            }
+        }
 
         for (const auto& proton : protons) {
             // Require proton in forward detector
@@ -215,7 +223,7 @@ public:
                 // Calculate invariant mass
                 double mass = calculate_invariant_mass(proton, pion);
 
-                // Fill all combinations histogram
+                // Fill all combinations histogram (after FD and momentum cuts)
                 if (h_ppim_mass_all) h_ppim_mass_all->Fill(mass);
 
                 // Check mass window
@@ -408,6 +416,7 @@ private:
     TH1D* h_n_pions = nullptr;
     TH1D* h_proton_momentum = nullptr;
     TH1D* h_pion_momentum = nullptr;
+    TH1D* h_ppim_mass_nocuts = nullptr;
     TH1D* h_ppim_mass_all = nullptr;
     TH1D* h_ppim_mass_selected = nullptr;
     TH1D* h_lambda_momentum = nullptr;
@@ -435,8 +444,9 @@ private:
         h_n_pions = m_hist_svc->book_hist1D("/Lambda/n_pions", "Number of #pi^{-};N_{#pi^{-}};Events", 10, 0, 10);
         h_proton_momentum = m_hist_svc->book_hist1D("/Lambda/proton_p", "Proton momentum;p [GeV];Events", 100, 0, 5);
         h_pion_momentum = m_hist_svc->book_hist1D("/Lambda/pion_p", "#pi^{-} momentum;p [GeV];Events", 100, 0, 3);
-        h_ppim_mass_all = m_hist_svc->book_hist1D("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (all);M(p#pi^{-}) [GeV];Events", 200, 1.0, 1.4);
-        h_ppim_mass_selected = m_hist_svc->book_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 100, 1.08, 1.16);
+        h_ppim_mass_nocuts = m_hist_svc->book_hist1D("/Lambda/ppim_mass_nocuts", "p#pi^{-} invariant mass (no cuts);M(p#pi^{-}) [GeV];Events", 300, 1.0, 2.5);
+        h_ppim_mass_all = m_hist_svc->book_hist1D("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (FD+p cuts);M(p#pi^{-}) [GeV];Events", 300, 1.0, 2.5);
+        h_ppim_mass_selected = m_hist_svc->book_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 200, 1.05, 1.25);
         h_lambda_momentum = m_hist_svc->book_hist1D("/Lambda/lambda_p", "#Lambda momentum;p [GeV];Events", 100, 0, 6);
         h_lambda_theta = m_hist_svc->book_hist1D("/Lambda/lambda_theta", "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
         h_coplanarity = m_hist_svc->book_hist1D("/Lambda/coplanarity", "Coplanarity;#Delta#phi [deg];Events", 90, 0, 90);
