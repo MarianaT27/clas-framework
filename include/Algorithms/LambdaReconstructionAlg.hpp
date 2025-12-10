@@ -110,6 +110,7 @@ public:
 
         Log::info(name(), "Initializing Lambda reconstruction algorithm");
         Log::info(name(), "  Mass window: {} GeV", m_mass_window);
+        Log::info(name(), "  Chi2pid: {}", m_max_chi2pid);
         Log::info(name(), "  Min proton momentum: {} GeV", m_min_proton_p);
         Log::info(name(), "  Min pion momentum: {} GeV", m_min_pion_p);
         Log::info(name(), "  Max vertex dz: {} cm", m_max_delta_vz);
