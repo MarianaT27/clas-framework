@@ -5,6 +5,7 @@
 #include <optional>
 #include <tuple>
 #include <vector>
+#include <Math/Vector4D.h>
 #include "CLAS/Constants.hpp"
 #include "CLAS/Detectors.hpp"
 #include "CLAS/PIDs.hpp"
@@ -151,6 +152,19 @@ public:
     auto execute(Framework::Event& event) -> Framework::StatusCode override {
         m_cutflow.pass("All Events");
 
+        // Get ALL protons and pions from event BEFORE any electron cuts
+        // This is for debugging - to see if we have Lambda signal at all
+        const auto& all_protons = event.particles(CLAS::PIDs::PROTON);
+        const auto& all_pions = event.particles(CLAS::PIDs::PIMINUS);
+        
+        // Fill raw mass distribution before ANY cuts (including electron)
+        for (const auto& proton : all_protons) {
+            for (const auto& pion : all_pions) {
+                double mass_raw = calculate_invariant_mass(proton, pion);
+                if (h_ppim_mass_nocuts) h_ppim_mass_nocuts->Fill(mass_raw);
+            }
+        }
+
         // Check for good electron from upstream
         if (!event.passes_decision("HasGoodDISElectron")) {
             return Framework::StatusCode::SUCCESS();
@@ -189,14 +203,6 @@ public:
         bool passed_vertex_dz = false;
         bool passed_mass = false;
         bool passed_coplanarity = false;
-
-        for (const auto& proton : protons) {
-            for (const auto& pion : pions) {
-                // Calculate invariant mass for ALL combinations (no cuts) for debugging
-                double mass_raw = calculate_invariant_mass(proton, pion);
-                if (h_ppim_mass_nocuts) h_ppim_mass_nocuts->Fill(mass_raw);
-            }
-        }
 
         for (const auto& proton : protons) {
             // Require proton in forward detector
@@ -380,19 +386,16 @@ public:
     }
 
     /**
-     * @brief Calculate invariant mass of proton + pion system
+     * @brief Calculate invariant mass of proton + pion system using ROOT
      */
     static auto calculate_invariant_mass(const CLAS::Particle& proton, const CLAS::Particle& pion) -> double {
-        double E_p = std::sqrt(proton.p() * proton.p() + CLAS::Constants::PROTONMASS * CLAS::Constants::PROTONMASS);
-        double E_pi = std::sqrt(pion.p() * pion.p() + CLAS::Constants::PIMASS * CLAS::Constants::PIMASS);
+        // Use ROOT's PxPyPzMVector for proper Lorentz vector arithmetic
+        ROOT::Math::PxPyPzMVector p4_proton(proton.px(), proton.py(), proton.pz(), CLAS::Constants::PROTONMASS);
+        ROOT::Math::PxPyPzMVector p4_pion(pion.px(), pion.py(), pion.pz(), CLAS::Constants::PIMASS);
         
-        double E_tot = E_p + E_pi;
-        double px_tot = proton.px() + pion.px();
-        double py_tot = proton.py() + pion.py();
-        double pz_tot = proton.pz() + pion.pz();
-        
-        double mass2 = E_tot * E_tot - px_tot * px_tot - py_tot * py_tot - pz_tot * pz_tot;
-        return (mass2 > 0) ? std::sqrt(mass2) : 0.0;
+        // Add the 4-vectors and get invariant mass
+        auto p4_total = p4_proton + p4_pion;
+        return p4_total.M();
     }
 
 private:
