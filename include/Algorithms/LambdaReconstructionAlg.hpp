@@ -222,6 +222,9 @@ public:
             
             if (proton.p() < m_min_proton_p) continue;
             passed_proton_p = true;
+            
+            // Chi2pid cut for proton (good PID quality)
+            if (std::abs(proton.chi2pid()) > m_max_chi2pid) continue;
 
             for (const auto& pion : pions) {
                 // Require pion in forward detector
@@ -230,6 +233,9 @@ public:
                 
                 if (pion.p() < m_min_pion_p) continue;
                 passed_pion_p = true;
+                
+                // Chi2pid cut for pion (good PID quality)
+                if (std::abs(pion.chi2pid()) > m_max_chi2pid) continue;
 
                 // Vertex z difference cut
                 double delta_vz = std::abs(proton.vz() - pion.vz());
@@ -413,7 +419,8 @@ private:
     double m_mass_window;
     double m_min_proton_p = 0.3;      // GeV
     double m_min_pion_p = 0.3;        // GeV
-    double m_max_delta_vz = 5.0;      // cm - vertex z difference cut
+    double m_max_delta_vz = 2.0;      // cm - tighter vertex z difference cut
+    double m_max_chi2pid = 3.0;       // chi2pid cut for particle ID quality
     double m_max_coplanarity = 0.0;   // deg - 0 means disabled
     double m_beam_energy = 10.6;      // GeV
     Framework::Cutflow m_cutflow;
@@ -458,9 +465,9 @@ private:
         h_n_pions = m_hist_svc->book_hist1D("/Lambda/n_pions", "Number of #pi^{-};N_{#pi^{-}};Events", 10, 0, 10);
         h_proton_momentum = m_hist_svc->book_hist1D("/Lambda/proton_p", "Proton momentum;p [GeV];Events", 100, 0, 5);
         h_pion_momentum = m_hist_svc->book_hist1D("/Lambda/pion_p", "#pi^{-} momentum;p [GeV];Events", 100, 0, 3);
-        h_ppim_mass_nocuts = m_hist_svc->book_hist1D("/Lambda/ppim_mass_nocuts", "p#pi^{-} invariant mass (no cuts);M(p#pi^{-}) [GeV];Events", 500, 1.08, 3.0);
-        h_ppim_mass_all = m_hist_svc->book_hist1D("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (FD+p cuts);M(p#pi^{-}) [GeV];Events", 500, 1.08, 3.0);
-        h_ppim_mass_selected = m_hist_svc->book_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 200, 1.08, 1.20);
+        h_ppim_mass_nocuts = m_hist_svc->book_hist1D("/Lambda/ppim_mass_nocuts", "p#pi^{-} invariant mass (no cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
+        h_ppim_mass_all = m_hist_svc->book_hist1D("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (FD+p cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
+        h_ppim_mass_selected = m_hist_svc->book_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
         h_lambda_momentum = m_hist_svc->book_hist1D("/Lambda/lambda_p", "#Lambda momentum;p [GeV];Events", 100, 0, 6);
         h_lambda_theta = m_hist_svc->book_hist1D("/Lambda/lambda_theta", "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
         h_coplanarity = m_hist_svc->book_hist1D("/Lambda/coplanarity", "Coplanarity;#Delta#phi [deg];Events", 90, 0, 90);
