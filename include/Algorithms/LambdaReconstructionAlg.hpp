@@ -29,6 +29,12 @@ using Framework::Log;
 constexpr double LAMBDA_MASS = 1.115683;  // GeV/c²
 
 /**
+ * @brief Lambda decay constants
+ * Lambda has cτ = 7.89 cm, so it travels a measurable distance before decaying
+ */
+constexpr double LAMBDA_CTAU = 7.89;  // cm
+
+/**
  * @brief Reconstructed Lambda candidate with full kinematics
  */
 struct LambdaCandidate {
@@ -38,12 +44,14 @@ struct LambdaCandidate {
     double momentum = 0.0;
     double theta = 0.0;
     double phi = 0.0;
-    double vertex_z = 0.0;
+    double vertex_z = 0.0;        // Decay vertex z (average of proton and pion)
     double delta_vz = 0.0;        // Vertex z difference between proton and pion
     double coplanarity = 0.0;     // Coplanarity angle with electron [deg]
     double opening_angle = 0.0;   // Opening angle between proton and pion [deg]
-    double decay_length = 0.0;    // Approximate decay length [cm]
+    double decay_length = 0.0;    // Decay length from primary vertex [cm]
     double missing_mass = 0.0;    // Missing mass M(e,e'Λ)X
+    double primary_vz = 0.0;      // Primary vertex z (from electron)
+    double displaced_vz = 0.0;    // Displacement: decay_vz - primary_vz [cm]
 };
 
 /**
@@ -68,6 +76,8 @@ public:
     void set_max_delta_vz(double dz) { m_max_delta_vz = dz; }
     void set_coplanarity_cut(double max_copla) { m_max_coplanarity = max_copla; }
     void set_beam_energy(double E) { m_beam_energy = E; }
+    void set_min_displaced_vz(double dz) { m_min_displaced_vz = dz; }
+    void set_max_displaced_vz(double dz) { m_max_displaced_vz = dz; }
     
     /**
      * @brief Check if particle is in forward detector
@@ -116,6 +126,8 @@ public:
         Log::info(name(), "  Max vertex dz: {} cm", m_max_delta_vz);
         Log::info(name(), "  Max coplanarity: {} deg", m_max_coplanarity);
         Log::info(name(), "  Beam energy: {} GeV", m_beam_energy);
+        Log::info(name(), "  Min displaced vz: {} cm", m_min_displaced_vz);
+        Log::info(name(), "  Max displaced vz: {} cm", m_max_displaced_vz);
 
         auto hist_sc = initialize_handle(m_hist_svc);
         if (hist_sc.is_failure()) {
@@ -142,6 +154,7 @@ public:
         m_cutflow.add_cut("Pion Momentum");
         m_cutflow.add_cut("Vertex dz");
         m_cutflow.add_cut("Lambda Mass Window");
+        m_cutflow.add_cut("Displaced Vertex");
         m_cutflow.add_cut("Coplanarity");
 
         m_cutflow.set_logger(m_log_svc.get());
@@ -207,6 +220,7 @@ public:
 
         // Find Lambda candidates
         std::vector<LambdaCandidate> candidates;
+        std::vector<LambdaCandidate> candidates_after_displaced;
         std::vector<LambdaCandidate> candidates_after_copla;
         bool passed_proton_fd = false;
         bool passed_pion_fd = false;
@@ -214,6 +228,7 @@ public:
         bool passed_pion_p = false;
         bool passed_vertex_dz = false;
         bool passed_mass = false;
+        bool passed_displaced_vz = false;
         bool passed_coplanarity = false;
 
         for (const auto& proton : protons) {
@@ -268,10 +283,25 @@ public:
                 candidate.momentum = std::sqrt(px*px + py*py + pz*pz);
                 candidate.theta = std::acos(pz / candidate.momentum);
                 candidate.phi = std::atan2(py, px);
-                candidate.vertex_z = (proton.vz() + pion.vz()) / 2.0;
+                candidate.vertex_z = (proton.vz() + pion.vz()) / 2.0;  // Decay vertex
                 
                 // Opening angle between proton and pion
                 candidate.opening_angle = calculate_opening_angle(proton, pion);
+                
+                // Displaced vertex calculation (Lambda decays downstream of primary vertex)
+                // Primary vertex is the electron vertex
+                if (electron) {
+                    candidate.primary_vz = electron->vz();
+                    candidate.displaced_vz = candidate.vertex_z - candidate.primary_vz;
+                    
+                    // Estimate decay length (approximate, using z displacement and Lambda angle)
+                    if (candidate.theta > 0.01) {  // Avoid division by zero
+                        candidate.decay_length = candidate.displaced_vz / std::cos(candidate.theta);
+                    }
+                }
+                
+                // Fill displaced vertex histogram before cut
+                if (h_displaced_vz_precut && electron) h_displaced_vz_precut->Fill(candidate.displaced_vz);
                 
                 // Coplanarity with electron
                 if (electron) {
@@ -294,6 +324,15 @@ public:
                 if (h_opening_angle) h_opening_angle->Fill(candidate.opening_angle);
                 
                 candidates.push_back(candidate);
+                
+                // Apply displaced vertex cut (Lambda decays downstream)
+                // Require decay vertex to be downstream of primary vertex
+                if (electron && m_min_displaced_vz > -999) {
+                    if (candidate.displaced_vz < m_min_displaced_vz) continue;
+                    if (m_max_displaced_vz > 0 && candidate.displaced_vz > m_max_displaced_vz) continue;
+                }
+                passed_displaced_vz = true;
+                candidates_after_displaced.push_back(candidate);
                 
                 // Apply coplanarity cut
                 if (m_max_coplanarity > 0 && candidate.coplanarity > m_max_coplanarity) continue;
@@ -320,11 +359,18 @@ public:
         if (!passed_mass) return Framework::StatusCode::SUCCESS();
         m_cutflow.pass("Lambda Mass Window");
 
+        if (m_min_displaced_vz > -999 && !passed_displaced_vz) return Framework::StatusCode::SUCCESS();
+        if (m_min_displaced_vz > -999) m_cutflow.pass("Displaced Vertex");
+
         if (m_max_coplanarity > 0 && !passed_coplanarity) return Framework::StatusCode::SUCCESS();
         if (m_max_coplanarity > 0) m_cutflow.pass("Coplanarity");
 
-        // Use candidates after coplanarity cut if enabled, otherwise all mass-window candidates
-        auto& final_candidates = (m_max_coplanarity > 0) ? candidates_after_copla : candidates;
+        // Use candidates after all cuts
+        // Priority: coplanarity > displaced > mass window
+        std::vector<LambdaCandidate>* final_candidates_ptr = &candidates;
+        if (m_min_displaced_vz > -999) final_candidates_ptr = &candidates_after_displaced;
+        if (m_max_coplanarity > 0) final_candidates_ptr = &candidates_after_copla;
+        auto& final_candidates = *final_candidates_ptr;
         if (final_candidates.empty()) return Framework::StatusCode::SUCCESS();
 
         // Store results
@@ -353,6 +399,8 @@ public:
             if (h_coplanarity) h_coplanarity->Fill(cand.coplanarity);
             if (h_delta_vz) h_delta_vz->Fill(cand.delta_vz);
             if (h_missing_mass) h_missing_mass->Fill(cand.missing_mass);
+            if (h_displaced_vz) h_displaced_vz->Fill(cand.displaced_vz);
+            if (h_decay_length) h_decay_length->Fill(cand.decay_length);
         }
 
         // Fill N-tuple
@@ -424,6 +472,8 @@ private:
     double m_max_chi2pid = 3.0;       // chi2pid cut for particle ID quality
     double m_max_coplanarity = 0.0;   // deg - 0 means disabled
     double m_beam_energy = 10.6;      // GeV
+    double m_min_displaced_vz = -1000.0;  // cm - minimum displaced vertex (decay_vz - primary_vz), -1000 means disabled
+    double m_max_displaced_vz = 0.0;      // cm - maximum displaced vertex, 0 means no upper limit
     Framework::Cutflow m_cutflow;
 
     // Services
@@ -449,6 +499,9 @@ private:
     TH1D* h_delta_vz_precut = nullptr;
     TH1D* h_opening_angle = nullptr;
     TH1D* h_missing_mass = nullptr;
+    TH1D* h_displaced_vz = nullptr;
+    TH1D* h_displaced_vz_precut = nullptr;
+    TH1D* h_decay_length = nullptr;
 
     // N-tuple variables
     double m_e_p = 0, m_e_theta = 0, m_e_phi = 0;
@@ -477,6 +530,9 @@ private:
         h_delta_vz_precut = m_hist_svc->book_hist1D("/Lambda/delta_vz_precut", "Vertex #Deltaz (pre-cut);#Deltaz [cm];Events", 100, 0, 20);
         h_opening_angle = m_hist_svc->book_hist1D("/Lambda/opening_angle", "Opening angle p-#pi^{-};#theta_{open} [deg];Events", 90, 0, 90);
         h_missing_mass = m_hist_svc->book_hist1D("/Lambda/missing_mass", "Missing mass M(e,e'#Lambda)X;M_{X} [GeV];Events", 200, -1, 3);
+        h_displaced_vz = m_hist_svc->book_hist1D("/Lambda/displaced_vz", "Displaced vertex z (decay - primary);#Deltaz [cm];Events", 200, -20, 40);
+        h_displaced_vz_precut = m_hist_svc->book_hist1D("/Lambda/displaced_vz_precut", "Displaced vertex z (pre-cut);#Deltaz [cm];Events", 200, -20, 40);
+        h_decay_length = m_hist_svc->book_hist1D("/Lambda/decay_length", "Decay length;L [cm];Events", 200, -20, 60);
     }
 
     void setup_ntuple() {

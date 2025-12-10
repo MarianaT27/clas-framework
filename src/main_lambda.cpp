@@ -49,6 +49,8 @@ int main(int argc, char* argv[]) {
             ("max_delta_vz", "Max vertex z difference in cm", cxxopts::value<double>()->default_value("5.0"))
             ("coplanarity", "Max coplanarity angle in deg (0=disabled)", cxxopts::value<double>()->default_value("0"))
             ("beam_energy", "Beam energy in GeV", cxxopts::value<double>()->default_value("10.53"))
+            ("min_displaced_vz", "Min displaced vertex z in cm (decay_vz - primary_vz)", cxxopts::value<double>()->default_value("-1000"))
+            ("max_displaced_vz", "Max displaced vertex z in cm (0=no limit)", cxxopts::value<double>()->default_value("0"))
             ("help", "Show help");
 
     auto args = options.parse(argc, argv);
@@ -68,6 +70,8 @@ int main(int argc, char* argv[]) {
     double max_delta_vz = args["max_delta_vz"].as<double>();
     double coplanarity = args["coplanarity"].as<double>();
     double beam_energy = args["beam_energy"].as<double>();
+    double min_displaced_vz = args["min_displaced_vz"].as<double>();
+    double max_displaced_vz = args["max_displaced_vz"].as<double>();
     
     CLAS::Target target = CLAS::string_to_target(target_str);
     CLAS::Polarity polarity = CLAS::string_to_polarity(polarity_str);
@@ -110,6 +114,8 @@ int main(int argc, char* argv[]) {
     metadata_svc->add_parameter("max_delta_vz", max_delta_vz);
     metadata_svc->add_parameter("coplanarity", coplanarity);
     metadata_svc->add_parameter("beam_energy", beam_energy);
+    metadata_svc->add_parameter("min_displaced_vz", min_displaced_vz);
+    metadata_svc->add_parameter("max_displaced_vz", max_displaced_vz);
 
     // Add services
     app.service_manager().add_service(std::move(log_svc));
@@ -135,6 +141,8 @@ int main(int argc, char* argv[]) {
     lambda_alg->set_max_delta_vz(max_delta_vz);
     lambda_alg->set_coplanarity_cut(coplanarity);
     lambda_alg->set_beam_energy(beam_energy);
+    lambda_alg->set_min_displaced_vz(min_displaced_vz);
+    lambda_alg->set_max_displaced_vz(max_displaced_vz);
     app.add_algorithm(std::move(lambda_alg));
 
     // Configure input
@@ -160,6 +168,8 @@ int main(int argc, char* argv[]) {
     Framework::Log::info("Configuration", "  Max delta vz: {} cm", max_delta_vz);
     Framework::Log::info("Configuration", "  Coplanarity cut: {} deg", coplanarity);
     Framework::Log::info("Configuration", "  Beam energy: {} GeV", beam_energy);
+    Framework::Log::info("Configuration", "  Min displaced vz: {} cm", min_displaced_vz);
+    Framework::Log::info("Configuration", "  Max displaced vz: {} cm", max_displaced_vz);
 
     sc = app.run();
     if (sc.is_failure()) {
