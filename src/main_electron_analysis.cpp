@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
             ("polarity", "Magnetic field polarity (In, Out)", cxxopts::value<std::string>()->default_value("Outbending"))
             ("percentage", "Percentage of events to process (0-100)", cxxopts::value<double>()->default_value("100"))
             ("num_threads", "Number of threads", cxxopts::value<int>()->default_value("1"))
-            ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("pi0_analysis_{target}_{polarity}.root"))
+            ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("electron_analysis_{target}_{polarity}.root"))
             ("input", "Input HIPO files (comma-separated or single file)", cxxopts::value<std::string>()->default_value(""))
             ("help", "Show help");
 

@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
 
     // 3a. Electron Analysis
     auto electron_analysis = std::make_unique<Algorithms::ElectronAnalysisAlg>(
-        "ElectronAnalysis", target, polarity, false);
+        "ElectronAnalysis", target, polarity);
     fmt::print("  ✓ ElectronAnalysis (AnalysisAlgorithm)\n");
     electron_seq->add_algorithm(std::move(electron_analysis));
 

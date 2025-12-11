@@ -4,7 +4,9 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <vector>
 #include "CLAS/ElectronCuts.hpp"
+#include "CLAS/Particle.hpp"
 #include "CLAS/ReadBank.hpp"
 #include "CLAS/Target.hpp"
 #include "Framework/Cutflow.hpp"
@@ -39,11 +41,8 @@ using Framework::Log;
  */
 class ElectronAnalysisAlg : public Framework::Algorithm {
    public:
-    explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis",
-                                 CLAS::Target target = CLAS::Target::LD2,
-                                 CLAS::Polarity polarity = CLAS::Polarity::Outbending,
-                                 bool enable_systematics = false)
-        : Algorithm(std::move(name)), m_target(target), m_polarity(polarity), m_enable_systematics(enable_systematics), m_cutflow("Electron Selection") {}
+    explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis", CLAS::Target target = CLAS::Target::LD2, CLAS::Polarity polarity = CLAS::Polarity::Outbending)
+        : Algorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow("Electron Selection") {}
 
     auto initialize() -> Framework::StatusCode override {
         // Get services
@@ -72,25 +71,13 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             return Framework::StatusCode::FAILURE();
         }
 
-        // Setup cutflow
         setup_cutflow();
-
-        // Book histograms
         book_histograms();
 
-        // Setup N-tuple branches
         if (m_ntuple_svc) {
             setup_ntuple();
         } else {
             Log::warning(name(), "NTupleService not available - N-tuple output disabled");
-        }
-
-        // Setup systematic variations if enabled
-        if (m_enable_systematics) {
-            setup_systematics();
-            if (Log::is_available()) {
-                Log::info(name(), "Systematic variations enabled");
-            }
         }
 
         return Framework::StatusCode::SUCCESS();
@@ -111,45 +98,18 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         hipo::bank_map REC_Calorimeter = hipo_event.get_bank_map("REC::Calorimeter");
         hipo::bank_map REC_Cherenkov = hipo_event.get_bank_map("REC::Cherenkov");
 
-        // Extract particles using ParticleSelectorService
-        Framework::ParticleMap particles = m_particle_svc->extract_particles(
-            REC_Particle,
-            {CLAS::PIDs::ELECTRON, CLAS::PIDs::PIMINUS, CLAS::PIDs::PIPLUS,
-             CLAS::PIDs::KMINUS, CLAS::PIDs::KPLUS, CLAS::PIDs::PHOTON});
+        Framework::ParticleMap particles = m_particle_svc->extract_particles(REC_Particle, {CLAS::PIDs::ELECTRON});
 
-        // Get start time for delta-t calculations
         const double event_start_time = REC_Event.get_bank().get<float>("startTime", 0);
 
-        // Process all track categories (like original Reader)
-        auto charged_tracks = m_particle_svc->get_particles_by_charge(particles);
-        auto neg_tracks = charged_tracks[-1];
-        auto pos_tracks = charged_tracks[+1];
-        const auto& pims = m_particle_svc->get_pions_minus(particles);
-        const auto& pips = m_particle_svc->get_pions_plus(particles);
+        std::map<int, std::vector<CLAS::Particle>> charged_tracks = m_particle_svc->get_particles_by_charge(REC_Particle);
+        std::vector<CLAS::Particle> neg_tracks = charged_tracks[-1];
+        std::vector<CLAS::Particle> pos_tracks = charged_tracks[+1];
 
         // Process tracks and fill histograms
         process_tracks(neg_tracks, h_neg_tracks, REC_Calorimeter.get_bank(),
                        REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
                        REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
-        process_tracks(pos_tracks, h_pos_tracks, REC_Calorimeter.get_bank(),
-                       REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
-                       REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
-        process_tracks(pims, h_pim_tracks, REC_Calorimeter.get_bank(),
-                       REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
-                       REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
-        process_tracks(pips, h_pip_tracks, REC_Calorimeter.get_bank(),
-                       REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
-                       REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
-
-        // Get negative tracks excluding electrons
-        std::vector<CLAS::Particle> neg_tracks_wo_electrons;
-        std::copy_if(neg_tracks.begin(), neg_tracks.end(),
-                     std::back_inserter(neg_tracks_wo_electrons),
-                     [](const CLAS::Particle& p) { return p.pdg() != CLAS::PIDs::ELECTRON; });
-        process_tracks(neg_tracks_wo_electrons, h_neg_tracks_wo_electrons,
-                       REC_Calorimeter.get_bank(), REC_Cherenkov.get_bank(),
-                       REC_Scintillator.get_bank(), REC_Traj.get_bank(),
-                       REC_Track.get_bank(), event_start_time);
 
         const auto& electrons = m_particle_svc->get_electrons(particles);
         if (electrons.empty()) return Framework::StatusCode::SUCCESS();
@@ -169,6 +129,10 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         // Apply cuts sequentially and fill histograms after each cut
         auto electron = trigger_e.value();
+
+        process_tracks({electron}, h_electron_tracks, REC_Calorimeter.get_bank(),
+                       REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
+                       REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
 
         // Calculate derived quantities
         const double E_tot = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;
@@ -264,7 +228,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
    private:
     CLAS::Target m_target;
     CLAS::Polarity m_polarity;
-    bool m_enable_systematics;
+    bool m_enable_systematics = false;
     Framework::Cutflow m_cutflow;
     Framework::SystematicManager m_sys_mgr;
 
@@ -312,32 +276,30 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
     } h_dc;
 
     // Track histograms structure (for neg/pos tracks, pions, etc.)
+    // Each histogram is stored per sector (1-6)
     struct TrackHistograms {
         bool booked = false;
-        // Calorimeter
-        TH1D* nphe = nullptr;
-        TH2D* EPCal_vs_ECal = nullptr;
-        TH1D* EPCal = nullptr;
-        TH2D* EPCal_vs_ECal_cut = nullptr;
-        TH1D* EPCal_cut = nullptr;
-        TH2D* Etot_vs_SF = nullptr;
-        TH2D* Etot_vs_SF_cut = nullptr;
-        // Timing
-        TH2D* delta_t_vs_p = nullptr;
-        // DC fiducial
-        TH2D* edge_vs_theta_r1 = nullptr;
-        TH2D* edge_vs_theta_r2 = nullptr;
-        TH2D* edge_vs_theta_r3 = nullptr;
-        TH2D* edge_vs_chi2ndf_r1 = nullptr;
-        TH2D* edge_vs_chi2ndf_r2 = nullptr;
-        TH2D* edge_vs_chi2ndf_r3 = nullptr;
+        // Calorimeter (per sector)
+        std::map<int, TH1D*> nphe;
+        std::map<int, TH2D*> EPCal_vs_ECal;
+        std::map<int, TH1D*> EPCal;
+        std::map<int, TH2D*> EPCal_vs_ECal_cut;
+        std::map<int, TH1D*> EPCal_cut;
+        std::map<int, TH2D*> Etot_vs_SF;
+        std::map<int, TH2D*> Etot_vs_SF_cut;
+        std::map<int, TH2D*> lv_vs_SF;
+        std::map<int, TH2D*> lw_vs_SF;
+        // DC fiducial (per sector)
+        std::map<int, TH2D*> edge_vs_theta_r1;
+        std::map<int, TH2D*> edge_vs_theta_r2;
+        std::map<int, TH2D*> edge_vs_theta_r3;
+        std::map<int, TH2D*> edge_vs_chi2ndf_r1;
+        std::map<int, TH2D*> edge_vs_chi2ndf_r2;
+        std::map<int, TH2D*> edge_vs_chi2ndf_r3;
     };
 
     TrackHistograms h_neg_tracks;
-    TrackHistograms h_pos_tracks;
-    TrackHistograms h_pim_tracks;
-    TrackHistograms h_pip_tracks;
-    TrackHistograms h_neg_tracks_wo_electrons;
+    TrackHistograms h_electron_tracks;
 
     // Histograms for each cut stage (dynamically created)
     struct CutStageHistograms {
@@ -400,10 +362,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         // Book track histograms for all track categories
         book_track_histograms(h_neg_tracks, "NegativeTracks");
-        book_track_histograms(h_pos_tracks, "PositiveTracks");
-        book_track_histograms(h_pim_tracks, "PiMinus");
-        book_track_histograms(h_pip_tracks, "PiPlus");
-        book_track_histograms(h_neg_tracks_wo_electrons, "NegativeTracksNoElectrons");
+        book_track_histograms(h_electron_tracks, "ElectronTracks");
 
         // Book cut-stage histograms (must be done at init time for thread safety)
         book_cut_stage_histograms("Chi2PID");
@@ -500,70 +459,104 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
     }
 
     /**
-     * @brief Books histograms for a track category
+     * @brief Books histograms for a track category with per-sector granularity
      */
     auto book_track_histograms(TrackHistograms& h, const std::string& category) -> void {
         std::string base = fmt::format("/Tracks/{}", category);
 
-        h.nphe = m_hist_svc->book_hist1D(
-            base + "/nphe", "Cherenkov nphe;nphe;Tracks", 100, 0, 50);
-        h.EPCal_vs_ECal = m_hist_svc->book_hist2D(
-            base + "/EPCal_vs_ECal", "E_{PCal} vs E_{Cal};E_{PCal} [GeV];E_{Cal} [GeV]",
-            100, 0, 1, 100, 0, 1);
-        h.EPCal = m_hist_svc->book_hist1D(
-            base + "/EPCal", "E_{PCal};E_{PCal} [GeV];Tracks", 100, 0, 1);
-        h.EPCal_vs_ECal_cut = m_hist_svc->book_hist2D(
-            base + "/EPCal_vs_ECal_cut", "E_{PCal} vs E_{Cal} (cut);E_{PCal} [GeV];E_{Cal} [GeV]",
-            100, 0, 1, 100, 0, 1);
-        h.EPCal_cut = m_hist_svc->book_hist1D(
-            base + "/EPCal_cut", "E_{PCal} (cut);E_{PCal} [GeV];Tracks", 100, 0, 1);
-        h.Etot_vs_SF = m_hist_svc->book_hist2D(
-            base + "/Etot_vs_SF", "E_{tot} vs SF;E_{tot} [GeV];E/p",
-            100, 0, 2, 100, 0, 0.5);
-        h.Etot_vs_SF_cut = m_hist_svc->book_hist2D(
-            base + "/Etot_vs_SF_cut", "E_{tot} vs SF (cut);E_{tot} [GeV];E/p",
-            100, 0, 2, 100, 0, 0.5);
-        h.delta_t_vs_p = m_hist_svc->book_hist2D(
-            base + "/delta_t_vs_p", "#Delta t vs p;p [GeV/c];#Delta t [ns]",
-            100, 0, 10, 200, -10, 10);
-        h.edge_vs_theta_r1 = m_hist_svc->book_hist2D(
-            base + "/edge_vs_theta_r1", "Edge vs #theta (R1);edge [cm];#theta [deg]",
-            200, 0, 50, 200, 0, 40);
-        h.edge_vs_theta_r2 = m_hist_svc->book_hist2D(
-            base + "/edge_vs_theta_r2", "Edge vs #theta (R2);edge [cm];#theta [deg]",
-            200, 0, 50, 200, 0, 40);
-        h.edge_vs_theta_r3 = m_hist_svc->book_hist2D(
-            base + "/edge_vs_theta_r3", "Edge vs #theta (R3);edge [cm];#theta [deg]",
-            200, 0, 50, 200, 0, 40);
-        h.edge_vs_chi2ndf_r1 = m_hist_svc->book_hist2D(
-            base + "/edge_vs_chi2ndf_r1", "Edge vs #chi^{2}/ndf (R1);edge [cm];#chi^{2}/ndf",
-            200, 0, 50, 200, 0, 10);
-        h.edge_vs_chi2ndf_r2 = m_hist_svc->book_hist2D(
-            base + "/edge_vs_chi2ndf_r2", "Edge vs #chi^{2}/ndf (R2);edge [cm];#chi^{2}/ndf",
-            200, 0, 50, 200, 0, 10);
-        h.edge_vs_chi2ndf_r3 = m_hist_svc->book_hist2D(
-            base + "/edge_vs_chi2ndf_r3", "Edge vs #chi^{2}/ndf (R3);edge [cm];#chi^{2}/ndf",
-            200, 0, 50, 200, 0, 10);
+        // Book histograms for each sector (1-6)
+        for (int sector = 1; sector <= 6; ++sector) {
+            std::string sec_suffix = fmt::format("_S{}", sector);
+
+            h.nphe[sector] = m_hist_svc->book_hist1D(
+                base + "/nphe" + sec_suffix,
+                fmt::format("Cherenkov nphe (Sector {});nphe;Tracks", sector),
+                51, 0, 50);
+
+            h.EPCal_vs_ECal[sector] = m_hist_svc->book_hist2D(
+                base + "/EPCal_vs_ECal" + sec_suffix,
+                fmt::format("E_{{PCal}} vs E_{{Cal}} (Sector {});E_{{PCal}} [GeV];E_{{Cal}} [GeV]", sector),
+                200, 0, 0.6, 200, 0, 0.6);
+
+            h.EPCal[sector] = m_hist_svc->book_hist1D(
+                base + "/EPCal" + sec_suffix,
+                fmt::format("E_{{PCal}} (Sector {});E_{{PCal}} [GeV];Tracks", sector),
+                200, 0, 1);
+
+            h.EPCal_vs_ECal_cut[sector] = m_hist_svc->book_hist2D(
+                base + "/EPCal_vs_ECal_cut" + sec_suffix,
+                fmt::format("E_{{PCal}} vs E_{{Cal}} (cut, Sector {});E_{{PCal}} [GeV];E_{{Cal}} [GeV]", sector),
+                200, 0, 0.6, 200, 0, 0.6);
+
+            h.EPCal_cut[sector] = m_hist_svc->book_hist1D(
+                base + "/EPCal_cut" + sec_suffix,
+                fmt::format("E_{{PCal}} (cut, Sector {});E_{{PCal}} [GeV];Tracks", sector),
+                200, 0, 1);
+
+            h.Etot_vs_SF[sector] = m_hist_svc->book_hist2D(
+                base + "/Etot_vs_SF" + sec_suffix,
+                fmt::format("E_{{tot}} vs SF (Sector {});E_{{tot}} [GeV];E/p", sector),
+                200, 0, 2, 200, 0, 0.5);
+
+            h.Etot_vs_SF_cut[sector] = m_hist_svc->book_hist2D(
+                base + "/Etot_vs_SF_cut" + sec_suffix,
+                fmt::format("E_{{tot}} vs SF (cut, Sector {});E_{{tot}} [GeV];E/p", sector),
+                200, 0, 2, 200, 0, 0.5);
+
+            h.edge_vs_theta_r1[sector] = m_hist_svc->book_hist2D(
+                base + "/edge_vs_theta_r1" + sec_suffix,
+                fmt::format("Edge vs #theta (R1, Sector {});edge [cm];#theta [deg]", sector),
+                200, 0, 50, 200, 0, 40);
+
+            h.edge_vs_theta_r2[sector] = m_hist_svc->book_hist2D(
+                base + "/edge_vs_theta_r2" + sec_suffix,
+                fmt::format("Edge vs #theta (R2, Sector {});edge [cm];#theta [deg]", sector),
+                200, 0, 50, 200, 0, 40);
+
+            h.edge_vs_theta_r3[sector] = m_hist_svc->book_hist2D(
+                base + "/edge_vs_theta_r3" + sec_suffix,
+                fmt::format("Edge vs #theta (R3, Sector {});edge [cm];#theta [deg]", sector),
+                200, 0, 50, 200, 0, 40);
+
+            h.edge_vs_chi2ndf_r1[sector] = m_hist_svc->book_hist2D(
+                base + "/edge_vs_chi2ndf_r1" + sec_suffix,
+                fmt::format("Edge vs #chi^{{2}}/ndf (R1, Sector {});edge [cm];#chi^{{2}}/ndf", sector),
+                200, 0, 50, 200, 0, 10);
+
+            h.edge_vs_chi2ndf_r2[sector] = m_hist_svc->book_hist2D(
+                base + "/edge_vs_chi2ndf_r2" + sec_suffix,
+                fmt::format("Edge vs #chi^{{2}}/ndf (R2, Sector {});edge [cm];#chi^{{2}}/ndf", sector),
+                200, 0, 50, 200, 0, 10);
+
+            h.edge_vs_chi2ndf_r3[sector] = m_hist_svc->book_hist2D(
+                base + "/edge_vs_chi2ndf_r3" + sec_suffix,
+                fmt::format("Edge vs #chi^{{2}}/ndf (R3, Sector {});edge [cm];#chi^{{2}}/ndf", sector),
+                200, 0, 50, 200, 0, 10);
+
+            h.lv_vs_SF[sector] = m_hist_svc->book_hist2D(
+                base + "/lv_vs_SF" + sec_suffix,
+                fmt::format("lv vs SF (Sector {});lv;E/p", sector),
+                100, 0, 70, 200, 0, 0.5);
+            h.lw_vs_SF[sector] = m_hist_svc->book_hist2D(
+                base + "/lw_vs_SF" + sec_suffix,
+                fmt::format("lw vs SF (Sector {});lw;E/p", sector),
+                100, 0, 70, 200, 0, 0.5);
+        }
 
         h.booked = true;
     }
 
     /**
-     * @brief Process tracks and fill histograms (mirrors original Reader::process_tracks)
+     * @brief Process tracks and fill per-sector histograms
      *
      * For each track, reads calorimeter, Cherenkov, scintillator, and DC trajectory
-     * information and fills the corresponding histograms.
+     * information and fills the corresponding per-sector histograms.
      */
-    auto process_tracks(const std::vector<CLAS::Particle>& tracks,
-                        TrackHistograms& histograms,
-                        hipo::bank& REC_Calorimeter,
-                        hipo::bank& REC_Cherenkov,
-                        hipo::bank& REC_Scintillator,
-                        hipo::bank& REC_Traj,
-                        hipo::bank& REC_Track,
-                        double event_start_time) -> void {
+    auto process_tracks(const std::vector<CLAS::Particle>& tracks, TrackHistograms& histograms,
+                        hipo::bank& REC_Calorimeter, hipo::bank& REC_Cherenkov,
+                        hipo::bank& REC_Scintillator, hipo::bank& REC_Traj,
+                        hipo::bank& REC_Track, [[maybe_unused]] double event_start_time) -> void {
         for (const auto& track : tracks) {
-            // Read detector banks for this track
             CLAS::CalorimeterBank calo = CLAS::read_Calorimeter_bank(REC_Calorimeter, track.index());
             CLAS::CherenkovBank cherenkov = CLAS::read_Cherenkov_bank(REC_Cherenkov, track.index());
             CLAS::ScintillatorBank scint = CLAS::read_Scintillator_bank(REC_Scintillator, track.index());
@@ -582,11 +575,11 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             const double E_pcal = calo.pcal.energy;
             const int nphe = cherenkov.nphe;
 
-            // Fill calorimeter histograms
-            histograms.nphe->Fill(nphe);
-            histograms.EPCal_vs_ECal->Fill(E_pcal, E_cal);
-            histograms.EPCal->Fill(E_pcal);
-            histograms.Etot_vs_SF->Fill(E_tot, SF);
+            // Fill calorimeter histograms for this sector
+            histograms.nphe[sector]->Fill(nphe);
+            histograms.EPCal_vs_ECal[sector]->Fill(E_pcal, E_cal);
+            histograms.EPCal[sector]->Fill(E_pcal);
+            histograms.Etot_vs_SF[sector]->Fill(E_tot, SF);
 
             // Apply EB-like cuts for cut histograms
             constexpr double EB_MIN_CHERENKOV_NPHE = 2.0;
@@ -595,19 +588,12 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             const bool passes_pcal = E_pcal > EB_MIN_PCAL_ENERGY;
 
             if (passes_nphe) {
-                histograms.EPCal_vs_ECal_cut->Fill(E_pcal, E_cal);
-                histograms.EPCal_cut->Fill(E_pcal);
+                histograms.EPCal_vs_ECal_cut[sector]->Fill(E_pcal, E_cal);
+                histograms.EPCal_cut[sector]->Fill(E_pcal);
             }
             if (passes_pcal && passes_nphe) {
-                histograms.Etot_vs_SF_cut->Fill(E_tot, SF);
+                histograms.Etot_vs_SF_cut[sector]->Fill(E_tot, SF);
             }
-
-            // Timing: delta-t calculation (assuming pion mass for generic tracks)
-            constexpr double PION_MASS = 0.13957;
-            const double beta_expected = track.p() / std::sqrt(track.p() * track.p() + PION_MASS * PION_MASS);
-            const double tof_expected = scint.path / (beta_expected * 29.9792458);  // c in cm/ns
-            const double delta_t = scint.time - event_start_time - tof_expected;
-            histograms.delta_t_vs_p->Fill(track.p(), delta_t);
 
             // DC fiducial: edge vs theta for each region
             auto compute_local_theta = [](double x, double y, double z, int sec) {
@@ -622,25 +608,26 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             const double theta_r2 = compute_local_theta(traj.region2.x, traj.region2.y, traj.region2.z, trk_r2.sector);
             const double theta_r3 = compute_local_theta(traj.region3.x, traj.region3.y, traj.region3.z, trk_r3.sector);
 
-            histograms.edge_vs_theta_r1->Fill(traj.region1.edge, theta_r1);
-            histograms.edge_vs_theta_r2->Fill(traj.region2.edge, theta_r2);
-            histograms.edge_vs_theta_r3->Fill(traj.region3.edge, theta_r3);
+            histograms.edge_vs_theta_r1[sector]->Fill(traj.region1.edge, theta_r1);
+            histograms.edge_vs_theta_r2[sector]->Fill(traj.region2.edge, theta_r2);
+            histograms.edge_vs_theta_r3[sector]->Fill(traj.region3.edge, theta_r3);
 
             // Edge vs chi2/ndf
             const double chi2ndf_r1 = trk_r1.ndf > 0 ? trk_r1.chi2 / trk_r1.ndf : std::numeric_limits<double>::quiet_NaN();
             const double chi2ndf_r2 = trk_r2.ndf > 0 ? trk_r2.chi2 / trk_r2.ndf : std::numeric_limits<double>::quiet_NaN();
             const double chi2ndf_r3 = trk_r3.ndf > 0 ? trk_r3.chi2 / trk_r3.ndf : std::numeric_limits<double>::quiet_NaN();
 
-            histograms.edge_vs_chi2ndf_r1->Fill(traj.region1.edge, chi2ndf_r1);
-            histograms.edge_vs_chi2ndf_r2->Fill(traj.region2.edge, chi2ndf_r2);
-            histograms.edge_vs_chi2ndf_r3->Fill(traj.region3.edge, chi2ndf_r3);
+            histograms.edge_vs_chi2ndf_r1[sector]->Fill(traj.region1.edge, chi2ndf_r1);
+            histograms.edge_vs_chi2ndf_r2[sector]->Fill(traj.region2.edge, chi2ndf_r2);
+            histograms.edge_vs_chi2ndf_r3[sector]->Fill(traj.region3.edge, chi2ndf_r3);
+
+            // SF vs lv,w
+            histograms.lv_vs_SF[sector]->Fill(calo.pcal.lv, SF);
+            histograms.lw_vs_SF[sector]->Fill(calo.pcal.lw, SF);
         }
     }
 
-    auto fill_final_histograms(const CLAS::Particle& electron,
-                               const CLAS::CalorimeterBank& calo,
-                               const CLAS::DCTrajBank& traj,
-                               const CLAS::TrackBank& track) -> void {
+    auto fill_final_histograms(const CLAS::Particle& electron, const CLAS::CalorimeterBank& calo, const CLAS::DCTrajBank& traj, const CLAS::TrackBank& track) -> void {
         // Fill electron kinematics
         h_electron.momentum->Fill(electron.p());
         h_electron.theta->Fill(electron.theta());

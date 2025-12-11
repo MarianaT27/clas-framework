@@ -96,8 +96,7 @@ int main(int argc, char** argv) {
     auto electron_alg = std::make_unique<Algorithms::ElectronAnalysisAlg>(
         "ElectronAnalysis",
         target,
-        polarity,
-        false  // Enable systematics: false for faster processing
+        polarity
     );
     fmt::print("  ✓ ElectronAnalysisAlg (Target: {}, Polarity: {})\n",
                target == CLAS::Target::LD2 ? "LD2" : "Other",

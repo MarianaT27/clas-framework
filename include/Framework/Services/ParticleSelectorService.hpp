@@ -182,13 +182,31 @@ public:
         return (it != particles.end()) ? it->second : empty;
     }
 
-    auto get_particles_by_charge(const ParticleMap& particles) const -> std::map<int, std::vector<CLAS::Particle>> {
+    auto get_particles_by_charge(hipo::bank_map& REC_Particle) const -> std::map<int, std::vector<CLAS::Particle>> {
         std::map<int, std::vector<CLAS::Particle>> charge_map;
-        for (const auto& [type, particles] : particles) {
-            for (const auto& particle : particles) {
-                charge_map[particle.charge()].emplace_back(particle);
-            }
+        
+        for (int i = 0; i < REC_Particle.get_rows(); i++) {
+            const int charge = REC_Particle.get_as<int>("charge", i);
+            const int pid = REC_Particle.get_as<int>("pid", i);
+            const int status = REC_Particle.get_as<int>("status", i);
+            const double px = REC_Particle.get_as<double>("px", i);
+            const double py = REC_Particle.get_as<double>("py", i);
+            const double pz = REC_Particle.get_as<double>("pz", i);
+            const double vx = REC_Particle.get_as<double>("vx", i);
+            const double vy = REC_Particle.get_as<double>("vy", i);
+            const double vz = REC_Particle.get_as<double>("vz", i);
+            const double vt = REC_Particle.get_as<double>("vt", i);
+            const double beta = REC_Particle.get_as<double>("beta", i);
+            const double chi2pid = REC_Particle.get_as<double>("chi2pid", i);
+
+            const double mass = Physics::ParticleUtils::get_mass(pid);
+            const double E = Physics::ParticleUtils::compute_energy(px, py, pz, pid);
+
+            CLAS::Particle particle(pid, status, i, charge, mass, px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
+
+            charge_map[charge].emplace_back(particle);
         }
+
         return charge_map;
     }
 
