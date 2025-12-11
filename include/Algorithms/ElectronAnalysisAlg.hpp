@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include "CLAS/ElectronCuts.hpp"
 #include "CLAS/ReadBank.hpp"
@@ -479,10 +480,10 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
      * @param track Track bank data for the electron
      */
     auto fill_after_cut(const std::string& cut_name,
-                       const CLAS::Particle& electron,
-                       const CLAS::CalorimeterBank& calo,
-                       const CLAS::DCTrajBank& traj,
-                       [[maybe_unused]] const CLAS::TrackBank& track) -> void {
+                        const CLAS::Particle& electron,
+                        const CLAS::CalorimeterBank& calo,
+                        const CLAS::DCTrajBank& traj,
+                        [[maybe_unused]] const CLAS::TrackBank& track) -> void {
         // Get pre-booked histograms for this cut stage
         auto& cut_hists = m_cut_stage_histograms.at(cut_name);
 
@@ -527,22 +528,22 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             100, 0, 10, 200, -10, 10);
         h.edge_vs_theta_r1 = m_hist_svc->book_hist2D(
             base + "/edge_vs_theta_r1", "Edge vs #theta (R1);edge [cm];#theta [deg]",
-            100, 0, 50, 100, 0, 40);
+            200, 0, 50, 200, 0, 40);
         h.edge_vs_theta_r2 = m_hist_svc->book_hist2D(
             base + "/edge_vs_theta_r2", "Edge vs #theta (R2);edge [cm];#theta [deg]",
-            100, 0, 50, 100, 0, 40);
+            200, 0, 50, 200, 0, 40);
         h.edge_vs_theta_r3 = m_hist_svc->book_hist2D(
             base + "/edge_vs_theta_r3", "Edge vs #theta (R3);edge [cm];#theta [deg]",
-            100, 0, 50, 100, 0, 40);
+            200, 0, 50, 200, 0, 40);
         h.edge_vs_chi2ndf_r1 = m_hist_svc->book_hist2D(
             base + "/edge_vs_chi2ndf_r1", "Edge vs #chi^{2}/ndf (R1);edge [cm];#chi^{2}/ndf",
-            100, 0, 50, 100, 0, 10);
+            200, 0, 50, 200, 0, 10);
         h.edge_vs_chi2ndf_r2 = m_hist_svc->book_hist2D(
             base + "/edge_vs_chi2ndf_r2", "Edge vs #chi^{2}/ndf (R2);edge [cm];#chi^{2}/ndf",
-            100, 0, 50, 100, 0, 10);
+            200, 0, 50, 200, 0, 10);
         h.edge_vs_chi2ndf_r3 = m_hist_svc->book_hist2D(
             base + "/edge_vs_chi2ndf_r3", "Edge vs #chi^{2}/ndf (R3);edge [cm];#chi^{2}/ndf",
-            100, 0, 50, 100, 0, 10);
+            200, 0, 50, 200, 0, 10);
 
         h.booked = true;
     }
@@ -626,9 +627,9 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             histograms.edge_vs_theta_r3->Fill(traj.region3.edge, theta_r3);
 
             // Edge vs chi2/ndf
-            const double chi2ndf_r1 = trk_r1.ndf > 0 ? trk_r1.chi2 / trk_r1.ndf : 0;
-            const double chi2ndf_r2 = trk_r2.ndf > 0 ? trk_r2.chi2 / trk_r2.ndf : 0;
-            const double chi2ndf_r3 = trk_r3.ndf > 0 ? trk_r3.chi2 / trk_r3.ndf : 0;
+            const double chi2ndf_r1 = trk_r1.ndf > 0 ? trk_r1.chi2 / trk_r1.ndf : std::numeric_limits<double>::quiet_NaN();
+            const double chi2ndf_r2 = trk_r2.ndf > 0 ? trk_r2.chi2 / trk_r2.ndf : std::numeric_limits<double>::quiet_NaN();
+            const double chi2ndf_r3 = trk_r3.ndf > 0 ? trk_r3.chi2 / trk_r3.ndf : std::numeric_limits<double>::quiet_NaN();
 
             histograms.edge_vs_chi2ndf_r1->Fill(traj.region1.edge, chi2ndf_r1);
             histograms.edge_vs_chi2ndf_r2->Fill(traj.region2.edge, chi2ndf_r2);
