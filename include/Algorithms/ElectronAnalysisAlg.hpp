@@ -19,6 +19,7 @@
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Services/SamplingFractionService.hpp"
 #include "Framework/SystematicVariation.hpp"
+#include "Framework/BankAccessor.hpp"
 #include "Physics/Kinematics.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
@@ -39,10 +40,43 @@ using Framework::Log;
  * - Physics calculators
  * - Clean separation of concerns
  */
+/// Configuration structure for ElectronAnalysisAlg parameters
+struct ElectronAnalysisConfig {
+    CLAS::Target target = CLAS::Target::LD2;
+    CLAS::Polarity polarity = CLAS::Polarity::Outbending;
+    bool enable_systematics = false;
+    bool enable_ntuple = true;
+    bool enable_cut_stage_histograms = true;
+    // Trigger electron momentum range
+    double trigger_p_min = 2000.0;
+    double trigger_p_max = 4000.0;
+    // Momentum binning for DC histograms
+    double p_bin_min = 1.0;
+    double p_bin_max = 10.0;
+    double p_bin_width = 1.0;
+};
+
 class ElectronAnalysisAlg : public Framework::Algorithm {
    public:
-    explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis", CLAS::Target target = CLAS::Target::LD2, CLAS::Polarity polarity = CLAS::Polarity::Outbending)
-        : Algorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow("Electron Selection") {}
+    using Config = ElectronAnalysisConfig;
+
+    explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis", const Config& config = Config{})
+        : Algorithm(std::move(name)),
+          m_config(config),
+          m_target(m_config.target),
+          m_polarity(m_config.polarity),
+          m_enable_systematics(m_config.enable_systematics),
+          m_cutflow("Electron Selection") {}
+
+    // Legacy constructor for backward compatibility
+    explicit ElectronAnalysisAlg(std::string name, CLAS::Target target, CLAS::Polarity polarity)
+        : Algorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow("Electron Selection") {
+        m_config.target = target;
+        m_config.polarity = polarity;
+    }
+
+    /// Access configuration (const)
+    [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     auto initialize() -> Framework::StatusCode override {
         // Get services
@@ -74,65 +108,68 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         setup_cutflow();
         book_histograms();
 
-        if (m_ntuple_svc) {
+        // Initialize systematic variations if enabled
+        if (m_enable_systematics) {
+            setup_systematics();
+            Log::info(name(), "Registered {} systematic variations", m_sys_mgr.variations().size());
+        }
+
+        if (m_ntuple_svc && m_config.enable_ntuple) {
             setup_ntuple();
-        } else {
+        } else if (!m_ntuple_svc) {
             Log::warning(name(), "NTupleService not available - N-tuple output disabled");
+        } else {
+            Log::info(name(), "N-tuple output disabled by configuration");
         }
 
         return Framework::StatusCode::SUCCESS();
     }
 
     auto execute(Framework::Event& event) -> Framework::StatusCode override {
+        ++m_counters.total_events;
         m_cutflow.pass("All Events");
 
-        // Get REC::Event for start time
-        auto& hipo_event = event.hipo_event();
-        hipo::bank_map REC_Event = hipo_event.get_bank_map("REC::Event");
-        if (REC_Event.get_rows() == 0) return Framework::StatusCode::SUCCESS();
+        // Use RECBanks helper for cleaner bank access
+        Framework::RECBanks banks(event.hipo_event());
 
-        hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
-        hipo::bank_map REC_Scintillator = hipo_event.get_bank_map("REC::Scintillator");
-        hipo::bank_map REC_Traj = hipo_event.get_bank_map("REC::Traj");
-        hipo::bank_map REC_Track = hipo_event.get_bank_map("REC::Track");
-        hipo::bank_map REC_Calorimeter = hipo_event.get_bank_map("REC::Calorimeter");
-        hipo::bank_map REC_Cherenkov = hipo_event.get_bank_map("REC::Cherenkov");
+        // Early exit if no event data
+        if (!banks.has_event()) return Framework::StatusCode::SUCCESS();
 
-        Framework::ParticleMap particles = m_particle_svc->extract_particles(REC_Particle, {CLAS::PIDs::ELECTRON});
+        const double event_start_time = banks.start_time();
 
-        const double event_start_time = REC_Event.get_bank().get<float>("startTime", 0);
+        // Extract particles
+        Framework::ParticleMap particles = m_particle_svc->extract_particles(banks.particle(), {CLAS::PIDs::ELECTRON});
 
-        std::map<int, std::vector<CLAS::Particle>> charged_tracks = m_particle_svc->get_particles_by_charge(REC_Particle);
+        std::map<int, std::vector<CLAS::Particle>> charged_tracks = m_particle_svc->get_particles_by_charge(banks.particle());
         std::vector<CLAS::Particle> neg_tracks = charged_tracks[-1];
-        std::vector<CLAS::Particle> pos_tracks = charged_tracks[+1];
 
         // Process tracks and fill histograms
-        process_tracks(neg_tracks, h_neg_tracks, REC_Calorimeter.get_bank(),
-                       REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
-                       REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
+        process_tracks(neg_tracks, h_neg_tracks, banks.calorimeter_bank(),
+                       banks.cherenkov_bank(), banks.scintillator_bank(),
+                       banks.traj_bank(), banks.track_bank(), event_start_time);
 
         const auto& electrons = m_particle_svc->get_electrons(particles);
         if (electrons.empty()) return Framework::StatusCode::SUCCESS();
+        ++m_counters.events_with_electrons;
 
-        // Select trigger electron
-        std::optional<CLAS::Particle> trigger_e = Physics::ParticleUtils::find_trigger_electron(electrons, {2000, 4000});
+        // Select trigger electron using configurable momentum range
+        std::optional<CLAS::Particle> trigger_e = Physics::ParticleUtils::find_trigger_electron(
+            electrons, {m_config.trigger_p_min, m_config.trigger_p_max});
         if (!trigger_e.has_value()) return Framework::StatusCode::SUCCESS();
+        ++m_counters.events_with_trigger;
         m_cutflow.pass("Trigger Electron");
 
         // Get detector info for electron
-        CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(
-            REC_Calorimeter.get_bank(), trigger_e->index());
-        CLAS::DCTrajBank traj = CLAS::read_Traj_bank(
-            REC_Traj.get_bank(), trigger_e->index());
-        CLAS::TrackBank track = CLAS::read_Track_bank(
-            REC_Track.get_bank(), trigger_e->index());
+        CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(banks.calorimeter_bank(), trigger_e->index());
+        CLAS::DCTrajBank traj = CLAS::read_Traj_bank(banks.traj_bank(), trigger_e->index());
+        CLAS::TrackBank track = CLAS::read_Track_bank(banks.track_bank(), trigger_e->index());
 
         // Apply cuts sequentially and fill histograms after each cut
         auto electron = trigger_e.value();
 
-        process_tracks({electron}, h_electron_tracks, REC_Calorimeter.get_bank(),
-                       REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
-                       REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
+        process_tracks({electron}, h_electron_tracks, banks.calorimeter_bank(),
+                       banks.cherenkov_bank(), banks.scintillator_bank(),
+                       banks.traj_bank(), banks.track_bank(), event_start_time);
 
         // Calculate derived quantities
         const double E_tot = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;
@@ -183,10 +220,11 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         fill_after_cut("DCChi2", electron, calorimeter, traj, track);
 
         // All cuts passed - fill final histograms
+        ++m_counters.events_passing_all;
         fill_final_histograms(electron, calorimeter, traj, track);
 
         // Fill N-tuple if service is available
-        if (m_ntuple_svc) {
+        if (m_ntuple_svc && m_config.enable_ntuple) {
             m_nt_e_p = electron.p();
             m_nt_e_theta = electron.theta();
             m_nt_e_phi = electron.phi();
@@ -210,7 +248,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             auto final_count = m_cutflow.get_count("DC Chi2/NDF");
             Log::info(name(), "Events passing all cuts: {}", final_count);
 
-            if (m_ntuple_svc) {
+            if (m_ntuple_svc && m_config.enable_ntuple) {
                 auto entries = m_ntuple_svc->get_entries("electron_analysis");
                 Log::info(name(), "N-tuple has {} entries", entries);
             }
@@ -219,18 +257,138 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         fmt::print("\n");
         m_cutflow.print();
 
-        fmt::print("\nElectron Analysis Statistics:\n");
-        fmt::print("  Events passing all cuts: {}\n", m_cutflow.get_count("DC Chi2/NDF"));
+        // Print detailed statistics
+        print_statistics();
 
         return Framework::StatusCode::SUCCESS();
     }
 
+    /// Print detailed event statistics
+    auto print_statistics() const -> void {
+        fmt::print("\nElectron Analysis Statistics:\n");
+        fmt::print("  Total events processed:     {}\n", m_counters.total_events);
+        fmt::print("  Events with electrons:      {} ({:.2f}%)\n",
+                   m_counters.events_with_electrons,
+                   percentage(m_counters.events_with_electrons, m_counters.total_events));
+        fmt::print("  Events with trigger e-:     {} ({:.2f}%)\n",
+                   m_counters.events_with_trigger,
+                   percentage(m_counters.events_with_trigger, m_counters.total_events));
+        fmt::print("  Events passing all cuts:    {} ({:.2f}%)\n",
+                   m_counters.events_passing_all,
+                   percentage(m_counters.events_passing_all, m_counters.total_events));
+
+        // Efficiency relative to trigger electrons
+        if (m_counters.events_with_trigger > 0) {
+            fmt::print("  Cut efficiency (vs trigger): {:.2f}%\n",
+                       percentage(m_counters.events_passing_all, m_counters.events_with_trigger));
+        }
+    }
+
+    /// Helper to compute percentage safely
+    [[nodiscard]] static auto percentage(size_t num, size_t denom) -> double {
+        return denom > 0 ? 100.0 * static_cast<double>(num) / static_cast<double>(denom) : 0.0;
+    }
+
+    /// Structure to hold electron candidate with all associated detector info
+    struct ElectronCandidate {
+        CLAS::Particle particle;
+        CLAS::CalorimeterBank calorimeter;
+        CLAS::DCTrajBank trajectory;
+        CLAS::TrackBank track;
+        double sampling_fraction = 0.0;
+        double total_energy = 0.0;
+        int sector = 0;
+
+        [[nodiscard]] auto is_valid() const -> bool {
+            return sector >= 1 && sector <= 6 && particle.p() > 0;
+        }
+    };
+
+    /// Build electron candidate with all detector information
+    [[nodiscard]] auto build_candidate(const CLAS::Particle& electron,
+                                        hipo::bank& REC_Calorimeter,
+                                        hipo::bank& REC_Traj,
+                                        hipo::bank& REC_Track) const -> ElectronCandidate {
+        ElectronCandidate candidate;
+        candidate.particle = electron;
+        candidate.calorimeter = CLAS::read_Calorimeter_bank(REC_Calorimeter, electron.index());
+        candidate.trajectory = CLAS::read_Traj_bank(REC_Traj, electron.index());
+        candidate.track = CLAS::read_Track_bank(REC_Track, electron.index());
+        candidate.total_energy = candidate.calorimeter.pcal.energy +
+                                  candidate.calorimeter.inner.energy +
+                                  candidate.calorimeter.outer.energy;
+        candidate.sampling_fraction = candidate.total_energy / electron.p();
+        candidate.sector = candidate.calorimeter.pcal.sector;
+        return candidate;
+    }
+
+    /// Apply all electron selection cuts and return result
+    /// Returns true if electron passes all cuts, fills cutflow along the way
+    [[nodiscard]] auto apply_electron_cuts(const ElectronCandidate& candidate) -> bool {
+        const auto& e = candidate.particle;
+        const auto& calo = candidate.calorimeter;
+        const auto& traj = candidate.trajectory;
+
+        // Chi2 PID cut
+        if (!CLAS::ElectronCuts::pass_chi2pid_cut(e.chi2pid())) return false;
+        m_cutflow.pass("Chi2 PID");
+        if (m_config.enable_cut_stage_histograms) {
+            fill_after_cut("Chi2PID", e, calo, traj, candidate.track);
+        }
+
+        // Momentum cut
+        if (!CLAS::ElectronCuts::pass_electron_momentum_cut(e.p())) return false;
+        m_cutflow.pass("Momentum > 0.8 GeV");
+        if (m_config.enable_cut_stage_histograms) {
+            fill_after_cut("Momentum", e, calo, traj, candidate.track);
+        }
+
+        // Vertex Z cut
+        if (!CLAS::ElectronCuts::pass_electron_vz_cut(e.vz(), m_target)) return false;
+        m_cutflow.pass("Vertex Z");
+        if (m_config.enable_cut_stage_histograms) {
+            fill_after_cut("VertexZ", e, calo, traj, candidate.track);
+        }
+
+        // Sampling fraction cut
+        if (!m_sf_svc->passes_cut(candidate.sampling_fraction, e.p(), candidate.sector, m_target, m_polarity)) return false;
+        m_cutflow.pass("Sampling Fraction");
+        if (m_config.enable_cut_stage_histograms) {
+            fill_after_cut("SamplingFraction", e, calo, traj, candidate.track);
+        }
+
+        // PCAL fiducial cut
+        if (!CLAS::ElectronCuts::pass_pcal_fiducial_cut(calo.pcal.lv, calo.pcal.lw)) return false;
+        m_cutflow.pass("PCAL Fiducial");
+        if (m_config.enable_cut_stage_histograms) {
+            fill_after_cut("PCALFiducial", e, calo, traj, candidate.track);
+        }
+
+        // DC chi2/ndf cut
+        if (!CLAS::ElectronCuts::pass_chi2ndf_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) return false;
+        m_cutflow.pass("DC Chi2/NDF");
+        if (m_config.enable_cut_stage_histograms) {
+            fill_after_cut("DCChi2", e, calo, traj, candidate.track);
+        }
+
+        return true;
+    }
+
    private:
+    Config m_config;
     CLAS::Target m_target;
     CLAS::Polarity m_polarity;
     bool m_enable_systematics = false;
     Framework::Cutflow m_cutflow;
     Framework::SystematicManager m_sys_mgr;
+
+    // Event counters for detailed statistics
+    struct EventCounters {
+        size_t total_events = 0;
+        size_t events_with_electrons = 0;
+        size_t events_with_trigger = 0;
+        size_t events_passing_all = 0;
+    } m_counters;
 
     // Services
     Framework::LoggingService* m_log_svc = nullptr;
@@ -345,11 +503,23 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             "/Electron/phi_vs_theta", "#phi vs #theta;#theta [deg];#phi [deg]",
             180, 0, 180, 180, -180, 180);
 
-        // Calorimeter
+        // Calorimeter - PCAL
         h_calorimeter.lu_vs_lv_pcal = m_hist_svc->book_hist2D(
             "/Calorimeter/lu_vs_lv_pcal", "PCAL lu vs lv;lv;lu", 100, 0, 500, 100, 0, 500);
         h_calorimeter.lu_vs_lw_pcal = m_hist_svc->book_hist2D(
             "/Calorimeter/lu_vs_lw_pcal", "PCAL lu vs lw;lw;lu", 100, 0, 500, 100, 0, 500);
+
+        // Calorimeter - Inner EC
+        h_calorimeter.lu_vs_lv_inner = m_hist_svc->book_hist2D(
+            "/Calorimeter/lu_vs_lv_inner", "Inner EC lu vs lv;lv;lu", 100, 0, 500, 100, 0, 500);
+        h_calorimeter.lu_vs_lw_inner = m_hist_svc->book_hist2D(
+            "/Calorimeter/lu_vs_lw_inner", "Inner EC lu vs lw;lw;lu", 100, 0, 500, 100, 0, 500);
+
+        // Calorimeter - Outer EC
+        h_calorimeter.lu_vs_lv_outer = m_hist_svc->book_hist2D(
+            "/Calorimeter/lu_vs_lv_outer", "Outer EC lu vs lv;lv;lu", 100, 0, 500, 100, 0, 500);
+        h_calorimeter.lu_vs_lw_outer = m_hist_svc->book_hist2D(
+            "/Calorimeter/lu_vs_lw_outer", "Outer EC lu vs lw;lw;lu", 100, 0, 500, 100, 0, 500);
 
         // DC Chi2/ndf vs edge for momentum bins
         std::vector<std::string> p_bins = {"1_2", "2_3", "3_4", "4_5", "5_6", "6_7", "7_8", "8_9", "9_10"};
@@ -365,19 +535,36 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         book_track_histograms(h_electron_tracks, "ElectronTracks");
 
         // Book cut-stage histograms (must be done at init time for thread safety)
-        book_cut_stage_histograms("Chi2PID");
-        book_cut_stage_histograms("Momentum");
-        book_cut_stage_histograms("VertexZ");
-        book_cut_stage_histograms("SamplingFraction");
-        book_cut_stage_histograms("PCALFiducial");
-        book_cut_stage_histograms("DCChi2");
+        if (m_config.enable_cut_stage_histograms) {
+            book_cut_stage_histograms("Chi2PID");
+            book_cut_stage_histograms("Momentum");
+            book_cut_stage_histograms("VertexZ");
+            book_cut_stage_histograms("SamplingFraction");
+            book_cut_stage_histograms("PCALFiducial");
+            book_cut_stage_histograms("DCChi2");
+            Log::info(name(), "Cut-stage histograms enabled");
+        }
     }
 
     auto setup_systematics() -> void {
+        // Energy scale variations (±1 sigma)
         m_sys_mgr.add_variation("EnergyScale_Up", Framework::VariationType::EnergyScale, +1.0);
         m_sys_mgr.add_variation("EnergyScale_Down", Framework::VariationType::EnergyScale, -1.0);
+
+        // Momentum scale variations (±1 sigma)
         m_sys_mgr.add_variation("MomentumScale_Up", Framework::VariationType::MomentumScale, +1.0);
         m_sys_mgr.add_variation("MomentumScale_Down", Framework::VariationType::MomentumScale, -1.0);
+
+        // Resolution variations
+        m_sys_mgr.add_variation("EnergyResolution_Up", Framework::VariationType::EnergyResolution, +1.0);
+        m_sys_mgr.add_variation("EnergyResolution_Down", Framework::VariationType::EnergyResolution, -1.0);
+
+        if (Log::is_available()) {
+            Log::debug(name(), "Systematic variations configured:");
+            for (const auto& var : m_sys_mgr.variations()) {
+                Log::debug(name(), "  - {}", var.name);
+            }
+        }
     }
 
     auto setup_ntuple() -> void {
@@ -637,37 +824,41 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         h_electron.p_vs_theta->Fill(electron.theta(), electron.p());
         h_electron.phi_vs_theta->Fill(electron.theta(), electron.phi());
 
-        // Fill calorimeter
+        // Fill calorimeter - PCAL
         h_calorimeter.lu_vs_lv_pcal->Fill(calo.pcal.lv, calo.pcal.lu);
         h_calorimeter.lu_vs_lw_pcal->Fill(calo.pcal.lw, calo.pcal.lu);
 
+        // Fill calorimeter - Inner EC
+        h_calorimeter.lu_vs_lv_inner->Fill(calo.inner.lv, calo.inner.lu);
+        h_calorimeter.lu_vs_lw_inner->Fill(calo.inner.lw, calo.inner.lu);
+
+        // Fill calorimeter - Outer EC
+        h_calorimeter.lu_vs_lv_outer->Fill(calo.outer.lv, calo.outer.lu);
+        h_calorimeter.lu_vs_lw_outer->Fill(calo.outer.lw, calo.outer.lu);
+
         // Fill DC histograms by momentum bin
-        double p = electron.p();
-        double chi2ndf = track.chi2 / track.ndf;
+        fill_dc_momentum_binned(electron.p(), traj, track);
+    }
 
-        auto fill_dc_bin = [&](const std::string& bin) {
-            if (h_dc.chi2ndf_vs_edge_r1.count(bin)) {
-                h_dc.chi2ndf_vs_edge_r1[bin]->Fill(traj.region1.edge, chi2ndf);
-            }
-        };
+    /// Fill DC histograms in the appropriate momentum bin
+    auto fill_dc_momentum_binned(double p, const CLAS::DCTrajBank& traj, const CLAS::TrackBank& track) -> void {
+        // Compute chi2/ndf safely
+        const double chi2ndf = (track.ndf > 0) ? track.chi2 / track.ndf : 0.0;
 
-        if (1.0 <= p && p < 2.0) fill_dc_bin("1_2");
-        else if (2.0 <= p && p < 3.0)
-            fill_dc_bin("2_3");
-        else if (3.0 <= p && p < 4.0)
-            fill_dc_bin("3_4");
-        else if (4.0 <= p && p < 5.0)
-            fill_dc_bin("4_5");
-        else if (5.0 <= p && p < 6.0)
-            fill_dc_bin("5_6");
-        else if (6.0 <= p && p < 7.0)
-            fill_dc_bin("6_7");
-        else if (7.0 <= p && p < 8.0)
-            fill_dc_bin("7_8");
-        else if (8.0 <= p && p < 9.0)
-            fill_dc_bin("8_9");
-        else if (9.0 <= p && p < 10.0)
-            fill_dc_bin("9_10");
+        // Determine momentum bin using configurable range
+        const int bin_idx = static_cast<int>((p - m_config.p_bin_min) / m_config.p_bin_width);
+        const int p_low = static_cast<int>(m_config.p_bin_min) + bin_idx;
+        const int p_high = p_low + static_cast<int>(m_config.p_bin_width);
+
+        // Check bounds
+        if (p < m_config.p_bin_min || p >= m_config.p_bin_max) return;
+
+        const std::string bin_key = fmt::format("{}_{}", p_low, p_high);
+
+        // Fill histogram if it exists for this bin
+        if (auto it = h_dc.chi2ndf_vs_edge_r1.find(bin_key); it != h_dc.chi2ndf_vs_edge_r1.end()) {
+            it->second->Fill(traj.region1.edge, chi2ndf);
+        }
     }
 };
 
