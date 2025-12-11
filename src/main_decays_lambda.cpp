@@ -33,11 +33,11 @@ int main(int argc, char* argv[]) {
             ("num_threads", "Number of threads", cxxopts::value<int>()->default_value("1"))
             ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("decays_lambda_analysis.root"))
             ("input", "Input HIPO files (comma-separated or single file)", cxxopts::value<std::string>()->default_value(""))
-            ("mass_window", "Lambda mass window in GeV", cxxopts::value<double>()->default_value("0.1"))
+            ("mass_window", "Lambda mass window in GeV", cxxopts::value<double>()->default_value("0.2"))
             ("min_momentum", "Minimum Lambda momentum in GeV", cxxopts::value<double>()->default_value("0.0"))
             ("min_decay_length", "Minimum decay length in cm (0=disabled)", cxxopts::value<double>()->default_value("0.0"))
-            ("min_vertex_detach", "Min vertex detachment z in cm (decay_vz - origin_vz)", cxxopts::value<double>()->default_value("-1000"))
-            ("max_vertex_detach", "Max vertex detachment z in cm (0=no limit)", cxxopts::value<double>()->default_value("0"))
+            ("min_vertex_detach", "Min vertex detachment z in cm (decay_vz - origin_vz)", cxxopts::value<double>()->default_value("1.0"))
+            ("max_vertex_detach", "Max vertex detachment z in cm (0=no limit)", cxxopts::value<double>()->default_value("100"))
             ("help", "Show help");
 
     auto args = options.parse(argc, argv);
