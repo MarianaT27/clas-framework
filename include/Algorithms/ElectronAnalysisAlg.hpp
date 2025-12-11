@@ -436,24 +436,10 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
     }
 
     /**
-     * @brief Fills histograms after each cut stage to monitor cut effects
-     *
-     * This function fills a set of histograms for each cut stage, allowing
-     * visualization of how each cut affects the electron distributions.
-     * Histograms are organized by cut name in the directory structure.
-     *
-     * @param cut_name Name of the cut that was just passed
-     * @param electron The electron particle passing the cut
-     * @param calo Calorimeter bank data for the electron
-     * @param traj DC trajectory bank data for the electron
-     * @param track Track bank data for the electron
+     * @brief Books histograms for a specific cut stage
+     * Must be called during initialize() to ensure thread safety
      */
-    auto fill_after_cut(const std::string& cut_name,
-                        const CLAS::Particle& electron,
-                        const CLAS::CalorimeterBank& calo,
-                        const CLAS::DCTrajBank& traj,
-                        const CLAS::TrackBank& track) -> void {
-        // Get or create histograms for this cut stage
+    auto book_cut_stage_histograms(const std::string& cut_name) -> void {
         auto& cut_hists = m_cut_stage_histograms[cut_name];
         std::string base = fmt::format("/Electron/CutStages/{}", cut_name);
 
