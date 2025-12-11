@@ -403,6 +403,14 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         book_track_histograms(h_pim_tracks, "PiMinus");
         book_track_histograms(h_pip_tracks, "PiPlus");
         book_track_histograms(h_neg_tracks_wo_electrons, "NegativeTracksNoElectrons");
+
+        // Book cut-stage histograms (must be done at init time for thread safety)
+        book_cut_stage_histograms("Chi2PID");
+        book_cut_stage_histograms("Momentum");
+        book_cut_stage_histograms("VertexZ");
+        book_cut_stage_histograms("SamplingFraction");
+        book_cut_stage_histograms("PCALFiducial");
+        book_cut_stage_histograms("DCChi2");
     }
 
     auto setup_systematics() -> void {
@@ -447,32 +455,50 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
                         const CLAS::TrackBank& track) -> void {
         // Get or create histograms for this cut stage
         auto& cut_hists = m_cut_stage_histograms[cut_name];
+        std::string base = fmt::format("/Electron/CutStages/{}", cut_name);
 
-        // Book histograms on first use
-        if (!cut_hists.booked) {
-            std::string base = fmt::format("/Electron/CutStages/{}", cut_name);
+        cut_hists.momentum = m_hist_svc->book_hist1D(
+            base + "/p", fmt::format("Electron p after {};p [GeV/c];Events", cut_name),
+            120, 0, 12);
+        cut_hists.theta = m_hist_svc->book_hist1D(
+            base + "/theta", fmt::format("Electron #theta after {};#theta [deg];Events", cut_name),
+            180, 0, 180);
+        cut_hists.phi = m_hist_svc->book_hist1D(
+            base + "/phi", fmt::format("Electron #phi after {};#phi [deg];Events", cut_name),
+            180, -180, 180);
+        cut_hists.vz = m_hist_svc->book_hist1D(
+            base + "/vz", fmt::format("Electron v_{{z}} after {};v_{{z}} [cm];Events", cut_name),
+            200, -20, 20);
+        cut_hists.sampling_fraction = m_hist_svc->book_hist2D(
+            base + "/sf_vs_p", fmt::format("SF vs p after {};p [GeV/c];E/p", cut_name),
+            120, 0, 12, 100, 0, 0.5);
+        cut_hists.dc_edge_r1 = m_hist_svc->book_hist1D(
+            base + "/dc_edge_r1", fmt::format("DC Edge R1 after {};edge [cm];Events", cut_name),
+            100, 0, 50);
 
-            cut_hists.momentum = m_hist_svc->book_hist1D(
-                base + "/p", fmt::format("Electron p after {};p [GeV/c];Events", cut_name),
-                120, 0, 12);
-            cut_hists.theta = m_hist_svc->book_hist1D(
-                base + "/theta", fmt::format("Electron #theta after {};#theta [deg];Events", cut_name),
-                180, 0, 180);
-            cut_hists.phi = m_hist_svc->book_hist1D(
-                base + "/phi", fmt::format("Electron #phi after {};#phi [deg];Events", cut_name),
-                180, -180, 180);
-            cut_hists.vz = m_hist_svc->book_hist1D(
-                base + "/vz", fmt::format("Electron v_{{z}} after {};v_{{z}} [cm];Events", cut_name),
-                200, -20, 20);
-            cut_hists.sampling_fraction = m_hist_svc->book_hist2D(
-                base + "/sf_vs_p", fmt::format("SF vs p after {};p [GeV/c];E/p", cut_name),
-                120, 0, 12, 100, 0, 0.5);
-            cut_hists.dc_edge_r1 = m_hist_svc->book_hist1D(
-                base + "/dc_edge_r1", fmt::format("DC Edge R1 after {};edge [cm];Events", cut_name),
-                100, 0, 50);
+        cut_hists.booked = true;
+    }
 
-            cut_hists.booked = true;
-        }
+    /**
+     * @brief Fills histograms after each cut stage to monitor cut effects
+     *
+     * This function fills a set of histograms for each cut stage, allowing
+     * visualization of how each cut affects the electron distributions.
+     * Histograms must be pre-booked during initialize() via book_cut_stage_histograms().
+     *
+     * @param cut_name Name of the cut that was just passed
+     * @param electron The electron particle passing the cut
+     * @param calo Calorimeter bank data for the electron
+     * @param traj DC trajectory bank data for the electron
+     * @param track Track bank data for the electron
+     */
+    auto fill_after_cut(const std::string& cut_name,
+                       const CLAS::Particle& electron,
+                       const CLAS::CalorimeterBank& calo,
+                       const CLAS::DCTrajBank& traj,
+                       [[maybe_unused]] const CLAS::TrackBank& track) -> void {
+        // Get pre-booked histograms for this cut stage
+        auto& cut_hists = m_cut_stage_histograms.at(cut_name);
 
         // Fill histograms
         cut_hists.momentum->Fill(electron.p());
