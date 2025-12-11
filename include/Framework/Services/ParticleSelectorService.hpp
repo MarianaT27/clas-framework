@@ -86,8 +86,7 @@ public:
      * @param types Vector of particle types to extract (empty = use defaults)
      * @return ParticleMap containing particles grouped by their PID
      */
-    auto extract_particles(hipo::bank_map& REC_Particle,
-                           const std::vector<CLAS::PIDs>& types = {}) const -> ParticleMap {
+    auto extract_particles(hipo::bank_map& REC_Particle, const std::vector<CLAS::PIDs>& types = {}) const -> ParticleMap {
         ParticleMap particle_map;
 
         const auto& target_types = types.empty() ? m_default_types : types;
@@ -181,6 +180,16 @@ public:
         static const std::vector<CLAS::Particle> empty;
         auto it = particles.find(CLAS::PIDs::PIMINUS);
         return (it != particles.end()) ? it->second : empty;
+    }
+
+    auto get_particles_by_charge(const ParticleMap& particles) const -> std::map<int, std::vector<CLAS::Particle>> {
+        std::map<int, std::vector<CLAS::Particle>> charge_map;
+        for (const auto& [type, particles] : particles) {
+            for (const auto& particle : particles) {
+                charge_map[particle.charge()].emplace_back(particle);
+            }
+        }
+        return charge_map;
     }
 
     // =========================================================================

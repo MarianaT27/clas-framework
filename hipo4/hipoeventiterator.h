@@ -191,7 +191,7 @@ public:
     }
 
     /// Get underlying bank reference
-    inline const bank& get_bank() const noexcept { return *m_bank; }
+    inline bank& get_bank() noexcept { return *m_bank; }
 
     /// Display bank contents in a formatted table
     void show() const { show(false, -1); }

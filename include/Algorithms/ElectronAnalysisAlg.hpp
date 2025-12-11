@@ -1,24 +1,24 @@
 #pragma once
 
-#include "Framework/IAlgorithm.hpp"
-#include "Framework/Event.hpp"
+#include <algorithm>
+#include <cmath>
+#include <memory>
+#include "CLAS/ElectronCuts.hpp"
+#include "CLAS/ReadBank.hpp"
+#include "CLAS/Target.hpp"
 #include "Framework/Cutflow.hpp"
-#include "Framework/SystematicVariation.hpp"
-#include "Framework/Services/HistogramService.hpp"
+#include "Framework/Event.hpp"
+#include "Framework/IAlgorithm.hpp"
 #include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Services/SamplingFractionService.hpp"
-#include "CLAS/ElectronCuts.hpp"
-#include "CLAS/ReadBank.hpp"
-#include "CLAS/Target.hpp"
+#include "Framework/SystematicVariation.hpp"
 #include "Physics/Kinematics.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
-#include <algorithm>
-#include <cmath>
-#include <memory>
 
 namespace Algorithms {
 
@@ -37,16 +37,12 @@ using Framework::Log;
  * - Clean separation of concerns
  */
 class ElectronAnalysisAlg : public Framework::Algorithm {
-public:
+   public:
     explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis",
-                                CLAS::Target target = CLAS::Target::LD2,
-                                CLAS::Polarity polarity = CLAS::Polarity::Outbending,
-                                bool enable_systematics = false)
-        : Algorithm(std::move(name))
-        , m_target(target)
-        , m_polarity(polarity)
-        , m_enable_systematics(enable_systematics)
-        , m_cutflow("Electron Selection") {}
+                                 CLAS::Target target = CLAS::Target::LD2,
+                                 CLAS::Polarity polarity = CLAS::Polarity::Outbending,
+                                 bool enable_systematics = false)
+        : Algorithm(std::move(name)), m_target(target), m_polarity(polarity), m_enable_systematics(enable_systematics), m_cutflow("Electron Selection") {}
 
     auto initialize() -> Framework::StatusCode override {
         // Get services
@@ -60,9 +56,9 @@ public:
         if (Log::is_available()) {
             Log::info(name(), "Initializing algorithm");
             Log::info(name(), "Target: {}, Polarity: {}, Systematics: {}",
-                     m_target == CLAS::Target::LD2 ? "LD2" : "Other",
-                     m_polarity == CLAS::Polarity::Outbending ? "Outbending" : "Inbending",
-                     m_enable_systematics ? "enabled" : "disabled");
+                      m_target == CLAS::Target::LD2 ? "LD2" : "Other",
+                      m_polarity == CLAS::Polarity::Outbending ? "Outbending" : "Inbending",
+                      m_enable_systematics ? "enabled" : "disabled");
         }
 
         if (!m_hist_svc) {
@@ -118,41 +114,41 @@ public:
         Framework::ParticleMap particles = m_particle_svc->extract_particles(
             REC_Particle,
             {CLAS::PIDs::ELECTRON, CLAS::PIDs::PIMINUS, CLAS::PIDs::PIPLUS,
-             CLAS::PIDs::KMINUS, CLAS::PIDs::KPLUS, CLAS::PIDs::PHOTON}
-        );
+             CLAS::PIDs::KMINUS, CLAS::PIDs::KPLUS, CLAS::PIDs::PHOTON});
 
         // Get start time for delta-t calculations
         const double event_start_time = REC_Event.get_bank().get<float>("startTime", 0);
 
         // Process all track categories (like original Reader)
-        auto neg_tracks = m_particle_svc->get_particles_by_charge(particles, -1);
-        auto pos_tracks = m_particle_svc->get_particles_by_charge(particles, +1);
-        const auto& pims = m_particle_svc->get_piminus(particles);
-        const auto& pips = m_particle_svc->get_piplus(particles);
+        auto charged_tracks = m_particle_svc->get_particles_by_charge(particles);
+        auto neg_tracks = charged_tracks[-1];
+        auto pos_tracks = charged_tracks[+1];
+        const auto& pims = m_particle_svc->get_pions_minus(particles);
+        const auto& pips = m_particle_svc->get_pions_plus(particles);
 
         // Process tracks and fill histograms
         process_tracks(neg_tracks, h_neg_tracks, REC_Calorimeter.get_bank(),
-                      REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
-                      REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
+                       REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
+                       REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
         process_tracks(pos_tracks, h_pos_tracks, REC_Calorimeter.get_bank(),
-                      REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
-                      REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
+                       REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
+                       REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
         process_tracks(pims, h_pim_tracks, REC_Calorimeter.get_bank(),
-                      REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
-                      REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
+                       REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
+                       REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
         process_tracks(pips, h_pip_tracks, REC_Calorimeter.get_bank(),
-                      REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
-                      REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
+                       REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
+                       REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
 
         // Get negative tracks excluding electrons
         std::vector<CLAS::Particle> neg_tracks_wo_electrons;
         std::copy_if(neg_tracks.begin(), neg_tracks.end(),
-                    std::back_inserter(neg_tracks_wo_electrons),
-                    [](const CLAS::Particle& p) { return p.pdg() != CLAS::PIDs::ELECTRON; });
+                     std::back_inserter(neg_tracks_wo_electrons),
+                     [](const CLAS::Particle& p) { return p.pdg() != CLAS::PIDs::ELECTRON; });
         process_tracks(neg_tracks_wo_electrons, h_neg_tracks_wo_electrons,
-                      REC_Calorimeter.get_bank(), REC_Cherenkov.get_bank(),
-                      REC_Scintillator.get_bank(), REC_Traj.get_bank(),
-                      REC_Track.get_bank(), event_start_time);
+                       REC_Calorimeter.get_bank(), REC_Cherenkov.get_bank(),
+                       REC_Scintillator.get_bank(), REC_Traj.get_bank(),
+                       REC_Track.get_bank(), event_start_time);
 
         const auto& electrons = m_particle_svc->get_electrons(particles);
         if (electrons.empty()) return Framework::StatusCode::SUCCESS();
@@ -264,7 +260,7 @@ public:
         return Framework::StatusCode::SUCCESS();
     }
 
-private:
+   private:
     CLAS::Target m_target;
     CLAS::Polarity m_polarity;
     bool m_enable_systematics;
@@ -352,6 +348,7 @@ private:
         TH2D* sampling_fraction = nullptr;
         TH1D* dc_edge_r1 = nullptr;
     };
+
     std::map<std::string, CutStageHistograms> m_cut_stage_histograms;
 
     auto setup_cutflow() -> void {
@@ -444,10 +441,10 @@ private:
      * @param track Track bank data for the electron
      */
     auto fill_after_cut(const std::string& cut_name,
-                       const CLAS::Particle& electron,
-                       const CLAS::CalorimeterBank& calo,
-                       const CLAS::DCTrajBank& traj,
-                       const CLAS::TrackBank& track) -> void {
+                        const CLAS::Particle& electron,
+                        const CLAS::CalorimeterBank& calo,
+                        const CLAS::DCTrajBank& traj,
+                        const CLAS::TrackBank& track) -> void {
         // Get or create histograms for this cut stage
         auto& cut_hists = m_cut_stage_histograms[cut_name];
 
@@ -545,13 +542,13 @@ private:
      * information and fills the corresponding histograms.
      */
     auto process_tracks(const std::vector<CLAS::Particle>& tracks,
-                       TrackHistograms& histograms,
-                       hipo::bank& REC_Calorimeter,
-                       hipo::bank& REC_Cherenkov,
-                       hipo::bank& REC_Scintillator,
-                       hipo::bank& REC_Traj,
-                       hipo::bank& REC_Track,
-                       double event_start_time) -> void {
+                        TrackHistograms& histograms,
+                        hipo::bank& REC_Calorimeter,
+                        hipo::bank& REC_Cherenkov,
+                        hipo::bank& REC_Scintillator,
+                        hipo::bank& REC_Traj,
+                        hipo::bank& REC_Track,
+                        double event_start_time) -> void {
         for (const auto& track : tracks) {
             // Read detector banks for this track
             CLAS::CalorimeterBank calo = CLAS::read_Calorimeter_bank(REC_Calorimeter, track.index());
@@ -628,9 +625,9 @@ private:
     }
 
     auto fill_final_histograms(const CLAS::Particle& electron,
-                              const CLAS::CalorimeterBank& calo,
-                              const CLAS::DCTrajBank& traj,
-                              const CLAS::TrackBank& track) -> void {
+                               const CLAS::CalorimeterBank& calo,
+                               const CLAS::DCTrajBank& traj,
+                               const CLAS::TrackBank& track) -> void {
         // Fill electron kinematics
         h_electron.momentum->Fill(electron.p());
         h_electron.theta->Fill(electron.theta());
@@ -655,14 +652,22 @@ private:
         };
 
         if (1.0 <= p && p < 2.0) fill_dc_bin("1_2");
-        else if (2.0 <= p && p < 3.0) fill_dc_bin("2_3");
-        else if (3.0 <= p && p < 4.0) fill_dc_bin("3_4");
-        else if (4.0 <= p && p < 5.0) fill_dc_bin("4_5");
-        else if (5.0 <= p && p < 6.0) fill_dc_bin("5_6");
-        else if (6.0 <= p && p < 7.0) fill_dc_bin("6_7");
-        else if (7.0 <= p && p < 8.0) fill_dc_bin("7_8");
-        else if (8.0 <= p && p < 9.0) fill_dc_bin("8_9");
-        else if (9.0 <= p && p < 10.0) fill_dc_bin("9_10");
+        else if (2.0 <= p && p < 3.0)
+            fill_dc_bin("2_3");
+        else if (3.0 <= p && p < 4.0)
+            fill_dc_bin("3_4");
+        else if (4.0 <= p && p < 5.0)
+            fill_dc_bin("4_5");
+        else if (5.0 <= p && p < 6.0)
+            fill_dc_bin("5_6");
+        else if (6.0 <= p && p < 7.0)
+            fill_dc_bin("6_7");
+        else if (7.0 <= p && p < 8.0)
+            fill_dc_bin("7_8");
+        else if (8.0 <= p && p < 9.0)
+            fill_dc_bin("8_9");
+        else if (9.0 <= p && p < 10.0)
+            fill_dc_bin("9_10");
     }
 };
 
