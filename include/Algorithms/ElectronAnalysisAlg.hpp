@@ -16,6 +16,8 @@
 #include "Physics/Kinematics.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
+#include <algorithm>
+#include <cmath>
 #include <memory>
 
 namespace Algorithms {
@@ -110,13 +112,47 @@ public:
         hipo::bank_map REC_Traj = hipo_event.get_bank_map("REC::Traj");
         hipo::bank_map REC_Track = hipo_event.get_bank_map("REC::Track");
         hipo::bank_map REC_Calorimeter = hipo_event.get_bank_map("REC::Calorimeter");
+        hipo::bank_map REC_Cherenkov = hipo_event.get_bank_map("REC::Cherenkov");
 
-        // Extract electrons using ParticleSelectorService
+        // Extract particles using ParticleSelectorService
         Framework::ParticleMap particles = m_particle_svc->extract_particles(
             REC_Particle,
             {CLAS::PIDs::ELECTRON, CLAS::PIDs::PIMINUS, CLAS::PIDs::PIPLUS,
              CLAS::PIDs::KMINUS, CLAS::PIDs::KPLUS, CLAS::PIDs::PHOTON}
         );
+
+        // Get start time for delta-t calculations
+        const double event_start_time = REC_Event.get_bank().get<float>("startTime", 0);
+
+        // Process all track categories (like original Reader)
+        auto neg_tracks = m_particle_svc->get_particles_by_charge(particles, -1);
+        auto pos_tracks = m_particle_svc->get_particles_by_charge(particles, +1);
+        const auto& pims = m_particle_svc->get_piminus(particles);
+        const auto& pips = m_particle_svc->get_piplus(particles);
+
+        // Process tracks and fill histograms
+        process_tracks(neg_tracks, h_neg_tracks, REC_Calorimeter.get_bank(),
+                      REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
+                      REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
+        process_tracks(pos_tracks, h_pos_tracks, REC_Calorimeter.get_bank(),
+                      REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
+                      REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
+        process_tracks(pims, h_pim_tracks, REC_Calorimeter.get_bank(),
+                      REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
+                      REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
+        process_tracks(pips, h_pip_tracks, REC_Calorimeter.get_bank(),
+                      REC_Cherenkov.get_bank(), REC_Scintillator.get_bank(),
+                      REC_Traj.get_bank(), REC_Track.get_bank(), event_start_time);
+
+        // Get negative tracks excluding electrons
+        std::vector<CLAS::Particle> neg_tracks_wo_electrons;
+        std::copy_if(neg_tracks.begin(), neg_tracks.end(),
+                    std::back_inserter(neg_tracks_wo_electrons),
+                    [](const CLAS::Particle& p) { return p.pdg() != CLAS::PIDs::ELECTRON; });
+        process_tracks(neg_tracks_wo_electrons, h_neg_tracks_wo_electrons,
+                      REC_Calorimeter.get_bank(), REC_Cherenkov.get_bank(),
+                      REC_Scintillator.get_bank(), REC_Traj.get_bank(),
+                      REC_Track.get_bank(), event_start_time);
 
         const auto& electrons = m_particle_svc->get_electrons(particles);
         if (electrons.empty()) return Framework::StatusCode::SUCCESS();
@@ -278,6 +314,46 @@ private:
         std::map<std::string, TH2D*> chi2ndf_vs_edge_r3;
     } h_dc;
 
+    // Track histograms structure (for neg/pos tracks, pions, etc.)
+    struct TrackHistograms {
+        bool booked = false;
+        // Calorimeter
+        TH1D* nphe = nullptr;
+        TH2D* EPCal_vs_ECal = nullptr;
+        TH1D* EPCal = nullptr;
+        TH2D* EPCal_vs_ECal_cut = nullptr;
+        TH1D* EPCal_cut = nullptr;
+        TH2D* Etot_vs_SF = nullptr;
+        TH2D* Etot_vs_SF_cut = nullptr;
+        // Timing
+        TH2D* delta_t_vs_p = nullptr;
+        // DC fiducial
+        TH2D* edge_vs_theta_r1 = nullptr;
+        TH2D* edge_vs_theta_r2 = nullptr;
+        TH2D* edge_vs_theta_r3 = nullptr;
+        TH2D* edge_vs_chi2ndf_r1 = nullptr;
+        TH2D* edge_vs_chi2ndf_r2 = nullptr;
+        TH2D* edge_vs_chi2ndf_r3 = nullptr;
+    };
+
+    TrackHistograms h_neg_tracks;
+    TrackHistograms h_pos_tracks;
+    TrackHistograms h_pim_tracks;
+    TrackHistograms h_pip_tracks;
+    TrackHistograms h_neg_tracks_wo_electrons;
+
+    // Histograms for each cut stage (dynamically created)
+    struct CutStageHistograms {
+        bool booked = false;
+        TH1D* momentum = nullptr;
+        TH1D* theta = nullptr;
+        TH1D* phi = nullptr;
+        TH1D* vz = nullptr;
+        TH2D* sampling_fraction = nullptr;
+        TH1D* dc_edge_r1 = nullptr;
+    };
+    std::map<std::string, CutStageHistograms> m_cut_stage_histograms;
+
     auto setup_cutflow() -> void {
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Trigger Electron");
@@ -323,6 +399,13 @@ private:
                 fmt::format("Region 1: p={} GeV;edge;#chi^{{2}}/ndf", bin),
                 100, 0, 400, 100, 0, 10);
         }
+
+        // Book track histograms for all track categories
+        book_track_histograms(h_neg_tracks, "NegativeTracks");
+        book_track_histograms(h_pos_tracks, "PositiveTracks");
+        book_track_histograms(h_pim_tracks, "PiMinus");
+        book_track_histograms(h_pip_tracks, "PiPlus");
+        book_track_histograms(h_neg_tracks_wo_electrons, "NegativeTracksNoElectrons");
     }
 
     auto setup_systematics() -> void {
@@ -347,13 +430,201 @@ private:
         }
     }
 
-    auto fill_after_cut([[maybe_unused]] const std::string& cut_name,
-                       [[maybe_unused]] const CLAS::Particle& electron,
-                       [[maybe_unused]] const CLAS::CalorimeterBank& calo,
-                       [[maybe_unused]] const CLAS::DCTrajBank& traj,
-                       [[maybe_unused]] const CLAS::TrackBank& track) -> void {
-        // Could fill histograms specific to this cut stage
-        // For now, just placeholder
+    /**
+     * @brief Fills histograms after each cut stage to monitor cut effects
+     *
+     * This function fills a set of histograms for each cut stage, allowing
+     * visualization of how each cut affects the electron distributions.
+     * Histograms are organized by cut name in the directory structure.
+     *
+     * @param cut_name Name of the cut that was just passed
+     * @param electron The electron particle passing the cut
+     * @param calo Calorimeter bank data for the electron
+     * @param traj DC trajectory bank data for the electron
+     * @param track Track bank data for the electron
+     */
+    auto fill_after_cut(const std::string& cut_name,
+                       const CLAS::Particle& electron,
+                       const CLAS::CalorimeterBank& calo,
+                       const CLAS::DCTrajBank& traj,
+                       const CLAS::TrackBank& track) -> void {
+        // Get or create histograms for this cut stage
+        auto& cut_hists = m_cut_stage_histograms[cut_name];
+
+        // Book histograms on first use
+        if (!cut_hists.booked) {
+            std::string base = fmt::format("/Electron/CutStages/{}", cut_name);
+
+            cut_hists.momentum = m_hist_svc->book_hist1D(
+                base + "/p", fmt::format("Electron p after {};p [GeV/c];Events", cut_name),
+                120, 0, 12);
+            cut_hists.theta = m_hist_svc->book_hist1D(
+                base + "/theta", fmt::format("Electron #theta after {};#theta [deg];Events", cut_name),
+                180, 0, 180);
+            cut_hists.phi = m_hist_svc->book_hist1D(
+                base + "/phi", fmt::format("Electron #phi after {};#phi [deg];Events", cut_name),
+                180, -180, 180);
+            cut_hists.vz = m_hist_svc->book_hist1D(
+                base + "/vz", fmt::format("Electron v_{{z}} after {};v_{{z}} [cm];Events", cut_name),
+                200, -20, 20);
+            cut_hists.sampling_fraction = m_hist_svc->book_hist2D(
+                base + "/sf_vs_p", fmt::format("SF vs p after {};p [GeV/c];E/p", cut_name),
+                120, 0, 12, 100, 0, 0.5);
+            cut_hists.dc_edge_r1 = m_hist_svc->book_hist1D(
+                base + "/dc_edge_r1", fmt::format("DC Edge R1 after {};edge [cm];Events", cut_name),
+                100, 0, 50);
+
+            cut_hists.booked = true;
+        }
+
+        // Fill histograms
+        cut_hists.momentum->Fill(electron.p());
+        cut_hists.theta->Fill(electron.theta());
+        cut_hists.phi->Fill(electron.phi());
+        cut_hists.vz->Fill(electron.vz());
+
+        const double E_tot = calo.pcal.energy + calo.inner.energy + calo.outer.energy;
+        const double SF = E_tot / electron.p();
+        cut_hists.sampling_fraction->Fill(electron.p(), SF);
+        cut_hists.dc_edge_r1->Fill(traj.region1.edge);
+    }
+
+    /**
+     * @brief Books histograms for a track category
+     */
+    auto book_track_histograms(TrackHistograms& h, const std::string& category) -> void {
+        std::string base = fmt::format("/Tracks/{}", category);
+
+        h.nphe = m_hist_svc->book_hist1D(
+            base + "/nphe", "Cherenkov nphe;nphe;Tracks", 100, 0, 50);
+        h.EPCal_vs_ECal = m_hist_svc->book_hist2D(
+            base + "/EPCal_vs_ECal", "E_{PCal} vs E_{Cal};E_{PCal} [GeV];E_{Cal} [GeV]",
+            100, 0, 1, 100, 0, 1);
+        h.EPCal = m_hist_svc->book_hist1D(
+            base + "/EPCal", "E_{PCal};E_{PCal} [GeV];Tracks", 100, 0, 1);
+        h.EPCal_vs_ECal_cut = m_hist_svc->book_hist2D(
+            base + "/EPCal_vs_ECal_cut", "E_{PCal} vs E_{Cal} (cut);E_{PCal} [GeV];E_{Cal} [GeV]",
+            100, 0, 1, 100, 0, 1);
+        h.EPCal_cut = m_hist_svc->book_hist1D(
+            base + "/EPCal_cut", "E_{PCal} (cut);E_{PCal} [GeV];Tracks", 100, 0, 1);
+        h.Etot_vs_SF = m_hist_svc->book_hist2D(
+            base + "/Etot_vs_SF", "E_{tot} vs SF;E_{tot} [GeV];E/p",
+            100, 0, 2, 100, 0, 0.5);
+        h.Etot_vs_SF_cut = m_hist_svc->book_hist2D(
+            base + "/Etot_vs_SF_cut", "E_{tot} vs SF (cut);E_{tot} [GeV];E/p",
+            100, 0, 2, 100, 0, 0.5);
+        h.delta_t_vs_p = m_hist_svc->book_hist2D(
+            base + "/delta_t_vs_p", "#Delta t vs p;p [GeV/c];#Delta t [ns]",
+            100, 0, 10, 200, -10, 10);
+        h.edge_vs_theta_r1 = m_hist_svc->book_hist2D(
+            base + "/edge_vs_theta_r1", "Edge vs #theta (R1);edge [cm];#theta [deg]",
+            100, 0, 50, 100, 0, 40);
+        h.edge_vs_theta_r2 = m_hist_svc->book_hist2D(
+            base + "/edge_vs_theta_r2", "Edge vs #theta (R2);edge [cm];#theta [deg]",
+            100, 0, 50, 100, 0, 40);
+        h.edge_vs_theta_r3 = m_hist_svc->book_hist2D(
+            base + "/edge_vs_theta_r3", "Edge vs #theta (R3);edge [cm];#theta [deg]",
+            100, 0, 50, 100, 0, 40);
+        h.edge_vs_chi2ndf_r1 = m_hist_svc->book_hist2D(
+            base + "/edge_vs_chi2ndf_r1", "Edge vs #chi^{2}/ndf (R1);edge [cm];#chi^{2}/ndf",
+            100, 0, 50, 100, 0, 10);
+        h.edge_vs_chi2ndf_r2 = m_hist_svc->book_hist2D(
+            base + "/edge_vs_chi2ndf_r2", "Edge vs #chi^{2}/ndf (R2);edge [cm];#chi^{2}/ndf",
+            100, 0, 50, 100, 0, 10);
+        h.edge_vs_chi2ndf_r3 = m_hist_svc->book_hist2D(
+            base + "/edge_vs_chi2ndf_r3", "Edge vs #chi^{2}/ndf (R3);edge [cm];#chi^{2}/ndf",
+            100, 0, 50, 100, 0, 10);
+
+        h.booked = true;
+    }
+
+    /**
+     * @brief Process tracks and fill histograms (mirrors original Reader::process_tracks)
+     *
+     * For each track, reads calorimeter, Cherenkov, scintillator, and DC trajectory
+     * information and fills the corresponding histograms.
+     */
+    auto process_tracks(const std::vector<CLAS::Particle>& tracks,
+                       TrackHistograms& histograms,
+                       hipo::bank& REC_Calorimeter,
+                       hipo::bank& REC_Cherenkov,
+                       hipo::bank& REC_Scintillator,
+                       hipo::bank& REC_Traj,
+                       hipo::bank& REC_Track,
+                       double event_start_time) -> void {
+        for (const auto& track : tracks) {
+            // Read detector banks for this track
+            CLAS::CalorimeterBank calo = CLAS::read_Calorimeter_bank(REC_Calorimeter, track.index());
+            CLAS::CherenkovBank cherenkov = CLAS::read_Cherenkov_bank(REC_Cherenkov, track.index());
+            CLAS::ScintillatorBank scint = CLAS::read_Scintillator_bank(REC_Scintillator, track.index());
+            CLAS::DCTrajBank traj = CLAS::read_Traj_bank(REC_Traj, track.index());
+            CLAS::TrackBank trk_r1 = CLAS::read_Track_bank(REC_Track, traj.region1.index);
+            CLAS::TrackBank trk_r2 = CLAS::read_Track_bank(REC_Track, traj.region2.index);
+            CLAS::TrackBank trk_r3 = CLAS::read_Track_bank(REC_Track, traj.region3.index);
+
+            const int sector = calo.pcal.sector;
+            if (sector < 1 || sector > 6) continue;
+
+            // Calorimeter quantities
+            const double E_tot = calo.pcal.energy + calo.inner.energy + calo.outer.energy;
+            const double SF = E_tot / track.p();
+            const double E_cal = calo.inner.energy + calo.outer.energy;
+            const double E_pcal = calo.pcal.energy;
+            const int nphe = cherenkov.nphe;
+
+            // Fill calorimeter histograms
+            histograms.nphe->Fill(nphe);
+            histograms.EPCal_vs_ECal->Fill(E_pcal, E_cal);
+            histograms.EPCal->Fill(E_pcal);
+            histograms.Etot_vs_SF->Fill(E_tot, SF);
+
+            // Apply EB-like cuts for cut histograms
+            constexpr double EB_MIN_CHERENKOV_NPHE = 2.0;
+            constexpr double EB_MIN_PCAL_ENERGY = 0.06;
+            const bool passes_nphe = nphe > EB_MIN_CHERENKOV_NPHE;
+            const bool passes_pcal = E_pcal > EB_MIN_PCAL_ENERGY;
+
+            if (passes_nphe) {
+                histograms.EPCal_vs_ECal_cut->Fill(E_pcal, E_cal);
+                histograms.EPCal_cut->Fill(E_pcal);
+            }
+            if (passes_pcal && passes_nphe) {
+                histograms.Etot_vs_SF_cut->Fill(E_tot, SF);
+            }
+
+            // Timing: delta-t calculation (assuming pion mass for generic tracks)
+            constexpr double PION_MASS = 0.13957;
+            const double beta_expected = track.p() / std::sqrt(track.p() * track.p() + PION_MASS * PION_MASS);
+            const double tof_expected = scint.path / (beta_expected * 29.9792458);  // c in cm/ns
+            const double delta_t = scint.time - event_start_time - tof_expected;
+            histograms.delta_t_vs_p->Fill(track.p(), delta_t);
+
+            // DC fiducial: edge vs theta for each region
+            auto compute_local_theta = [](double x, double y, double z, int sec) {
+                constexpr double SECTOR_ANGLE = M_PI / 3.0;
+                double angle = (sec - 1) * SECTOR_ANGLE;
+                double s = std::sin(angle);
+                double c = std::cos(angle);
+                return std::atan2(std::hypot(c * x - s * y, s * x + c * y), z) * 180.0 / M_PI;
+            };
+
+            const double theta_r1 = compute_local_theta(traj.region1.x, traj.region1.y, traj.region1.z, trk_r1.sector);
+            const double theta_r2 = compute_local_theta(traj.region2.x, traj.region2.y, traj.region2.z, trk_r2.sector);
+            const double theta_r3 = compute_local_theta(traj.region3.x, traj.region3.y, traj.region3.z, trk_r3.sector);
+
+            histograms.edge_vs_theta_r1->Fill(traj.region1.edge, theta_r1);
+            histograms.edge_vs_theta_r2->Fill(traj.region2.edge, theta_r2);
+            histograms.edge_vs_theta_r3->Fill(traj.region3.edge, theta_r3);
+
+            // Edge vs chi2/ndf
+            const double chi2ndf_r1 = trk_r1.ndf > 0 ? trk_r1.chi2 / trk_r1.ndf : 0;
+            const double chi2ndf_r2 = trk_r2.ndf > 0 ? trk_r2.chi2 / trk_r2.ndf : 0;
+            const double chi2ndf_r3 = trk_r3.ndf > 0 ? trk_r3.chi2 / trk_r3.ndf : 0;
+
+            histograms.edge_vs_chi2ndf_r1->Fill(traj.region1.edge, chi2ndf_r1);
+            histograms.edge_vs_chi2ndf_r2->Fill(traj.region2.edge, chi2ndf_r2);
+            histograms.edge_vs_chi2ndf_r3->Fill(traj.region3.edge, chi2ndf_r3);
+        }
     }
 
     auto fill_final_histograms(const CLAS::Particle& electron,
