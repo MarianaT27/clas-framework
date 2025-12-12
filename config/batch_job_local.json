@@ -1,28 +1,19 @@
 {
-  "job_name": "test_analysis",
-  "executable": "./build/main_improved",
+  "job_name": "local_test",
+  "executable": "./builddir/improved",
   "system": "local",
 
-  "input_files": [
-    "./data/test_*.hipo"
-  ],
-
+  "data_dir": "./data",
   "output_dir": "./test_output",
   "log_dir": "./test_logs",
 
-  "files_per_job": 2,
-  "n_cores": 1,
-  "memory_gb": 2,
+  "files_per_job": 1,
+  "n_cores": 4,
+  "memory_gb": 8,
   "time_limit": "01:00:00",
-
-  "root_setup": "source /usr/local/root/bin/thisroot.sh",
-
-  "extra_args": [
-    "--max-events", "1000"
-  ],
 
   "comments": [
     "Local testing configuration",
-    "Use this to test your analysis before submitting to cluster"
+    "Run: ./batch --config=config/batch_job_local.json"
   ]
 }

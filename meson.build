@@ -10,180 +10,94 @@ project(
   ],
 )
 
+#══════════════════════════════════════════════════════════════════════════════#
+#                              SUBPROJECTS                                      #
+#══════════════════════════════════════════════════════════════════════════════#
 
-#── Subprojects ───────────────────────────────────────────────────────────────#
-fmt = subproject('fmt')
-fmt_dep = fmt.get_variable('fmt_dep')
-
-toml = subproject('tomlplusplus')
-toml_dep = toml.get_variable('tomlplusplus_dep')
-
-lz4 = subproject('lz4')
-lz4_dep = lz4.get_variable('liblz4_dep')
-
-
+fmt_dep    = subproject('fmt').get_variable('fmt_dep')
+toml_dep   = subproject('tomlplusplus').get_variable('tomlplusplus_dep')
+lz4_dep    = subproject('lz4').get_variable('liblz4_dep')
 cxxopts_dep = dependency('cxxopts')
 
 subdir('hipo4')
 
-#── ROOT via root-config ─────────────────────────────────────────────────────#
-root_incdir   = run_command('root-config', '--incdir', check: true).stdout().strip()
-root_libs     = run_command('root-config', '--libs',   check: true).stdout().strip().split()
+#══════════════════════════════════════════════════════════════════════════════#
+#                              ROOT DEPENDENCY                                  #
+#══════════════════════════════════════════════════════════════════════════════#
 
 root_dep = declare_dependency(
-  include_directories: include_directories(root_incdir),
-  link_args:           root_libs,
+  include_directories: include_directories(
+    run_command('root-config', '--incdir', check: true).stdout().strip()
+  ),
+  link_args: run_command('root-config', '--libs', check: true).stdout().strip().split(),
 )
 
-#── Project sources & include dirs ────────────────────────────────────────────#
+#══════════════════════════════════════════════════════════════════════════════#
+#                              COMMON SOURCES                                   #
+#══════════════════════════════════════════════════════════════════════════════#
 
 inc = include_directories('include')
 
-# Original study1 executable (legacy) - COMMENTED OUT - source files deleted
-# sources = files(
-#   'src/CLAS/Particle.cpp',
-#   'src/Framework/Histogram.cpp',
-#   'src/main.cpp',
-#   'src/study1/Drawing.cpp',
-#   'src/study1/Reader.cpp',
-# )
-#
-# executable(
-#   'starter',
-#   sources,
-#   include_directories: [inc],
-#   dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
-# )
-
-# New framework example executable
-framework_example_sources = files(
+# Shared framework sources used by most executables
+framework_core = files(
   'src/CLAS/Particle.cpp',
   'src/Framework/Histogram.cpp',
-  'src/example_framework.cpp',
 )
 
+# Common dependencies for all executables
+common_deps = [hipo_dep, fmt_dep, root_dep]
+full_deps   = common_deps + [toml_dep, cxxopts_dep]
+
+#══════════════════════════════════════════════════════════════════════════════#
+#                              EXECUTABLES                                      #
+#══════════════════════════════════════════════════════════════════════════════#
+
+# Helper to build standard executables with framework core
+executables = {
+  'framework_example':      {'main': 'src/example_framework.cpp'},
+  'improved':               {'main': 'src/improved.cpp'},
+  'advanced':               {'main': 'src/advanced.cpp'},
+  'example_auto_histograms': {'main': 'src/example_auto_histograms.cpp'},
+  'lambda':                 {'main': 'src/lambda.cpp'},
+  'decays_lambda':          {'main': 'src/decays_lambda.cpp'},
+  'electron_analysis':      {'main': 'src/electron_analysis.cpp'},
+}
+
+foreach name, config : executables
+  executable(
+    name,
+    framework_core + files(config['main']),
+    include_directories: inc,
+    dependencies: full_deps,
+  )
+endforeach
+
+# Pi0 - requires additional algorithm sources
 executable(
-  'framework_example',
-  framework_example_sources,
-  include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
+  'pi0',
+  framework_core + files(
+    'src/Framework/Services/PhotonCutsService.cpp',
+    'src/Algorithms/Pi0ReconstructionAlg.cpp',
+    'src/pi0.cpp',
+  ),
+  include_directories: inc,
+  dependencies: full_deps,
 )
 
-# Improved main with Phase 3 features
-main_improved_sources = files(
-  'src/CLAS/Particle.cpp',
-  'src/Framework/Histogram.cpp',
-  'src/main_improved.cpp',
-)
-
+# Generic batch job submitter - works with any analysis executable
 executable(
-  'main_improved',
-  main_improved_sources,
-  include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
+  'batch',
+  files('src/batch.cpp'),
+  include_directories: inc,
+  dependencies: common_deps + [cxxopts_dep],
 )
 
-# Advanced main with algorithm types demo
-main_advanced_sources = files(
-  'src/CLAS/Particle.cpp',
-  'src/Framework/Histogram.cpp',
-  'src/main_advanced.cpp',
-)
+#══════════════════════════════════════════════════════════════════════════════#
+#                              OPTIONAL COMPONENTS                              #
+#══════════════════════════════════════════════════════════════════════════════#
 
-executable(
-  'main_advanced',
-  main_advanced_sources,
-  include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
-)
-
-# Automatic histogram writing demo
-auto_histograms_sources = files(
-  'src/CLAS/Particle.cpp',
-  'src/Framework/Histogram.cpp',
-  'src/example_auto_histograms.cpp',
-)
-
-executable(
-  'example_auto_histograms',
-  auto_histograms_sources,
-  include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
-)
-
-# Pi0 reconstruction analysis executable
-main_pi0_sources = files(
-  'src/CLAS/Particle.cpp',
-  'src/Framework/Histogram.cpp',
-  'src/Framework/Services/PhotonCutsService.cpp',
-  'src/Algorithms/Pi0ReconstructionAlg.cpp',
-  'src/main_pi0.cpp',
-)
-
-executable(
-  'main_pi0',
-  main_pi0_sources,
-  include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
-)
-
-# Pi0 batch job submission executable
-main_pi0_batch_sources = files(
-  'src/main_pi0_batch.cpp',
-)
-
-executable(
-  'main_pi0_batch',
-  main_pi0_batch_sources,
-  include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, root_dep, cxxopts_dep],
-)
-
-# Lambda reconstruction analysis executable
-main_lambda_sources = files(
-  'src/CLAS/Particle.cpp',
-  'src/Framework/Histogram.cpp',
-  'src/main_lambda.cpp',
-)
-
-executable(
-  'main_lambda',
-  main_lambda_sources,
-  include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
-)
-
-# DECAYS Lambda analysis executable (using DECAYS::Particle bank)
-main_decays_lambda_sources = files(
-  'src/CLAS/Particle.cpp',
-  'src/Framework/Histogram.cpp',
-  'src/main_decays_lambda.cpp',
-)
-
-executable(
-  'main_decays_lambda',
-  main_decays_lambda_sources,
-  include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
-)
-
-main_electron_analysis_sources = files(
-  'src/CLAS/Particle.cpp',
-  'src/Framework/Histogram.cpp',
-  'src/main_electron_analysis.cpp',
-)
-
-executable(
-  'main_electron_analysis',
-  main_electron_analysis_sources,
-  include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
-)
-
-#── Test suite ────────────────────────────────────────────────────────────────#
-# Tests require Google Test and RapidCheck for property-based testing
+# Test suite (requires Google Test)
 # subdir('test')
 
-#── Python bindings (optional) ────────────────────────────────────────────────#
-# Uncomment to build Python bindings (requires Python 3 and pybind11)
+# Python bindings (requires pybind11)
 # subdir('python')
