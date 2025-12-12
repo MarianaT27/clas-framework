@@ -125,7 +125,6 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
     }
 
     auto execute(Framework::Event& event) -> Framework::StatusCode override {
-        ++m_counters.total_events;
         m_cutflow.pass("All Events");
 
         // Get all needed banks using structured bindings (new hipo interface)
@@ -151,13 +150,11 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         const auto& electrons = m_particle_svc->get_electrons(particles);
         if (electrons.empty()) return Framework::StatusCode::SUCCESS();
-        ++m_counters.events_with_electrons;
 
         // Select trigger electron using configurable momentum range
         std::optional<CLAS::Particle> trigger_e = Physics::ParticleUtils::find_trigger_electron(
             electrons, {m_config.trigger_p_min, m_config.trigger_p_max});
         if (!trigger_e.has_value()) return Framework::StatusCode::SUCCESS();
-        ++m_counters.events_with_trigger;
         m_cutflow.pass("Trigger Electron");
 
         // Get detector info for electron using BankView
@@ -220,7 +217,6 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         fill_after_cut("DCChi2", electron, calorimeter, traj, track);
 
         // All cuts passed - fill final histograms
-        ++m_counters.events_passing_all;
         fill_final_histograms(electron, calorimeter, traj, track);
 
         // Fill N-tuple if service is available
@@ -256,9 +252,6 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         fmt::print("\n");
         m_cutflow.print();
-
-        // Print detailed statistics
-        print_statistics();
 
         return Framework::StatusCode::SUCCESS();
     }
@@ -382,14 +375,6 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
     Framework::Cutflow m_cutflow;
     Framework::SystematicManager m_sys_mgr;
 
-    // Event counters for detailed statistics
-    struct EventCounters {
-        size_t total_events = 0;
-        size_t events_with_electrons = 0;
-        size_t events_with_trigger = 0;
-        size_t events_passing_all = 0;
-    } m_counters;
-
     // Services
     Framework::LoggingService* m_log_svc = nullptr;
     Framework::HistogramService* m_hist_svc = nullptr;
@@ -447,6 +432,8 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         std::map<int, TH2D*> Etot_vs_SF_cut;
         std::map<int, TH2D*> lv_vs_SF;
         std::map<int, TH2D*> lw_vs_SF;
+        std::map<int, TH2D*> lu_vs_SF_low;
+        std::map<int, TH2D*> lu_vs_SF_high;
         // DC fiducial (per sector)
         std::map<int, TH2D*> edge_vs_theta_r1;
         std::map<int, TH2D*> edge_vs_theta_r2;
@@ -728,6 +715,15 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
                 base + "/lw_vs_SF" + sec_suffix,
                 fmt::format("lw vs SF (Sector {});lw;E/p", sector),
                 100, 0, 70, 200, 0, 0.5);
+            h.lu_vs_SF_low[sector] = m_hist_svc->book_hist2D(
+                base + "/lu_vs_SF_low" + sec_suffix,
+                fmt::format("lu vs SF (low, Sector {});lu;E/p", sector),
+                100, 0, 70, 200, 0, 0.5);
+            h.lu_vs_SF_high[sector] = m_hist_svc->book_hist2D(
+                base + "/lu_vs_SF_high" + sec_suffix,
+                fmt::format("lu vs SF (high, Sector {});lu;E/p", sector),
+                100, 350, 450, 200, 0, 0.5);
+            
         }
 
         h.booked = true;
@@ -761,6 +757,8 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             const double E_cal = calo.inner.energy + calo.outer.energy;
             const double E_pcal = calo.pcal.energy;
             const int nphe = cherenkov.nphe;
+
+            if (E_cal == 0 || E_pcal == 0) continue;
 
             // Fill calorimeter histograms for this sector
             histograms.nphe[sector]->Fill(nphe);
@@ -811,6 +809,10 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             // SF vs lv,w
             histograms.lv_vs_SF[sector]->Fill(calo.pcal.lv, SF);
             histograms.lw_vs_SF[sector]->Fill(calo.pcal.lw, SF);
+
+            // Low end and high end of lu
+            histograms.lu_vs_SF_low[sector]->Fill(calo.pcal.lu, SF);
+            histograms.lu_vs_SF_high[sector]->Fill(calo.pcal.lu, SF);
         }
     }
 
