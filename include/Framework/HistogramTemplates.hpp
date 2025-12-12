@@ -207,26 +207,25 @@ struct TimeOfFlightHistograms {
 
 /**
  * @brief DIS (Deep Inelastic Scattering) kinematics
+ * 
+ * 1D histograms for Q2, W, nu xB and y.
+ * 2D histograms for Q2 vs W, Q2 vs xB and xB vs y. 
  */
 struct DISKinematics {
-    static auto create(HistogramService* service, const std::string& base_path)
-        -> std::unique_ptr<HistogramGroup> {
+    static auto create(HistogramService* service, const std::string& base_path) -> std::unique_ptr<HistogramGroup> {
         auto group = std::make_unique<HistogramGroup>(service, base_path);
 
         // DIS variables
         group->add_hist1D("Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 10);
         group->add_hist1D("W", "W;W [GeV];Events", 100, 0, 5);
         group->add_hist1D("nu", "#nu;#nu [GeV];Events", 100, 0, 10);
-        group->add_hist1D("x", "Bjorken x;x;Events", 100, 0, 1);
+        group->add_hist1D("xB", "Bjorken x;x;Events", 100, 0, 1);
         group->add_hist1D("y", "Inelasticity;y;Events", 100, 0, 1);
 
         // 2D correlations
-        group->add_hist2D("W_vs_Q2", "W vs Q^{2};Q^{2} [GeV^{2}];W [GeV]",
-                         100, 0, 10, 100, 0, 5);
-        group->add_hist2D("x_vs_Q2", "x vs Q^{2};Q^{2} [GeV^{2}];x",
-                         100, 0, 10, 100, 0, 1);
-        group->add_hist2D("y_vs_x", "y vs x;x;y",
-                         100, 0, 1, 100, 0, 1);
+        group->add_hist2D("W_vs_Q2", "W vs Q^{2};Q^{2} [GeV^{2}];W [GeV]", 100, 0, 10, 100, 0, 5);
+        group->add_hist2D("xB_vs_Q2", "xB vs Q^{2};Q^{2} [GeV^{2}];xB", 100, 0, 10, 100, 0, 1);
+        group->add_hist2D("y_vs_xB", "y vs xB;xB;y", 100, 0, 1, 100, 0, 1);
 
         return group;
     }

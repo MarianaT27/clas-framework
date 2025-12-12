@@ -22,14 +22,6 @@ namespace Algorithms {
 
 /**
  * @brief Algorithm for π⁰ reconstruction from photon pairs
- *
- * This algorithm reconstructs π⁰ candidates by:
- * 1. Selecting photons above a minimum energy threshold
- * 2. Forming all possible photon pair combinations
- * 3. Calculating invariant mass for each pair
- * 4. Selecting the best candidate within a mass window around the π⁰ mass
- *
- * Requirements: 1.1, 1.2, 1.3, 2.1, 2.2, 2.3, 2.4
  */
 class Pi0ReconstructionAlg : public Framework::Algorithm {
    public:

@@ -1,242 +1,171 @@
 #pragma once
 
 #include <atomic>
+#include <cstddef>
+#include <fmt/format.h>
 #include <functional>
 #include <map>
 #include <string>
 #include <vector>
-#include <fmt/format.h>
+
 #include "Framework/Services/LoggingService.hpp"
 
 namespace Framework {
 
-// Forward declaration
-class LoggingService;
-
 /**
  * @brief Cutflow manager for tracking event selection efficiency
- *
- * This class implements a cutflow system similar to those used in ATLAS/CMS
- * analyses. It tracks the number of events passing each cut in a sequential
- * selection chain and provides methods to print cutflow tables and calculate
- * efficiencies.
- *
- * Example usage:
- * @code
- * Cutflow cutflow("Electron Selection");
- * cutflow.add_cut("All Events");
- * cutflow.add_cut("Trigger Electron");
- * cutflow.add_cut("Chi2 PID");
- * cutflow.add_cut("Momentum > 0.8 GeV");
- * cutflow.add_cut("Sampling Fraction");
- * cutflow.add_cut("PCAL Fiducial");
- *
- * // In event loop:
- * cutflow.pass("All Events");
- * if (!has_trigger_electron) return;
- * cutflow.pass("Trigger Electron");
- * if (!pass_chi2pid) return;
- * cutflow.pass("Chi2 PID");
- * // ... etc
- *
- * // At end:
- * cutflow.print();
- * @endcode
  */
 class Cutflow {
-public:
-    /**
-     * @brief Construct a new Cutflow object
-     * @param name Name of this cutflow (e.g., "Electron Selection")
-     */
+   public:
     explicit Cutflow(std::string name) : m_name(std::move(name)) {}
 
-    /**
-     * @brief Get the number of cuts in the cutflow
-     * @return size_t Number of cuts
-     */
-    auto num_cuts() const -> size_t { return m_cut_names.size(); }
-
-    /**
-     * @brief Add a cut to the cutflow
-     * @param cut_name Name of the cut
-     */
+    /// Add a cut to the cutflow
     auto add_cut(const std::string& cut_name) -> void {
-        m_cut_names.push_back(cut_name);
+        m_cuts.push_back(cut_name);
         m_counters[cut_name] = 0;
-        m_cut_order.push_back(cut_name);
     }
 
-    /**
-     * @brief Increment the counter for a given cut
-     * @param cut_name Name of the cut that was passed
-     */
+    /// Number of cuts
+    [[nodiscard]] auto size() const -> std::size_t { return m_cuts.size(); }
+    [[nodiscard]] auto num_cuts() const -> std::size_t { return size(); }
+
+    /// Get all cut names in order
+    [[nodiscard]] auto cuts() const -> const std::vector<std::string>& { return m_cuts; }
+    [[nodiscard]] auto get_cut_names() const -> const std::vector<std::string>& { return m_cuts; }
+
+    /// Increment counter for a cut (thread-safe)
     auto pass(const std::string& cut_name) -> void {
-        m_counters[cut_name]++;
+        if (auto it = m_counters.find(cut_name); it != m_counters.end()) {
+            ++it->second;
+        }
     }
 
-    /**
-     * @brief Get the count for a specific cut
-     * @param cut_name Name of the cut
-     * @return size_t Number of events passing this cut
-     */
-    auto get_count(const std::string& cut_name) const -> size_t {
-        auto it = m_counters.find(cut_name);
-        if (it != m_counters.end()) {
+    /// Get count for a specific cut
+    [[nodiscard]] auto count(const std::string& cut_name) const -> std::size_t {
+        if (auto it = m_counters.find(cut_name); it != m_counters.end()) {
             return it->second.load();
         }
         return 0;
     }
-
-    /**
-     * @brief Get all cut names in order
-     * @return const std::vector<std::string>& Vector of cut names
-     */
-    auto get_cut_names() const -> const std::vector<std::string>& {
-        return m_cut_order;
+    [[nodiscard]] auto get_count(const std::string& cut_name) const -> std::size_t {
+        return count(cut_name);
     }
 
-    /**
-     * @brief Set logging service for structured output
-     */
-    auto set_logger(LoggingService* log) -> void {
-        m_log = log;
+    /// Get initial/final counts and efficiency
+    [[nodiscard]] auto initial_count() const -> std::size_t {
+        return m_cuts.empty() ? 0 : count(m_cuts.front());
+    }
+    [[nodiscard]] auto final_count() const -> std::size_t {
+        return m_cuts.empty() ? 0 : count(m_cuts.back());
+    }
+    [[nodiscard]] auto efficiency() const -> double {
+        auto init = initial_count();
+        return init > 0 ? static_cast<double>(final_count()) / static_cast<double>(init) : 0.0;
     }
 
-    /**
-     * @brief Print the cutflow table to stdout or logger
-     */
+    /// Get cutflow name
+    [[nodiscard]] auto name() const -> const std::string& { return m_name; }
+
+    /// Set logger for structured output (optional)
+    auto set_logger(LoggingService* log) -> void { m_log = log; }
+
+    /// Print cutflow table (uses Log singleton if available, otherwise fmt::print)
     auto print() const -> void {
-        if (m_log) {
-            print_with_logger();
+        if (m_cuts.empty()) return;
+
+        const std::size_t init = count(m_cuts.front());
+        std::size_t prev = init;
+
+        // Header
+        if (Log::is_available() || m_log) {
+            log_info("────────────────────────────────────────────────────────────");
+            log_info("Cutflow: {}", m_name);
+            log_info("────────────────────────────────────────────────────────────");
         } else {
-            print_legacy();
+            fmt::print("\n");
+            fmt::print("════════════════════════════════════════════════════════════\n");
+            fmt::print("  Cutflow: {}\n", m_name);
+            fmt::print("════════════════════════════════════════════════════════════\n");
+            fmt::print("{:<35} {:>10} {:>8} {:>8}\n", "Cut", "Events", "Abs Eff", "Rel Eff");
+            fmt::print("────────────────────────────────────────────────────────────\n");
         }
-    }
 
-private:
-    /**
-     * @brief Print cutflow using logger (one line per cut)
-     */
-    auto print_with_logger() const -> void {
-        if (m_cut_order.empty()) return;
+        // Cuts
+        for (std::size_t i = 0; i < m_cuts.size(); ++i) {
+            const auto& cut = m_cuts[i];
+            const std::size_t cnt = count(cut);
+            const double abs_eff = init > 0 ? 100.0 * cnt / init : 0.0;
+            const double rel_eff = prev > 0 ? 100.0 * cnt / prev : 0.0;
 
-        // Calculate column widths for alignment
-        size_t initial_count = get_count(m_cut_order[0]);
-        size_t previous_count = initial_count;
-
-        // Print each cut as a single INFO line
-        for (size_t i = 0; i < m_cut_order.size(); ++i) {
-            const auto& cut_name = m_cut_order[i];
-            size_t count = get_count(cut_name);
-
-            if (i == 0) {
-                m_log->info(m_name, "{:<40} │ {:>10} events │ Abs: {:>6} │ Rel: {:>6}",
-                           cut_name, count, "100.0%", "100.0%");
-                previous_count = count;
+            if (Log::is_available() || m_log) {
+                if (i == 0) {
+                    log_info("{:<35} {:>10}   Abs: 100.0%   Rel: 100.0%", cut, cnt);
+                } else {
+                    log_info("{:<35} {:>10}   Abs: {:>5.1f}%   Rel: {:>5.1f}%", cut, cnt, abs_eff, rel_eff);
+                }
             } else {
-                double abs_eff = initial_count > 0 ? 100.0 * count / initial_count : 0.0;
-                double rel_eff = previous_count > 0 ? 100.0 * count / previous_count : 0.0;
-                m_log->info(m_name, "{:<40} │ {:>10} events │ Abs: {:>5.2f}% │ Rel: {:>5.2f}%",
-                           cut_name, count, abs_eff, rel_eff);
-                previous_count = count;
+                if (i == 0) {
+                    fmt::print("{:<35} {:>10} {:>8} {:>8}\n", cut, cnt, "100.0%", "100.0%");
+                } else {
+                    fmt::print("{:<35} {:>10} {:>7.1f}% {:>7.1f}%\n", cut, cnt, abs_eff, rel_eff);
+                }
             }
+            prev = cnt;
+        }
+
+        // Footer
+        if (Log::is_available() || m_log) {
+            log_info("────────────────────────────────────────────────────────────");
+            log_info("Overall efficiency: {:.2f}%", efficiency() * 100.0);
+        } else {
+            fmt::print("════════════════════════════════════════════════════════════\n");
+            fmt::print("  Overall efficiency: {:.2f}%\n\n", efficiency() * 100.0);
         }
     }
 
-    /**
-     * @brief Legacy print method (fallback when no logger)
-     */
-    auto print_legacy() const -> void {
-        fmt::print("\n");
-        fmt::print("═══════════════════════════════════════════════════════════════\n");
-        fmt::print("  Cutflow: {}\n", m_name);
-        fmt::print("═══════════════════════════════════════════════════════════════\n");
-        fmt::print("{:<35} {:>10} {:>8} {:>8}\n", "Cut", "Events", "Abs Eff", "Rel Eff");
-        fmt::print("───────────────────────────────────────────────────────────────\n");
-
-        size_t initial_count = 0;
-        size_t previous_count = 0;
-
-        for (size_t i = 0; i < m_cut_order.size(); ++i) {
-            const auto& cut_name = m_cut_order[i];
-            size_t count = get_count(cut_name);
-
-            if (i == 0) {
-                initial_count = count;
-                previous_count = count;
-                fmt::print("{:<35} {:>10} {:>8} {:>8}\n",
-                          cut_name, count, "100.0%", "100.0%");
-            } else {
-                double abs_eff = initial_count > 0 ? 100.0 * count / initial_count : 0.0;
-                double rel_eff = previous_count > 0 ? 100.0 * count / previous_count : 0.0;
-                fmt::print("{:<35} {:>10} {:>7.2f}% {:>7.2f}%\n",
-                          cut_name, count, abs_eff, rel_eff);
-                previous_count = count;
-            }
-        }
-
-        fmt::print("═══════════════════════════════════════════════════════════════\n");
-        fmt::print("\n");
-    }
-
-public:
-
-    /**
-     * @brief Get the cutflow name
-     * @return const std::string& Name of this cutflow
-     */
-    auto name() const -> const std::string& {
-        return m_name;
-    }
-
-private:
+   private:
     std::string m_name;
-    std::vector<std::string> m_cut_names;
-    std::vector<std::string> m_cut_order;  // Preserves order of cuts
-    std::map<std::string, std::atomic<size_t>> m_counters;
+    std::vector<std::string> m_cuts;
+    std::map<std::string, std::atomic<std::size_t>> m_counters;
     LoggingService* m_log = nullptr;
+
+    template <typename... Args>
+    auto log_info(fmt::format_string<Args...> fmt, Args&&... args) const -> void {
+        if (m_log) {
+            m_log->info(m_name, fmt, std::forward<Args>(args)...);
+        } else if (Log::is_available()) {
+            Log::info(m_name, fmt, std::forward<Args>(args)...);
+        }
+    }
 };
+
 
 /**
  * @brief Extended cutflow with histogram filling capabilities
- *
- * This class extends the basic Cutflow to automatically fill histograms
- * after each cut, enabling N-1 plots and per-cut distributions.
- *
- * @tparam HistogramFiller Function type for filling histograms
  */
-template<typename Particle>
+template <typename Particle>
 class CutflowWithHistograms : public Cutflow {
-public:
+   public:
     using HistogramFiller = std::function<void(const Particle&, const std::string&)>;
 
     explicit CutflowWithHistograms(std::string name, HistogramFiller filler = nullptr)
-        : Cutflow(std::move(name)), m_histogram_filler(std::move(filler)) {}
+        : Cutflow(std::move(name)), m_filler(std::move(filler)) {}
 
-    /**
-     * @brief Pass a cut and optionally fill histograms
-     * @param cut_name Name of the cut
-     * @param particle Particle object to fill histograms with
-     * @param fill_histograms Whether to fill histograms for this event
-     */
-    auto pass(const std::string& cut_name, const Particle& particle, bool fill_histograms = true) -> void {
+    /// Pass a cut and optionally fill histograms
+    auto pass(const std::string& cut_name, const Particle& particle, bool fill = true) -> void {
         Cutflow::pass(cut_name);
-        if (fill_histograms && m_histogram_filler) {
-            m_histogram_filler(particle, cut_name);
+        if (fill && m_filler) {
+            m_filler(particle, cut_name);
         }
     }
 
-    /**
-     * @brief Set the histogram filler function
-     * @param filler Function to call for filling histograms
-     */
+    /// Set the histogram filler function
     auto set_histogram_filler(HistogramFiller filler) -> void {
-        m_histogram_filler = std::move(filler);
+        m_filler = std::move(filler);
     }
 
-private:
-    HistogramFiller m_histogram_filler;
+   private:
+    HistogramFiller m_filler;
 };
 
 }  // namespace Framework
