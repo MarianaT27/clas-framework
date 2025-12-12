@@ -256,32 +256,6 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         return Framework::StatusCode::SUCCESS();
     }
 
-    /// Print detailed event statistics
-    auto print_statistics() const -> void {
-        fmt::print("\nElectron Analysis Statistics:\n");
-        fmt::print("  Total events processed:     {}\n", m_counters.total_events);
-        fmt::print("  Events with electrons:      {} ({:.2f}%)\n",
-                   m_counters.events_with_electrons,
-                   percentage(m_counters.events_with_electrons, m_counters.total_events));
-        fmt::print("  Events with trigger e-:     {} ({:.2f}%)\n",
-                   m_counters.events_with_trigger,
-                   percentage(m_counters.events_with_trigger, m_counters.total_events));
-        fmt::print("  Events passing all cuts:    {} ({:.2f}%)\n",
-                   m_counters.events_passing_all,
-                   percentage(m_counters.events_passing_all, m_counters.total_events));
-
-        // Efficiency relative to trigger electrons
-        if (m_counters.events_with_trigger > 0) {
-            fmt::print("  Cut efficiency (vs trigger): {:.2f}%\n",
-                       percentage(m_counters.events_passing_all, m_counters.events_with_trigger));
-        }
-    }
-
-    /// Helper to compute percentage safely
-    [[nodiscard]] static auto percentage(size_t num, size_t denom) -> double {
-        return denom > 0 ? 100.0 * static_cast<double>(num) / static_cast<double>(denom) : 0.0;
-    }
-
     /// Structure to hold electron candidate with all associated detector info
     struct ElectronCandidate {
         CLAS::Particle particle;
@@ -718,7 +692,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             h.lu_vs_SF_low[sector] = m_hist_svc->book_hist2D(
                 base + "/lu_vs_SF_low" + sec_suffix,
                 fmt::format("lu vs SF (low, Sector {});lu;E/p", sector),
-                100, 0, 70, 200, 0, 0.5);
+                100, 0, 170, 200, 0, 0.5);
             h.lu_vs_SF_high[sector] = m_hist_svc->book_hist2D(
                 base + "/lu_vs_SF_high" + sec_suffix,
                 fmt::format("lu vs SF (high, Sector {});lu;E/p", sector),
