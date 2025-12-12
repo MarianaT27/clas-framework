@@ -114,9 +114,9 @@ private:
      */
     void process_particle_statistics(Framework::Event& event) {
         auto& hipo_event = event.hipo_event();
-        hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
+        auto& REC_Particle = hipo_event["REC::Particle"];
 
-        const int n_particles = REC_Particle.get_rows();
+        const int n_particles = REC_Particle.rows();
         m_total_particles += n_particles;
 
         if (h_particles_per_event) {

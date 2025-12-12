@@ -93,11 +93,7 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
 
         auto& hipo_event = event.hipo_event();
-        hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
-        hipo::bank_map REC_Scintillator = hipo_event.get_bank_map("REC::Scintillator");
-        hipo::bank_map REC_Traj = hipo_event.get_bank_map("REC::Traj");
-        hipo::bank_map REC_Track = hipo_event.get_bank_map("REC::Track");
-        hipo::bank_map REC_Calorimeter = hipo_event.get_bank_map("REC::Calorimeter");
+        auto [REC_Calorimeter, REC_Traj] = hipo_event.banks("REC::Calorimeter", "REC::Traj");
 
         if (electrons.empty()) {
             event.set_decision("HasGoodElectron", false);
@@ -133,9 +129,9 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         }
         m_cutflow.pass("Vertex Z");
 
-        // Get detector info for electron
-        CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(REC_Calorimeter.get_bank(), electron.index());
-        CLAS::DCTrajBank traj = CLAS::read_Traj_bank(REC_Traj.get_bank(), electron.index());
+        // Get detector info for electron using BankView
+        CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(*REC_Calorimeter, electron.index());
+        CLAS::DCTrajBank traj = CLAS::read_Traj_bank(*REC_Traj, electron.index());
 
         // Calculate derived quantities
         const double E_tot = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;

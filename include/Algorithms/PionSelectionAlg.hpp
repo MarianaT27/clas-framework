@@ -84,29 +84,28 @@ public:
             return Framework::StatusCode::FAILURE();
         }
 
-        // Get REC::Event for start time
+        // Get banks using structured bindings
         auto& hipo_event = event.hipo_event();
-        hipo::bank_map REC_Event = hipo_event.get_bank_map("REC::Event");
-        if (REC_Event.get_rows() == 0) return Framework::StatusCode::SUCCESS();
+        auto [REC_Event, REC_Particle, REC_Scintillator] =
+            hipo_event.banks("REC::Event", "REC::Particle", "REC::Scintillator");
 
-        double start_time = REC_Event.get_as<double>("startTime", 0);
+        if (REC_Event->rows() == 0) return Framework::StatusCode::SUCCESS();
 
-        hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
-        hipo::bank_map REC_Scintillator = hipo_event.get_bank_map("REC::Scintillator");
+        double start_time = REC_Event->get<double>("startTime", 0);
 
         // Extract pions using ParticleSelectorService
         Framework::ParticleMap particles = m_particle_svc->extract_particles(
-            REC_Particle,
+            *REC_Particle,
             {CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS}
         );
 
         // Process π⁺
         const auto& pions_plus = m_particle_svc->get_pions_plus(particles);
-        process_pions(pions_plus, REC_Scintillator.get_bank(), start_time, true);
+        process_pions(pions_plus, *REC_Scintillator, start_time, true);
 
         // Process π⁻
         const auto& pions_minus = m_particle_svc->get_pions_minus(particles);
-        process_pions(pions_minus, REC_Scintillator.get_bank(), start_time, false);
+        process_pions(pions_minus, *REC_Scintillator, start_time, false);
 
         return Framework::StatusCode::SUCCESS();
     }
@@ -294,7 +293,7 @@ private:
      * @brief Process pions (either π⁺ or π⁻)
      */
     auto process_pions(const std::vector<CLAS::Particle>& pions,
-                      const hipo::bank& REC_Scintillator,
+                      hipo::BankView& REC_Scintillator,
                       double start_time,
                       bool is_piplus) -> void {
         auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
@@ -324,9 +323,9 @@ private:
             if (!pass_beta_cut(beta, p)) continue;
             cutflow.pass("Beta");
 
-            // Get scintillator info for delta_t
+            // Get scintillator info for delta_t using BankView
             CLAS::ScintillatorBank scintillator = CLAS::read_Scintillator_bank(
-                REC_Scintillator, pion.index());
+                REC_Scintillator.data(), pion.index());
 
             // Calculate delta_t
             double delta_t = calculate_delta_t(pion, scintillator, start_time);

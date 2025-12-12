@@ -67,7 +67,7 @@ protected:
         m_cutflow.pass("All Events");
 
         auto& hipo_event = event.hipo_event();
-        hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
+        auto& REC_Particle = hipo_event["REC::Particle"];
 
         // Extract electrons using ParticleSelectorService
         Framework::ParticleMap particles = m_particle_svc->extract_particles(

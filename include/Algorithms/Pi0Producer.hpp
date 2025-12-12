@@ -65,7 +65,7 @@ protected:
         m_events_processed++;
 
         auto& hipo_event = event.hipo_event();
-        hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
+        auto& REC_Particle = hipo_event["REC::Particle"];
 
         // Extract photons using ParticleSelectorService
         Framework::ParticleMap particles = m_particle_svc->extract_particles(

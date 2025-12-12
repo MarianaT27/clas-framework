@@ -19,7 +19,6 @@
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Services/SamplingFractionService.hpp"
 #include "Framework/SystematicVariation.hpp"
-#include "Framework/BankAccessor.hpp"
 #include "Physics/Kinematics.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
@@ -129,24 +128,26 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         ++m_counters.total_events;
         m_cutflow.pass("All Events");
 
-        // Use RECBanks helper for cleaner bank access
-        Framework::RECBanks banks(event.hipo_event());
+        // Get all needed banks using structured bindings (new hipo interface)
+        auto& hipo_event = event.hipo_event();
+        auto [REC_Event, REC_Particle, REC_Calorimeter, REC_Cherenkov, REC_Scintillator, REC_Traj, REC_Track] =
+            hipo_event.banks("REC::Event", "REC::Particle", "REC::Calorimeter",
+                             "REC::Cherenkov", "REC::Scintillator", "REC::Traj", "REC::Track");
 
         // Early exit if no event data
-        if (!banks.has_event()) return Framework::StatusCode::SUCCESS();
+        if (REC_Event->rows() == 0) return Framework::StatusCode::SUCCESS();
 
-        const double event_start_time = banks.start_time();
+        const double event_start_time = REC_Event->data().get<float>("startTime", 0);
 
         // Extract particles
-        Framework::ParticleMap particles = m_particle_svc->extract_particles(banks.particle(), {CLAS::PIDs::ELECTRON});
+        Framework::ParticleMap particles = m_particle_svc->extract_particles(*REC_Particle, {CLAS::PIDs::ELECTRON});
 
-        std::map<int, std::vector<CLAS::Particle>> charged_tracks = m_particle_svc->get_particles_by_charge(banks.particle());
+        std::map<int, std::vector<CLAS::Particle>> charged_tracks = m_particle_svc->get_particles_by_charge(*REC_Particle);
         std::vector<CLAS::Particle> neg_tracks = charged_tracks[-1];
 
         // Process tracks and fill histograms
-        process_tracks(neg_tracks, h_neg_tracks, banks.calorimeter_bank(),
-                       banks.cherenkov_bank(), banks.scintillator_bank(),
-                       banks.traj_bank(), banks.track_bank(), event_start_time);
+        process_tracks(neg_tracks, h_neg_tracks, *REC_Calorimeter, *REC_Cherenkov,
+                       *REC_Scintillator, *REC_Traj, *REC_Track, event_start_time);
 
         const auto& electrons = m_particle_svc->get_electrons(particles);
         if (electrons.empty()) return Framework::StatusCode::SUCCESS();
@@ -159,17 +160,16 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         ++m_counters.events_with_trigger;
         m_cutflow.pass("Trigger Electron");
 
-        // Get detector info for electron
-        CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(banks.calorimeter_bank(), trigger_e->index());
-        CLAS::DCTrajBank traj = CLAS::read_Traj_bank(banks.traj_bank(), trigger_e->index());
-        CLAS::TrackBank track = CLAS::read_Track_bank(banks.track_bank(), trigger_e->index());
+        // Get detector info for electron using BankView
+        CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(*REC_Calorimeter, trigger_e->index());
+        CLAS::DCTrajBank traj = CLAS::read_Traj_bank(*REC_Traj, trigger_e->index());
+        CLAS::TrackBank track = CLAS::read_Track_bank(*REC_Track, trigger_e->index());
 
         // Apply cuts sequentially and fill histograms after each cut
         auto electron = trigger_e.value();
 
-        process_tracks({electron}, h_electron_tracks, banks.calorimeter_bank(),
-                       banks.cherenkov_bank(), banks.scintillator_bank(),
-                       banks.traj_bank(), banks.track_bank(), event_start_time);
+        process_tracks({electron}, h_electron_tracks, *REC_Calorimeter, *REC_Cherenkov,
+                       *REC_Scintillator, *REC_Traj, *REC_Track, event_start_time);
 
         // Calculate derived quantities
         const double E_tot = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;
@@ -306,9 +306,9 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
     /// Build electron candidate with all detector information
     [[nodiscard]] auto build_candidate(const CLAS::Particle& electron,
-                                        hipo::bank& REC_Calorimeter,
-                                        hipo::bank& REC_Traj,
-                                        hipo::bank& REC_Track) const -> ElectronCandidate {
+                                        hipo::BankView& REC_Calorimeter,
+                                        hipo::BankView& REC_Traj,
+                                        hipo::BankView& REC_Track) const -> ElectronCandidate {
         ElectronCandidate candidate;
         candidate.particle = electron;
         candidate.calorimeter = CLAS::read_Calorimeter_bank(REC_Calorimeter, electron.index());
@@ -740,13 +740,13 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
      * information and fills the corresponding per-sector histograms.
      */
     auto process_tracks(const std::vector<CLAS::Particle>& tracks, TrackHistograms& histograms,
-                        hipo::bank& REC_Calorimeter, hipo::bank& REC_Cherenkov,
-                        hipo::bank& REC_Scintillator, hipo::bank& REC_Traj,
-                        hipo::bank& REC_Track, [[maybe_unused]] double event_start_time) -> void {
+                        hipo::BankView& REC_Calorimeter, hipo::BankView& REC_Cherenkov,
+                        hipo::BankView& REC_Scintillator, hipo::BankView& REC_Traj,
+                        hipo::BankView& REC_Track, [[maybe_unused]] double event_start_time) -> void {
         for (const auto& track : tracks) {
             CLAS::CalorimeterBank calo = CLAS::read_Calorimeter_bank(REC_Calorimeter, track.index());
             CLAS::CherenkovBank cherenkov = CLAS::read_Cherenkov_bank(REC_Cherenkov, track.index());
-            CLAS::ScintillatorBank scint = CLAS::read_Scintillator_bank(REC_Scintillator, track.index());
+            [[maybe_unused]] CLAS::ScintillatorBank scint = CLAS::read_Scintillator_bank(REC_Scintillator, track.index());
             CLAS::DCTrajBank traj = CLAS::read_Traj_bank(REC_Traj, track.index());
             CLAS::TrackBank trk_r1 = CLAS::read_Track_bank(REC_Track, traj.region1.index);
             CLAS::TrackBank trk_r2 = CLAS::read_Track_bank(REC_Track, traj.region2.index);

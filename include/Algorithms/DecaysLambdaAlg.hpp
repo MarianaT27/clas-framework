@@ -160,9 +160,9 @@ public:
 
         // Get DECAYS::Particle bank
         auto& hipo_event = event.hipo_event();
-        hipo::bank_map decays_bank = hipo_event.get_bank_map("DECAYS::Particle");
+        auto& decays_bank = hipo_event["DECAYS::Particle"];
         
-        const int nrows = decays_bank.get_rows();
+        const int nrows = decays_bank.rows();
         if (nrows == 0) {
             return Framework::StatusCode::SUCCESS();
         }
