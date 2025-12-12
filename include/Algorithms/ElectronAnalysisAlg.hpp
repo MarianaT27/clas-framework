@@ -404,6 +404,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         std::map<int, TH1D*> EPCal_cut;
         std::map<int, TH2D*> Etot_vs_SF;
         std::map<int, TH2D*> Etot_vs_SF_cut;
+        std::map<int, TH2D*> p_vs_SF;
         std::map<int, TH2D*> lv_vs_SF;
         std::map<int, TH2D*> lw_vs_SF;
         std::map<int, TH2D*> lu_vs_SF_low;
@@ -650,6 +651,11 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
                 base + "/Etot_vs_SF_cut" + sec_suffix,
                 fmt::format("E_{{tot}} vs SF (cut, Sector {});E_{{tot}} [GeV];E/p", sector),
                 200, 0, 2, 200, 0, 0.5);
+            
+            h.p_vs_SF[sector] = m_hist_svc->book_hist2D(
+                base + "/p_vs_SF" + sec_suffix,
+                fmt::format("p vs SF (Sector {});p [GeV];E/p", sector),
+                200, 0, 11, 200, 0, 0.4);
 
             h.edge_vs_theta_r1[sector] = m_hist_svc->book_hist2D(
                 base + "/edge_vs_theta_r1" + sec_suffix,
@@ -739,6 +745,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             histograms.EPCal_vs_ECal[sector]->Fill(E_pcal, E_cal);
             histograms.EPCal[sector]->Fill(E_pcal);
             histograms.Etot_vs_SF[sector]->Fill(E_tot, SF);
+            histograms.p_vs_SF[sector]->Fill(track.p(), SF);
 
             // Apply EB-like cuts for cut histograms
             constexpr double EB_MIN_CHERENKOV_NPHE = 2.0;
