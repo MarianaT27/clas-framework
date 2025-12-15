@@ -53,6 +53,10 @@ struct ElectronAnalysisConfig {
     double p_bin_min = 1.0;
     double p_bin_max = 10.0;
     double p_bin_width = 1.0;
+    // Theta binning for DC histograms
+    double theta_bin_min = 5.0;
+    double theta_bin_max = 40.0;
+    double theta_bin_width = 5.0;
 };
 
 class ElectronAnalysisAlg : public Framework::Algorithm {
@@ -489,8 +493,42 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             h_dc.chi2ndf_vs_edge_r1[bin] = m_hist_svc->book_hist2D(
                 fmt::format("/DC/chi2ndf_vs_edge_r1_{}", bin),
                 fmt::format("Region 1: p={} GeV;edge;#chi^{{2}}/ndf", bin),
-                100, 0, 400, 100, 0, 10);
+                200, 0, 50, 200, 0, 10);
         }
+        for (const auto& bin : p_bins) {
+            h_dc.chi2ndf_vs_edge_r2[bin] = m_hist_svc->book_hist2D(
+                fmt::format("/DC/chi2ndf_vs_edge_r2_{}", bin),
+                fmt::format("Region 2: p={} GeV;edge;#chi^{{2}}/ndf", bin),
+                200, 0, 50, 200, 0, 10);
+        }
+        for (const auto& bin : p_bins) {
+            h_dc.chi2ndf_vs_edge_r3[bin] = m_hist_svc->book_hist2D(
+                fmt::format("/DC/chi2ndf_vs_edge_r3_{}", bin),
+                fmt::format("Region 3: p={} GeV;edge;#chi^{{2}}/ndf", bin),
+                200, 0, 50, 200, 0, 10);
+        }
+
+        // DC Chi2/ndf vs edge for theta bins 
+        std::vector<std::string> theta_bins = {"5_10", "10_15", "15_20", "20_25", "25_30", "30_35", "35_40"};
+        for (const auto& bin : theta_bins) {
+            h_dc.chi2ndf_vs_edge_r1[bin] = m_hist_svc->book_hist2D(
+                fmt::format("/DC/chi2ndf_vs_edge_r1_theta_{}", bin),
+                fmt::format("Region 1: #theta={} deg;edge;#chi^{{2}}/ndf", bin),
+                200, 0, 50, 200, 0, 10);
+        }
+        for (const auto& bin : theta_bins) {
+            h_dc.chi2ndf_vs_edge_r2[bin] = m_hist_svc->book_hist2D(
+                fmt::format("/DC/chi2ndf_vs_edge_r2_theta_{}", bin),
+                fmt::format("Region 2: #theta={} deg;edge;#chi^{{2}}/ndf", bin),
+                200, 0, 50, 200, 0, 10);
+        }
+        for (const auto& bin : theta_bins) {
+            h_dc.chi2ndf_vs_edge_r3[bin] = m_hist_svc->book_hist2D(
+                fmt::format("/DC/chi2ndf_vs_edge_r3_theta_{}", bin),
+                fmt::format("Region 3: #theta={} deg;edge;#chi^{{2}}/ndf", bin),
+                200, 0, 50, 200, 0, 10);
+        }
+
 
         // Book track histograms for all track categories
         book_track_histograms(h_neg_tracks, "NegativeTracks");
@@ -821,9 +859,11 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         // Fill DC histograms by momentum bin
         fill_dc_momentum_binned(electron.p(), traj, track);
+        // Fill DC histograms by theta bin
+        fill_dc_theta_binned(electron.theta(), traj, track);
     }
 
-    /// Fill DC histograms in the appropriate momentum bin
+    /// Fill DC histograms in the appropriate momentum bin 
     auto fill_dc_momentum_binned(double p, const CLAS::DCTrajBank& traj, const CLAS::TrackBank& track) -> void {
         // Compute chi2/ndf safely
         const double chi2ndf = (track.ndf > 0) ? track.chi2 / track.ndf : 0.0;
@@ -842,7 +882,38 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         if (auto it = h_dc.chi2ndf_vs_edge_r1.find(bin_key); it != h_dc.chi2ndf_vs_edge_r1.end()) {
             it->second->Fill(traj.region1.edge, chi2ndf);
         }
+        if (auto it = h_dc.chi2ndf_vs_edge_r2.find(bin_key); it != h_dc.chi2ndf_vs_edge_r2.end()) {
+            it->second->Fill(traj.region2.edge, chi2ndf);
+        }
+        if (auto it = h_dc.chi2ndf_vs_edge_r3.find(bin_key); it != h_dc.chi2ndf_vs_edge_r3.end()) {
+            it->second->Fill(traj.region3.edge, chi2ndf);
+        }
     }
+
+    auto fill_dc_theta_binned(double theta, const CLAS::DCTrajBank& traj, const CLAS::TrackBank& track) -> void {
+        // Compute chi2/ndf safely
+        const double chi2ndf = (track.ndf > 0) ? track.chi2 / track.ndf : 0.0;
+
+        // Determine theta bin using configurable range
+        const int bin_idx = static_cast<int>((theta - m_config.theta_bin_min) / m_config.theta_bin_width);
+        const int theta_low = static_cast<int>(m_config.theta_bin_min) + bin_idx;
+        const int theta_high = theta_low + static_cast<int>(m_config.theta_bin_width);
+
+        // Check bounds
+        if (theta < m_config.theta_bin_min || theta >= m_config.theta_bin_max) return;
+
+        const std::string bin_key = fmt::format("{}_{}", theta_low, theta_high);
+
+        // Fill histogram if it exists for this bin
+        if (auto it = h_dc.chi2ndf_vs_edge_r1.find(bin_key); it != h_dc.chi2ndf_vs_edge_r1.end()) {
+            it->second->Fill(traj.region1.edge, chi2ndf);
+        }
+        if (auto it = h_dc.chi2ndf_vs_edge_r2.find(bin_key); it != h_dc.chi2ndf_vs_edge_r2.end()) {
+            it->second->Fill(traj.region2.edge, chi2ndf);
+        }
+        if (auto it = h_dc.chi2ndf_vs_edge_r3.find(bin_key); it != h_dc.chi2ndf_vs_edge_r3.end()) {
+            it->second->Fill(traj.region3.edge, chi2ndf);
+        }
 };
 
 }  // namespace Algorithms

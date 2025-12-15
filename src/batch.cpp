@@ -167,7 +167,7 @@ int main(int argc, char* argv[]) {
         // Required
         ("executable", "Path to analysis executable", cxxopts::value<std::string>())
 
-        // Data source (one of these)
+        // Data source (one of these or target and polarity)
         ("config", "JSON configuration file", cxxopts::value<std::string>()->default_value(""))
         ("data-dir", "Data directory with .hipo files", cxxopts::value<std::string>()->default_value(""))
         ("target", "Target type (LD2, CxC, CuSn)", cxxopts::value<std::string>()->default_value(""))
