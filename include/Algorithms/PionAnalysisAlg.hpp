@@ -78,14 +78,12 @@ public:
 
         auto& hipo_event = event.hipo_event();
         auto [REC_Event, REC_Particle, REC_Calorimeter, REC_Traj, REC_Track] =
-            hipo_event.banks("REC::Event", "REC::Particle", "REC::Calorimeter",
-                             "REC::Traj", "REC::Track");
+            hipo_event.banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Traj", "REC::Track");
 
         if (REC_Event->rows() == 0) return Framework::StatusCode::SUCCESS();
 
         // Extract pions
-        auto particles = m_particle_svc->extract_particles(
-            *REC_Particle, {CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS});
+        auto particles = m_particle_svc->extract_particles(*REC_Particle, {CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS});
 
         // Process π⁺
         for (const auto& pion : m_particle_svc->get_pions_plus(particles)) {
@@ -103,14 +101,12 @@ public:
     auto finalize() -> Framework::StatusCode override {
         Log::info(name(), "Finalizing pion analysis");
 
-        fmt::print("\n");
         m_cutflow_piplus.print();
-        fmt::print("\n");
         m_cutflow_piminus.print();
 
-        fmt::print("\nPion Analysis Summary:\n");
-        fmt::print("  π⁺ with calorimeter info: {}\n", m_cutflow_piplus.get_count("Has Calorimeter"));
-        fmt::print("  π⁻ with calorimeter info: {}\n", m_cutflow_piminus.get_count("Has Calorimeter"));
+        Log::info(name(), "Pion Analysis Summary:");
+        Log::info(name(), "     - π⁺ with calorimeter info: {}", m_cutflow_piplus.get_count("Has Calorimeter"));
+        Log::info(name(), "     - π⁻ with calorimeter info: {}", m_cutflow_piminus.get_count("Has Calorimeter"));
 
         return Framework::StatusCode::SUCCESS();
     }
@@ -127,8 +123,8 @@ private:
     // Histogram set for each pion charge
     struct PionHistograms {
         // Calorimeter: lv, lw vs SF
-        TH2D* lv_vs_sf = nullptr;
-        TH2D* lw_vs_sf = nullptr;
+        TH2D* sf_vs_lv = nullptr;
+        TH2D* sf_vs_lw = nullptr;
         TH1D* sf = nullptr;
         TH1D* lv = nullptr;
         TH1D* lw = nullptr;
@@ -153,6 +149,7 @@ private:
     void setup_cutflows() {
         auto setup = [](Framework::Cutflow& cf) {
             cf.add_cut("All Pions");
+            cf.add_cut("In the forward detector");
             cf.add_cut("Momentum > 0.3 GeV");
             cf.add_cut("Has Calorimeter");
             cf.add_cut("Has DC Track");
@@ -162,8 +159,8 @@ private:
     }
 
     void book_histograms() {
-        book_pion_histograms("/PionAnalysis/PiPlus", h_piplus, "π⁺");
-        book_pion_histograms("/PionAnalysis/PiMinus", h_piminus, "π⁻");
+        book_pion_histograms("/PionAnalysis/PiPlus", h_piplus, "#pi^{+}");
+        book_pion_histograms("/PionAnalysis/PiMinus", h_piminus, "#pi^{-}");
     }
 
     void book_pion_histograms(const std::string& dir, PionHistograms& h, const std::string& label) {
@@ -178,15 +175,14 @@ private:
             dir + "/lw", fmt::format("{} PCAL lw;lw [cm];Events", label),
             100, 0, 500);
 
-        h.lv_vs_sf = m_hist_svc->book_hist2D(
-            dir + "/lv_vs_sf",
-            fmt::format("{} lv vs SF;SF;lv [cm]", label),
-            100, 0, 0.4, 100, 0, 500);
-        h.lw_vs_sf = m_hist_svc->book_hist2D(
-            dir + "/lw_vs_sf",
-            fmt::format("{} lw vs SF;SF;lw [cm]", label),
-            100, 0, 0.4, 100, 0, 500);
-
+        h.sf_vs_lv = m_hist_svc->book_hist2D(
+            dir + "/sf_vs_lv",
+            fmt::format("{} Sf vs lv;lv [cm];SF", label),
+            200, 0, 70, 200, 0, 0.4);
+        h.sf_vs_lw = m_hist_svc->book_hist2D(
+            dir + "/sf_vs_lw",
+            fmt::format("{} Sf vs lw;lw [cm];SF", label),
+            200, 0, 70, 200, 0, 0.4);
         // DC chi2/ndf vs edge histograms
         h.chi2ndf = m_hist_svc->book_hist1D(
             dir + "/chi2ndf", fmt::format("{} DC #chi^{{2}}/NDF;#chi^{{2}}/NDF;Events", label),
@@ -204,23 +200,22 @@ private:
         h.chi2ndf_vs_edge_r1 = m_hist_svc->book_hist2D(
             dir + "/chi2ndf_vs_edge_r1",
             fmt::format("{} #chi^{{2}}/NDF vs Edge R1;Edge R1 [cm];#chi^{{2}}/NDF", label),
-            100, -10, 50, 100, 0, 20);
+            200, 0, 50, 200, 0, 100);
         h.chi2ndf_vs_edge_r2 = m_hist_svc->book_hist2D(
             dir + "/chi2ndf_vs_edge_r2",
             fmt::format("{} #chi^{{2}}/NDF vs Edge R2;Edge R2 [cm];#chi^{{2}}/NDF", label),
-            100, -10, 50, 100, 0, 20);
+            200, 0, 50, 200, 0, 100);
         h.chi2ndf_vs_edge_r3 = m_hist_svc->book_hist2D(
             dir + "/chi2ndf_vs_edge_r3",
             fmt::format("{} #chi^{{2}}/NDF vs Edge R3;Edge R3 [cm];#chi^{{2}}/NDF", label),
-            100, -10, 50, 100, 0, 20);
-
+            200, 0, 50, 200, 0, 100);
         // Basic kinematics
         h.momentum = m_hist_svc->book_hist1D(
             dir + "/momentum", fmt::format("{} Momentum;p [GeV/c];Events", label),
             100, 0, 10);
         h.theta = m_hist_svc->book_hist1D(
             dir + "/theta", fmt::format("{} #theta;#theta [deg];Events", label),
-            180, 0, 180);
+            180, 0, 40);
     }
 
     void process_pion(const CLAS::Particle& pion,
@@ -232,6 +227,12 @@ private:
         auto& h = is_piplus ? h_piplus : h_piminus;
 
         cutflow.pass("All Pions");
+
+        // Pion in the forward detector (2000<=|status| < 4000)
+        int status = pion.status();
+        if (std::abs(status) < 2000 || std::abs(status) >= 4000) return;
+        cutflow.pass("In the forward detector");
+
 
         // Basic momentum cut
         double p = pion.p();
@@ -271,8 +272,8 @@ private:
         h.sf->Fill(SF);
         h.lv->Fill(lv);
         h.lw->Fill(lw);
-        h.lv_vs_sf->Fill(SF, lv);
-        h.lw_vs_sf->Fill(SF, lw);
+        h.sf_vs_lv->Fill(lv, SF);
+        h.sf_vs_lw->Fill(lw, SF);
 
         // DC histograms
         h.chi2ndf->Fill(chi2ndf);
