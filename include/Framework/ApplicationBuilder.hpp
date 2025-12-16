@@ -13,6 +13,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "Framework/Application.hpp"
@@ -125,8 +126,12 @@ public:
     /// Add an algorithm by type with constructor arguments
     template <typename AlgT, typename... Args>
     auto add_algorithm(Args&&... args) -> ApplicationBuilder& {
-        m_algorithm_factories.push_back([... args = std::forward<Args>(args)]() mutable {
-            return std::make_unique<AlgT>(std::forward<Args>(args)...);
+        // Use a tuple to capture the arguments, then apply them later
+        auto captured_args = std::make_tuple(std::forward<Args>(args)...);
+        m_algorithm_factories.push_back([captured_args = std::move(captured_args)]() mutable {
+            return std::apply([](auto&&... a) {
+                return std::make_unique<AlgT>(std::forward<decltype(a)>(a)...);
+            }, std::move(captured_args));
         });
         return *this;
     }
