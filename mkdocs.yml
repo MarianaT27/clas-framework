@@ -111,6 +111,7 @@ nav:
     - Your First Analysis: getting-started/first-analysis.md
   - User Guide:
     - Framework Guide: user-guide/framework.md
+    - ApplicationBuilder: user-guide/application-builder.md
     - Services: user-guide/services.md
     - Algorithms: user-guide/algorithms.md
     - Particle Selection: user-guide/particle-selection.md
@@ -126,9 +127,11 @@ nav:
     - Overview: api/index.md
     - Framework:
       - Application: api/framework/application.md
+      - ApplicationBuilder: api/framework/application-builder.md
       - Algorithm: api/framework/algorithm.md
       - Event: api/framework/event.md
       - Services: api/framework/services.md
+      - ServiceHandle: api/framework/service-handle.md
       - Cutflow: api/framework/cutflow.md
     - CLAS:
       - Particle: api/clas/particle.md

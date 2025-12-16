@@ -261,6 +261,187 @@ auto finalize() -> Framework::StatusCode override {
 
 ---
 
+## PhotonCutsService
+
+AI/ML-based photon selection using Gradient Boosted Tree (GBT) models.
+
+### Setup
+
+```cpp
+auto photon_svc = std::make_unique<Framework::PhotonCutsService>();
+photon_svc->set_pass(1);  // Reconstruction pass
+app.service_manager().add_service(std::move(photon_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    auto& hipo_event = event.hipo_event();
+    auto& RUN_config = hipo_event["RUN::config"];
+    auto& REC_Particle = hipo_event["REC::Particle"];
+    auto& REC_Calorimeter = hipo_event["REC::Calorimeter"];
+
+    // Select photons using AI classification
+    auto good_photons = m_photon_svc->select_photons_with_AI(
+        RUN_config, REC_Particle, REC_Calorimeter);
+
+    // Individual cuts are also available
+    bool pass_fiducial = Framework::PhotonCutsService::pass_pcal_fiducial_cut(v, w);
+    bool pass_fd = Framework::PhotonCutsService::pass_forward_detector_cut(theta_deg);
+    bool pass_energy = Framework::PhotonCutsService::pass_energy_cut(E);
+
+    return Framework::StatusCode::SUCCESS();
+}
+```
+
+### Features
+
+- Run-dependent model selection (RGA, RGC campaigns)
+- Configurable AI threshold (default: 0.78)
+- PCAL fiducial cuts
+- Forward detector angle cuts
+- Minimum energy cuts
+
+---
+
+## ParticleSelectorService
+
+Service-based particle extraction and filtering.
+
+### Setup
+
+```cpp
+auto particle_svc = std::make_unique<Framework::ParticleSelectorService>();
+particle_svc->set_default_types({
+    CLAS::PIDs::ELECTRON, CLAS::PIDs::PHOTON,
+    CLAS::PIDs::PROTON, CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS
+});
+app.service_manager().add_service(std::move(particle_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    auto& bank = event.get_bank("REC::Particle");
+
+    // Extract all particles
+    auto particles = m_particle_svc->extract_particles(bank);
+
+    // Get specific particle types
+    const auto& electrons = m_particle_svc->get_electrons(particles);
+    const auto& photons = m_particle_svc->get_photons(particles);
+
+    // Apply filters
+    auto good_electrons = m_particle_svc->with_momentum_range(electrons, 1.0, 10.0);
+    auto fd_electrons = m_particle_svc->get_forward_detector(good_electrons);
+
+    return Framework::StatusCode::SUCCESS();
+}
+```
+
+### Available Filters
+
+| Method | Description |
+|--------|-------------|
+| `with_momentum_range(particles, min, max)` | Filter by momentum |
+| `with_vz_range(particles, min, max)` | Filter by vertex z |
+| `with_theta_range(particles, min, max)` | Filter by theta angle |
+| `with_chi2pid_range(particles, min, max)` | Filter by chi2pid |
+| `with_charge(particles, charge)` | Filter by charge |
+| `get_forward_detector(particles)` | Get FD particles |
+| `get_central_detector(particles)` | Get CD particles |
+
+---
+
+## SamplingFractionService
+
+Target/polarity-dependent sampling fraction cuts for electron identification.
+
+### Setup
+
+```cpp
+auto sf_svc = std::make_unique<Framework::SamplingFractionService>();
+app.service_manager().add_service(std::move(sf_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    // Calculate sampling fraction
+    double SF = (pcal_e + ecin_e + ecout_e) / electron.p();
+
+    // Check if passes cut
+    bool passes = m_sf_svc->passes_cut(
+        SF, electron.p(), sector,
+        CLAS::Target::LD2, CLAS::Polarity::Outbending);
+
+    return Framework::StatusCode::SUCCESS();
+}
+```
+
+---
+
+## MetadataService
+
+Store analysis metadata for reproducibility.
+
+### Setup
+
+```cpp
+auto metadata_svc = std::make_unique<Framework::MetadataService>();
+metadata_svc->set_output_file("output.root");
+metadata_svc->set_version("2.0");
+metadata_svc->set_beam_energy(10.53);
+metadata_svc->set_target("LD2");
+app.service_manager().add_service(std::move(metadata_svc));
+```
+
+---
+
+## Additional Services
+
+| Service | Description |
+|---------|-------------|
+| `ProfilingService` | Performance profiling and timing |
+| `ConfigService` | Configuration file parsing |
+| `WorkflowVisualizationService` | Generate workflow diagrams |
+| `SelectionService` | Generic selection criteria |
+| `SummaryService` | Analysis summary generation |
+
+---
+
+## ServiceHandle Pattern
+
+Type-safe service access with validation at initialization:
+
+```cpp
+class MyAlgorithm : public Framework::Algorithm {
+private:
+    Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
+    Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
+
+    auto initialize() -> Framework::StatusCode override {
+        // Initialize handles - validates service availability
+        auto hist_sc = initialize_handle(m_hist_svc);
+        if (hist_sc.is_failure()) {
+            return hist_sc;  // Required service not available
+        }
+
+        // Use services via handle
+        if (m_hist_svc) {
+            h_momentum = m_hist_svc->book_hist1D("/Analysis/p", "Momentum", 100, 0, 10);
+        }
+
+        return Framework::StatusCode::SUCCESS();
+    }
+};
+```
+
+---
+
 ## Creating Custom Services
 
 Implement the `IService` interface:

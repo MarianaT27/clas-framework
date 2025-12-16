@@ -2,6 +2,52 @@
 
 Algorithms are the building blocks of analysis. They process events and can access services for common functionality.
 
+## Built-in Algorithms
+
+The framework provides several ready-to-use algorithms:
+
+| Algorithm | Description |
+|-----------|-------------|
+| `ElectronSelectionAlg` | Electron identification with full cut suite |
+| `ElectronAnalysisAlg` | Electron analysis with histograms and N-tuples |
+| `DISSelectionAlg` | DIS event selection with configurable kinematic regions |
+| `Pi0ReconstructionAlg` | π⁰ reconstruction from photon pairs |
+| `EventMonitor` | Real-time event processing statistics |
+| `PionSelectionAlg` | Pion identification |
+| `LambdaReconstructionAlg` | Λ reconstruction |
+| `TriggerElectronFilter` | Filter events with trigger electron |
+
+### Using Built-in Algorithms
+
+```cpp
+#include "Framework/ApplicationBuilder.hpp"
+#include "Algorithms/ElectronSelectionAlg.hpp"
+#include "Algorithms/DISSelectionAlg.hpp"
+#include "Algorithms/Pi0ReconstructionAlg.hpp"
+#include "Algorithms/EventMonitor.hpp"
+
+auto app = Framework::make_application("My Analysis")
+    .with_standard_services()
+    .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
+    .add_algorithm<Algorithms::ElectronSelectionAlg>(
+        "ElectronSelection", CLAS::Target::LD2, CLAS::Polarity::Outbending)
+    .add_algorithm<Algorithms::DISSelectionAlg>(
+        "DISSelection", Physics::DISAnalysis::standard_dis_region())
+    .add_algorithm<Algorithms::Pi0ReconstructionAlg>(
+        "Pi0Reconstruction", 0.2, 0.3)  // mass_window, min_energy
+    .build();
+```
+
+## Algorithm Base Classes
+
+The framework provides specialized base classes:
+
+| Base Class | Purpose |
+|------------|---------|
+| `Algorithm` | Standard algorithm with initialize/execute/finalize |
+| `MonitoringAlgorithm` | For event monitoring (uses `monitor()` instead of `execute()`) |
+| `FilterAlgorithm` | For event filtering (uses `filter()` returning bool) |
+
 ## Algorithm Types
 
 ### Filter Algorithms
@@ -92,7 +138,34 @@ app.add_algorithm(std::make_unique<Pi0AnalysisAlg>());
 
 ## Accessing Services
 
-Use the `service<T>()` helper method:
+### Using ServiceHandle (Recommended)
+
+```cpp
+class MyAlgorithm : public Framework::Algorithm {
+private:
+    Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
+    Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
+
+    auto initialize() -> Framework::StatusCode override {
+        // Initialize required service
+        if (auto sc = initialize_handle(m_hist_svc); sc.is_failure()) {
+            return sc;
+        }
+
+        // Initialize optional service
+        initialize_handle(m_log_svc);
+
+        // Use service
+        if (m_hist_svc) {
+            h_momentum = m_hist_svc->book_hist1D("/Analysis/p", "Momentum", 100, 0, 10);
+        }
+
+        return Framework::StatusCode::SUCCESS();
+    }
+};
+```
+
+### Using service<T>() Helper
 
 ```cpp
 auto initialize() -> Framework::StatusCode override {

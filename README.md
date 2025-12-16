@@ -35,30 +35,52 @@ meson compile
 
 ### Your First Analysis
 
+Using the new ApplicationBuilder pattern (recommended):
+
+```cpp
+#include "Framework/ApplicationBuilder.hpp"
+#include "Algorithms/ElectronSelectionAlg.hpp"
+#include "Algorithms/EventMonitor.hpp"
+
+int main() {
+    auto app = Framework::make_application("MyAnalysis")
+        .with_input_files({"data/run_5032.hipo"})
+        .with_output("output.root")
+        .with_threads(4)
+        .with_standard_services()
+        .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
+        .add_algorithm<Algorithms::ElectronSelectionAlg>(
+            "ElectronSelection", CLAS::Target::LD2, CLAS::Polarity::Outbending)
+        .build();
+
+    app.initialize();
+    app.run();
+    app.finalize();
+
+    return 0;
+}
+```
+
+Or using the traditional approach:
+
 ```cpp
 #include "Framework/Application.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Algorithms/ElectronSelectionAlg.hpp"
 
 int main() {
-    // Create application
     Framework::Application app("MyAnalysis");
 
-    // Add histogram service
     auto hist_svc = std::make_unique<Framework::HistogramService>();
     hist_svc->set_output_file("output.root");
     app.service_manager().add_service(std::move(hist_svc));
 
-    // Add electron selection algorithm
     auto electron_alg = std::make_unique<Algorithms::ElectronSelectionAlg>();
     app.add_algorithm(std::move(electron_alg));
 
-    // Configure input
     app.set_input_files({"data/run_5032.hipo"});
-    app.set_max_events(10000);
     app.set_num_threads(4);
 
-    // Run
     app.initialize();
     app.run();
     app.finalize();
@@ -73,15 +95,31 @@ int main() {
 
 ### 🏗️ Architecture
 
+**ApplicationBuilder Pattern** (New in v2.0)
+- Fluent API for cleaner application setup
+- `with_standard_services()` adds all common services automatically
+- Type-safe algorithm configuration with constructor arguments
+
 **Service Layer**
 - `HistogramService` - Centralized histogram management with automatic ROOT file writing
 - `ConditionsService` - Run-dependent calibrations with Interval of Validity (IOV)
+- `PhotonCutsService` - AI/ML-based photon selection with GBT models
+- `ParticleSelectorService` - Configurable particle extraction and filtering
+- `SamplingFractionService` - Target/polarity-dependent sampling fraction cuts
+- `MetadataService` - Analysis metadata storage
 - `ServiceManager` - Lifecycle management for all services
 
 **Algorithm Framework**
 - Base `Algorithm` class with initialize/execute/finalize lifecycle
-- Automatic service access via dependency injection
+- Specialized types: `MonitoringAlgorithm`, `FilterAlgorithm`
+- `ServiceHandle` for type-safe service access with validation
 - Clean separation between framework and physics code
+
+**Built-in Algorithms**
+- `ElectronSelectionAlg` - Electron identification with full cut suite
+- `DISSelectionAlg` - DIS event selection with configurable kinematic regions
+- `Pi0ReconstructionAlg` - π⁰ reconstruction from photon pairs
+- `EventMonitor` - Real-time processing statistics
 
 **Event Data Model**
 - High-level `Event` class abstracting HIPO banks
@@ -120,7 +158,15 @@ Chi2 PID                                42108    42.11%    93.10%
 ═══════════════════════════════════════════════════════════════
 ```
 
+### 📁 Example Analyses
 
+| File | Description |
+|------|-------------|
+| `src/pi0.cpp` | Pi0 reconstruction using ApplicationBuilder |
+| `src/example_builder.cpp` | ApplicationBuilder pattern demo |
+| `src/improved.cpp` | Full framework example with all services |
+| `src/electron_analysis.cpp` | Electron analysis |
+| `src/lambda.cpp` | Lambda reconstruction |
 
 ## References
 

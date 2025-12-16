@@ -4,7 +4,52 @@ History of major refactoring efforts.
 
 ## Version 2.0 Changes
 
-### Service-Oriented Architecture
+### Phase 3: ApplicationBuilder & New Features
+
+**ApplicationBuilder Pattern**
+
+New fluent API for cleaner application setup:
+
+```cpp
+auto app = Framework::make_application("My Analysis")
+    .with_input_files(files)
+    .with_output("output.root")
+    .with_threads(4)
+    .with_standard_services()
+    .add_algorithm<Algorithms::ElectronSelectionAlg>("ElectronSelection", target, polarity)
+    .build();
+```
+
+**New Algorithms**
+
+- `Pi0ReconstructionAlg` - π⁰ reconstruction from photon pairs
+- `DISSelectionAlg` - DIS event selection with configurable kinematic regions
+- `EventMonitor` - Real-time event processing statistics
+
+**New Services**
+
+- `PhotonCutsService` - AI/ML-based photon selection with GBT models
+- `ParticleSelectorService` - Service-based particle extraction
+- `MetadataService` - Analysis metadata storage
+- `ProfilingService` - Performance profiling
+- `HipoFileService` - HIPO file management
+- `RootFileService` - ROOT file management
+
+**ServiceHandle Pattern**
+
+Type-safe service access with validation:
+
+```cpp
+Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
+
+auto initialize() -> Framework::StatusCode override {
+    auto sc = initialize_handle(m_hist_svc);
+    if (sc.is_failure()) return sc;
+    return Framework::StatusCode::SUCCESS();
+}
+```
+
+### Phase 1 & 2: Service-Oriented Architecture
 
 Migrated from monolithic design to service-based architecture:
 
@@ -12,6 +57,7 @@ Migrated from monolithic design to service-based architecture:
 - `LoggingService` - Structured logging
 - `NTupleService` - ROOT TTree management
 - `ConditionsService` - Run-dependent calibrations
+- `SamplingFractionService` - Sampling fraction cuts
 
 ### Algorithm Framework
 

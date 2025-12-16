@@ -14,7 +14,29 @@ meson compile -C build
 
 ## Basic Analysis Structure
 
-Every analysis follows this pattern:
+Using the **ApplicationBuilder** pattern (recommended):
+
+```cpp
+#include "Framework/ApplicationBuilder.hpp"
+
+int main() {
+    auto app = Framework::make_application("MyAnalysis")
+        .with_input_files({"data.hipo"})
+        .with_output("output.root")
+        .with_threads(4)
+        .with_standard_services()
+        .add_algorithm<MyAlgorithm>("MyAlg", arg1, arg2)
+        .build();
+
+    app.initialize();
+    app.run();
+    app.finalize();
+
+    return 0;
+}
+```
+
+Or using the traditional approach:
 
 ```cpp
 #include "Framework/Application.hpp"
@@ -58,6 +80,13 @@ Services provide shared functionality:
 | `LoggingService` | Structured logging |
 | `NTupleService` | ROOT TTree management |
 | `ConditionsService` | Run-dependent calibrations |
+| `PhotonCutsService` | AI/ML-based photon selection |
+| `ParticleSelectorService` | Particle extraction and filtering |
+| `SamplingFractionService` | Sampling fraction cuts |
+| `MetadataService` | Analysis metadata storage |
+
+!!! tip "Standard Services"
+    Use `with_standard_services()` in ApplicationBuilder to add all common services automatically.
 
 ### Algorithms
 

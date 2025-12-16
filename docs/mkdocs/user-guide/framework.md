@@ -43,9 +43,50 @@ graph TB
     J --> K
 ```
 
-## Application
+## ApplicationBuilder (Recommended)
 
-The `Application` class is the main entry point:
+The `ApplicationBuilder` provides a fluent API for cleaner application setup:
+
+```cpp
+#include "Framework/ApplicationBuilder.hpp"
+
+auto app = Framework::make_application("MyAnalysis")
+    .with_input_files({"data.hipo"})
+    .with_output("output.root")
+    .with_threads(4)
+    .with_standard_services()
+    .with_version("2.0")
+    .with_beam_energy(10.53)
+    .with_target("LD2")
+    .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
+    .add_algorithm<Algorithms::ElectronSelectionAlg>(
+        "ElectronSelection", target, polarity)
+    .build();
+
+app.initialize();
+app.run();
+app.finalize();
+```
+
+### Builder Methods
+
+| Method | Description |
+|--------|-------------|
+| `with_input_files(files)` | Set input HIPO files |
+| `with_output(filename)` | Set output ROOT file |
+| `with_percentage(pct)` | Set percentage of events to process |
+| `with_threads(n)` | Set number of processing threads |
+| `with_standard_services()` | Add all standard services |
+| `with_version(version)` | Set analysis version metadata |
+| `with_beam_energy(energy)` | Set beam energy metadata |
+| `with_target(target)` | Set target name metadata |
+| `add_service<T>(args...)` | Add a custom service |
+| `add_algorithm<T>(args...)` | Add an algorithm with constructor args |
+| `build()` | Build and return the Application |
+
+## Application (Traditional)
+
+The `Application` class can also be used directly:
 
 ```cpp
 Framework::Application app("MyAnalysis");

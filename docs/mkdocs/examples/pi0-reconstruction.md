@@ -1,20 +1,64 @@
 # π⁰ Reconstruction Example
 
-Reconstruct π⁰ → γγ from photon pairs.
+Reconstruct π⁰ → γγ from photon pairs using the framework's built-in `Pi0ReconstructionAlg` or a custom implementation.
 
 ## Overview
 
 This example demonstrates:
 
+- Using the ApplicationBuilder pattern
+- AI-based photon selection with PhotonCutsService
 - Photon pair combinatorics
 - Invariant mass calculation
 - Signal region selection
 
-## Code
+## Using Built-in Algorithm
+
+The simplest approach uses the built-in `Pi0ReconstructionAlg`:
+
+```cpp
+#include "Framework/ApplicationBuilder.hpp"
+#include "Algorithms/ElectronSelectionAlg.hpp"
+#include "Algorithms/DISSelectionAlg.hpp"
+#include "Algorithms/Pi0ReconstructionAlg.hpp"
+#include "Algorithms/EventMonitor.hpp"
+#include "Framework/Services/PhotonCutsService.hpp"
+
+int main() {
+    auto app = Framework::make_application("Pi0 Analysis")
+        .with_input_files(input_files)
+        .with_output("pi0_analysis.root")
+        .with_threads(4)
+        .with_standard_services()
+        .with_version("2.0")
+        .with_beam_energy(10.53)
+        .with_target("LD2")
+        .add_service<Framework::PhotonCutsService>()
+        .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
+        .add_algorithm<Algorithms::ElectronSelectionAlg>(
+            "ElectronSelection", CLAS::Target::LD2, CLAS::Polarity::Outbending)
+        .add_algorithm<Algorithms::DISSelectionAlg>(
+            "DISSelection", Physics::DISAnalysis::standard_dis_region())
+        .add_algorithm<Algorithms::Pi0ReconstructionAlg>(
+            "Pi0Reconstruction", 0.2, 0.3)  // mass_window, min_photon_energy
+        .build();
+
+    app.initialize();
+    app.run();
+    app.finalize();
+
+    return 0;
+}
+```
+
+## Custom Implementation
+
+For more control, implement a custom algorithm:
 
 ```cpp
 #include "Framework/Application.hpp"
 #include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/PhotonCutsService.hpp"
 #include "Physics/CompositeParticle.hpp"
 #include "Physics/Kinematics.hpp"
 
@@ -103,3 +147,39 @@ private:
 ## π⁰ Mass
 
 The π⁰ mass is 134.98 MeV. The signal region is typically 100-170 MeV.
+
+## Using AI-Based Photon Selection
+
+The `PhotonCutsService` provides AI/ML-based photon selection:
+
+```cpp
+auto initialize() -> Framework::StatusCode override {
+    m_photon_svc = service<Framework::PhotonCutsService>("PhotonCutsService");
+    m_photon_svc->set_pass(1);  // Reconstruction pass
+    return Framework::StatusCode::SUCCESS();
+}
+
+auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    auto& hipo_event = event.hipo_event();
+    auto& RUN_config = hipo_event["RUN::config"];
+    auto& REC_Particle = hipo_event["REC::Particle"];
+    auto& REC_Calorimeter = hipo_event["REC::Calorimeter"];
+
+    // Select photons using AI classification
+    auto good_photons = m_photon_svc->select_photons_with_AI(
+        RUN_config, REC_Particle, REC_Calorimeter);
+
+    // Continue with pair combinatorics...
+    return Framework::StatusCode::SUCCESS();
+}
+```
+
+## Command Line Usage
+
+The `pi0` executable supports these options:
+
+```bash
+./builddir/pi0 --target=LD2 --polarity=Outbending \
+    --input=/path/to/data --output=pi0_analysis.root \
+    --mass_window=0.2 --min_energy=0.3 --num_threads=4
+```
