@@ -1,0 +1,150 @@
+# MkDocs configuration for CLAS12 Analysis Framework
+site_name: CLAS12 Analysis Framework
+site_description: A modern particle physics analysis framework for CLAS12 data
+site_author: Mathieu Ouillon
+site_url: https://gitlab.com/MathieuOuillon/clas-analysis
+
+# Repository
+repo_name: MathieuOuillon/clas-analysis
+repo_url: https://gitlab.com/MathieuOuillon/clas-analysis
+
+# Theme configuration
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/gitlab
+
+# Extensions
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: MathieuOuillon
+      repo: clas-analysis
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Plugins
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [scripts]
+
+# Documentation directory
+docs_dir: docs/mkdocs
+
+# Extra JavaScript for math rendering
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+# Extra CSS
+extra_css:
+  - stylesheets/extra.css
+
+# Navigation
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Your First Analysis: getting-started/first-analysis.md
+  - User Guide:
+    - Framework Guide: user-guide/framework.md
+    - Services: user-guide/services.md
+    - Algorithms: user-guide/algorithms.md
+    - Particle Selection: user-guide/particle-selection.md
+    - Physics Cuts: user-guide/cuts.md
+    - Kinematics: user-guide/kinematics.md
+    - Batch System: user-guide/batch-system.md
+  - Examples:
+    - Basic Electron Analysis: examples/electron-analysis.md
+    - DIS Analysis: examples/dis-analysis.md
+    - Pi0 Reconstruction: examples/pi0-reconstruction.md
+    - Lambda Analysis: examples/lambda-analysis.md
+  - API Reference:
+    - Overview: api/index.md
+    - Framework:
+      - Application: api/framework/application.md
+      - Algorithm: api/framework/algorithm.md
+      - Event: api/framework/event.md
+      - Services: api/framework/services.md
+      - Cutflow: api/framework/cutflow.md
+    - CLAS:
+      - Particle: api/clas/particle.md
+      - Cuts: api/clas/cuts.md
+      - Banks: api/clas/banks.md
+    - Physics:
+      - Kinematics: api/physics/kinematics.md
+      - DIS Analysis: api/physics/dis-analysis.md
+    - HIPO:
+      - Reader: api/hipo/reader.md
+      - Writer: api/hipo/writer.md
+  - Development:
+    - Contributing: development/contributing.md
+    - Code Style: development/code-style.md
+    - Testing: development/testing.md
+    - Refactoring Notes: development/refactoring-notes.md
+
+# Copyright
+copyright: Copyright &copy; 2024 Mathieu Ouillon
