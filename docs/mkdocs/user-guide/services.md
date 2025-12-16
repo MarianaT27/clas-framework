@@ -173,6 +173,94 @@ auto initialize() -> Framework::StatusCode override {
 
 ---
 
+## HipoFileService
+
+Centralized HIPO file I/O management for reading and writing HIPO files.
+
+### Setup
+
+```cpp
+auto hipo_svc = std::make_unique<Framework::HipoFileService>();
+hipo_svc->add_input_file("data/run_5032.hipo");
+hipo_svc->set_output_file("filtered_events.hipo");
+app.service_manager().add_service(std::move(hipo_svc));
+```
+
+### Usage
+
+```cpp
+auto initialize() -> Framework::StatusCode override {
+    m_hipo_svc = service<Framework::HipoFileService>("HipoFileService");
+
+    // Get dictionary from input files
+    auto* dict = m_hipo_svc->get_dictionary();
+
+    return Framework::StatusCode::SUCCESS();
+}
+
+auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    // Write filtered events to output
+    if (passes_selection) {
+        m_hipo_svc->write_event(event.hipo_event());
+    }
+
+    return Framework::StatusCode::SUCCESS();
+}
+```
+
+### Features
+
+- Multiple input file support
+- Thread-safe event writing
+- Automatic dictionary management
+- Event statistics tracking
+
+---
+
+## RootFileService
+
+Centralized ROOT file management for coordinating multiple output files.
+
+### Setup
+
+```cpp
+auto root_svc = std::make_unique<Framework::RootFileService>();
+root_svc->set_default_output("analysis.root");
+app.service_manager().add_service(std::move(root_svc));
+```
+
+### Usage
+
+```cpp
+auto initialize() -> Framework::StatusCode override {
+    m_root_svc = service<Framework::RootFileService>("RootFileService");
+
+    // Open additional output files
+    m_root_svc->open_file("systematics", "systematics.root", "RECREATE");
+
+    // Create directory structure
+    m_root_svc->mkdir("default", "Electrons/Kinematics");
+
+    return Framework::StatusCode::SUCCESS();
+}
+
+auto finalize() -> Framework::StatusCode override {
+    // Write objects to specific files
+    m_root_svc->write_object("systematics", my_histogram);
+
+    return Framework::StatusCode::SUCCESS();
+}
+```
+
+### Features
+
+- Multiple file management with aliases
+- Thread-safe file operations
+- Directory structure creation
+- Automatic file lifecycle management
+
+---
+
 ## Creating Custom Services
 
 Implement the `IService` interface:

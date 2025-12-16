@@ -1,12 +1,23 @@
-#include <fmt/format.h>
+/**
+ * @file electron_analysis.cpp
+ * @brief Electron analysis using the improved framework patterns
+ *
+ * Demonstrates:
+ * - Structured configuration parsing
+ * - Clean service setup
+ * - Proper error handling
+ */
+
 #include <cstdlib>
-#include <cxxopts.hpp>
+#include <optional>
 #include <string>
+#include <vector>
+
 #include <TROOT.h>
+#include <cxxopts.hpp>
+#include <fmt/format.h>
+
 #include "Algorithms/ElectronAnalysisAlg.hpp"
-#include "Algorithms/ElectronSelectionAlg.hpp"
-#include "Algorithms/DISSelectionAlg.hpp"
-#include "Algorithms/Pi0ReconstructionAlg.hpp"
 #include "Algorithms/EventMonitor.hpp"
 #include "CLAS/FileUtils.hpp"
 #include "CLAS/Runs.hpp"
@@ -14,169 +25,222 @@
 #include "CLAS/Target.hpp"
 #include "Framework/Application.hpp"
 #include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/HipoFileService.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/MetadataService.hpp"
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
-#include "Framework/Services/PhotonCutsService.hpp"
-#include "Framework/Services/MetadataService.hpp"
 #include "Framework/Services/ProfilingService.hpp"
+#include "Framework/Services/RootFileService.hpp"
 #include "Framework/Services/SamplingFractionService.hpp"
-#include "fmt/base.h"
 
-int main(int argc, char* argv[]) {
-    ROOT::EnableThreadSafety();
-    ROOT::EnableImplicitMT();
-    
-    cxxopts::Options options("Electron_analysis", "Electron analysis executable");
+// ============================================================================
+// Configuration
+// ============================================================================
+struct AnalysisConfig {
+    CLAS::Target target = CLAS::Target::LD2;
+    CLAS::Polarity polarity = CLAS::Polarity::Outbending;
+    double percentage = 100.0;
+    int num_threads = 1;
+    std::string output_file;
+    std::vector<std::string> input_files;
 
-    options.add_options() 
-            ("target", "Target type (LD2, CxC, CuSn, Cu, Sn)", cxxopts::value<std::string>()->default_value("LD2"))
-            ("polarity", "Magnetic field polarity (In, Out)", cxxopts::value<std::string>()->default_value("Outbending"))
-            ("percentage", "Percentage of events to process (0-100)", cxxopts::value<double>()->default_value("100"))
-            ("num_threads", "Number of threads", cxxopts::value<int>()->default_value("1"))
-            ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("electron_analysis_{target}_{polarity}.root"))
-            ("input", "Input HIPO files (comma-separated or single file)", cxxopts::value<std::string>()->default_value(""))
-            ("help", "Show help");
+    [[nodiscard]] auto is_valid() const -> bool {
+        return !input_files.empty() && !output_file.empty() && percentage > 0;
+    }
+};
 
-    // Parse command-line arguments
+// ============================================================================
+// Command-line parsing
+// ============================================================================
+[[nodiscard]] auto parse_arguments(int argc, char* argv[]) -> std::optional<AnalysisConfig> {
+    cxxopts::Options options("electron_analysis", "Electron analysis");
+
+    options.add_options()
+        ("target", "Target (LD2, CxC, CuSn)", cxxopts::value<std::string>()->default_value("LD2"))
+        ("polarity", "Polarity (Outbending, Inbending)", cxxopts::value<std::string>()->default_value("Outbending"))
+        ("percentage", "Events to process (%)", cxxopts::value<double>()->default_value("100"))
+        ("num_threads", "Thread count", cxxopts::value<int>()->default_value("1"))
+        ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("electron_analysis_{target}_{polarity}.root"))
+        ("input", "Input HIPO files (comma-separated)", cxxopts::value<std::string>()->default_value(""))
+        ("h,help", "Show help");
+
     auto args = options.parse(argc, argv);
 
     if (args.count("help")) {
         fmt::print("{}\n", options.help());
-        return EXIT_SUCCESS;
+        return std::nullopt;
     }
 
-    double percentage = args["percentage"].as<double>();
-    int num_threads = args["num_threads"].as<int>();
-    std::string output_file = args["output"].as<std::string>();
-    std::string target_str = args["target"].as<std::string>();
-    std::string polarity_str = args["polarity"].as<std::string>();
+    AnalysisConfig config;
+    config.target = CLAS::string_to_target(args["target"].as<std::string>());
+    config.polarity = CLAS::string_to_polarity(args["polarity"].as<std::string>());
+    config.percentage = args["percentage"].as<double>();
+    config.num_threads = args["num_threads"].as<int>();
+
+    // Build output filename
+    config.output_file = args["output"].as<std::string>();
+    config.output_file = CLAS::StringUtils::replace_all(
+        config.output_file, "{target}", CLAS::to_string(config.target));
+    config.output_file = CLAS::StringUtils::replace_all(
+        config.output_file, "{polarity}", CLAS::to_string(config.polarity));
+
+    // Get input files
     std::string input_str = args["input"].as<std::string>();
-    CLAS::Target target = CLAS::string_to_target(target_str);
-    CLAS::Polarity polarity = CLAS::string_to_polarity(polarity_str);
-
-    output_file = CLAS::StringUtils::replace_all(output_file, "{target}", CLAS::to_string(target));
-    output_file = CLAS::StringUtils::replace_all(output_file, "{polarity}", CLAS::to_string(polarity));
-
-    // Determine input files - either from --input option or from target/polarity
-    std::vector<std::string> input_files;
-    std::string data_dir;
-    
     if (!input_str.empty()) {
-        // Parse comma-separated input files
-        input_files = CLAS::StringUtils::split(input_str, ',');
+        config.input_files = CLAS::StringUtils::split(input_str, ',');
     } else {
-        // Determine data directory based on target and polarity
-        std::array sources = (polarity == CLAS::Polarity::Outbending)
-                                 ? std::array{std::tuple{CLAS::Target::CuSn, "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/", &CLAS::outbending_runs_CuSn},
-                                              std::tuple{CLAS::Target::CxC, "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/", &CLAS::outbending_runs_CxC},
-                                              std::tuple{CLAS::Target::LD2, "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/", &CLAS::outbending_runs_LD2}}
-                                 : std::array{std::tuple{CLAS::Target::CuSn, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CuSn},
-                                              std::tuple{CLAS::Target::CxC, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_CxC},
-                                              std::tuple{CLAS::Target::LD2, "/cache/hallb/scratch/rg-d/production/skim_pass0v11/", &CLAS::inbending_runs_LD2}};
-        
-        bool valid = false;
-        for (const auto& [src_target, src_dir, _] : sources) {
-            if (target == src_target) {
-                data_dir = src_dir;
-                valid = true;
-                break;
-            }
-        }
-        if (!valid) {
-            fmt::println(stderr, "ERROR: Invalid target '{}' for polarity '{}'", target_str, polarity_str);
-            fmt::println(stderr, "Valid targets are: LD2, CxC, CuSn, Cu, or Sn");
-            return EXIT_FAILURE;
-        }
-        
-        input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
+        config.input_files = find_default_input_files(config.target, config.polarity);
     }
 
-    // Create application
-    Framework::Application app("Pi0 Analysis");
+    return config;
+}
+
+[[nodiscard]] auto find_default_input_files(CLAS::Target target, CLAS::Polarity polarity)
+    -> std::vector<std::string> {
+
+    struct DataSource {
+        CLAS::Target target;
+        std::string_view outbending_path;
+        std::string_view inbending_path;
+    };
+
+    constexpr std::array<DataSource, 3> sources = {{
+        {CLAS::Target::LD2,
+         "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/",
+         "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
+        {CLAS::Target::CxC,
+         "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/",
+         "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
+        {CLAS::Target::CuSn,
+         "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/",
+         "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
+    }};
+
+    for (const auto& src : sources) {
+        if (src.target == target) {
+            std::string path = (polarity == CLAS::Polarity::Outbending)
+                ? std::string(src.outbending_path)
+                : std::string(src.inbending_path);
+            return CLAS::FileUtils::read_recursive_hipo_files(path);
+        }
+    }
+
+    return {};
+}
+
+// ============================================================================
+// Service setup
+// ============================================================================
+auto setup_services(Framework::Application& app, const AnalysisConfig& config) -> void {
+    auto& mgr = app.service_manager();
 
     // Create services
     auto log_svc = std::make_unique<Framework::LoggingService>();
-    auto ntuple_svc = std::make_unique<Framework::NTupleService>();
+    auto hipo_svc = std::make_unique<Framework::HipoFileService>();
+    auto root_svc = std::make_unique<Framework::RootFileService>();
     auto hist_svc = std::make_unique<Framework::HistogramService>();
-    auto conditions_svc = std::make_unique<Framework::ConditionsService>();
-    auto particle_svc = std::make_unique<Framework::ParticleSelectorService>();
-    auto photon_cuts_svc = std::make_unique<Framework::PhotonCutsService>();
+    auto ntuple_svc = std::make_unique<Framework::NTupleService>();
     auto metadata_svc = std::make_unique<Framework::MetadataService>();
-    auto profiling_svc = std::make_unique<Framework::ProfilingService>();
+    auto particle_svc = std::make_unique<Framework::ParticleSelectorService>();
     auto sf_svc = std::make_unique<Framework::SamplingFractionService>();
+    auto conditions_svc = std::make_unique<Framework::ConditionsService>();
+    auto profiling_svc = std::make_unique<Framework::ProfilingService>();
 
-    // Configure output files for services
-    ntuple_svc->set_output_file(output_file);
-    hist_svc->set_output_file(output_file);
-    metadata_svc->set_output_file(output_file);
+    // Configure file services
+    hipo_svc->set_input_files(config.input_files);
+    root_svc->set_default_output(config.output_file);
+    hist_svc->set_output_file(config.output_file);
+    ntuple_svc->set_output_file(config.output_file);
     ntuple_svc->enable_incremental_writing();
+    metadata_svc->set_output_file(config.output_file);
 
     // Configure metadata
-    metadata_svc->set_version("1.0");
+    metadata_svc->set_version("2.0");
     metadata_svc->set_beam_energy(10.53);
-    metadata_svc->set_target(CLAS::to_string(target));
-    metadata_svc->set_command_line(argc, argv);
-    metadata_svc->add_parameter("polarity", CLAS::to_string(polarity));
-    metadata_svc->add_parameter("percentage", percentage);
-    metadata_svc->add_parameter("num_threads", num_threads);
+    metadata_svc->set_target(CLAS::to_string(config.target));
+    metadata_svc->add_parameter("polarity", CLAS::to_string(config.polarity));
+    metadata_svc->add_parameter("percentage", config.percentage);
+    metadata_svc->add_parameter("num_threads", config.num_threads);
 
-    // Add services to the application
-    app.service_manager().add_service(std::move(log_svc));
-    app.service_manager().add_service(std::move(conditions_svc));
-    app.service_manager().add_service(std::move(hist_svc));
-    app.service_manager().add_service(std::move(ntuple_svc));
-    app.service_manager().add_service(std::move(particle_svc));
-    app.service_manager().add_service(std::move(photon_cuts_svc));
-    app.service_manager().add_service(std::move(metadata_svc));
-    app.service_manager().add_service(std::move(profiling_svc));
-    app.service_manager().add_service(std::move(sf_svc));
+    // Add services in dependency order
+    mgr.add_service(std::move(log_svc));
+    mgr.add_service(std::move(hipo_svc));
+    mgr.add_service(std::move(root_svc));
+    mgr.add_service(std::move(conditions_svc));
+    mgr.add_service(std::move(hist_svc));
+    mgr.add_service(std::move(ntuple_svc));
+    mgr.add_service(std::move(particle_svc));
+    mgr.add_service(std::move(sf_svc));
+    mgr.add_service(std::move(metadata_svc));
+    mgr.add_service(std::move(profiling_svc));
+}
 
-    auto monitoring_alg = std::make_unique<Algorithms::EventMonitor>("EventMonitor");
-    app.add_algorithm(std::move(monitoring_alg));
+// ============================================================================
+// Algorithm setup
+// ============================================================================
+auto setup_algorithms(Framework::Application& app, const AnalysisConfig& config) -> void {
+    // Event monitor
+    app.add_algorithm(std::make_unique<Algorithms::EventMonitor>("EventMonitor"));
 
-    // Configure algorithm sequence
-    auto electron_alg = std::make_unique<Algorithms::ElectronAnalysisAlg>("ElectronAnalysis", target, polarity);
-    app.add_algorithm(std::move(electron_alg));
+    // Electron analysis with configuration
+    Algorithms::ElectronAnalysisConfig alg_config;
+    alg_config.target = config.target;
+    alg_config.polarity = config.polarity;
 
+    app.add_algorithm(std::make_unique<Algorithms::ElectronAnalysisAlg>(
+        "ElectronAnalysis", alg_config));
+}
 
-    // Configure input files
-    if (input_files.empty()) {
-        fmt::print(stderr, "ERROR: No input files found\n");
-        return 1;
-    }
-    app.set_input_files(input_files);
-    app.set_percentage(percentage);
-    app.set_num_threads(num_threads);
+// ============================================================================
+// Main
+// ============================================================================
+auto main(int argc, char* argv[]) -> int {
+    ROOT::EnableThreadSafety();
+    ROOT::EnableImplicitMT();
 
-    // Run the analysis (logger singleton is auto-detected during initialize)
-    auto sc = app.initialize();
-    if (sc.is_failure()) {
-        Framework::Log::error("Application", "Initialization failed");
-        return 1;
-    }
-
-    // Print configuration after initialization (logger is now available)
-    Framework::Log::info("Configuration", "Pi0 Analysis Configuration:");
-    Framework::Log::info("Configuration", "  Data directory: {}", data_dir);
-    Framework::Log::info("Configuration", "  Percentage: {}", percentage);
-    Framework::Log::info("Configuration", "  Threads: {}", num_threads);
-    Framework::Log::info("Configuration", "  Output file: {}", output_file);
-    Framework::Log::info("Configuration", "  Input files: {}", input_files.size());
-
-    sc = app.run();
-    if (sc.is_failure()) {
-        Framework::Log::error("Application", "Event processing failed");
-        return 1;
+    // Parse configuration
+    auto config = parse_arguments(argc, argv);
+    if (!config) {
+        return EXIT_SUCCESS;  // Help was shown
     }
 
-    sc = app.finalize();
-    if (sc.is_failure()) {
-        Framework::Log::warning("Application", "Finalization had issues");
+    if (!config->is_valid()) {
+        fmt::print(stderr, "ERROR: Invalid configuration or no input files found\n");
+        return EXIT_FAILURE;
     }
 
-    Framework::Log::info("Application", "Pi0 analysis complete! Output: {}", output_file);
+    // Create and configure application
+    Framework::Application app("Electron Analysis");
+    setup_services(app, *config);
+    setup_algorithms(app, *config);
 
-    return 0;
+    app.set_input_files(config->input_files);
+    app.set_percentage(config->percentage);
+    app.set_num_threads(config->num_threads);
+
+    // Run analysis
+    if (auto sc = app.initialize(); sc.is_failure()) {
+        Framework::Log::error("Main", "Initialization failed: {}", sc.message());
+        return EXIT_FAILURE;
+    }
+
+    Framework::Log::info("Main", "Configuration:");
+    Framework::Log::info("Main", "  Target: {}", CLAS::to_string(config->target));
+    Framework::Log::info("Main", "  Polarity: {}", CLAS::to_string(config->polarity));
+    Framework::Log::info("Main", "  Input files: {}", config->input_files.size());
+    Framework::Log::info("Main", "  Output: {}", config->output_file);
+
+    if (auto sc = app.run(); sc.is_failure()) {
+        Framework::Log::error("Main", "Processing failed: {}", sc.message());
+        return EXIT_FAILURE;
+    }
+
+    if (auto sc = app.finalize(); sc.is_failure()) {
+        Framework::Log::warning("Main", "Finalization had issues");
+    }
+
+    Framework::Log::info("Main", "Analysis complete: {}", config->output_file);
+    return EXIT_SUCCESS;
 }

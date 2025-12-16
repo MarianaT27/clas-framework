@@ -60,6 +60,7 @@ executables = {
   'improved':               {'main': 'src/improved.cpp'},
   'advanced':               {'main': 'src/advanced.cpp'},
   'example_auto_histograms': {'main': 'src/example_auto_histograms.cpp'},
+  'example_builder':        {'main': 'src/example_builder.cpp'},
   'lambda':                 {'main': 'src/lambda.cpp'},
   'decays_lambda':          {'main': 'src/decays_lambda.cpp'},
   'electron_analysis':      {'main': 'src/electron_analysis.cpp'},

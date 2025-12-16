@@ -96,9 +96,12 @@ int main(int argc, char** argv) {
         "TriggerElectronFilter"  // Only run if this decision is true
     );
 
-    // 3a. Electron Analysis
+    // 3a. Electron Analysis (using config struct)
+    Algorithms::ElectronAnalysisConfig electron_config;
+    electron_config.target = target;
+    electron_config.polarity = polarity;
     auto electron_analysis = std::make_unique<Algorithms::ElectronAnalysisAlg>(
-        "ElectronAnalysis", target, polarity);
+        "ElectronAnalysis", electron_config);
     fmt::print("  ✓ ElectronAnalysis (AnalysisAlgorithm)\n");
     electron_seq->add_algorithm(std::move(electron_analysis));
 
