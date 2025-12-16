@@ -277,17 +277,17 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
     /// Build electron candidate with all detector information
     [[nodiscard]] auto build_candidate(const CLAS::Particle& electron,
-                                        hipo::BankView& REC_Calorimeter,
-                                        hipo::BankView& REC_Traj,
-                                        hipo::BankView& REC_Track) const -> ElectronCandidate {
+                                       hipo::BankView& REC_Calorimeter,
+                                       hipo::BankView& REC_Traj,
+                                       hipo::BankView& REC_Track) const -> ElectronCandidate {
         ElectronCandidate candidate;
         candidate.particle = electron;
         candidate.calorimeter = CLAS::read_Calorimeter_bank(REC_Calorimeter, electron.index());
         candidate.trajectory = CLAS::read_Traj_bank(REC_Traj, electron.index());
         candidate.track = CLAS::read_Track_bank(REC_Track, electron.index());
         candidate.total_energy = candidate.calorimeter.pcal.energy +
-                                  candidate.calorimeter.inner.energy +
-                                  candidate.calorimeter.outer.energy;
+                                 candidate.calorimeter.inner.energy +
+                                 candidate.calorimeter.outer.energy;
         candidate.sampling_fraction = candidate.total_energy / electron.p();
         candidate.sector = candidate.calorimeter.pcal.sector;
         return candidate;
@@ -508,7 +508,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
                 200, 0, 50, 200, 0, 10);
         }
 
-        // DC Chi2/ndf vs edge for theta bins 
+        // DC Chi2/ndf vs edge for theta bins
         std::vector<std::string> theta_bins = {"5_10", "10_15", "15_20", "20_25", "25_30", "30_35", "35_40"};
         for (const auto& bin : theta_bins) {
             h_dc.chi2ndf_vs_edge_r1[bin] = m_hist_svc->book_hist2D(
@@ -528,7 +528,6 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
                 fmt::format("Region 3: #theta={} deg;edge;#chi^{{2}}/ndf", bin),
                 200, 0, 50, 200, 0, 10);
         }
-
 
         // Book track histograms for all track categories
         book_track_histograms(h_neg_tracks, "NegativeTracks");
@@ -689,7 +688,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
                 base + "/Etot_vs_SF_cut" + sec_suffix,
                 fmt::format("E_{{tot}} vs SF (cut, Sector {});E_{{tot}} [GeV];E/p", sector),
                 200, 0, 2, 200, 0, 0.5);
-            
+
             h.p_vs_SF[sector] = m_hist_svc->book_hist2D(
                 base + "/p_vs_SF" + sec_suffix,
                 fmt::format("p vs SF (Sector {});p [GeV];E/p", sector),
@@ -741,7 +740,6 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
                 base + "/lu_vs_SF_high" + sec_suffix,
                 fmt::format("lu vs SF (high, Sector {});lu;E/p", sector),
                 100, 350, 450, 200, 0, 0.5);
-            
         }
 
         h.booked = true;
@@ -863,7 +861,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         fill_dc_theta_binned(electron.theta(), traj, track);
     }
 
-    /// Fill DC histograms in the appropriate momentum bin 
+    /// Fill DC histograms in the appropriate momentum bin
     auto fill_dc_momentum_binned(double p, const CLAS::DCTrajBank& traj, const CLAS::TrackBank& track) -> void {
         // Compute chi2/ndf safely
         const double chi2ndf = (track.ndf > 0) ? track.chi2 / track.ndf : 0.0;

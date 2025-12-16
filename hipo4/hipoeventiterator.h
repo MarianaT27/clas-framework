@@ -57,7 +57,6 @@ namespace hipo {
 class EventFile;
 class EventProxy;
 
-
 // =============================================================================
 // BankView - Lightweight view over a HIPO bank with cached column metadata
 // =============================================================================
@@ -105,11 +104,14 @@ class BankView {
 
     /// Access underlying bank (for compatibility with existing code)
     [[nodiscard]] bank& data() noexcept { return *m_bank; }
+
     [[nodiscard]] const bank& data() const noexcept { return *m_bank; }
 
     // Legacy method names for backward compatibility
     [[nodiscard]] int get_rows() const noexcept { return m_row_count; }
+
     [[nodiscard]] bank& get_bank() noexcept { return *m_bank; }
+
     [[nodiscard]] const bank& get_bank() const noexcept { return *m_bank; }
 
     template <typename T>
@@ -178,10 +180,9 @@ class BankView {
         for (int i = 0; i < count; ++i) {
             m_columns.emplace_back(m_schema->getEntryName(i), i);
             auto [offset_mult, size] = m_schema->getOffsetParts(i);
-            m_column_cache.push_back({
-                .type_id = m_schema->getEntryType(i),
-                .row_offset = m_row_count * offset_mult,
-                .type_size = size});
+            m_column_cache.push_back({.type_id = m_schema->getEntryType(i),
+                                      .row_offset = m_row_count * offset_mult,
+                                      .type_size = size});
         }
     }
 
@@ -190,7 +191,7 @@ class BankView {
             if (int w = std::atoi(env); w > 0) return w;
         }
 #ifdef TIOCGWINSZ
-        struct winsize ws {};
+        struct winsize ws{};
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
             return ws.ws_col;
         }
@@ -200,49 +201,77 @@ class BankView {
 
     [[nodiscard]] std::string type_name(int column) const {
         switch (m_column_cache[column].type_id) {
-            case kByte:   return "byte";
-            case kShort:  return "short";
-            case kInt:    return "int";
-            case kFloat:  return "float";
-            case kDouble: return "double";
-            case kLong:   return "long";
-            default:      return "?";
+            case kByte:
+                return "byte";
+            case kShort:
+                return "short";
+            case kInt:
+                return "int";
+            case kFloat:
+                return "float";
+            case kDouble:
+                return "double";
+            case kLong:
+                return "long";
+            default:
+                return "?";
         }
     }
 
     [[nodiscard]] int column_width(int column) const {
         const auto name_len = static_cast<int>(m_schema->getEntryName(column).length());
         switch (m_column_cache[column].type_id) {
-            case kByte:   return std::max(name_len, 4);
-            case kShort:  return std::max(name_len, 6);
-            case kInt:    return std::max(name_len, 8);
-            case kFloat:  return std::max(name_len, 9);
-            case kDouble: return std::max(name_len, 9);
-            case kLong:   return std::max(name_len, 12);
-            default:      return name_len;
+            case kByte:
+                return std::max(name_len, 4);
+            case kShort:
+                return std::max(name_len, 6);
+            case kInt:
+                return std::max(name_len, 8);
+            case kFloat:
+                return std::max(name_len, 9);
+            case kDouble:
+                return std::max(name_len, 9);
+            case kLong:
+                return std::max(name_len, 12);
+            default:
+                return name_len;
         }
     }
 
     void print_value(int column, int row, int width) const {
         switch (m_column_cache[column].type_id) {
-            case kByte:   std::printf("%*d ", width, m_bank->get<int8_t>(column, row)); break;
-            case kShort:  std::printf("%*d ", width, m_bank->get<int16_t>(column, row)); break;
-            case kInt:    std::printf("%*d ", width, m_bank->get<int32_t>(column, row)); break;
-            case kFloat:  std::printf("%*.3f ", width, m_bank->get<float>(column, row)); break;
-            case kDouble: std::printf("%*.3f ", width, m_bank->get<double>(column, row)); break;
-            case kLong:   std::printf("%*lld ", width, static_cast<long long>(m_bank->get<int64_t>(column, row))); break;
-            default:      std::printf("%*s ", width, "?");
+            case kByte:
+                std::printf("%*d ", width, m_bank->get<int8_t>(column, row));
+                break;
+            case kShort:
+                std::printf("%*d ", width, m_bank->get<int16_t>(column, row));
+                break;
+            case kInt:
+                std::printf("%*d ", width, m_bank->get<int32_t>(column, row));
+                break;
+            case kFloat:
+                std::printf("%*.3f ", width, m_bank->get<float>(column, row));
+                break;
+            case kDouble:
+                std::printf("%*.3f ", width, m_bank->get<double>(column, row));
+                break;
+            case kLong:
+                std::printf("%*lld ", width, static_cast<long long>(m_bank->get<int64_t>(column, row)));
+                break;
+            default:
+                std::printf("%*s ", width, "?");
         }
     }
-
 
     void print_border(const std::vector<int>& widths, const char* left, const char* mid,
                       const char* right, const char* fill) const {
         std::printf("%s", left);
-        for (int k = 0; k < 6; ++k) std::printf("%s", fill);
+        for (int k = 0; k < 6; ++k)
+            std::printf("%s", fill);
         std::printf("%s", mid);
         for (size_t i = 0; i < widths.size(); ++i) {
-            for (int j = 0; j < widths[i] + 2; ++j) std::printf("%s", fill);
+            for (int j = 0; j < widths[i] + 2; ++j)
+                std::printf("%s", fill);
             std::printf("%s", i < widths.size() - 1 ? mid : right);
         }
         std::printf("\n");
@@ -259,7 +288,8 @@ class BankView {
         // Calculate column widths
         std::vector<int> widths;
         widths.reserve(n_cols);
-        for (int c = 0; c < n_cols; ++c) widths.push_back(column_width(c));
+        for (int c = 0; c < n_cols; ++c)
+            widths.push_back(column_width(c));
 
         // Determine which columns fit in terminal
         const int term_width = detect_terminal_width() - 10;
@@ -284,17 +314,20 @@ class BankView {
         }
 
         std::vector<int> disp_widths;
-        for (int c : visible_cols) disp_widths.push_back(widths[c]);
+        for (int c : visible_cols)
+            disp_widths.push_back(widths[c]);
 
         const int table_width = 8 + [&] {
             int sum = 0;
-            for (int w : disp_widths) sum += w + 3;
+            for (int w : disp_widths)
+                sum += w + 3;
             return sum;
         }();
 
         // Print header
         std::printf("\n┌");
-        for (int i = 0; i < table_width - 2; ++i) std::printf("─");
+        for (int i = 0; i < table_width - 2; ++i)
+            std::printf("─");
         std::printf("┐\n");
 
         const char* bank_name = m_schema->getName().c_str();
@@ -367,7 +400,6 @@ class BankView {
 
 // Legacy alias for backward compatibility
 using bank_map = BankView;
-
 
 // =============================================================================
 // EventFile - RAII wrapper for reading HIPO files with range-based iteration
@@ -449,8 +481,11 @@ class EventFile {
 
     // Legacy method names for backward compatibility
     [[nodiscard]] uintmax_t entries() const { return m_reader->getEntries(); }
+
     [[nodiscard]] uintmax_t nrecords() const { return m_reader->getNRecords(); }
+
     bool goto_event(long idx) { return seek(idx); }
+
     bool read_next_event(event& evt) { return read(evt); }
 
     // -------------------------------------------------------------------------
@@ -491,7 +526,6 @@ class EventFile {
 
 // Legacy alias for backward compatibility
 using hipoeventfile = EventFile;
-
 
 // =============================================================================
 // EventProxy - Lightweight proxy for accessing banks within a single event
@@ -597,7 +631,6 @@ class EventProxy {
 
 // Legacy alias for backward compatibility
 using iter_event = EventProxy;
-
 
 // =============================================================================
 // EventFile::Iterator - Input iterator for range-based event processing

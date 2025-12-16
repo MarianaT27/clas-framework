@@ -4,31 +4,33 @@
 
 namespace ascii {
 class Text {
-public:
-  Text() {}
-  Text(std::string text) : text_(text) {}
-  Text(std::string text, Style style) : text_(text), style_(style) {}
+   public:
+    Text() {}
 
-  Text &style(Style style) {
-    style_ = style;
-    return *this;
-  }
+    Text(std::string text) : text_(text) {}
 
-  Text &text(std::string text) {
-    text_ = text;
-    return *this;
-  }
+    Text(std::string text, Style style) : text_(text), style_(style) {}
 
-  std::string text() { return text_; }
+    Text& style(Style style) {
+        style_ = style;
+        return *this;
+    }
 
-  friend std::ostream &operator<<(std::ostream &os, const Text &val) {
-    os << val.style_ << val.text_ << Decoration::From(Decoration::RESET);
-    return os;
-  }
+    Text& text(std::string text) {
+        text_ = text;
+        return *this;
+    }
 
-private:
-  std::string text_;
-  Style style_;
+    std::string text() { return text_; }
+
+    friend std::ostream& operator<<(std::ostream& os, const Text& val) {
+        os << val.style_ << val.text_ << Decoration::From(Decoration::RESET);
+        return os;
+    }
+
+   private:
+    std::string text_;
+    Style style_;
 };
-} // namespace ascii
-#endif // !INCLUDE_ASCII_TEXT_H_
+}  // namespace ascii
+#endif  // !INCLUDE_ASCII_TEXT_H_

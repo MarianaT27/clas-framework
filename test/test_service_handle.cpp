@@ -1,13 +1,13 @@
 #include <gtest/gtest.h>
+#include "Framework/IService.hpp"
 #include "Framework/ServiceHandle.hpp"
 #include "Framework/ServiceManager.hpp"
-#include "Framework/IService.hpp"
 
 using namespace Framework;
 
 // Test service for unit tests
 class TestService : public Service {
-public:
+   public:
     explicit TestService(std::string name = "TestService")
         : Service(std::move(name)) {}
 
@@ -22,25 +22,26 @@ public:
     }
 
     auto is_initialized() const -> bool { return m_initialized; }
+
     auto is_finalized() const -> bool { return m_finalized; }
 
     auto do_something() const -> int { return 42; }
 
-private:
+   private:
     bool m_initialized = false;
     bool m_finalized = false;
 };
 
 // Another test service for type checking
 class OtherService : public Service {
-public:
+   public:
     explicit OtherService(std::string name = "OtherService")
         : Service(std::move(name)) {}
 };
 
 // Test fixture
 class ServiceHandleTest : public ::testing::Test {
-protected:
+   protected:
     void SetUp() override {
         svc_mgr = std::make_unique<ServiceManager>();
     }

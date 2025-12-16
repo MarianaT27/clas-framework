@@ -1,14 +1,14 @@
 #pragma once
 
+#include <fmt/format.h>
+#include <fstream>
+#include <functional>
+#include <map>
+#include <memory>
+#include <string>
 #include "Framework/IService.hpp"
 #include "TF1.h"
 #include "TH1D.h"
-#include <fmt/format.h>
-#include <string>
-#include <map>
-#include <functional>
-#include <memory>
-#include <fstream>
 
 namespace Framework {
 
@@ -37,7 +37,7 @@ namespace Framework {
  * @endcode
  */
 class CorrectionsService : public Service {
-public:
+   public:
     // Correction function types
     using Correction1D = std::function<double(double)>;
     using Correction2D = std::function<double(double, double)>;
@@ -132,7 +132,7 @@ public:
         std::ifstream file(filename);
         if (!file.is_open()) {
             fmt::print(stderr, "WARNING: Failed to open corrections file: {}\n",
-                      filename);
+                       filename);
             return false;
         }
 
@@ -178,7 +178,7 @@ public:
         fmt::print("\n");
     }
 
-private:
+   private:
     std::map<std::string, Correction1D> m_corrections_1d;
     std::map<std::string, Correction2D> m_corrections_2d;
     std::map<std::string, Correction3D> m_corrections_3d;
@@ -192,34 +192,34 @@ private:
 
         // Electron momentum correction (example)
         define_correction_2d("electron_momentum",
-            [](double p, double sector) {
-                // Sector-dependent momentum correction
-                // This is a placeholder - replace with real corrections
-                return p * (1.0 + 0.001 * (sector - 3));
-            });
+                             [](double p, double sector) {
+                                 // Sector-dependent momentum correction
+                                 // This is a placeholder - replace with real corrections
+                                 return p * (1.0 + 0.001 * (sector - 3));
+                             });
 
         // ECAL energy scale (example)
         define_correction_1d("ecal_energy_scale",
-            [](double E) {
-                // Energy scale correction
-                return E * 1.002;  // 0.2% correction
-            });
+                             [](double E) {
+                                 // Energy scale correction
+                                 return E * 1.002;  // 0.2% correction
+                             });
 
         // Sampling fraction correction (example)
         define_correction_2d("sampling_fraction",
-            [](double p, double sector) {
-                // p and sector dependent
-                double sf_nom = 0.27;
-                double correction = 0.01 * std::exp(-p/3.0);
-                return sf_nom * (1.0 + correction);
-            });
+                             [](double p, double sector) {
+                                 // p and sector dependent
+                                 double sf_nom = 0.27;
+                                 double correction = 0.01 * std::exp(-p / 3.0);
+                                 return sf_nom * (1.0 + correction);
+                             });
 
         // Vertex Z correction (example)
         define_correction_1d("vertex_z",
-            [](double vz) {
-                // Target position correction
-                return vz - 0.1;  // -1 mm shift
-            });
+                             [](double vz) {
+                                 // Target position correction
+                                 return vz - 0.1;  // -1 mm shift
+                             });
     }
 };
 
@@ -268,7 +268,7 @@ inline auto sector_dependent(const std::array<double, 6>& corrections)
  * @brief Run-dependent correction
  */
 class RunDependentCorrection {
-public:
+   public:
     auto add_run_correction(int run_number, double correction) -> void {
         m_corrections[run_number] = correction;
     }
@@ -281,7 +281,7 @@ public:
         return value;  // No correction for this run
     }
 
-private:
+   private:
     std::map<int, double> m_corrections;
 };
 
@@ -289,7 +289,7 @@ private:
  * @brief Efficiency correction (from histogram)
  */
 class EfficiencyCorrection {
-public:
+   public:
     explicit EfficiencyCorrection(TH1D* efficiency_hist)
         : m_hist(efficiency_hist) {}
 
@@ -311,7 +311,7 @@ public:
         return (eff > 0.0) ? 1.0 / eff : 0.0;
     }
 
-private:
+   private:
     TH1D* m_hist;
 };
 

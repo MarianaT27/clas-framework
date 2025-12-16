@@ -1,14 +1,14 @@
 #pragma once
 
-#include "Framework/IService.hpp"
 #include <fmt/format.h>
+#include <chrono>
 #include <fstream>
-#include <string>
+#include <iomanip>
 #include <memory>
 #include <mutex>
-#include <chrono>
-#include <iomanip>
 #include <sstream>
+#include <string>
+#include "Framework/IService.hpp"
 
 namespace Framework {
 
@@ -42,7 +42,7 @@ enum class LogLevel {
  * @endcode
  */
 class LoggingService : public Service {
-public:
+   public:
     explicit LoggingService(std::string name = "LoggingService")
         : Service(std::move(name)) {}
 
@@ -98,7 +98,7 @@ public:
     /**
      * @brief Log debug message
      */
-    template<typename... Args>
+    template <typename... Args>
     auto debug(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
         log(LogLevel::DEBUG, source, fmt, std::forward<Args>(args)...);
     }
@@ -106,7 +106,7 @@ public:
     /**
      * @brief Log info message
      */
-    template<typename... Args>
+    template <typename... Args>
     auto info(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
         log(LogLevel::INFO, source, fmt, std::forward<Args>(args)...);
     }
@@ -114,7 +114,7 @@ public:
     /**
      * @brief Log warning message
      */
-    template<typename... Args>
+    template <typename... Args>
     auto warning(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
         log(LogLevel::WARNING, source, fmt, std::forward<Args>(args)...);
     }
@@ -122,7 +122,7 @@ public:
     /**
      * @brief Log error message
      */
-    template<typename... Args>
+    template <typename... Args>
     auto error(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
         log(LogLevel::ERROR, source, fmt, std::forward<Args>(args)...);
     }
@@ -130,7 +130,7 @@ public:
     /**
      * @brief Log critical message
      */
-    template<typename... Args>
+    template <typename... Args>
     auto critical(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
         log(LogLevel::CRITICAL, source, fmt, std::forward<Args>(args)...);
     }
@@ -142,7 +142,7 @@ public:
         return m_min_level;
     }
 
-private:
+   private:
     LogLevel m_min_level = LogLevel::INFO;
     bool m_console_output = true;
     bool m_colored_output = true;
@@ -153,7 +153,7 @@ private:
     /**
      * @brief Core logging function
      */
-    template<typename... Args>
+    template <typename... Args>
     auto log(LogLevel level, const std::string& source,
              fmt::format_string<Args...> fmt_str, Args&&... args) -> void {
         if (level < m_min_level) return;
@@ -167,7 +167,8 @@ private:
         auto now = std::chrono::system_clock::now();
         auto time_t = std::chrono::system_clock::to_time_t(now);
         auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now.time_since_epoch()) % 1000;
+                      now.time_since_epoch()) %
+                  1000;
 
         std::stringstream timestamp;
         timestamp << std::put_time(std::localtime(&time_t), "%H:%M:%S")
@@ -204,19 +205,19 @@ private:
             if (m_colored_output) {
                 // Use ANSI escape codes for colors
                 fmt::print("\033[90m[{}]\033[0m {}{}  \033[0m\033[1m{:<20}\033[0m {}\n",
-                          timestamp.str(), color_code, level_str, source, message);
+                           timestamp.str(), color_code, level_str, source, message);
             } else {
                 fmt::print("[{}] {} {:<20} {}\n",
-                          timestamp.str(), level_str, source, message);
+                           timestamp.str(), level_str, source, message);
             }
         }
 
         // File output
         if (m_file_stream.is_open()) {
             m_file_stream << "[" << timestamp.str() << "] "
-                         << level_str << " "
-                         << std::setw(20) << std::left << source << " "
-                         << message << "\n";
+                          << level_str << " "
+                          << std::setw(20) << std::left << source << " "
+                          << message << "\n";
             m_file_stream.flush();
         }
     }
@@ -236,7 +237,7 @@ private:
  * @endcode
  */
 class Log {
-public:
+   public:
     /**
      * @brief Set the global logger instance
      * Called by Application during initialization
@@ -262,7 +263,7 @@ public:
     /**
      * @brief Log debug message
      */
-    template<typename... Args>
+    template <typename... Args>
     static auto debug(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
         if (s_instance) s_instance->debug(source, fmt, std::forward<Args>(args)...);
     }
@@ -270,7 +271,7 @@ public:
     /**
      * @brief Log info message
      */
-    template<typename... Args>
+    template <typename... Args>
     static auto info(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
         if (s_instance) s_instance->info(source, fmt, std::forward<Args>(args)...);
     }
@@ -278,7 +279,7 @@ public:
     /**
      * @brief Log warning message
      */
-    template<typename... Args>
+    template <typename... Args>
     static auto warning(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
         if (s_instance) s_instance->warning(source, fmt, std::forward<Args>(args)...);
     }
@@ -286,7 +287,7 @@ public:
     /**
      * @brief Log error message
      */
-    template<typename... Args>
+    template <typename... Args>
     static auto error(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
         if (s_instance) s_instance->error(source, fmt, std::forward<Args>(args)...);
     }
@@ -294,12 +295,12 @@ public:
     /**
      * @brief Log critical message
      */
-    template<typename... Args>
+    template <typename... Args>
     static auto critical(const std::string& source, fmt::format_string<Args...> fmt, Args&&... args) -> void {
         if (s_instance) s_instance->critical(source, fmt, std::forward<Args>(args)...);
     }
 
-private:
+   private:
     static inline LoggingService* s_instance = nullptr;
 };
 

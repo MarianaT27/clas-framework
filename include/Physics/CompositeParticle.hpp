@@ -1,9 +1,9 @@
 #pragma once
 
-#include "CLAS/Particle.hpp"
-#include "CLAS/PIDs.hpp"
-#include <vector>
 #include <memory>
+#include <vector>
+#include "CLAS/PIDs.hpp"
+#include "CLAS/Particle.hpp"
 
 namespace Physics {
 
@@ -14,7 +14,7 @@ namespace Physics {
  * such as π⁰ → γγ, ρ → π⁺π⁻, etc.
  */
 class CompositeParticle {
-public:
+   public:
     /**
      * @brief Construct from daughter particles
      * @param daughters Vector of daughter particles
@@ -36,8 +36,11 @@ public:
      * @brief Get four-momentum components
      */
     auto px() const -> double { return m_px; }
+
     auto py() const -> double { return m_py; }
+
     auto pz() const -> double { return m_pz; }
+
     auto energy() const -> double { return m_energy; }
 
     /**
@@ -103,7 +106,7 @@ public:
         return std::abs(m_mass - center) < width;
     }
 
-private:
+   private:
     std::vector<CLAS::Particle> m_daughters;
     int m_pid;
     double m_px = 0.0;
@@ -141,7 +144,7 @@ private:
  * @brief Builder for composite particles
  */
 class CompositeParticleBuilder {
-public:
+   public:
     /**
      * @brief Reconstruct π⁰ from two photons
      * @param photons Vector of photons
@@ -169,7 +172,7 @@ public:
      * @return Vector of ρ candidates
      */
     static auto reconstruct_rho(const std::vector<CLAS::Particle>& pions_plus,
-                                 const std::vector<CLAS::Particle>& pions_minus)
+                                const std::vector<CLAS::Particle>& pions_minus)
         -> std::vector<CompositeParticle> {
         std::vector<CompositeParticle> rho_candidates;
 
@@ -190,7 +193,7 @@ public:
      * @return Vector of J/ψ candidates
      */
     static auto reconstruct_jpsi(const std::vector<CLAS::Particle>& electrons,
-                                  const std::vector<CLAS::Particle>& positrons)
+                                 const std::vector<CLAS::Particle>& positrons)
         -> std::vector<CompositeParticle> {
         std::vector<CompositeParticle> jpsi_candidates;
 

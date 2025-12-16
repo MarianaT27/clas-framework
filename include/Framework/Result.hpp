@@ -1,20 +1,20 @@
 #pragma once
 
-#include <string>
-#include <variant>
-#include <type_traits>
 #include <stdexcept>
+#include <string>
+#include <type_traits>
+#include <variant>
 
 namespace Framework {
 
 namespace detail {
-    // Wrapper to distinguish error strings from value strings
-    struct ErrorWrapper {
-        std::string message;
-        
-        explicit ErrorWrapper(std::string msg) : message(std::move(msg)) {}
-    };
-}
+// Wrapper to distinguish error strings from value strings
+struct ErrorWrapper {
+    std::string message;
+
+    explicit ErrorWrapper(std::string msg) : message(std::move(msg)) {}
+};
+}  // namespace detail
 
 /**
  * @brief A Result type for operations that can fail
@@ -31,9 +31,9 @@ namespace detail {
  *       std::cerr << result.error_message() << std::endl;
  *   }
  */
-template<typename T>
+template <typename T>
 class Result {
-public:
+   public:
     // Factory methods
     static auto ok(T value) -> Result<T> {
         return Result<T>(std::move(value));
@@ -90,7 +90,7 @@ public:
      * containing the transformed value. If this Result is an error, returns
      * a new Result with the same error message.
      */
-    template<typename F>
+    template <typename F>
     auto map(F&& func) const -> Result<std::invoke_result_t<F, const T&>> {
         using U = std::invoke_result_t<F, const T&>;
         if (is_ok()) {
@@ -105,7 +105,7 @@ public:
      * If this Result is ok, applies func to the value (func must return a Result).
      * If this Result is an error, returns a new Result with the same error message.
      */
-    template<typename F>
+    template <typename F>
     auto and_then(F&& func) const -> std::invoke_result_t<F, const T&> {
         using ResultU = std::invoke_result_t<F, const T&>;
         if (is_ok()) {
@@ -114,7 +114,7 @@ public:
         return ResultU::error(error_message());
     }
 
-private:
+   private:
     // Constructor for ok value
     explicit Result(T value) : m_data(std::move(value)) {}
 
@@ -124,16 +124,15 @@ private:
     std::variant<T, detail::ErrorWrapper> m_data;
 };
 
-
 /**
  * @brief Specialization of Result for void return type
  *
  * Used for operations that either succeed (with no value) or fail with an error.
  * This is useful for operations like validation or side-effect-only functions.
  */
-template<>
+template <>
 class Result<void> {
-public:
+   public:
     // Factory methods
     static auto ok() -> Result<void> {
         return Result<void>(true);
@@ -162,7 +161,7 @@ public:
      * If this Result is ok, calls func and returns its result.
      * If this Result is an error, returns a new Result with the same error message.
      */
-    template<typename F>
+    template <typename F>
     auto and_then(F&& func) const -> std::invoke_result_t<F> {
         using ResultU = std::invoke_result_t<F>;
         if (is_ok()) {
@@ -171,7 +170,7 @@ public:
         return ResultU::error(error_message());
     }
 
-private:
+   private:
     // Constructor for ok
     explicit Result(bool) : m_is_ok(true), m_message() {}
 

@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
 #include <rapidcheck.h>
 #include <rapidcheck/gtest.h>
-#include "Framework/ServiceManager.hpp"
-#include "Framework/IService.hpp"
-#include <vector>
-#include <string>
-#include <set>
 #include <algorithm>
+#include <set>
+#include <string>
+#include <vector>
+#include "Framework/IService.hpp"
+#include "Framework/ServiceManager.hpp"
 
 using namespace Framework;
 
@@ -14,7 +14,7 @@ using namespace Framework;
  * Test service that tracks initialization order
  */
 class TrackingService : public Service {
-public:
+   public:
     explicit TrackingService(const std::string& name, std::vector<std::string>* init_order)
         : Service(name), m_init_order(init_order) {}
 
@@ -25,7 +25,7 @@ public:
         return StatusCode::SUCCESS();
     }
 
-private:
+   private:
     std::vector<std::string>* m_init_order;
 };
 
@@ -41,7 +41,7 @@ private:
 RC_GTEST_PROP(ServiceDependencyProperties, DependenciesInitializedFirst, ()) {
     // Generate a small number of services (2-6) to keep test fast
     int num_services = *rc::gen::inRange(2, 7);
-    
+
     // Generate service names
     std::vector<std::string> service_names;
     for (int i = 0; i < num_services; ++i) {
@@ -147,7 +147,7 @@ TEST(ServiceDependencyTest, LinearDependencyChain) {
 
     // Verify order: A must come before B, B must come before C
     ASSERT_EQ(init_order.size(), 3);
-    
+
     auto pos_a = std::find(init_order.begin(), init_order.end(), "A") - init_order.begin();
     auto pos_b = std::find(init_order.begin(), init_order.end(), "B") - init_order.begin();
     auto pos_c = std::find(init_order.begin(), init_order.end(), "C") - init_order.begin();
@@ -241,12 +241,11 @@ TEST(ServiceDependencyTest, GetDependencies) {
     EXPECT_TRUE(deps_unknown.empty());
 }
 
-
 /**
  * Test service that fails initialization
  */
 class FailingService : public Service {
-public:
+   public:
     explicit FailingService(const std::string& name, const std::string& error_msg)
         : Service(name), m_error_msg(error_msg) {}
 
@@ -254,7 +253,7 @@ public:
         return StatusCode::failure(m_error_msg);
     }
 
-private:
+   private:
     std::string m_error_msg;
 };
 
@@ -275,7 +274,7 @@ TEST(ServiceDependencyTest, InitializationFailureReporting) {
     // Verify error message contains service name and reason
     EXPECT_TRUE(sc.message().find("B") != std::string::npos);
     EXPECT_TRUE(sc.message().find("Database connection failed") != std::string::npos);
-    
+
     // A should have been initialized before B failed
     EXPECT_EQ(init_order.size(), 1);
     EXPECT_EQ(init_order[0], "A");

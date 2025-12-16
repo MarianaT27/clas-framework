@@ -1,10 +1,10 @@
 #pragma once
 
+#include <memory>
+#include <mutex>
 #include "TH1D.h"
 #include "TH2D.h"
 #include "TProfile.h"
-#include <mutex>
-#include <memory>
 
 namespace Framework {
 
@@ -15,7 +15,7 @@ namespace Framework {
  * Each fill operation is atomic and thread-safe.
  */
 class ThreadSafeHist1D {
-public:
+   public:
     explicit ThreadSafeHist1D(TH1D* hist = nullptr) : m_hist(hist) {}
 
     auto fill(double value) -> ThreadSafeHist1D& {
@@ -43,11 +43,14 @@ public:
     }
 
     auto get() -> TH1D* { return m_hist; }
+
     auto get() const -> const TH1D* { return m_hist; }
+
     auto is_valid() const -> bool { return m_hist != nullptr; }
+
     explicit operator bool() const { return is_valid(); }
 
-private:
+   private:
     TH1D* m_hist;
     mutable std::mutex m_mutex;
 };
@@ -56,7 +59,7 @@ private:
  * @brief Thread-safe wrapper for TH2D
  */
 class ThreadSafeHist2D {
-public:
+   public:
     explicit ThreadSafeHist2D(TH2D* hist = nullptr) : m_hist(hist) {}
 
     auto fill(double x, double y) -> ThreadSafeHist2D& {
@@ -84,11 +87,14 @@ public:
     }
 
     auto get() -> TH2D* { return m_hist; }
+
     auto get() const -> const TH2D* { return m_hist; }
+
     auto is_valid() const -> bool { return m_hist != nullptr; }
+
     explicit operator bool() const { return is_valid(); }
 
-private:
+   private:
     TH2D* m_hist;
     mutable std::mutex m_mutex;
 };
@@ -97,7 +103,7 @@ private:
  * @brief Thread-safe wrapper for TProfile
  */
 class ThreadSafeProfile {
-public:
+   public:
     explicit ThreadSafeProfile(TProfile* prof = nullptr) : m_prof(prof) {}
 
     auto fill(double x, double y) -> ThreadSafeProfile& {
@@ -125,11 +131,14 @@ public:
     }
 
     auto get() -> TProfile* { return m_prof; }
+
     auto get() const -> const TProfile* { return m_prof; }
+
     auto is_valid() const -> bool { return m_prof != nullptr; }
+
     explicit operator bool() const { return is_valid(); }
 
-private:
+   private:
     TProfile* m_prof;
     mutable std::mutex m_mutex;
 };

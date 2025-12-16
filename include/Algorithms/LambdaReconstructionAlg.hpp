@@ -1,11 +1,11 @@
 #pragma once
 
+#include <Math/Vector4D.h>
 #include <cmath>
 #include <mutex>
 #include <optional>
 #include <tuple>
 #include <vector>
-#include <Math/Vector4D.h>
 #include "CLAS/Constants.hpp"
 #include "CLAS/Detectors.hpp"
 #include "CLAS/PIDs.hpp"
@@ -44,14 +44,14 @@ struct LambdaCandidate {
     double momentum = 0.0;
     double theta = 0.0;
     double phi = 0.0;
-    double vertex_z = 0.0;        // Decay vertex z (average of proton and pion)
-    double delta_vz = 0.0;        // Vertex z difference between proton and pion
-    double coplanarity = 0.0;     // Coplanarity angle with electron [deg]
-    double opening_angle = 0.0;   // Opening angle between proton and pion [deg]
-    double decay_length = 0.0;    // Decay length from primary vertex [cm]
-    double missing_mass = 0.0;    // Missing mass M(e,e'Λ)X
-    double primary_vz = 0.0;      // Primary vertex z (from electron)
-    double displaced_vz = 0.0;    // Displacement: decay_vz - primary_vz [cm]
+    double vertex_z = 0.0;       // Decay vertex z (average of proton and pion)
+    double delta_vz = 0.0;       // Vertex z difference between proton and pion
+    double coplanarity = 0.0;    // Coplanarity angle with electron [deg]
+    double opening_angle = 0.0;  // Opening angle between proton and pion [deg]
+    double decay_length = 0.0;   // Decay length from primary vertex [cm]
+    double missing_mass = 0.0;   // Missing mass M(e,e'Λ)X
+    double primary_vz = 0.0;     // Primary vertex z (from electron)
+    double displaced_vz = 0.0;   // Displacement: decay_vz - primary_vz [cm]
 };
 
 /**
@@ -64,21 +64,28 @@ struct LambdaCandidate {
  * 4. Selecting candidates within a mass window around the Λ mass
  */
 class LambdaReconstructionAlg : public Framework::Algorithm {
-public:
+   public:
     explicit LambdaReconstructionAlg(
         std::string name = "LambdaReconstructionAlg",
         double mass_window = 0.5  // GeV (±500 MeV around 1.116 GeV)
-    ) : Algorithm(std::move(name)), m_mass_window(mass_window), m_cutflow("Lambda Reconstruction") {}
+        ) : Algorithm(std::move(name)), m_mass_window(mass_window), m_cutflow("Lambda Reconstruction") {}
 
     void set_mass_window(double window) { m_mass_window = window; }
+
     void set_min_proton_momentum(double p) { m_min_proton_p = p; }
+
     void set_min_pion_momentum(double p) { m_min_pion_p = p; }
+
     void set_max_delta_vz(double dz) { m_max_delta_vz = dz; }
+
     void set_coplanarity_cut(double max_copla) { m_max_coplanarity = max_copla; }
+
     void set_beam_energy(double E) { m_beam_energy = E; }
+
     void set_min_displaced_vz(double dz) { m_min_displaced_vz = dz; }
+
     void set_max_displaced_vz(double dz) { m_max_displaced_vz = dz; }
-    
+
     /**
      * @brief Check if particle is in forward detector
      */
@@ -86,7 +93,7 @@ public:
         int abs_status = std::abs(particle.status());
         return 2000 <= abs_status && abs_status < 4000;
     }
-    
+
     /**
      * @brief Calculate coplanarity angle between Lambda and electron
      * Returns the azimuthal angle difference (should be 0 or 180 for coplanar events)
@@ -98,7 +105,7 @@ public:
         // Return the minimum angle to either 0° (same side) or 180° (opposite side)
         return std::min(phi_diff, 180.0 - phi_diff);
     }
-    
+
     /**
      * @brief Calculate opening angle between two particles
      */
@@ -170,7 +177,7 @@ public:
         // This is for debugging - to see if we have Lambda signal at all
         const auto& all_protons = event.particles(CLAS::PIDs::PROTON);
         const auto& all_pions = event.particles(CLAS::PIDs::PIMINUS);
-        
+
         // Fill raw mass distribution before ANY cuts (including electron)
         for (const auto& proton : all_protons) {
             for (const auto& pion : all_pions) {
@@ -224,10 +231,10 @@ public:
             // Require proton in forward detector
             if (!is_forward_detector(proton)) continue;
             passed_proton_fd = true;
-            
+
             if (proton.p() < m_min_proton_p) continue;
             passed_proton_p = true;
-            
+
             // Chi2pid cut for proton (good PID quality)
             if (std::abs(proton.chi2pid()) > m_max_chi2pid) continue;
 
@@ -235,10 +242,10 @@ public:
                 // Require pion in forward detector
                 if (!is_forward_detector(pion)) continue;
                 passed_pion_fd = true;
-                
+
                 if (pion.p() < m_min_pion_p) continue;
                 passed_pion_p = true;
-                
+
                 // Chi2pid cut for pion (good PID quality)
                 if (std::abs(pion.chi2pid()) > m_max_chi2pid) continue;
 
@@ -264,38 +271,38 @@ public:
                 candidate.pion = pion;
                 candidate.mass = mass;
                 candidate.delta_vz = delta_vz;
-                
+
                 // Calculate Lambda 4-momentum
                 double px = proton.px() + pion.px();
                 double py = proton.py() + pion.py();
                 double pz = proton.pz() + pion.pz();
-                candidate.momentum = std::sqrt(px*px + py*py + pz*pz);
+                candidate.momentum = std::sqrt(px * px + py * py + pz * pz);
                 candidate.theta = std::acos(pz / candidate.momentum);
                 candidate.phi = std::atan2(py, px);
                 candidate.vertex_z = (proton.vz() + pion.vz()) / 2.0;  // Decay vertex
-                
+
                 // Opening angle between proton and pion
                 candidate.opening_angle = calculate_opening_angle(proton, pion);
-                
+
                 // Displaced vertex calculation (Lambda decays downstream of primary vertex)
                 // Primary vertex is the electron vertex
                 if (electron) {
                     candidate.primary_vz = electron->vz();
                     candidate.displaced_vz = candidate.vertex_z - candidate.primary_vz;
-                    
+
                     // Estimate decay length (approximate, using z displacement and Lambda angle)
                     if (candidate.theta > 0.01) {  // Avoid division by zero
                         candidate.decay_length = candidate.displaced_vz / std::cos(candidate.theta);
                     }
                 }
-                
+
                 // Fill displaced vertex histogram before cut
                 if (h_displaced_vz_precut && electron) h_displaced_vz_precut->Fill(candidate.displaced_vz);
-                
+
                 // Coplanarity with electron
                 if (electron) {
                     candidate.coplanarity = calculate_coplanarity(*electron, candidate.phi);
-                    
+
                     // Calculate missing mass M(e,e'Λ)X
                     double E_beam = m_beam_energy;
                     double E_e = electron->E();
@@ -311,9 +318,9 @@ public:
                 // Fill pre-coplanarity histograms
                 if (h_coplanarity_precut) h_coplanarity_precut->Fill(candidate.coplanarity);
                 if (h_opening_angle) h_opening_angle->Fill(candidate.opening_angle);
-                
+
                 candidates.push_back(candidate);
-                
+
                 // Apply displaced vertex cut (Lambda decays downstream)
                 // Require decay vertex to be downstream of primary vertex
                 if (electron && m_min_displaced_vz > -999) {
@@ -322,7 +329,7 @@ public:
                 }
                 passed_displaced_vz = true;
                 candidates_after_displaced.push_back(candidate);
-                
+
                 // Apply coplanarity cut
                 if (m_max_coplanarity > 0 && candidate.coplanarity > m_max_coplanarity) continue;
                 passed_coplanarity = true;
@@ -364,12 +371,12 @@ public:
 
         // Store results
         event.set_decision("HasLambda", true);
-        
+
         // Find best candidate (closest to Lambda mass)
         auto best_it = std::min_element(final_candidates.begin(), final_candidates.end(),
-            [](const LambdaCandidate& a, const LambdaCandidate& b) {
-                return std::abs(a.mass - LAMBDA_MASS) < std::abs(b.mass - LAMBDA_MASS);
-            });
+                                        [](const LambdaCandidate& a, const LambdaCandidate& b) {
+                                            return std::abs(a.mass - LAMBDA_MASS) < std::abs(b.mass - LAMBDA_MASS);
+                                        });
 
         // Store best Lambda
         event.store("lambda_mass", best_it->mass);
@@ -395,7 +402,7 @@ public:
         // Fill N-tuple
         if (m_ntuple_svc) {
             std::lock_guard<std::mutex> lock(m_ntuple_mutex);
-            
+
             // Get electron info
             if (electron) {
                 m_e_p = electron->p();
@@ -447,20 +454,20 @@ public:
         // Use ROOT's PxPyPzMVector for proper Lorentz vector arithmetic
         ROOT::Math::PxPyPzMVector p4_proton(proton.px(), proton.py(), proton.pz(), CLAS::Constants::PROTONMASS);
         ROOT::Math::PxPyPzMVector p4_pion(pion.px(), pion.py(), pion.pz(), CLAS::Constants::PIMASS);
-        
+
         // Add the 4-vectors and get invariant mass
         auto p4_total = p4_proton + p4_pion;
         return p4_total.M();
     }
 
-private:
+   private:
     double m_mass_window;
-    double m_min_proton_p = 0.3;      // GeV
-    double m_min_pion_p = 0.3;        // GeV
-    double m_max_delta_vz = 2.0;      // cm - tighter vertex z difference cut
-    double m_max_chi2pid = 3.0;       // chi2pid cut for particle ID quality
-    double m_max_coplanarity = 0.0;   // deg - 0 means disabled
-    double m_beam_energy = 10.6;      // GeV
+    double m_min_proton_p = 0.3;          // GeV
+    double m_min_pion_p = 0.3;            // GeV
+    double m_max_delta_vz = 2.0;          // cm - tighter vertex z difference cut
+    double m_max_chi2pid = 3.0;           // chi2pid cut for particle ID quality
+    double m_max_coplanarity = 0.0;       // deg - 0 means disabled
+    double m_beam_energy = 10.6;          // GeV
     double m_min_displaced_vz = -1000.0;  // cm - minimum displaced vertex (decay_vz - primary_vz), -1000 means disabled
     double m_max_displaced_vz = 0.0;      // cm - maximum displaced vertex, 0 means no upper limit
     Framework::Cutflow m_cutflow;

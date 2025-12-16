@@ -1,17 +1,17 @@
 #pragma once
 
-#include "IService.hpp"
-#include "Framework/Services/LoggingService.hpp"
-#include "StatusCode.hpp"
-#include "Result.hpp"
-#include <map>
-#include <memory>
-#include <string>
-#include <vector>
-#include <algorithm>
-#include <set>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <algorithm>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <vector>
+#include "Framework/Services/LoggingService.hpp"
+#include "IService.hpp"
+#include "Result.hpp"
+#include "StatusCode.hpp"
 
 namespace Framework {
 
@@ -27,7 +27,7 @@ class LoggingService;
  * initialize them in the correct order.
  */
 class ServiceManager {
-public:
+   public:
     /**
      * @brief Add a service to the manager (backward compatible)
      * @param service Unique pointer to the service
@@ -61,7 +61,7 @@ public:
      * @param name Name of the service
      * @return T* Pointer to the service, or nullptr if not found
      */
-    template<typename T>
+    template <typename T>
     auto get_service(const std::string& name) -> T* {
         auto it = m_services.find(name);
         if (it == m_services.end()) {
@@ -95,15 +95,15 @@ public:
         const auto& order = sort_result.value();
         for (const auto& name : order) {
             auto it = m_services.find(name);
-            if (it == m_services.end()) continue;  
-            
+            if (it == m_services.end()) continue;
+
             Framework::Log::info("ServiceManager", "Initializing service: {}", name);
 
             auto sc = it->second->initialize();
             if (sc.is_failure()) {
                 std::string error_msg = sc.message().empty()
-                    ? fmt::format("Failed to initialize service '{}'", name)
-                    : fmt::format("Failed to initialize service '{}': {}", name, sc.message());
+                                            ? fmt::format("Failed to initialize service '{}'", name)
+                                            : fmt::format("Failed to initialize service '{}': {}", name, sc.message());
                 Framework::Log::error("ServiceManager", "{}", error_msg);
                 return StatusCode::failure(error_msg);
             }
@@ -134,8 +134,7 @@ public:
                 // Check if dependency exists
                 if (m_services.find(dep) == m_services.end()) {
                     return Result<std::vector<std::string>>::error(
-                        fmt::format("Service '{}' depends on non-existent service '{}'", name, dep)
-                    );
+                        fmt::format("Service '{}' depends on non-existent service '{}'", name, dep));
                 }
                 in_degree[name]++;
                 dependents[dep].push_back(name);
@@ -178,8 +177,7 @@ public:
             }
             return Result<std::vector<std::string>>::error(
                 fmt::format("Circular dependency detected involving services: {}",
-                           fmt::join(cycle_services, ", "))
-            );
+                            fmt::join(cycle_services, ", ")));
         }
 
         // SPECIAL CASE: NTupleService must finalize FIRST (initialize LAST)
@@ -243,7 +241,7 @@ public:
         return m_services.size();
     }
 
-private:
+   private:
     std::map<std::string, std::unique_ptr<IService>> m_services;
     std::map<std::string, std::vector<std::string>> m_dependencies;
     LoggingService* m_log = nullptr;
@@ -257,30 +255,28 @@ private:
 
 // Template implementation for Algorithm::service
 namespace Framework {
-    template<typename T>
-    auto Algorithm::service(const std::string& service_name) -> T* {
-        if (!m_svc_mgr) {
-            fmt::print(stderr, "ERROR: ServiceManager not set for algorithm '{}'\n", m_name);
-            return nullptr;
-        }
-        return m_svc_mgr->get_service<T>(service_name);
+template <typename T>
+auto Algorithm::service(const std::string& service_name) -> T* {
+    if (!m_svc_mgr) {
+        fmt::print(stderr, "ERROR: ServiceManager not set for algorithm '{}'\n", m_name);
+        return nullptr;
     }
-
-    template<typename T>
-    auto Algorithm::initialize_handle(ServiceHandle<T>& handle) -> StatusCode {
-        if (!m_svc_mgr) {
-            return StatusCode::failure(
-                fmt::format("Algorithm '{}': ServiceManager not set", m_name)
-            );
-        }
-
-        auto sc = handle.initialize(*m_svc_mgr);
-        if (sc.is_failure()) {
-            return StatusCode::failure(
-                fmt::format("Algorithm '{}': {}", m_name, sc.message())
-            );
-        }
-
-        return StatusCode::SUCCESS();
-    }
+    return m_svc_mgr->get_service<T>(service_name);
 }
+
+template <typename T>
+auto Algorithm::initialize_handle(ServiceHandle<T>& handle) -> StatusCode {
+    if (!m_svc_mgr) {
+        return StatusCode::failure(
+            fmt::format("Algorithm '{}': ServiceManager not set", m_name));
+    }
+
+    auto sc = handle.initialize(*m_svc_mgr);
+    if (sc.is_failure()) {
+        return StatusCode::failure(
+            fmt::format("Algorithm '{}': {}", m_name, sc.message()));
+    }
+
+    return StatusCode::SUCCESS();
+}
+}  // namespace Framework

@@ -1,20 +1,20 @@
 #pragma once
 
-#include "Framework/IAlgorithm.hpp"
-#include "Framework/Event.hpp"
+#include <cmath>
+#include <memory>
+#include "CLAS/Constants.hpp"
+#include "CLAS/ElectronCuts.hpp"
+#include "CLAS/ReadBank.hpp"
+#include "CLAS/Target.hpp"
 #include "Framework/Cutflow.hpp"
+#include "Framework/Event.hpp"
+#include "Framework/IAlgorithm.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
-#include "CLAS/ElectronCuts.hpp"
-#include "CLAS/ReadBank.hpp"
-#include "CLAS/Target.hpp"
-#include "CLAS/Constants.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
-#include <memory>
-#include <cmath>
 
 namespace Algorithms {
 
@@ -33,15 +33,11 @@ using Framework::Log;
  * - Cutflow tracking for efficiency
  */
 class PionSelectionAlg : public Framework::Algorithm {
-public:
+   public:
     explicit PionSelectionAlg(std::string name = "PionSelection",
-                             CLAS::Target target = CLAS::Target::LD2,
-                             bool separate_charges = true)
-        : Algorithm(std::move(name))
-        , m_target(target)
-        , m_separate_charges(separate_charges)
-        , m_cutflow_piplus("π⁺ Selection")
-        , m_cutflow_piminus("π⁻ Selection") {}
+                              CLAS::Target target = CLAS::Target::LD2,
+                              bool separate_charges = true)
+        : Algorithm(std::move(name)), m_target(target), m_separate_charges(separate_charges), m_cutflow_piplus("π⁺ Selection"), m_cutflow_piminus("π⁻ Selection") {}
 
     auto initialize() -> Framework::StatusCode override {
         // Get services
@@ -53,8 +49,8 @@ public:
         if (Log::is_available()) {
             Log::info(name(), "Initializing pion selection algorithm");
             Log::info(name(), "Target: {}, Separate charges: {}",
-                     m_target == CLAS::Target::LD2 ? "LD2" : "Other",
-                     m_separate_charges ? "yes" : "no");
+                      m_target == CLAS::Target::LD2 ? "LD2" : "Other",
+                      m_separate_charges ? "yes" : "no");
         }
 
         if (!m_hist_svc) {
@@ -96,8 +92,7 @@ public:
         // Extract pions using ParticleSelectorService
         Framework::ParticleMap particles = m_particle_svc->extract_particles(
             *REC_Particle,
-            {CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS}
-        );
+            {CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS});
 
         // Process π⁺
         const auto& pions_plus = m_particle_svc->get_pions_plus(particles);
@@ -139,7 +134,7 @@ public:
         return Framework::StatusCode::SUCCESS();
     }
 
-private:
+   private:
     CLAS::Target m_target;
     bool m_separate_charges;
     Framework::Cutflow m_cutflow_piplus;
@@ -293,9 +288,9 @@ private:
      * @brief Process pions (either π⁺ or π⁻)
      */
     auto process_pions(const std::vector<CLAS::Particle>& pions,
-                      hipo::BankView& REC_Scintillator,
-                      double start_time,
-                      bool is_piplus) -> void {
+                       hipo::BankView& REC_Scintillator,
+                       double start_time,
+                       bool is_piplus) -> void {
         auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
         cutflow.pass("All Events");
 
@@ -344,8 +339,8 @@ private:
      * delta_t = measured_time - expected_time
      */
     auto calculate_delta_t(const CLAS::Particle& pion,
-                          const CLAS::ScintillatorBank& scintillator,
-                          double start_time) -> double {
+                           const CLAS::ScintillatorBank& scintillator,
+                           double start_time) -> double {
         double measured_time = scintillator.time - start_time;
         double path_length = scintillator.path;
         double p = pion.p();

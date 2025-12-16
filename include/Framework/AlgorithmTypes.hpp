@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Framework/IAlgorithm.hpp"
-#include "Framework/Event.hpp"
-#include "Framework/StatusCode.hpp"
 #include <string>
+#include "Framework/Event.hpp"
+#include "Framework/IAlgorithm.hpp"
+#include "Framework/StatusCode.hpp"
 
 namespace Framework {
 
@@ -23,7 +23,7 @@ namespace Framework {
  * - Gaudi: FilterAlgorithm
  */
 class FilterAlgorithm : public Algorithm {
-public:
+   public:
     explicit FilterAlgorithm(std::string name) : Algorithm(std::move(name)) {}
 
     /**
@@ -42,7 +42,7 @@ public:
         return StatusCode::SUCCESS();
     }
 
-protected:
+   protected:
     /**
      * @brief Filter decision logic
      * @param event Event to evaluate
@@ -69,7 +69,7 @@ protected:
  * - Gaudi: GaudiAlgorithm with DataObjects
  */
 class ProducerAlgorithm : public Algorithm {
-public:
+   public:
     explicit ProducerAlgorithm(std::string name) : Algorithm(std::move(name)) {}
 
     /**
@@ -83,7 +83,7 @@ public:
         return produce(event);
     }
 
-protected:
+   protected:
     /**
      * @brief Production logic
      * @param event Event to process, add products to event store
@@ -112,7 +112,7 @@ protected:
  * - Gaudi: GaudiAlgorithm (analysis mode)
  */
 class AnalysisAlgorithm : public Algorithm {
-public:
+   public:
     explicit AnalysisAlgorithm(std::string name) : Algorithm(std::move(name)) {}
 
     /**
@@ -126,7 +126,7 @@ public:
         return analyze(event);
     }
 
-protected:
+   protected:
     /**
      * @brief Analysis logic
      * @param event Event to analyze (read-only in principle)
@@ -155,7 +155,7 @@ protected:
  * - Gaudi: MonitoringAlgorithm
  */
 class MonitoringAlgorithm : public Algorithm {
-public:
+   public:
     explicit MonitoringAlgorithm(std::string name) : Algorithm(std::move(name)) {}
 
     /**
@@ -169,7 +169,7 @@ public:
         return monitor(event);
     }
 
-protected:
+   protected:
     /**
      * @brief Monitoring logic
      * @param event Event to monitor
@@ -194,7 +194,7 @@ protected:
  * - Gaudi: GaudiSequencer
  */
 class AlgorithmSequence : public Algorithm {
-public:
+   public:
     explicit AlgorithmSequence(std::string name) : Algorithm(std::move(name)) {}
 
     /**
@@ -251,7 +251,7 @@ public:
         return m_algorithms.size();
     }
 
-private:
+   private:
     std::vector<std::unique_ptr<IAlgorithm>> m_algorithms;
 };
 
@@ -264,10 +264,9 @@ private:
  * Example: Run pion analysis sequence only if "HasGoodElectron" is true
  */
 class ConditionalSequence : public AlgorithmSequence {
-public:
+   public:
     explicit ConditionalSequence(std::string name, std::string required_decision)
-        : AlgorithmSequence(std::move(name))
-        , m_required_decision(std::move(required_decision)) {}
+        : AlgorithmSequence(std::move(name)), m_required_decision(std::move(required_decision)) {}
 
     /**
      * @brief Execute sequence only if required decision passes
@@ -289,7 +288,7 @@ public:
         return m_required_decision;
     }
 
-private:
+   private:
     std::string m_required_decision;
 };
 

@@ -1,15 +1,15 @@
 #pragma once
 
-#include "Framework/IService.hpp"
-#include "TTree.h"
-#include "TFile.h"
-#include "TObjString.h"
 #include <fmt/format.h>
-#include <string>
-#include <map>
-#include <vector>
 #include <chrono>
 #include <ctime>
+#include <map>
+#include <string>
+#include <vector>
+#include "Framework/IService.hpp"
+#include "TFile.h"
+#include "TObjString.h"
+#include "TTree.h"
 
 namespace Framework {
 
@@ -37,7 +37,7 @@ namespace Framework {
  * @endcode
  */
 class MetadataService : public Service {
-public:
+   public:
     explicit MetadataService(std::string name = "MetadataService")
         : Service(std::move(name)) {}
 
@@ -102,7 +102,7 @@ public:
     /**
      * @brief Add analysis parameter
      */
-    template<typename T>
+    template <typename T>
     auto add_parameter(const std::string& name, T value) -> void {
         m_parameters[name] = fmt::format("{}", value);
     }
@@ -222,7 +222,8 @@ public:
         Long64_t start_timestamp = std::chrono::system_clock::to_time_t(m_start_time);
         Long64_t end_timestamp = std::chrono::system_clock::to_time_t(m_end_time);
         Long64_t duration_sec = std::chrono::duration_cast<std::chrono::seconds>(
-            m_end_time - m_start_time).count();
+                                    m_end_time - m_start_time)
+                                    .count();
 
         // Register branches
         tree.Branch("version", &version);
@@ -272,7 +273,7 @@ public:
         Framework::Log::info("MetadataService", "Metadata written successfully");
     }
 
-private:
+   private:
     std::string m_output_file;
     std::string m_version;
     std::string m_git_hash;

@@ -1,13 +1,14 @@
 #pragma once
 
 #include <optional>
-#include "CLAS/ElectronCuts.hpp"
 #include "CLAS/Detectors.hpp"
+#include "CLAS/ElectronCuts.hpp"
 #include "CLAS/Particle.hpp"
 #include "CLAS/ReadBank.hpp"
 #include "CLAS/Target.hpp"
 #include "Framework/Cutflow.hpp"
 #include "Framework/Event.hpp"
+#include "Framework/HistogramTemplates.hpp"
 #include "Framework/IAlgorithm.hpp"
 #include "Framework/ServiceHandle.hpp"
 #include "Framework/Services/ConditionsService.hpp"
@@ -15,7 +16,6 @@
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/SamplingFractionService.hpp"
-#include "Framework/HistogramTemplates.hpp"
 
 namespace Algorithms {
 
@@ -40,9 +40,9 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         // LoggingService is optional - we continue if it's not available
         auto log_sc = initialize_handle(m_log_svc);
         if (log_sc.is_failure()) Log::error(name(), "WARNING: LoggingService not available");
-    
+
         Log::info(name(), "Initializing algorithm");
-        
+
         // HistogramService is required
         auto hist_sc = initialize_handle(m_hist_svc);
         if (hist_sc.is_failure()) {
@@ -67,7 +67,7 @@ class ElectronSelectionAlg : public Framework::Algorithm {
 
         book_histograms();
         if (m_ntuple_svc) setup_ntuple();
-        
+
         // Setup cutflow
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Has Electron");
@@ -78,7 +78,7 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         m_cutflow.add_cut("PCAL Fiducial");
         m_cutflow.add_cut("DC Chi2/NDF");
 
-        { // Inject logger into cutflow for structured output
+        {  // Inject logger into cutflow for structured output
             m_cutflow.set_logger(m_log_svc.get());
             Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
         }
@@ -166,7 +166,7 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         (*m_kinematics_hists)["phi"].fill(electron.phi());
         m_kinematics_hists->hist2d("p_vs_theta").fill(electron.theta(), p);
         m_kinematics_hists->hist2d("phi_vs_theta").fill(electron.theta(), electron.phi());
-        
+
         // Fill electron ID histograms
         (*m_electron_id_hists)["chi2pid"].fill(electron.chi2pid());
         (*m_electron_id_hists)["vz"].fill(electron.vz());

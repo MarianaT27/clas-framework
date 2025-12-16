@@ -1,13 +1,13 @@
 #pragma once
 
+#include <fmt/format.h>
+#include <chrono>
+#include <map>
+#include <string>
 #include "Framework/IService.hpp"
 #include "Framework/Services/HistogramService.hpp"
-#include "Framework/Services/ProfilingService.hpp"
 #include "Framework/Services/LoggingService.hpp"
-#include <fmt/format.h>
-#include <string>
-#include <map>
-#include <chrono>
+#include "Framework/Services/ProfilingService.hpp"
 
 namespace Framework {
 
@@ -27,7 +27,7 @@ namespace Framework {
  * - LoggingService
  */
 class SummaryService : public Service {
-public:
+   public:
     explicit SummaryService(std::string name = "SummaryService")
         : Service(std::move(name)) {}
 
@@ -90,7 +90,7 @@ public:
             double events_per_sec = m_events_processed / (duration.count() / 1000.0);
             fmt::print("  Processing rate: {:.1f} events/second\n", events_per_sec);
             fmt::print("  Time per event: {:.2f} ms\n",
-                      duration.count() / static_cast<double>(m_events_processed));
+                       duration.count() / static_cast<double>(m_events_processed));
         }
         fmt::print("\n");
 
@@ -108,18 +108,16 @@ public:
         if (!m_cutflow.empty()) {
             print_section_header("Cutflow Efficiency");
             fmt::print("  {:<30} {:>12} {:>12} {:>12}\n",
-                      "Cut Stage", "Events", "Efficiency", "Cumulative");
+                       "Cut Stage", "Events", "Efficiency", "Cumulative");
             fmt::print("  {:-<30} {:->12} {:->12} {:->12}\n", "", "", "", "");
 
             size_t previous_count = m_events_processed;
             for (const auto& [stage, count] : m_cutflow) {
-                double stage_eff = (previous_count > 0) ?
-                                  100.0 * count / previous_count : 0.0;
-                double cumul_eff = (m_events_processed > 0) ?
-                                  100.0 * count / m_events_processed : 0.0;
+                double stage_eff = (previous_count > 0) ? 100.0 * count / previous_count : 0.0;
+                double cumul_eff = (m_events_processed > 0) ? 100.0 * count / m_events_processed : 0.0;
 
                 fmt::print("  {:<30} {:>12} {:>11.2f}% {:>11.2f}%\n",
-                          stage, count, stage_eff, cumul_eff);
+                           stage, count, stage_eff, cumul_eff);
                 previous_count = count;
             }
             fmt::print("\n");
@@ -129,8 +127,8 @@ public:
         if (auto hist_svc = get_histogram_service()) {
             print_section_header("Histogram Summary");
             fmt::print("  Total histograms: {}\n",
-                      hist_svc->num_hist1D() + hist_svc->num_hist2D() +
-                      hist_svc->num_profiles());
+                       hist_svc->num_hist1D() + hist_svc->num_hist2D() +
+                           hist_svc->num_profiles());
             fmt::print("    - 1D histograms: {}\n", hist_svc->num_hist1D());
             fmt::print("    - 2D histograms: {}\n", hist_svc->num_hist2D());
             fmt::print("    - TProfile: {}\n", hist_svc->num_profiles());
@@ -165,7 +163,7 @@ public:
 
                 if (!slowest_name.empty()) {
                     fmt::print("  Slowest algorithm: {} ({:.2f} ms total)\n",
-                              slowest_name, slowest_time);
+                               slowest_name, slowest_time);
                 }
 
                 // Calculate total algorithm time
@@ -174,7 +172,7 @@ public:
                     total_alg_time += stat.total_time_ms;
                 }
                 fmt::print("  Total algorithm time: {:.2f} seconds\n",
-                          total_alg_time / 1000.0);
+                           total_alg_time / 1000.0);
 
                 fmt::print("  (See detailed performance report above)\n");
                 fmt::print("\n");
@@ -196,7 +194,7 @@ public:
         // For now, summary is printed to console
     }
 
-private:
+   private:
     std::chrono::high_resolution_clock::time_point m_start_time;
     std::chrono::high_resolution_clock::time_point m_end_time;
 

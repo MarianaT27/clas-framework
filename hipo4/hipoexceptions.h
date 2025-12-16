@@ -17,17 +17,15 @@
 #include <exception>
 
 class HipoWrongFile : public std::exception {
-  virtual const char* what() const throw(){
-    return "exception: wrong Hipo File format.";
-  }
+    virtual const char* what() const throw() {
+        return "exception: wrong Hipo File format.";
+    }
 };
 
 class HipoRecordError : public std::exception {
-  virtual const char* what() const throw(){
-    return "exception: error parsing record";
-  }
+    virtual const char* what() const throw() {
+        return "exception: error parsing record";
+    }
 };
 
-
 #endif /* HIPOEXCEPTIONS_H */
-

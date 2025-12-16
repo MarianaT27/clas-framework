@@ -1,17 +1,17 @@
 #pragma once
 
-#include <Framework/IService.hpp>
-#include <Framework/StatusCode.hpp>
-#include <CLAS/Particle.hpp>
+#include <Math/VectorUtil.h>
+#include <hipo4/bank.h>
 #include <CLAS/PIDs.hpp>
+#include <CLAS/Particle.hpp>
 #include <CLAS/models/RGA_inbending_pass1.hpp>
 #include <CLAS/models/RGA_inbending_pass2.hpp>
 #include <CLAS/models/RGA_outbending_pass1.hpp>
 #include <CLAS/models/RGA_outbending_pass2.hpp>
 #include <CLAS/models/RGC_Summer2022_pass1.hpp>
+#include <Framework/IService.hpp>
+#include <Framework/StatusCode.hpp>
 #include <Physics/ParticleUtils.hpp>
-#include <Math/VectorUtil.h>
-#include <hipo4/bank.h>
 
 #include <cmath>
 #include <functional>
@@ -39,17 +39,17 @@ namespace Framework {
  * @endcode
  */
 class PhotonCutsService : public Service {
-public:
+   public:
     // ============================================================================
     // Constants
     // ============================================================================
 
-    static constexpr double AI_THRESHOLD = 0.78;  // Threshold for model predictions
-    static constexpr double MIN_PCAL_V = 14.0;    // cm
-    static constexpr double MIN_PCAL_W = 14.0;    // cm
+    static constexpr double AI_THRESHOLD = 0.78;      // Threshold for model predictions
+    static constexpr double MIN_PCAL_V = 14.0;        // cm
+    static constexpr double MIN_PCAL_W = 14.0;        // cm
     static constexpr double MIN_PHOTON_ENERGY = 0.2;  // GeV
-    static constexpr double MIN_FD_THETA = 5.0;   // degrees
-    static constexpr double MAX_FD_THETA = 35.0;  // degrees
+    static constexpr double MIN_FD_THETA = 5.0;       // degrees
+    static constexpr double MAX_FD_THETA = 35.0;      // degrees
 
     // ============================================================================
     // Service Interface
@@ -71,9 +71,11 @@ public:
     // ============================================================================
 
     void set_pass(int pass) { m_pass = pass; }
+
     void set_ai_threshold(double threshold) { m_ai_threshold = threshold; }
 
     [[nodiscard]] auto pass() const -> int { return m_pass; }
+
     [[nodiscard]] auto ai_threshold() const -> double { return m_ai_threshold; }
 
     // ============================================================================
@@ -146,7 +148,7 @@ public:
         return good_photons;
     }
 
-private:
+   private:
     int m_pass = 1;
     double m_ai_threshold = AI_THRESHOLD;
 

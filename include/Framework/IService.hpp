@@ -1,8 +1,8 @@
 #pragma once
 
-#include "StatusCode.hpp"
-#include <string>
 #include <memory>
+#include <string>
+#include "StatusCode.hpp"
 
 namespace Framework {
 
@@ -14,7 +14,7 @@ namespace Framework {
  * This follows the service-oriented architecture pattern used in Gaudi/Athena.
  */
 class IService {
-public:
+   public:
     virtual ~IService() = default;
 
     /**
@@ -40,7 +40,7 @@ public:
  * @brief Base class for service implementations
  */
 class Service : public IService {
-public:
+   public:
     explicit Service(std::string name) : m_name(std::move(name)) {}
 
     auto name() const -> const std::string& override { return m_name; }
@@ -53,7 +53,7 @@ public:
         return StatusCode::SUCCESS();
     }
 
-protected:
+   protected:
     std::string m_name;
 };
 

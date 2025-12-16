@@ -1,13 +1,13 @@
 #pragma once
 
-#include "Framework/IService.hpp"
-#include "Framework/Result.hpp"
-#include <toml++/toml.hpp>
-#include <string>
-#include <vector>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <string>
+#include <toml++/toml.hpp>
+#include <vector>
+#include "Framework/IService.hpp"
+#include "Framework/Result.hpp"
 
 namespace Framework {
 
@@ -39,16 +39,14 @@ namespace Framework {
  * @endcode
  */
 class ConfigService : public Service {
-public:
+   public:
     /**
      * @brief Construct ConfigService with path to TOML config file
      * @param config_path Path to the TOML configuration file
      * @param name Service name (default: "ConfigService")
      */
     explicit ConfigService(std::string config_path, std::string name = "ConfigService")
-        : Service(std::move(name))
-        , m_config_path(std::move(config_path))
-        , m_initialized(false) {}
+        : Service(std::move(name)), m_config_path(std::move(config_path)), m_initialized(false) {}
 
     /**
      * @brief Initialize the service by loading the configuration file
@@ -74,7 +72,7 @@ public:
      * @param key Dot-separated key path (e.g., "application.max_events")
      * @return Result<T> containing the value or an error message
      */
-    template<typename T>
+    template <typename T>
     auto get(const std::string& key) const -> Result<T> {
         if (!m_initialized) {
             return Result<T>::error("ConfigService not initialized");
@@ -100,7 +98,7 @@ public:
      * @param default_value Value to return if key is missing or type mismatch
      * @return The configuration value or the default
      */
-    template<typename T>
+    template <typename T>
     auto get(const std::string& key, T default_value) const -> T {
         auto result = get<T>(key);
         return result.value_or(std::move(default_value));
@@ -165,7 +163,7 @@ public:
         return m_config;
     }
 
-private:
+   private:
     std::string m_config_path;
     toml::table m_config;
     bool m_initialized;
@@ -185,11 +183,10 @@ private:
         try {
             m_config = toml::parse_file(m_config_path);
             return Result<void>::ok();
-        }
-        catch (const toml::parse_error& err) {
+        } catch (const toml::parse_error& err) {
             std::ostringstream oss;
             oss << "Failed to parse configuration file '" << m_config_path << "': ";
-            
+
             // Include source location if available
             if (err.source().begin.line > 0) {
                 oss << "line " << err.source().begin.line;
@@ -199,10 +196,9 @@ private:
                 oss << ": ";
             }
             oss << err.description();
-            
+
             return Result<void>::error(oss.str());
-        }
-        catch (const std::exception& err) {
+        } catch (const std::exception& err) {
             return Result<void>::error(
                 "Failed to parse configuration file '" + m_config_path + "': " + err.what());
         }

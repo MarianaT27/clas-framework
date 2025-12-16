@@ -1,14 +1,14 @@
 #pragma once
 
-#include "Framework/IService.hpp"
-#include "Framework/IAlgorithm.hpp"
 #include <fmt/format.h>
+#include <fstream>
+#include <map>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
-#include <map>
-#include <set>
-#include <fstream>
-#include <memory>
+#include "Framework/IAlgorithm.hpp"
+#include "Framework/IService.hpp"
 
 namespace Framework {
 
@@ -38,15 +38,15 @@ namespace Framework {
  * @endcode
  */
 class WorkflowVisualizationService : public Service {
-public:
+   public:
     /**
      * @brief Node type in the workflow
      */
     enum class NodeType {
-        ALGORITHM,        // Regular algorithm
-        FILTER,          // Filter (conditional)
-        SERVICE,         // Service
-        DATA_OBJECT      // Data object in Event store
+        ALGORITHM,   // Regular algorithm
+        FILTER,      // Filter (conditional)
+        SERVICE,     // Service
+        DATA_OBJECT  // Data object in Event store
     };
 
     /**
@@ -99,8 +99,8 @@ public:
      * @brief Register an algorithm
      */
     auto register_algorithm(const std::string& name,
-                           const std::vector<std::string>& dependencies = {},
-                           NodeType type = NodeType::ALGORITHM) -> void {
+                            const std::vector<std::string>& dependencies = {},
+                            NodeType type = NodeType::ALGORITHM) -> void {
         Node node;
         node.name = name;
         node.type = type;
@@ -120,7 +120,7 @@ public:
      * @brief Register a filter (conditional algorithm)
      */
     auto register_filter(const std::string& name,
-                        const std::vector<std::string>& dependencies = {}) -> void {
+                         const std::vector<std::string>& dependencies = {}) -> void {
         register_algorithm(name, dependencies, NodeType::FILTER);
     }
 
@@ -140,7 +140,7 @@ public:
      * @brief Register conditional execution
      */
     auto register_conditional(const std::string& condition,
-                             const std::string& algorithm) -> void {
+                              const std::string& algorithm) -> void {
         Edge edge;
         edge.from = condition;
         edge.to = algorithm;
@@ -153,7 +153,7 @@ public:
      * @brief Register service usage
      */
     auto register_service_use(const std::string& algorithm,
-                             const std::string& service) -> void {
+                              const std::string& service) -> void {
         // Register service as node if not already
         if (m_nodes.find(service) == m_nodes.end()) {
             Node node;
@@ -174,8 +174,8 @@ public:
      * @brief Register data flow
      */
     auto register_data_flow(const std::string& producer,
-                           const std::string& data_object,
-                           const std::string& consumer) -> void {
+                            const std::string& data_object,
+                            const std::string& consumer) -> void {
         // Add data object as output of producer
         m_nodes[producer].outputs.insert(data_object);
 
@@ -346,10 +346,18 @@ public:
         size_t algorithms = 0, filters = 0, services = 0, data_objects = 0;
         for (const auto& [name, node] : m_nodes) {
             switch (node.type) {
-                case NodeType::ALGORITHM: algorithms++; break;
-                case NodeType::FILTER: filters++; break;
-                case NodeType::SERVICE: services++; break;
-                case NodeType::DATA_OBJECT: data_objects++; break;
+                case NodeType::ALGORITHM:
+                    algorithms++;
+                    break;
+                case NodeType::FILTER:
+                    filters++;
+                    break;
+                case NodeType::SERVICE:
+                    services++;
+                    break;
+                case NodeType::DATA_OBJECT:
+                    data_objects++;
+                    break;
             }
         }
 
@@ -396,7 +404,7 @@ public:
         return "Very Complex";
     }
 
-private:
+   private:
     std::string m_output_file;
     std::map<std::string, Node> m_nodes;
     std::vector<Edge> m_edges;
@@ -445,10 +453,14 @@ private:
 
     auto get_type_string(NodeType type) const -> std::string {
         switch (type) {
-            case NodeType::ALGORITHM: return "Algorithm";
-            case NodeType::FILTER: return "Filter";
-            case NodeType::SERVICE: return "Service";
-            case NodeType::DATA_OBJECT: return "Data";
+            case NodeType::ALGORITHM:
+                return "Algorithm";
+            case NodeType::FILTER:
+                return "Filter";
+            case NodeType::SERVICE:
+                return "Service";
+            case NodeType::DATA_OBJECT:
+                return "Data";
         }
         return "Unknown";
     }
@@ -498,8 +510,8 @@ private:
     }
 
     auto has_cycle_util(const std::string& node,
-                       std::set<std::string>& visited,
-                       std::set<std::string>& rec_stack) const -> bool {
+                        std::set<std::string>& visited,
+                        std::set<std::string>& rec_stack) const -> bool {
         if (rec_stack.find(node) != rec_stack.end()) {
             return true;  // Back edge found
         }
@@ -531,7 +543,7 @@ private:
  * @brief Helper for automatic workflow registration
  */
 class WorkflowBuilder {
-public:
+   public:
     explicit WorkflowBuilder(WorkflowVisualizationService* service)
         : m_service(service) {}
 
@@ -584,7 +596,7 @@ public:
         return *this;
     }
 
-private:
+   private:
     WorkflowVisualizationService* m_service;
     std::string m_last_node;
     std::string m_producing_object;

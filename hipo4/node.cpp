@@ -39,54 +39,54 @@
 
 namespace hipo {
 
-  //==============================================================
-  // Definition of class structure, this will class will be extended
-  // to represent different objects that will be appended to the event
-  //==============================================================
+//==============================================================
+// Definition of class structure, this will class will be extended
+// to represent different objects that will be appended to the event
+//==============================================================
 
-    void node::create(int group, int item, int type, int size){
-        allocate(size);
-        char *__a = const_cast<char*> (nodePointer);
-        *reinterpret_cast<uint16_t *>(__a) = (uint16_t) group;
-        *reinterpret_cast<uint8_t *>(__a+2) = (uint8_t) item;
-        *reinterpret_cast<uint8_t *>(__a+3) = (uint8_t) type;
-        *reinterpret_cast<uint32_t *>(__a+4) = 0x00000000;
-    }
-  
-  void    node::setSize(int size){
-    char *__a = const_cast<char*> (nodePointer);
-    *reinterpret_cast<uint32_t *>(__a+4) = size;
-  }
-  
-  void     node::assign(std::tuple<int,int,int,int> params ){
-    int  size = std::get<3>(params);
+void node::create(int group, int item, int type, int size) {
+    allocate(size);
+    char* __a = const_cast<char*>(nodePointer);
+    *reinterpret_cast<uint16_t*>(__a) = (uint16_t)group;
+    *reinterpret_cast<uint8_t*>(__a + 2) = (uint8_t)item;
+    *reinterpret_cast<uint8_t*>(__a + 3) = (uint8_t)type;
+    *reinterpret_cast<uint32_t*>(__a + 4) = 0x00000000;
+}
+
+void node::setSize(int size) {
+    char* __a = const_cast<char*>(nodePointer);
+    *reinterpret_cast<uint32_t*>(__a + 4) = size;
+}
+
+void node::assign(std::tuple<int, int, int, int> params) {
+    int size = std::get<3>(params);
     int group = std::get<0>(params);
-    int  item = std::get<1>(params);
-    int  type = std::get<2>(params);
+    int item = std::get<1>(params);
+    int type = std::get<2>(params);
     //std::get<0>(params),std::get<1>(params), std::get<2>(params), std::get<3>(params)
     allocate(size);
-    char *__a = const_cast<char*> (nodePointer);
-    *reinterpret_cast<uint16_t *>(__a) = (uint16_t) group;
-    *reinterpret_cast<uint8_t *>(__a+2) = (uint8_t) item;
-    *reinterpret_cast<uint8_t *>(__a+3) = (uint8_t) type;
-    *reinterpret_cast<uint32_t *>(__a+4) = 0x00000000;
-    
-  }
-  void node::initEmpty(){
-      char *__a = const_cast<char*> (nodePointer);
-        *reinterpret_cast<uint16_t *>(__a) = (uint16_t) 0;
-        *reinterpret_cast<uint8_t *>(__a+2) = (uint8_t) 0;
-        *reinterpret_cast<uint8_t *>(__a+3) = (uint8_t) 0;
-        *reinterpret_cast<uint8_t *>(__a+4) = 0x00000000;
-    }
+    char* __a = const_cast<char*>(nodePointer);
+    *reinterpret_cast<uint16_t*>(__a) = (uint16_t)group;
+    *reinterpret_cast<uint8_t*>(__a + 2) = (uint8_t)item;
+    *reinterpret_cast<uint8_t*>(__a + 3) = (uint8_t)type;
+    *reinterpret_cast<uint32_t*>(__a + 4) = 0x00000000;
+}
 
-    void node::show(){
-      printf("hipo::node : [%5d,%5d] type = %4d, node length = %5d, format length = %6d, data length = %8d, offset = %5d, capacity = %8d\n",
-         group(),item(),type(), size(), formatLength(), dataLength(), dataOffset(), (int) capacity());
-    }
+void node::initEmpty() {
+    char* __a = const_cast<char*>(nodePointer);
+    *reinterpret_cast<uint16_t*>(__a) = (uint16_t)0;
+    *reinterpret_cast<uint8_t*>(__a + 2) = (uint8_t)0;
+    *reinterpret_cast<uint8_t*>(__a + 3) = (uint8_t)0;
+    *reinterpret_cast<uint8_t*>(__a + 4) = 0x00000000;
+}
+
+void node::show() {
+    printf("hipo::node : [%5d,%5d] type = %4d, node length = %5d, format length = %6d, data length = %8d, offset = %5d, capacity = %8d\n",
+           group(), item(), type(), size(), formatLength(), dataLength(), dataOffset(), (int)capacity());
+}
 
 //====================================================================
 //-=-     END of hipo::node class - starting composite class        -=-
 //====================================================================
 
-}
+}  // namespace hipo

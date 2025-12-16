@@ -18,9 +18,8 @@ static constexpr double RHO0MASS2 = RHO0MASS * RHO0MASS;
 static constexpr double KMASS = 0.493677;
 static constexpr double KMASS2 = KMASS * KMASS;
 
-
 static constexpr double DEG_TO_RAD = std::numbers::pi / 180.0;
 static constexpr double RAD_TO_DEG = 180.0 / std::numbers::pi;
 static constexpr double SPEED_OF_LIGHT = 29.9792458;  // cm/ns
 
-}  // namespace CLAS::Constantes
+}  // namespace CLAS::Constants

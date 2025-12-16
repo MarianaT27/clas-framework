@@ -1,10 +1,10 @@
 #pragma once
 
-#include <string>
-#include <vector>
-#include <optional>
 #include <filesystem>
 #include <fstream>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace Framework {
 
@@ -19,15 +19,15 @@ namespace Framework {
  * - Result merging
  */
 class BatchSystem {
-public:
+   public:
     /**
      * @brief Supported batch systems
      */
     enum class System {
-        SLURM,      // Simple Linux Utility for Resource Management
-        PBS,        // Portable Batch System
-        Condor,     // HTCondor
-        Local       // Local execution (for testing)
+        SLURM,   // Simple Linux Utility for Resource Management
+        PBS,     // Portable Batch System
+        Condor,  // HTCondor
+        Local    // Local execution (for testing)
     };
 
     /**
@@ -88,16 +88,14 @@ public:
      */
     static auto split_input_files(
         const std::vector<std::string>& input_files,
-        int files_per_job
-    ) -> std::vector<std::vector<std::string>> {
+        int files_per_job) -> std::vector<std::vector<std::string>> {
         std::vector<std::vector<std::string>> chunks;
 
         for (size_t i = 0; i < input_files.size(); i += files_per_job) {
             size_t end = std::min(i + files_per_job, input_files.size());
             std::vector<std::string> chunk(
                 input_files.begin() + i,
-                input_files.begin() + end
-            );
+                input_files.begin() + end);
             chunks.push_back(chunk);
         }
 
@@ -110,8 +108,7 @@ public:
     static auto generate_slurm_script(
         const JobConfig& config,
         int job_index,
-        const std::vector<std::string>& input_chunk
-    ) -> std::string {
+        const std::vector<std::string>& input_chunk) -> std::string {
         std::ostringstream script;
 
         // SLURM directives
@@ -145,7 +142,7 @@ public:
 
         // Setup module environment
         if (!config.module_setup.empty()) script << config.module_setup << "\n";
-        
+
         // Load modules
         for (const auto& module : config.modules) {
             script << "module load " << module << "\n";
@@ -206,8 +203,7 @@ public:
     static auto generate_pbs_script(
         const JobConfig& config,
         int job_index,
-        const std::vector<std::string>& input_chunk
-    ) -> std::string {
+        const std::vector<std::string>& input_chunk) -> std::string {
         std::ostringstream script;
 
         // PBS directives
@@ -302,8 +298,7 @@ public:
     static auto generate_condor_submit(
         const JobConfig& config,
         int job_index,
-        const std::vector<std::string>& input_chunk
-    ) -> std::string {
+        const std::vector<std::string>& input_chunk) -> std::string {
         std::ostringstream submit;
 
         submit << "# HTCondor submission file\n";
@@ -370,12 +365,10 @@ public:
      */
     static auto write_script(
         const std::string& filename,
-        const std::string& content
-    ) -> bool {
+        const std::string& content) -> bool {
         try {
             std::filesystem::create_directories(
-                std::filesystem::path(filename).parent_path()
-            );
+                std::filesystem::path(filename).parent_path());
 
             std::ofstream file(filename);
             if (!file.is_open()) return false;
@@ -387,8 +380,7 @@ public:
             std::filesystem::permissions(
                 filename,
                 std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec,
-                std::filesystem::perm_options::add
-            );
+                std::filesystem::perm_options::add);
 
             return true;
         } catch (const std::exception& e) {
@@ -401,8 +393,7 @@ public:
      */
     static auto submit_jobs(
         const JobConfig& config,
-        System system = System::SLURM
-    ) -> std::vector<std::string> {
+        System system = System::SLURM) -> std::vector<std::string> {
         // Split input files
         auto chunks = split_input_files(config.input_files, config.files_per_job);
 
@@ -476,11 +467,16 @@ public:
      */
     static auto system_name(System sys) -> std::string {
         switch (sys) {
-            case System::SLURM: return "SLURM";
-            case System::PBS: return "PBS";
-            case System::Condor: return "Condor";
-            case System::Local: return "Local";
-            default: return "Unknown";
+            case System::SLURM:
+                return "SLURM";
+            case System::PBS:
+                return "PBS";
+            case System::Condor:
+                return "Condor";
+            case System::Local:
+                return "Local";
+            default:
+                return "Unknown";
         }
     }
 };

@@ -11,10 +11,10 @@
  * All functions support both hipo::bank and hipo::BankView as input.
  */
 
-#include <CLAS/Banks.hpp>
-#include <CLAS/Detectors.hpp>
 #include <hipo4/bank.h>
 #include <hipo4/hipoeventiterator.h>
+#include <CLAS/Banks.hpp>
+#include <CLAS/Detectors.hpp>
 
 #include <map>
 #include <string>
@@ -64,7 +64,6 @@ inline auto build_index_map(const hipo::BankView& view, const char* index_column
     -> std::map<int, std::vector<int>> {
     return build_index_map(view.data(), index_column);
 }
-
 
 // =============================================================================
 // Cherenkov Bank Reader
@@ -147,9 +146,15 @@ inline auto read_Calorimeter_bank(const hipo::bank& bank, int pindex) -> Calorim
         if (bank.get<int>("detector", row) != ECAL) continue;
 
         switch (bank.get<int>("layer", row)) {
-            case PCAL:  fill_calo(result.pcal, row); break;
-            case ECIN:  fill_calo(result.inner, row); break;
-            case ECOUT: fill_calo(result.outer, row); break;
+            case PCAL:
+                fill_calo(result.pcal, row);
+                break;
+            case ECIN:
+                fill_calo(result.inner, row);
+                break;
+            case ECOUT:
+                fill_calo(result.outer, row);
+                break;
         }
     }
 
@@ -159,7 +164,6 @@ inline auto read_Calorimeter_bank(const hipo::bank& bank, int pindex) -> Calorim
 inline auto read_Calorimeter_bank(hipo::BankView& view, int pindex) -> CalorimeterBank {
     return read_Calorimeter_bank(view.data(), pindex);
 }
-
 
 // =============================================================================
 // Track Bank Reader
@@ -239,9 +243,15 @@ inline auto read_Traj_bank(const hipo::bank& bank, int pindex) -> DCTrajBank {
         if (bank.get<int>("detector", row) != DC) continue;
 
         switch (bank.get<int>("layer", row)) {
-            case DC1: fill_traj(result.region1, row); break;
-            case DC3: fill_traj(result.region2, row); break;
-            case DC6: fill_traj(result.region3, row); break;
+            case DC1:
+                fill_traj(result.region1, row);
+                break;
+            case DC3:
+                fill_traj(result.region2, row);
+                break;
+            case DC6:
+                fill_traj(result.region3, row);
+                break;
         }
     }
 
@@ -251,7 +261,6 @@ inline auto read_Traj_bank(const hipo::bank& bank, int pindex) -> DCTrajBank {
 inline auto read_Traj_bank(hipo::BankView& view, int pindex) -> DCTrajBank {
     return read_Traj_bank(view.data(), pindex);
 }
-
 
 // =============================================================================
 // Scintillator Bank Reader
@@ -333,7 +342,7 @@ inline auto read_Scintillator_bank(hipo::BankView& view, int pindex) -> Scintill
  * @return MC particle index, or -1 if no match found
  */
 inline auto get_mc_particle_index(const hipo::bank& bank, int rec_pindex,
-                                   float min_quality = 0.92f) -> int {
+                                  float min_quality = 0.92f) -> int {
     const int n_rows = bank.getRows();
 
     for (int row = 0; row < n_rows; ++row) {
@@ -360,7 +369,7 @@ inline auto get_mc_particle_index(const hipo::bank& bank, int rec_pindex,
  * @return Reconstructed particle index, or -1 if no match found
  */
 inline auto get_rec_particle_index(const hipo::bank& bank, int mc_index,
-                                    float min_quality = 0.92f) -> int {
+                                   float min_quality = 0.92f) -> int {
     const int n_rows = bank.getRows();
 
     for (int row = 0; row < n_rows; ++row) {

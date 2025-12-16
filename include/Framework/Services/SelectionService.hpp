@@ -1,12 +1,12 @@
 #pragma once
 
-#include "Framework/IService.hpp"
-#include "Framework/Event.hpp"
 #include <fmt/format.h>
-#include <string>
-#include <map>
 #include <functional>
+#include <map>
 #include <memory>
+#include <string>
+#include "Framework/Event.hpp"
+#include "Framework/IService.hpp"
 
 namespace Framework {
 
@@ -48,7 +48,7 @@ namespace Framework {
  * @endcode
  */
 class SelectionService : public Service {
-public:
+   public:
     using SelectionFunction = std::function<bool(const Event&)>;
 
     explicit SelectionService(std::string name = "SelectionService")
@@ -96,7 +96,7 @@ public:
      * @brief Check if event passes ALL selections (AND)
      */
     auto passes_all(const std::vector<std::string>& selections,
-                   const Event& event) -> bool {
+                    const Event& event) -> bool {
         for (const auto& sel : selections) {
             if (!passes(sel, event)) {
                 return false;
@@ -109,7 +109,7 @@ public:
      * @brief Check if event passes ANY selection (OR)
      */
     auto passes_any(const std::vector<std::string>& selections,
-                   const Event& event) -> bool {
+                    const Event& event) -> bool {
         for (const auto& sel : selections) {
             if (passes(sel, event)) {
                 return true;
@@ -129,7 +129,7 @@ public:
      * @brief Define composite selection (AND)
      */
     auto define_and(const std::string& name,
-                   const std::vector<std::string>& selections) -> void {
+                    const std::vector<std::string>& selections) -> void {
         define(name, [this, selections](const Event& event) {
             for (const auto& sel : selections) {
                 auto it = m_selections.find(sel);
@@ -145,7 +145,7 @@ public:
      * @brief Define composite selection (OR)
      */
     auto define_or(const std::string& name,
-                  const std::vector<std::string>& selections) -> void {
+                   const std::vector<std::string>& selections) -> void {
         define(name, [this, selections](const Event& event) {
             for (const auto& sel : selections) {
                 auto it = m_selections.find(sel);
@@ -195,16 +195,15 @@ public:
         fmt::print("\n");
 
         fmt::print("{:<30} {:>12} {:>12} {:>12}\n",
-                  "Selection", "Passed", "Total", "Efficiency");
+                   "Selection", "Passed", "Total", "Efficiency");
         fmt::print("{:-<30} {:->12} {:->12} {:->12}\n",
-                  "", "", "", "");
+                   "", "", "", "");
 
         for (const auto& [name, stats] : m_statistics) {
-            double efficiency = (stats.total > 0) ?
-                               100.0 * stats.passed / stats.total : 0.0;
+            double efficiency = (stats.total > 0) ? 100.0 * stats.passed / stats.total : 0.0;
 
             fmt::print("{:<30} {:>12} {:>12} {:>11.2f}%\n",
-                      name, stats.passed, stats.total, efficiency);
+                       name, stats.passed, stats.total, efficiency);
         }
 
         fmt::print("\n");
@@ -231,7 +230,7 @@ public:
         return names;
     }
 
-private:
+   private:
     struct SelectionStats {
         size_t passed = 0;
         size_t total = 0;

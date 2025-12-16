@@ -1,14 +1,14 @@
 #pragma once
 
+#include <map>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+#include "TEfficiency.h"
 #include "TH1D.h"
 #include "TH2D.h"
 #include "TProfile.h"
-#include "TEfficiency.h"
-#include <string>
-#include <memory>
-#include <map>
-#include <vector>
-#include <optional>
 
 namespace Framework {
 
@@ -22,7 +22,7 @@ namespace Framework {
  * - Optional condition-based filling
  */
 class Hist1D {
-public:
+   public:
     explicit Hist1D(TH1D* hist = nullptr) : m_hist(hist) {}
 
     /**
@@ -61,6 +61,7 @@ public:
      * @brief Get underlying ROOT histogram
      */
     auto get() -> TH1D* { return m_hist; }
+
     auto get() const -> const TH1D* { return m_hist; }
 
     /**
@@ -77,9 +78,10 @@ public:
      * @brief Allow direct access to ROOT methods via ->
      */
     auto operator->() -> TH1D* { return m_hist; }
+
     auto operator->() const -> const TH1D* { return m_hist; }
 
-private:
+   private:
     TH1D* m_hist;
 };
 
@@ -87,7 +89,7 @@ private:
  * @brief Type-safe histogram wrapper for 2D histograms
  */
 class Hist2D {
-public:
+   public:
     explicit Hist2D(TH2D* hist = nullptr) : m_hist(hist) {}
 
     auto fill(double x, double y) -> Hist2D& {
@@ -111,13 +113,18 @@ public:
     }
 
     auto get() -> TH2D* { return m_hist; }
+
     auto get() const -> const TH2D* { return m_hist; }
+
     auto is_valid() const -> bool { return m_hist != nullptr; }
+
     explicit operator bool() const { return is_valid(); }
+
     auto operator->() -> TH2D* { return m_hist; }
+
     auto operator->() const -> const TH2D* { return m_hist; }
 
-private:
+   private:
     TH2D* m_hist;
 };
 
@@ -125,7 +132,7 @@ private:
  * @brief Type-safe wrapper for TProfile histograms
  */
 class Profile {
-public:
+   public:
     explicit Profile(TProfile* prof = nullptr) : m_prof(prof) {}
 
     auto fill(double x, double y) -> Profile& {
@@ -144,13 +151,18 @@ public:
     }
 
     auto get() -> TProfile* { return m_prof; }
+
     auto get() const -> const TProfile* { return m_prof; }
+
     auto is_valid() const -> bool { return m_prof != nullptr; }
+
     explicit operator bool() const { return is_valid(); }
+
     auto operator->() -> TProfile* { return m_prof; }
+
     auto operator->() const -> const TProfile* { return m_prof; }
 
-private:
+   private:
     TProfile* m_prof;
 };
 
@@ -174,7 +186,7 @@ private:
  * @endcode
  */
 class HistogramGroup {
-public:
+   public:
     HistogramGroup(class HistogramService* service, std::string path_prefix)
         : m_service(service), m_path_prefix(std::move(path_prefix)) {}
 
@@ -225,7 +237,7 @@ public:
         return m_path_prefix + "/" + name;
     }
 
-private:
+   private:
     class HistogramService* m_service;
     std::string m_path_prefix;
     std::map<std::string, Hist1D> m_hist1d;
@@ -259,17 +271,12 @@ private:
  * - /Electron/cutflow/momentum_Momentum
  */
 class CutflowHistogram {
-public:
+   public:
     CutflowHistogram(class HistogramService* service,
                      const std::string& base_path,
                      const std::string& title,
                      int nbins, double xmin, double xmax)
-        : m_service(service)
-        , m_base_path(base_path)
-        , m_title(title)
-        , m_nbins(nbins)
-        , m_xmin(xmin)
-        , m_xmax(xmax) {}
+        : m_service(service), m_base_path(base_path), m_title(title), m_nbins(nbins), m_xmin(xmin), m_xmax(xmax) {}
 
     /**
      * @brief Register a cut stage
@@ -291,7 +298,7 @@ public:
      */
     auto get_histogram(const std::string& cut_name) -> std::optional<Hist1D>;
 
-private:
+   private:
     class HistogramService* m_service;
     std::string m_base_path;
     std::string m_title;

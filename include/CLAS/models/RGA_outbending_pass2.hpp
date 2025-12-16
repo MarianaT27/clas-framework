@@ -5060,5 +5060,4 @@ inline double ApplyCatboostModel_RGA_outbending_pass2(
     return ApplyCatboostModel_RGA_outbending_pass2(floatFeatures);
 }
 
-
 // clang-format on

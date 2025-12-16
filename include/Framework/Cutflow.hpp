@@ -1,8 +1,8 @@
 #pragma once
 
+#include <fmt/format.h>
 #include <atomic>
 #include <cstddef>
-#include <fmt/format.h>
 #include <functional>
 #include <map>
 #include <string>
@@ -27,10 +27,12 @@ class Cutflow {
 
     /// Number of cuts
     [[nodiscard]] auto size() const -> std::size_t { return m_cuts.size(); }
+
     [[nodiscard]] auto num_cuts() const -> std::size_t { return size(); }
 
     /// Get all cut names in order
     [[nodiscard]] auto cuts() const -> const std::vector<std::string>& { return m_cuts; }
+
     [[nodiscard]] auto get_cut_names() const -> const std::vector<std::string>& { return m_cuts; }
 
     /// Increment counter for a cut (thread-safe)
@@ -47,6 +49,7 @@ class Cutflow {
         }
         return 0;
     }
+
     [[nodiscard]] auto get_count(const std::string& cut_name) const -> std::size_t {
         return count(cut_name);
     }
@@ -55,9 +58,11 @@ class Cutflow {
     [[nodiscard]] auto initial_count() const -> std::size_t {
         return m_cuts.empty() ? 0 : count(m_cuts.front());
     }
+
     [[nodiscard]] auto final_count() const -> std::size_t {
         return m_cuts.empty() ? 0 : count(m_cuts.back());
     }
+
     [[nodiscard]] auto efficiency() const -> double {
         auto init = initial_count();
         return init > 0 ? static_cast<double>(final_count()) / static_cast<double>(init) : 0.0;
@@ -138,7 +143,6 @@ class Cutflow {
         }
     }
 };
-
 
 /**
  * @brief Extended cutflow with histogram filling capabilities

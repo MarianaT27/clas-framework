@@ -1,10 +1,10 @@
 #pragma once
 
-#include <string>
+#include <cmath>
 #include <functional>
 #include <map>
 #include <memory>
-#include <cmath>
+#include <string>
 #include "CLAS/Particle.hpp"
 
 namespace Framework {
@@ -13,22 +13,22 @@ namespace Framework {
  * @brief Types of systematic variations
  */
 enum class VariationType {
-    EnergyScale,      // Energy scale up/down
-    EnergyResolution, // Energy resolution smearing
-    MomentumScale,    // Momentum scale up/down
-    AngularResolution,// Angular resolution
-    SamplingFraction, // SF cut variation
-    Efficiency,       // Selection efficiency
-    Custom           // User-defined
+    EnergyScale,        // Energy scale up/down
+    EnergyResolution,   // Energy resolution smearing
+    MomentumScale,      // Momentum scale up/down
+    AngularResolution,  // Angular resolution
+    SamplingFraction,   // SF cut variation
+    Efficiency,         // Selection efficiency
+    Custom              // User-defined
 };
 
 /**
  * @brief Systematic variation descriptor
  */
 struct SystematicVariation {
-    std::string name;           // e.g., "EnergyScale_Up"
+    std::string name;  // e.g., "EnergyScale_Up"
     VariationType type;
-    double magnitude;           // Variation magnitude (e.g., +1 sigma)
+    double magnitude;  // Variation magnitude (e.g., +1 sigma)
 
     SystematicVariation(std::string name, VariationType type, double mag = 1.0)
         : name(std::move(name)), type(type), magnitude(mag) {}
@@ -54,7 +54,7 @@ struct SystematicVariation {
  * @endcode
  */
 class SystematicManager {
-public:
+   public:
     /**
      * @brief Add a systematic variation
      */
@@ -84,11 +84,11 @@ public:
 
         switch (variation.type) {
             case VariationType::EnergyScale:
-                scale_factor = 1.0 + (0.01 * variation.magnitude); // 1% per sigma
+                scale_factor = 1.0 + (0.01 * variation.magnitude);  // 1% per sigma
                 break;
 
             case VariationType::MomentumScale:
-                scale_factor = 1.0 + (0.005 * variation.magnitude); // 0.5% per sigma
+                scale_factor = 1.0 + (0.005 * variation.magnitude);  // 0.5% per sigma
                 break;
 
             case VariationType::EnergyResolution:
@@ -112,14 +112,13 @@ public:
             particle.px() * scale_factor,  // Scaled px
             particle.py() * scale_factor,  // Scaled py
             particle.pz() * scale_factor,  // Scaled pz
-            particle.E() * scale_factor,  // Scaled E (approximately)
+            particle.E() * scale_factor,   // Scaled E (approximately)
             particle.vx(),
             particle.vy(),
             particle.vz(),
             particle.vt(),
             particle.beta(),
-            particle.chi2pid()
-        );
+            particle.chi2pid());
     }
 
     /**
@@ -162,7 +161,7 @@ public:
         return m_current_variation;
     }
 
-private:
+   private:
     std::vector<SystematicVariation> m_variations;
     std::map<std::string, std::function<CLAS::Particle(const CLAS::Particle&)>> m_custom_variations;
     std::string m_current_variation;  // Empty string means nominal

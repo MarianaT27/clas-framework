@@ -1,10 +1,10 @@
 #pragma once
 
+#include <optional>
+#include <vector>
 #include "CLAS/Constants.hpp"
 #include "CLAS/Particle.hpp"
 #include "Physics/Kinematics.hpp"
-#include <optional>
-#include <vector>
 
 namespace Physics {
 
@@ -36,19 +36,19 @@ struct BeamConfig {
  * kinematic region selection, Q2-W binning, and DIS event classification.
  */
 class DISAnalysis {
-public:
+   public:
     /**
      * @brief DIS kinematic region definition
      */
     struct KinematicRegion {
-        double q2_min = 1.0;      // GeV²
-        double q2_max = 11.0;     // GeV²
-        double w_min = 2.0;       // GeV
-        double w_max = 5.0;       // GeV
-        double y_min = 0.0;       // dimensionless
-        double y_max = 0.85;      // dimensionless
-        double xb_min = 0.0;      // dimensionless
-        double xb_max = 1.0;      // dimensionless
+        double q2_min = 1.0;   // GeV²
+        double q2_max = 11.0;  // GeV²
+        double w_min = 2.0;    // GeV
+        double w_max = 5.0;    // GeV
+        double y_min = 0.0;    // dimensionless
+        double y_max = 0.85;   // dimensionless
+        double xb_min = 0.0;   // dimensionless
+        double xb_max = 1.0;   // dimensionless
 
         /**
          * @brief Check if kinematics are in this region
@@ -71,8 +71,7 @@ public:
             .w_min = 0.0,
             .w_max = 50.0,
             .y_min = 0.0,
-            .y_max = 10.0
-        };
+            .y_max = 10.0};
     }
 
     /**
@@ -85,8 +84,7 @@ public:
             .w_min = 2.0,
             .w_max = 5.0,
             .y_min = 0.0,
-            .y_max = 0.85
-        };
+            .y_max = 0.85};
     }
 
     /**
@@ -99,8 +97,7 @@ public:
             .w_min = 1.08,  // Above pion threshold
             .w_max = 2.0,
             .y_min = 0.0,
-            .y_max = 0.85
-        };
+            .y_max = 0.85};
     }
 
     /**
@@ -113,21 +110,20 @@ public:
             .w_min = 2.0,
             .w_max = 5.0,
             .y_min = 0.0,
-            .y_max = 0.85
-        };
+            .y_max = 0.85};
     }
 
     /**
      * @brief Calculate all DIS kinematics for an electron
      */
     struct DISKinematics {
-        double q2;          // GeV²
-        double w;           // GeV
-        double nu;          // GeV
-        double xb;          // Bjorken x
-        double y;           // Inelasticity
-        double epsilon;     // Virtual photon polarization
-        double gamma;       // Boost factor
+        double q2;       // GeV²
+        double w;        // GeV
+        double nu;       // GeV
+        double xb;       // Bjorken x
+        double y;        // Inelasticity
+        double epsilon;  // Virtual photon polarization
+        double gamma;    // Boost factor
 
         /**
          * @brief Check if in standard DIS region
@@ -160,8 +156,7 @@ public:
      */
     static auto calculate_kinematics(
         const CLAS::Particle& electron,
-        const BeamConfig& beam = BeamConfig()
-    ) -> DISKinematics {
+        const BeamConfig& beam = BeamConfig()) -> DISKinematics {
         // Create target proton at rest
         CLAS::Particle target(2212, 0, -1, 1, CLAS::Constants::PROTONMASS,
                               0, 0, 0, CLAS::Constants::PROTONMASS, 0, 0, 0, 0, 0, 0);
@@ -189,8 +184,7 @@ public:
             .xb = xb_val,
             .y = y_val,
             .epsilon = epsilon_val,
-            .gamma = gamma_val
-        };
+            .gamma = gamma_val};
     }
 
     /**
@@ -206,8 +200,7 @@ public:
         static auto standard_binning() -> Q2WBinning {
             return Q2WBinning{
                 .q2_edges = {1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 11.0},
-                .w_edges = {2.0, 2.2, 2.4, 2.6, 2.8, 3.0, 3.5, 4.0, 5.0}
-            };
+                .w_edges = {2.0, 2.2, 2.4, 2.6, 2.8, 3.0, 3.5, 4.0, 5.0}};
         }
 
         /**
@@ -252,13 +245,13 @@ public:
      * @brief DIS event classification
      */
     enum class EventType {
-        Elastic,         // W ~ M_p, Q² > 0
-        QuasiElastic,    // W < 1.5 GeV
-        Resonance,       // 1.08 < W < 2.0 GeV
-        DIS,             // W > 2.0 GeV, Q² > 1.0 GeV²
-        HighQ2DIS,       // W > 2.0 GeV, Q² > 4.0 GeV²
-        LowQ2,           // Q² < 1.0 GeV²
-        HighY,           // y > 0.85 (radiative tail)
+        Elastic,       // W ~ M_p, Q² > 0
+        QuasiElastic,  // W < 1.5 GeV
+        Resonance,     // 1.08 < W < 2.0 GeV
+        DIS,           // W > 2.0 GeV, Q² > 1.0 GeV²
+        HighQ2DIS,     // W > 2.0 GeV, Q² > 4.0 GeV²
+        LowQ2,         // Q² < 1.0 GeV²
+        HighY,         // y > 0.85 (radiative tail)
         Unknown
     };
 
@@ -285,18 +278,26 @@ public:
      */
     static auto event_type_name(EventType type) -> std::string {
         switch (type) {
-            case EventType::Elastic: return "Elastic";
-            case EventType::QuasiElastic: return "QuasiElastic";
-            case EventType::Resonance: return "Resonance";
-            case EventType::DIS: return "DIS";
-            case EventType::HighQ2DIS: return "HighQ2DIS";
-            case EventType::LowQ2: return "LowQ2";
-            case EventType::HighY: return "HighY";
-            default: return "Unknown";
+            case EventType::Elastic:
+                return "Elastic";
+            case EventType::QuasiElastic:
+                return "QuasiElastic";
+            case EventType::Resonance:
+                return "Resonance";
+            case EventType::DIS:
+                return "DIS";
+            case EventType::HighQ2DIS:
+                return "HighQ2DIS";
+            case EventType::LowQ2:
+                return "LowQ2";
+            case EventType::HighY:
+                return "HighY";
+            default:
+                return "Unknown";
         }
     }
 
-private:
+   private:
     /**
      * @brief Calculate virtual photon polarization parameter
      * ε = [1 + 2(1 + ν²/Q²)tan²(θ_e/2)]^(-1)
@@ -311,7 +312,7 @@ private:
  * @brief Helper for structure function extraction
  */
 class StructureFunctionHelper {
-public:
+   public:
     /**
      * @brief Calculate F2 structure function from cross section
      * Simplified formula for quick estimates
@@ -329,8 +330,7 @@ public:
     static auto reduced_cross_section(
         double F2,
         double FL,
-        double y
-    ) -> double {
+        double y) -> double {
         double y_factor = y * y / (1.0 + (1.0 - y) * (1.0 - y));
         return F2 - y_factor * FL;
     }

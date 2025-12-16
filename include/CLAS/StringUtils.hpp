@@ -53,7 +53,7 @@ inline auto split(const std::string& str, char delimiter) -> std::vector<std::st
     std::vector<std::string> result;
     size_t start = 0;
     size_t end = str.find(delimiter);
-    
+
     while (end != std::string::npos) {
         std::string token = str.substr(start, end - start);
         if (!token.empty()) {
@@ -62,12 +62,12 @@ inline auto split(const std::string& str, char delimiter) -> std::vector<std::st
         start = end + 1;
         end = str.find(delimiter, start);
     }
-    
+
     std::string last = str.substr(start);
     if (!last.empty()) {
         result.push_back(last);
     }
-    
+
     return result;
 }
 

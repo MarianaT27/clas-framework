@@ -1,11 +1,11 @@
 #pragma once
 
-#include "Framework/AlgorithmTypes.hpp"
-#include "Framework/Cutflow.hpp"
-#include "Framework/Services/ParticleSelectorService.hpp"
 #include "CLAS/ElectronCuts.hpp"
 #include "CLAS/ReadBank.hpp"
 #include "CLAS/Target.hpp"
+#include "Framework/AlgorithmTypes.hpp"
+#include "Framework/Cutflow.hpp"
+#include "Framework/Services/ParticleSelectorService.hpp"
 
 namespace Algorithms {
 
@@ -24,15 +24,12 @@ namespace Algorithms {
  * @endcode
  */
 class TriggerElectronFilter : public Framework::FilterAlgorithm {
-public:
+   public:
     explicit TriggerElectronFilter(
         std::string name = "TriggerElectronFilter",
         CLAS::Target target = CLAS::Target::LD2,
         CLAS::Polarity polarity = CLAS::Polarity::Outbending)
-        : FilterAlgorithm(std::move(name))
-        , m_target(target)
-        , m_polarity(polarity)
-        , m_cutflow("Trigger Electron Filter") {}
+        : FilterAlgorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow("Trigger Electron Filter") {}
 
     auto initialize() -> Framework::StatusCode override {
         fmt::print("  {} - Initializing\n", name());
@@ -59,7 +56,7 @@ public:
         return Framework::StatusCode::SUCCESS();
     }
 
-protected:
+   protected:
     /**
      * @brief Filter logic - check if event has good trigger electron
      */
@@ -100,7 +97,7 @@ protected:
         return true;  // Event passes filter
     }
 
-private:
+   private:
     CLAS::Target m_target;
     CLAS::Polarity m_polarity;
     Framework::Cutflow m_cutflow;

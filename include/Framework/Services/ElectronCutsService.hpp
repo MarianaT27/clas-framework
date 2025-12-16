@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Framework/IService.hpp>
-#include <Framework/StatusCode.hpp>
 #include <CLAS/Banks.hpp>
 #include <CLAS/Particle.hpp>
 #include <CLAS/Target.hpp>
+#include <Framework/IService.hpp>
+#include <Framework/StatusCode.hpp>
 #include <array>
 #include <utility>
 
@@ -33,7 +33,7 @@ namespace Framework {
  * @endcode
  */
 class ElectronCutsService : public Service {
-public:
+   public:
     // ============================================================================
     // Constants
     // ============================================================================
@@ -123,11 +123,15 @@ public:
     // ============================================================================
 
     void set_target(CLAS::Target target) { m_target = target; }
+
     void set_polarity(CLAS::Polarity polarity) { m_polarity = polarity; }
+
     void set_n_sigma(double n_sigma) { m_n_sigma = n_sigma; }
 
     [[nodiscard]] auto target() const -> CLAS::Target { return m_target; }
+
     [[nodiscard]] auto polarity() const -> CLAS::Polarity { return m_polarity; }
+
     [[nodiscard]] auto n_sigma() const -> double { return m_n_sigma; }
 
     // ============================================================================
@@ -143,13 +147,11 @@ public:
     }
 
     [[nodiscard]] static auto get_vz_range(CLAS::Target target) -> VzRange {
-        static constexpr std::array<std::pair<CLAS::Target, VzRange>, 5> TARGET_VZ_RANGES = {{
-            {CLAS::Target::LD2, {-15.0, 5.0}},
-            {CLAS::Target::CxC, {-10.6, 5.0}},
-            {CLAS::Target::Cu, {-10.6, -6.5}},
-            {CLAS::Target::Sn, {-5.5, 5.0}},
-            {CLAS::Target::CuSn, {-10.6, 5.0}}
-        }};
+        static constexpr std::array<std::pair<CLAS::Target, VzRange>, 5> TARGET_VZ_RANGES = {{{CLAS::Target::LD2, {-15.0, 5.0}},
+                                                                                              {CLAS::Target::CxC, {-10.6, 5.0}},
+                                                                                              {CLAS::Target::Cu, {-10.6, -6.5}},
+                                                                                              {CLAS::Target::Sn, {-5.5, 5.0}},
+                                                                                              {CLAS::Target::CuSn, {-10.6, 5.0}}}};
 
         for (const auto& [t, range] : TARGET_VZ_RANGES) {
             if (t == target) return range;
@@ -178,6 +180,7 @@ public:
 
     // PCAL Fiducial Cuts
     [[nodiscard]] static auto pass_pcal_v_cut(double v) -> bool { return v > MIN_PCAL_V; }
+
     [[nodiscard]] static auto pass_pcal_w_cut(double w) -> bool { return w > MIN_PCAL_W; }
 
     [[nodiscard]] static auto pass_pcal_fiducial_cut(double v, double w) -> bool {
@@ -254,7 +257,7 @@ public:
                results.pcal_fiducial && results.dc_chi2ndf;
     }
 
-private:
+   private:
     CLAS::Target m_target = CLAS::Target::LD2;
     CLAS::Polarity m_polarity = CLAS::Polarity::Outbending;
     double m_n_sigma = SF_N_SIGMA;

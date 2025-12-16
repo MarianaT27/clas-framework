@@ -1,13 +1,13 @@
 #pragma once
 
+#include <chrono>
+#include <vector>
 #include "CLAS/PIDs.hpp"
 #include "Framework/AlgorithmTypes.hpp"
 #include "Framework/ServiceHandle.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
-#include <chrono>
-#include <vector>
 
 namespace Algorithms {
 
@@ -25,14 +25,15 @@ namespace Algorithms {
  * @endcode
  */
 class EventMonitor : public Framework::MonitoringAlgorithm {
-public:
+   public:
     explicit EventMonitor(std::string name = "EventMonitor")
-        : MonitoringAlgorithm(std::move(name))
-        , m_monitored_pids(initialize_default_pids()) {}
+        : MonitoringAlgorithm(std::move(name)), m_monitored_pids(initialize_default_pids()) {}
 
     // Configuration methods
     void set_progress_interval(size_t interval) { m_progress_interval = interval; }
+
     void set_particle_types(std::vector<CLAS::PIDs> pids) { m_monitored_pids = std::move(pids); }
+
     auto initialize() -> Framework::StatusCode override {
         Framework::Log::info("Event Monitor", "  {} - Initializing", name());
 
@@ -58,7 +59,7 @@ public:
         return Framework::StatusCode::SUCCESS();
     }
 
-protected:
+   protected:
     /**
      * @brief Monitor event characteristics
      */
@@ -71,7 +72,7 @@ protected:
         return Framework::StatusCode::SUCCESS();
     }
 
-private:
+   private:
     // Configuration constants
     static constexpr int PARTICLES_HIST_BINS = 50;
     static constexpr int PARTICLES_HIST_MIN = 0;
@@ -161,8 +162,8 @@ private:
      */
     [[nodiscard]] double calculate_avg_particles() const {
         return m_events_processed > 0
-            ? static_cast<double>(m_total_particles) / m_events_processed
-            : 0.0;
+                   ? static_cast<double>(m_total_particles) / m_events_processed
+                   : 0.0;
     }
 
     /**
@@ -173,7 +174,7 @@ private:
         const auto duration = std::chrono::duration_cast<std::chrono::seconds>(end_time - m_start_time);
 
         Framework::Log::info("EventMonitor", "Event Monitor Statistics:\n  Total events processed: {}\n  Total runtime: {} seconds\n  Average rate: {:.1f} events/second\n  Average particles/event: {:.2f}",
-            m_events_processed, duration.count(), calculate_event_rate(duration.count()), calculate_avg_particles());
+                             m_events_processed, duration.count(), calculate_event_rate(duration.count()), calculate_avg_particles());
     }
 
     auto initialize_default_pids() const -> std::vector<CLAS::PIDs> {

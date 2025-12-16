@@ -1,10 +1,10 @@
 #pragma once
 
+#include <cmath>
+#include <optional>
+#include <vector>
 #include "CLAS/Particle.hpp"
 #include "Physics/Kinematics.hpp"
-#include <vector>
-#include <optional>
-#include <cmath>
 
 namespace Physics {
 
@@ -18,15 +18,15 @@ namespace Physics {
  * - Phase space cuts
  */
 class ExclusiveAnalysis {
-public:
+   public:
     /**
      * @brief Exclusivity criteria for exclusive reactions
      */
     struct ExclusivityCuts {
         double max_missing_energy = 0.5;    // GeV
-        double max_missing_momentum = 0.3;   // GeV/c
-        double missing_mass_center = 0.0;    // GeV (0 for exclusive)
-        double missing_mass_width = 0.5;     // GeV
+        double max_missing_momentum = 0.3;  // GeV/c
+        double missing_mass_center = 0.0;   // GeV (0 for exclusive)
+        double missing_mass_width = 0.5;    // GeV
 
         /**
          * @brief Standard exclusive cuts (tight)
@@ -36,8 +36,7 @@ public:
                 .max_missing_energy = 0.3,
                 .max_missing_momentum = 0.2,
                 .missing_mass_center = 0.0,
-                .missing_mass_width = 0.3
-            };
+                .missing_mass_width = 0.3};
         }
 
         /**
@@ -48,8 +47,7 @@ public:
                 .max_missing_energy = 0.8,
                 .max_missing_momentum = 0.5,
                 .missing_mass_center = 0.0,
-                .missing_mass_width = 0.8
-            };
+                .missing_mass_width = 0.8};
         }
 
         /**
@@ -60,8 +58,7 @@ public:
                 .max_missing_energy = 0.5,
                 .max_missing_momentum = 0.4,
                 .missing_mass_center = 0.940,  // Neutron mass
-                .missing_mass_width = 0.2
-            };
+                .missing_mass_width = 0.2};
         }
     };
 
@@ -69,9 +66,9 @@ public:
      * @brief Result of exclusivity check
      */
     struct ExclusivityResult {
-        double missing_energy;      // GeV
-        double missing_momentum;    // GeV/c
-        double missing_mass;        // GeV
+        double missing_energy;    // GeV
+        double missing_momentum;  // GeV/c
+        double missing_mass;      // GeV
         bool passes_energy;
         bool passes_momentum;
         bool passes_mass;
@@ -105,8 +102,7 @@ public:
         const CLAS::Particle& electron,
         const std::vector<CLAS::Particle>& detected_particles,
         const ExclusivityCuts& cuts = ExclusivityCuts(),
-        const Kinematics::BeamConfig& beam = Kinematics::BeamConfig()
-    ) -> ExclusivityResult {
+        const Kinematics::BeamConfig& beam = Kinematics::BeamConfig()) -> ExclusivityResult {
         using namespace Kinematics;
 
         double E_miss = missing_energy(electron, detected_particles, beam);
@@ -119,8 +115,7 @@ public:
             .missing_mass = mm,
             .passes_energy = std::abs(E_miss) < cuts.max_missing_energy,
             .passes_momentum = p_miss < cuts.max_missing_momentum,
-            .passes_mass = std::abs(mm - cuts.missing_mass_center) < cuts.missing_mass_width
-        };
+            .passes_mass = std::abs(mm - cuts.missing_mass_center) < cuts.missing_mass_width};
     }
 
     /**
@@ -213,8 +208,7 @@ public:
     static auto calculate_t(
         const CLAS::Particle& electron,
         const CLAS::Particle& meson,
-        const Kinematics::BeamConfig& beam = Kinematics::BeamConfig()
-    ) -> double {
+        const Kinematics::BeamConfig& beam = Kinematics::BeamConfig()) -> double {
         return Kinematics::momentum_transfer_t(electron, meson, beam);
     }
 
@@ -229,10 +223,10 @@ public:
      * @brief Angle calculations for exclusive reactions
      */
     struct ExclusiveAngles {
-        double theta_gamma_cm;      // Meson/photon angle in CM frame
-        double phi_h;               // Hadron plane angle
-        double phi_gamma;           // Photon/meson plane angle
-        double delta_phi;           // Relative azimuthal angle
+        double theta_gamma_cm;  // Meson/photon angle in CM frame
+        double phi_h;           // Hadron plane angle
+        double phi_gamma;       // Photon/meson plane angle
+        double delta_phi;       // Relative azimuthal angle
 
         /**
          * @brief Calculate angles for DVCS/meson production
@@ -241,8 +235,7 @@ public:
         static auto calculate(
             const CLAS::Particle& electron,
             const CLAS::Particle& meson_or_photon,
-            const CLAS::Particle& recoil_proton
-        ) -> ExclusiveAngles {
+            const CLAS::Particle& recoil_proton) -> ExclusiveAngles {
             using namespace Kinematics;
 
             // Calculate relative phi angle
@@ -255,8 +248,7 @@ public:
                 .theta_gamma_cm = theta_cm,
                 .phi_h = recoil_proton.phi(),
                 .phi_gamma = meson_or_photon.phi(),
-                .delta_phi = dphi
-            };
+                .delta_phi = dphi};
         }
     };
 
@@ -264,12 +256,12 @@ public:
      * @brief Phase space boundaries for exclusive reactions
      */
     struct PhaseSpaceCuts {
-        double t_min = -2.0;         // GeV²
-        double t_max = 0.0;          // GeV²
-        double w_min = 2.0;          // GeV
-        double w_max = 5.0;          // GeV
-        double q2_min = 1.0;         // GeV²
-        double q2_max = 10.0;        // GeV²
+        double t_min = -2.0;   // GeV²
+        double t_max = 0.0;    // GeV²
+        double w_min = 2.0;    // GeV
+        double w_max = 5.0;    // GeV
+        double q2_min = 1.0;   // GeV²
+        double q2_max = 10.0;  // GeV²
         double xb_min = 0.0;
         double xb_max = 1.0;
 
@@ -283,8 +275,7 @@ public:
                 .w_min = 2.0,
                 .w_max = 4.0,
                 .q2_min = 1.0,
-                .q2_max = 10.0
-            };
+                .q2_max = 10.0};
         }
 
         /**
@@ -299,8 +290,7 @@ public:
                 .q2_min = 1.0,
                 .q2_max = 10.0,
                 .xb_min = 0.05,
-                .xb_max = 0.5
-            };
+                .xb_max = 0.5};
         }
 
         /**
@@ -319,8 +309,7 @@ public:
      */
     static auto reconstruct_pi0(
         const CLAS::Particle& gamma1,
-        const CLAS::Particle& gamma2
-    ) -> std::optional<CLAS::Particle> {
+        const CLAS::Particle& gamma2) -> std::optional<CLAS::Particle> {
         using namespace Kinematics;
 
         double m_pipi = invariant_mass(gamma1, gamma2);
@@ -349,7 +338,7 @@ public:
         const CLAS::Particle& p1,
         const CLAS::Particle& p2,
         double tolerance = 20.0  // degrees
-    ) -> bool {
+        ) -> bool {
         double dphi = std::abs(Kinematics::delta_phi(p1, p2));
         return std::abs(dphi - 180.0) < tolerance;
     }
@@ -359,8 +348,7 @@ public:
      * For exclusive reactions, p_T should sum to ~0
      */
     static auto transverse_momentum_balance(
-        const std::vector<CLAS::Particle>& particles
-    ) -> double {
+        const std::vector<CLAS::Particle>& particles) -> double {
         double px_sum = 0.0;
         double py_sum = 0.0;
 
@@ -377,14 +365,14 @@ public:
  * @brief Helper for resonance identification
  */
 class ResonanceHelper {
-public:
+   public:
     /**
      * @brief Known resonances
      */
     struct Resonance {
         std::string name;
-        double mass;        // GeV
-        double width;       // GeV
+        double mass;   // GeV
+        double width;  // GeV
         int charge;
         int strangeness;
 
@@ -414,15 +402,13 @@ public:
     static auto identify_resonance(
         double inv_mass,
         int charge = 0,
-        double n_sigma = 2.0
-    ) -> std::vector<Resonance> {
+        double n_sigma = 2.0) -> std::vector<Resonance> {
         std::vector<Resonance> candidates;
 
         // Check all known resonances
         std::vector<Resonance> resonances = {
             DELTA_1232, N_1440, N_1520, N_1535,
-            RHO_770, OMEGA_782, PHI_1020, K_STAR_892
-        };
+            RHO_770, OMEGA_782, PHI_1020, K_STAR_892};
 
         for (const auto& res : resonances) {
             if (res.charge == charge && res.matches(inv_mass, n_sigma)) {

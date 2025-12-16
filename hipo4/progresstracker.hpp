@@ -1,17 +1,17 @@
 #pragma once
 
+#include <fmt/core.h>
+#include <fmt/format.h>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <iostream>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
-#include <algorithm>
-#include <iostream>
-#include <stdexcept>
-#include <fmt/core.h>
-#include <fmt/format.h>
 
 /**
  * @brief Thread-safe progress tracker with visual progress bar.
@@ -37,9 +37,7 @@ class ProgressTracker {
         std::chrono::milliseconds update_interval;
 
         Config()
-            : bar_width(50), show_eta(true), show_rate(true), 
-              use_colors(true), use_gradient(true), label("Processing"),
-              update_interval(100) {}
+            : bar_width(50), show_eta(true), show_rate(true), use_colors(true), use_gradient(true), label("Processing"), update_interval(100) {}
     };
 
     /**
@@ -71,7 +69,7 @@ class ProgressTracker {
     /**
      * @brief Gets current progress count (thread-safe).
      */
-    [[nodiscard]] auto get_processed() const noexcept -> std::size_t{
+    [[nodiscard]] auto get_processed() const noexcept -> std::size_t {
         return m_processed.load(std::memory_order_acquire);
     }
 
@@ -115,7 +113,6 @@ class ProgressTracker {
      */
     [[nodiscard]] static auto format_duration(std::chrono::seconds duration) noexcept -> std::string;
 
-
    private:
     // ANSI escape codes
     struct AnsiCodes {
@@ -123,7 +120,7 @@ class ProgressTracker {
         static constexpr std::string_view RESET = "\033[0m";
         static constexpr std::string_view BOLD = "\033[1m";
         static constexpr std::string_view DIM = "\033[2m";
-        
+
         // Standard colors
         static constexpr std::string_view GREEN = "\033[32m";
         static constexpr std::string_view CYAN = "\033[36m";
@@ -132,14 +129,14 @@ class ProgressTracker {
         static constexpr std::string_view WHITE = "\033[37m";
         static constexpr std::string_view BLUE = "\033[34m";
         static constexpr std::string_view RED = "\033[31m";
-        
+
         // Bright colors
         static constexpr std::string_view BRIGHT_GREEN = "\033[92m";
         static constexpr std::string_view BRIGHT_CYAN = "\033[96m";
         static constexpr std::string_view BRIGHT_YELLOW = "\033[93m";
         static constexpr std::string_view BRIGHT_MAGENTA = "\033[95m";
         static constexpr std::string_view BRIGHT_WHITE = "\033[97m";
-        
+
         // Background colors for gradient effect
         static constexpr std::string_view BG_CYAN = "\033[46m";
         static constexpr std::string_view BG_BLUE = "\033[44m";
@@ -149,7 +146,7 @@ class ProgressTracker {
     // Progress bar block characters (8 levels of granularity)
     static constexpr std::array<std::string_view, 9> BLOCK_CHARS = {
         " ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"};
-    
+
     // Spinner animation characters
     static constexpr std::array<std::string_view, 10> SPINNER_CHARS = {
         "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};

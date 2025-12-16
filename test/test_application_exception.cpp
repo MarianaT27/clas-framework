@@ -1,9 +1,9 @@
+#include <fmt/format.h>
 #include <gtest/gtest.h>
-#include "Framework/StatusCode.hpp"
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <fmt/format.h>
+#include "Framework/StatusCode.hpp"
 
 using namespace Framework;
 
@@ -18,7 +18,7 @@ TEST(ApplicationExceptionTest, AlgorithmExceptionIsCaught) {
     // Simulate what the Application does - wrap execute in try-catch
     int exception_count = 0;
     std::string caught_message;
-    
+
     try {
         // This simulates calling alg->execute(event) in the Application
         throw std::runtime_error("Test exception from algorithm");
@@ -26,7 +26,7 @@ TEST(ApplicationExceptionTest, AlgorithmExceptionIsCaught) {
         exception_count++;
         caught_message = e.what();
     }
-    
+
     EXPECT_EQ(exception_count, 1);
     EXPECT_EQ(caught_message, "Test exception from algorithm");
 }
@@ -37,7 +37,7 @@ TEST(ApplicationExceptionTest, AlgorithmExceptionIsCaught) {
 TEST(ApplicationExceptionTest, NonStdExceptionIsCaught) {
     int exception_count = 0;
     bool caught_unknown = false;
-    
+
     try {
         throw 42;  // Non-standard exception
     } catch (const std::exception& e) {
@@ -46,7 +46,7 @@ TEST(ApplicationExceptionTest, NonStdExceptionIsCaught) {
         exception_count++;
         caught_unknown = true;
     }
-    
+
     EXPECT_EQ(exception_count, 1);
     EXPECT_TRUE(caught_unknown);
 }
@@ -62,7 +62,7 @@ TEST(ApplicationExceptionTest, ProcessingContinuesAfterException) {
     std::vector<std::string> algorithm_names = {"Alg1", "ThrowingAlg", "Alg2", "Alg3"};
     std::vector<bool> executed(4, false);
     int exception_count = 0;
-    
+
     // Simulate event loop processing
     for (size_t i = 0; i < algorithm_names.size(); ++i) {
         try {
@@ -75,7 +75,7 @@ TEST(ApplicationExceptionTest, ProcessingContinuesAfterException) {
             // Continue to next algorithm (don't break)
         }
     }
-    
+
     // Verify that algorithms before and after the throwing one executed
     EXPECT_TRUE(executed[0]);   // Alg1 executed
     EXPECT_FALSE(executed[1]);  // ThrowingAlg threw
@@ -90,7 +90,7 @@ TEST(ApplicationExceptionTest, ProcessingContinuesAfterException) {
 TEST(ApplicationExceptionTest, MultipleExceptionsAreCounted) {
     int exception_count = 0;
     int events_processed = 5;
-    
+
     // Simulate processing multiple events where some throw
     for (int evt = 0; evt < events_processed; ++evt) {
         try {
@@ -101,7 +101,7 @@ TEST(ApplicationExceptionTest, MultipleExceptionsAreCounted) {
             exception_count++;
         }
     }
-    
+
     EXPECT_EQ(exception_count, 2);
 }
 
@@ -110,7 +110,7 @@ TEST(ApplicationExceptionTest, MultipleExceptionsAreCounted) {
  */
 TEST(ApplicationExceptionTest, AlgorithmNameAvailableForErrorReporting) {
     std::string alg_name = "MyTestAlgorithm";
-    
+
     // Simulate error reporting pattern used in Application
     std::string error_message;
     try {
@@ -119,7 +119,7 @@ TEST(ApplicationExceptionTest, AlgorithmNameAvailableForErrorReporting) {
         // This is the pattern used in Application::run()
         error_message = fmt::format("ERROR: Exception in algorithm '{}': {}", alg_name, e.what());
     }
-    
+
     EXPECT_EQ(error_message, "ERROR: Exception in algorithm 'MyTestAlgorithm': Something went wrong");
 }
 
@@ -129,10 +129,10 @@ TEST(ApplicationExceptionTest, AlgorithmNameAvailableForErrorReporting) {
 TEST(ApplicationExceptionTest, ErrorMessageFormatMatchesApplication) {
     std::string alg_name = "ElectronSelector";
     std::string exception_msg = "Invalid particle index";
-    
+
     // Format error message the same way Application does
     std::string formatted = fmt::format("ERROR: Exception in algorithm '{}': {}", alg_name, exception_msg);
-    
+
     EXPECT_TRUE(formatted.find("ERROR:") != std::string::npos);
     EXPECT_TRUE(formatted.find(alg_name) != std::string::npos);
     EXPECT_TRUE(formatted.find(exception_msg) != std::string::npos);

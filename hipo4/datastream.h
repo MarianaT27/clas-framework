@@ -40,14 +40,14 @@
 #ifndef DATASTREAM_H
 #define DATASTREAM_H
 
-#include <iostream>
-#include <utility>
-#include <vector>
-#include <fstream>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <iostream>
 #include <memory>
-#include <climits>
+#include <utility>
+#include <vector>
 
 #ifdef __XROOTD__
 #include <XrdClient/XrdClient.hh>
@@ -57,81 +57,89 @@
 
 namespace hipo {
 
-
 class datastream {
 
-    private:
+   private:
+    std::ifstream inputStream;
+    std::string remoteAddress;
+    int streamType = 1;
 
-       std::ifstream     inputStream;
-       std::string       remoteAddress;
-       int               streamType = 1;
+   public:
+    datastream();
+    //datastream(const char *address);
+    virtual ~datastream();
 
+    virtual long size() { return 0; }
 
-    public:
+    virtual long position() { return 0; }
 
-        datastream();
-        //datastream(const char *address);
-        virtual ~datastream();
+    virtual long position(long pos) { return 0; }
 
-        virtual long   size(){ return 0;}
-        virtual long   position(){ return 0;}
-        virtual long   position(long pos){ return 0;}
-        //virtual void  setAdress(const char *address){}
-        virtual void  open(const char *filename){}
-        virtual int   read(char *s, int size){return 0;}
-  };
+    //virtual void  setAdress(const char *address){}
+    virtual void open(const char* filename) {}
+
+    virtual int read(char* s, int size) { return 0; }
+};
 
 class datastreamLocalFile {
 
-  private:
-    std::ifstream     inputStream;
+   private:
+    std::ifstream inputStream;
 
-  public:
+   public:
+    datastreamLocalFile();
 
-      datastreamLocalFile();
-      ~datastreamLocalFile(){
-        if(inputStream.is_open()==true){
-          inputStream.close();
+    ~datastreamLocalFile() {
+        if (inputStream.is_open() == true) {
+            inputStream.close();
         }
-      }
+    }
 
-      long   size(){
-          long pos = inputStream.tellg();
-          inputStream.seekg(0,std::ios_base::end);
-          long lastpos = inputStream.tellg();
-          inputStream.seekg(pos,std::ios_base::beg);
-          return lastpos;
-        }
+    long size() {
+        long pos = inputStream.tellg();
+        inputStream.seekg(0, std::ios_base::end);
+        long lastpos = inputStream.tellg();
+        inputStream.seekg(pos, std::ios_base::beg);
+        return lastpos;
+    }
 
-      void   open(const char *filename){
+    void open(const char* filename) {
         inputStream.open(filename, std::ios::binary);
-      }
-      long   position(){ return inputStream.tellg();}
-      long   position(long pos){ inputStream.seekg(pos,std::ios_base::beg); return pos; }
-      int    read(char *s, int size){inputStream.read(s,size); return size;}
+    }
+
+    long position() { return inputStream.tellg(); }
+
+    long position(long pos) {
+        inputStream.seekg(pos, std::ios_base::beg);
+        return pos;
+    }
+
+    int read(char* s, int size) {
+        inputStream.read(s, size);
+        return size;
+    }
 };
 
 class datastreamXrootd {
 
-private:
-  #ifdef __XROOTD__
-          kXR_unt16 open_mode = (kXR_ur);
-          kXR_unt16 open_opts = (1);
-          XrdClient *cli = NULL;
-  #endif
-  long streamPosition = 0;
+   private:
+#ifdef __XROOTD__
+    kXR_unt16 open_mode = (kXR_ur);
+    kXR_unt16 open_opts = (1);
+    XrdClient* cli = NULL;
+#endif
+    long streamPosition = 0;
 
-public:
-  datastreamXrootd();
-  ~datastreamXrootd();
+   public:
+    datastreamXrootd();
+    ~datastreamXrootd();
 
-
-   long   size();
-   long   position();
-   long   position(long pos);
-  //virtual void  setAdress(const char *address){}
-   void  open(const char *filename);
-   int   read(char *s, int size);
+    long size();
+    long position();
+    long position(long pos);
+    //virtual void  setAdress(const char *address){}
+    void open(const char* filename);
+    int read(char* s, int size);
 };
-}
+}  // namespace hipo
 #endif /* DATASTREAM_H */

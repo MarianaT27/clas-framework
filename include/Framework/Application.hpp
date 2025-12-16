@@ -1,16 +1,16 @@
 #pragma once
 
+#include <fmt/format.h>
+#include <memory>
+#include <string>
+#include <vector>
+#include "Framework/Event.hpp"
 #include "Framework/IAlgorithm.hpp"
 #include "Framework/ServiceManager.hpp"
 #include "Framework/Services/LoggingService.hpp"
-#include "Framework/Event.hpp"
 #include "Framework/StatusCode.hpp"
-#include "hipoeventiterator.h"
 #include "hipo4/chain.h"
-#include <vector>
-#include <memory>
-#include <string>
-#include <fmt/format.h>
+#include "hipoeventiterator.h"
 
 namespace Framework {
 
@@ -26,7 +26,7 @@ namespace Framework {
  * This follows the application framework pattern used in Gaudi/Athena.
  */
 class Application {
-public:
+   public:
     Application(std::string name) : m_name(std::move(name)) {}
 
     /**
@@ -164,10 +164,8 @@ public:
             chain.add(file);
         }
 
-
         // Process events
         chain.process([this](hipo::iter_event& hipo_event, int file_idx, long evt_idx) {
-
             // Create Event wrapper
             Event event(hipo_event);
             event.set_event_number(evt_idx);
@@ -196,7 +194,8 @@ public:
                     break;
                 }
             }
-        }, m_percentage);
+        },
+                      m_percentage);
 
         if (m_exception_count > 0) {
             fmt::print("WARNING: {} exception(s) caught during event processing\n", m_exception_count);
@@ -257,7 +256,7 @@ public:
         return m_exception_count;
     }
 
-private:
+   private:
     std::string m_name;
     ServiceManager m_svc_mgr;
     std::vector<std::unique_ptr<IAlgorithm>> m_algorithms;

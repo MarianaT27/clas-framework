@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fmt/base.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -14,7 +15,6 @@
 #include <thread>
 #include <type_traits>
 #include <vector>
-#include <fmt/base.h>
 
 /**
  * @brief A ThreadPool implementation.
@@ -156,7 +156,6 @@ auto ThreadPool::submit(Callable&& callable, Args&&... args)
     m_task_available.notify_one();
     return future;
 }
-
 
 namespace {
 constexpr std::size_t MAX_REASONABLE_THREADS = 100;
@@ -326,7 +325,7 @@ auto ThreadPool::worker_loop(std::size_t worker_id) noexcept -> void {
 
     while (!m_stop_requested.load(std::memory_order_acquire)) {
         std::function<void()> task;
-        { // This scope is VERY IMPORTANT to limit lock duration, don't remove it!
+        {  // This scope is VERY IMPORTANT to limit lock duration, don't remove it!
             std::unique_lock lock{m_queue_mutex};
 
             // Wait for task or stop signal
@@ -344,7 +343,7 @@ auto ThreadPool::worker_loop(std::size_t worker_id) noexcept -> void {
                 task = std::move(m_task_queue.front());
                 m_task_queue.pop();
             }
-        /*
+            /*
         The braces { } create a new scope. In C++, when a variable goes out of scope, its destructor is called automatically (RAII).
         By wrapping the std::unique_lock in braces, the lock's destructor runs at the closing }, which releases the mutex before the task executes. 
         Without the braces, the lock stayed alive until the end of the entire while loop, keeping the mutex locked during task execution and blocking all other threads.

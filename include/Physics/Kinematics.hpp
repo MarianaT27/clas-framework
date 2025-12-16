@@ -1,11 +1,11 @@
 #pragma once
 
+#include <cmath>
+#include <vector>
 #include "CLAS/Constants.hpp"
 #include "CLAS/Particle.hpp"
 #include "CompositeParticle.hpp"
 #include "fmt/base.h"
-#include <vector>
-#include <cmath>
 
 namespace Physics {
 
@@ -16,7 +16,7 @@ namespace Physics {
  * used in particle physics analyses.
  */
 class KinematicCalculator {
-public:
+   public:
     /**
      * @brief Calculate missing mass squared
      * @param beam Beam particle
@@ -62,8 +62,8 @@ public:
      * @return W in GeV
      */
     static auto calculate_W(const CLAS::Particle& beam,
-                           const CLAS::Particle& scattered,
-                           const CLAS::Particle& target) -> double {
+                            const CLAS::Particle& scattered,
+                            const CLAS::Particle& target) -> double {
         // Virtual photon four-momentum
         double q_px = beam.px() - scattered.px();
         double q_py = beam.py() - scattered.py();
@@ -108,7 +108,7 @@ public:
      * @return y
      */
     static auto calculate_y(const CLAS::Particle& beam,
-                           const CLAS::Particle& scattered) -> double {
+                            const CLAS::Particle& scattered) -> double {
         double nu = beam.E() - scattered.E();
         return nu / beam.E();
     }
@@ -125,8 +125,8 @@ public:
     };
 
     static auto calculate_DIS(const CLAS::Particle& beam,
-                             const CLAS::Particle& scattered,
-                             const CLAS::Particle& target) -> DISKinematics {
+                              const CLAS::Particle& scattered,
+                              const CLAS::Particle& target) -> DISKinematics {
         DISKinematics kin;
         kin.Q2 = calculate_Q2(beam, scattered);
         kin.W = calculate_W(beam, scattered, target);
@@ -177,7 +177,7 @@ public:
      * For photoproduction: t = (p_gamma - p_meson)²
      */
     static auto calculate_t(const CLAS::Particle& photon,
-                           const CompositeParticle& meson) -> double {
+                            const CompositeParticle& meson) -> double {
         double dpx = photon.px() - meson.px();
         double dpy = photon.py() - meson.py();
         double dpz = photon.pz() - meson.pz();

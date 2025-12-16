@@ -92,5 +92,4 @@ struct ScintillatorBank {
     int status = std::numeric_limits<int>::quiet_NaN();
 };
 
-
 }  // namespace CLAS

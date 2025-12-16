@@ -14,100 +14,105 @@
 #ifndef FUSION_H
 #define FUSION_H
 
-#include <iostream>
-#include <cstdlib>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <iostream>
+#include <map>
 #include <string>
 #include <vector>
-#include <map>
 #include "reader.h"
-#include <chrono>
 
 namespace hipo {
-  
+
 class inputSource {
-    
-  private:
-    
+
+   private:
     hipo::reader reader;
-    std::map<std::string,hipo::bank> banks;
-    hipo::dictionary  factory;
-    hipo::event      event;
-    
-  public:
-    
-    inputSource(){}
-    inputSource(const char *filename){ open(filename); }
-    inputSource(const char *filename, int tag) { open(filename, tag); }
-    ~inputSource(){}
-    
-    void open(const char *filename);
-    void open(const char *filename, int tag);
-    void define(const char *bank);
-    void describe(const char *bank);
+    std::map<std::string, hipo::bank> banks;
+    hipo::dictionary factory;
+    hipo::event event;
+
+   public:
+    inputSource() {}
+
+    inputSource(const char* filename) { open(filename); }
+
+    inputSource(const char* filename, int tag) { open(filename, tag); }
+
+    ~inputSource() {}
+
+    void open(const char* filename);
+    void open(const char* filename, int tag);
+    void define(const char* bank);
+    void describe(const char* bank);
     bool next();
 
-    std::string   schema(const char *bank);
-    hipo::bank   &get(const char *bank){ return banks[bank];}
-    int           getSize(const char *bank);
-    
-    int         getInt(   const char *bank, const char *entry, int row);
-    int64_t     getLong(   const char *bank, const char *entry, int row);
-    float       getFloat( const char *bank, const char *entry, int row);
-    double      getDouble( const char *bank, const char *entry, int row);
+    std::string schema(const char* bank);
 
-    void getByteArray(  const char *bank, int entry, int8_t *ptr, int length);
-    void getShortArray( const char *bank, int entry, int16_t *ptr, int length);
-    void getIntArray(   const char *bank, int entry, int32_t  *ptr, int length);
-    void getFloatArray( const char *bank, int entry, float   *ptr, int length);
+    hipo::bank& get(const char* bank) { return banks[bank]; }
+
+    int getSize(const char* bank);
+
+    int getInt(const char* bank, const char* entry, int row);
+    int64_t getLong(const char* bank, const char* entry, int row);
+    float getFloat(const char* bank, const char* entry, int row);
+    double getDouble(const char* bank, const char* entry, int row);
+
+    void getByteArray(const char* bank, int entry, int8_t* ptr, int length);
+    void getShortArray(const char* bank, int entry, int16_t* ptr, int length);
+    void getIntArray(const char* bank, int entry, int32_t* ptr, int length);
+    void getFloatArray(const char* bank, int entry, float* ptr, int length);
 
     int64_t getEntries() { return reader.getEntries(); }
-  };
+};
 
 class fusion {
 
-  private:
+   private:
+    std::map<int, inputSource*> sources;
 
-     std::map<int,inputSource*> sources;
+   public:
+    fusion() {}
 
-  public:
+    ~fusion() {}
 
-  fusion(){}
-  ~fusion(){}
-  
-  
-  int      open(const char *filename);
-  int      open(const char *filename, int tag);
-  bool     next(int handle);
-  
-  void   define(int fid, const char *bank);
-  void   describe(int fid, const char *bank);
-  std::string schema(int fid, const char *bank);
-  
-  int    getSize(int fid, const char *bank);
+    int open(const char* filename);
+    int open(const char* filename, int tag);
+    bool next(int handle);
 
-  void getByteArray(  int handle, const char *bank, int entry, int8_t *ptr, int length){
-    sources[handle]->getByteArray(bank,entry,ptr,length);
-  }
-  void getShortArray( int handle, const char *bank, int entry, int16_t *ptr, int length){
-        sources[handle]->getShortArray(bank,entry,ptr,length);
-  }
-  void getIntArray(   int handle, const char *bank, int entry, int32_t  *ptr, int length){
-        sources[handle]->getIntArray(bank,entry,ptr,length);
-  }
-  void getFloatArray( int handle, const char *bank, int entry, float   *ptr, int length){
-        sources[handle]->getFloatArray(bank,entry,ptr,length);
-  }
-  
-  int         getInt(   int handle, const char *bank, const char *entry, int row);
-  int64_t     getLong(   int handle, const char *bank, const char *entry, int row);
-  float       getFloat( int handle, const char *bank, const char *entry, int row);
-  double      getDouble( int handle, const char *bank, const char *entry, int row);
-  int         getType( int handle, const char *bank, const char *entry);
+    void define(int fid, const char* bank);
+    void describe(int fid, const char* bank);
+    std::string schema(int fid, const char* bank);
 
-  int64_t getEntries(int handle) { return sources[handle]->getEntries(); }
-  hipo::bank &getBank(int handle, const char *bank) {return sources[handle]->get(bank);}
+    int getSize(int fid, const char* bank);
+
+    void getByteArray(int handle, const char* bank, int entry, int8_t* ptr, int length) {
+        sources[handle]->getByteArray(bank, entry, ptr, length);
+    }
+
+    void getShortArray(int handle, const char* bank, int entry, int16_t* ptr, int length) {
+        sources[handle]->getShortArray(bank, entry, ptr, length);
+    }
+
+    void getIntArray(int handle, const char* bank, int entry, int32_t* ptr, int length) {
+        sources[handle]->getIntArray(bank, entry, ptr, length);
+    }
+
+    void getFloatArray(int handle, const char* bank, int entry, float* ptr, int length) {
+        sources[handle]->getFloatArray(bank, entry, ptr, length);
+    }
+
+    int getInt(int handle, const char* bank, const char* entry, int row);
+    int64_t getLong(int handle, const char* bank, const char* entry, int row);
+    float getFloat(int handle, const char* bank, const char* entry, int row);
+    double getDouble(int handle, const char* bank, const char* entry, int row);
+    int getType(int handle, const char* bank, const char* entry);
+
+    int64_t getEntries(int handle) { return sources[handle]->getEntries(); }
+
+    hipo::bank& getBank(int handle, const char* bank) { return sources[handle]->get(bank); }
 };
-}
+}  // namespace hipo
 
 #endif /* FUSION_H */

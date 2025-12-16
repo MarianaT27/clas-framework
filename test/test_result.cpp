@@ -34,7 +34,7 @@ TEST(ResultTest, ValueAccessOnErrorThrows) {
 TEST(ResultTest, ValueOr) {
     auto ok_result = Result<int>::ok(42);
     auto err_result = Result<int>::error("error");
-    
+
     EXPECT_EQ(ok_result.value_or(0), 42);
     EXPECT_EQ(err_result.value_or(0), 0);
 }
@@ -44,7 +44,6 @@ TEST(ResultTest, ErrorMessageOnOkIsEmpty) {
     EXPECT_TRUE(result.error_message().empty());
 }
 
-
 // ============================================================================
 // Monadic Operations Tests
 // ============================================================================
@@ -52,7 +51,7 @@ TEST(ResultTest, ErrorMessageOnOkIsEmpty) {
 TEST(ResultTest, MapOnOk) {
     auto result = Result<int>::ok(5);
     auto mapped = result.map([](int x) { return x * 2; });
-    
+
     EXPECT_TRUE(mapped.is_ok());
     EXPECT_EQ(mapped.value(), 10);
 }
@@ -60,7 +59,7 @@ TEST(ResultTest, MapOnOk) {
 TEST(ResultTest, MapOnError) {
     auto result = Result<int>::error("original error");
     auto mapped = result.map([](int x) { return x * 2; });
-    
+
     EXPECT_TRUE(mapped.is_error());
     EXPECT_EQ(mapped.error_message(), "original error");
 }
@@ -70,7 +69,7 @@ TEST(ResultTest, AndThenOnOk) {
     auto chained = result.and_then([](int x) -> Result<std::string> {
         return Result<std::string>::ok(std::to_string(x * 2));
     });
-    
+
     EXPECT_TRUE(chained.is_ok());
     EXPECT_EQ(chained.value(), "10");
 }
@@ -80,25 +79,25 @@ TEST(ResultTest, AndThenOnError) {
     auto chained = result.and_then([](int x) -> Result<std::string> {
         return Result<std::string>::ok(std::to_string(x));
     });
-    
+
     EXPECT_TRUE(chained.is_error());
     EXPECT_EQ(chained.error_message(), "original error");
 }
 
 TEST(ResultTest, AndThenChaining) {
     auto result = Result<int>::ok(10)
-        .and_then([](int x) { return Result<int>::ok(x + 5); })
-        .and_then([](int x) { return Result<int>::ok(x * 2); });
-    
+                      .and_then([](int x) { return Result<int>::ok(x + 5); })
+                      .and_then([](int x) { return Result<int>::ok(x * 2); });
+
     EXPECT_TRUE(result.is_ok());
     EXPECT_EQ(result.value(), 30);
 }
 
 TEST(ResultTest, AndThenChainingWithError) {
     auto result = Result<int>::ok(10)
-        .and_then([](int) -> Result<int> { return Result<int>::error("failed"); })
-        .and_then([](int x) { return Result<int>::ok(x * 2); });
-    
+                      .and_then([](int) -> Result<int> { return Result<int>::error("failed"); })
+                      .and_then([](int x) { return Result<int>::ok(x * 2); });
+
     EXPECT_TRUE(result.is_error());
     EXPECT_EQ(result.error_message(), "failed");
 }
@@ -130,7 +129,7 @@ TEST(ResultVoidTest, AndThenOnOk) {
     auto chained = result.and_then([]() -> Result<void> {
         return Result<void>::ok();
     });
-    
+
     EXPECT_TRUE(chained.is_ok());
 }
 
@@ -139,7 +138,7 @@ TEST(ResultVoidTest, AndThenOnError) {
     auto chained = result.and_then([]() -> Result<void> {
         return Result<void>::ok();
     });
-    
+
     EXPECT_TRUE(chained.is_error());
     EXPECT_EQ(chained.error_message(), "original error");
 }

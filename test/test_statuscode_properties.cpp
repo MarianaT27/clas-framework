@@ -16,15 +16,15 @@ using namespace Framework;
 RC_GTEST_PROP(StatusCodeProperties, ErrorMessagePreservation, ()) {
     // Generate a random non-empty error message
     std::string message = *rc::gen::nonEmpty<std::string>();
-    
+
     // Create a failure StatusCode with the message
     StatusCode sc = StatusCode::failure(message);
-    
+
     // Verify the StatusCode is a failure
     RC_ASSERT(sc.is_failure());
     RC_ASSERT(!sc.is_success());
     RC_ASSERT(!static_cast<bool>(sc));
-    
+
     // Verify the exact error message is preserved
     RC_ASSERT(sc.message() == message);
 }
@@ -37,7 +37,7 @@ RC_GTEST_PROP(StatusCodeProperties, ErrorMessagePreservation, ()) {
  */
 RC_GTEST_PROP(StatusCodeProperties, SuccessHasEmptyMessage, ()) {
     StatusCode sc = StatusCode::success();
-    
+
     RC_ASSERT(sc.is_success());
     RC_ASSERT(!sc.is_failure());
     RC_ASSERT(static_cast<bool>(sc));
@@ -49,7 +49,7 @@ RC_GTEST_PROP(StatusCodeProperties, SuccessHasEmptyMessage, ()) {
  */
 RC_GTEST_PROP(StatusCodeProperties, BackwardCompatibleFailureEmptyMessage, ()) {
     StatusCode sc = StatusCode::FAILURE();
-    
+
     RC_ASSERT(sc.is_failure());
     RC_ASSERT(!sc.is_success());
     RC_ASSERT(sc.message().empty());
@@ -73,10 +73,10 @@ TEST(StatusCodeTest, BackwardCompatibility) {
     // Test that old-style SUCCESS() and FAILURE() still work
     StatusCode success = StatusCode::SUCCESS();
     StatusCode failure = StatusCode::FAILURE();
-    
+
     EXPECT_TRUE(success.is_success());
     EXPECT_TRUE(failure.is_failure());
-    
+
     // Old-style should have empty messages
     EXPECT_TRUE(success.message().empty());
     EXPECT_TRUE(failure.message().empty());

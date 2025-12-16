@@ -1,17 +1,18 @@
 #pragma once
 
-#include "StatusCode.hpp"
-#include "IService.hpp"
-#include <string>
-#include <memory>
 #include <map>
+#include <memory>
+#include <string>
+#include "IService.hpp"
+#include "StatusCode.hpp"
 
 namespace Framework {
 
 // Forward declarations
 class Event;
 class ServiceManager;
-template<typename T> class ServiceHandle;
+template <typename T>
+class ServiceHandle;
 
 /**
  * @brief Base interface for all algorithms in the framework
@@ -27,7 +28,7 @@ template<typename T> class ServiceHandle;
  * 4. finalize() - Called once at the end
  */
 class IAlgorithm {
-public:
+   public:
     virtual ~IAlgorithm() = default;
 
     /**
@@ -78,7 +79,7 @@ public:
  * @brief Base class for algorithm implementations
  */
 class Algorithm : public IAlgorithm {
-public:
+   public:
     explicit Algorithm(std::string name) : m_name(std::move(name)) {}
 
     auto name() const -> const std::string& override { return m_name; }
@@ -87,7 +88,7 @@ public:
         m_svc_mgr = svc_mgr;
     }
 
-protected:
+   protected:
     std::string m_name;
     ServiceManager* m_svc_mgr = nullptr;
 
@@ -97,7 +98,7 @@ protected:
      * @param service_name Name of the service
      * @return T* Pointer to the service, or nullptr if not found
      */
-    template<typename T>
+    template <typename T>
     auto service(const std::string& service_name) -> T*;
 
     /**
@@ -110,7 +111,7 @@ protected:
      * @param handle The service handle to initialize
      * @return StatusCode SUCCESS if handle was initialized, FAILURE with message otherwise
      */
-    template<typename T>
+    template <typename T>
     auto initialize_handle(ServiceHandle<T>& handle) -> StatusCode;
 };
 

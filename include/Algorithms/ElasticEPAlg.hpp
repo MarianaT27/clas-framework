@@ -2,8 +2,8 @@
 
 #include <cmath>
 #include "CLAS/Constants.hpp"
-#include "CLAS/Particle.hpp"
 #include "CLAS/PIDs.hpp"
+#include "CLAS/Particle.hpp"
 #include "Framework/Cutflow.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/IAlgorithm.hpp"
@@ -31,10 +31,14 @@ enum class NuclearTarget {
  */
 inline double get_target_mass(NuclearTarget target) {
     switch (target) {
-        case NuclearTarget::Proton: return CLAS::Constants::PROTONMASS;
-        case NuclearTarget::Neutron: return CLAS::Constants::NEUTRONMASS;
-        case NuclearTarget::Deuteron: return CLAS::Constants::DEUTERIUMMASS;
-        default: return CLAS::Constants::PROTONMASS;
+        case NuclearTarget::Proton:
+            return CLAS::Constants::PROTONMASS;
+        case NuclearTarget::Neutron:
+            return CLAS::Constants::NEUTRONMASS;
+        case NuclearTarget::Deuteron:
+            return CLAS::Constants::DEUTERIUMMASS;
+        default:
+            return CLAS::Constants::PROTONMASS;
     }
 }
 
@@ -43,10 +47,14 @@ inline double get_target_mass(NuclearTarget target) {
  */
 inline int get_recoil_pid(NuclearTarget target) {
     switch (target) {
-        case NuclearTarget::Proton: return CLAS::PIDs::PROTON;
-        case NuclearTarget::Neutron: return CLAS::PIDs::NEUTRON;
-        case NuclearTarget::Deuteron: return 1000010020;  // Deuteron PDG
-        default: return CLAS::PIDs::PROTON;
+        case NuclearTarget::Proton:
+            return CLAS::PIDs::PROTON;
+        case NuclearTarget::Neutron:
+            return CLAS::PIDs::NEUTRON;
+        case NuclearTarget::Deuteron:
+            return 1000010020;  // Deuteron PDG
+        default:
+            return CLAS::PIDs::PROTON;
     }
 }
 
@@ -55,10 +63,14 @@ inline int get_recoil_pid(NuclearTarget target) {
  */
 inline std::string get_target_name(NuclearTarget target) {
     switch (target) {
-        case NuclearTarget::Proton: return "proton";
-        case NuclearTarget::Neutron: return "neutron";
-        case NuclearTarget::Deuteron: return "deuteron";
-        default: return "proton";
+        case NuclearTarget::Proton:
+            return "proton";
+        case NuclearTarget::Neutron:
+            return "neutron";
+        case NuclearTarget::Deuteron:
+            return "deuteron";
+        default:
+            return "proton";
     }
 }
 
@@ -66,21 +78,21 @@ inline std::string get_target_name(NuclearTarget target) {
  * @brief Elastic electron-nucleon scattering kinematics
  */
 struct ElasticKinematics {
-    double Q2 = 0.0;              // Four-momentum transfer squared [GeV^2]
-    double W = 0.0;               // Invariant mass [GeV]
-    double theta_e = 0.0;         // Electron scattering angle [rad]
-    double theta_recoil = 0.0;    // Recoil nucleon angle [rad]
-    double phi_e = 0.0;           // Electron azimuthal angle [rad]
-    double phi_recoil = 0.0;      // Recoil nucleon azimuthal angle [rad]
-    double delta_phi = 0.0;       // Coplanarity: |phi_e - phi_recoil| - 180 [deg]
-    double p_e = 0.0;             // Electron momentum [GeV]
-    double p_recoil = 0.0;        // Recoil nucleon momentum [GeV]
-    double p_e_expected = 0.0;    // Expected electron momentum from elastic [GeV]
-    double p_recoil_expected = 0.0; // Expected recoil momentum from elastic [GeV]
-    double theta_recoil_expected = 0.0; // Expected recoil angle from elastic [rad]
-    double delta_p_e = 0.0;       // (p_e - p_e_expected) / p_e_expected
-    double delta_p_recoil = 0.0;  // (p_recoil - p_recoil_expected) / p_recoil_expected
-    double delta_theta_recoil = 0.0; // theta_recoil - theta_recoil_expected [deg]
+    double Q2 = 0.0;                     // Four-momentum transfer squared [GeV^2]
+    double W = 0.0;                      // Invariant mass [GeV]
+    double theta_e = 0.0;                // Electron scattering angle [rad]
+    double theta_recoil = 0.0;           // Recoil nucleon angle [rad]
+    double phi_e = 0.0;                  // Electron azimuthal angle [rad]
+    double phi_recoil = 0.0;             // Recoil nucleon azimuthal angle [rad]
+    double delta_phi = 0.0;              // Coplanarity: |phi_e - phi_recoil| - 180 [deg]
+    double p_e = 0.0;                    // Electron momentum [GeV]
+    double p_recoil = 0.0;               // Recoil nucleon momentum [GeV]
+    double p_e_expected = 0.0;           // Expected electron momentum from elastic [GeV]
+    double p_recoil_expected = 0.0;      // Expected recoil momentum from elastic [GeV]
+    double theta_recoil_expected = 0.0;  // Expected recoil angle from elastic [rad]
+    double delta_p_e = 0.0;              // (p_e - p_e_expected) / p_e_expected
+    double delta_p_recoil = 0.0;         // (p_recoil - p_recoil_expected) / p_recoil_expected
+    double delta_theta_recoil = 0.0;     // theta_recoil - theta_recoil_expected [deg]
 };
 
 /**
@@ -95,21 +107,27 @@ struct ElasticKinematics {
  * Supports proton, neutron, and deuteron targets.
  */
 class ElasticEPAlg : public Framework::Algorithm {
-public:
+   public:
     explicit ElasticEPAlg(std::string name = "ElasticEPAlg", double beam_energy = 10.6, NuclearTarget target = NuclearTarget::Proton)
-        : Algorithm(std::move(name)), m_beam_energy(beam_energy), m_target(target), 
-          m_target_mass(get_target_mass(target)), m_recoil_pid(get_recoil_pid(target)),
-          m_cutflow("Elastic e" + get_target_name(target) + " Selection") {}
+        : Algorithm(std::move(name)), m_beam_energy(beam_energy), m_target(target), m_target_mass(get_target_mass(target)), m_recoil_pid(get_recoil_pid(target)), m_cutflow("Elastic e" + get_target_name(target) + " Selection") {}
 
     void set_beam_energy(double energy) { m_beam_energy = energy; }
-    void set_target(NuclearTarget target) { 
-        m_target = target; 
+
+    void set_target(NuclearTarget target) {
+        m_target = target;
         m_target_mass = get_target_mass(target);
         m_recoil_pid = get_recoil_pid(target);
     }
-    void set_W_cut(double min, double max) { m_W_min = min; m_W_max = max; }
+
+    void set_W_cut(double min, double max) {
+        m_W_min = min;
+        m_W_max = max;
+    }
+
     void set_coplanarity_cut(double max_delta_phi) { m_delta_phi_max = max_delta_phi; }
+
     void set_momentum_cut(double max_delta) { m_delta_p_max = max_delta; }
+
     void set_angle_cut(double max_delta_theta) { m_delta_theta_max = max_delta_theta; }
 
     auto initialize() -> Framework::StatusCode override {
@@ -244,7 +262,7 @@ public:
         return Framework::StatusCode::SUCCESS();
     }
 
-private:
+   private:
     double m_beam_energy;
     NuclearTarget m_target;
     double m_target_mass;
@@ -252,11 +270,11 @@ private:
     Framework::Cutflow m_cutflow;
 
     // Cut parameters
-    double m_W_min = 0.8;           // GeV
-    double m_W_max = 1.05;          // GeV (proton mass ~0.938)
-    double m_delta_phi_max = 5.0;   // degrees
-    double m_delta_p_max = 0.1;     // fractional
-    double m_delta_theta_max = 2.0; // degrees
+    double m_W_min = 0.8;            // GeV
+    double m_W_max = 1.05;           // GeV (proton mass ~0.938)
+    double m_delta_phi_max = 5.0;    // degrees
+    double m_delta_p_max = 0.1;      // fractional
+    double m_delta_theta_max = 2.0;  // degrees
 
     // Services
     Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
@@ -285,7 +303,7 @@ private:
 
     auto calculate_kinematics(const CLAS::Particle& electron, const CLAS::Particle& recoil) -> ElasticKinematics {
         ElasticKinematics kin;
-        
+
         const double M = m_target_mass;
         const double Eb = m_beam_energy;
 
@@ -320,7 +338,7 @@ private:
         if (tan_half_e > 0) {
             kin.theta_recoil_expected = std::atan(1.0 / ((1.0 + Eb / M) * tan_half_e));
         }
-        
+
         // Recoil momentum from energy conservation
         double E_recoil_expected = M + Eb - kin.p_e_expected;
         double p2 = E_recoil_expected * E_recoil_expected - M * M;

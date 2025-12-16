@@ -29,7 +29,7 @@ namespace FileUtils {
  * @throws std::out_of_range if percentage is invalid
  */
 inline auto read_recursive_hipo_files(const std::filesystem::path& directory,
-                                       const double percentage = 100) -> std::vector<std::string> {
+                                      const double percentage = 100) -> std::vector<std::string> {
     if (!std::filesystem::exists(directory)) {
         throw std::runtime_error(fmt::format("Directory '{}' does not exist", directory.string()));
     }
@@ -94,15 +94,15 @@ inline auto read_subdirectories(const std::filesystem::path& directory) -> std::
  * @return Filtered vector of file paths containing any of the run numbers
  */
 inline auto filter_by_run_numbers(const std::vector<std::string>& files,
-                                   const std::vector<std::string>& run_numbers) -> std::vector<std::string> {
+                                  const std::vector<std::string>& run_numbers) -> std::vector<std::string> {
     std::vector<std::string> filtered;
     filtered.reserve(files.size());
 
     for (const auto& file_name : files) {
         bool matches = std::any_of(run_numbers.begin(), run_numbers.end(),
-            [&file_name](const std::string& run_num) {
-                return file_name.find(run_num) != std::string::npos;
-            });
+                                   [&file_name](const std::string& run_num) {
+                                       return file_name.find(run_num) != std::string::npos;
+                                   });
         if (matches) {
             filtered.push_back(file_name);
         }

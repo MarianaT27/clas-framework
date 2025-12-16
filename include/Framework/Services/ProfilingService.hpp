@@ -1,13 +1,13 @@
 #pragma once
 
-#include "Framework/IService.hpp"
 #include <fmt/format.h>
-#include <string>
-#include <map>
-#include <chrono>
-#include <mutex>
 #include <algorithm>
+#include <chrono>
+#include <map>
+#include <mutex>
+#include <string>
 #include <vector>
+#include "Framework/IService.hpp"
 
 namespace Framework {
 
@@ -49,7 +49,7 @@ struct AlgorithmStats {
  * @endcode
  */
 class ProfilingService : public Service {
-public:
+   public:
     using TimePoint = std::chrono::high_resolution_clock::time_point;
     using Timer = std::pair<std::string, TimePoint>;
 
@@ -151,8 +151,7 @@ public:
 
         // Print statistics
         for (const auto& stats : sorted_stats) {
-            double percent = (total_alg_time > 0.0) ?
-                            (stats.total_time_ms / total_alg_time * 100.0) : 0.0;
+            double percent = (total_alg_time > 0.0) ? (stats.total_time_ms / total_alg_time * 100.0) : 0.0;
 
             fmt::print("{:<30} {:>10} {:>12.2f} {:>10.3f} {:>10.3f} {:>10.3f} {:>7.1f}%\n",
                        stats.name,
@@ -170,11 +169,10 @@ public:
         fmt::print("Performance Analysis:\n");
         bool has_bottleneck = false;
         for (const auto& stats : sorted_stats) {
-            double percent = (total_alg_time > 0.0) ?
-                            (stats.total_time_ms / total_alg_time * 100.0) : 0.0;
+            double percent = (total_alg_time > 0.0) ? (stats.total_time_ms / total_alg_time * 100.0) : 0.0;
             if (percent > 20.0) {
                 fmt::print("  ⚠️  {} is a bottleneck ({:.1f}% of total time)\n",
-                          stats.name, percent);
+                           stats.name, percent);
                 has_bottleneck = true;
             }
         }
@@ -189,8 +187,7 @@ public:
             total_calls += stats.call_count;
         }
         if (total_duration.count() > 0) {
-            double events_per_sec = (total_calls > 0) ?
-                (1000.0 / (total_alg_time / total_calls)) : 0.0;
+            double events_per_sec = (total_calls > 0) ? (1000.0 / (total_alg_time / total_calls)) : 0.0;
             fmt::print("  ℹ️  Average throughput: {:.1f} events/second\n", events_per_sec);
         }
 
@@ -205,7 +202,7 @@ public:
         m_stats.clear();
     }
 
-private:
+   private:
     mutable std::mutex m_mutex;
     std::map<std::string, AlgorithmStats> m_stats;
     TimePoint m_start_time;
@@ -224,10 +221,9 @@ private:
  * @endcode
  */
 class AutoTimer {
-public:
+   public:
     AutoTimer(ProfilingService* service, const std::string& name)
-        : m_service(service), m_timer(service ? service->start_timer(name) :
-                                       ProfilingService::Timer{name, {}}) {}
+        : m_service(service), m_timer(service ? service->start_timer(name) : ProfilingService::Timer{name, {}}) {}
 
     ~AutoTimer() {
         if (m_service) {
@@ -241,7 +237,7 @@ public:
     AutoTimer(AutoTimer&&) = delete;
     AutoTimer& operator=(AutoTimer&&) = delete;
 
-private:
+   private:
     ProfilingService* m_service;
     ProfilingService::Timer m_timer;
 };

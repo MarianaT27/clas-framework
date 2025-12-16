@@ -1,8 +1,8 @@
 #pragma once
 
-#include "StatusCode.hpp"
-#include <string>
 #include <fmt/format.h>
+#include <string>
+#include "StatusCode.hpp"
 
 namespace Framework {
 
@@ -34,9 +34,9 @@ class ServiceManager;
  *
  * @tparam T The service type (must inherit from IService)
  */
-template<typename T>
+template <typename T>
 class ServiceHandle {
-public:
+   public:
     /**
      * @brief Construct a service handle with the given service name
      * @param name Name of the service to retrieve
@@ -118,7 +118,7 @@ public:
         return is_valid();
     }
 
-private:
+   private:
     std::string m_name;
     T* m_service = nullptr;
 };
@@ -130,7 +130,7 @@ private:
 
 namespace Framework {
 
-template<typename T>
+template <typename T>
 auto ServiceHandle<T>::initialize(ServiceManager& svc_mgr) -> StatusCode {
     if (m_name.empty()) {
         return StatusCode::failure("ServiceHandle: Service name is empty");
@@ -140,8 +140,7 @@ auto ServiceHandle<T>::initialize(ServiceManager& svc_mgr) -> StatusCode {
 
     if (!m_service) {
         return StatusCode::failure(
-            fmt::format("ServiceHandle: Service '{}' not found or wrong type", m_name)
-        );
+            fmt::format("ServiceHandle: Service '{}' not found or wrong type", m_name));
     }
 
     return StatusCode::SUCCESS();

@@ -32,7 +32,7 @@ namespace CLAS {
  * For sampling fraction cuts, use Framework::SamplingFractionService.
  */
 class ElectronCuts {
-public:
+   public:
     // ============================================================================
     // Constants
     // ============================================================================
@@ -59,6 +59,7 @@ public:
     struct VzRange {
         double min;
         double max;
+
         [[nodiscard]] constexpr bool contains(double vz) const { return min < vz && vz < max; }
     };
 
@@ -66,6 +67,7 @@ public:
         double R1;
         double R2;
         double R3;
+
         [[nodiscard]] bool passes_chi2ndf_cut() const {
             return R1 > MIN_EDGE_R1 && R2 > MIN_EDGE_R2 && R3 > MIN_EDGE_R3;
         }
@@ -92,13 +94,11 @@ public:
     // Static Data
     // ============================================================================
 
-    static constexpr std::array<std::pair<CLAS::Target, VzRange>, 5> TARGET_VZ_RANGES = {{
-        {CLAS::Target::LD2, {-15.0, 5.0}},
-        {CLAS::Target::CxC, {-10.6, 5.0}},
-        {CLAS::Target::Cu, {-10.6, -6.5}},
-        {CLAS::Target::Sn, {-5.5, 5.0}},
-        {CLAS::Target::CuSn, {-10.6, 5.0}}
-    }};
+    static constexpr std::array<std::pair<CLAS::Target, VzRange>, 5> TARGET_VZ_RANGES = {{{CLAS::Target::LD2, {-15.0, 5.0}},
+                                                                                          {CLAS::Target::CxC, {-10.6, 5.0}},
+                                                                                          {CLAS::Target::Cu, {-10.6, -6.5}},
+                                                                                          {CLAS::Target::Sn, {-5.5, 5.0}},
+                                                                                          {CLAS::Target::CuSn, {-10.6, 5.0}}}};
 
     static constexpr VzRange DEFAULT_VZ_RANGE = {-30.0, 30.0};
 
@@ -122,6 +122,7 @@ public:
     }
 
     [[nodiscard]] static auto pass_pcal_v_cut(double v) -> bool { return v > MIN_PCAL_V; }
+
     [[nodiscard]] static auto pass_pcal_w_cut(double w) -> bool { return w > MIN_PCAL_W; }
 
     [[nodiscard]] static auto pass_pcal_fiducial_cut(double v, double w) -> bool {

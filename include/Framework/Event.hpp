@@ -1,9 +1,9 @@
 #pragma once
 
-#include <CLAS/Particle.hpp>
-#include <CLAS/PIDs.hpp>
-#include <Physics/ParticleUtils.hpp>
 #include <hipo4/hipoeventiterator.h>
+#include <CLAS/PIDs.hpp>
+#include <CLAS/Particle.hpp>
+#include <Physics/ParticleUtils.hpp>
 
 #include <any>
 #include <map>
@@ -30,7 +30,7 @@ using ParticleMap = std::map<CLAS::PIDs, std::vector<CLAS::Particle>>;
  * banks when explicitly requested.
  */
 class Event {
-public:
+   public:
     /**
      * @brief Construct an Event from a HIPO event iterator
      * @param hipo_event Reference to the HIPO event iterator
@@ -200,7 +200,7 @@ public:
         return result.value_or(false);
     }
 
-private:
+   private:
     hipo::iter_event& m_hipo_event;
     ParticleMap m_particles;
     bool m_particles_loaded = false;
@@ -219,10 +219,9 @@ private:
         std::vector<CLAS::PIDs> target_types = {
             CLAS::PIDs::ELECTRON, CLAS::PIDs::POSITRON,
             CLAS::PIDs::PHOTON,
-            CLAS::PIDs::PROTON,   CLAS::PIDs::NEUTRON,
-            CLAS::PIDs::PIPLUS,   CLAS::PIDs::PIMINUS,
-            CLAS::PIDs::KPLUS,    CLAS::PIDs::KMINUS
-        };
+            CLAS::PIDs::PROTON, CLAS::PIDs::NEUTRON,
+            CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS,
+            CLAS::PIDs::KPLUS, CLAS::PIDs::KMINUS};
 
         for (const auto& type : target_types) {
             m_particles[type] = std::vector<CLAS::Particle>();

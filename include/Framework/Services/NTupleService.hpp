@@ -117,8 +117,8 @@ class NTupleService : public Service {
             tree->SetDirectory(nullptr);  // Don't let ROOT own it
         }
 
-        tree->SetAutoFlush(-100000); // Flush every 100KB
-        tree->SetCircular(500000000LL); // Keep max 500MB of baskets
+        tree->SetAutoFlush(-100000);     // Flush every 100KB
+        tree->SetCircular(500000000LL);  // Keep max 500MB of baskets
 
         TTree* ptr = tree.get();
         m_trees[name] = std::move(tree);
@@ -261,7 +261,6 @@ class NTupleService : public Service {
             tree->SetDirectory(nullptr);
         }
 
-        
         file_ptr->Write();
         file_ptr->Close();
 
@@ -269,7 +268,6 @@ class NTupleService : public Service {
 
         m_output_file_ptr->Close();
         if (m_log) m_log->info(name(), "Closed output file: {}", m_output_file);
-
     }
 
     /**

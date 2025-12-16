@@ -1061,5 +1061,4 @@ inline double ApplyCatboostModel_RGC_Summer2022_pass1(
     return ApplyCatboostModel_RGC_Summer2022_pass1(floatFeatures);
 }
 
-
 // clang-format on

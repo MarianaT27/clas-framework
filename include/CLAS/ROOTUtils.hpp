@@ -5,8 +5,8 @@
 #include <iostream>
 #include <vector>
 
-#include <TH1.h>
 #include <TError.h>
+#include <TH1.h>
 #include <TROOT.h>
 #include <TStyle.h>
 

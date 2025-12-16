@@ -1,10 +1,10 @@
 #pragma once
 
+#include <vector>
+#include "CLAS/PIDs.hpp"
 #include "Framework/AlgorithmTypes.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Physics/CompositeParticle.hpp"
-#include "CLAS/PIDs.hpp"
-#include <vector>
 
 namespace Algorithms {
 
@@ -29,14 +29,12 @@ namespace Algorithms {
  * @endcode
  */
 class Pi0Producer : public Framework::ProducerAlgorithm {
-public:
+   public:
     explicit Pi0Producer(
         std::string name = "Pi0Producer",
         double mass_window_center = 0.135,  // GeV/c²
         double mass_window_width = 0.050)   // GeV/c²
-        : ProducerAlgorithm(std::move(name))
-        , m_mass_center(mass_window_center)
-        , m_mass_width(mass_window_width) {}
+        : ProducerAlgorithm(std::move(name)), m_mass_center(mass_window_center), m_mass_width(mass_window_width) {}
 
     auto initialize() -> Framework::StatusCode override {
         fmt::print("  {} - Initializing\n", name());
@@ -57,7 +55,7 @@ public:
         return Framework::StatusCode::SUCCESS();
     }
 
-protected:
+   protected:
     /**
      * @brief Produce π⁰ candidates from photon pairs
      */
@@ -97,7 +95,7 @@ protected:
         return Framework::StatusCode::SUCCESS();
     }
 
-private:
+   private:
     double m_mass_center;
     double m_mass_width;
     size_t m_events_processed = 0;

@@ -36,15 +36,11 @@ using Framework::Log;
  * @brief Pion analysis with calorimeter SF and DC quality histograms
  */
 class PionAnalysisAlg : public Framework::Algorithm {
-public:
+   public:
     explicit PionAnalysisAlg(std::string name = "PionAnalysis",
                              CLAS::Target target = CLAS::Target::LD2,
                              CLAS::Polarity polarity = CLAS::Polarity::Outbending)
-        : Algorithm(std::move(name))
-        , m_target(target)
-        , m_polarity(polarity)
-        , m_cutflow_piplus("π⁺ Analysis")
-        , m_cutflow_piminus("π⁻ Analysis") {}
+        : Algorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow_piplus("π⁺ Analysis"), m_cutflow_piminus("π⁻ Analysis") {}
 
     auto initialize() -> Framework::StatusCode override {
         m_hist_svc = service<Framework::HistogramService>("HistogramService");
@@ -111,7 +107,7 @@ public:
         return Framework::StatusCode::SUCCESS();
     }
 
-private:
+   private:
     CLAS::Target m_target;
     CLAS::Polarity m_polarity;
     Framework::Cutflow m_cutflow_piplus;
@@ -232,7 +228,6 @@ private:
         int status = pion.status();
         if (std::abs(status) < 2000 || std::abs(status) >= 4000) return;
         cutflow.pass("In the forward detector");
-
 
         // Basic momentum cut
         double p = pion.p();

@@ -27,7 +27,7 @@ class DISSelectionAlg : public Framework::Algorithm {
     auto initialize() -> Framework::StatusCode override {
         auto log_sc = initialize_handle(m_log_svc);
         if (log_sc.is_failure()) fmt::print(stderr, "WARNING: LoggingService not available\n");
-        
+
         Log::info(name(), "Initializing DIS selection algorithm");
 
         auto hist_sc = initialize_handle(m_hist_svc);
@@ -69,7 +69,7 @@ class DISSelectionAlg : public Framework::Algorithm {
         m_cutflow.pass("Has Electron");
 
         Physics::DISAnalysis::DISKinematics kin = Physics::DISAnalysis::calculate_kinematics(event.get_particles<CLAS::Particle>("SelectedElectrons")->front());
-        
+
         // Apply DIS region cuts one by one for cutflow
         if (kin.q2 < m_dis_region.q2_min || kin.q2 > m_dis_region.q2_max) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Q2 Cut");

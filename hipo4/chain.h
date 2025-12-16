@@ -18,27 +18,27 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <regex>
 #include <string>
 #include <vector>
-#include <regex>
 
 // <fmt> headers
 #include "fmt/base.h"
 
 // Project headers
 #include "hipoeventiterator.h"
-#include "threadpool.hpp"
 #include "progresstracker.hpp"
+#include "threadpool.hpp"
 
 namespace hipo {
 
 class chain {
-public:
+   public:
     struct fileinfo {
         std::string filename;
         int file_index;
-        long total_events;      // Will be -1 until actually queried
-        int num_records;        // Will be -1 until actually queried
+        long total_events;  // Will be -1 until actually queried
+        int num_records;    // Will be -1 until actually queried
 
         fileinfo(const std::string& name, int idx)
             : filename(name), file_index(idx), total_events(-1), num_records(-1) {}
@@ -58,12 +58,13 @@ public:
 
         double get_throughput() const {
             auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-                end_time - start_time).count();
+                               end_time - start_time)
+                               .count();
             return elapsed > 0 ? static_cast<double>(events_processed) / elapsed : 0.0;
         }
     };
 
-private:
+   private:
     std::vector<fileinfo> files;
     int num_threads;
     bool show_progress;
@@ -93,7 +94,7 @@ private:
         return files[file_idx].total_events;
     }
 
-public:
+   public:
     explicit chain(int threads = 0, bool progress = true, bool verb = false)
         : num_threads(threads == 0 ? std::thread::hardware_concurrency() : threads),
           show_progress(progress),
@@ -203,13 +204,18 @@ public:
                 // temp_reader closes here
 
                 std::string size_str;
-                if (file_size > 1024*1024*1024) { size_str = fmt::format("{:.1f} GB", file_size / (1024.0*1024*1024)); }
-                else if (file_size > 1024*1024) { size_str = fmt::format("{:.1f} MB", file_size / (1024.0*1024)); }
-                else if (file_size > 1024) { size_str = fmt::format("{:.1f} KB", file_size / 1024.0); }
-                else { size_str = fmt::format("{} B", file_size); }
+                if (file_size > 1024 * 1024 * 1024) {
+                    size_str = fmt::format("{:.1f} GB", file_size / (1024.0 * 1024 * 1024));
+                } else if (file_size > 1024 * 1024) {
+                    size_str = fmt::format("{:.1f} MB", file_size / (1024.0 * 1024));
+                } else if (file_size > 1024) {
+                    size_str = fmt::format("{:.1f} KB", file_size / 1024.0);
+                } else {
+                    size_str = fmt::format("{} B", file_size);
+                }
 
                 fmt::print("  [{}] {}\n      Records: {}, Events: {}, Size: {}\n",
-                          file_info.file_index, file_info.filename, records, events, size_str);
+                           file_info.file_index, file_info.filename, records, events, size_str);
 
             } catch (const std::exception& e) {
                 fmt::print("  [{}] {} - ERROR: {}\n", file_info.file_index, file_info.filename, e.what());
@@ -227,9 +233,13 @@ public:
         fmt::print("Total events:        {}\n", total_events);
 
         std::string total_size_str;
-        if (total_size > 1024*1024*1024) { total_size_str = fmt::format("{:.1f} GB", total_size / (1024.0*1024*1024)); }
-        else if (total_size > 1024*1024) { total_size_str = fmt::format("{:.1f} MB", total_size / (1024.0*1024)); }
-        else { total_size_str = fmt::format("{:.1f} KB", total_size / 1024.0); }
+        if (total_size > 1024 * 1024 * 1024) {
+            total_size_str = fmt::format("{:.1f} GB", total_size / (1024.0 * 1024 * 1024));
+        } else if (total_size > 1024 * 1024) {
+            total_size_str = fmt::format("{:.1f} MB", total_size / (1024.0 * 1024));
+        } else {
+            total_size_str = fmt::format("{:.1f} KB", total_size / 1024.0);
+        }
         fmt::print("Total size:          {}\n", total_size_str);
         if (valid_files > 0) fmt::print("Average events/file: {}\n", total_events / valid_files);
     }
@@ -282,7 +292,7 @@ public:
      * Files are opened ONE AT A TIME, only when needed.
      * Metadata is loaded lazily as required.
      */
-    template<typename ProcessFunc>
+    template <typename ProcessFunc>
     void process(ProcessFunc&& process_func, double percentage = 100.0) {
         if (files.empty()) {
             fmt::print(stderr, "[chain] Warning: No files to process.\n");
@@ -304,6 +314,7 @@ public:
             int file_idx;
             long events_to_process;
         };
+
         std::vector<work_item> work_list;
 
         long events_accumulated = 0;
@@ -342,7 +353,7 @@ public:
 
             if (verbose) {
                 fmt::print("[chain] Processing file {}/{}: {} ({} events)\n",
-                          work.file_idx + 1, work_list.size(), file_info.filename, work.events_to_process);
+                           work.file_idx + 1, work_list.size(), file_info.filename, work.events_to_process);
             }
 
             // All threads work on THIS file together
@@ -373,7 +384,7 @@ public:
 
                     } catch (const std::exception& e) {
                         fmt::print(stderr, "[chain] Thread error on file {}: {}\n",
-                                  file_info.filename, e.what());
+                                   file_info.filename, e.what());
                     }
                 }));
             }
@@ -425,8 +436,10 @@ public:
     }
 
     const chainstatistics& statistics() const { return stats; }
+
     ThreadPool& threadpool() { return thread_pool; }
+
     long total_events_count() const { return stats.total_events.load(); }
 };
 
-} // namespace hipo
+}  // namespace hipo

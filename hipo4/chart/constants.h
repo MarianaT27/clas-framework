@@ -9,5 +9,5 @@ constexpr double kDoubleNotANumber = std::numeric_limits<double>::quiet_NaN();
 constexpr double kDoubleInfinity = (std::numeric_limits<double>::infinity)();
 constexpr double kDoubleNegInfinity =
     (-(std::numeric_limits<double>::infinity)());
-} // namespace ascii
+}  // namespace ascii
 #endif

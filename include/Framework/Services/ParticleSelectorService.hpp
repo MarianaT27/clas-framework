@@ -1,12 +1,12 @@
 #pragma once
 
+#include <hipo4/hipoeventiterator.h>
+#include <hipo4/reader.h>
+#include <CLAS/PIDs.hpp>
+#include <CLAS/Particle.hpp>
 #include <Framework/IService.hpp>
 #include <Framework/StatusCode.hpp>
-#include <CLAS/Particle.hpp>
-#include <CLAS/PIDs.hpp>
 #include <Physics/ParticleUtils.hpp>
-#include <hipo4/reader.h>
-#include <hipo4/hipoeventiterator.h>
 
 #include <functional>
 #include <map>
@@ -38,7 +38,7 @@ using ParticleMap = std::map<CLAS::PIDs, std::vector<CLAS::Particle>>;
  * @endcode
  */
 class ParticleSelectorService : public Service {
-public:
+   public:
     explicit ParticleSelectorService(std::string name = "ParticleSelectorService")
         : Service(std::move(name)) {}
 
@@ -184,7 +184,7 @@ public:
 
     auto get_particles_by_charge(hipo::bank_map& REC_Particle) const -> std::map<int, std::vector<CLAS::Particle>> {
         std::map<int, std::vector<CLAS::Particle>> charge_map;
-        
+
         for (int i = 0; i < REC_Particle.get_rows(); i++) {
             const int charge = REC_Particle.get_as<int>("charge", i);
             const int pid = REC_Particle.get_as<int>("pid", i);
@@ -320,14 +320,13 @@ public:
         });
     }
 
-private:
+   private:
     std::vector<CLAS::PIDs> m_default_types = {
         CLAS::PIDs::ELECTRON, CLAS::PIDs::POSITRON,
         CLAS::PIDs::PHOTON,
         CLAS::PIDs::PROTON, CLAS::PIDs::NEUTRON,
         CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS,
-        CLAS::PIDs::KPLUS, CLAS::PIDs::KMINUS
-    };
+        CLAS::PIDs::KPLUS, CLAS::PIDs::KMINUS};
 };
 
 }  // namespace Framework

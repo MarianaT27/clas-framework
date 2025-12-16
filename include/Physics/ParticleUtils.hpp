@@ -77,7 +77,7 @@ inline auto compute_energy(double px, double py, double pz, int pid) -> double {
  * @return The first trigger electron if found, or std::nullopt otherwise
  */
 inline auto find_trigger_electron(const std::vector<CLAS::Particle>& electrons,
-                                   std::pair<double, double> status_range) -> std::optional<CLAS::Particle> {
+                                  std::pair<double, double> status_range) -> std::optional<CLAS::Particle> {
     auto it = std::find_if(electrons.begin(), electrons.end(),
                            [&status_range](const CLAS::Particle& electron) {
                                const double absStatus = std::abs(electron.status());
@@ -100,7 +100,7 @@ inline auto find_most_energetic_electron(const std::vector<CLAS::Particle>& elec
     if (electrons.empty()) return std::nullopt;
 
     auto result = std::max_element(electrons.begin(), electrons.end(),
-        [](const CLAS::Particle& a, const CLAS::Particle& b) { return a.E() < b.E(); });
+                                   [](const CLAS::Particle& a, const CLAS::Particle& b) { return a.E() < b.E(); });
 
     if (result != electrons.end() && result->p() != 0.0) {
         return *result;
@@ -160,13 +160,15 @@ auto mod(const T x, const T y) -> T {
         if (m >= y) return 0;
         if (m < 0) {
             if (y + m == y) return 0;
-            else return y + m;
+            else
+                return y + m;
         }
     } else {
         if (m <= y) return 0;
         if (m > 0) {
             if (y + m == y) return 0;
-            else return y + m;
+            else
+                return y + m;
         }
     }
 

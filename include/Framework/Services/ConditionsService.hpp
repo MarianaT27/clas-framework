@@ -1,13 +1,13 @@
 #pragma once
 
-#include "Framework/IService.hpp"
-#include "CLAS/Target.hpp"
+#include <fmt/format.h>
+#include <any>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
-#include <optional>
-#include <any>
-#include <fmt/format.h>
+#include "CLAS/Target.hpp"
+#include "Framework/IService.hpp"
 
 namespace Framework {
 
@@ -42,7 +42,7 @@ struct IntervalOfValidity {
  * selected based on run number.
  */
 class ConditionsService : public Service {
-public:
+   public:
     explicit ConditionsService(std::string name = "ConditionsService")
         : Service(std::move(name)) {}
 
@@ -94,12 +94,14 @@ public:
      * @return std::vector<double> SF polynomial parameters
      */
     auto get_sampling_fraction_params(CLAS::Target target,
-                                     CLAS::Polarity polarity,
-                                     int sector) -> std::vector<double> {
+                                      CLAS::Polarity polarity,
+                                      int sector) -> std::vector<double> {
         // For now, return empty vector - would be populated from conditions DB
         // In a full implementation, this would query by IOV and return
         // the polynomial coefficients for sampling fraction cuts
-        (void)target; (void)polarity; (void)sector;  // Suppress unused warnings
+        (void)target;
+        (void)polarity;
+        (void)sector;  // Suppress unused warnings
         return std::vector<double>{};
     }
 
@@ -121,7 +123,7 @@ public:
      * @param value Value to store
      * @param iov Interval of validity
      */
-    template<typename T>
+    template <typename T>
     auto set_value(const std::string& key, T value, IntervalOfValidity iov) -> void {
         ConditionData data;
         data.value = value;
@@ -136,7 +138,7 @@ public:
      * @param default_value Default if not found
      * @return T The calibration value
      */
-    template<typename T>
+    template <typename T>
     auto get_value(const std::string& key, T default_value = T{}) -> T {
         auto it = m_conditions.find(key);
         if (it == m_conditions.end()) {
@@ -146,7 +148,7 @@ public:
         // Check if IOV is valid for current run
         if (!it->second.iov.contains(m_current_run)) {
             fmt::print(stderr, "WARNING: No valid IOV for '{}' at run {}\n",
-                      key, m_current_run);
+                       key, m_current_run);
             return default_value;
         }
 
@@ -170,7 +172,7 @@ public:
         return StatusCode::SUCCESS();
     }
 
-private:
+   private:
     struct ConditionData {
         std::any value;
         IntervalOfValidity iov;

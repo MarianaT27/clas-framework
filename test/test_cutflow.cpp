@@ -50,8 +50,8 @@ TEST(CutflowTest, ThreadSafety) {
     Cutflow cutflow("Thread Test");
     cutflow.add_cut("Counter");
 
-    // Simulate concurrent increments
-    #pragma omp parallel for
+// Simulate concurrent increments
+#pragma omp parallel for
     for (int i = 0; i < 10000; ++i) {
         cutflow.pass("Counter");
     }

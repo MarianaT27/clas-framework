@@ -1,10 +1,10 @@
 #pragma once
 
-#include "CLAS/Particle.hpp"
-#include <vector>
-#include <string>
-#include <optional>
 #include <functional>
+#include <optional>
+#include <string>
+#include <vector>
+#include "CLAS/Particle.hpp"
 
 namespace Physics {
 
@@ -12,12 +12,12 @@ namespace Physics {
  * @brief General physics helper utilities
  */
 class PhysicsHelpers {
-public:
+   public:
     /**
      * @brief Particle pair combination generator
      * Generates all unique pairs of particles (without replacement)
      */
-    template<typename ParticleType>
+    template <typename ParticleType>
     static auto generate_pairs(const std::vector<ParticleType>& particles)
         -> std::vector<std::pair<ParticleType, ParticleType>> {
         std::vector<std::pair<ParticleType, ParticleType>> pairs;
@@ -35,11 +35,10 @@ public:
      * @brief Find best pair based on criterion
      * Example: Find pair with invariant mass closest to target
      */
-    template<typename ParticleType, typename Criterion>
+    template <typename ParticleType, typename Criterion>
     static auto find_best_pair(
         const std::vector<ParticleType>& particles,
-        Criterion criterion
-    ) -> std::optional<std::pair<ParticleType, ParticleType>> {
+        Criterion criterion) -> std::optional<std::pair<ParticleType, ParticleType>> {
         auto pairs = generate_pairs(particles);
         if (pairs.empty()) return std::nullopt;
 
@@ -47,8 +46,7 @@ public:
             pairs.begin(), pairs.end(),
             [&criterion](const auto& a, const auto& b) {
                 return criterion(a) < criterion(b);
-            }
-        );
+            });
 
         return *best;
     }
@@ -95,9 +93,9 @@ public:
     static auto sort_by_momentum(std::vector<CLAS::Particle> particles, bool descending = true)
         -> std::vector<CLAS::Particle> {
         std::sort(particles.begin(), particles.end(),
-            [descending](const CLAS::Particle& a, const CLAS::Particle& b) {
-                return descending ? a.p() > b.p() : a.p() < b.p();
-            });
+                  [descending](const CLAS::Particle& a, const CLAS::Particle& b) {
+                      return descending ? a.p() > b.p() : a.p() < b.p();
+                  });
         return particles;
     }
 
@@ -107,9 +105,9 @@ public:
     static auto sort_by_energy(std::vector<CLAS::Particle> particles, bool descending = true)
         -> std::vector<CLAS::Particle> {
         std::sort(particles.begin(), particles.end(),
-            [descending](const CLAS::Particle& a, const CLAS::Particle& b) {
-                return descending ? a.E() > b.E() : a.E() < b.E();
-            });
+                  [descending](const CLAS::Particle& a, const CLAS::Particle& b) {
+                      return descending ? a.E() > b.E() : a.E() < b.E();
+                  });
         return particles;
     }
 
@@ -147,8 +145,7 @@ public:
      */
     static auto boost_to_cm(
         const CLAS::Particle& p,
-        double beta_z
-    ) -> FourMomentum {
+        double beta_z) -> FourMomentum {
         double gamma = 1.0 / std::sqrt(1.0 - beta_z * beta_z);
 
         double E_cm = gamma * (p.E() - beta_z * p.pz());
@@ -158,8 +155,7 @@ public:
             .px = p.px(),
             .py = p.py(),
             .pz = pz_cm,
-            .E = E_cm
-        };
+            .E = E_cm};
     }
 
     /**
@@ -167,10 +163,10 @@ public:
      * For two-body decay: Φ = p_cm / (8πM²)
      */
     static auto phase_space_two_body(
-        double M,           // Parent mass
-        double m1,          // Daughter 1 mass
-        double m2           // Daughter 2 mass
-    ) -> double {
+        double M,   // Parent mass
+        double m1,  // Daughter 1 mass
+        double m2   // Daughter 2 mass
+        ) -> double {
         // CM momentum
         double E_cm = M / 2.0;
         double p_cm = std::sqrt(E_cm * E_cm - m1 * m1);
@@ -183,8 +179,7 @@ public:
      */
     static auto is_decay_allowed(
         double M_parent,
-        const std::vector<double>& daughter_masses
-    ) -> bool {
+        const std::vector<double>& daughter_masses) -> bool {
         double sum_masses = 0.0;
         for (double m : daughter_masses) {
             sum_masses += m;
@@ -198,8 +193,7 @@ public:
      */
     static auto decay_angle_cm(
         const CLAS::Particle& parent,
-        const CLAS::Particle& daughter
-    ) -> double {
+        const CLAS::Particle& daughter) -> double {
         // Get parent momentum direction
         double px_p = parent.px();
         double py_p = parent.py();
@@ -239,7 +233,8 @@ public:
                 } else {
                     mult.charged++;
                     if (p.charge() > 0) mult.positive++;
-                    else mult.negative++;
+                    else
+                        mult.negative++;
                 }
             }
 
@@ -253,8 +248,7 @@ public:
      */
     static auto check_conservation(
         const FourMomentum& initial,
-        const FourMomentum& final
-    ) -> double {
+        const FourMomentum& final) -> double {
         double dE = std::abs(initial.E - final.E) / initial.E;
         double dpx = std::abs(initial.px - final.px) / (std::abs(initial.px) + 1e-9);
         double dpy = std::abs(initial.py - final.py) / (std::abs(initial.py) + 1e-9);
@@ -324,22 +318,23 @@ public:
  * @brief Statistical helper functions
  */
 class StatisticsHelper {
-public:
+   public:
     /**
      * @brief Calculate mean of a vector
      */
-    template<typename T>
+    template <typename T>
     static auto mean(const std::vector<T>& values) -> double {
         if (values.empty()) return 0.0;
         double sum = 0.0;
-        for (const auto& v : values) sum += v;
+        for (const auto& v : values)
+            sum += v;
         return sum / values.size();
     }
 
     /**
      * @brief Calculate standard deviation
      */
-    template<typename T>
+    template <typename T>
     static auto stddev(const std::vector<T>& values) -> double {
         if (values.size() < 2) return 0.0;
 
@@ -356,7 +351,7 @@ public:
     /**
      * @brief Calculate median
      */
-    template<typename T>
+    template <typename T>
     static auto median(std::vector<T> values) -> double {
         if (values.empty()) return 0.0;
 
@@ -373,11 +368,10 @@ public:
     /**
      * @brief Calculate weighted mean
      */
-    template<typename T>
+    template <typename T>
     static auto weighted_mean(
         const std::vector<T>& values,
-        const std::vector<double>& weights
-    ) -> double {
+        const std::vector<double>& weights) -> double {
         if (values.size() != weights.size() || values.empty()) return 0.0;
 
         double sum = 0.0;
@@ -394,11 +388,10 @@ public:
     /**
      * @brief Calculate Pearson correlation coefficient
      */
-    template<typename T>
+    template <typename T>
     static auto correlation(
         const std::vector<T>& x,
-        const std::vector<T>& y
-    ) -> double {
+        const std::vector<T>& y) -> double {
         if (x.size() != y.size() || x.size() < 2) return 0.0;
 
         double mean_x = mean(x);

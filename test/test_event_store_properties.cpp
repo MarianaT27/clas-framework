@@ -3,8 +3,8 @@
 #include <rapidcheck/gtest.h>
 #include <any>
 #include <map>
-#include <string>
 #include <optional>
+#include <string>
 #include <vector>
 
 /**
@@ -15,13 +15,13 @@
  * storage mechanism that Event uses internally.
  */
 class EventStore {
-public:
-    template<typename T>
+   public:
+    template <typename T>
     auto store(const std::string& key, T value) -> void {
         m_store[key] = std::any(std::move(value));
     }
 
-    template<typename T>
+    template <typename T>
     auto retrieve(const std::string& key) const -> std::optional<T> {
         auto it = m_store.find(key);
         if (it == m_store.end()) {
@@ -38,12 +38,12 @@ public:
         return m_store.find(key) != m_store.end();
     }
 
-    template<typename ParticleType>
+    template <typename ParticleType>
     auto store_particles(const std::string& key, std::vector<ParticleType> particles) -> void {
         m_store[key] = std::any(std::move(particles));
     }
 
-    template<typename ParticleType>
+    template <typename ParticleType>
     auto get_particles(const std::string& key) const -> const std::vector<ParticleType>* {
         auto it = m_store.find(key);
         if (it == m_store.end()) {
@@ -52,34 +52,32 @@ public:
         return std::any_cast<std::vector<ParticleType>>(&it->second);
     }
 
-private:
+   private:
     std::map<std::string, std::any> m_store;
 };
 
 namespace {
-    // Generate valid storage key (alphanumeric, starting with letter)
-    auto genValidKey() -> rc::Gen<std::string> {
-        return rc::gen::map(
-            rc::gen::pair(
-                rc::gen::inRange('a', 'z'),
-                rc::gen::container<std::string>(rc::gen::inRange('a', 'z'))
-            ),
-            [](const std::pair<char, std::string>& p) {
-                return std::string(1, p.first) + p.second;
-            }
-        );
-    }
-
-    // Simple particle-like struct for testing
-    struct TestParticle {
-        double px, py, pz;
-        int pid;
-        
-        bool operator==(const TestParticle& other) const {
-            return px == other.px && py == other.py && pz == other.pz && pid == other.pid;
-        }
-    };
+// Generate valid storage key (alphanumeric, starting with letter)
+auto genValidKey() -> rc::Gen<std::string> {
+    return rc::gen::map(
+        rc::gen::pair(
+            rc::gen::inRange('a', 'z'),
+            rc::gen::container<std::string>(rc::gen::inRange('a', 'z'))),
+        [](const std::pair<char, std::string>& p) {
+            return std::string(1, p.first) + p.second;
+        });
 }
+
+// Simple particle-like struct for testing
+struct TestParticle {
+    double px, py, pz;
+    int pid;
+
+    bool operator==(const TestParticle& other) const {
+        return px == other.px && py == other.py && pz == other.pz && pid == other.pid;
+    }
+};
+}  // namespace
 
 /**
  * **Feature: code-quality-improvements, Property 4: Event Store Round-Trip**
@@ -96,9 +94,9 @@ RC_GTEST_PROP(EventStoreProperties, IntegerRoundTrip, ()) {
     EventStore store;
     std::string key = *genValidKey();
     int value = *rc::gen::arbitrary<int>();
-    
+
     store.store(key, value);
-    
+
     auto result = store.retrieve<int>(key);
     RC_ASSERT(result.has_value());
     RC_ASSERT(result.value() == value);
@@ -109,9 +107,9 @@ RC_GTEST_PROP(EventStoreProperties, DoubleRoundTrip, ()) {
     EventStore store;
     std::string key = *genValidKey();
     double value = *rc::gen::arbitrary<double>();
-    
+
     store.store(key, value);
-    
+
     auto result = store.retrieve<double>(key);
     RC_ASSERT(result.has_value());
     // Handle NaN specially
@@ -127,9 +125,9 @@ RC_GTEST_PROP(EventStoreProperties, StringRoundTrip, ()) {
     EventStore store;
     std::string key = *genValidKey();
     std::string value = *rc::gen::arbitrary<std::string>();
-    
+
     store.store(key, value);
-    
+
     auto result = store.retrieve<std::string>(key);
     RC_ASSERT(result.has_value());
     RC_ASSERT(result.value() == value);
@@ -140,9 +138,9 @@ RC_GTEST_PROP(EventStoreProperties, BooleanRoundTrip, ()) {
     EventStore store;
     std::string key = *genValidKey();
     bool value = *rc::gen::arbitrary<bool>();
-    
+
     store.store(key, value);
-    
+
     auto result = store.retrieve<bool>(key);
     RC_ASSERT(result.has_value());
     RC_ASSERT(result.value() == value);
@@ -152,7 +150,7 @@ RC_GTEST_PROP(EventStoreProperties, BooleanRoundTrip, ()) {
 RC_GTEST_PROP(EventStoreProperties, NonExistentKeyReturnsEmpty, ()) {
     EventStore store;
     std::string key = *genValidKey();
-    
+
     // Don't store anything, just try to retrieve
     auto result = store.retrieve<int>(key);
     RC_ASSERT(!result.has_value());
@@ -163,17 +161,17 @@ RC_GTEST_PROP(EventStoreProperties, ContainsAfterStore, ()) {
     EventStore store;
     std::string key = *genValidKey();
     int value = *rc::gen::arbitrary<int>();
-    
+
     RC_ASSERT(!store.contains(key));  // Before storing
     store.store(key, value);
-    RC_ASSERT(store.contains(key));   // After storing
+    RC_ASSERT(store.contains(key));  // After storing
 }
 
 // Property: Contains returns false for non-existent keys
 RC_GTEST_PROP(EventStoreProperties, ContainsNonExistent, ()) {
     EventStore store;
     std::string key = *genValidKey();
-    
+
     RC_ASSERT(!store.contains(key));
 }
 
@@ -182,9 +180,9 @@ RC_GTEST_PROP(EventStoreProperties, TypeMismatchReturnsEmpty, ()) {
     EventStore store;
     std::string key = *genValidKey();
     int value = *rc::gen::arbitrary<int>();
-    
+
     store.store(key, value);
-    
+
     // Try to retrieve as wrong type
     auto result = store.retrieve<std::string>(key);
     RC_ASSERT(!result.has_value());
@@ -194,28 +192,26 @@ RC_GTEST_PROP(EventStoreProperties, TypeMismatchReturnsEmpty, ()) {
 RC_GTEST_PROP(EventStoreProperties, ParticleCollectionRoundTrip, ()) {
     EventStore store;
     std::string key = *genValidKey();
-    
+
     // Generate a vector of test particles
     auto particles = *rc::gen::container<std::vector<TestParticle>>(
         rc::gen::build<TestParticle>(
             rc::gen::set(&TestParticle::px, rc::gen::arbitrary<double>()),
             rc::gen::set(&TestParticle::py, rc::gen::arbitrary<double>()),
             rc::gen::set(&TestParticle::pz, rc::gen::arbitrary<double>()),
-            rc::gen::set(&TestParticle::pid, rc::gen::arbitrary<int>())
-        )
-    );
-    
+            rc::gen::set(&TestParticle::pid, rc::gen::arbitrary<int>())));
+
     store.store_particles(key, particles);
-    
+
     auto* result = store.get_particles<TestParticle>(key);
     RC_ASSERT(result != nullptr);
     RC_ASSERT(result->size() == particles.size());
-    
+
     for (size_t i = 0; i < particles.size(); ++i) {
         // Handle NaN in comparisons
         const auto& orig = particles[i];
         const auto& retrieved = (*result)[i];
-        
+
         if (std::isnan(orig.px)) {
             RC_ASSERT(std::isnan(retrieved.px));
         } else {
@@ -239,7 +235,7 @@ RC_GTEST_PROP(EventStoreProperties, ParticleCollectionRoundTrip, ()) {
 RC_GTEST_PROP(EventStoreProperties, ParticleCollectionNonExistent, ()) {
     EventStore store;
     std::string key = *genValidKey();
-    
+
     auto* result = store.get_particles<TestParticle>(key);
     RC_ASSERT(result == nullptr);
 }
@@ -251,16 +247,16 @@ RC_GTEST_PROP(EventStoreProperties, MultipleKeysIndependent, ()) {
     std::string key2 = *rc::gen::suchThat(genValidKey(), [&key1](const std::string& k) {
         return k != key1;
     });
-    
+
     int value1 = *rc::gen::arbitrary<int>();
     int value2 = *rc::gen::arbitrary<int>();
-    
+
     store.store(key1, value1);
     store.store(key2, value2);
-    
+
     auto result1 = store.retrieve<int>(key1);
     auto result2 = store.retrieve<int>(key2);
-    
+
     RC_ASSERT(result1.has_value());
     RC_ASSERT(result2.has_value());
     RC_ASSERT(result1.value() == value1);
@@ -273,10 +269,10 @@ RC_GTEST_PROP(EventStoreProperties, OverwriteUpdatesValue, ()) {
     std::string key = *genValidKey();
     int value1 = *rc::gen::arbitrary<int>();
     int value2 = *rc::gen::arbitrary<int>();
-    
+
     store.store(key, value1);
     store.store(key, value2);
-    
+
     auto result = store.retrieve<int>(key);
     RC_ASSERT(result.has_value());
     RC_ASSERT(result.value() == value2);

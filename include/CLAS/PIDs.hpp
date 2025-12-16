@@ -39,15 +39,24 @@ inline auto operator==(int value, PIDs pid) -> bool {
  */
 inline auto to_pid_enum(int pid) -> std::optional<PIDs> {
     switch (pid) {
-        case 11: return PIDs::ELECTRON;
-        case -11: return PIDs::POSITRON;
-        case 2212: return PIDs::PROTON;
-        case 2112: return PIDs::NEUTRON;
-        case 211: return PIDs::PIPLUS;
-        case -211: return PIDs::PIMINUS;
-        case 321: return PIDs::KPLUS;
-        case -321: return PIDs::KMINUS;
-        default: return std::nullopt;
+        case 11:
+            return PIDs::ELECTRON;
+        case -11:
+            return PIDs::POSITRON;
+        case 2212:
+            return PIDs::PROTON;
+        case 2112:
+            return PIDs::NEUTRON;
+        case 211:
+            return PIDs::PIPLUS;
+        case -211:
+            return PIDs::PIMINUS;
+        case 321:
+            return PIDs::KPLUS;
+        case -321:
+            return PIDs::KMINUS;
+        default:
+            return std::nullopt;
     }
 }
 
@@ -63,15 +72,24 @@ inline auto matches(int pid, PIDs type) -> bool {
  */
 inline auto pid_name(PIDs pid) -> std::string {
     switch (pid) {
-        case PIDs::ELECTRON: return "Electron";
-        case PIDs::POSITRON: return "Positron";
-        case PIDs::PROTON: return "Proton";
-        case PIDs::NEUTRON: return "Neutron";
-        case PIDs::PIPLUS: return "PionPlus";
-        case PIDs::PIMINUS: return "PionMinus";
-        case PIDs::KPLUS: return "KaonPlus";
-        case PIDs::KMINUS: return "KaonMinus";
-        default: return "Unknown";
+        case PIDs::ELECTRON:
+            return "Electron";
+        case PIDs::POSITRON:
+            return "Positron";
+        case PIDs::PROTON:
+            return "Proton";
+        case PIDs::NEUTRON:
+            return "Neutron";
+        case PIDs::PIPLUS:
+            return "PionPlus";
+        case PIDs::PIMINUS:
+            return "PionMinus";
+        case PIDs::KPLUS:
+            return "KaonPlus";
+        case PIDs::KMINUS:
+            return "KaonMinus";
+        default:
+            return "Unknown";
     }
 }
 

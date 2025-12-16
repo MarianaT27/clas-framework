@@ -1,15 +1,15 @@
 #pragma once
 
-#include "Framework/IService.hpp"
-#include "Framework/Services/LoggingService.hpp"
-#include "TH1D.h"
-#include "TH2D.h"
-#include "TProfile.h"
-#include "TFile.h"
+#include <fmt/format.h>
 #include <map>
 #include <memory>
 #include <string>
-#include <fmt/format.h>
+#include "Framework/IService.hpp"
+#include "Framework/Services/LoggingService.hpp"
+#include "TFile.h"
+#include "TH1D.h"
+#include "TH2D.h"
+#include "TProfile.h"
 
 namespace Framework {
 
@@ -25,7 +25,7 @@ class LoggingService;
  * written to the output file.
  */
 class HistogramService : public Service {
-public:
+   public:
     explicit HistogramService(std::string name = "HistogramService")
         : Service(std::move(name)) {}
 
@@ -213,7 +213,7 @@ public:
 
         std::string name = extract_name(path);
         auto prof = std::make_unique<TProfile>(name.c_str(), title.c_str(),
-                                                nbins, xmin, xmax);
+                                               nbins, xmin, xmax);
         prof->SetDirectory(nullptr);
 
         TProfile* ptr = prof.get();
@@ -285,7 +285,7 @@ public:
         file.Close();
         if (m_log) {
             m_log->info(name(), "Wrote {} 1D, {} 2D histograms, and {} profiles",
-                       m_hist1D.size(), m_hist2D.size(), m_profiles.size());
+                        m_hist1D.size(), m_hist2D.size(), m_profiles.size());
         }
 
         // Verify histograms were written correctly
@@ -381,7 +381,7 @@ public:
         if (all_ok) {
             if (m_log) {
                 m_log->info(name(), "Verification passed: All {} histograms found",
-                           found_count + empty_count);
+                            found_count + empty_count);
                 if (empty_count > 0) {
                     m_log->warning(name(), "{} histogram(s) are empty", empty_count);
                 }
@@ -395,9 +395,9 @@ public:
         return all_ok;
     }
 
-private:
+   private:
     std::string m_output_file;
-    bool m_auto_write = true;  // Automatically write histograms on finalize
+    bool m_auto_write = true;     // Automatically write histograms on finalize
     bool m_verify_output = true;  // Verify histograms after writing
     std::map<std::string, std::unique_ptr<TH1D>> m_hist1D;
     std::map<std::string, std::unique_ptr<TH2D>> m_hist2D;
