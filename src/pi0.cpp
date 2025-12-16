@@ -11,6 +11,7 @@
 #include <fmt/format.h>
 #include <cstdlib>
 #include <cxxopts.hpp>
+#include <filesystem>
 #include <string>
 #include <TROOT.h>
 #include "Algorithms/ElectronSelectionAlg.hpp"
@@ -73,8 +74,16 @@ int main(int argc, char* argv[]) {
     std::string data_dir;
     
     if (!input_str.empty()) {
-        // Parse comma-separated input files
-        input_files = CLAS::StringUtils::split(input_str, ',');
+        // Check if input is a directory
+        if (std::filesystem::is_directory(input_str)) {
+            input_files = CLAS::FileUtils::read_recursive_hipo_files(input_str);
+        } else if (input_str.find(',') != std::string::npos) {
+            // Comma-separated list of files
+            input_files = CLAS::StringUtils::split(input_str, ',');
+        } else {
+            // Single file
+            input_files = {input_str};
+        }
     } else {
         // Determine data directory based on target and polarity
         std::array sources = (polarity == CLAS::Polarity::Outbending)

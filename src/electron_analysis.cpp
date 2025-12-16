@@ -9,6 +9,7 @@
  */
 
 #include <cstdlib>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -93,7 +94,16 @@ struct AnalysisConfig {
     // Get input files
     std::string input_str = args["input"].as<std::string>();
     if (!input_str.empty()) {
-        config.input_files = CLAS::StringUtils::split(input_str, ',');
+        // Check if input is a directory
+        if (std::filesystem::is_directory(input_str)) {
+            config.input_files = CLAS::FileUtils::read_recursive_hipo_files(input_str);
+        } else if (input_str.find(',') != std::string::npos) {
+            // Comma-separated list of files
+            config.input_files = CLAS::StringUtils::split(input_str, ',');
+        } else {
+            // Single file
+            config.input_files = {input_str};
+        }
     } else {
         config.input_files = find_default_input_files(config.target, config.polarity);
     }
