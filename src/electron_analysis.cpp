@@ -97,9 +97,7 @@ struct AnalysisConfig {
     return config;
 }
 
-[[nodiscard]] auto find_default_input_files(CLAS::Target target, CLAS::Polarity polarity)
-    -> std::vector<std::string> {
-
+[[nodiscard]] auto find_default_input_files(CLAS::Target target, CLAS::Polarity polarity) -> std::vector<std::string> {
     struct DataSource {
         CLAS::Target target;
         std::string_view outbending_path;
@@ -189,8 +187,7 @@ auto setup_algorithms(Framework::Application& app, const AnalysisConfig& config)
     alg_config.target = config.target;
     alg_config.polarity = config.polarity;
 
-    app.add_algorithm(std::make_unique<Algorithms::ElectronAnalysisAlg>(
-        "ElectronAnalysis", alg_config));
+    app.add_algorithm(std::make_unique<Algorithms::ElectronAnalysisAlg>("ElectronAnalysis", alg_config));
 }
 
 // ============================================================================
