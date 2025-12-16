@@ -34,7 +34,7 @@ This section provides detailed API documentation for the CLAS12 Analysis Framewo
 
 ## Doxygen Documentation
 
-For complete API documentation including all classes, methods, and parameters, see the [Doxygen-generated documentation](../api/html/index.html).
+For complete API documentation including all classes, methods, and parameters, see the [Doxygen-generated documentation](../api/index.html).
 
 ## Quick Reference
 
