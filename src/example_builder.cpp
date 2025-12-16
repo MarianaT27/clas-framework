@@ -11,7 +11,7 @@
 #include <TROOT.h>
 #include <fmt/format.h>
 
-#include "Algorithms/ElectronAnalysisAlgV2.hpp"
+#include "Algorithms/ElectronAnalysisAlg.hpp"
 #include "Algorithms/EventMonitor.hpp"
 #include "CLAS/FileUtils.hpp"
 #include "CLAS/Target.hpp"
@@ -32,7 +32,7 @@ auto main(int argc, char** argv) -> int {
     }
 
     // Configure algorithm
-    Algorithms::ElectronAnalysisConfigV2 alg_config;
+    Algorithms::ElectronAnalysisConfig alg_config;
     alg_config.target = CLAS::Target::LD2;
     alg_config.polarity = CLAS::Polarity::Outbending;
 
@@ -45,7 +45,7 @@ auto main(int argc, char** argv) -> int {
         .with_target("LD2")
         .with_beam_energy(10.53)
         .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
-        .add_algorithm<Algorithms::ElectronAnalysisAlgV2>("ElectronAnalysis", alg_config)
+        .add_algorithm<Algorithms::ElectronAnalysisAlg>("ElectronAnalysis", alg_config)
         .build();
 
     // Run analysis

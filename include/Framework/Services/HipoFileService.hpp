@@ -224,7 +224,10 @@ private:
             if (!m_input_files.empty()) {
                 auto dict = get_dictionary();
                 if (dict) {
-                    m_writer->getDictionary().addSchema(dict->getSchemaList());
+                    auto schema_list = dict->getSchemaList();
+                    for (const auto& schema_name : schema_list) {
+                        m_writer->getDictionary().addSchema(dict->getSchema(schema_name.c_str()));
+                    }
                 }
             }
             

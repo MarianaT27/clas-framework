@@ -51,6 +51,10 @@ struct AnalysisConfig {
     }
 };
 
+// Forward declaration
+[[nodiscard]] auto find_default_input_files(CLAS::Target target, CLAS::Polarity polarity)
+    -> std::vector<std::string>;
+
 // ============================================================================
 // Command-line parsing
 // ============================================================================

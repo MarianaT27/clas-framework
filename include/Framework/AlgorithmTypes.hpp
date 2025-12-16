@@ -304,7 +304,7 @@ public:
     }
 
     /// Check if sequence would execute for given event
-    [[nodiscard]] auto would_execute(const Event& event) const -> bool {
+    [[nodiscard]] auto would_execute(Event& event) const -> bool {
         return event.passes_decision(m_required_decision);
     }
 
