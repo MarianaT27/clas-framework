@@ -185,6 +185,9 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         m_cutflow.pass("Chi2 PID");
         fill_after_cut("Chi2PID", electron, calorimeter, traj, track);
 
+        // All cuts passed - fill final histograms
+        fill_final_histograms(electron, calorimeter, traj, track);
+
         // Momentum cut
         if (!CLAS::ElectronCuts::pass_electron_momentum_cut(p_e)) {
             return Framework::StatusCode::SUCCESS();
@@ -219,9 +222,6 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         }
         m_cutflow.pass("DC Chi2/NDF");
         fill_after_cut("DCChi2", electron, calorimeter, traj, track);
-
-        // All cuts passed - fill final histograms
-        fill_final_histograms(electron, calorimeter, traj, track);
 
         // Fill N-tuple if service is available
         if (m_ntuple_svc && m_config.enable_ntuple) {
@@ -896,7 +896,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         // Determine theta bin using configurable range
         const int bin_idx = static_cast<int>((theta - m_config.theta_bin_min) / m_config.theta_bin_width);
-        const int theta_low = static_cast<int>(m_config.theta_bin_min) + bin_idx;
+        const int theta_low = static_cast<int>(m_config.theta_bin_min) + bin_idx * static_cast<int>(m_config.theta_bin_width);
         const int theta_high = theta_low + static_cast<int>(m_config.theta_bin_width);
 
         // Check bounds
@@ -914,6 +914,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         if (auto it = h_dc.chi2ndf_vs_edge_r3.find(bin_key); it != h_dc.chi2ndf_vs_edge_r3.end()) {
             it->second->Fill(traj.region3.edge, chi2ndf);
         }
+    }
 };
 
 }  // namespace Algorithms

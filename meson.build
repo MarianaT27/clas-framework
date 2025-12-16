@@ -42,6 +42,8 @@ inc = include_directories('include')
 framework_core = files(
   'src/CLAS/Particle.cpp',
   'src/Framework/Histogram.cpp',
+  'src/Algorithms/Pi0ReconstructionAlg.cpp',
+  'src/Framework/Services/PhotonCutsService.cpp',
 )
 
 # Common dependencies for all executables
