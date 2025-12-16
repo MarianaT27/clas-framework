@@ -3,9 +3,12 @@
 **A modern particle physics analysis framework for CLAS12 data**
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![Framework Version](https://img.shields.io/badge/version-1.0-blue)]()
+[![Framework Version](https://img.shields.io/badge/version-2.0-blue)]()
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-orange)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
+[![Documentation](https://img.shields.io/badge/docs-GitLab%20Pages-blue)](https://mathieuouillon.gitlab.io/clas-framework)
+
+📚 **[Full Documentation](https://mathieuouillon.gitlab.io/clas-framework)** | 📖 **[API Reference](https://mathieuouillon.gitlab.io/clas-framework/api/)**
 
 ---
 
@@ -20,9 +23,8 @@
 
 ```bash
 # Clone the repository
-git clone https://gitlab.com/MathieuOuillon/clas-analysis clas12-framework
-git checkout test2
-cd clas12-framework
+git clone https://gitlab.com/MathieuOuillon/clas-framework.git
+cd clas-framework
 
 # Configure build
 meson setup build

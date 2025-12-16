@@ -2,11 +2,11 @@
 site_name: CLAS12 Analysis Framework
 site_description: A modern particle physics analysis framework for CLAS12 data
 site_author: Mathieu Ouillon
-site_url: https://gitlab.com/MathieuOuillon/clas-analysis
+site_url: https://mathieuouillon.gitlab.io/clas-framework
 
 # Repository
-repo_name: MathieuOuillon/clas-analysis
-repo_url: https://gitlab.com/MathieuOuillon/clas-analysis
+repo_name: MathieuOuillon/clas-framework
+repo_url: https://gitlab.com/MathieuOuillon/clas-framework
 
 # Theme configuration
 theme:
@@ -67,7 +67,7 @@ markdown_extensions:
   - pymdownx.magiclink:
       repo_url_shorthand: true
       user: MathieuOuillon
-      repo: clas-analysis
+      repo: clas-framework
   - pymdownx.mark
   - pymdownx.smartsymbols
   - pymdownx.superfences:

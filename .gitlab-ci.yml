@@ -58,8 +58,6 @@ pages:
       - public
   only:
     - main
-    - master
-    - test2
   environment:
     name: production
-    url: https://mathieuouillon.gitlab.io/clas-analysis
+    url: https://mathieuouillon.gitlab.io/clas-framework

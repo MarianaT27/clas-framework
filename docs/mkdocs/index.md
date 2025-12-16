@@ -118,4 +118,4 @@ int main() {
 
 ## License
 
-MIT License - See [LICENSE](https://gitlab.com/MathieuOuillon/clas-analysis/-/blob/main/LICENSE) for details.
+MIT License - See [LICENSE](https://gitlab.com/MathieuOuillon/clas-framework/-/blob/main/LICENSE) for details.
