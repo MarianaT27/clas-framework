@@ -155,21 +155,21 @@ public:
 
         // Check for good electron from upstream
         if (!event.passes_decision("HasGoodElectron")) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Has Electron");
 
         // Get selected electron
         auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
         if (!electrons || electrons->empty()) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         const auto& electron = electrons->front();
 
         // Get recoil particles from event
         const auto& recoils = event.particles(m_recoil_pid);
         if (recoils.empty()) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Has Recoil");
 
@@ -207,7 +207,7 @@ public:
         }
 
         if (!found_elastic) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
 
         // Pass cutflow for the best candidate

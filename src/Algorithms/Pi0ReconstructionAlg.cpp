@@ -140,7 +140,7 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
     m_cutflow.pass("All Events");
 
     // Check for good electron decision from upstream algorithm
-    if (!event.passes_decision("HasGoodDISElectron")) return Framework::StatusCode::SUCCESS();
+    if (!event.passes_decision("HasGoodDISElectron")) return Framework::StatusCode::FILTERED();
     m_cutflow.pass("Has Electron");
 
     const auto& photons = event.particles(CLAS::PIDs::PHOTON);
@@ -167,7 +167,7 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
         if (h_photon_theta) h_photon_theta->Fill(photon.theta());
     }
 
-    if (selected_photons.size() < 2) return Framework::StatusCode::SUCCESS();
+    if (selected_photons.size() < 2) return Framework::StatusCode::FILTERED();
     m_cutflow.pass("Has >= 2 Photons");
 
     for (size_t i = 0; i < selected_photons.size(); ++i) {
@@ -178,7 +178,7 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
     }
 
     auto candidates_opt = find_all_unique_pi0_candidates(selected_photons);
-    if (!candidates_opt.has_value()) return Framework::StatusCode::SUCCESS();
+    if (!candidates_opt.has_value()) return Framework::StatusCode::FILTERED();
     
     auto pi0_candidates = candidates_opt.value();
     m_cutflow.pass("Pi0 Found");

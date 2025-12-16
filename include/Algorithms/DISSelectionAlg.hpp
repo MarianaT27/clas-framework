@@ -65,17 +65,17 @@ class DISSelectionAlg : public Framework::Algorithm {
         m_cutflow.pass("All Events");
 
         // Check for good electron decision from upstream algorithm
-        if (!event.passes_decision("HasGoodElectron")) return Framework::StatusCode::SUCCESS();
+        if (!event.passes_decision("HasGoodElectron")) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Has Electron");
 
         Physics::DISAnalysis::DISKinematics kin = Physics::DISAnalysis::calculate_kinematics(event.get_particles<CLAS::Particle>("SelectedElectrons")->front());
         
         // Apply DIS region cuts one by one for cutflow
-        if (kin.q2 < m_dis_region.q2_min || kin.q2 > m_dis_region.q2_max) return Framework::StatusCode::SUCCESS();
+        if (kin.q2 < m_dis_region.q2_min || kin.q2 > m_dis_region.q2_max) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Q2 Cut");
-        if (kin.w < m_dis_region.w_min || kin.w > m_dis_region.w_max) return Framework::StatusCode::SUCCESS();
+        if (kin.w < m_dis_region.w_min || kin.w > m_dis_region.w_max) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("W Cut");
-        if (kin.y < m_dis_region.y_min || kin.y > m_dis_region.y_max) return Framework::StatusCode::SUCCESS();
+        if (kin.y < m_dis_region.y_min || kin.y > m_dis_region.y_max) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("y Cut");
 
         // Electron passed all cuts - set decision and store for downstream algorithms

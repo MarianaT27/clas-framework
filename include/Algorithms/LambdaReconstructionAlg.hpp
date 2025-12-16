@@ -181,7 +181,7 @@ public:
 
         // Check for good electron from upstream
         if (!event.passes_decision("HasGoodDISElectron")) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Has Good DIS Electron");
 
@@ -190,12 +190,12 @@ public:
         const auto& pions = event.particles(CLAS::PIDs::PIMINUS);
 
         if (protons.empty()) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Has Proton");
 
         if (pions.empty()) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Has PiMinus");
 
@@ -330,28 +330,28 @@ public:
             }
         }
 
-        if (!passed_proton_fd) return Framework::StatusCode::SUCCESS();
+        if (!passed_proton_fd) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Proton in FD");
 
-        if (!passed_pion_fd) return Framework::StatusCode::SUCCESS();
+        if (!passed_pion_fd) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Pion in FD");
 
-        if (!passed_proton_p) return Framework::StatusCode::SUCCESS();
+        if (!passed_proton_p) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Proton Momentum");
 
-        if (!passed_pion_p) return Framework::StatusCode::SUCCESS();
+        if (!passed_pion_p) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Pion Momentum");
 
-        if (!passed_vertex_dz) return Framework::StatusCode::SUCCESS();
+        if (!passed_vertex_dz) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Vertex dz");
 
-        if (!passed_mass) return Framework::StatusCode::SUCCESS();
+        if (!passed_mass) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Lambda Mass Window");
 
-        if (m_min_displaced_vz > -999 && !passed_displaced_vz) return Framework::StatusCode::SUCCESS();
+        if (m_min_displaced_vz > -999 && !passed_displaced_vz) return Framework::StatusCode::FILTERED();
         if (m_min_displaced_vz > -999) m_cutflow.pass("Displaced Vertex");
 
-        if (m_max_coplanarity > 0 && !passed_coplanarity) return Framework::StatusCode::SUCCESS();
+        if (m_max_coplanarity > 0 && !passed_coplanarity) return Framework::StatusCode::FILTERED();
         if (m_max_coplanarity > 0) m_cutflow.pass("Coplanarity");
 
         // Use candidates after all cuts
@@ -360,7 +360,7 @@ public:
         if (m_min_displaced_vz > -999) final_candidates_ptr = &candidates_after_displaced;
         if (m_max_coplanarity > 0) final_candidates_ptr = &candidates_after_copla;
         auto& final_candidates = *final_candidates_ptr;
-        if (final_candidates.empty()) return Framework::StatusCode::SUCCESS();
+        if (final_candidates.empty()) return Framework::StatusCode::FILTERED();
 
         // Store results
         event.set_decision("HasLambda", true);

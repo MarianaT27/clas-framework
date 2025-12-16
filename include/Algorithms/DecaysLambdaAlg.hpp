@@ -164,7 +164,7 @@ public:
         
         const int nrows = decays_bank.rows();
         if (nrows == 0) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Has DECAYS Bank");
 
@@ -225,7 +225,7 @@ public:
         }
 
         if (lambdas.empty()) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Has Lambda");
 
@@ -270,19 +270,19 @@ public:
             selected_lambdas.push_back(lambda);
         }
 
-        if (!passed_mass) return Framework::StatusCode::SUCCESS();
+        if (!passed_mass) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Mass Window");
 
-        if (!passed_momentum) return Framework::StatusCode::SUCCESS();
+        if (!passed_momentum) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Momentum Cut");
 
-        if (m_min_decay_length > 0 && !passed_decay_length) return Framework::StatusCode::SUCCESS();
+        if (m_min_decay_length > 0 && !passed_decay_length) return Framework::StatusCode::FILTERED();
         if (m_min_decay_length > 0) m_cutflow.pass("Decay Length Cut");
         
-        if (m_min_vertex_detach > -999 && !passed_vertex_detach) return Framework::StatusCode::SUCCESS();
+        if (m_min_vertex_detach > -999 && !passed_vertex_detach) return Framework::StatusCode::FILTERED();
         if (m_min_vertex_detach > -999) m_cutflow.pass("Vertex Detach Cut");
 
-        if (selected_lambdas.empty()) return Framework::StatusCode::SUCCESS();
+        if (selected_lambdas.empty()) return Framework::StatusCode::FILTERED();
 
         // Store results
         event.set_decision("HasDecaysLambda", true);

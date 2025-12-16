@@ -73,14 +73,14 @@ public:
     auto execute(Framework::Event& event) -> Framework::StatusCode override {
         // Require selected electron
         if (!event.passes_decision("HasGoodElectron")) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
 
         auto& hipo_event = event.hipo_event();
         auto [REC_Event, REC_Particle, REC_Calorimeter, REC_Traj, REC_Track] =
             hipo_event.banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Traj", "REC::Track");
 
-        if (REC_Event->rows() == 0) return Framework::StatusCode::SUCCESS();
+        if (REC_Event->rows() == 0) return Framework::StatusCode::FILTERED();
 
         // Extract pions
         auto particles = m_particle_svc->extract_particles(*REC_Particle, {CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS});

@@ -81,7 +81,7 @@ public:
     auto execute(Framework::Event& event) -> Framework::StatusCode override {
         // Only process pions if a good electron was found
         if (!event.passes_decision("HasGoodElectron")) {
-            return Framework::StatusCode::FAILURE();
+            return Framework::StatusCode::FILTERED();
         }
 
         // Get banks using structured bindings

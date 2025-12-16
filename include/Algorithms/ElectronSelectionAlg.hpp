@@ -97,7 +97,7 @@ class ElectronSelectionAlg : public Framework::Algorithm {
 
         if (electrons.empty()) {
             event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Has Electron");
 
@@ -105,27 +105,27 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         const std::optional<CLAS::Particle>& possible_electron = Physics::ParticleUtils::find_trigger_electron(electrons, {CLAS::FD, CLAS::BD});
         if (!possible_electron.has_value()) {
             event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         const CLAS::Particle& electron = possible_electron.value();
 
         // Apply cuts sequentially
         if (!CLAS::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
             event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Chi2 PID");
 
         double p = electron.p();
         if (!CLAS::ElectronCuts::pass_electron_momentum_cut(p)) {
             event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Momentum > 0.8 GeV");
 
         if (!CLAS::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) {
             event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Vertex Z");
 
@@ -140,19 +140,19 @@ class ElectronSelectionAlg : public Framework::Algorithm {
 
         if (!m_sf_svc->passes_cut(SF, p, sector, m_target, m_polarity)) {
             event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Sampling Fraction");
 
         if (!CLAS::ElectronCuts::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
             event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("PCAL Fiducial");
 
         if (!CLAS::ElectronCuts::pass_chi2ndf_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
             event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("DC Chi2/NDF");
 

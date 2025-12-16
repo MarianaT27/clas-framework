@@ -180,13 +180,20 @@ public:
                     if (sc.is_failure()) {
                         fmt::print(stderr, "ERROR: Algorithm '{}' failed on event {}\n", alg->name(), evt_idx);
                         m_exception_count++;
+                        break;  // Stop processing this event on failure
+                    }
+                    if (sc.is_filtered()) {
+                        // Event filtered out by this algorithm, skip remaining algorithms
+                        break;
                     }
                 } catch (const std::exception& e) {
                     fmt::print(stderr, "ERROR: Exception in algorithm '{}': {}\n", alg->name(), e.what());
                     m_exception_count++;
+                    break;
                 } catch (...) {
                     fmt::print(stderr, "ERROR: Unknown exception in algorithm '{}'\n", alg->name());
                     m_exception_count++;
+                    break;
                 }
             }
         }, m_percentage);

@@ -138,7 +138,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
                              "REC::Cherenkov", "REC::Scintillator", "REC::Traj", "REC::Track");
 
         // Early exit if no event data
-        if (REC_Event->rows() == 0) return Framework::StatusCode::SUCCESS();
+        if (REC_Event->rows() == 0) return Framework::StatusCode::FILTERED();
 
         const double event_start_time = REC_Event->data().get<float>("startTime", 0);
 
@@ -153,12 +153,12 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
                        *REC_Scintillator, *REC_Traj, *REC_Track, event_start_time);
 
         const auto& electrons = m_particle_svc->get_electrons(particles);
-        if (electrons.empty()) return Framework::StatusCode::SUCCESS();
+        if (electrons.empty()) return Framework::StatusCode::FILTERED();
 
         // Select trigger electron using configurable momentum range
         std::optional<CLAS::Particle> trigger_e = Physics::ParticleUtils::find_trigger_electron(
             electrons, {m_config.trigger_p_min, m_config.trigger_p_max});
-        if (!trigger_e.has_value()) return Framework::StatusCode::SUCCESS();
+        if (!trigger_e.has_value()) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Trigger Electron");
 
         // Get detector info for electron using BankView
@@ -180,7 +180,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         // Chi2 PID cut
         if (!CLAS::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Chi2 PID");
         fill_after_cut("Chi2PID", electron, calorimeter, traj, track);
@@ -190,35 +190,35 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         // Momentum cut
         if (!CLAS::ElectronCuts::pass_electron_momentum_cut(p_e)) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Momentum > 0.8 GeV");
         fill_after_cut("Momentum", electron, calorimeter, traj, track);
 
         // Vertex Z cut
         if (!CLAS::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Vertex Z");
         fill_after_cut("VertexZ", electron, calorimeter, traj, track);
 
         // Sampling fraction cut
         if (!m_sf_svc->passes_cut(SF, p_e, sector, m_target, m_polarity)) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Sampling Fraction");
         fill_after_cut("SamplingFraction", electron, calorimeter, traj, track);
 
         // PCAL fiducial cut
         if (!CLAS::ElectronCuts::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("PCAL Fiducial");
         fill_after_cut("PCALFiducial", electron, calorimeter, traj, track);
 
         // DC chi2/ndf cut
         if (!CLAS::ElectronCuts::pass_chi2ndf_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
-            return Framework::StatusCode::SUCCESS();
+            return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("DC Chi2/NDF");
         fill_after_cut("DCChi2", electron, calorimeter, traj, track);
