@@ -63,6 +63,7 @@ executables = {
   'lambda':                 {'main': 'src/lambda.cpp'},
   'decays_lambda':          {'main': 'src/decays_lambda.cpp'},
   'electron_analysis':      {'main': 'src/electron_analysis.cpp'},
+  'pion_analysis':          {'main': 'src/pion_analysis.cpp'},
 }
 
 foreach name, config : executables
