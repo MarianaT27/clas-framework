@@ -38,16 +38,12 @@ public:
         if (m_log) {
             m_log->info(name(), "Initializing HipoFileService");
             m_log->info(name(), "  Input files: {}", m_input_files.size());
-            if (!m_output_file.empty()) {
-                m_log->info(name(), "  Output file: {}", m_output_file);
-            }
+            if (!m_output_file.empty()) m_log->info(name(), "  Output file: {}", m_output_file);
         }
 
         // Open output file if specified
         if (!m_output_file.empty() && m_enable_output) {
-            if (!open_output_file()) {
-                return StatusCode::FAILURE();
-            }
+            if (!open_output_file()) return StatusCode::FAILURE();
         }
 
         return StatusCode::SUCCESS();
@@ -66,8 +62,7 @@ public:
         }
 
         if (m_log) {
-            m_log->info(name(), "Finalized - {} events read, {} events written",
-                       m_events_read, m_events_written);
+            m_log->info(name(), "Finalized - {} events read, {} events written", m_events_read, m_events_written);
         }
 
         return StatusCode::SUCCESS();

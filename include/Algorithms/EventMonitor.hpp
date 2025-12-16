@@ -173,8 +173,11 @@ class EventMonitor : public Framework::MonitoringAlgorithm {
         const auto end_time = std::chrono::high_resolution_clock::now();
         const auto duration = std::chrono::duration_cast<std::chrono::seconds>(end_time - m_start_time);
 
-        Framework::Log::info("EventMonitor", "Event Monitor Statistics:\n  Total events processed: {}\n  Total runtime: {} seconds\n  Average rate: {:.1f} events/second\n  Average particles/event: {:.2f}",
-                             m_events_processed, duration.count(), calculate_event_rate(duration.count()), calculate_avg_particles());
+        Framework::Log::info("EventMonitor", "Event Monitor Statistics:");
+        Framework::Log::info("EventMonitor", "   - Total events processed: {}", m_events_processed);
+        Framework::Log::info("EventMonitor", "   - Total runtime: {} seconds", duration.count());
+        Framework::Log::info("EventMonitor", "   - Average rate: {:.1f} events/second", calculate_event_rate(duration.count()));
+        Framework::Log::info("EventMonitor", "   - Average particles/event: {:.2f}", calculate_avg_particles());
     }
 
     auto initialize_default_pids() const -> std::vector<CLAS::PIDs> {
