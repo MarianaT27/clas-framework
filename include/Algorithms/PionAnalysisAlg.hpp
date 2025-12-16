@@ -124,8 +124,8 @@ private:
     Framework::HistogramService* m_hist_svc = nullptr;
     Framework::ParticleSelectorService* m_particle_svc = nullptr;
 
-    // π⁺ histograms
-    struct {
+    // Histogram set for each pion charge
+    struct PionHistograms {
         // Calorimeter: lv, lw vs SF
         TH2D* lv_vs_sf = nullptr;
         TH2D* lw_vs_sf = nullptr;
@@ -145,27 +145,10 @@ private:
         // Kinematics
         TH1D* momentum = nullptr;
         TH1D* theta = nullptr;
-    } h_piplus;
+    };
 
-    // π⁻ histograms
-    struct {
-        TH2D* lv_vs_sf = nullptr;
-        TH2D* lw_vs_sf = nullptr;
-        TH1D* sf = nullptr;
-        TH1D* lv = nullptr;
-        TH1D* lw = nullptr;
-
-        TH2D* chi2ndf_vs_edge_r1 = nullptr;
-        TH2D* chi2ndf_vs_edge_r2 = nullptr;
-        TH2D* chi2ndf_vs_edge_r3 = nullptr;
-        TH1D* chi2ndf = nullptr;
-        TH1D* edge_r1 = nullptr;
-        TH1D* edge_r2 = nullptr;
-        TH1D* edge_r3 = nullptr;
-
-        TH1D* momentum = nullptr;
-        TH1D* theta = nullptr;
-    } h_piminus;
+    PionHistograms h_piplus;
+    PionHistograms h_piminus;
 
     void setup_cutflows() {
         auto setup = [](Framework::Cutflow& cf) {
@@ -183,8 +166,7 @@ private:
         book_pion_histograms("/PionAnalysis/PiMinus", h_piminus, "π⁻");
     }
 
-    template <typename H>
-    void book_pion_histograms(const std::string& dir, H& h, const std::string& label) {
+    void book_pion_histograms(const std::string& dir, PionHistograms& h, const std::string& label) {
         // Sampling fraction histograms
         h.sf = m_hist_svc->book_hist1D(
             dir + "/sf", fmt::format("{} Sampling Fraction;SF;Events", label),
