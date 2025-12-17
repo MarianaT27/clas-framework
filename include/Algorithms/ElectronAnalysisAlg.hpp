@@ -18,7 +18,6 @@
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Services/SamplingFractionService.hpp"
-#include "Framework/SystematicVariation.hpp"
 #include "Physics/Kinematics.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
@@ -35,7 +34,6 @@ using Framework::Log;
  * the new framework with all Phase 3 improvements:
  * - HistogramService for histogram management
  * - Cutflow for automatic efficiency tracking
- * - Systematic variations
  * - Physics calculators
  * - Clean separation of concerns
  */
@@ -43,12 +41,8 @@ using Framework::Log;
 struct ElectronAnalysisConfig {
     CLAS::Target target = CLAS::Target::LD2;
     CLAS::Polarity polarity = CLAS::Polarity::Outbending;
-    bool enable_systematics = false;
     bool enable_ntuple = true;
     bool enable_cut_stage_histograms = true;
-    // Trigger electron status range
-    double trigger_status_min = 2000.0;
-    double trigger_status_max = 4000.0;
     // Momentum binning for DC histograms
     double p_bin_min = 1.0;
     double p_bin_max = 10.0;
@@ -68,15 +62,8 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
           m_config(config),
           m_target(m_config.target),
           m_polarity(m_config.polarity),
-          m_enable_systematics(m_config.enable_systematics),
           m_cutflow("Electron Selection") {}
 
-    // Legacy constructor for backward compatibility
-    explicit ElectronAnalysisAlg(std::string name, CLAS::Target target, CLAS::Polarity polarity)
-        : Algorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow("Electron Selection") {
-        m_config.target = target;
-        m_config.polarity = polarity;
-    }
 
     /// Access configuration (const)
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -92,10 +79,9 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         if (Log::is_available()) {
             Log::info(name(), "Initializing algorithm");
-            Log::info(name(), "Target: {}, Polarity: {}, Systematics: {}",
+            Log::info(name(), "Target: {}, Polarity: {}",
                       m_target == CLAS::Target::LD2 ? "LD2" : "Other",
-                      m_polarity == CLAS::Polarity::Outbending ? "Outbending" : "Inbending",
-                      m_enable_systematics ? "enabled" : "disabled");
+                      m_polarity == CLAS::Polarity::Outbending ? "Outbending" : "Inbending");
         }
 
         if (!m_hist_svc) {
@@ -110,12 +96,6 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         setup_cutflow();
         book_histograms();
-
-        // Initialize systematic variations if enabled
-        if (m_enable_systematics) {
-            setup_systematics();
-            Log::info(name(), "Registered {} systematic variations", m_sys_mgr.variations().size());
-        }
 
         if (m_ntuple_svc && m_config.enable_ntuple) {
             setup_ntuple();
@@ -156,27 +136,21 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         if (electrons.empty()) return Framework::StatusCode::SUCCESS();
 
         // Select trigger electron using configurable momentum range
-        std::optional<CLAS::Particle> trigger_e = Physics::ParticleUtils::find_trigger_electron(
-            electrons, {m_config.trigger_status_min, m_config.trigger_status_max});
+        std::optional<CLAS::Particle> trigger_e = Physics::ParticleUtils::find_trigger_electron(electrons, {CLAS::FD, CLAS::CD});
         if (!trigger_e.has_value()) return Framework::StatusCode::SUCCESS();
         m_cutflow.pass("Trigger Electron");
 
-        // Get detector info for electron using BankView
-        CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(*REC_Calorimeter, trigger_e->index());
-        CLAS::DCTrajBank traj = CLAS::read_Traj_bank(*REC_Traj, trigger_e->index());
-        CLAS::TrackBank track = CLAS::read_Track_bank(*REC_Track, trigger_e->index());
+        // Build electron candidate with all detector information
+        auto candidate = build_candidate(trigger_e.value(), *REC_Calorimeter, *REC_Traj, *REC_Track);
 
-        // Apply cuts sequentially and fill histograms after each cut
-        auto electron = trigger_e.value();
-
-        process_tracks({electron}, h_electron_tracks, *REC_Calorimeter, *REC_Cherenkov,
+        process_tracks({candidate.particle}, h_electron_tracks, *REC_Calorimeter, *REC_Cherenkov,
                        *REC_Scintillator, *REC_Traj, *REC_Track, event_start_time);
 
-        // Calculate derived quantities
-        const double E_tot = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;
-        const double SF = E_tot / electron.p();
-        const double p_e = electron.p();
-        const int sector = calorimeter.pcal.sector;
+        // Apply cuts using the candidate
+        const auto& electron = candidate.particle;
+        const auto& calorimeter = candidate.calorimeter;
+        const auto& traj = candidate.trajectory;
+        const auto& track = candidate.track;
 
         // Chi2 PID cut
         if (!CLAS::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
@@ -186,7 +160,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         fill_after_cut("Chi2PID", electron, calorimeter, traj, track);
 
         // Momentum cut
-        if (!CLAS::ElectronCuts::pass_electron_momentum_cut(p_e)) {
+        if (!CLAS::ElectronCuts::pass_electron_momentum_cut(electron.p())) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Momentum > 0.8 GeV");
@@ -200,7 +174,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         fill_after_cut("VertexZ", electron, calorimeter, traj, track);
 
         // Sampling fraction cut
-        if (!m_sf_svc->passes_cut(SF, p_e, sector, m_target, m_polarity)) {
+        if (!m_sf_svc->passes_cut(candidate.sampling_fraction, electron.p(), candidate.sector, m_target, m_polarity)) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Sampling Fraction");
@@ -230,8 +204,8 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             m_nt_e_phi = electron.phi();
             m_nt_e_vz = electron.vz();
             m_nt_e_chi2pid = electron.chi2pid();
-            m_nt_sampling_fraction = SF;
-            m_nt_sector = calorimeter.pcal.sector;
+            m_nt_sampling_fraction = candidate.sampling_fraction;
+            m_nt_sector = candidate.sector;
 
             m_ntuple_svc->fill("electron_analysis");
         }
@@ -349,9 +323,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
     Config m_config;
     CLAS::Target m_target;
     CLAS::Polarity m_polarity;
-    bool m_enable_systematics = false;
     Framework::Cutflow m_cutflow;
-    Framework::SystematicManager m_sys_mgr;
 
     // Services
     Framework::LoggingService* m_log_svc = nullptr;
@@ -545,27 +517,6 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             book_cut_stage_histograms("PCALFiducial");
             book_cut_stage_histograms("DCChi2");
             Log::info(name(), "Cut-stage histograms enabled");
-        }
-    }
-
-    auto setup_systematics() -> void {
-        // Energy scale variations (±1 sigma)
-        m_sys_mgr.add_variation("EnergyScale_Up", Framework::VariationType::EnergyScale, +1.0);
-        m_sys_mgr.add_variation("EnergyScale_Down", Framework::VariationType::EnergyScale, -1.0);
-
-        // Momentum scale variations (±1 sigma)
-        m_sys_mgr.add_variation("MomentumScale_Up", Framework::VariationType::MomentumScale, +1.0);
-        m_sys_mgr.add_variation("MomentumScale_Down", Framework::VariationType::MomentumScale, -1.0);
-
-        // Resolution variations
-        m_sys_mgr.add_variation("EnergyResolution_Up", Framework::VariationType::EnergyResolution, +1.0);
-        m_sys_mgr.add_variation("EnergyResolution_Down", Framework::VariationType::EnergyResolution, -1.0);
-
-        if (Log::is_available()) {
-            Log::debug(name(), "Systematic variations configured:");
-            for (const auto& var : m_sys_mgr.variations()) {
-                Log::debug(name(), "  - {}", var.name);
-            }
         }
     }
 

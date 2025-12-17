@@ -50,6 +50,13 @@ class Cutflow {
         }
     }
 
+    /// Increment counter for a cut (thread-safe) - overload for string literals
+    auto pass(const char* cut_name) -> void {
+        if (auto it = m_counters.find(cut_name); it != m_counters.end()) {
+            ++it->second;
+        }
+    }
+
     /// Get count for a specific cut
     [[nodiscard]] auto count(const std::string& cut_name) const -> std::size_t {
         if (auto it = m_counters.find(cut_name); it != m_counters.end()) {
