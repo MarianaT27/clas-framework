@@ -57,7 +57,6 @@ full_deps   = common_deps + [toml_dep, cxxopts_dep]
 # Helper to build standard executables with framework core
 executables = {
   'framework_example':      {'main': 'src/example_framework.cpp'},
-  'improved':               {'main': 'src/improved.cpp'},
   'advanced':               {'main': 'src/advanced.cpp'},
   'example_auto_histograms': {'main': 'src/example_auto_histograms.cpp'},
   'example_builder':        {'main': 'src/example_builder.cpp'},
