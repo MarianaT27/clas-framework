@@ -8,6 +8,7 @@
 #include <CLAS/Target.hpp>
 #include <Framework/IService.hpp>
 #include <Framework/StatusCode.hpp>
+#include <Framework/Services/SamplingFractionService.hpp>
 
 namespace Framework {
 
