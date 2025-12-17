@@ -42,14 +42,20 @@ struct SectorSFParameters {
 /**
  * @brief Service for sampling fraction cuts in CLAS12 electron analysis
  *
- * This service provides target and polarity-dependent sampling fraction
+ * This service provides run-group, target, and polarity-dependent sampling fraction
  * parameterizations for electron identification. It is implemented as a
  * singleton-like service that can be shared across algorithms.
  *
  * The sampling fraction is parameterized as:
  *   SF = μ(p) ± n·σ(p)
  *
- * where μ and σ are third-order polynomials in momentum p.
+ * where μ and σ are polynomials in momentum p. The polynomial order and
+ * coefficients are run-group dependent:
+ *   - RG-D: 3rd order polynomial (poly3)
+ *   - RG-A, RG-B, RG-C: May use different polynomial orders (TBD)
+ *
+ * Currently, all run groups use RG-D parameterizations. This can be extended
+ * when parameterizations for other run groups are available.
  *
  * Usage:
  * @code
@@ -58,8 +64,11 @@ struct SectorSFParameters {
  * double mu = sf_svc->evaluate_mu("LD2", "OB", sector, momentum);
  * double sigma = sf_svc->evaluate_sigma("LD2", "OB", sector, momentum);
  *
- * // Or use convenience methods
- * bool passes = sf_svc->passes_cut(SF, momentum, sector, CLAS::Target::LD2, CLAS::Polarity::Outbending);
+ * // Or use convenience methods with run group
+ * bool passes = sf_svc->passes_cut(SF, momentum, sector,
+ *                                   CLAS::RunGroup::RG_D,
+ *                                   CLAS::Target::LD2,
+ *                                   CLAS::Polarity::Outbending);
  * @endcode
  */
 class SamplingFractionService : public Service {
@@ -139,24 +148,51 @@ class SamplingFractionService : public Service {
     }
 
     // ============================================================================
-    // Convenience Methods with CLAS::Target/Polarity
+    // Convenience Methods with CLAS::Target/Polarity (Legacy - assumes RG-D)
     // ============================================================================
 
     /**
-     * @brief Check if sampling fraction passes the cut
+     * @brief Check if sampling fraction passes the cut (legacy - assumes RG-D)
      */
     [[nodiscard]] auto passes_cut(double SF, double p, int sector, CLAS::Target target, CLAS::Polarity polarity) const
         -> bool {
-        return passes_cut(SF, p, sector, target, polarity, m_n_sigma);
+        return passes_cut(SF, p, sector, CLAS::RunGroup::RG_D, target, polarity, m_n_sigma);
     }
 
     /**
-     * @brief Check if sampling fraction passes the cut with custom n_sigma
+     * @brief Check if sampling fraction passes the cut with custom n_sigma (legacy - assumes RG-D)
      */
     [[nodiscard]] auto passes_cut(double SF, double p, int sector, CLAS::Target target, CLAS::Polarity polarity, double n_sigma) const
         -> bool {
+        return passes_cut(SF, p, sector, CLAS::RunGroup::RG_D, target, polarity, n_sigma);
+    }
+
+    // ============================================================================
+    // Run-Group Aware Methods
+    // ============================================================================
+
+    /**
+     * @brief Check if sampling fraction passes the cut (run-group aware)
+     */
+    [[nodiscard]] auto passes_cut(double SF, double p, int sector,
+                                   CLAS::RunGroup run_group, CLAS::Target target, CLAS::Polarity polarity) const
+        -> bool {
+        return passes_cut(SF, p, sector, run_group, target, polarity, m_n_sigma);
+    }
+
+    /**
+     * @brief Check if sampling fraction passes the cut with custom n_sigma (run-group aware)
+     *
+     * Currently all run groups use RG-D parameterizations.
+     * This will be extended when other run group parameterizations are available.
+     */
+    [[nodiscard]] auto passes_cut(double SF, double p, int sector,
+                                   CLAS::RunGroup run_group, CLAS::Target target, CLAS::Polarity polarity, double n_sigma) const
+        -> bool {
         if (sector < 1 || sector > NUM_SECTORS) return false;
 
+        // TODO: Add run-group specific parameterizations when available
+        // For now, all run groups use RG-D data
         std::string target_str = CLAS::to_string(target);
         std::string polarity_str = (polarity == CLAS::Polarity::Outbending) ? "OB" : "IB";
 
@@ -164,6 +200,22 @@ class SamplingFractionService : public Service {
         double cut_high = evaluate_plus_cut(target_str, polarity_str, sector, p, n_sigma);
 
         return cut_low < SF && SF < cut_high;
+    }
+
+    /**
+     * @brief Get μ and σ values using run-group aware method
+     */
+    [[nodiscard]] auto get_mean_sigma(double p, int sector,
+                                       CLAS::RunGroup run_group, CLAS::Target target, CLAS::Polarity polarity) const
+        -> std::pair<double, double> {
+        // TODO: Add run-group specific parameterizations when available
+        std::string target_str = CLAS::to_string(target);
+        std::string polarity_str = (polarity == CLAS::Polarity::Outbending) ? "OB" : "IB";
+
+        double mu = evaluate_mu(target_str, polarity_str, sector, p);
+        double sigma = evaluate_sigma(target_str, polarity_str, sector, p);
+
+        return {mu, sigma};
     }
 
     /**

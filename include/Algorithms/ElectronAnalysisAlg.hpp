@@ -107,6 +107,9 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         m_electron_cuts_svc->set_target(m_target);
         m_electron_cuts_svc->set_polarity(m_polarity);
 
+        // Connect the sampling fraction service to the electron cuts service
+        m_electron_cuts_svc->set_sf_service(m_sf_svc);
+
         setup_cutflow();
         book_histograms();
 
