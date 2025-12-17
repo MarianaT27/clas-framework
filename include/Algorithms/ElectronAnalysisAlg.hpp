@@ -5,7 +5,6 @@
 #include <limits>
 #include <memory>
 #include <vector>
-#include "CLAS/ElectronCuts.hpp"
 #include "CLAS/Particle.hpp"
 #include "CLAS/ReadBank.hpp"
 #include "CLAS/Target.hpp"
@@ -13,6 +12,7 @@
 #include "Framework/Event.hpp"
 #include "Framework/IAlgorithm.hpp"
 #include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/ElectronCutsService.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
@@ -30,12 +30,15 @@ using Framework::Log;
 /**
  * @brief Full electron analysis algorithm (refactored from study1::Reader)
  *
- * This demonstrates how to refactor the original Reader.cpp to use
- * the new framework with all Phase 3 improvements:
+ * This demonstrates a fully service-based electron analysis using the framework:
+ * - ElectronCutsService for all electron selection criteria
+ * - SamplingFractionService for energy-momentum correlation cuts
  * - HistogramService for histogram management
  * - Cutflow for automatic efficiency tracking
- * - Physics calculators
- * - Clean separation of concerns
+ * - Per-sector track analysis histograms
+ * - DC fiducial studies (momentum and angular binning)
+ * - Cut-stage monitoring for optimization
+ * - Clean separation of concerns with no direct cut implementations
  */
 /// Configuration structure for ElectronAnalysisAlg parameters
 struct ElectronAnalysisConfig {
@@ -76,6 +79,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         m_cond_svc = service<Framework::ConditionsService>("ConditionsService");
         m_particle_svc = service<Framework::ParticleSelectorService>("ParticleSelectorService");
         m_sf_svc = service<Framework::SamplingFractionService>("SamplingFractionService");
+        m_electron_cuts_svc = service<Framework::ElectronCutsService>("ElectronCutsService");
 
         if (Log::is_available()) {
             Log::info(name(), "Initializing algorithm");
@@ -93,6 +97,15 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             Log::error(name(), "Could not get SamplingFractionService");
             return Framework::StatusCode::FAILURE();
         }
+
+        if (!m_electron_cuts_svc) {
+            Log::error(name(), "Could not get ElectronCutsService");
+            return Framework::StatusCode::FAILURE();
+        }
+
+        // Configure services with target and polarity
+        m_electron_cuts_svc->set_target(m_target);
+        m_electron_cuts_svc->set_polarity(m_polarity);
 
         setup_cutflow();
         book_histograms();
@@ -153,21 +166,21 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         const auto& track = candidate.track;
 
         // Chi2 PID cut
-        if (!CLAS::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
+        if (!m_electron_cuts_svc->pass_chi2pid_cut(electron.chi2pid())) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Chi2 PID");
         fill_after_cut("Chi2PID", electron, calorimeter, traj, track);
 
         // Momentum cut
-        if (!CLAS::ElectronCuts::pass_electron_momentum_cut(electron.p())) {
+        if (!m_electron_cuts_svc->pass_momentum_cut(electron.p())) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Momentum > 0.8 GeV");
         fill_after_cut("Momentum", electron, calorimeter, traj, track);
 
         // Vertex Z cut
-        if (!CLAS::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) {
+        if (!m_electron_cuts_svc->pass_vz_cut(electron.vz())) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Vertex Z");
@@ -181,14 +194,14 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         fill_after_cut("SamplingFraction", electron, calorimeter, traj, track);
 
         // PCAL fiducial cut
-        if (!CLAS::ElectronCuts::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
+        if (!m_electron_cuts_svc->pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("PCAL Fiducial");
         fill_after_cut("PCALFiducial", electron, calorimeter, traj, track);
 
-        // DC chi2/ndf cut
-        if (!CLAS::ElectronCuts::pass_chi2ndf_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
+        // DC edge cut
+        if (!m_electron_cuts_svc->pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("DC Chi2/NDF");
@@ -275,21 +288,21 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         const auto& traj = candidate.trajectory;
 
         // Chi2 PID cut
-        if (!CLAS::ElectronCuts::pass_chi2pid_cut(e.chi2pid())) return false;
+        if (!m_electron_cuts_svc->pass_chi2pid_cut(e.chi2pid())) return false;
         m_cutflow.pass("Chi2 PID");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("Chi2PID", e, calo, traj, candidate.track);
         }
 
         // Momentum cut
-        if (!CLAS::ElectronCuts::pass_electron_momentum_cut(e.p())) return false;
+        if (!m_electron_cuts_svc->pass_momentum_cut(e.p())) return false;
         m_cutflow.pass("Momentum > 0.8 GeV");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("Momentum", e, calo, traj, candidate.track);
         }
 
         // Vertex Z cut
-        if (!CLAS::ElectronCuts::pass_electron_vz_cut(e.vz(), m_target)) return false;
+        if (!m_electron_cuts_svc->pass_vz_cut(e.vz())) return false;
         m_cutflow.pass("Vertex Z");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("VertexZ", e, calo, traj, candidate.track);
@@ -303,14 +316,14 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         }
 
         // PCAL fiducial cut
-        if (!CLAS::ElectronCuts::pass_pcal_fiducial_cut(calo.pcal.lv, calo.pcal.lw)) return false;
+        if (!m_electron_cuts_svc->pass_pcal_fiducial_cut(calo.pcal.lv, calo.pcal.lw)) return false;
         m_cutflow.pass("PCAL Fiducial");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("PCALFiducial", e, calo, traj, candidate.track);
         }
 
-        // DC chi2/ndf cut
-        if (!CLAS::ElectronCuts::pass_chi2ndf_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) return false;
+        // DC edge cut
+        if (!m_electron_cuts_svc->pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) return false;
         m_cutflow.pass("DC Chi2/NDF");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("DCChi2", e, calo, traj, candidate.track);
@@ -332,6 +345,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
     Framework::ConditionsService* m_cond_svc = nullptr;
     Framework::ParticleSelectorService* m_particle_svc = nullptr;
     Framework::SamplingFractionService* m_sf_svc = nullptr;
+    Framework::ElectronCutsService* m_electron_cuts_svc = nullptr;
 
     // N-tuple variables
     double m_nt_e_p = 0.0;

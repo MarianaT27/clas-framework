@@ -39,8 +39,6 @@ class ElectronCuts {
 
     static constexpr double HIGH_MOMENTUM_THRESHOLD = 4.5;
     static constexpr double MIN_ELECTRON_MOMENTUM = 0.8;
-    static constexpr int MIN_FD_STATUS = 2000;
-    static constexpr int MAX_FD_STATUS = 4000;
     static constexpr double MIN_PCAL_V = 9.0;
     static constexpr double MIN_PCAL_W = 9.0;
     static constexpr double SF_N_SIGMA = 3.5;
