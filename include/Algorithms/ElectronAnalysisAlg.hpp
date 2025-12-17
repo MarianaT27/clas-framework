@@ -27,6 +27,7 @@
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Services/SamplingFractionService.hpp"
+#include "Framework/StatusCode.hpp"
 #include "Physics/Kinematics.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
@@ -34,7 +35,7 @@
 namespace Algorithms {
 
 // ============================================================================
-// Constants - Avoid magic strings (C++ Core Guidelines: ES.45)
+// Constants
 // ============================================================================
 namespace ElectronCutNames {
     inline constexpr std::string_view kAllEvents = "All Events";
@@ -53,7 +54,7 @@ namespace ElectronCutNames {
 }  // namespace ElectronCutNames
 
 // ============================================================================
-// Configuration (C++ Core Guidelines: I.23 - Keep arguments low)
+// Configuration
 // ============================================================================
 struct ElectronAnalysisConfig {
     CLAS::Target target = CLAS::Target::LD2;
@@ -79,7 +80,7 @@ struct ElectronAnalysisConfig {
 };
 
 // ============================================================================
-// Electron Candidate (C++ Core Guidelines: C.2 - Use class for invariants)
+// Electron Candidate
 // ============================================================================
 struct ElectronCandidate {
     CLAS::Particle particle;
@@ -109,28 +110,16 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 public:
     using Config = ElectronAnalysisConfig;
 
-    explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis",
-                                  Config config = Config{})
+    explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis", Config config = Config{})
         : Algorithm(std::move(name)), m_config(std::move(config)) {}
-
-    // Legacy constructor for backward compatibility
-    explicit ElectronAnalysisAlg(std::string name, CLAS::Target target, CLAS::Polarity polarity)
-        : Algorithm(std::move(name)) {
-        m_config.target = target;
-        m_config.polarity = polarity;
-    }
 
     auto initialize() -> Framework::StatusCode override {
         // Initialize services using ServiceHandle
-        if (auto sc = initialize_services(); sc.is_failure()) {
-            return sc;
-        }
-
+        if (Framework::StatusCode sc = initialize_services(); sc.is_failure()) return sc;
+    
         book_histograms();
 
-        if (m_ntuple_svc && m_config.enable_ntuple) {
-            setup_ntuple();
-        }
+        if (m_ntuple_svc && m_config.enable_ntuple) setup_ntuple();
 
         Framework::Log::info(name(), "Initialized - Target: {}, Polarity: {}",
                              CLAS::to_string(m_config.target),
@@ -139,23 +128,24 @@ public:
         return Framework::StatusCode::SUCCESS();
     }
 
+    /**
+    * @brief Execute the algorithm for each event
+    * @param event The event to process
+    * @return StatusCode indicating success or filtering, will set decision flag "HasGoodElectron" if passed
+    */
     auto execute(Framework::Event& event) -> Framework::StatusCode override {
-        m_cuts.cutflow().pass(std::string(ElectronCutNames::kAllEvents));
+        m_cuts.cutflow().pass(ElectronCutNames::kAllEvents);
 
         // Extract candidate
         auto candidate = extract_candidate(event);
-        if (!candidate) {
-            return Framework::StatusCode::FILTERED();
-        }
-        m_cuts.cutflow().pass(std::string(ElectronCutNames::kTriggerElectron));
+        if (!candidate) return Framework::StatusCode::FILTERED();
+        m_cuts.cutflow().pass(ElectronCutNames::kTriggerElectron);
 
         // Store for cut lambdas
         m_current_candidate = &(*candidate);
 
         // Apply cuts
-        if (!apply_selection_cuts()) {
-            return Framework::StatusCode::FILTERED();
-        }
+        if (!apply_selection_cuts()) return Framework::StatusCode::FILTERED();
 
         // All cuts passed
         fill_final_histograms(*candidate);
@@ -245,19 +235,16 @@ private:
     // ========================================================================
     // Event processing
     // ========================================================================
-    [[nodiscard]] auto extract_candidate(Framework::Event& event)
-        -> std::optional<ElectronCandidate> {
+    [[nodiscard]] auto extract_candidate(Framework::Event& event) -> std::optional<ElectronCandidate> {
 
         auto& hipo = event.hipo_event();
         auto [REC_Event, REC_Particle, REC_Calorimeter, REC_Traj, REC_Track] =
-            hipo.banks("REC::Event", "REC::Particle", "REC::Calorimeter",
-                       "REC::Traj", "REC::Track");
+            hipo.banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Traj", "REC::Track");
 
         if (REC_Event->rows() == 0) return std::nullopt;
 
         // Extract electrons
-        auto particles = m_particle_svc->extract_particles(
-            *REC_Particle, {CLAS::PIDs::ELECTRON});
+        auto particles = m_particle_svc->extract_particles(*REC_Particle, {CLAS::PIDs::ELECTRON});
         const auto& electrons = m_particle_svc->get_electrons(particles);
 
         if (electrons.empty()) return std::nullopt;

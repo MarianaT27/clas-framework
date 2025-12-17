@@ -69,10 +69,8 @@ struct AnalysisConfig {
     config.num_threads = args["num_threads"].as<int>();
 
     config.output_file = args["output"].as<std::string>();
-    config.output_file = CLAS::StringUtils::replace_all(
-        config.output_file, "{target}", CLAS::to_string(config.target));
-    config.output_file = CLAS::StringUtils::replace_all(
-        config.output_file, "{polarity}", CLAS::to_string(config.polarity));
+    config.output_file = CLAS::StringUtils::replace_all(config.output_file, "{target}", CLAS::to_string(config.target));
+    config.output_file = CLAS::StringUtils::replace_all(config.output_file, "{polarity}", CLAS::to_string(config.polarity));
 
     std::string input_str = args["input"].as<std::string>();
     if (!input_str.empty()) {

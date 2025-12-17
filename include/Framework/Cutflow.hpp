@@ -6,6 +6,7 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "Framework/Services/LoggingService.hpp"
@@ -38,6 +39,13 @@ class Cutflow {
     /// Increment counter for a cut (thread-safe)
     auto pass(const std::string& cut_name) -> void {
         if (auto it = m_counters.find(cut_name); it != m_counters.end()) {
+            ++it->second;
+        }
+    }
+
+    /// Increment counter for a cut (thread-safe)
+    auto pass(const std::string_view cut_name) -> void {
+        if (auto it = m_counters.find(cut_name.data()); it != m_counters.end()) {
             ++it->second;
         }
     }
