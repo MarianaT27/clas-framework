@@ -135,6 +135,9 @@ auto main(int argc, char* argv[]) -> int {
         return EXIT_FAILURE;
     }
 
+    // Electron Cuts Service
+    auto electron_cuts_svc = std::make_unique<Framework::ElectronCutsService>();
+
     // Configure algorithm
     Algorithms::ElectronAnalysisConfig alg_config;
     alg_config.target = config->target;
