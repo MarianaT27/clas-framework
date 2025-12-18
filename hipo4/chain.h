@@ -247,42 +247,121 @@ class chain {
     int get_nb_files() const { return files.size(); }
 
     const fileinfo& file_info(int index) const {
-        if (index < 0 || index >= files.size()) throw std::out_of_range("chain: File index out of range");
+        if (index < 0 || static_cast<size_t>(index) >= files.size()) throw std::out_of_range("chain: File index out of range");
         return files[index];
     }
 
     void set_tags(const std::vector<long>& t) { tags = t; }
 
     /**
-     * @brief "Open" - but doesn't actually open any files!
-     * Just validates they exist and prepares for processing.
+     * @brief "Open" - validates all files exist and are valid HIPO files.
      *
-     * ZERO OVERHEAD: No files are opened. No metadata is loaded.
-     * Everything happens lazily during process().
+     * This method validates:
+     * - Files exist on disk
+     * - Files can be opened as valid HIPO files
+     * - Files have proper indices (no corrupt/truncated files)
+     *
+     * @param validate_all If true (default), opens each file briefly to validate.
+     *                     If false, only checks file existence (zero-overhead mode).
      */
-    void open() {
+    void open(bool validate_all = true) {
         if (files.empty()) throw std::runtime_error("chain: No files added to chain");
 
         if (verbose) {
-            fmt::print("[chain] Preparing {} files (zero-overhead mode)\n", files.size());
-            fmt::print("[chain] No files opened yet - metadata will be loaded on-demand\n");
-        }
-
-        // Just validate files exist
-        int missing = 0;
-        for (const auto& file_info : files) {
-            if (!std::filesystem::exists(file_info.filename)) {
-                fmt::print(stderr, "[chain] Warning: File not found: {}\n", file_info.filename);
-                missing++;
+            fmt::print("[chain] Preparing {} files\n", files.size());
+            if (validate_all) {
+                fmt::print("[chain] Validating all files...\n");
+            } else {
+                fmt::print("[chain] Zero-overhead mode - metadata will be loaded on-demand\n");
             }
         }
 
-        if (missing > 0) fmt::print(stderr, "[chain] Warning: {} files not found\n", missing);
+        int missing = 0;
+        int invalid = 0;
+        int no_index = 0;
+        int corrupt = 0;
+        int valid_count = 0;
+        long total_events = 0;
+        int total_records = 0;
 
-        if (verbose) {
-            fmt::print("[chain] Chain ready:\n");
-            fmt::print("  Files:         {}\n", files.size());
-            fmt::print("  Memory used:   ~{} bytes (just filenames)\n", files.size() * 300);  // Rough estimate
+        for (auto& file_info : files) {
+            // Check file exists
+            if (!std::filesystem::exists(file_info.filename)) {
+                fmt::print(stderr, "[chain] Warning: File not found: {}\n", file_info.filename);
+                missing++;
+                continue;
+            }
+
+            if (validate_all) {
+                // Validate HIPO file by opening it
+                try {
+                    hipo::hipoeventfile temp(file_info.filename, tags, 0);
+
+                    // Check error code
+                    ErrorCode err = temp.getErrorCode();
+                    if (err == ErrorCode::ERROR_NOINDEX) {
+                        fmt::print(stderr, "[chain] Warning: File has no index: {}\n", file_info.filename);
+                        no_index++;
+                        continue;
+                    } else if (err == ErrorCode::ERROR_CORRUPT_FILE) {
+                        fmt::print(stderr, "[chain] Warning: File appears corrupt: {}\n", file_info.filename);
+                        corrupt++;
+                        continue;
+                    } else if (err != ErrorCode::NO_ERROR) {
+                        fmt::print(stderr, "[chain] Warning: File error ({}): {}\n",
+                                   ErrorCode::toString(err), file_info.filename);
+                        invalid++;
+                        continue;
+                    }
+
+                    // File is valid - cache metadata
+                    file_info.total_events = temp.getEventCount();
+                    file_info.num_records = temp.nrecords();
+                    total_events += file_info.total_events;
+                    total_records += file_info.num_records;
+                    valid_count++;
+
+                    if (verbose) {
+                        fmt::print("  [{}] {} - OK ({} events, {} records)\n",
+                                   file_info.file_index, file_info.filename,
+                                   file_info.total_events, file_info.num_records);
+                    }
+
+                } catch (const std::exception& e) {
+                    fmt::print(stderr, "[chain] Warning: Cannot open file {}: {}\n",
+                               file_info.filename, e.what());
+                    invalid++;
+                }
+            } else {
+                // Zero-overhead mode - just count as valid if exists
+                valid_count++;
+            }
+        }
+
+        // Report validation summary
+        if (validate_all) {
+            fmt::print("\n[chain] Validation Summary:\n");
+            fmt::print("  Total files:      {}\n", files.size());
+            fmt::print("  Valid files:      {}\n", valid_count);
+            if (missing > 0) fmt::print("  Missing files:    {}\n", missing);
+            if (invalid > 0) fmt::print("  Invalid files:    {}\n", invalid);
+            if (no_index > 0) fmt::print("  No index:         {}\n", no_index);
+            if (corrupt > 0) fmt::print("  Corrupt files:    {}\n", corrupt);
+            fmt::print("  Total events:     {}\n", total_events);
+            fmt::print("  Total records:    {}\n", total_records);
+
+            // Update stats
+            stats.total_events = total_events;
+            metadata_loaded = true;
+        }
+
+        int total_issues = missing + invalid + no_index + corrupt;
+        if (total_issues > 0) {
+            fmt::print(stderr, "[chain] Warning: {} file(s) have issues\n", total_issues);
+        }
+
+        if (valid_count == 0) {
+            throw std::runtime_error("chain: No valid files in chain");
         }
     }
 
@@ -440,6 +519,172 @@ class chain {
     ThreadPool& threadpool() { return thread_pool; }
 
     long total_events_count() const { return stats.total_events.load(); }
+
+    // =========================================================================
+    // New Java-compatible API methods
+    // =========================================================================
+
+    /**
+     * @brief Process events with bank filtering (like Java nextEvent with schemas)
+     *
+     * Only processes events that contain all specified banks.
+     */
+    template <typename ProcessFunc>
+    void process_filtered(ProcessFunc&& process_func,
+                          const std::vector<std::string>& required_banks,
+                          double percentage = 100.0) {
+        if (files.empty()) {
+            fmt::print(stderr, "[chain] Warning: No files to process.\n");
+            return;
+        }
+
+        percentage = std::max(0.0, std::min(100.0, percentage)) / 100.0;
+
+        if (verbose) fmt::print("[chain] Loading file metadata...\n");
+        long total_events_available = 0;
+        for (size_t i = 0; i < files.size(); i++) {
+            total_events_available += get_file_event_count(i);
+        }
+
+        long target_events = static_cast<long>(total_events_available * percentage);
+
+        stats.reset();
+        stats.total_events = target_events;
+
+        if (verbose) {
+            fmt::print("[chain] Filtered processing: requiring banks [");
+            for (size_t i = 0; i < required_banks.size(); i++) {
+                fmt::print("{}", required_banks[i]);
+                if (i < required_banks.size() - 1) fmt::print(", ");
+            }
+            fmt::print("]\n");
+        }
+
+        std::unique_ptr<ProgressTracker> progress;
+        if (show_progress && stats.total_events > 0) {
+            ProgressTracker::Config config;
+            config.label = fmt::format("Filtered processing ({:.1f}%)", percentage * 100.0);
+            config.show_eta = true;
+            config.show_rate = true;
+            config.use_colors = true;
+            progress = std::make_unique<ProgressTracker>(stats.total_events, config);
+            progress->start();
+        }
+
+        std::atomic<long> events_found{0};
+
+        // Process files
+        for (size_t file_idx = 0; file_idx < files.size() && events_found < target_events; file_idx++) {
+            const auto& file_info = files[file_idx];
+
+            if (verbose) {
+                fmt::print("[chain] Processing file {}/{}: {}\n",
+                           file_idx + 1, files.size(), file_info.filename);
+            }
+
+            std::vector<std::future<void>> futures;
+
+            for (int t = 0; t < num_threads && events_found < target_events; t++) {
+                futures.push_back(thread_pool.submit([&]() {
+                    try {
+                        hipo::hipoeventfile reader(file_info.filename, tags, 0);
+                        hipo::event temp_event;
+
+                        while (events_found < target_events) {
+                            // Use filtered nextEvent
+                            if (!reader.nextEvent(temp_event, required_banks)) {
+                                break;
+                            }
+
+                            long evt_count = events_found.fetch_add(1);
+                            if (evt_count >= target_events) break;
+
+                            iter_event evt(&temp_event, &reader);
+                            process_func(evt, file_info.file_index, evt_count);
+
+                            stats.events_processed++;
+                            if (progress) progress->increment();
+                        }
+
+                    } catch (const std::exception& e) {
+                        fmt::print(stderr, "[chain] Thread error on file {}: {}\n",
+                                   file_info.filename, e.what());
+                    }
+                }));
+            }
+
+            for (auto& future : futures) {
+                future.get();
+            }
+        }
+
+        stats.end_time = std::chrono::steady_clock::now();
+        if (progress) progress->finish();
+
+        if (verbose) {
+            fmt::print("[chain] Found {} events matching filter criteria\n", events_found.load());
+            print_statistics();
+        }
+    }
+
+    /**
+     * @brief Get combined record info from all files
+     */
+    std::vector<std::pair<int, std::vector<RecordPosition>>> get_all_record_positions() {
+        std::vector<std::pair<int, std::vector<RecordPosition>>> result;
+        for (size_t i = 0; i < files.size(); i++) {
+            try {
+                hipo::hipoeventfile temp(files[i].filename, tags, 0);
+                result.push_back({static_cast<int>(i), temp.getRecordPositions()});
+            } catch (const std::exception& e) {
+                fmt::print(stderr, "[chain] Error reading file {}: {}\n", files[i].filename, e.what());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * @brief Show info for all files (like Java showInfo)
+     */
+    void show_all_info() {
+        fmt::print("\nChain File Info\n");
+        fmt::print("================\n");
+        for (size_t i = 0; i < files.size(); i++) {
+            fmt::print("\nFile [{}]: {}\n", i, files[i].filename);
+            try {
+                hipo::hipoeventfile temp(files[i].filename, tags, 0);
+                temp.showInfo();
+            } catch (const std::exception& e) {
+                fmt::print("  Error: {}\n", e.what());
+            }
+        }
+    }
+
+    /**
+     * @brief Check if any file has configuration key
+     */
+    bool any_has_config(const std::string& name) {
+        for (size_t i = 0; i < files.size(); i++) {
+            try {
+                hipo::hipoeventfile temp(files[i].filename, tags, 0);
+                if (temp.hasConfig(name)) return true;
+            } catch (...) {}
+        }
+        return false;
+    }
+
+    /**
+     * @brief Get configuration from first file that has it
+     */
+    std::string get_config(const std::string& name) {
+        for (size_t i = 0; i < files.size(); i++) {
+            try {
+                hipo::hipoeventfile temp(files[i].filename, tags, 0);
+                if (temp.hasConfig(name)) return temp.getConfig(name);
+            } catch (...) {}
+        }
+        return "";
+    }
 };
 
 }  // namespace hipo

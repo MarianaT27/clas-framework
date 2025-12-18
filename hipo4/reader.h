@@ -124,7 +124,9 @@ struct ErrorCode {
         NO_ERROR = 0,
         FILE_OPEN_ERROR = 1,
         INVALID_HEADER_LENGTH = 2,
-        INDEX_READ_ERROR = 3
+        INDEX_READ_ERROR = 3,
+        ERROR_NOINDEX = 4,
+        ERROR_CORRUPT_FILE = 5
     } value = NO_ERROR;
 
     ErrorCode(Value v = NO_ERROR) : value(v) {}
@@ -141,6 +143,10 @@ struct ErrorCode {
                 return "Invalid Header Length";
             case INDEX_READ_ERROR:
                 return "Index Read Error";
+            case ERROR_NOINDEX:
+                return "File has no index (trailer missing)";
+            case ERROR_CORRUPT_FILE:
+                return "File appears corrupt or not closed properly";
             default:
                 return "Unknown Error Code";
         }
@@ -171,6 +177,45 @@ struct recordInfo_t {
     long userWordOne{};
     long userWordTwo{};
 };  // recordInfo_t;
+
+/**
+ * RecordPosition - Detailed record position info matching Java implementation
+ * Used for file trailer index tracking with tag-based filtering support
+ */
+class RecordPosition {
+   private:
+    long position_{};
+    int length_{};
+    int count_{};
+    long userWordOne_{};
+    long userWordTwo_{};
+
+   public:
+    RecordPosition() = default;
+
+    RecordPosition(long pos, int len, int cnt)
+        : position_(pos), length_(len), count_(cnt) {}
+
+    long getPosition() const { return position_; }
+    int getLength() const { return length_; }
+    int getCount() const { return count_; }
+    long getUserWordOne() const { return userWordOne_; }
+    long getUserWordTwo() const { return userWordTwo_; }
+
+    void setPosition(long pos) { position_ = pos; }
+    void setLength(int len) { length_ = len; }
+    void setCount(int cnt) { count_ = cnt; }
+    void setUserWordOne(long word) { userWordOne_ = word; }
+    void setUserWordTwo(long word) { userWordTwo_ = word; }
+
+    std::string toString() const {
+        char buffer[256];
+        std::snprintf(buffer, sizeof(buffer),
+                      "pos=%12ld, len=%8d, count=%6d, tag1=%ld, tag2=%ld",
+                      position_, length_, count_, userWordOne_, userWordTwo_);
+        return std::string(buffer);
+    }
+};
 
 /**
    * READER index class is used to construct entire events
@@ -260,6 +305,11 @@ class reader {
     hipo::event event;
     hipo::dictionary factory;
 
+    // New members matching Java HipoReader
+    std::vector<RecordPosition> recordPositions;
+    ErrorCode readerErrorCode{ErrorCode::NO_ERROR};
+    int numberOfEvents{0};
+
     void readHeader();
     void readIndex();
 
@@ -323,6 +373,112 @@ class reader {
 
     std::vector<int> getInt(const char* bank, const char* column, int max = -1);
     std::vector<float> getFloat(const char* bank, const char* column, int max = -1);
+
+    // =========================================================================
+    // New methods matching Java HipoReader API
+    // =========================================================================
+
+    /**
+     * Get the reader error code (NO_ERROR, ERROR_NOINDEX, etc.)
+     * @return current error code
+     */
+    ErrorCode getErrorCode() const { return readerErrorCode; }
+
+    /**
+     * Get total event count (sum of all records)
+     * @return number of events in file
+     */
+    int getEventCount() const { return numberOfEvents; }
+
+    /**
+     * Get list of record positions
+     * @return reference to record positions vector
+     */
+    const std::vector<RecordPosition>& getRecordPositions() const { return recordPositions; }
+
+    // -------------------------------------------------------------------------
+    // User Configuration Methods (like Java hasConfig/getConfig/showConfig)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Check if user configuration contains a key
+     * @param name configuration key
+     * @return true if key exists
+     */
+    bool hasConfig(const std::string& name) const {
+        return userConfig.find(name) != userConfig.end();
+    }
+
+    /**
+     * Get user configuration value by key
+     * @param name configuration key
+     * @return configuration value or empty string if not found
+     */
+    std::string getConfig(const std::string& name) const {
+        auto it = userConfig.find(name);
+        return (it != userConfig.end()) ? it->second : "";
+    }
+
+    /**
+     * Print all user configuration key-value pairs
+     */
+    void showConfig() const;
+
+    // -------------------------------------------------------------------------
+    // Random Access by Event Index (like Java getEvent)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Get event at specific index (random access)
+     * @param dataevent event to fill
+     * @param index event index
+     * @return true if successful
+     */
+    bool getEvent(hipo::event& dataevent, int index);
+
+    // -------------------------------------------------------------------------
+    // Filtered Event Reading (like Java nextEvent with schemas)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Get next event that contains all specified banks
+     * @param dataevent event to fill
+     * @param bankNames list of required bank names
+     * @return true if found, false if no more matching events
+     */
+    bool nextEvent(hipo::event& dataevent, const std::vector<std::string>& bankNames);
+
+    // -------------------------------------------------------------------------
+    // Bank Factory (like Java getBank)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Create a bank instance from schema name
+     * @param name bank/schema name
+     * @return bank instance (empty if schema not found)
+     */
+    hipo::bank getBank(const std::string& name);
+
+    // -------------------------------------------------------------------------
+    // Debug/Info Display (like Java showRecords/showInfo)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Print record positions and event counts
+     */
+    void showRecords() const;
+
+    /**
+     * Print file info summary grouped by tags
+     */
+    void showInfo() const;
+
+    /**
+     * Get the dictionary/schema factory
+     * @return reference to dictionary
+     */
+    hipo::dictionary& getSchemaFactory() { return factory; }
+    const hipo::dictionary& getSchemaFactory() const { return factory; }
 };
 
 class readerstream {

@@ -499,6 +499,77 @@ class EventFile {
     bool read(event& evt) { return m_reader->next(evt); }
 
     // -------------------------------------------------------------------------
+    // New Java-compatible API methods
+    // -------------------------------------------------------------------------
+
+    /// Get error code (like Java getErrorCode)
+    [[nodiscard]] ErrorCode getErrorCode() const { return m_reader->getErrorCode(); }
+
+    /// Get total event count (like Java getEventCount)
+    [[nodiscard]] int getEventCount() const { return m_reader->getEventCount(); }
+
+    /// Get record positions (like Java recordPositions)
+    [[nodiscard]] const std::vector<RecordPosition>& getRecordPositions() const {
+        return m_reader->getRecordPositions();
+    }
+
+    // -------------------------------------------------------------------------
+    // User Configuration (like Java hasConfig/getConfig/showConfig)
+    // -------------------------------------------------------------------------
+
+    /// Check if user configuration contains a key
+    [[nodiscard]] bool hasConfig(const std::string& name) const {
+        return m_reader->hasConfig(name);
+    }
+
+    /// Get user configuration value by key
+    [[nodiscard]] std::string getConfig(const std::string& name) const {
+        return m_reader->getConfig(name);
+    }
+
+    /// Print all user configuration key-value pairs
+    void showConfig() const { m_reader->showConfig(); }
+
+    // -------------------------------------------------------------------------
+    // Random Access by Index (like Java getEvent)
+    // -------------------------------------------------------------------------
+
+    /// Get event at specific index (random access)
+    bool getEvent(event& evt, int index) { return m_reader->getEvent(evt, index); }
+
+    // -------------------------------------------------------------------------
+    // Filtered Event Reading (like Java nextEvent with schemas)
+    // -------------------------------------------------------------------------
+
+    /// Get next event containing all specified banks
+    bool nextEvent(event& evt, const std::vector<std::string>& bankNames) {
+        return m_reader->nextEvent(evt, bankNames);
+    }
+
+    // -------------------------------------------------------------------------
+    // Bank Factory (like Java getBank)
+    // -------------------------------------------------------------------------
+
+    /// Create bank instance from schema name
+    [[nodiscard]] bank getBank(const std::string& name) {
+        return m_reader->getBank(name);
+    }
+
+    // -------------------------------------------------------------------------
+    // Debug/Info Display (like Java showRecords/showInfo)
+    // -------------------------------------------------------------------------
+
+    /// Print record positions and event counts
+    void showRecords() const { m_reader->showRecords(); }
+
+    /// Print file info summary grouped by tags
+    void showInfo() const { m_reader->showInfo(); }
+
+    /// Get the underlying reader (advanced use)
+    [[nodiscard]] reader& getReader() { return *m_reader; }
+    [[nodiscard]] const reader& getReader() const { return *m_reader; }
+
+    // -------------------------------------------------------------------------
     // Range-based Iteration
     // -------------------------------------------------------------------------
 

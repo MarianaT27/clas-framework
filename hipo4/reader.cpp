@@ -158,12 +158,40 @@ namespace hipo {
  */
 void  reader::readIndex(){
 
+    // Check for missing trailer (like Java scanFileTrailer)
+    if(header.trailerPosition == 0) {
+        printf("\n\n");
+        printf("reader:: ****** warning : file does not appear to have an index.\n");
+        printf("reader:: ****** warning : please use HipoDoctor class to rebuild index.\n");
+        printf("\n\n");
+        readerErrorCode = ErrorCode::ERROR_NOINDEX;
+        recordPositions.clear();
+        numberOfEvents = 0;
+        return;
+    }
+
+    // Check for corrupt/truncated file
+    if((header.trailerPosition + 54) > inputStreamSize) {
+        printf("\n\n");
+        printf("reader:: ****** warning : this file seems to be corrupt or not closed properly.\n");
+        printf("reader:: ****** warning : please use HipoDoctor class to salvage useful parts.\n");
+        printf("\n\n");
+        readerErrorCode = ErrorCode::ERROR_CORRUPT_FILE;
+        recordPositions.clear();
+        numberOfEvents = 0;
+        return;
+    }
+
     inputRecord.readRecord(inputStream,header.trailerPosition,0);
     if(_verbose)printf("*** reader:: trailer record event count : %d\n",inputRecord.getEventCount());
 
     //a catch for broken files
     //can use hiporeader.getNRecords() to see if succesfull (=-1 if not)
-    if(inputRecord.getEventCount()==0) return;//dglazier
+    if(inputRecord.getEventCount()==0) {
+        readerErrorCode = ErrorCode::ERROR_NOINDEX;
+        numberOfEvents = 0;
+        return;
+    }
 
     hipo::event event;
     inputRecord.readHipoEvent(event,0);
@@ -172,6 +200,8 @@ void  reader::readIndex(){
     event.getStructure(base,32111,1);
     if(_verbose)base.show();
     readerEventIndex.clear();
+    recordPositions.clear();
+    numberOfEvents = 0;
     int rows = base.getSize()/32;
 
     //printf(" number of rows = %d\n",rows);
@@ -181,9 +211,17 @@ void  reader::readIndex(){
        int  entries  = base.getIntAt ( rows*12 + i*4);
        long uid1     = base.getLongAt( rows*16 + i*8);
        long uid2     = base.getLongAt( rows*24 + i*8);
+
+       // Create RecordPosition object (like Java)
+       RecordPosition recPos(position, length, entries);
+       recPos.setUserWordOne(uid1);
+       recPos.setUserWordTwo(uid2);
+
        if(tagsToRead.size()==0){
           readerEventIndex.addSize(entries);
           readerEventIndex.addPosition(position);
+          recordPositions.push_back(recPos);
+          numberOfEvents += entries;
        } else {
           bool accept = false;
           for(long jr : tagsToRead){
@@ -192,12 +230,17 @@ void  reader::readIndex(){
           if(accept==true){
             readerEventIndex.addSize(entries);
             readerEventIndex.addPosition(position);
+            recordPositions.push_back(recPos);
+            numberOfEvents += entries;
           }
         }
     }
     readerEventIndex.rewind();
     //printf("**** reader:: header version   : %d \n",readerEventIndex.getMaxEvents());
-    if(_verbose)printf("**** reader::  # of events     : %d \n",readerEventIndex.getMaxEvents());
+    if(_verbose){
+        printf("**** reader:: number of records : %12zu\n", recordPositions.size());
+        printf("**** reader:: number of events  : %12d\n", numberOfEvents);
+    }
 }
 /**
  * Checks if there are more events in the file to advance to.
@@ -606,6 +649,169 @@ bool readerIndex::loadRecord(int irec){
  */
 bool readerIndex::canAdvanceInRecord(){
   return (currentEvent<recordEvents[currentRecord+1]-1);
+}
+
+}
+
+// =============================================================================
+// New reader methods matching Java HipoReader API
+// =============================================================================
+
+namespace hipo {
+
+/**
+ * Print all user configuration key-value pairs (like Java showConfig)
+ */
+void reader::showConfig() const {
+    printf("\nFILE user configuration:\n");
+    for (const auto& entry : userConfig) {
+        printf("%s :\n", entry.first.c_str());
+        printf("%s\n\n", entry.second.c_str());
+    }
+}
+
+/**
+ * Get event at specific index using random access (like Java getEvent)
+ * @param dataevent event to fill
+ * @param index event index
+ * @return true if successful
+ */
+bool reader::getEvent(hipo::event& dataevent, int index) {
+    // Store previous record
+    int previousRecord = readerEventIndex.getRecordNumber();
+
+    // Go to the requested event
+    if (!readerEventIndex.gotoEvent(index)) {
+        return false;
+    }
+
+    int currentRecord = readerEventIndex.getRecordNumber();
+
+    // Load new record if needed
+    if (currentRecord != previousRecord) {
+        long position = readerEventIndex.getPosition(currentRecord);
+        inputRecord.readRecord(inputStream, position, 0);
+    }
+
+    // Read the event
+    int recordEventNumber = readerEventIndex.getRecordEventNumber();
+    inputRecord.readHipoEvent(dataevent, recordEventNumber);
+    return true;
+}
+
+/**
+ * Get next event that contains all specified banks (like Java nextEvent with schemas)
+ * @param dataevent event to fill
+ * @param bankNames list of required bank names
+ * @return true if found, false if no more matching events
+ */
+bool reader::nextEvent(hipo::event& dataevent, const std::vector<std::string>& bankNames) {
+    // If no banks specified, just get next event
+    if (bankNames.empty()) {
+        return next(dataevent);
+    }
+
+    // Get schemas for the requested banks
+    std::vector<std::pair<int, int>> bankIds;  // group, item pairs
+    for (const auto& name : bankNames) {
+        if (factory.hasSchema(name.c_str())) {
+            hipo::schema& sch = factory.getSchema(name.c_str());
+            bankIds.push_back({sch.getGroup(), sch.getItem()});
+        }
+    }
+
+    // If we couldn't find any schemas, return false
+    if (bankIds.empty()) {
+        return false;
+    }
+
+    // Keep reading until we find an event with all requested banks
+    while (hasNext()) {
+        if (!next(dataevent)) {
+            return false;
+        }
+
+        // Check if event has all requested banks
+        bool hasAll = true;
+        for (size_t i = 0; i < bankIds.size(); i++) {
+            int group = bankIds[i].first;
+            int item = bankIds[i].second;
+            hipo::structure temp;
+            dataevent.getStructure(temp, group, item);
+            if (temp.getSize() == 0) {
+                hasAll = false;
+                break;
+            }
+        }
+
+        if (hasAll) {
+            return true;
+        }
+    }
+
+    dataevent.reset();
+    return false;
+}
+
+/**
+ * Create a bank instance from schema name (like Java getBank)
+ * @param name bank/schema name
+ * @return bank instance
+ */
+hipo::bank reader::getBank(const std::string& name) {
+    if (factory.hasSchema(name.c_str())) {
+        return hipo::bank(factory.getSchema(name.c_str()));
+    }
+    // Return empty bank with default schema if not found
+    printf("[WARNING] reader::getBank: schema '%s' not found\n", name.c_str());
+    return hipo::bank();
+}
+
+/**
+ * Print record positions and event counts (like Java showRecords)
+ */
+void reader::showRecords() const {
+    printf("--------> size = %zu\n", recordPositions.size());
+    int counter = 0;
+    int entries = 0;
+    for (const auto& pos : recordPositions) {
+        printf("%4d : %s\n", counter, pos.toString().c_str());
+        counter++;
+        entries += pos.getCount();
+    }
+    printf(" Entries = %d\n", entries);
+}
+
+/**
+ * Print file info summary grouped by tags (like Java showInfo)
+ */
+void reader::showInfo() const {
+    std::map<long, int> tagCounter;
+    std::map<long, int> tagEntries;
+    std::map<long, int> tagDataLength;
+
+    for (const auto& pos : recordPositions) {
+        long tag = pos.getUserWordOne();
+        int count = pos.getCount();
+        int length = pos.getLength();
+
+        if (tagCounter.find(tag) == tagCounter.end()) {
+            tagCounter[tag] = 0;
+            tagEntries[tag] = 0;
+            tagDataLength[tag] = 0;
+        }
+        tagCounter[tag]++;
+        tagEntries[tag] += count;
+        tagDataLength[tag] += length;
+    }
+
+    printf("file info: (# records = %zu):\n", recordPositions.size());
+    for (auto it = tagCounter.begin(); it != tagCounter.end(); ++it) {
+        long tag = it->first;
+        int count = it->second;
+        printf("****>>>> index tag : %8ld, count = %9d, entries = %9d, data length = %9d\n",
+               tag, count, tagEntries.at(tag), tagDataLength.at(tag));
+    }
 }
 
 }
