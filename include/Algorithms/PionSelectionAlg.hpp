@@ -288,7 +288,7 @@ class PionSelectionAlg : public Framework::Algorithm {
      * @brief Process pions (either π⁺ or π⁻)
      */
     auto process_pions(const std::vector<CLAS::Particle>& pions,
-                       hipo::BankView& REC_Scintillator,
+                       hipo::bank& REC_Scintillator,
                        double start_time,
                        bool is_piplus) -> void {
         auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
@@ -318,9 +318,9 @@ class PionSelectionAlg : public Framework::Algorithm {
             if (!pass_beta_cut(beta, p)) continue;
             cutflow.pass("Beta");
 
-            // Get scintillator info for delta_t using BankView
+            // Get scintillator info for delta_t
             CLAS::ScintillatorBank scintillator = CLAS::read_Scintillator_bank(
-                REC_Scintillator.data(), pion.index());
+                REC_Scintillator, pion.index());
 
             // Calculate delta_t
             double delta_t = calculate_delta_t(pion, scintillator, start_time);

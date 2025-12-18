@@ -7,12 +7,9 @@
  * This header provides functions to read and parse CLAS12 detector banks
  * (Calorimeter, Cherenkov, Track, Trajectory, Scintillator) into structured
  * C++ objects for convenient analysis.
- *
- * All functions support both hipo::bank and hipo::BankView as input.
  */
 
 #include <hipo4/bank.h>
-#include <hipo4/hipoeventiterator.h>
 #include <CLAS/Banks.hpp>
 #include <CLAS/Detectors.hpp>
 
@@ -59,11 +56,7 @@ inline auto build_index_map(const hipo::bank& bank, const char* index_column)
     return result;
 }
 
-/// Overload for BankView
-inline auto build_index_map(const hipo::BankView& view, const char* index_column)
-    -> std::map<int, std::vector<int>> {
-    return build_index_map(view.data(), index_column);
-}
+
 
 // =============================================================================
 // Cherenkov Bank Reader
@@ -102,9 +95,7 @@ inline auto read_Cherenkov_bank(const hipo::bank& bank, int pindex) -> Cherenkov
     return result;
 }
 
-inline auto read_Cherenkov_bank(hipo::BankView& view, int pindex) -> CherenkovBank {
-    return read_Cherenkov_bank(view.data(), pindex);
-}
+
 
 // =============================================================================
 // Calorimeter Bank Reader
@@ -161,9 +152,7 @@ inline auto read_Calorimeter_bank(const hipo::bank& bank, int pindex) -> Calorim
     return result;
 }
 
-inline auto read_Calorimeter_bank(hipo::BankView& view, int pindex) -> CalorimeterBank {
-    return read_Calorimeter_bank(view.data(), pindex);
-}
+
 
 // =============================================================================
 // Track Bank Reader
@@ -200,9 +189,7 @@ inline auto read_Track_bank(const hipo::bank& bank, int pindex) -> TrackBank {
     return result;
 }
 
-inline auto read_Track_bank(hipo::BankView& view, int pindex) -> TrackBank {
-    return read_Track_bank(view.data(), pindex);
-}
+
 
 // =============================================================================
 // Trajectory Bank Reader
@@ -258,9 +245,7 @@ inline auto read_Traj_bank(const hipo::bank& bank, int pindex) -> DCTrajBank {
     return result;
 }
 
-inline auto read_Traj_bank(hipo::BankView& view, int pindex) -> DCTrajBank {
-    return read_Traj_bank(view.data(), pindex);
-}
+
 
 // =============================================================================
 // Scintillator Bank Reader
@@ -325,9 +310,7 @@ inline auto read_Scintillator_bank(const hipo::bank& bank, int pindex) -> Scinti
     return result;
 }
 
-inline auto read_Scintillator_bank(hipo::BankView& view, int pindex) -> ScintillatorBank {
-    return read_Scintillator_bank(view.data(), pindex);
-}
+
 
 // =============================================================================
 // MC Matching Utilities

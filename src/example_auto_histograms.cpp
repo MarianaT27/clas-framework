@@ -101,9 +101,9 @@ public:
         m_events_processed++;
 
         auto& hipo_event = event.hipo_event();
-        hipo::bank_map REC_Particle = hipo_event.get_bank_map("REC::Particle");
+        hipo::bank& REC_Particle = hipo_event.get("REC::Particle");
 
-        int n_particles = REC_Particle.get_rows();
+        int n_particles = REC_Particle.rows();
 
         // Fill individual histogram
         h_n_particles.fill(n_particles);

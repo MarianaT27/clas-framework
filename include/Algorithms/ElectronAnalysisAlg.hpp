@@ -136,7 +136,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         // Early exit if no event data
         if (REC_Event->rows() == 0) return Framework::StatusCode::SUCCESS();
 
-        const double event_start_time = REC_Event->data().get<float>("startTime", 0);
+        const double event_start_time = REC_Event->get<float>("startTime", 0);
 
         // Extract particles
         Framework::ParticleMap particles = m_particle_svc->extract_particles(*REC_Particle, {CLAS::PIDs::ELECTRON});
@@ -267,9 +267,9 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
     /// Build electron candidate with all detector information
     [[nodiscard]] auto build_candidate(const CLAS::Particle& electron,
-                                        hipo::BankView& REC_Calorimeter,
-                                        hipo::BankView& REC_Traj,
-                                        hipo::BankView& REC_Track) const -> ElectronCandidate {
+                                        hipo::bank& REC_Calorimeter,
+                                        hipo::bank& REC_Traj,
+                                        hipo::bank& REC_Track) const -> ElectronCandidate {
         ElectronCandidate candidate;
         candidate.particle = electron;
         candidate.calorimeter = CLAS::read_Calorimeter_bank(REC_Calorimeter, electron.index());
@@ -731,9 +731,9 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
      * information and fills the corresponding per-sector histograms.
      */
     auto process_tracks(const std::vector<CLAS::Particle>& tracks, TrackHistograms& histograms,
-                        hipo::BankView& REC_Calorimeter, hipo::BankView& REC_Cherenkov,
-                        hipo::BankView& REC_Scintillator, hipo::BankView& REC_Traj,
-                        hipo::BankView& REC_Track, [[maybe_unused]] double event_start_time) -> void {
+                        hipo::bank& REC_Calorimeter, hipo::bank& REC_Cherenkov,
+                        hipo::bank& REC_Scintillator, hipo::bank& REC_Traj,
+                        hipo::bank& REC_Track, [[maybe_unused]] double event_start_time) -> void {
         for (const auto& track : tracks) {
             CLAS::CalorimeterBank calo = CLAS::read_Calorimeter_bank(REC_Calorimeter, track.index());
             CLAS::CherenkovBank cherenkov = CLAS::read_Cherenkov_bank(REC_Cherenkov, track.index());

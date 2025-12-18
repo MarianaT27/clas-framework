@@ -123,13 +123,9 @@ void structure::show() const {
 }
 
 std::string structure::getStringAt(int index) {
+    // Direct string construction - no malloc/free needed
     int length = getSize();
-    auto* string_ch = (char*)malloc(length + 1);
-    std::memcpy(string_ch, &structureBuffer[8], length);
-    string_ch[length] = '\0';
-    std::string result = string_ch;
-    free(string_ch);
-    return result;
+    return std::string(&structureBuffer[8], length);
 }
 
 void structure::putStringAt(int index, std::string& str) {
@@ -447,11 +443,8 @@ void bank::rowlist::setList(list_t const& list) {
 void bank::rowlist::filter(std::function<bool(bank&, int)> func) {
     if (ownerBankIsUnknown("filter"))
         return;
-    auto indx = m_list;
-    m_list.clear();
-    for (auto const& r : indx)
-        if (func(*m_owner_bank, r) == true)
-            m_list.push_back(r);
+    // Use C++20 std::erase_if for in-place filtering (avoids copy)
+    std::erase_if(m_list, [&](int r) { return !func(*m_owner_bank, r); });
 }
 
 void bank::rowlist::filter(const char* expression) {
@@ -647,6 +640,125 @@ banklist::size_type getBanklistIndex(banklist& banks, std::string const& bankNam
     if (auto it{std::find_if(banks.begin(), banks.end(), predicate)}; it != banks.end())
         return std::distance(banks.begin(), it);
     throw std::runtime_error("bank named '" + bankName + "' not found in banklist");
+}
+
+void bank::print_table(bool show_all, int max_rows) const {
+    const auto& row_list = getRowList();
+    const int n_cols = bankSchema.getEntries();
+    const bool use_all = show_all || !bankRowList.isInitialized() ||
+                         static_cast<int>(row_list.size()) == bankRows;
+
+    // Calculate column widths
+    std::vector<int> widths;
+    widths.reserve(n_cols);
+    for (int c = 0; c < n_cols; ++c)
+        widths.push_back(column_width(c));
+
+    // Determine which columns fit in terminal
+    const int term_width = detect_terminal_width() - 10;
+    std::vector<int> visible_cols;
+    int total_width = 6;
+    bool truncated = false;
+
+    for (int c = 0; c < n_cols; ++c) {
+        if (total_width + widths[c] + 4 <= term_width) {
+            visible_cols.push_back(c);
+            total_width += widths[c] + 3;
+        } else {
+            truncated = true;
+            break;
+        }
+    }
+
+    if (visible_cols.empty() && n_cols > 0) {
+        visible_cols.push_back(0);
+        total_width += widths[0] + 3;
+        truncated = (n_cols > 1);
+    }
+
+    std::vector<int> disp_widths;
+    for (int c : visible_cols)
+        disp_widths.push_back(widths[c]);
+
+    const int table_width = 8 + [&] {
+        int sum = 0;
+        for (int w : disp_widths)
+            sum += w + 3;
+        return sum;
+    }();
+
+    // Print header
+    std::printf("\n┌");
+    for (int i = 0; i < table_width - 2; ++i)
+        std::printf("─");
+    std::printf("┐\n");
+
+    const std::string bank_name_str = bankSchema.getName();
+    const int display_rows = use_all ? bankRows : static_cast<int>(row_list.size());
+    if (truncated) {
+        std::printf("│ Bank: %-20s  Rows: %-6d  Cols: %zu/%d │\n",
+                    bank_name_str.c_str(), display_rows, visible_cols.size(), n_cols);
+    } else {
+        std::printf("│ Bank: %-20s  Rows: %-6d %*s│\n",
+                    bank_name_str.c_str(), display_rows, table_width - 42, "");
+    }
+
+    print_border(disp_widths, "├", "┬", "┤", "─");
+
+    // Column names
+    std::printf("│ %4s │", "row");
+    for (size_t i = 0; i < visible_cols.size(); ++i) {
+        std::printf(" %-*s │", disp_widths[i], bankSchema.getEntryName(visible_cols[i]).c_str());
+    }
+    std::printf("\n");
+
+    // Column types (dimmed)
+    std::printf("│ %4s │", "");
+    for (size_t i = 0; i < visible_cols.size(); ++i) {
+        std::printf(" \033[90m%-*s\033[0m │", disp_widths[i], type_name(visible_cols[i]).c_str());
+    }
+    std::printf("\n");
+
+    print_border(disp_widths, "├", "┼", "┤", "─");
+
+    // Data rows
+    int rows_to_print = (max_rows > 0) ? std::min(max_rows, display_rows) : display_rows;
+
+    if (use_all) {
+        for (int r = 0; r < rows_to_print; ++r) {
+            std::printf("│ %4d │", r);
+            for (size_t i = 0; i < visible_cols.size(); ++i) {
+                std::printf(" ");
+                print_value_formatted(visible_cols[i], r, disp_widths[i]);
+                std::printf("│");
+            }
+            std::printf("\n");
+        }
+    } else {
+        int count = 0;
+        for (int r : row_list) {
+            if (count >= rows_to_print) break;
+            std::printf("│ %4d │", r);
+            for (size_t i = 0; i < visible_cols.size(); ++i) {
+                std::printf(" ");
+                print_value_formatted(visible_cols[i], r, disp_widths[i]);
+                std::printf("│");
+            }
+            std::printf("\n");
+            ++count;
+        }
+    }
+
+    print_border(disp_widths, "└", "┴", "┘", "─");
+
+    if (max_rows > 0 && max_rows < display_rows) {
+        std::printf("  ... showing %d of %d rows\n", max_rows, display_rows);
+    }
+    if (truncated) {
+        std::printf("  Note: %d columns hidden (terminal width)\n",
+                    n_cols - static_cast<int>(visible_cols.size()));
+    }
+    std::printf("\n");
 }
 
 }  // namespace hipo

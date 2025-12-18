@@ -147,9 +147,9 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
     if (h_n_photons) h_n_photons->Fill(static_cast<double>(photons.size()));
 
     auto& hipo_event = event.hipo_event();
-    hipo::bank& RUN_config = hipo_event.get_bank("RUN::config");
-    hipo::bank& REC_Particle = hipo_event.get_bank("REC::Particle");
-    hipo::bank& REC_Calorimeter = hipo_event.get_bank("REC::Calorimeter");
+    hipo::bank& RUN_config = hipo_event.get("RUN::config");
+    hipo::bank& REC_Particle = hipo_event.get("REC::Particle");
+    hipo::bank& REC_Calorimeter = hipo_event.get("REC::Calorimeter");
 
     auto selected_photons = select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
 

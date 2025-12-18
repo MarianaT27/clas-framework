@@ -141,7 +141,7 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         }
         m_cutflow.pass("Vertex Z");
 
-        // Get detector info for electron using BankView
+        // Get detector info for electron
         CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(*REC_Calorimeter, electron.index());
         CLAS::DCTrajBank traj = CLAS::read_Traj_bank(*REC_Traj, electron.index());
 

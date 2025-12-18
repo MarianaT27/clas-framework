@@ -509,15 +509,14 @@ class readerstream {
     }
 
     void run(std::function<int(int)>&& function, int nthreads) {
-        std::vector<std::thread*> threads;
+        // Use std::jthread for RAII - threads auto-join on destruction
+        std::vector<std::jthread> threads;
+        threads.reserve(nthreads);
         for (int i = 0; i < nthreads; i++) {
-            threads.push_back(new std::thread(function, i));
+            threads.emplace_back(function, i);
         }
-        printf("-- created denoiser with %lu threads\n", threads.size());
-        for (int k = 0; k < (int)threads.size(); k++)
-            threads[k]->join();
-        for (int k = 0; k < (int)threads.size(); k++)
-            delete threads[k];
+        printf("-- created denoiser with %zu threads\n", threads.size());
+        // No explicit join needed - jthread destructor handles it
     }
 
     hipo::reader& reader() { return hr; }

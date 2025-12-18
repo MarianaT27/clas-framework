@@ -245,7 +245,7 @@ class PionAnalysisAlg : public Framework::Algorithm {
 
     }
 
-    void process_pion(const CLAS::Particle& pion, hipo::BankView& REC_Calorimeter, hipo::BankView& REC_Traj, hipo::BankView& REC_Track, bool is_piplus) {
+    void process_pion(const CLAS::Particle& pion, hipo::bank& REC_Calorimeter, hipo::bank& REC_Traj, hipo::bank& REC_Track, bool is_piplus) {
         auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
         auto& h = is_piplus ? h_piplus : h_piminus;
 

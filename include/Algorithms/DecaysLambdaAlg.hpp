@@ -182,52 +182,52 @@ class DecaysLambdaAlg : public Framework::Algorithm {
         std::vector<DecaysDaughter> all_daughters;
 
         for (int i = 0; i < nrows; ++i) {
-            int pid = decays_bank.get_as<int>("pid", i);
+            int pid = decays_bank.get<int>("pid", i);
 
             if (pid == LAMBDA_PID) {
                 DecaysLambda lambda;
-                lambda.idx = decays_bank.get_as<int>("idx", i);
+                lambda.idx = decays_bank.get<int>("idx", i);
                 lambda.pid = pid;
-                lambda.mass = decays_bank.get_as<float>("mass", i);
-                lambda.umass = decays_bank.get_as<float>("umass", i);
-                lambda.px = decays_bank.get_as<float>("px", i);
-                lambda.py = decays_bank.get_as<float>("py", i);
-                lambda.pz = decays_bank.get_as<float>("pz", i);
-                lambda.vx = decays_bank.get_as<float>("vx", i);
-                lambda.vy = decays_bank.get_as<float>("vy", i);
-                lambda.vz = decays_bank.get_as<float>("vz", i);
-                lambda.ovx = decays_bank.get_as<float>("ovx", i);
-                lambda.ovy = decays_bank.get_as<float>("ovy", i);
-                lambda.ovz = decays_bank.get_as<float>("ovz", i);
-                lambda.e = decays_bank.get_as<float>("e", i);
-                lambda.emc = decays_bank.get_as<float>("emc", i);
-                lambda.erec = decays_bank.get_as<float>("erec", i);
-                lambda.charge = decays_bank.get_as<int>("charge", i);
-                lambda.ndau = decays_bank.get_as<int>("ndau", i);
-                lambda.dau1idx = decays_bank.get_as<int>("dau1idx", i);
-                lambda.dau2idx = decays_bank.get_as<int>("dau2idx", i);
-                lambda.dau3idx = decays_bank.get_as<int>("dau3idx", i);
-                lambda.det = decays_bank.get_as<int>("det", i);
-                lambda.r = decays_bank.get_as<float>("r", i);
+                lambda.mass = decays_bank.get<float>("mass", i);
+                lambda.umass = decays_bank.get<float>("umass", i);
+                lambda.px = decays_bank.get<float>("px", i);
+                lambda.py = decays_bank.get<float>("py", i);
+                lambda.pz = decays_bank.get<float>("pz", i);
+                lambda.vx = decays_bank.get<float>("vx", i);
+                lambda.vy = decays_bank.get<float>("vy", i);
+                lambda.vz = decays_bank.get<float>("vz", i);
+                lambda.ovx = decays_bank.get<float>("ovx", i);
+                lambda.ovy = decays_bank.get<float>("ovy", i);
+                lambda.ovz = decays_bank.get<float>("ovz", i);
+                lambda.e = decays_bank.get<float>("e", i);
+                lambda.emc = decays_bank.get<float>("emc", i);
+                lambda.erec = decays_bank.get<float>("erec", i);
+                lambda.charge = decays_bank.get<int>("charge", i);
+                lambda.ndau = decays_bank.get<int>("ndau", i);
+                lambda.dau1idx = decays_bank.get<int>("dau1idx", i);
+                lambda.dau2idx = decays_bank.get<int>("dau2idx", i);
+                lambda.dau3idx = decays_bank.get<int>("dau3idx", i);
+                lambda.det = decays_bank.get<int>("det", i);
+                lambda.r = decays_bank.get<float>("r", i);
 
                 lambdas.push_back(lambda);
             } else {
                 // Store as potential daughter
                 DecaysDaughter dau;
-                dau.idx = decays_bank.get_as<int>("idx", i);
+                dau.idx = decays_bank.get<int>("idx", i);
                 dau.pid = pid;
-                dau.mass = decays_bank.get_as<float>("mass", i);
-                dau.px = decays_bank.get_as<float>("px", i);
-                dau.py = decays_bank.get_as<float>("py", i);
-                dau.pz = decays_bank.get_as<float>("pz", i);
-                dau.vx = decays_bank.get_as<float>("vx", i);
-                dau.vy = decays_bank.get_as<float>("vy", i);
-                dau.vz = decays_bank.get_as<float>("vz", i);
-                dau.upx = decays_bank.get_as<float>("upx", i);
-                dau.upy = decays_bank.get_as<float>("upy", i);
-                dau.upz = decays_bank.get_as<float>("upz", i);
-                dau.charge = decays_bank.get_as<int>("charge", i);
-                dau.det = decays_bank.get_as<int>("det", i);
+                dau.mass = decays_bank.get<float>("mass", i);
+                dau.px = decays_bank.get<float>("px", i);
+                dau.py = decays_bank.get<float>("py", i);
+                dau.pz = decays_bank.get<float>("pz", i);
+                dau.vx = decays_bank.get<float>("vx", i);
+                dau.vy = decays_bank.get<float>("vy", i);
+                dau.vz = decays_bank.get<float>("vz", i);
+                dau.upx = decays_bank.get<float>("upx", i);
+                dau.upy = decays_bank.get<float>("upy", i);
+                dau.upz = decays_bank.get<float>("upz", i);
+                dau.charge = decays_bank.get<int>("charge", i);
+                dau.det = decays_bank.get<int>("det", i);
 
                 all_daughters.push_back(dau);
             }

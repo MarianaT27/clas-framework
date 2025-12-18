@@ -85,6 +85,7 @@ class datastreamLocalFile {
 
    private:
     std::ifstream inputStream;
+    long m_cached_size{-1};  // Cached file size to avoid repeated seeks
 
    public:
     datastreamLocalFile();
@@ -95,19 +96,23 @@ class datastreamLocalFile {
         }
     }
 
-    long size() {
-        long pos = inputStream.tellg();
-        inputStream.seekg(0, std::ios_base::end);
-        long lastpos = inputStream.tellg();
-        inputStream.seekg(pos, std::ios_base::beg);
-        return lastpos;
+    /// Get file size. Cached after first call to avoid repeated seeks.
+    [[nodiscard]] long size() {
+        if (m_cached_size < 0) {
+            long pos = inputStream.tellg();
+            inputStream.seekg(0, std::ios_base::end);
+            m_cached_size = inputStream.tellg();
+            inputStream.seekg(pos, std::ios_base::beg);
+        }
+        return m_cached_size;
     }
 
     void open(const char* filename) {
         inputStream.open(filename, std::ios::binary);
+        m_cached_size = -1;  // Reset cache on new file
     }
 
-    long position() { return inputStream.tellg(); }
+    [[nodiscard]] long position() { return inputStream.tellg(); }
 
     long position(long pos) {
         inputStream.seekg(pos, std::ios_base::beg);

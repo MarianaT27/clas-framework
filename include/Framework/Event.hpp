@@ -77,10 +77,10 @@ class Event {
     /**
      * @brief Get a HIPO bank by name
      * @param bank_name Name of the bank (e.g., "REC::Particle")
-     * @return hipo::bank_map The bank map
+     * @return hipo::bank& Reference to the bank
      */
-    auto get_bank(const std::string& bank_name) -> hipo::bank_map {
-        return m_hipo_event.get_bank_map(bank_name.c_str());
+    auto get_bank(const std::string& bank_name) -> hipo::bank& {
+        return m_hipo_event.get(bank_name.c_str());
     }
 
     /**
@@ -213,7 +213,7 @@ class Event {
      * @brief Load particles from REC::Particle bank
      */
     auto load_particles() -> void {
-        hipo::bank_map REC_Particle = m_hipo_event.get_bank_map("REC::Particle");
+        hipo::bank& REC_Particle = m_hipo_event.get("REC::Particle");
 
         // Initialize particle vectors for common types
         std::vector<CLAS::PIDs> target_types = {
@@ -228,8 +228,8 @@ class Event {
         }
 
         // Extract particles from bank
-        for (int i = 0; i < REC_Particle.get_rows(); i++) {
-            const int pid = REC_Particle.get_as<int>("pid", i);
+        for (int i = 0; i < REC_Particle.rows(); i++) {
+            const int pid = REC_Particle.get<int>("pid", i);
 
             // Find matching particle type
             CLAS::PIDs particle_type;
@@ -244,18 +244,18 @@ class Event {
 
             if (!found) continue;
 
-            const int status = REC_Particle.get_as<int>("status", i);
-            const int charge = REC_Particle.get_as<int>("charge", i);
+            const int status = REC_Particle.get<int>("status", i);
+            const int charge = REC_Particle.get<int>("charge", i);
             // REC::Particle stores momentum and vertex as floats
-            const double px = static_cast<double>(REC_Particle.get_as<float>("px", i));
-            const double py = static_cast<double>(REC_Particle.get_as<float>("py", i));
-            const double pz = static_cast<double>(REC_Particle.get_as<float>("pz", i));
-            const double vx = static_cast<double>(REC_Particle.get_as<float>("vx", i));
-            const double vy = static_cast<double>(REC_Particle.get_as<float>("vy", i));
-            const double vz = static_cast<double>(REC_Particle.get_as<float>("vz", i));
-            const double vt = static_cast<double>(REC_Particle.get_as<float>("vt", i));
-            const double beta = static_cast<double>(REC_Particle.get_as<float>("beta", i));
-            const double chi2pid = static_cast<double>(REC_Particle.get_as<float>("chi2pid", i));
+            const double px = static_cast<double>(REC_Particle.get<float>("px", i));
+            const double py = static_cast<double>(REC_Particle.get<float>("py", i));
+            const double pz = static_cast<double>(REC_Particle.get<float>("pz", i));
+            const double vx = static_cast<double>(REC_Particle.get<float>("vx", i));
+            const double vy = static_cast<double>(REC_Particle.get<float>("vy", i));
+            const double vz = static_cast<double>(REC_Particle.get<float>("vz", i));
+            const double vt = static_cast<double>(REC_Particle.get<float>("vt", i));
+            const double beta = static_cast<double>(REC_Particle.get<float>("beta", i));
+            const double chi2pid = static_cast<double>(REC_Particle.get<float>("chi2pid", i));
 
             const double mass = Physics::ParticleUtils::get_mass(pid);
             const double E = Physics::ParticleUtils::compute_energy(px, py, pz, pid);
@@ -269,9 +269,9 @@ class Event {
     }
 
     auto load_event_info() -> void {
-        hipo::bank_map REC_Event = m_hipo_event.get_bank_map("REC::Event");
-        if (REC_Event.get_rows() > 0) {
-            m_start_time = REC_Event.get_as<double>("startTime", 0);
+        hipo::bank& REC_Event = m_hipo_event.get("REC::Event");
+        if (REC_Event.rows() > 0) {
+            m_start_time = REC_Event.get<double>("startTime", 0);
         }
     }
 };

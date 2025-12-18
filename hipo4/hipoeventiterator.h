@@ -8,7 +8,7 @@
 //************************ Jefferson National Lab (2017) ***********************
 /**
  * @file hipoeventiterator.h
- * @brief Modern C++ interface for iterating over HIPO events
+ * @brief Modern C++20 interface for iterating over HIPO events
  *
  * This header provides a range-based iteration interface for HIPO files,
  * enabling idiomatic C++ patterns like:
@@ -19,6 +19,16 @@
  *     auto& particles = event["REC::Particle"];
  *     // Process particles...
  * }
+ *
+ * // With index tracking
+ * for (auto [event, idx] : file.enumerate()) {
+ *     fmt::print("Event {}: {} particles\n", idx, event["REC::Particle"].rows());
+ * }
+ *
+ * // Process subset
+ * for (auto event : file.take(1000)) {
+ *     // First 1000 events only
+ * }
  * @endcode
  */
 #pragma once
@@ -28,12 +38,16 @@
 #include <event.h>
 #include <reader.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <iterator>
 #include <memory>
+#include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -56,350 +70,7 @@ namespace hipo {
 
 class EventFile;
 class EventProxy;
-
-// =============================================================================
-// BankView - Lightweight view over a HIPO bank with cached column metadata
-// =============================================================================
-
-/**
- * @brief Provides efficient, cached access to HIPO bank data
- *
- * BankView wraps a hipo::bank with pre-computed column metadata for fast access.
- * It supports pretty-printing and type-safe value retrieval.
- *
- * @note This class does not own the underlying bank - it's a non-owning view.
- */
-class BankView {
-   public:
-    // -------------------------------------------------------------------------
-    // Construction
-    // -------------------------------------------------------------------------
-
-    BankView() noexcept : m_bank(nullptr), m_schema(nullptr), m_row_count(0) {}
-
-    explicit BankView(bank& b) noexcept
-        : m_bank(&b), m_schema(&b.getSchema()), m_row_count(b.getRows()) {
-        cache_column_metadata();
-    }
-
-    // -------------------------------------------------------------------------
-    // Core Accessors
-    // -------------------------------------------------------------------------
-
-    /// Refresh view with updated bank data (e.g., after reading new event)
-    BankView& refresh(bank& b) noexcept {
-        m_bank = &b;
-        m_row_count = b.getRows();
-        return *this;
-    }
-
-    /// Number of rows in the bank
-    [[nodiscard]] int rows() const noexcept { return m_row_count; }
-
-    /// Check if bank has any data
-    [[nodiscard]] bool empty() const noexcept { return m_row_count == 0; }
-
-    /// Check if bank is valid (non-null)
-    [[nodiscard]] explicit operator bool() const noexcept { return m_bank != nullptr; }
-
-    /// Access underlying bank (for compatibility with existing code)
-    [[nodiscard]] bank& data() noexcept { return *m_bank; }
-
-    [[nodiscard]] const bank& data() const noexcept { return *m_bank; }
-
-    // Legacy method names for backward compatibility
-    [[nodiscard]] int get_rows() const noexcept { return m_row_count; }
-
-    [[nodiscard]] bank& get_bank() noexcept { return *m_bank; }
-
-    [[nodiscard]] const bank& get_bank() const noexcept { return *m_bank; }
-
-    template <typename T>
-    [[nodiscard]] T get_as(const std::string& column, int row) const { return get<T>(column, row); }
-
-    // -------------------------------------------------------------------------
-    // Type-safe Value Access
-    // -------------------------------------------------------------------------
-
-    /// Get value by column name and row index
-    template <typename T>
-    [[nodiscard]] T get(const std::string& column, int row) const {
-        for (const auto& [name, idx] : m_columns) {
-            if (name == column) return m_bank->get<T>(idx, row);
-        }
-        std::fprintf(stderr, "[BankView] Error: unknown column '%s'\n", column.c_str());
-        return T{};
-    }
-
-    /// Get value by column index and row index (faster, no lookup)
-    template <typename T>
-    [[nodiscard]] T get(int column, int row) const {
-        return m_bank->get<T>(column, row);
-    }
-
-    // -------------------------------------------------------------------------
-    // Display / Debugging
-    // -------------------------------------------------------------------------
-
-    /// Print bank contents to stdout
-    void print(int max_rows = -1) const { print_table(false, max_rows); }
-
-    /// Print all rows (ignoring any row filters)
-    void print_all(int max_rows = -1) const { print_table(true, max_rows); }
-
-   private:
-    // -------------------------------------------------------------------------
-    // Internal Types
-    // -------------------------------------------------------------------------
-
-    struct ColumnMeta {
-        int type_id;
-        int row_offset;
-        int type_size;
-    };
-
-    // -------------------------------------------------------------------------
-    // Member Data
-    // -------------------------------------------------------------------------
-
-    bank* m_bank;
-    schema* m_schema;
-    int m_row_count;
-    std::vector<std::pair<std::string, int>> m_columns;
-    std::vector<ColumnMeta> m_column_cache;
-
-    // -------------------------------------------------------------------------
-    // Internal Methods
-    // -------------------------------------------------------------------------
-
-    void cache_column_metadata() {
-        const int count = m_schema->getEntries();
-        m_columns.reserve(count);
-        m_column_cache.reserve(count);
-
-        for (int i = 0; i < count; ++i) {
-            m_columns.emplace_back(m_schema->getEntryName(i), i);
-            auto [offset_mult, size] = m_schema->getOffsetParts(i);
-            m_column_cache.push_back({.type_id = m_schema->getEntryType(i),
-                                      .row_offset = m_row_count * offset_mult,
-                                      .type_size = size});
-        }
-    }
-
-    [[nodiscard]] static int detect_terminal_width() {
-        if (const char* env = std::getenv("COLUMNS")) {
-            if (int w = std::atoi(env); w > 0) return w;
-        }
-#ifdef TIOCGWINSZ
-        struct winsize ws{};
-        if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
-            return ws.ws_col;
-        }
-#endif
-        return 120;  // Default fallback
-    }
-
-    [[nodiscard]] std::string type_name(int column) const {
-        switch (m_column_cache[column].type_id) {
-            case kByte:
-                return "byte";
-            case kShort:
-                return "short";
-            case kInt:
-                return "int";
-            case kFloat:
-                return "float";
-            case kDouble:
-                return "double";
-            case kLong:
-                return "long";
-            default:
-                return "?";
-        }
-    }
-
-    [[nodiscard]] int column_width(int column) const {
-        const auto name_len = static_cast<int>(m_schema->getEntryName(column).length());
-        switch (m_column_cache[column].type_id) {
-            case kByte:
-                return std::max(name_len, 4);
-            case kShort:
-                return std::max(name_len, 6);
-            case kInt:
-                return std::max(name_len, 8);
-            case kFloat:
-                return std::max(name_len, 9);
-            case kDouble:
-                return std::max(name_len, 9);
-            case kLong:
-                return std::max(name_len, 12);
-            default:
-                return name_len;
-        }
-    }
-
-    void print_value(int column, int row, int width) const {
-        switch (m_column_cache[column].type_id) {
-            case kByte:
-                std::printf("%*d ", width, m_bank->get<int8_t>(column, row));
-                break;
-            case kShort:
-                std::printf("%*d ", width, m_bank->get<int16_t>(column, row));
-                break;
-            case kInt:
-                std::printf("%*d ", width, m_bank->get<int32_t>(column, row));
-                break;
-            case kFloat:
-                std::printf("%*.3f ", width, m_bank->get<float>(column, row));
-                break;
-            case kDouble:
-                std::printf("%*.3f ", width, m_bank->get<double>(column, row));
-                break;
-            case kLong:
-                std::printf("%*lld ", width, static_cast<long long>(m_bank->get<int64_t>(column, row)));
-                break;
-            default:
-                std::printf("%*s ", width, "?");
-        }
-    }
-
-    void print_border(const std::vector<int>& widths, const char* left, const char* mid,
-                      const char* right, const char* fill) const {
-        std::printf("%s", left);
-        for (int k = 0; k < 6; ++k)
-            std::printf("%s", fill);
-        std::printf("%s", mid);
-        for (size_t i = 0; i < widths.size(); ++i) {
-            for (int j = 0; j < widths[i] + 2; ++j)
-                std::printf("%s", fill);
-            std::printf("%s", i < widths.size() - 1 ? mid : right);
-        }
-        std::printf("\n");
-    }
-
-    void print_table(bool show_all, int max_rows) const {
-        if (!m_bank) return;
-
-        const auto& row_list = m_bank->getRowList();
-        const int n_cols = m_schema->getEntries();
-        const bool use_all = show_all || !m_bank->getMutableRowList().isInitialized() ||
-                             static_cast<int>(row_list.size()) == m_row_count;
-
-        // Calculate column widths
-        std::vector<int> widths;
-        widths.reserve(n_cols);
-        for (int c = 0; c < n_cols; ++c)
-            widths.push_back(column_width(c));
-
-        // Determine which columns fit in terminal
-        const int term_width = detect_terminal_width() - 10;
-        std::vector<int> visible_cols;
-        int total_width = 6;
-        bool truncated = false;
-
-        for (int c = 0; c < n_cols; ++c) {
-            if (total_width + widths[c] + 4 <= term_width) {
-                visible_cols.push_back(c);
-                total_width += widths[c] + 3;
-            } else {
-                truncated = true;
-                break;
-            }
-        }
-
-        if (visible_cols.empty() && n_cols > 0) {
-            visible_cols.push_back(0);
-            total_width += widths[0] + 3;
-            truncated = (n_cols > 1);
-        }
-
-        std::vector<int> disp_widths;
-        for (int c : visible_cols)
-            disp_widths.push_back(widths[c]);
-
-        const int table_width = 8 + [&] {
-            int sum = 0;
-            for (int w : disp_widths)
-                sum += w + 3;
-            return sum;
-        }();
-
-        // Print header
-        std::printf("\n┌");
-        for (int i = 0; i < table_width - 2; ++i)
-            std::printf("─");
-        std::printf("┐\n");
-
-        const char* bank_name = m_schema->getName().c_str();
-        const int display_rows = use_all ? m_row_count : static_cast<int>(row_list.size());
-        if (truncated) {
-            std::printf("│ Bank: %-20s  Rows: %-6d  Cols: %zu/%d │\n",
-                        bank_name, display_rows, visible_cols.size(), n_cols);
-        } else {
-            std::printf("│ Bank: %-20s  Rows: %-6d %*s│\n",
-                        bank_name, display_rows, table_width - 42, "");
-        }
-
-        print_border(disp_widths, "├", "┬", "┤", "─");
-
-        // Column names
-        std::printf("│ %4s │", "row");
-        for (size_t i = 0; i < visible_cols.size(); ++i) {
-            std::printf(" %-*s │", disp_widths[i], m_schema->getEntryName(visible_cols[i]).c_str());
-        }
-        std::printf("\n");
-
-        // Column types (dimmed)
-        std::printf("│ %4s │", "");
-        for (size_t i = 0; i < visible_cols.size(); ++i) {
-            std::printf(" \033[90m%-*s\033[0m │", disp_widths[i], type_name(visible_cols[i]).c_str());
-        }
-        std::printf("\n");
-
-        print_border(disp_widths, "├", "┼", "┤", "─");
-
-        // Data rows
-        int rows_to_print = (max_rows > 0) ? std::min(max_rows, display_rows) : display_rows;
-
-        if (use_all) {
-            for (int r = 0; r < rows_to_print; ++r) {
-                std::printf("│ %4d │", r);
-                for (size_t i = 0; i < visible_cols.size(); ++i) {
-                    std::printf(" ");
-                    print_value(visible_cols[i], r, disp_widths[i]);
-                    std::printf("│");
-                }
-                std::printf("\n");
-            }
-        } else {
-            int count = 0;
-            for (int r : row_list) {
-                if (count >= rows_to_print) break;
-                std::printf("│ %4d │", r);
-                for (size_t i = 0; i < visible_cols.size(); ++i) {
-                    std::printf(" ");
-                    print_value(visible_cols[i], r, disp_widths[i]);
-                    std::printf("│");
-                }
-                std::printf("\n");
-                ++count;
-            }
-        }
-
-        print_border(disp_widths, "└", "┴", "┘", "─");
-
-        if (max_rows > 0 && max_rows < display_rows) {
-            std::printf("  ... showing %d of %d rows\n", max_rows, display_rows);
-        }
-        if (truncated) {
-            std::printf("  Note: %d columns hidden (terminal width)\n", n_cols - static_cast<int>(visible_cols.size()));
-        }
-        std::printf("\n");
-    }
-};
-
-// Legacy alias for backward compatibility
-using bank_map = BankView;
+class ChainIterator;
 
 // =============================================================================
 // EventFile - RAII wrapper for reading HIPO files with range-based iteration
@@ -413,16 +84,30 @@ using bank_map = BankView;
  * - Range-based for loop support
  * - Pre-cached bank schemas for efficient access
  * - Move-only semantics (non-copyable)
+ * - Functional-style processing (for_each, transform, filter)
  *
  * @code
  * hipo::EventFile file("data.hipo");
- * std::cout << "Events: " << file.size() << "\n";
  *
+ * // Simple iteration
  * for (auto event : file) {
  *     auto& particles = event["REC::Particle"];
- *     if (particles.empty()) continue;
- *     // Process...
  * }
+ *
+ * // With index
+ * for (auto [event, idx] : file.enumerate()) {
+ *     // idx is the event index
+ * }
+ *
+ * // Process subset
+ * for (auto event : file.take(1000)) {
+ *     // First 1000 events
+ * }
+ *
+ * // Functional style
+ * file.for_each([](auto& event) {
+ *     auto& particles = event["REC::Particle"];
+ * });
  * @endcode
  */
 class EventFile {
@@ -430,12 +115,16 @@ class EventFile {
 
    public:
     class Iterator;
+    class EnumerateView;
+    class TakeView;
+    class FilterView;
+
     using iterator = Iterator;
     using const_iterator = Iterator;
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // Construction / Destruction
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     /**
      * @brief Open a HIPO file for reading
@@ -444,14 +133,18 @@ class EventFile {
      * @param verbosity Reader verbosity level (0 = quiet)
      * @throws std::runtime_error if file cannot be opened
      */
-    explicit EventFile(const std::string& filename, const std::vector<long>& tags = {}, int verbosity = 0) {
+    explicit EventFile(std::string_view filename,
+                       const std::vector<long>& tags = {},
+                       int verbosity = 0)
+        : m_filename(filename) {
         m_reader = std::make_unique<reader>();
         if (!tags.empty()) m_reader->setTags(tags);
         m_reader->setVerbose(verbosity);
 
-        ErrorCode status = m_reader->open(filename.c_str());
+        ErrorCode status = m_reader->open(m_filename.c_str());
         if (status != ErrorCode::NO_ERROR) {
-            throw std::runtime_error("Failed to open HIPO file: " + filename + " (Error: " + ErrorCode::toString(status) + ")");
+            throw std::runtime_error("Failed to open HIPO file: " + m_filename +
+                                     " (Error: " + ErrorCode::toString(status) + ")");
         }
 
         m_reader->readDictionary(m_dictionary);
@@ -466,31 +159,42 @@ class EventFile {
     EventFile(const EventFile&) = delete;
     EventFile& operator=(const EventFile&) = delete;
 
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // File Information
-    // -------------------------------------------------------------------------
+    // =========================================================================
+
+    /// File path
+    [[nodiscard]] std::string_view filename() const noexcept { return m_filename; }
 
     /// Total number of events in the file
-    [[nodiscard]] std::size_t size() const { return m_reader->getEntries(); }
+    [[nodiscard]] std::size_t size() const noexcept { return m_reader->getEntries(); }
+
+    /// Check if file is empty
+    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
 
     /// Number of records in the file
-    [[nodiscard]] std::size_t record_count() const { return m_reader->getNRecords(); }
+    [[nodiscard]] std::size_t record_count() const noexcept { return m_reader->getNRecords(); }
 
     /// Access the file's schema dictionary
-    [[nodiscard]] const dictionary& schemas() const { return m_dictionary; }
+    [[nodiscard]] const dictionary& schemas() const noexcept { return m_dictionary; }
 
-    // Legacy method names for backward compatibility
-    [[nodiscard]] uintmax_t entries() const { return m_reader->getEntries(); }
+    /// Get list of available bank names
+    [[nodiscard]] std::vector<std::string> bank_names() {
+        return m_dictionary.getSchemaList();
+    }
 
-    [[nodiscard]] uintmax_t nrecords() const { return m_reader->getNRecords(); }
+    /// Check if a bank schema exists
+    [[nodiscard]] bool has_bank(std::string_view name) const {
+        return m_dictionary.hasSchema(name.data());
+    }
 
-    bool goto_event(long idx) { return seek(idx); }
+    // Legacy aliases
+    [[nodiscard]] std::size_t entries() const noexcept { return size(); }
+    [[nodiscard]] std::size_t nrecords() const noexcept { return record_count(); }
 
-    bool read_next_event(event& evt) { return read(evt); }
-
-    // -------------------------------------------------------------------------
+    // =========================================================================
     // Random Access
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     /// Seek to a specific event index
     bool seek(long event_index) { return m_reader->gotoEvent(event_index); }
@@ -498,104 +202,216 @@ class EventFile {
     /// Read the next event into the provided event object
     bool read(event& evt) { return m_reader->next(evt); }
 
-    // -------------------------------------------------------------------------
-    // New Java-compatible API methods
-    // -------------------------------------------------------------------------
+    /// Get event at specific index (random access)
+    bool get_event(event& evt, long index) { return m_reader->getEvent(evt, index); }
 
-    /// Get error code (like Java getErrorCode)
-    [[nodiscard]] ErrorCode getErrorCode() const { return m_reader->getErrorCode(); }
+    // Legacy aliases
+    bool goto_event(long idx) { return seek(idx); }
+    bool read_next_event(event& evt) { return read(evt); }
+    bool getEvent(event& evt, int index) { return get_event(evt, index); }
 
-    /// Get total event count (like Java getEventCount)
-    [[nodiscard]] int getEventCount() const { return m_reader->getEventCount(); }
+    // =========================================================================
+    // Bank Factory
+    // =========================================================================
 
-    /// Get record positions (like Java recordPositions)
-    [[nodiscard]] const std::vector<RecordPosition>& getRecordPositions() const {
-        return m_reader->getRecordPositions();
+    /// Create bank instance from schema name
+    [[nodiscard]] bank create_bank(std::string_view name) const {
+        return bank(m_dictionary.getSchema(name.data()));
     }
 
-    // -------------------------------------------------------------------------
-    // User Configuration (like Java hasConfig/getConfig/showConfig)
-    // -------------------------------------------------------------------------
+    /// Get cached bank template (for repeated use)
+    [[nodiscard]] bank& get_bank_template(std::string_view name) {
+        return m_bank_templates[std::string(name)];
+    }
+
+    // Legacy alias
+    [[nodiscard]] bank getBank(const std::string& name) { return create_bank(name); }
+
+    // =========================================================================
+    // Error Handling
+    // =========================================================================
+
+    /// Get error code from last operation
+    [[nodiscard]] ErrorCode error_code() const noexcept { return m_reader->getErrorCode(); }
+
+    // Legacy alias
+    [[nodiscard]] ErrorCode getErrorCode() const noexcept { return error_code(); }
+
+    // =========================================================================
+    // Configuration Access
+    // =========================================================================
 
     /// Check if user configuration contains a key
-    [[nodiscard]] bool hasConfig(const std::string& name) const {
-        return m_reader->hasConfig(name);
+    [[nodiscard]] bool has_config(std::string_view name) const {
+        return m_reader->hasConfig(std::string(name));
     }
 
     /// Get user configuration value by key
-    [[nodiscard]] std::string getConfig(const std::string& name) const {
-        return m_reader->getConfig(name);
+    [[nodiscard]] std::optional<std::string> get_config(std::string_view name) const {
+        if (m_reader->hasConfig(std::string(name))) {
+            return m_reader->getConfig(std::string(name));
+        }
+        return std::nullopt;
     }
 
-    /// Print all user configuration key-value pairs
+    /// Get all configuration keys
+    [[nodiscard]] std::vector<std::string> config_keys() const {
+        // Note: This would need reader support to enumerate keys
+        return {};
+    }
+
+    // Legacy aliases
+    [[nodiscard]] bool hasConfig(const std::string& name) const { return has_config(name); }
+    [[nodiscard]] std::string getConfig(const std::string& name) const {
+        return get_config(name).value_or("");
+    }
     void showConfig() const { m_reader->showConfig(); }
 
-    // -------------------------------------------------------------------------
-    // Random Access by Index (like Java getEvent)
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // Record Information
+    // =========================================================================
 
-    /// Get event at specific index (random access)
-    bool getEvent(event& evt, int index) { return m_reader->getEvent(evt, index); }
+    /// Get record positions
+    [[nodiscard]] std::span<const RecordPosition> record_positions() const {
+        return m_reader->getRecordPositions();
+    }
 
-    // -------------------------------------------------------------------------
-    // Filtered Event Reading (like Java nextEvent with schemas)
-    // -------------------------------------------------------------------------
+    /// Get total event count
+    [[nodiscard]] int event_count() const noexcept { return m_reader->getEventCount(); }
+
+    // Legacy aliases
+    [[nodiscard]] const std::vector<RecordPosition>& getRecordPositions() const {
+        return m_reader->getRecordPositions();
+    }
+    [[nodiscard]] int getEventCount() const noexcept { return event_count(); }
+
+    // =========================================================================
+    // Filtered Reading
+    // =========================================================================
 
     /// Get next event containing all specified banks
+    bool next_event_with_banks(event& evt, std::span<const std::string> bank_names) {
+        std::vector<std::string> names(bank_names.begin(), bank_names.end());
+        return m_reader->nextEvent(evt, names);
+    }
+
+    // Legacy alias
     bool nextEvent(event& evt, const std::vector<std::string>& bankNames) {
-        return m_reader->nextEvent(evt, bankNames);
+        return next_event_with_banks(evt, bankNames);
     }
 
-    // -------------------------------------------------------------------------
-    // Bank Factory (like Java getBank)
-    // -------------------------------------------------------------------------
-
-    /// Create bank instance from schema name
-    [[nodiscard]] bank getBank(const std::string& name) {
-        return m_reader->getBank(name);
-    }
-
-    // -------------------------------------------------------------------------
-    // Debug/Info Display (like Java showRecords/showInfo)
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // Debug/Info Display
+    // =========================================================================
 
     /// Print record positions and event counts
-    void showRecords() const { m_reader->showRecords(); }
+    void show_records() const { m_reader->showRecords(); }
 
-    /// Print file info summary grouped by tags
-    void showInfo() const { m_reader->showInfo(); }
+    /// Print file info summary
+    void show_info() const { m_reader->showInfo(); }
+
+    // Legacy aliases
+    void showRecords() const { show_records(); }
+    void showInfo() const { show_info(); }
+
+    // =========================================================================
+    // Advanced Access
+    // =========================================================================
 
     /// Get the underlying reader (advanced use)
-    [[nodiscard]] reader& getReader() { return *m_reader; }
-    [[nodiscard]] const reader& getReader() const { return *m_reader; }
+    [[nodiscard]] reader& get_reader() noexcept { return *m_reader; }
+    [[nodiscard]] const reader& get_reader() const noexcept { return *m_reader; }
 
-    // -------------------------------------------------------------------------
+    // Legacy aliases
+    [[nodiscard]] reader& getReader() noexcept { return *m_reader; }
+    [[nodiscard]] const reader& getReader() const noexcept { return *m_reader; }
+
+    // =========================================================================
     // Range-based Iteration
-    // -------------------------------------------------------------------------
+    // =========================================================================
 
     [[nodiscard]] Iterator begin();
     [[nodiscard]] Iterator end();
 
+    // =========================================================================
+    // Enhanced Iteration Views
+    // =========================================================================
+
+    /**
+     * @brief Iterate with event index
+     *
+     * @code
+     * for (auto [event, idx] : file.enumerate()) {
+     *     fmt::print("Event {}\n", idx);
+     * }
+     * @endcode
+     */
+    [[nodiscard]] EnumerateView enumerate();
+
+    /**
+     * @brief Iterate over first N events
+     *
+     * @code
+     * for (auto event : file.take(1000)) {
+     *     // Process first 1000 events
+     * }
+     * @endcode
+     */
+    [[nodiscard]] TakeView take(std::size_t count);
+
+    /**
+     * @brief Iterate over events matching a predicate
+     *
+     * @code
+     * for (auto event : file.filter([](auto& e) {
+     *     return e["REC::Particle"].rows() > 0;
+     * })) {
+     *     // Only events with particles
+     * }
+     * @endcode
+     */
+    template <typename Predicate>
+    [[nodiscard]] FilterView filter(Predicate&& pred);
+
+    // =========================================================================
+    // Functional-style Processing (implementations after Iterator is defined)
+    // =========================================================================
+
+    /// Apply function to each event
+    template <typename Func>
+    void for_each(Func&& func);
+
+    /// Apply function to each event with index
+    template <typename Func>
+    void for_each_indexed(Func&& func);
+
+    /// Count events matching a predicate
+    template <typename Predicate>
+    [[nodiscard]] std::size_t count_if(Predicate&& pred);
+
+    /// Find first event matching a predicate
+    template <typename Predicate>
+    [[nodiscard]] std::optional<std::size_t> find_if(Predicate&& pred);
+
    private:
+    std::string m_filename;
     std::unique_ptr<reader> m_reader;
     dictionary m_dictionary;
     mutable std::unordered_map<std::string, bank> m_bank_templates;
-    mutable std::unordered_map<std::string, BankView> m_bank_views;
 
     void initialize_bank_cache() {
         const auto& schema_names = m_dictionary.getSchemaList();
         m_bank_templates.reserve(schema_names.size());
-        m_bank_views.reserve(schema_names.size());
 
         for (const auto& name : schema_names) {
             schema& sch = m_dictionary.getSchema(name.c_str());
             m_bank_templates.emplace(name, bank(sch));
-            m_bank_views.emplace(name, BankView(m_bank_templates[name]));
         }
     }
+
 };
 
-// Legacy alias for backward compatibility
+// Legacy alias
 using hipoeventfile = EventFile;
 
 // =============================================================================
@@ -616,6 +432,11 @@ using hipoeventfile = EventFile;
  *
  *     // Multiple banks with structured bindings
  *     auto [part, calo, track] = event.banks("REC::Particle", "REC::Calorimeter", "REC::Track");
+ *
+ *     // Check if bank exists and has data
+ *     if (auto& cal = event["REC::Calorimeter"]; !cal.empty()) {
+ *         // Process calorimeter data
+ *     }
  * }
  * @endcode
  *
@@ -625,6 +446,7 @@ class EventProxy {
     friend class EventFile;
     friend class EventFile::Iterator;
     friend class chain;
+    friend class ChainIterator;
 
    public:
     EventProxy() : m_event(nullptr), m_file(nullptr) {}
@@ -636,30 +458,31 @@ class EventProxy {
     // Bank Access - Single Bank
     // -------------------------------------------------------------------------
 
-    /// Get bank by name (returns reference to cached BankView)
-    [[nodiscard]] BankView& operator[](const std::string& bank_name) const {
-        return get(bank_name);
-    }
-
-    /// Get bank by name (C-string overload)
-    [[nodiscard]] BankView& operator[](const char* bank_name) const {
+    /// Get bank by name (returns reference to cached bank)
+    [[nodiscard]] bank& operator[](std::string_view bank_name) const {
         return get(bank_name);
     }
 
     /// Explicit get method (same as operator[])
-    [[nodiscard]] BankView& get(const std::string& bank_name) const {
-        bank& b = m_file->m_bank_templates[bank_name];
+    [[nodiscard]] bank& get(std::string_view bank_name) const {
+        std::string name(bank_name);
+        bank& b = m_file->m_bank_templates[name];
         m_event->read(b);
-        return m_file->m_bank_views[bank_name].refresh(b);
+        return b;
     }
 
-    /// Legacy method names for backward compatibility
-    [[nodiscard]] BankView& get_bank_map(const std::string& bank_name) const {
-        return get(bank_name);
+    /// Check if bank exists in schema
+    [[nodiscard]] bool has_bank(std::string_view bank_name) const {
+        return m_file->has_bank(bank_name);
     }
 
-    [[nodiscard]] bank& get_bank(const std::string& bank_name) const {
-        return raw_bank(bank_name);
+    /// Get bank if it exists and has rows, otherwise nullopt
+    [[nodiscard]] std::optional<std::reference_wrapper<bank>>
+    get_if_present(std::string_view bank_name) const {
+        if (!has_bank(bank_name)) return std::nullopt;
+        auto& b = get(bank_name);
+        if (b.empty()) return std::nullopt;
+        return b;
     }
 
     // -------------------------------------------------------------------------
@@ -675,23 +498,15 @@ class EventProxy {
      * );
      * @endcode
      *
-     * @return Tuple of pointers to BankView objects
+     * @return Tuple of pointers to bank objects
      */
     template <typename... Names>
     [[nodiscard]] auto banks(Names&&... names) const {
         return std::make_tuple(&get(std::forward<Names>(names))...);
     }
 
-    // -------------------------------------------------------------------------
-    // Raw Access (for advanced use)
-    // -------------------------------------------------------------------------
-
-    /// Get underlying hipo::bank directly (bypasses BankView)
-    [[nodiscard]] bank& raw_bank(const std::string& bank_name) const {
-        bank& b = m_file->m_bank_templates[bank_name];
-        m_event->read(b);
-        return b;
-    }
+    /// Get underlying event object
+    [[nodiscard]] event& raw_event() const noexcept { return *m_event; }
 
    private:
     event* m_event;
@@ -700,7 +515,7 @@ class EventProxy {
     EventProxy(event* ev, EventFile* file) : m_event(ev), m_file(file) {}
 };
 
-// Legacy alias for backward compatibility
+// Legacy alias
 using iter_event = EventProxy;
 
 // =============================================================================
@@ -717,25 +532,15 @@ class EventFile::Iterator {
     friend class EventFile;
 
    public:
-    // Iterator traits
     using iterator_category = std::input_iterator_tag;
     using value_type = EventProxy;
     using difference_type = std::ptrdiff_t;
     using pointer = EventProxy*;
     using reference = EventProxy;
 
-    // -------------------------------------------------------------------------
-    // Construction
-    // -------------------------------------------------------------------------
-
     /// Default constructor creates end iterator
     Iterator() : m_reader(nullptr), m_file(nullptr), m_exhausted(true) {}
 
-    // -------------------------------------------------------------------------
-    // Iterator Operations
-    // -------------------------------------------------------------------------
-
-    /// Advance to next event
     Iterator& operator++() {
         if (m_reader && !m_exhausted) {
             if (!m_reader->next(m_current_event)) {
@@ -745,20 +550,17 @@ class EventFile::Iterator {
         return *this;
     }
 
-    /// Post-increment (returns void for input iterators)
     void operator++(int) { ++(*this); }
 
-    /// Dereference - returns EventProxy for current event
     [[nodiscard]] value_type operator*() {
         return EventProxy(&m_current_event, m_file);
     }
 
-    /// Equality comparison (for detecting end of iteration)
-    [[nodiscard]] bool operator==(const Iterator& other) const {
+    [[nodiscard]] bool operator==(const Iterator& other) const noexcept {
         return m_exhausted == other.m_exhausted;
     }
 
-    [[nodiscard]] bool operator!=(const Iterator& other) const {
+    [[nodiscard]] bool operator!=(const Iterator& other) const noexcept {
         return !(*this == other);
     }
 
@@ -768,7 +570,6 @@ class EventFile::Iterator {
     event m_current_event;
     bool m_exhausted;
 
-    /// Private constructor for begin iterator
     Iterator(reader* rdr, EventFile* file)
         : m_reader(rdr), m_file(file), m_exhausted(false) {
         if (!m_reader || !m_reader->next(m_current_event)) {
@@ -780,15 +581,228 @@ class EventFile::Iterator {
 };
 
 // =============================================================================
-// EventFile Iterator Factory Methods
+// EnumerateView - View for iterating with index
+// =============================================================================
+
+class EventFile::EnumerateView {
+public:
+    class EnumerateIterator {
+    public:
+        struct Value {
+            EventProxy event;
+            std::size_t index;
+        };
+
+        EnumerateIterator() : m_iter(), m_index(0) {}
+        EnumerateIterator(Iterator iter, std::size_t idx)
+            : m_iter(std::move(iter)), m_index(idx) {}
+
+        EnumerateIterator& operator++() {
+            ++m_iter;
+            ++m_index;
+            return *this;
+        }
+
+        [[nodiscard]] Value operator*() { return {*m_iter, m_index}; }
+
+        [[nodiscard]] bool operator==(const EnumerateIterator& other) const {
+            return m_iter == other.m_iter;
+        }
+        [[nodiscard]] bool operator!=(const EnumerateIterator& other) const {
+            return !(*this == other);
+        }
+
+    private:
+        Iterator m_iter;
+        std::size_t m_index;
+    };
+
+    explicit EnumerateView(EventFile* file) : m_file(file) {}
+
+    [[nodiscard]] EnumerateIterator begin() {
+        return EnumerateIterator(m_file->begin(), 0);
+    }
+    [[nodiscard]] EnumerateIterator end() {
+        return EnumerateIterator(m_file->end(), 0);
+    }
+
+private:
+    EventFile* m_file;
+};
+
+// =============================================================================
+// TakeView - View for iterating over first N events
+// =============================================================================
+
+class EventFile::TakeView {
+public:
+    class TakeIterator {
+    public:
+        TakeIterator() : m_iter(), m_remaining(0) {}
+        TakeIterator(Iterator iter, std::size_t count)
+            : m_iter(std::move(iter)), m_remaining(count) {}
+
+        TakeIterator& operator++() {
+            if (m_remaining > 0) {
+                --m_remaining;
+                ++m_iter;
+            }
+            return *this;
+        }
+
+        [[nodiscard]] EventProxy operator*() { return *m_iter; }
+
+        [[nodiscard]] bool operator==(const TakeIterator& other) const {
+            if (m_remaining == 0 && other.m_remaining == 0) return true;
+            return m_iter == other.m_iter && m_remaining == other.m_remaining;
+        }
+        [[nodiscard]] bool operator!=(const TakeIterator& other) const {
+            return !(*this == other);
+        }
+
+    private:
+        Iterator m_iter;
+        std::size_t m_remaining;
+    };
+
+    TakeView(EventFile* file, std::size_t count)
+        : m_file(file), m_count(count) {}
+
+    [[nodiscard]] TakeIterator begin() {
+        return TakeIterator(m_file->begin(), m_count);
+    }
+    [[nodiscard]] TakeIterator end() {
+        return TakeIterator(m_file->end(), 0);
+    }
+
+private:
+    EventFile* m_file;
+    std::size_t m_count;
+};
+
+// =============================================================================
+// FilterView - View for iterating over filtered events
+// =============================================================================
+
+class EventFile::FilterView {
+public:
+    using Predicate = std::function<bool(EventProxy&)>;
+
+    class FilterIterator {
+    public:
+        FilterIterator() : m_iter(), m_end(), m_pred(nullptr) {}
+        FilterIterator(Iterator iter, Iterator end, Predicate* pred)
+            : m_iter(std::move(iter)), m_end(std::move(end)), m_pred(pred) {
+            advance_to_match();
+        }
+
+        FilterIterator& operator++() {
+            ++m_iter;
+            advance_to_match();
+            return *this;
+        }
+
+        [[nodiscard]] EventProxy operator*() { return *m_iter; }
+
+        [[nodiscard]] bool operator==(const FilterIterator& other) const {
+            return m_iter == other.m_iter;
+        }
+        [[nodiscard]] bool operator!=(const FilterIterator& other) const {
+            return !(*this == other);
+        }
+
+    private:
+        Iterator m_iter;
+        Iterator m_end;
+        Predicate* m_pred;
+
+        void advance_to_match() {
+            while (m_iter != m_end) {
+                auto proxy = *m_iter;
+                if ((*m_pred)(proxy)) break;
+                ++m_iter;
+            }
+        }
+    };
+
+    FilterView(EventFile* file, Predicate pred)
+        : m_file(file), m_pred(std::move(pred)) {}
+
+    [[nodiscard]] FilterIterator begin() {
+        return FilterIterator(m_file->begin(), m_file->end(), &m_pred);
+    }
+    [[nodiscard]] FilterIterator end() {
+        return FilterIterator(m_file->end(), m_file->end(), &m_pred);
+    }
+
+private:
+    EventFile* m_file;
+    Predicate m_pred;
+};
+
+// =============================================================================
+// EventFile Method Implementations
 // =============================================================================
 
 inline EventFile::Iterator EventFile::begin() {
+    // Reset to beginning of file for fresh iteration
+    m_reader->gotoEvent(0);
     return Iterator(m_reader.get(), this);
 }
 
 inline EventFile::Iterator EventFile::end() {
     return Iterator();
+}
+
+inline EventFile::TakeView EventFile::take(std::size_t count) {
+    return TakeView(this, count);
+}
+
+inline EventFile::EnumerateView EventFile::enumerate() {
+    return EnumerateView(this);
+}
+
+template <typename Predicate>
+inline EventFile::FilterView EventFile::filter(Predicate&& pred) {
+    return FilterView(this, std::forward<Predicate>(pred));
+}
+
+// =============================================================================
+// EventFile Functional Method Implementations
+// =============================================================================
+
+template <typename Func>
+void EventFile::for_each(Func&& func) {
+    for (auto event : *this) {
+        func(event);
+    }
+}
+
+template <typename Func>
+void EventFile::for_each_indexed(Func&& func) {
+    std::size_t idx = 0;
+    for (auto event : *this) {
+        func(event, idx++);
+    }
+}
+
+template <typename Predicate>
+std::size_t EventFile::count_if(Predicate&& pred) {
+    std::size_t count = 0;
+    for (auto event : *this) {
+        if (pred(event)) ++count;
+    }
+    return count;
+}
+
+template <typename Predicate>
+std::optional<std::size_t> EventFile::find_if(Predicate&& pred) {
+    std::size_t idx = 0;
+    for (auto event : *this) {
+        if (pred(event)) return idx;
+        ++idx;
+    }
+    return std::nullopt;
 }
 
 }  // namespace hipo

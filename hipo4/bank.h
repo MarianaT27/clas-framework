@@ -44,10 +44,25 @@
 #include <cstdlib>
 #include <map>
 #include <functional>
+#include <concepts>
+#include <string_view>
+#include <iterator>
+#include <algorithm>
 #include "dictionary.h"
 #include "node.h"
 
+// Platform-specific terminal width detection
+#if defined(__unix__) || defined(__APPLE__)
+#include <sys/ioctl.h>
+#include <unistd.h>
+#endif
+
 namespace hipo {
+
+  // Forward declarations
+  class bank;
+  template<typename T> class ColumnAccessor;
+  template<typename T> class ColumnView;
 
   class structure {
 
@@ -294,22 +309,29 @@ namespace hipo {
 
         ~bank() override;
 
-        schema  &getSchema() { return bankSchema;}
+        [[nodiscard]] schema& getSchema() noexcept { return bankSchema;}
+        [[nodiscard]] const schema& getSchema() const noexcept { return bankSchema;}
 
-        int    getRows()  const noexcept{ return bankRows;}
-        void   setRows(   int rows);
-        int    getInt(    int item, int index) const noexcept;
-        int    getShort(  int item, int index) const noexcept;
-        int    getByte(   int item, int index) const noexcept;
-        float  getFloat(  int item, int index) const noexcept;
-        double getDouble( int item, int index) const noexcept;
-        long   getLong(   int item, int index) const noexcept;
+        /// Get number of rows in the bank
+        [[nodiscard]] int getRows() const noexcept { return bankRows; }
+        /// Modern alias for getRows()
+        [[nodiscard]] int rows() const noexcept { return bankRows; }
 
-        std::vector<int>    getInt(    int item) const noexcept;
-        std::vector<float>  getFloat(  int item) const noexcept;
-        std::vector<double> getDouble( int item) const noexcept;
+        void   setRows(int rows);
 
-        template<typename T = double> T get(int item, int index) const noexcept {
+        [[nodiscard]] int    getInt(    int item, int index) const noexcept;
+        [[nodiscard]] int    getShort(  int item, int index) const noexcept;
+        [[nodiscard]] int    getByte(   int item, int index) const noexcept;
+        [[nodiscard]] float  getFloat(  int item, int index) const noexcept;
+        [[nodiscard]] double getDouble( int item, int index) const noexcept;
+        [[nodiscard]] long   getLong(   int item, int index) const noexcept;
+
+        [[nodiscard]] std::vector<int>    getInt(    int item) const noexcept;
+        [[nodiscard]] std::vector<float>  getFloat(  int item) const noexcept;
+        [[nodiscard]] std::vector<double> getDouble( int item) const noexcept;
+
+        template<typename T = double>
+        [[nodiscard]] T get(int item, int index) const noexcept {
           auto type   = bankSchema.getEntryType(item);
           auto offset = bankSchema.getOffset(item, index, bankRows);
           switch(type) {
@@ -326,7 +348,7 @@ namespace hipo {
         }
 
         template<typename T = double>
-        T get(int item, int index, int type, int offset) const noexcept {
+        [[nodiscard]] T get(int item, int index, int type, int offset) const noexcept {
           switch(type) {
             case kByte:   return getByteAt(offset);
             case kShort:  return getShortAt(offset);
@@ -340,19 +362,19 @@ namespace hipo {
           return 0;
         }
 
-        int    getInt(    const char *name, int index) const noexcept;
-        
-        int    getShort(  const char *name, int index) const noexcept;
-        int    getByte(   const char *name, int index) const noexcept;
-        float  getFloat(  const char *name, int index) const noexcept;
-        double getDouble( const char *name, int index) const noexcept;
-        long   getLong(   const char *name, int index) const noexcept;
-        
-        std::vector<int>    getInt(    const char *name) const noexcept;
-        std::vector<float>  getFloat(  const char *name) const noexcept;
-        std::vector<double> getDouble( const char *name) const noexcept;
+        [[nodiscard]] int    getInt(    const char *name, int index) const noexcept;
+        [[nodiscard]] int    getShort(  const char *name, int index) const noexcept;
+        [[nodiscard]] int    getByte(   const char *name, int index) const noexcept;
+        [[nodiscard]] float  getFloat(  const char *name, int index) const noexcept;
+        [[nodiscard]] double getDouble( const char *name, int index) const noexcept;
+        [[nodiscard]] long   getLong(   const char *name, int index) const noexcept;
 
-        template<typename T = double> T get(const char *name, int index) const noexcept {
+        [[nodiscard]] std::vector<int>    getInt(    const char *name) const noexcept;
+        [[nodiscard]] std::vector<float>  getFloat(  const char *name) const noexcept;
+        [[nodiscard]] std::vector<double> getDouble( const char *name) const noexcept;
+
+        template<typename T = double>
+        [[nodiscard]] T get(const char *name, int index) const noexcept {
           return get<T>(bankSchema.getEntryOrder(name), index);
         }
 
@@ -420,7 +442,297 @@ namespace hipo {
 
         void notify() override;
 
+        /// Create a high-performance column accessor for tight loops.
+        /// Pre-computes offset information to avoid repeated string lookups.
+        /// @param column_index the column index (use schema.getEntryOrder() once)
+        /// @returns ColumnAccessor for direct indexed access
+        template<typename T>
+        [[nodiscard]] ColumnAccessor<T> column(int column_index) const noexcept {
+            return ColumnAccessor<T>(this, column_index);
+        }
+
+        /// Create a high-performance column accessor by name.
+        /// @param name the column name (lookup done once at creation)
+        /// @returns ColumnAccessor for direct indexed access
+        template<typename T>
+        [[nodiscard]] ColumnAccessor<T> column(std::string_view name) const {
+            auto idx = bankSchema.getEntryOrderOpt(name);
+            if (!idx) {
+                throw ColumnNotFound(bankSchema.getName(), name);
+            }
+            return ColumnAccessor<T>(this, *idx);
+        }
+
+        /// Create a zero-copy view over a column for iteration.
+        /// @param column_index the column index
+        /// @returns ColumnView providing iterator access without allocation
+        template<typename T>
+        [[nodiscard]] ColumnView<T> view(int column_index) const noexcept {
+            return ColumnView<T>(this, column_index);
+        }
+
+        /// Create a zero-copy view over a column by name.
+        /// @param name the column name
+        /// @returns ColumnView providing iterator access without allocation
+        template<typename T>
+        [[nodiscard]] ColumnView<T> view(std::string_view name) const {
+            auto idx = bankSchema.getEntryOrderOpt(name);
+            if (!idx) {
+                throw ColumnNotFound(bankSchema.getName(), name);
+            }
+            return ColumnView<T>(this, *idx);
+        }
+
+        // =========================================================================
+        // Bank Metadata
+        // =========================================================================
+
+        /// Get the bank/schema name
+        [[nodiscard]] std::string name() const { return bankSchema.getName(); }
+
+        /// Get number of columns in the bank
+        [[nodiscard]] int columns() const noexcept { return bankSchema.getEntries(); }
+
+        /// Check if bank has any data
+        [[nodiscard]] bool empty() const noexcept { return bankRows == 0; }
+
+        // =========================================================================
+        // Pretty Printing
+        // =========================================================================
+
+        /// Print bank contents as a formatted table
+        /// @param max_rows Maximum rows to display (-1 for all)
+        void print(int max_rows = -1) const { print_table(false, max_rows); }
+
+        /// Print all bank contents (ignoring row filters)
+        /// @param max_rows Maximum rows to display (-1 for all)
+        void print_all(int max_rows = -1) const { print_table(true, max_rows); }
+
+    private:
+        // =========================================================================
+        // Pretty Printing Helpers
+        // =========================================================================
+
+        [[nodiscard]] static int detect_terminal_width() {
+            if (const char* env = std::getenv("COLUMNS")) {
+                if (int w = std::atoi(env); w > 0) return w;
+            }
+#ifdef TIOCGWINSZ
+            struct winsize ws{};
+            if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
+                return ws.ws_col;
+            }
+#endif
+            return 120;
+        }
+
+        [[nodiscard]] std::string type_name(int column) const {
+            switch (bankSchema.getEntryType(column)) {
+                case kByte: return "byte";
+                case kShort: return "short";
+                case kInt: return "int";
+                case kFloat: return "float";
+                case kDouble: return "double";
+                case kLong: return "long";
+                default: return "?";
+            }
+        }
+
+        [[nodiscard]] int column_width(int column) const {
+            const auto name_len = static_cast<int>(bankSchema.getEntryName(column).length());
+            switch (bankSchema.getEntryType(column)) {
+                case kByte: return std::max(name_len, 4);
+                case kShort: return std::max(name_len, 6);
+                case kInt: return std::max(name_len, 8);
+                case kFloat: return std::max(name_len, 9);
+                case kDouble: return std::max(name_len, 9);
+                case kLong: return std::max(name_len, 12);
+                default: return name_len;
+            }
+        }
+
+        void print_value_formatted(int column, int row, int width) const {
+            switch (bankSchema.getEntryType(column)) {
+                case kByte: std::printf("%*d ", width, get<int8_t>(column, row)); break;
+                case kShort: std::printf("%*d ", width, get<int16_t>(column, row)); break;
+                case kInt: std::printf("%*d ", width, get<int32_t>(column, row)); break;
+                case kFloat: std::printf("%*.3f ", width, get<float>(column, row)); break;
+                case kDouble: std::printf("%*.3f ", width, get<double>(column, row)); break;
+                case kLong: std::printf("%*lld ", width, static_cast<long long>(get<int64_t>(column, row))); break;
+                default: std::printf("%*s ", width, "?");
+            }
+        }
+
+        void print_border(const std::vector<int>& widths, const char* left, const char* mid,
+                          const char* right, const char* fill) const {
+            std::printf("%s", left);
+            for (int k = 0; k < 6; ++k) std::printf("%s", fill);
+            std::printf("%s", mid);
+            for (size_t i = 0; i < widths.size(); ++i) {
+                for (int j = 0; j < widths[i] + 2; ++j) std::printf("%s", fill);
+                std::printf("%s", i < widths.size() - 1 ? mid : right);
+            }
+            std::printf("\n");
+        }
+
+        void print_table(bool show_all, int max_rows) const;
+
   };
+
+  //=============================================================================
+  // ColumnAccessor - High-performance pre-computed column access
+  //=============================================================================
+  /// Provides O(1) indexed access to bank columns without repeated string lookups.
+  /// Use this in tight loops where you access the same column many times.
+  ///
+  /// Example:
+  /// @code
+  /// auto px = particles.column<float>("px");
+  /// auto py = particles.column<float>("py");
+  /// for (int i = 0; i < particles.getRows(); ++i) {
+  ///     float momentum = std::sqrt(px[i]*px[i] + py[i]*py[i]);
+  /// }
+  /// @endcode
+  template<typename T>
+  class ColumnAccessor {
+  private:
+      const bank* m_bank;
+      int m_column_index;
+      int m_base_offset;   // Pre-computed: schema entry offset
+      int m_type_size;     // Pre-computed: size of type
+      int m_type;          // Column type for validation
+
+  public:
+      ColumnAccessor(const bank* b, int col_idx) noexcept
+          : m_bank(b), m_column_index(col_idx) {
+          auto [base_off, type_sz] = b->getSchema().getOffsetParts(col_idx);
+          m_base_offset = base_off;
+          m_type_size = type_sz;
+          m_type = b->getSchema().getEntryType(col_idx);
+      }
+
+      /// Access element at row index - O(1) operation
+      [[nodiscard]] T operator[](int row) const noexcept {
+          int offset = m_bank->getRows() * m_base_offset + row * m_type_size;
+          return m_bank->template get<T>(m_column_index, row, m_type, offset);
+      }
+
+      /// Get the number of rows
+      [[nodiscard]] int size() const noexcept { return m_bank->getRows(); }
+
+      /// Get the column index
+      [[nodiscard]] int columnIndex() const noexcept { return m_column_index; }
+  };
+
+  //=============================================================================
+  // ColumnView - Zero-copy iterable view over a column
+  //=============================================================================
+  /// Provides iterator-based access to bank columns without vector allocation.
+  /// Use this when you need to iterate over all values in a column.
+  ///
+  /// Example:
+  /// @code
+  /// for (float px : particles.view<float>("px")) {
+  ///     // process px
+  /// }
+  /// @endcode
+  template<typename T>
+  class ColumnView {
+  private:
+      const bank* m_bank;
+      int m_column_index;
+      int m_base_offset;
+      int m_type_size;
+      int m_type;
+      int m_rows;
+
+  public:
+      class iterator {
+      public:
+          using iterator_category = std::random_access_iterator_tag;
+          using value_type = T;
+          using difference_type = std::ptrdiff_t;
+          using pointer = const T*;
+          using reference = T;  // Returns by value since we compute on-the-fly
+
+      private:
+          const ColumnView* m_view;
+          int m_row;
+
+      public:
+          iterator(const ColumnView* view, int row) noexcept
+              : m_view(view), m_row(row) {}
+
+          [[nodiscard]] T operator*() const noexcept {
+              return (*m_view)[m_row];
+          }
+
+          iterator& operator++() noexcept { ++m_row; return *this; }
+          iterator operator++(int) noexcept { auto tmp = *this; ++m_row; return tmp; }
+          iterator& operator--() noexcept { --m_row; return *this; }
+          iterator operator--(int) noexcept { auto tmp = *this; --m_row; return tmp; }
+
+          iterator& operator+=(difference_type n) noexcept { m_row += n; return *this; }
+          iterator& operator-=(difference_type n) noexcept { m_row -= n; return *this; }
+
+          [[nodiscard]] iterator operator+(difference_type n) const noexcept {
+              return iterator(m_view, m_row + n);
+          }
+          [[nodiscard]] iterator operator-(difference_type n) const noexcept {
+              return iterator(m_view, m_row - n);
+          }
+          [[nodiscard]] difference_type operator-(const iterator& other) const noexcept {
+              return m_row - other.m_row;
+          }
+
+          [[nodiscard]] T operator[](difference_type n) const noexcept {
+              return (*m_view)[m_row + n];
+          }
+
+          [[nodiscard]] bool operator==(const iterator& other) const noexcept {
+              return m_row == other.m_row;
+          }
+          [[nodiscard]] bool operator!=(const iterator& other) const noexcept {
+              return m_row != other.m_row;
+          }
+          [[nodiscard]] bool operator<(const iterator& other) const noexcept {
+              return m_row < other.m_row;
+          }
+          [[nodiscard]] bool operator<=(const iterator& other) const noexcept {
+              return m_row <= other.m_row;
+          }
+          [[nodiscard]] bool operator>(const iterator& other) const noexcept {
+              return m_row > other.m_row;
+          }
+          [[nodiscard]] bool operator>=(const iterator& other) const noexcept {
+              return m_row >= other.m_row;
+          }
+      };
+
+      ColumnView(const bank* b, int col_idx) noexcept
+          : m_bank(b), m_column_index(col_idx), m_rows(b->getRows()) {
+          auto [base_off, type_sz] = b->getSchema().getOffsetParts(col_idx);
+          m_base_offset = base_off;
+          m_type_size = type_sz;
+          m_type = b->getSchema().getEntryType(col_idx);
+      }
+
+      /// Access element at row index
+      [[nodiscard]] T operator[](int row) const noexcept {
+          int offset = m_rows * m_base_offset + row * m_type_size;
+          return m_bank->template get<T>(m_column_index, row, m_type, offset);
+      }
+
+      [[nodiscard]] iterator begin() const noexcept { return iterator(this, 0); }
+      [[nodiscard]] iterator end() const noexcept { return iterator(this, m_rows); }
+
+      [[nodiscard]] int size() const noexcept { return m_rows; }
+      [[nodiscard]] bool empty() const noexcept { return m_rows == 0; }
+
+      [[nodiscard]] T front() const noexcept { return (*this)[0]; }
+      [[nodiscard]] T back() const noexcept { return (*this)[m_rows - 1]; }
+  };
+
     /////////////////////////////////////
     //inlined getters
 

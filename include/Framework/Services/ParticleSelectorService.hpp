@@ -86,7 +86,7 @@ class ParticleSelectorService : public Service {
      * @param types Vector of particle types to extract (empty = use defaults)
      * @return ParticleMap containing particles grouped by their PID
      */
-    auto extract_particles(hipo::bank_map& REC_Particle, const std::vector<CLAS::PIDs>& types = {}) const -> ParticleMap {
+    auto extract_particles(hipo::bank& REC_Particle, const std::vector<CLAS::PIDs>& types = {}) const -> ParticleMap {
         ParticleMap particle_map;
 
         const auto& target_types = types.empty() ? m_default_types : types;
@@ -95,8 +95,8 @@ class ParticleSelectorService : public Service {
             particle_map[type] = std::vector<CLAS::Particle>();
         }
 
-        for (int i = 0; i < REC_Particle.get_rows(); i++) {
-            const int pid = REC_Particle.get_as<int>("pid", i);
+        for (int i = 0; i < REC_Particle.rows(); i++) {
+            const int pid = REC_Particle.get<int>("pid", i);
 
             CLAS::PIDs particle_type;
             bool found = false;
@@ -110,17 +110,17 @@ class ParticleSelectorService : public Service {
 
             if (!found) continue;
 
-            const int status = REC_Particle.get_as<int>("status", i);
-            const int charge = REC_Particle.get_as<int>("charge", i);
-            const double px = REC_Particle.get_as<double>("px", i);
-            const double py = REC_Particle.get_as<double>("py", i);
-            const double pz = REC_Particle.get_as<double>("pz", i);
-            const double vx = REC_Particle.get_as<double>("vx", i);
-            const double vy = REC_Particle.get_as<double>("vy", i);
-            const double vz = REC_Particle.get_as<double>("vz", i);
-            const double vt = REC_Particle.get_as<double>("vt", i);
-            const double beta = REC_Particle.get_as<double>("beta", i);
-            const double chi2pid = REC_Particle.get_as<double>("chi2pid", i);
+            const int status = REC_Particle.get<int>("status", i);
+            const int charge = REC_Particle.get<int>("charge", i);
+            const double px = REC_Particle.get<double>("px", i);
+            const double py = REC_Particle.get<double>("py", i);
+            const double pz = REC_Particle.get<double>("pz", i);
+            const double vx = REC_Particle.get<double>("vx", i);
+            const double vy = REC_Particle.get<double>("vy", i);
+            const double vz = REC_Particle.get<double>("vz", i);
+            const double vt = REC_Particle.get<double>("vt", i);
+            const double beta = REC_Particle.get<double>("beta", i);
+            const double chi2pid = REC_Particle.get<double>("chi2pid", i);
 
             const double mass = Physics::ParticleUtils::get_mass(pid);
             const double E = Physics::ParticleUtils::compute_energy(px, py, pz, pid);
@@ -182,22 +182,22 @@ class ParticleSelectorService : public Service {
         return (it != particles.end()) ? it->second : empty;
     }
 
-    auto get_particles_by_charge(hipo::bank_map& REC_Particle) const -> std::map<int, std::vector<CLAS::Particle>> {
+    auto get_particles_by_charge(hipo::bank& REC_Particle) const -> std::map<int, std::vector<CLAS::Particle>> {
         std::map<int, std::vector<CLAS::Particle>> charge_map;
 
-        for (int i = 0; i < REC_Particle.get_rows(); i++) {
-            const int charge = REC_Particle.get_as<int>("charge", i);
-            const int pid = REC_Particle.get_as<int>("pid", i);
-            const int status = REC_Particle.get_as<int>("status", i);
-            const double px = REC_Particle.get_as<double>("px", i);
-            const double py = REC_Particle.get_as<double>("py", i);
-            const double pz = REC_Particle.get_as<double>("pz", i);
-            const double vx = REC_Particle.get_as<double>("vx", i);
-            const double vy = REC_Particle.get_as<double>("vy", i);
-            const double vz = REC_Particle.get_as<double>("vz", i);
-            const double vt = REC_Particle.get_as<double>("vt", i);
-            const double beta = REC_Particle.get_as<double>("beta", i);
-            const double chi2pid = REC_Particle.get_as<double>("chi2pid", i);
+        for (int i = 0; i < REC_Particle.rows(); i++) {
+            const int charge = REC_Particle.get<int>("charge", i);
+            const int pid = REC_Particle.get<int>("pid", i);
+            const int status = REC_Particle.get<int>("status", i);
+            const double px = REC_Particle.get<double>("px", i);
+            const double py = REC_Particle.get<double>("py", i);
+            const double pz = REC_Particle.get<double>("pz", i);
+            const double vx = REC_Particle.get<double>("vx", i);
+            const double vy = REC_Particle.get<double>("vy", i);
+            const double vz = REC_Particle.get<double>("vz", i);
+            const double vt = REC_Particle.get<double>("vt", i);
+            const double beta = REC_Particle.get<double>("beta", i);
+            const double chi2pid = REC_Particle.get<double>("chi2pid", i);
 
             const double mass = Physics::ParticleUtils::get_mass(pid);
             const double E = Physics::ParticleUtils::compute_energy(px, py, pz, pid);
