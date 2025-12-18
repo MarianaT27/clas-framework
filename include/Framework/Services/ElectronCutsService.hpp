@@ -341,11 +341,11 @@ class ElectronCutsService : public Service {
     }
 
     /**
-     * @brief Apply run-group-aware sampling fraction cut
+     * @brief Apply sampling fraction cut using target-averaged parameterizations
      *
      * This method uses the integrated SamplingFractionService to automatically
-     * determine the correct mean and sigma based on run group, target, polarity,
-     * sector, and momentum.
+     * determine the correct mean and sigma based on polarity, sector, and momentum.
+     * The parameterizations are target-averaged.
      *
      * @param SF Sampling fraction (E_total / p)
      * @param p Particle momentum (GeV)
@@ -353,14 +353,12 @@ class ElectronCutsService : public Service {
      * @return true if SF passes the cut
      *
      * @note Requires SamplingFractionService to be set via set_sf_service()
-     * @note Uses run_group, target, polarity, and n_sigma from config
+     * @note Uses polarity and n_sigma from config
      */
     [[nodiscard]] auto pass_sampling_fraction_cut(double SF, double p, int sector) const -> bool {
         if (!m_sf_service) return false;
 
         return m_sf_service->passes_cut(SF, p, sector,
-                                         m_config.run_group,
-                                         m_config.target,
                                          m_config.polarity,
                                          m_config.n_sigma);
     }
@@ -373,14 +371,12 @@ class ElectronCutsService : public Service {
      * @return std::pair<double, double> (mean, sigma) or (0, 0) if service unavailable
      *
      * @note Requires SamplingFractionService to be set via set_sf_service()
-     * @note Uses run_group, target, and polarity from config
+     * @note Uses polarity from config
      */
     [[nodiscard]] auto get_sampling_fraction_params(double p, int sector) const -> std::pair<double, double> {
         if (!m_sf_service) return {0.0, 0.0};
 
         return m_sf_service->get_mean_sigma(p, sector,
-                                             m_config.run_group,
-                                             m_config.target,
                                              m_config.polarity);
     }
 

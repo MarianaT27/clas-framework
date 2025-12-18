@@ -138,7 +138,7 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         const double SF = E_tot / electron.p();
         const int sector = calorimeter.pcal.sector;
 
-        if (!m_sf_svc->passes_cut(SF, p, sector, m_target, m_polarity)) {
+        if (!m_sf_svc->passes_cut(SF, p, sector, m_polarity)) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::FILTERED();
         }

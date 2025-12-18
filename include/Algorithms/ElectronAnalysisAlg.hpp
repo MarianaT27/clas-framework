@@ -190,7 +190,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         fill_after_cut("VertexZ", electron, calorimeter, traj, track);
 
         // Sampling fraction cut
-        if (!m_sf_svc->passes_cut(candidate.sampling_fraction, electron.p(), candidate.sector, m_target, m_polarity)) {
+        if (!m_sf_svc->passes_cut(candidate.sampling_fraction, electron.p(), candidate.sector, m_polarity)) {
             return Framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Sampling Fraction");
@@ -312,7 +312,7 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         }
 
         // Sampling fraction cut
-        if (!m_sf_svc->passes_cut(candidate.sampling_fraction, e.p(), candidate.sector, m_target, m_polarity)) return false;
+        if (!m_sf_svc->passes_cut(candidate.sampling_fraction, e.p(), candidate.sector, m_polarity)) return false;
         m_cutflow.pass("Sampling Fraction");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("SamplingFraction", e, calo, traj, candidate.track);
