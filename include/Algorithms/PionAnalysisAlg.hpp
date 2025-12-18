@@ -13,7 +13,6 @@
  */
 
 #include "CLAS/Constants.hpp"
-#include "CLAS/ElectronCuts.hpp"
 #include "CLAS/ReadBank.hpp"
 #include "CLAS/Target.hpp"
 #include "Framework/Cutflow.hpp"
@@ -27,6 +26,7 @@
 
 #include <cmath>
 #include <memory>
+#include <string>
 
 namespace Algorithms {
 

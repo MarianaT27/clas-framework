@@ -2,7 +2,6 @@
 
 #include <optional>
 #include "CLAS/Detectors.hpp"
-#include "CLAS/ElectronCuts.hpp"
 #include "CLAS/Particle.hpp"
 #include "CLAS/ReadBank.hpp"
 #include "CLAS/Target.hpp"
@@ -12,6 +11,7 @@
 #include "Framework/IAlgorithm.hpp"
 #include "Framework/ServiceHandle.hpp"
 #include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/ElectronCutsService.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
@@ -65,6 +65,18 @@ class ElectronSelectionAlg : public Framework::Algorithm {
             return sf_sc;
         }
 
+        // ElectronCutsService is required for electron selection
+        auto electron_cuts_sc = initialize_handle(m_electron_cuts_svc);
+        if (electron_cuts_sc.is_failure()) {
+            Log::error(name(), "Could not get ElectronCutsService: {}", electron_cuts_sc.message());
+            return electron_cuts_sc;
+        }
+
+        // Configure ElectronCutsService
+        m_electron_cuts_svc->set_target(m_target);
+        m_electron_cuts_svc->set_polarity(m_polarity);
+        m_electron_cuts_svc->set_sf_service(m_sf_svc.get());
+
         book_histograms();
         if (m_ntuple_svc) setup_ntuple();
 
@@ -110,20 +122,20 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         const CLAS::Particle& electron = possible_electron.value();
 
         // Apply cuts sequentially
-        if (!CLAS::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
+        if (!m_electron_cuts_svc->pass_chi2pid_cut(electron.chi2pid())) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Chi2 PID");
 
         double p = electron.p();
-        if (!CLAS::ElectronCuts::pass_electron_momentum_cut(p)) {
+        if (!m_electron_cuts_svc->pass_momentum_cut(p)) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Momentum > 0.8 GeV");
 
-        if (!CLAS::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) {
+        if (!m_electron_cuts_svc->pass_vz_cut(electron.vz())) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::FILTERED();
         }
@@ -138,19 +150,19 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         const double SF = E_tot / electron.p();
         const int sector = calorimeter.pcal.sector;
 
-        if (!m_sf_svc->passes_cut(SF, p, sector, m_polarity)) {
+        if (!m_electron_cuts_svc->pass_sampling_fraction_cut(SF, p, sector)) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Sampling Fraction");
 
-        if (!CLAS::ElectronCuts::pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
+        if (!m_electron_cuts_svc->pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("PCAL Fiducial");
 
-        if (!CLAS::ElectronCuts::pass_chi2ndf_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
+        if (!m_electron_cuts_svc->pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::FILTERED();
         }
@@ -210,6 +222,7 @@ class ElectronSelectionAlg : public Framework::Algorithm {
     Framework::ServiceHandle<Framework::NTupleService> m_ntuple_svc{"NTupleService"};
     Framework::ServiceHandle<Framework::ConditionsService> m_cond_svc{"ConditionsService"};
     Framework::ServiceHandle<Framework::SamplingFractionService> m_sf_svc{"SamplingFractionService"};
+    Framework::ServiceHandle<Framework::ElectronCutsService> m_electron_cuts_svc{"ElectronCutsService"};
 
     // Histogram groups using templates
     std::unique_ptr<Framework::HistogramGroup> m_kinematics_hists;
