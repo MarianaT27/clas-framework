@@ -20,6 +20,8 @@
 #include "CLAS/StringUtils.hpp"
 #include "CLAS/Target.hpp"
 #include "Framework/ApplicationBuilder.hpp"
+#include "Framework/IService.hpp"
+#include "Framework/Services/ElectronCutsService.hpp"
 
 // ============================================================================
 // Configuration
@@ -145,6 +147,7 @@ auto main(int argc, char* argv[]) -> int {
         .with_percentage(config->percentage)
         .with_threads(config->num_threads)
         .with_standard_services()
+        .add_service<Framework::ElectronCutsService>()
         .with_version("2.0")
         .with_beam_energy(10.53)
         .with_target(CLAS::to_string(config->target))
