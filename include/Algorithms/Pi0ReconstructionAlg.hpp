@@ -69,6 +69,9 @@ class Pi0ReconstructionAlg : public Framework::Algorithm {
     mutable std::mutex m_ntuple_mutex;
 
     // Histograms (non-owning pointers managed by HistogramService)
+    TH1D* h_photon_energy_raw = nullptr;
+    TH1D* h_photon_theta_raw = nullptr;
+    TH1D* h_photon_phi_raw = nullptr;
     TH1D* h_photon_energy = nullptr;
     TH1D* h_photon_theta = nullptr;
     TH1D* h_n_photons = nullptr;

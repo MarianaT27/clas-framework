@@ -145,6 +145,11 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
 
     const auto& photons = event.particles(CLAS::PIDs::PHOTON);
     if (h_n_photons) h_n_photons->Fill(static_cast<double>(photons.size()));
+    for (const auto& photon : photons) {
+        if (h_photon_energy_raw) h_photon_energy_raw->Fill(photon.E());
+        if (h_photon_theta_raw) h_photon_theta_raw->Fill(photon.theta());
+        if (h_photon_phi_raw) h_photon_phi_raw->Fill(photon.phi());
+    }
 
     auto& hipo_event = event.hipo_event();
     hipo::bank& RUN_config = hipo_event.get("RUN::config");
@@ -292,6 +297,10 @@ auto Pi0ReconstructionAlg::finalize() -> Framework::StatusCode {
 }
 
 auto Pi0ReconstructionAlg::book_histograms() -> void {
+    h_photon_energy_raw = m_hist_svc->book_hist1D("/Pi0/photon_energy_raw", "Raw Photon Energy;E [GeV];Events", 100, 0, 5);
+    h_photon_theta_raw = m_hist_svc->book_hist1D("/Pi0/photon_theta_raw", "Raw Photon Theta;#theta [deg];Events", 180, 0, 40);
+    h_photon_phi_raw = m_hist_svc->book_hist1D("/Pi0/photon_phi_raw", "Raw Photon Phi;#phi [deg];Events", 360, -180, 180);
+
     h_photon_energy = m_hist_svc->book_hist1D("/Pi0/photon_energy", "Photon Energy;E [GeV];Events", 100, 0, 5);
     h_photon_theta = m_hist_svc->book_hist1D("/Pi0/photon_theta", "Photon Theta;#theta [deg];Events", 180, 0, 180);
     h_n_photons = m_hist_svc->book_hist1D("/Pi0/n_photons", "Number of Photons;N_{#gamma};Events", 20, 0, 20);

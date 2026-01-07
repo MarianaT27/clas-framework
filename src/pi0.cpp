@@ -158,11 +158,11 @@ auto main(int argc, char* argv[]) -> int {
         .with_standard_services()
         .with_version("2.0")
         .with_beam_energy(10.53)
+        .add_service<Framework::ElectronCutsService>()
         .with_target(CLAS::to_string(config->target))
         .add_service<Framework::PhotonCutsService>()
         .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
-        .add_algorithm<Algorithms::ElectronSelectionAlg>(
-            "ElectronSelection", config->target, config->polarity)
+        .add_algorithm<Algorithms::ElectronSelectionAlg>()
         .add_algorithm<Algorithms::DISSelectionAlg>(
             "DISSelection", Physics::DISAnalysis::standard_dis_region())
         .add_algorithm<Algorithms::Pi0ReconstructionAlg>(
