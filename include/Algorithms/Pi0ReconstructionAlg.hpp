@@ -10,10 +10,9 @@
 #include "CLAS/ReadBank.hpp"
 #include "Framework/Cutflow.hpp"
 #include "Framework/Event.hpp"
-#include "Framework/IAlgorithm.hpp"
-#include "Framework/ServiceHandle.hpp"
+#include "Framework/Property.hpp"
+#include "Framework/SimpleAlgorithm.hpp"
 #include "Framework/Services/HistogramService.hpp"
-#include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/PhotonCutsService.hpp"
 #include "bank.h"
@@ -22,8 +21,13 @@ namespace Algorithms {
 
 /**
  * @brief Algorithm for π⁰ reconstruction from photon pairs
+ *
+ * Modernized using SimpleAlgorithm CRTP pattern with:
+ * - Automatic service injection via require_service<T>()
+ * - Property system for configuration
+ * - Reduced boilerplate through CRTP
  */
-class Pi0ReconstructionAlg : public Framework::Algorithm {
+class Pi0ReconstructionAlg : public Framework::SimpleAlgorithm<Pi0ReconstructionAlg> {
    public:
     explicit Pi0ReconstructionAlg(
         std::string name = "Pi0ReconstructionAlg",
@@ -31,9 +35,11 @@ class Pi0ReconstructionAlg : public Framework::Algorithm {
         double pi0_mass_window = 0.03    // GeV (±30 MeV around 135 MeV)
     );
 
-    auto initialize() -> Framework::StatusCode override;
-    auto execute(Framework::Event& event) -> Framework::StatusCode override;
-    auto finalize() -> Framework::StatusCode override;
+    // SimpleAlgorithm interface
+    auto configure() -> void override;
+    auto on_initialize() -> Framework::StatusCode override;
+    auto process(Framework::Event& event) -> Framework::StatusCode override;
+    auto on_finalize() -> Framework::StatusCode override;
 
     // Public helper methods for testing
     auto select_photons(const std::vector<CLAS::Particle>& photons) const -> std::vector<CLAS::Particle>;
@@ -45,22 +51,22 @@ class Pi0ReconstructionAlg : public Framework::Algorithm {
 
     auto find_all_unique_pi0_candidates(const std::vector<CLAS::Particle>& photons) const -> std::optional<std::vector<std::tuple<CLAS::Particle, CLAS::Particle, double>>>;
 
-    auto min_photon_energy() const -> double { return m_min_photon_energy; }
+    auto min_photon_energy() const -> double { return m_min_photon_energy.get(); }
 
-    auto pi0_mass_window() const -> double { return m_pi0_mass_window; }
+    auto pi0_mass_window() const -> double { return m_pi0_mass_window.get(); }
 
     static constexpr double PI0_MASS = CLAS::Constants::PI0MASS;  // GeV/c²
 
    private:
-    // Configuration
-    double m_min_photon_energy;
-    double m_pi0_mass_window;
+    // Properties
+    Framework::Property<double> m_min_photon_energy{"min_photon_energy", 0.1, "Minimum photon energy [GeV]"};
+    Framework::Property<double> m_pi0_mass_window{"pi0_mass_window", 0.03, "Pi0 mass window [GeV]"};
+    Framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
 
-    // Services
-    Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
-    Framework::ServiceHandle<Framework::NTupleService> m_ntuple_svc{"NTupleService"};
-    Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
-    Framework::ServiceHandle<Framework::PhotonCutsService> m_photon_cuts_svc{"PhotonCutsService"};
+    // Service handles (auto-injected via require_service)
+    Framework::ServiceHandle<Framework::HistogramService>* m_hist_svc = nullptr;
+    Framework::ServiceHandle<Framework::NTupleService>* m_ntuple_svc = nullptr;
+    Framework::ServiceHandle<Framework::PhotonCutsService>* m_photon_cuts_svc = nullptr;
 
     // Cutflow
     Framework::Cutflow m_cutflow;

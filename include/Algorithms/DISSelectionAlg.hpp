@@ -1,53 +1,65 @@
 #pragma once
 
+#include "Framework/CutBuilder.hpp"
 #include "Framework/Cutflow.hpp"
 #include "Framework/Event.hpp"
-#include "Framework/IAlgorithm.hpp"
-#include "Framework/ServiceHandle.hpp"
-#include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Property.hpp"
+#include "Framework/SimpleAlgorithm.hpp"
 #include "Framework/Services/HistogramService.hpp"
-#include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
 #include "Physics/DISAnalysis.hpp"
 
 namespace Algorithms {
 
-// Import Log singleton for convenient logging
 using Framework::Log;
 
 /**
  * @brief Algorithm for DIS event selection
+ *
+ * Modernized using SimpleAlgorithm CRTP pattern with:
+ * - Automatic service injection via require_service<T>()
+ * - Property system for configuration
+ * - CutBuilder for fluent cut definitions
  */
-class DISSelectionAlg : public Framework::Algorithm {
+class DISSelectionAlg : public Framework::SimpleAlgorithm<DISSelectionAlg> {
    public:
-    explicit DISSelectionAlg(std::string name = "DISSelectionAlg", Physics::DISAnalysis::KinematicRegion dis_region = Physics::DISAnalysis::full_phase_space()) : Algorithm(std::move(name)), m_cutflow("DIS Selection"), m_dis_region(std::move(dis_region)) {}
+    explicit DISSelectionAlg(std::string name = "DISSelectionAlg",
+                              Physics::DISAnalysis::KinematicRegion dis_region = Physics::DISAnalysis::full_phase_space())
+        : SimpleAlgorithm(std::move(name))
+        , m_cutflow("DIS Selection")
+        , m_dis_region(std::move(dis_region)) {
+        // Declare properties
+        declare_property(m_q2_min);
+        declare_property(m_q2_max);
+        declare_property(m_w_min);
+        declare_property(m_w_max);
+        declare_property(m_y_min);
+        declare_property(m_y_max);
+        declare_property(m_enable_ntuple);
+    }
 
-    auto set_dis_region(const Physics::DISAnalysis::KinematicRegion& region) -> void { m_dis_region = region; }
+    auto set_dis_region(const Physics::DISAnalysis::KinematicRegion& region) -> void {
+        m_dis_region = region;
+    }
 
-    auto initialize() -> Framework::StatusCode override {
-        auto log_sc = initialize_handle(m_log_svc);
-        if (log_sc.is_failure()) fmt::print(stderr, "WARNING: LoggingService not available\n");
+    /**
+     * @brief Configure required services
+     */
+    auto configure() -> void override {
+        m_hist_svc = &require_service<Framework::HistogramService>("HistogramService");
+        m_ntuple_svc = &require_service<Framework::NTupleService>("NTupleService");
+    }
 
+    /**
+     * @brief Custom initialization after services are injected
+     */
+    auto on_initialize() -> Framework::StatusCode override {
         Log::info(name(), "Initializing DIS selection algorithm");
 
-        auto hist_sc = initialize_handle(m_hist_svc);
-        if (hist_sc.is_failure()) {
-            Log::error(name(), "Could not get HistogramService: {}", hist_sc.message());
-            return hist_sc;
-        }
-
-        auto ntuple_sc = initialize_handle(m_ntuple_svc);
-        if (ntuple_sc.is_failure()) {
-            Log::warning(name(), "Could not get NTupleService - N-tuple output disabled");
-        }
-
-        auto cond_sc = initialize_handle(m_cond_svc);
-        if (cond_sc.is_failure()) {
-            Log::warning(name(), "Could not get ConditionsService");
-        }
-
         book_histograms();
-        if (m_ntuple_svc) setup_ntuple();
+        if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
+            setup_ntuple();
+        }
 
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Has Electron");
@@ -55,32 +67,46 @@ class DISSelectionAlg : public Framework::Algorithm {
         m_cutflow.add_cut("W Cut");
         m_cutflow.add_cut("y Cut");
 
-        m_cutflow.set_logger(m_log_svc.get());
         Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
+        Log::info(name(), "DIS region: Q2=[{}, {}], W=[{}, {}], y=[{}, {}]",
+                  m_q2_min.get(), m_q2_max.get(),
+                  m_w_min.get(), m_w_max.get(),
+                  m_y_min.get(), m_y_max.get());
 
         return Framework::StatusCode::SUCCESS();
     }
 
-    auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    /**
+     * @brief Process a single event
+     */
+    auto process(Framework::Event& event) -> Framework::StatusCode override {
         m_cutflow.pass("All Events");
 
         // Check for good electron decision from upstream algorithm
-        if (!event.passes_decision("HasGoodElectron")) return Framework::StatusCode::FILTERED();
+        if (!event.passes_decision("HasGoodElectron")) {
+            return Framework::StatusCode::FILTERED();
+        }
         m_cutflow.pass("Has Electron");
 
-        Physics::DISAnalysis::DISKinematics kin = Physics::DISAnalysis::calculate_kinematics(event.get_particles<CLAS::Particle>("SelectedElectrons")->front());
+        Physics::DISAnalysis::DISKinematics kin =
+            Physics::DISAnalysis::calculate_kinematics(
+                event.get_particles<CLAS::Particle>("SelectedElectrons")->front());
 
-        // Apply DIS region cuts one by one for cutflow
-        if (kin.q2 < m_dis_region.q2_min || kin.q2 > m_dis_region.q2_max) return Framework::StatusCode::FILTERED();
-        m_cutflow.pass("Q2 Cut");
-        if (kin.w < m_dis_region.w_min || kin.w > m_dis_region.w_max) return Framework::StatusCode::FILTERED();
-        m_cutflow.pass("W Cut");
-        if (kin.y < m_dis_region.y_min || kin.y > m_dis_region.y_max) return Framework::StatusCode::FILTERED();
-        m_cutflow.pass("y Cut");
+        // Apply DIS region cuts using CutBuilder
+        bool passed = Framework::CutBuilder(m_cutflow)
+            .require_in_range("Q2 Cut", kin.q2, m_q2_min.get(), m_q2_max.get())
+            .require_in_range("W Cut", kin.w, m_w_min.get(), m_w_max.get())
+            .require_in_range("y Cut", kin.y, m_y_min.get(), m_y_max.get())
+            .evaluate();
+
+        if (!passed) {
+            return Framework::StatusCode::FILTERED();
+        }
 
         // Electron passed all cuts - set decision and store for downstream algorithms
         event.set_decision("HasGoodDISElectron", true);
-        event.store_particles<CLAS::Particle>("SelectedDISElectron", {event.get_particles<CLAS::Particle>("SelectedElectrons")->front()});
+        event.store_particles<CLAS::Particle>("SelectedDISElectron",
+            {event.get_particles<CLAS::Particle>("SelectedElectrons")->front()});
         event.store("dis_Q2", kin.q2);
         event.store("dis_W", kin.w);
         event.store("dis_xB", kin.xb);
@@ -95,8 +121,7 @@ class DISSelectionAlg : public Framework::Algorithm {
         if (h_y) h_y->Fill(kin.y);
 
         // Fill N-tuple if service is available
-        if (m_ntuple_svc) {
-            // Get electron from event store (stored by ElectronSelectionAlg)
+        if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
             auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
             if (electrons && !electrons->empty()) {
                 const auto& electron = (*electrons)[0];
@@ -111,20 +136,20 @@ class DISSelectionAlg : public Framework::Algorithm {
             m_nu = kin.nu;
             m_xB = kin.xb;
             m_y = kin.y;
-            m_ntuple_svc->fill("dis_kinematics");
+            m_ntuple_svc->get()->fill("dis_kinematics");
         }
 
         return Framework::StatusCode::SUCCESS();
     }
 
-    auto finalize() -> Framework::StatusCode override {
-
-        {
-            Log::info(name(), "Finalizing DIS selection algorithm");
-            if (m_ntuple_svc) {
-                auto entries = m_ntuple_svc->get_entries("dis_kinematics");
-                Log::info(name(), "N-tuple has {} entries", entries);
-            }
+    /**
+     * @brief Finalization - print cutflow summary
+     */
+    auto on_finalize() -> Framework::StatusCode override {
+        Log::info(name(), "Finalizing DIS selection algorithm");
+        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
+            auto entries = m_ntuple_svc->get()->get_entries("dis_kinematics");
+            Log::info(name(), "N-tuple has {} entries", entries);
         }
 
         m_cutflow.print();
@@ -135,11 +160,18 @@ class DISSelectionAlg : public Framework::Algorithm {
     Framework::Cutflow m_cutflow;
     Physics::DISAnalysis::KinematicRegion m_dis_region;
 
-    // Services - using typed ServiceHandle pattern for validation at initialization
-    Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
-    Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
-    Framework::ServiceHandle<Framework::NTupleService> m_ntuple_svc{"NTupleService"};
-    Framework::ServiceHandle<Framework::ConditionsService> m_cond_svc{"ConditionsService"};
+    // Properties for DIS cuts
+    Framework::Property<double> m_q2_min{"q2_min", 1.0, "Minimum Q2 [GeV^2]"};
+    Framework::Property<double> m_q2_max{"q2_max", 100.0, "Maximum Q2 [GeV^2]"};
+    Framework::Property<double> m_w_min{"w_min", 2.0, "Minimum W [GeV]"};
+    Framework::Property<double> m_w_max{"w_max", 100.0, "Maximum W [GeV]"};
+    Framework::Property<double> m_y_min{"y_min", 0.0, "Minimum y"};
+    Framework::Property<double> m_y_max{"y_max", 0.85, "Maximum y"};
+    Framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
+
+    // Service handles (auto-injected via require_service)
+    Framework::ServiceHandle<Framework::HistogramService>* m_hist_svc = nullptr;
+    Framework::ServiceHandle<Framework::NTupleService>* m_ntuple_svc = nullptr;
 
     // Histograms (non-owning pointers managed by HistogramService)
     TH1D* h_Q2 = nullptr;
@@ -161,25 +193,29 @@ class DISSelectionAlg : public Framework::Algorithm {
     double m_y = 0.0;
 
     auto book_histograms() -> void {
-        h_Q2 = m_hist_svc->book_hist1D("/DIS/Q2", "Q^{2};Q^{2} [GeV^{2}/c^{2}];Events", 120, 0, 12);
-        h_W = m_hist_svc->book_hist1D("/DIS/W", "W;W [GeV];Events", 180, 0, 10);
-        h_nu = m_hist_svc->book_hist1D("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
-        h_xB = m_hist_svc->book_hist1D("/DIS/xB", "x_{B};x_{B} [GeV];Events", 200, 0, 1.2);
-        h_y = m_hist_svc->book_hist1D("/DIS/y", "y;y;Events", 200, 0, 1);
+        if (!m_hist_svc || !m_hist_svc->is_valid()) return;
+        auto* svc = m_hist_svc->get();
+        h_Q2 = svc->book_hist1D("/DIS/Q2", "Q^{2};Q^{2} [GeV^{2}/c^{2}];Events", 120, 0, 12);
+        h_W = svc->book_hist1D("/DIS/W", "W;W [GeV];Events", 180, 0, 10);
+        h_nu = svc->book_hist1D("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
+        h_xB = svc->book_hist1D("/DIS/xB", "x_{B};x_{B} [GeV];Events", 200, 0, 1.2);
+        h_y = svc->book_hist1D("/DIS/y", "y;y;Events", 200, 0, 1);
     }
 
     auto setup_ntuple() -> void {
-        m_ntuple_svc->register_branch("dis_kinematics", "e_p", &m_e_p);
-        m_ntuple_svc->register_branch("dis_kinematics", "e_theta", &m_e_theta);
-        m_ntuple_svc->register_branch("dis_kinematics", "e_phi", &m_e_phi);
-        m_ntuple_svc->register_branch("dis_kinematics", "e_vz", &m_e_vz);
-        m_ntuple_svc->register_branch("dis_kinematics", "e_chi2pid", &m_e_chi2pid);
-        m_ntuple_svc->register_branch("dis_kinematics", "Q2", &m_Q2);
-        m_ntuple_svc->register_branch("dis_kinematics", "W", &m_W);
-        m_ntuple_svc->register_branch("dis_kinematics", "nu", &m_nu);
-        m_ntuple_svc->register_branch("dis_kinematics", "xB", &m_xB);
-        m_ntuple_svc->register_branch("dis_kinematics", "y", &m_y);
-        Log::info(name(), "N-tuple branches registered for electron kinematics");
+        if (!m_ntuple_svc || !m_ntuple_svc->is_valid()) return;
+        auto* svc = m_ntuple_svc->get();
+        svc->register_branch("dis_kinematics", "e_p", &m_e_p);
+        svc->register_branch("dis_kinematics", "e_theta", &m_e_theta);
+        svc->register_branch("dis_kinematics", "e_phi", &m_e_phi);
+        svc->register_branch("dis_kinematics", "e_vz", &m_e_vz);
+        svc->register_branch("dis_kinematics", "e_chi2pid", &m_e_chi2pid);
+        svc->register_branch("dis_kinematics", "Q2", &m_Q2);
+        svc->register_branch("dis_kinematics", "W", &m_W);
+        svc->register_branch("dis_kinematics", "nu", &m_nu);
+        svc->register_branch("dis_kinematics", "xB", &m_xB);
+        svc->register_branch("dis_kinematics", "y", &m_y);
+        Log::info(name(), "N-tuple branches registered for DIS kinematics");
     }
 };
 

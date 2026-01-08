@@ -4,25 +4,38 @@
 
 namespace Algorithms {
 
-// Import Log singleton for convenient logging
 using Framework::Log;
 
 Pi0ReconstructionAlg::Pi0ReconstructionAlg(std::string name, double min_photon_energy, double pi0_mass_window)
-    : Algorithm(std::move(name)), m_min_photon_energy(min_photon_energy), m_pi0_mass_window(pi0_mass_window), m_cutflow("Pi0 Reconstruction") {}
+    : SimpleAlgorithm(std::move(name))
+    , m_min_photon_energy{"min_photon_energy", min_photon_energy, "Minimum photon energy [GeV]"}
+    , m_pi0_mass_window{"pi0_mass_window", pi0_mass_window, "Pi0 mass window [GeV]"}
+    , m_cutflow("Pi0 Reconstruction") {
+    // Declare properties
+    declare_property(m_min_photon_energy);
+    declare_property(m_pi0_mass_window);
+    declare_property(m_enable_ntuple);
+}
+
+auto Pi0ReconstructionAlg::configure() -> void {
+    m_hist_svc = &require_service<Framework::HistogramService>("HistogramService");
+    m_ntuple_svc = &require_service<Framework::NTupleService>("NTupleService");
+    m_photon_cuts_svc = &require_service<Framework::PhotonCutsService>("PhotonCutsService");
+}
 
 auto Pi0ReconstructionAlg::select_photons(const std::vector<CLAS::Particle>& photons) const -> std::vector<CLAS::Particle> {
     std::vector<CLAS::Particle> selected;
     selected.reserve(photons.size());
 
     for (const auto& photon : photons) {
-        if (photon.E() >= m_min_photon_energy) selected.push_back(photon);
+        if (photon.E() >= m_min_photon_energy.get()) selected.push_back(photon);
     }
 
     return selected;
 }
 
 auto Pi0ReconstructionAlg::select_photons_with_AI(hipo::bank& RUN_config, hipo::bank& REC_Particle, hipo::bank& REC_Calorimeter) const -> std::vector<CLAS::Particle> {
-    return m_photon_cuts_svc->select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
+    return m_photon_cuts_svc->get()->select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
 }
 
 auto Pi0ReconstructionAlg::calculate_invariant_mass(const CLAS::Particle& g1, const CLAS::Particle& g2) -> double {
@@ -39,7 +52,7 @@ auto Pi0ReconstructionAlg::find_best_pi0(const std::vector<CLAS::Particle>& phot
         for (size_t j = i + 1; j < photons.size(); ++j) {
             double mass = calculate_invariant_mass(photons[i], photons[j]);
             double mass_diff = std::abs(mass - PI0_MASS);
-            if (mass_diff < m_pi0_mass_window && mass_diff < best_mass_diff) {
+            if (mass_diff < m_pi0_mass_window.get() && mass_diff < best_mass_diff) {
                 best_mass_diff = mass_diff;
                 best = std::make_tuple(photons[i], photons[j], mass);
             }
@@ -72,7 +85,7 @@ auto Pi0ReconstructionAlg::find_all_unique_pi0_candidates(const std::vector<CLAS
                 double mass = calculate_invariant_mass(photons[i], photons[j]);
                 double mass_diff = std::abs(mass - PI0_MASS);
                 
-                if (mass_diff < m_pi0_mass_window && mass_diff < best_mass_diff) {
+                if (mass_diff < m_pi0_mass_window.get() && mass_diff < best_mass_diff) {
                     best_mass_diff = mass_diff;
                     best_i = i;
                     best_j = j;
@@ -94,49 +107,28 @@ auto Pi0ReconstructionAlg::find_all_unique_pi0_candidates(const std::vector<CLAS
 }
 
 
-auto Pi0ReconstructionAlg::initialize() -> Framework::StatusCode {
-    auto log_sc = initialize_handle(m_log_svc);
-    if (log_sc.is_failure()) fmt::print(stderr, "WARNING: LoggingService not available\n");
-
-    {
-        Log::info(name(), "Initializing Pi0ReconstructionAlg");
-        Log::info(name(), "  Min photon energy: {} GeV", m_min_photon_energy);
-        Log::info(name(), "  Pi0 mass window: ±{} GeV", m_pi0_mass_window);
-    }
-
-    auto hist_sc = initialize_handle(m_hist_svc);
-    if (hist_sc.is_failure()) {
-        Log::error(name(), "Could not get HistogramService: {}", hist_sc.message());
-        return hist_sc;
-    }
-
-    auto ntuple_sc = initialize_handle(m_ntuple_svc);
-    if (ntuple_sc.is_failure()) {
-        Log::warning(name(), "Could not get NTupleService - N-tuple output disabled");
-    }
-
-    auto photon_cuts_sc = initialize_handle(m_photon_cuts_svc);
-    if (photon_cuts_sc.is_failure()) {
-        Log::error(name(), "Could not get PhotonCutsService: {}", photon_cuts_sc.message());
-        return photon_cuts_sc;
-    }
+auto Pi0ReconstructionAlg::on_initialize() -> Framework::StatusCode {
+    Log::info(name(), "Initializing Pi0ReconstructionAlg");
+    Log::info(name(), "  Min photon energy: {} GeV", m_min_photon_energy.get());
+    Log::info(name(), "  Pi0 mass window: ±{} GeV", m_pi0_mass_window.get());
 
     book_histograms();
 
-    if (m_ntuple_svc) setup_ntuple();
+    if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
+        setup_ntuple();
+    }
 
     m_cutflow.add_cut("All Events");
     m_cutflow.add_cut("Has Electron");
     m_cutflow.add_cut("Has >= 2 Photons");
     m_cutflow.add_cut("Pi0 Found");
 
-    // Inject logger into cutflow for structured output
-    m_cutflow.set_logger(m_log_svc.get());
     Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
 
     return Framework::StatusCode::SUCCESS();
 }
-auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::StatusCode {
+
+auto Pi0ReconstructionAlg::process(Framework::Event& event) -> Framework::StatusCode {
     m_cutflow.pass("All Events");
 
     // Check for good electron decision from upstream algorithm
@@ -227,7 +219,7 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
         local_pi0_phis.push_back(pi0_phi);
     }
 
-    if (m_ntuple_svc && !pi0_candidates.empty()) {
+    if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get() && !pi0_candidates.empty()) {
         auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
         if (electrons && !electrons->empty()) {
             const auto& electron = (*electrons)[0];
@@ -259,13 +251,13 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
             mpi0_phis = std::move(local_pi0_phis);
             
             // Sanity check
-            if (mgs_E.size() % 2 != 0 && m_log_svc) {
+            if (mgs_E.size() % 2 != 0) {
                 Log::warning(name(), "Event has odd number of photons: {} candidates, {} photons", 
                             pi0_candidates.size(), mgs_E.size());
             }
             
             // Fill the ntuple while holding the lock
-            m_ntuple_svc->fill("pi0_events");
+            m_ntuple_svc->get()->fill("pi0_events");
             
             // Clear vectors for next event (still inside lock)
             mgs_E.clear();
@@ -281,13 +273,11 @@ auto Pi0ReconstructionAlg::execute(Framework::Event& event) -> Framework::Status
 
     return Framework::StatusCode::SUCCESS();
 }
-auto Pi0ReconstructionAlg::finalize() -> Framework::StatusCode {
-    {
-        Log::info(name(), "Finalizing Pi0ReconstructionAlg");
-        if (m_ntuple_svc) {
-            auto entries = m_ntuple_svc->get_entries("pi0_events");
-            Log::info(name(), "N-tuple has {} entries", entries);
-        }
+auto Pi0ReconstructionAlg::on_finalize() -> Framework::StatusCode {
+    Log::info(name(), "Finalizing Pi0ReconstructionAlg");
+    if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
+        auto entries = m_ntuple_svc->get()->get_entries("pi0_events");
+        Log::info(name(), "N-tuple has {} entries", entries);
     }
 
     fmt::print("\n");
@@ -297,37 +287,43 @@ auto Pi0ReconstructionAlg::finalize() -> Framework::StatusCode {
 }
 
 auto Pi0ReconstructionAlg::book_histograms() -> void {
-    h_photon_energy_raw = m_hist_svc->book_hist1D("/Pi0/photon_energy_raw", "Raw Photon Energy;E [GeV];Events", 100, 0, 5);
-    h_photon_theta_raw = m_hist_svc->book_hist1D("/Pi0/photon_theta_raw", "Raw Photon Theta;#theta [deg];Events", 180, 0, 40);
-    h_photon_phi_raw = m_hist_svc->book_hist1D("/Pi0/photon_phi_raw", "Raw Photon Phi;#phi [deg];Events", 360, -180, 180);
+    if (!m_hist_svc || !m_hist_svc->is_valid()) return;
+    auto* svc = m_hist_svc->get();
+    
+    h_photon_energy_raw = svc->book_hist1D("/Pi0/photon_energy_raw", "Raw Photon Energy;E [GeV];Events", 100, 0, 5);
+    h_photon_theta_raw = svc->book_hist1D("/Pi0/photon_theta_raw", "Raw Photon Theta;#theta [deg];Events", 180, 0, 40);
+    h_photon_phi_raw = svc->book_hist1D("/Pi0/photon_phi_raw", "Raw Photon Phi;#phi [deg];Events", 360, -180, 180);
 
-    h_photon_energy = m_hist_svc->book_hist1D("/Pi0/photon_energy", "Photon Energy;E [GeV];Events", 100, 0, 5);
-    h_photon_theta = m_hist_svc->book_hist1D("/Pi0/photon_theta", "Photon Theta;#theta [deg];Events", 180, 0, 180);
-    h_n_photons = m_hist_svc->book_hist1D("/Pi0/n_photons", "Number of Photons;N_{#gamma};Events", 20, 0, 20);
-    h_gg_mass_all = m_hist_svc->book_hist1D("/Pi0/gg_mass_all", "All #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
-    h_gg_mass_selected = m_hist_svc->book_hist1D("/Pi0/gg_mass_selected", "Selected #pi^{0} Candidate Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0.0, 0.35);
-    h_pi0_momentum = m_hist_svc->book_hist1D("/Pi0/pi0_momentum", "#pi^{0} Momentum;p [GeV/c];Events", 100, 0, 10);
-    h_pi0_theta = m_hist_svc->book_hist1D("/Pi0/pi0_theta", "#pi^{0} Theta;#theta [deg];Events", 180, 0, 180);
-    h_opening_angle = m_hist_svc->book_hist1D("/Pi0/opening_angle", "Photon Opening Angle;#theta_{#gamma#gamma} [deg];Events", 180, 0, 180);
+    h_photon_energy = svc->book_hist1D("/Pi0/photon_energy", "Photon Energy;E [GeV];Events", 100, 0, 5);
+    h_photon_theta = svc->book_hist1D("/Pi0/photon_theta", "Photon Theta;#theta [deg];Events", 180, 0, 180);
+    h_n_photons = svc->book_hist1D("/Pi0/n_photons", "Number of Photons;N_{#gamma};Events", 20, 0, 20);
+    h_gg_mass_all = svc->book_hist1D("/Pi0/gg_mass_all", "All #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
+    h_gg_mass_selected = svc->book_hist1D("/Pi0/gg_mass_selected", "Selected #pi^{0} Candidate Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0.0, 0.35);
+    h_pi0_momentum = svc->book_hist1D("/Pi0/pi0_momentum", "#pi^{0} Momentum;p [GeV/c];Events", 100, 0, 10);
+    h_pi0_theta = svc->book_hist1D("/Pi0/pi0_theta", "#pi^{0} Theta;#theta [deg];Events", 180, 0, 180);
+    h_opening_angle = svc->book_hist1D("/Pi0/opening_angle", "Photon Opening Angle;#theta_{#gamma#gamma} [deg];Events", 180, 0, 180);
 }
 
 auto Pi0ReconstructionAlg::setup_ntuple() -> void {
+    if (!m_ntuple_svc || !m_ntuple_svc->is_valid()) return;
+    auto* svc = m_ntuple_svc->get();
+    
     // Electron kinematics
-    m_ntuple_svc->register_branch("pi0_events", "e_p", &m_e_p);
-    m_ntuple_svc->register_branch("pi0_events", "e_theta", &m_e_theta);
-    m_ntuple_svc->register_branch("pi0_events", "e_phi", &m_e_phi);
-    m_ntuple_svc->register_branch("pi0_events", "e_vz", &m_e_vz);
+    svc->register_branch("pi0_events", "e_p", &m_e_p);
+    svc->register_branch("pi0_events", "e_theta", &m_e_theta);
+    svc->register_branch("pi0_events", "e_phi", &m_e_phi);
+    svc->register_branch("pi0_events", "e_vz", &m_e_vz);
 
     // Photon kinematics
-    m_ntuple_svc->register_branch("pi0_events", "mgs_E", &mgs_E);
-    m_ntuple_svc->register_branch("pi0_events", "mgs_theta", &mgs_theta);
-    m_ntuple_svc->register_branch("pi0_events", "mgs_phi", &mgs_phi);
+    svc->register_branch("pi0_events", "mgs_E", &mgs_E);
+    svc->register_branch("pi0_events", "mgs_theta", &mgs_theta);
+    svc->register_branch("pi0_events", "mgs_phi", &mgs_phi);
     
     // Pi0 candidate properties
-    m_ntuple_svc->register_branch("pi0_events", "mpi0_masses", &mpi0_masses);
-    m_ntuple_svc->register_branch("pi0_events", "mpi0_ps", &mpi0_ps);
-    m_ntuple_svc->register_branch("pi0_events", "mpi0_thetas", &mpi0_thetas);
-    m_ntuple_svc->register_branch("pi0_events", "mpi0_phis", &mpi0_phis);
+    svc->register_branch("pi0_events", "mpi0_masses", &mpi0_masses);
+    svc->register_branch("pi0_events", "mpi0_ps", &mpi0_ps);
+    svc->register_branch("pi0_events", "mpi0_thetas", &mpi0_thetas);
+    svc->register_branch("pi0_events", "mpi0_phis", &mpi0_phis);
 
     Log::info(name(), "N-tuple branches registered for pi0_events");
 }

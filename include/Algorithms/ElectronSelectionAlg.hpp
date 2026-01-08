@@ -5,11 +5,12 @@
 #include "CLAS/Particle.hpp"
 #include "CLAS/ReadBank.hpp"
 #include "CLAS/Target.hpp"
+#include "Framework/CutBuilder.hpp"
 #include "Framework/Cutflow.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/HistogramTemplates.hpp"
-#include "Framework/IAlgorithm.hpp"
-#include "Framework/ServiceHandle.hpp"
+#include "Framework/Property.hpp"
+#include "Framework/SimpleAlgorithm.hpp"
 #include "Framework/Services/ConditionsService.hpp"
 #include "Framework/Services/ElectronCutsService.hpp"
 #include "Framework/Services/HistogramService.hpp"
@@ -19,66 +20,59 @@
 
 namespace Algorithms {
 
-// Import Log singleton for convenient logging
 using Framework::Log;
 
 /**
  * @brief Algorithm for electron selection and kinematics
  *
- * This algorithm demonstrates the new framework by:
- * - Using services for histogram management and conditions
- * - Implementing a proper cutflow
- * - Separating concerns (selection logic vs. framework)
+ * Modernized using SimpleAlgorithm CRTP pattern with:
+ * - Automatic service injection via require_service<T>()
+ * - Property system for configuration
+ * - CutBuilder for fluent cut definitions
+ * - Reduced boilerplate through CRTP
  */
-class ElectronSelectionAlg : public Framework::Algorithm {
+class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelectionAlg> {
    public:
-    explicit ElectronSelectionAlg(std::string name = "ElectronSelectionAlg", CLAS::Target target = CLAS::Target::LD2, CLAS::Polarity polarity = CLAS::Polarity::Outbending)
-        : Algorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow("Electron Selection") {}
+    explicit ElectronSelectionAlg(std::string name = "ElectronSelectionAlg",
+                                   CLAS::Target target = CLAS::Target::LD2,
+                                   CLAS::Polarity polarity = CLAS::Polarity::Outbending)
+        : SimpleAlgorithm(std::move(name))
+        , m_target(target)
+        , m_polarity(polarity)
+        , m_cutflow("Electron Selection") {
+        // Declare properties
+        declare_property(m_enable_ntuple);
+    }
 
-    auto initialize() -> Framework::StatusCode override {
-        // Initialize service handles using the typed ServiceHandle pattern
-        // LoggingService is optional - we continue if it's not available
-        auto log_sc = initialize_handle(m_log_svc);
-        if (log_sc.is_failure()) Log::error(name(), "WARNING: LoggingService not available");
+    /**
+     * @brief Configure required services (called automatically during initialize)
+     */
+    auto configure() -> void override {
+        m_hist_svc = &require_service<Framework::HistogramService>("HistogramService");
+        m_ntuple_svc = &require_service<Framework::NTupleService>("NTupleService");
+        m_sf_svc = &require_service<Framework::SamplingFractionService>("SamplingFractionService");
+        m_electron_cuts_svc = &require_service<Framework::ElectronCutsService>("ElectronCutsService");
+    }
 
+    /**
+     * @brief Custom initialization after services are injected
+     */
+    auto on_initialize() -> Framework::StatusCode override {
         Log::info(name(), "Initializing algorithm");
 
-        // HistogramService is required
-        auto hist_sc = initialize_handle(m_hist_svc);
-        if (hist_sc.is_failure()) {
-            Log::error(name(), "Could not get HistogramService: {}", hist_sc.message());
-            return hist_sc;
-        }
-
-        // NTupleService is optional
-        auto ntuple_sc = initialize_handle(m_ntuple_svc);
-        if (ntuple_sc.is_failure()) Log::warning(name(), "Could not get NTupleService - N-tuple output disabled");
-
-        // ConditionsService is optional
-        auto cond_sc = initialize_handle(m_cond_svc);
-        if (cond_sc.is_failure()) Log::warning(name(), "Could not get ConditionsService");
-
-        // SamplingFractionService is required for electron selection
-        auto sf_sc = initialize_handle(m_sf_svc);
-        if (sf_sc.is_failure()) {
-            Log::error(name(), "Could not get SamplingFractionService: {}", sf_sc.message());
-            return sf_sc;
-        }
-
-        // ElectronCutsService is required for electron selection
-        auto electron_cuts_sc = initialize_handle(m_electron_cuts_svc);
-        if (electron_cuts_sc.is_failure()) {
-            Log::error(name(), "Could not get ElectronCutsService: {}", electron_cuts_sc.message());
-            return electron_cuts_sc;
-        }
-
         // Configure ElectronCutsService
-        m_electron_cuts_svc->set_target(m_target);
-        m_electron_cuts_svc->set_polarity(m_polarity);
-        m_electron_cuts_svc->set_sf_service(m_sf_svc.get());
+        if (m_electron_cuts_svc && m_electron_cuts_svc->is_valid()) {
+            m_electron_cuts_svc->get()->set_target(m_target);
+            m_electron_cuts_svc->get()->set_polarity(m_polarity);
+            if (m_sf_svc && m_sf_svc->is_valid()) {
+                m_electron_cuts_svc->get()->set_sf_service(m_sf_svc->get());
+            }
+        }
 
         book_histograms();
-        if (m_ntuple_svc) setup_ntuple();
+        if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
+            setup_ntuple();
+        }
 
         // Setup cutflow
         m_cutflow.add_cut("All Events");
@@ -90,15 +84,15 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         m_cutflow.add_cut("PCAL Fiducial");
         m_cutflow.add_cut("DC Chi2/NDF");
 
-        {  // Inject logger into cutflow for structured output
-            m_cutflow.set_logger(m_log_svc.get());
-            Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
-        }
+        Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
 
         return Framework::StatusCode::SUCCESS();
     }
 
-    auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    /**
+     * @brief Process a single event
+     */
+    auto process(Framework::Event& event) -> Framework::StatusCode override {
         m_cutflow.pass("All Events");
 
         // Get electrons from event
@@ -113,60 +107,41 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         }
         m_cutflow.pass("Has Electron");
 
-        // Select first electron (could be improved with trigger selection)
-        const std::optional<CLAS::Particle>& possible_electron = Physics::ParticleUtils::find_trigger_electron(electrons, {CLAS::FD, CLAS::BD});
+        // Select trigger electron
+        const std::optional<CLAS::Particle>& possible_electron =
+            Physics::ParticleUtils::find_trigger_electron(electrons, {CLAS::FD, CLAS::BD});
         if (!possible_electron.has_value()) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::FILTERED();
         }
         const CLAS::Particle& electron = possible_electron.value();
 
-        // Apply cuts sequentially
-        if (!m_electron_cuts_svc->pass_chi2pid_cut(electron.chi2pid())) {
-            event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::FILTERED();
-        }
-        m_cutflow.pass("Chi2 PID");
-
-        double p = electron.p();
-        if (!m_electron_cuts_svc->pass_momentum_cut(p)) {
-            event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::FILTERED();
-        }
-        m_cutflow.pass("Momentum > 0.8 GeV");
-
-        if (!m_electron_cuts_svc->pass_vz_cut(electron.vz())) {
-            event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::FILTERED();
-        }
-        m_cutflow.pass("Vertex Z");
-
         // Get detector info for electron
         CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(*REC_Calorimeter, electron.index());
         CLAS::DCTrajBank traj = CLAS::read_Traj_bank(*REC_Traj, electron.index());
 
         // Calculate derived quantities
+        const double p = electron.p();
         const double E_tot = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;
-        const double SF = E_tot / electron.p();
+        const double SF = E_tot / p;
         const int sector = calorimeter.pcal.sector;
 
-        if (!m_electron_cuts_svc->pass_sampling_fraction_cut(SF, p, sector)) {
-            event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::FILTERED();
-        }
-        m_cutflow.pass("Sampling Fraction");
+        auto* cuts_svc = m_electron_cuts_svc->get();
 
-        if (!m_electron_cuts_svc->pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
-            event.set_decision("HasGoodElectron", false);
-            return Framework::StatusCode::FILTERED();
-        }
-        m_cutflow.pass("PCAL Fiducial");
+        // Apply cuts using CutBuilder for fluent, chainable API
+        bool passed = Framework::CutBuilder(m_cutflow)
+            .require("Chi2 PID", cuts_svc->pass_chi2pid_cut(electron.chi2pid()))
+            .require("Momentum > 0.8 GeV", cuts_svc->pass_momentum_cut(p))
+            .require("Vertex Z", cuts_svc->pass_vz_cut(electron.vz()))
+            .require("Sampling Fraction", cuts_svc->pass_sampling_fraction_cut(SF, p, sector))
+            .require("PCAL Fiducial", cuts_svc->pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw))
+            .require("DC Chi2/NDF", cuts_svc->pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge))
+            .evaluate();
 
-        if (!m_electron_cuts_svc->pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
+        if (!passed) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::FILTERED();
         }
-        m_cutflow.pass("DC Chi2/NDF");
 
         // Electron passed all cuts - set decision and store for downstream algorithms
         event.set_decision("HasGoodElectron", true);
@@ -186,25 +161,26 @@ class ElectronSelectionAlg : public Framework::Algorithm {
         m_electron_id_hists->hist2d("sf_vs_p").fill(p, SF);
 
         // Fill N-tuple if service is available
-        if (m_ntuple_svc) {
+        if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
             m_e_p = p;
             m_e_theta = electron.theta();
             m_e_phi = electron.phi();
             m_e_vz = electron.vz();
             m_e_chi2pid = electron.chi2pid();
-            m_ntuple_svc->fill("electron_kinematics");
+            m_ntuple_svc->get()->fill("electron_kinematics");
         }
 
         return Framework::StatusCode::SUCCESS();
     }
 
-    auto finalize() -> Framework::StatusCode override {
-        {
-            Log::info(name(), "Finalizing algorithm");
-            if (m_ntuple_svc) {
-                auto entries = m_ntuple_svc->get_entries("electron_kinematics");
-                Log::info(name(), "N-tuple has {} entries", entries);
-            }
+    /**
+     * @brief Finalization - print cutflow summary
+     */
+    auto on_finalize() -> Framework::StatusCode override {
+        Log::info(name(), "Finalizing algorithm");
+        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
+            auto entries = m_ntuple_svc->get()->get_entries("electron_kinematics");
+            Log::info(name(), "N-tuple has {} entries", entries);
         }
 
         m_cutflow.print();
@@ -216,13 +192,14 @@ class ElectronSelectionAlg : public Framework::Algorithm {
     CLAS::Polarity m_polarity;
     Framework::Cutflow m_cutflow;
 
-    // Services - using typed ServiceHandle pattern for validation at initialization
-    Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
-    Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
-    Framework::ServiceHandle<Framework::NTupleService> m_ntuple_svc{"NTupleService"};
-    Framework::ServiceHandle<Framework::ConditionsService> m_cond_svc{"ConditionsService"};
-    Framework::ServiceHandle<Framework::SamplingFractionService> m_sf_svc{"SamplingFractionService"};
-    Framework::ServiceHandle<Framework::ElectronCutsService> m_electron_cuts_svc{"ElectronCutsService"};
+    // Properties
+    Framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
+
+    // Service handles (auto-injected via require_service)
+    Framework::ServiceHandle<Framework::HistogramService>* m_hist_svc = nullptr;
+    Framework::ServiceHandle<Framework::NTupleService>* m_ntuple_svc = nullptr;
+    Framework::ServiceHandle<Framework::SamplingFractionService>* m_sf_svc = nullptr;
+    Framework::ServiceHandle<Framework::ElectronCutsService>* m_electron_cuts_svc = nullptr;
 
     // Histogram groups using templates
     std::unique_ptr<Framework::HistogramGroup> m_kinematics_hists;
@@ -236,19 +213,22 @@ class ElectronSelectionAlg : public Framework::Algorithm {
     double m_e_chi2pid = 0.0;
 
     auto book_histograms() -> void {
+        if (!m_hist_svc || !m_hist_svc->is_valid()) return;
         // Use histogram templates for standard electron histograms
         m_kinematics_hists = Framework::HistogramTemplates::ParticleKinematics::create(
-            m_hist_svc.get(), "/Electron/Kinematics");
+            m_hist_svc->get(), "/Electron/Kinematics");
         m_electron_id_hists = Framework::HistogramTemplates::ElectronID::create(
-            m_hist_svc.get(), "/Electron/ID");
+            m_hist_svc->get(), "/Electron/ID");
     }
 
     auto setup_ntuple() -> void {
-        m_ntuple_svc->register_branch("electron_kinematics", "e_p", &m_e_p);
-        m_ntuple_svc->register_branch("electron_kinematics", "e_theta", &m_e_theta);
-        m_ntuple_svc->register_branch("electron_kinematics", "e_phi", &m_e_phi);
-        m_ntuple_svc->register_branch("electron_kinematics", "e_vz", &m_e_vz);
-        m_ntuple_svc->register_branch("electron_kinematics", "e_chi2pid", &m_e_chi2pid);
+        if (!m_ntuple_svc || !m_ntuple_svc->is_valid()) return;
+        auto* svc = m_ntuple_svc->get();
+        svc->register_branch("electron_kinematics", "e_p", &m_e_p);
+        svc->register_branch("electron_kinematics", "e_theta", &m_e_theta);
+        svc->register_branch("electron_kinematics", "e_phi", &m_e_phi);
+        svc->register_branch("electron_kinematics", "e_vz", &m_e_vz);
+        svc->register_branch("electron_kinematics", "e_chi2pid", &m_e_chi2pid);
         Log::info(name(), "N-tuple branches registered for electron kinematics");
     }
 };
