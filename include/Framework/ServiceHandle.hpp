@@ -2,6 +2,7 @@
 
 #include <fmt/format.h>
 #include <string>
+#include "Concepts.hpp"
 #include "StatusCode.hpp"
 
 namespace Framework {
@@ -16,6 +17,10 @@ class ServiceManager;
  * at initialization time. This follows the pattern used in Gaudi/Athena
  * where service handles are declared as members and initialized during
  * algorithm initialization.
+ *
+ * The template parameter is constrained by ServiceConcept, which ensures
+ * at compile time that only valid service types can be used. This provides
+ * clear error messages when incompatible types are used.
  *
  * Usage:
  * @code
@@ -32,9 +37,11 @@ class ServiceManager;
  * };
  * @endcode
  *
- * @tparam T The service type (must inherit from IService)
+ * @tparam T The service type (must satisfy ServiceConcept)
+ * @see ServiceConcept
+ * @see Requirements 1.3
  */
-template <typename T>
+template <ServiceConcept T>
 class ServiceHandle {
    public:
     /**
@@ -130,7 +137,7 @@ class ServiceHandle {
 
 namespace Framework {
 
-template <typename T>
+template <ServiceConcept T>
 auto ServiceHandle<T>::initialize(ServiceManager& svc_mgr) -> StatusCode {
     if (m_name.empty()) {
         return StatusCode::failure("ServiceHandle: Service name is empty");

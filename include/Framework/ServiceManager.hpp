@@ -8,6 +8,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include "Concepts.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "IService.hpp"
 #include "Result.hpp"
@@ -57,11 +58,18 @@ class ServiceManager {
 
     /**
      * @brief Retrieve a service by name
-     * @tparam T Service type
+     *
+     * The template parameter is constrained by ServiceConcept, ensuring
+     * at compile time that only valid service types can be requested.
+     * This provides clear error messages when incompatible types are used.
+     *
+     * @tparam T Service type (must satisfy ServiceConcept)
      * @param name Name of the service
      * @return T* Pointer to the service, or nullptr if not found
+     * @see ServiceConcept
+     * @see Requirement 1.4
      */
-    template <typename T>
+    template <ServiceConcept T>
     auto get_service(const std::string& name) -> T* {
         auto it = m_services.find(name);
         if (it == m_services.end()) {
@@ -255,7 +263,7 @@ class ServiceManager {
 
 // Template implementation for Algorithm::service
 namespace Framework {
-template <typename T>
+template <ServiceConcept T>
 auto Algorithm::service(const std::string& service_name) -> T* {
     if (!m_svc_mgr) {
         fmt::print(stderr, "ERROR: ServiceManager not set for algorithm '{}'\n", m_name);
@@ -264,7 +272,7 @@ auto Algorithm::service(const std::string& service_name) -> T* {
     return m_svc_mgr->get_service<T>(service_name);
 }
 
-template <typename T>
+template <ServiceConcept T>
 auto Algorithm::initialize_handle(ServiceHandle<T>& handle) -> StatusCode {
     if (!m_svc_mgr) {
         return StatusCode::failure(

@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include "Concepts.hpp"
 #include "IService.hpp"
 #include "StatusCode.hpp"
 
@@ -11,7 +12,7 @@ namespace Framework {
 // Forward declarations
 class Event;
 class ServiceManager;
-template <typename T>
+template <ServiceConcept T>
 class ServiceHandle;
 
 /**
@@ -94,11 +95,16 @@ class Algorithm : public IAlgorithm {
 
     /**
      * @brief Retrieve a service by name
-     * @tparam T Service type
+     *
+     * The template parameter is constrained by ServiceConcept, ensuring
+     * at compile time that only valid service types can be requested.
+     *
+     * @tparam T Service type (must satisfy ServiceConcept)
      * @param service_name Name of the service
      * @return T* Pointer to the service, or nullptr if not found
+     * @see ServiceConcept
      */
-    template <typename T>
+    template <ServiceConcept T>
     auto service(const std::string& service_name) -> T*;
 
     /**
@@ -107,11 +113,12 @@ class Algorithm : public IAlgorithm {
      * Helper method to initialize a ServiceHandle during algorithm initialization.
      * Reports errors with the algorithm name for better diagnostics.
      *
-     * @tparam T Service type
+     * @tparam T Service type (must satisfy ServiceConcept)
      * @param handle The service handle to initialize
      * @return StatusCode SUCCESS if handle was initialized, FAILURE with message otherwise
+     * @see ServiceConcept
      */
-    template <typename T>
+    template <ServiceConcept T>
     auto initialize_handle(ServiceHandle<T>& handle) -> StatusCode;
 };
 

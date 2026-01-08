@@ -11,6 +11,55 @@ project(
 )
 
 #══════════════════════════════════════════════════════════════════════════════#
+#                              COMPILER REQUIREMENTS                            #
+#══════════════════════════════════════════════════════════════════════════════#
+
+# C++20/23 features require modern compilers
+# - GCC 12+ for full C++20 coroutine support
+# - Clang 14+ for full C++20 coroutine support
+
+cpp = meson.get_compiler('cpp')
+compiler_id = cpp.get_id()
+compiler_version = cpp.version()
+
+# Verify compiler compatibility
+if compiler_id == 'gcc'
+  if not cpp.version().version_compare('>=12')
+    error('GCC 12 or later is required for C++20 coroutine support. Found: ' + compiler_version)
+  endif
+elif compiler_id == 'clang'
+  if not cpp.version().version_compare('>=14')
+    error('Clang 14 or later is required for C++20 coroutine support. Found: ' + compiler_version)
+  endif
+elif compiler_id == 'msvc'
+  if not cpp.version().version_compare('>=19.29')
+    error('MSVC 19.29 (VS 2019 16.10) or later is required for C++20 support. Found: ' + compiler_version)
+  endif
+else
+  warning('Unknown compiler: ' + compiler_id + '. C++20 coroutine support may be incomplete.')
+endif
+
+# Compiler flags for C++20 coroutine support
+cpp20_args = []
+
+if compiler_id == 'gcc'
+  # GCC requires -fcoroutines for coroutine support (GCC 10-12)
+  # GCC 13+ has coroutines enabled by default with -std=c++20
+  if cpp.version().version_compare('<13')
+    cpp20_args += ['-fcoroutines']
+  endif
+elif compiler_id == 'clang'
+  # Clang 14+ supports coroutines natively with -std=c++20
+  # No additional flags needed
+endif
+
+# Add global C++20 arguments
+add_project_arguments(cpp20_args, language: 'cpp')
+
+message('Compiler: ' + compiler_id + ' ' + compiler_version)
+message('C++20 coroutine support: enabled')
+
+#══════════════════════════════════════════════════════════════════════════════#
 #                              SUBPROJECTS                                      #
 #══════════════════════════════════════════════════════════════════════════════#
 
@@ -60,6 +109,8 @@ executables = {
   'advanced':               {'main': 'src/advanced.cpp'},
   'example_auto_histograms': {'main': 'src/example_auto_histograms.cpp'},
   'example_builder':        {'main': 'src/example_builder.cpp'},
+  'example_simple_algorithm': {'main': 'src/example_simple_algorithm.cpp'},
+  'example_modern_electron_analysis': {'main': 'src/example_modern_electron_analysis.cpp'},
   'lambda':                 {'main': 'src/lambda.cpp'},
   'decays_lambda':          {'main': 'src/decays_lambda.cpp'},
   'electron_analysis':      {'main': 'src/electron_analysis.cpp'},
@@ -100,7 +151,7 @@ executable(
 #══════════════════════════════════════════════════════════════════════════════#
 
 # Test suite (requires Google Test)
-# subdir('test')
+subdir('test')
 
 # Python bindings (requires pybind11)
 # subdir('python')

@@ -6,11 +6,21 @@
 #include <Physics/ParticleUtils.hpp>
 
 #include <any>
+#include <functional>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <optional>
+#include <ranges>
+#include <set>
 #include <string>
+#include <tuple>
 #include <vector>
+
+// Optional fmt support for better formatting
+#if __has_include(<fmt/format.h>)
+#include <fmt/format.h>
+#endif
 
 namespace Framework {
 
@@ -75,12 +85,115 @@ class Event {
     }
 
     /**
+     * @brief Get all particles as a flat range-compatible view
+     *
+     * Returns a lazy-evaluated view of all particles across all PID types.
+     * This view is compatible with C++20 range adaptors and can be composed
+     * using the pipe operator with filters from Framework::Ranges.
+     *
+     * The view uses lazy evaluation - particles are only accessed when
+     * the view is iterated, and filtering operations are applied on-the-fly.
+     *
+     * @return A range view of all particles
+     *
+     * Example usage:
+     * @code
+     * // Get all electrons with momentum > 2 GeV in Forward Detector
+     * auto electrons = event.all_particles()
+     *     | Ranges::by_pid(CLAS::PIDs::ELECTRON)
+     *     | Ranges::by_min_momentum(2.0)
+     *     | Ranges::in_detector(CLAS::FD);
+     *
+     * for (const auto& e : electrons) {
+     *     // Process electron
+     * }
+     * @endcode
+     *
+     * @see Requirements 3.1, 3.3
+     */
+    auto all_particles() {
+        if (!m_particles_loaded) {
+            load_particles();
+        }
+        // Flatten all particle vectors into a single view using std::views::join
+        // This creates a lazy view that iterates over all particles across all PID types
+        return m_particles
+            | std::views::values  // Get just the vectors (not the PID keys)
+            | std::views::join;   // Flatten into a single range
+    }
+
+    /**
+     * @brief Get all particles as a flat vector
+     *
+     * Returns a vector containing all particles from all PID types.
+     * Unlike all_particles(), this eagerly evaluates and copies all particles.
+     *
+     * Use this when you need to store the particles or iterate multiple times.
+     * For single-pass filtering, prefer all_particles() for better performance.
+     *
+     * @return std::vector<CLAS::Particle> Vector of all particles
+     */
+    auto all_particles_vector() -> std::vector<CLAS::Particle> {
+        if (!m_particles_loaded) {
+            load_particles();
+        }
+        std::vector<CLAS::Particle> result;
+        for (const auto& [pid, particles] : m_particles) {
+            result.insert(result.end(), particles.begin(), particles.end());
+        }
+        return result;
+    }
+
+    /**
      * @brief Get a HIPO bank by name
      * @param bank_name Name of the bank (e.g., "REC::Particle")
      * @return hipo::bank& Reference to the bank
      */
     auto get_bank(const std::string& bank_name) -> hipo::bank& {
         return m_hipo_event.get(bank_name.c_str());
+    }
+
+    /**
+     * @brief Get multiple banks at once using structured bindings
+     *
+     * Returns a tuple of references to the requested banks. This enables
+     * clean structured binding syntax for accessing multiple banks simultaneously.
+     *
+     * If a requested bank does not exist in the event, an empty bank reference
+     * is returned and a warning is logged (if logging is available).
+     *
+     * @tparam Names Variadic string types for bank names
+     * @param names Bank names (e.g., "REC::Particle", "REC::Calorimeter")
+     * @return std::tuple of bank references
+     *
+     * Example usage:
+     * @code
+     * auto [particles, calo, track] = event.banks(
+     *     "REC::Particle", "REC::Calorimeter", "REC::Track"
+     * );
+     *
+     * // Process particles
+     * for (int i = 0; i < particles.rows(); ++i) {
+     *     auto px = particles.get<float>("px", i);
+     *     // ...
+     * }
+     * @endcode
+     *
+     * @see Requirements 6.1, 6.2
+     */
+    template <typename... Names>
+    auto banks(Names&&... names) {
+        return std::make_tuple(std::ref(get_bank_safe(std::forward<Names>(names)))...);
+    }
+
+    /**
+     * @brief Check if a bank exists and has data
+     * @param bank_name Name of the bank
+     * @return true if bank exists and has rows
+     */
+    auto has_bank(const std::string& bank_name) -> bool {
+        auto& bank = m_hipo_event.get(bank_name.c_str());
+        return bank.rows() > 0;
     }
 
     /**
@@ -208,6 +321,47 @@ class Event {
     long m_event_number = -1;
     int m_file_index = -1;
     std::map<std::string, std::any> m_store;
+
+    /**
+     * @brief Get a bank safely, logging a warning if it doesn't exist
+     *
+     * This helper method retrieves a bank by name and logs a warning
+     * if the bank is empty (doesn't exist in the current event).
+     *
+     * @param bank_name Name of the bank
+     * @return hipo::bank& Reference to the bank (may be empty)
+     *
+     * @see Requirements 6.4
+     */
+    auto get_bank_safe(const std::string& bank_name) -> hipo::bank& {
+        auto& bank = m_hipo_event.get(bank_name.c_str());
+        if (bank.rows() == 0) {
+            // Log warning for missing bank - use stderr if logging service unavailable
+            // The bank exists in schema but has no data in this event
+            // This is a common occurrence and not necessarily an error
+            log_missing_bank_warning(bank_name);
+        }
+        return bank;
+    }
+
+    /**
+     * @brief Log a warning about a missing bank
+     * @param bank_name Name of the missing bank
+     */
+    auto log_missing_bank_warning(const std::string& bank_name) -> void {
+        // Track which banks we've already warned about to avoid spam
+        static thread_local std::set<std::string> warned_banks;
+        if (warned_banks.find(bank_name) == warned_banks.end()) {
+            warned_banks.insert(bank_name);
+            // Only warn once per bank name per thread
+            // Use fmt if available, otherwise fall back to cerr
+#ifdef FMT_VERSION
+            fmt::print(stderr, "[Event] Warning: Bank '{}' is empty or missing\n", bank_name);
+#else
+            std::cerr << "[Event] Warning: Bank '" << bank_name << "' is empty or missing\n";
+#endif
+        }
+    }
 
     /**
      * @brief Load particles from REC::Particle bank

@@ -118,8 +118,10 @@ nav:
     - Physics Cuts: user-guide/cuts.md
     - Kinematics: user-guide/kinematics.md
     - Batch System: user-guide/batch-system.md
+    - Migration Guide: user-guide/migration-guide.md
   - Examples:
     - Basic Electron Analysis: examples/electron-analysis.md
+    - Modern Electron Analysis: examples/modern-electron-analysis.md
     - DIS Analysis: examples/dis-analysis.md
     - Pi0 Reconstruction: examples/pi0-reconstruction.md
     - Lambda Analysis: examples/lambda-analysis.md

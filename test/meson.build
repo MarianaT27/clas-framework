@@ -9,6 +9,7 @@ rapidcheck_proj = subproject('rapidcheck')
 rapidcheck_dep = rapidcheck_proj.get_variable('rapidcheck_dep')
 
 test_inc = include_directories('../include')
+hipo_inc = include_directories('..')
 
 # Test executables
 test_cutflow = executable(
@@ -113,6 +114,15 @@ test_pi0_reconstruction_properties = executable(
   dependencies: [gtest_dep, gtest_main_dep, rapidcheck_dep, fmt_dep, root_dep],
 )
 
+# Unit tests for Range Adaptors
+test_ranges = executable(
+  'test_ranges',
+  'test_ranges.cpp',
+  '../src/CLAS/Particle.cpp',
+  include_directories: [test_inc],
+  dependencies: [gtest_dep, gtest_main_dep, fmt_dep, root_dep],
+)
+
 # Register tests
 test('Cutflow Tests', test_cutflow)
 test('Service Tests', test_services)
@@ -127,3 +137,76 @@ test('Logging Service Tests', test_logging_service)
 test('Logging Property Tests', test_logging_properties)
 test('Application Exception Tests', test_application_exception)
 test('Pi0 Reconstruction Property Tests', test_pi0_reconstruction_properties)
+test('Range Adaptors Tests', test_ranges)
+
+# Unit tests for SimpleAlgorithm
+test_simple_algorithm = executable(
+  'test_simple_algorithm',
+  'test_simple_algorithm.cpp',
+  include_directories: [test_inc],
+  dependencies: [gtest_dep, gtest_main_dep, fmt_dep, toml_dep],
+)
+
+test('SimpleAlgorithm Tests', test_simple_algorithm)
+
+# Unit tests for Generator coroutine type
+test_generator = executable(
+  'test_generator',
+  'test_generator.cpp',
+  include_directories: [test_inc],
+  dependencies: [gtest_dep, gtest_main_dep, fmt_dep],
+)
+
+test('Generator Tests', test_generator)
+
+# Integration tests for event processing features
+test_event_processing_integration = executable(
+  'test_event_processing_integration',
+  'test_event_processing_integration.cpp',
+  '../src/CLAS/Particle.cpp',
+  include_directories: [test_inc, hipo_inc],
+  dependencies: [gtest_dep, gtest_main_dep, fmt_dep, hipo_dep, root_dep],
+)
+
+test('Event Processing Integration Tests', test_event_processing_integration)
+
+# Unit tests for Histogram Templates
+test_histogram_templates = executable(
+  'test_histogram_templates',
+  'test_histogram_templates.cpp',
+  '../src/Framework/Histogram.cpp',
+  include_directories: [test_inc],
+  dependencies: [gtest_dep, gtest_main_dep, fmt_dep, root_dep],
+)
+
+test('Histogram Templates Tests', test_histogram_templates)
+
+# Unit tests for CutBuilder
+test_cutbuilder = executable(
+  'test_cutbuilder',
+  'test_cutbuilder.cpp',
+  include_directories: [test_inc],
+  dependencies: [gtest_dep, gtest_main_dep, fmt_dep],
+)
+
+test('CutBuilder Tests', test_cutbuilder)
+
+# Unit tests for ConfigSchema
+test_config_schema = executable(
+  'test_config_schema',
+  'test_config_schema.cpp',
+  include_directories: [test_inc],
+  dependencies: [gtest_dep, gtest_main_dep, fmt_dep, toml_dep],
+)
+
+test('ConfigSchema Tests', test_config_schema)
+
+# Unit tests for Inject and InjectableAlgorithm
+test_inject = executable(
+  'test_inject',
+  'test_inject.cpp',
+  include_directories: [test_inc],
+  dependencies: [gtest_dep, gtest_main_dep, fmt_dep],
+)
+
+test('Inject Tests', test_inject)
