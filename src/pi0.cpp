@@ -163,10 +163,8 @@ auto main(int argc, char* argv[]) -> int {
         .add_service<Framework::PhotonCutsService>()
         .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
         .add_algorithm<Algorithms::ElectronSelectionAlg>()
-        .add_algorithm<Algorithms::DISSelectionAlg>(
-            "DISSelection", Physics::DISAnalysis::standard_dis_region())
-        .add_algorithm<Algorithms::Pi0ReconstructionAlg>(
-            "Pi0Reconstruction", config->mass_window, config->min_energy)
+        .add_algorithm<Algorithms::DISSelectionAlg>("DISSelection", Physics::DISAnalysis::standard_dis_region())
+        .add_algorithm<Algorithms::Pi0ReconstructionAlg>("Pi0Reconstruction", config->mass_window, config->min_energy)
         .build();
 
     if (auto sc = app.initialize(); sc.is_failure()) {
@@ -187,7 +185,11 @@ auto main(int argc, char* argv[]) -> int {
         return EXIT_FAILURE;
     }
 
-    app.finalize();
+    auto result = app.finalize();
+    if (result.is_failure()) {
+        fmt::print(stderr, "Finalization failed: {}\n", result.message());
+        return EXIT_FAILURE;
+    }
     Framework::Log::info("Main", "Analysis complete: {}", config->output_file);
     return EXIT_SUCCESS;
 }

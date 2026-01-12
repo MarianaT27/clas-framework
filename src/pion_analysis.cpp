@@ -152,10 +152,8 @@ auto main(int argc, char* argv[]) -> int {
         .with_beam_energy(10.53)
         .with_target(CLAS::to_string(config->target))
         .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
-        .add_algorithm<Algorithms::ElectronSelectionAlg>(
-            "ElectronSelection", config->target, config->polarity)
-        .add_algorithm<Algorithms::PionAnalysisAlg>(
-            "PionAnalysis", config->target, config->polarity)
+        .add_algorithm<Algorithms::ElectronSelectionAlg>("ElectronSelection", config->target, config->polarity)
+        .add_algorithm<Algorithms::PionAnalysisAlg>("PionAnalysis", config->target, config->polarity)
         .build();
 
     if (auto sc = app.initialize(); sc.is_failure()) {
