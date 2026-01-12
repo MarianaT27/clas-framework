@@ -108,8 +108,7 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         m_cutflow.pass("Has Electron");
 
         // Select trigger electron
-        const std::optional<CLAS::Particle>& possible_electron =
-            Physics::ParticleUtils::find_trigger_electron(electrons, {CLAS::FD, CLAS::BD});
+        const std::optional<CLAS::Particle>& possible_electron = Physics::ParticleUtils::find_trigger_electron(electrons, {CLAS::FD, CLAS::BD});
         if (!possible_electron.has_value()) {
             event.set_decision("HasGoodElectron", false);
             return Framework::StatusCode::FILTERED();
@@ -128,7 +127,6 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
 
         auto* cuts_svc = m_electron_cuts_svc->get();
 
-        // Apply cuts using CutBuilder for fluent, chainable API
         bool passed = Framework::CutBuilder(m_cutflow)
             .require("Chi2 PID", cuts_svc->pass_chi2pid_cut(electron.chi2pid()))
             .require("Momentum > 0.8 GeV", cuts_svc->pass_momentum_cut(p))
@@ -215,10 +213,8 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
     auto book_histograms() -> void {
         if (!m_hist_svc || !m_hist_svc->is_valid()) return;
         // Use histogram templates for standard electron histograms
-        m_kinematics_hists = Framework::HistogramTemplates::ParticleKinematics::create(
-            m_hist_svc->get(), "/Electron/Kinematics");
-        m_electron_id_hists = Framework::HistogramTemplates::ElectronID::create(
-            m_hist_svc->get(), "/Electron/ID");
+        m_kinematics_hists = Framework::HistogramTemplates::ParticleKinematics::create(m_hist_svc->get(), "/Electron/Kinematics");
+        m_electron_id_hists = Framework::HistogramTemplates::ElectronID::create(m_hist_svc->get(), "/Electron/ID");
     }
 
     auto setup_ntuple() -> void {
