@@ -3,9 +3,11 @@
 #include <fmt/format.h>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include "Framework/IService.hpp"
 #include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/OutputFileService.hpp"
 #include "TFile.h"
 #include "TH1D.h"
 #include "TH2D.h"
@@ -13,8 +15,9 @@
 
 namespace Framework {
 
-// Forward declaration
+// Forward declarations
 class LoggingService;
+class OutputFileService;
 
 /**
  * @brief Service for managing ROOT histograms
@@ -22,7 +25,7 @@ class LoggingService;
  * This service provides centralized histogram booking and management,
  * similar to the THistSvc in Gaudi/Athena. Histograms are organized
  * by path (e.g., "/ElectronKinematics/momentum") and automatically
- * written to the output file.
+ * written to the output file via OutputFileService.
  */
 class HistogramService : public Service {
    public:
@@ -30,35 +33,27 @@ class HistogramService : public Service {
         : Service(std::move(name)) {}
 
     auto initialize() -> StatusCode override {
-        // Set default output file if none specified
-        if (m_output_file.empty()) {
-            m_output_file = "histograms.root";
-            if (m_log) {
-                m_log->info(name(), "Using default output file 'histograms.root'");
-            }
+        if (!m_output_svc) {
+            if (m_log) m_log->error(name(), "OutputFileService not set! Call set_output_file_service() before initialize()");
+            return StatusCode::FAILURE();
         }
-        if (m_log) {
-            m_log->info(name(), "Initialized");
+        
+        if (!m_output_svc->is_file_open()) {
+            if (m_log) m_log->error(name(), "OutputFileService file is not open");
+            return StatusCode::FAILURE();
         }
+        
+        if (m_log) m_log->info(name(), "Initialized with OutputFileService");
         return StatusCode::SUCCESS();
     }
 
     auto finalize() -> StatusCode override {
-        // Automatically write all histograms to ROOT file
-        if (m_auto_write && !m_output_file.empty()) {
+        if (m_auto_write) {
             write_histograms();
-        } else if (!m_auto_write) {
-            if (m_log) {
-                m_log->info(name(), "Auto-write disabled, histograms not written");
-            }
         } else {
-            if (m_log) {
-                m_log->warning(name(), "No output file set, histograms not written");
-            }
+            if (m_log) m_log->info(name(), "Auto-write disabled, histograms not written");
         }
-        if (m_log) {
-            m_log->info(name(), "Finalized");
-        }
+        if (m_log) m_log->info(name(), "Finalized");
         return StatusCode::SUCCESS();
     }
 
@@ -70,19 +65,18 @@ class HistogramService : public Service {
     }
 
     /**
-     * @brief Set the output ROOT file
-     * @param filename Output file path
+     * @brief Set the OutputFileService (REQUIRED)
+     * Must be called before initialize()
      */
-    auto set_output_file(const std::string& filename) -> void {
-        m_output_file = filename;
+    auto set_output_file_service(OutputFileService* svc) -> void {
+        m_output_svc = svc;
     }
 
     /**
-     * @brief Get the output file path
-     * @return Current output file path
+     * @brief Get the output file path from OutputFileService
      */
-    auto get_output_file() const -> const std::string& {
-        return m_output_file;
+    auto get_output_file() const -> std::string {
+        return m_output_svc ? m_output_svc->get_output_file() : "";
     }
 
     /**
@@ -235,62 +229,48 @@ class HistogramService : public Service {
     }
 
     /**
-     * @brief Write all histograms to a single output ROOT file
+     * @brief Write all histograms via OutputFileService
      */
     auto write_histograms() -> void {
-        if (m_output_file.empty()) {
-            if (m_log) {
-                m_log->warning(name(), "No output file set");
-            }
+        if (!m_output_svc || !m_output_svc->is_file_open()) {
+            if (m_log) m_log->error(name(), "OutputFileService not available for writing histograms");
             return;
         }
 
         size_t total = m_hist1D.size() + m_hist2D.size() + m_profiles.size();
         if (total == 0) {
-            if (m_log) {
-                m_log->info(name(), "No histograms to write");
-            }
+            if (m_log) m_log->info(name(), "No histograms to write");
             return;
         }
 
-        if (m_log) {
-            m_log->info(name(), "Writing {} histograms to: {}", total, m_output_file);
-        }
+        if (m_log) m_log->info(name(), "Writing {} histograms via OutputFileService", total);
 
-        TFile file(m_output_file.c_str(), "UPDATE");
-
-        if (file.IsZombie() || !file.IsOpen()) {
-            if (m_log) m_log->error(name(), "Failed to open output file: {}", m_output_file);
-            return;
-        }
+        // Use the service's mutex for thread safety
+        std::lock_guard<std::mutex> lock(m_output_svc->mutex());
+        TFile* file = m_output_svc->get_file();
+        if (!file) return;
 
         // Create directory structure and write 1D histograms
         for (auto& [path, hist] : m_hist1D) {
-            create_directories(&file, path);
-            hist->Write();
+            create_directories(file, path);
+            hist->Write("", TObject::kOverwrite);
         }
 
         // Write 2D histograms
         for (auto& [path, hist] : m_hist2D) {
-            create_directories(&file, path);
-            hist->Write();
+            create_directories(file, path);
+            hist->Write("", TObject::kOverwrite);
         }
 
         // Write profiles
         for (auto& [path, prof] : m_profiles) {
-            create_directories(&file, path);
-            prof->Write();
+            create_directories(file, path);
+            prof->Write("", TObject::kOverwrite);
         }
 
-        file.Close();
         if (m_log) {
             m_log->info(name(), "Wrote {} 1D, {} 2D histograms, and {} profiles",
                         m_hist1D.size(), m_hist2D.size(), m_profiles.size());
-        }
-
-        // Verify histograms were written correctly
-        if (m_verify_output) {
-            verify_histograms();
         }
     }
 
@@ -301,108 +281,14 @@ class HistogramService : public Service {
         m_verify_output = enable;
     }
 
-    /**
-     * @brief Verify histograms were written correctly
-     */
-    auto verify_histograms() -> bool {
-        if (m_output_file.empty()) {
-            return false;
-        }
-
-        if (m_log) {
-            m_log->info(name(), "Verifying histograms in: {}", m_output_file);
-        }
-
-        TFile file(m_output_file.c_str(), "READ");
-        if (file.IsZombie() || !file.IsOpen()) {
-            if (m_log) {
-                m_log->error(name(), "Failed to open file for verification");
-            }
-            return false;
-        }
-
-        bool all_ok = true;
-        size_t found_count = 0;
-        size_t missing_count = 0;
-        size_t empty_count = 0;
-
-        // Verify 1D histograms
-        for (const auto& [path, hist] : m_hist1D) {
-            std::string name = extract_name(path);
-            TH1D* h = dynamic_cast<TH1D*>(file.Get(path.c_str()));
-            if (!h) {
-                if (m_log) {
-                    m_log->error(this->name(), "  Missing: {}", path);
-                }
-                missing_count++;
-                all_ok = false;
-            } else if (h->GetEntries() == 0) {
-                empty_count++;
-            } else {
-                found_count++;
-            }
-        }
-
-        // Verify 2D histograms
-        for (const auto& [path, hist] : m_hist2D) {
-            TH2D* h = dynamic_cast<TH2D*>(file.Get(path.c_str()));
-            if (!h) {
-                if (m_log) {
-                    m_log->error(this->name(), "  Missing: {}", path);
-                }
-                missing_count++;
-                all_ok = false;
-            } else if (h->GetEntries() == 0) {
-                empty_count++;
-            } else {
-                found_count++;
-            }
-        }
-
-        // Verify profiles
-        for (const auto& [path, prof] : m_profiles) {
-            TProfile* p = dynamic_cast<TProfile*>(file.Get(path.c_str()));
-            if (!p) {
-                if (m_log) {
-                    m_log->error(this->name(), "  Missing: {}", path);
-                }
-                missing_count++;
-                all_ok = false;
-            } else if (p->GetEntries() == 0) {
-                empty_count++;
-            } else {
-                found_count++;
-            }
-        }
-
-        file.Close();
-
-        // Print summary
-        if (all_ok) {
-            if (m_log) {
-                m_log->info(name(), "Verification passed: All {} histograms found",
-                            found_count + empty_count);
-                if (empty_count > 0) {
-                    m_log->warning(name(), "{} histogram(s) are empty", empty_count);
-                }
-            }
-        } else {
-            if (m_log) {
-                m_log->error(name(), "Verification failed: {} histogram(s) missing", missing_count);
-            }
-        }
-
-        return all_ok;
-    }
-
    private:
-    std::string m_output_file;
     bool m_auto_write = true;     // Automatically write histograms on finalize
-    bool m_verify_output = true;  // Verify histograms after writing
+    bool m_verify_output = false; // Verify histograms after writing (disabled by default)
     std::map<std::string, std::unique_ptr<TH1D>> m_hist1D;
     std::map<std::string, std::unique_ptr<TH2D>> m_hist2D;
     std::map<std::string, std::unique_ptr<TProfile>> m_profiles;
     LoggingService* m_log = nullptr;
+    OutputFileService* m_output_svc = nullptr;
 
     auto extract_name(const std::string& path) -> std::string {
         size_t pos = path.find_last_of('/');

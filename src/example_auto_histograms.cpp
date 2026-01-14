@@ -10,6 +10,7 @@
 #include "Framework/Application.hpp"
 #include "Framework/IAlgorithm.hpp"
 #include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/OutputFileService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Histogram.hpp"
 #include "CLAS/Particle.hpp"
@@ -202,12 +203,19 @@ int main(int argc, char** argv) {
     fmt::print("  ✓ ParticleSelectorService\n");
     app.service_manager().add_service(std::unique_ptr<Framework::IService>(std::move(particle_svc)));
 
+    // Add OutputFileService (required for HistogramService)
+    auto output_svc = std::make_unique<Framework::OutputFileService>();
+    output_svc->set_output_file("demo_histograms.root");
+    Framework::OutputFileService* output_svc_ptr = output_svc.get();
+    fmt::print("  ✓ OutputFileService\n");
+    fmt::print("  ✓ Output file: demo_histograms.root\n");
+    app.service_manager().add_service(std::unique_ptr<Framework::IService>(std::move(output_svc)));
+
     // Add HistogramService
     auto hist_svc = std::make_unique<Framework::HistogramService>();
-    hist_svc->set_output_file("demo_histograms.root");
+    hist_svc->set_output_file_service(output_svc_ptr);
     hist_svc->set_auto_write(true);  // Enable automatic writing (default)
     fmt::print("  ✓ HistogramService → auto-write enabled\n");
-    fmt::print("  ✓ Output file: demo_histograms.root\n");
     app.service_manager().add_service(std::unique_ptr<Framework::IService>(std::move(hist_svc)));
 
     // Add algorithm

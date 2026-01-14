@@ -8,24 +8,27 @@
 #include <vector>
 #include "Framework/IService.hpp"
 #include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/OutputFileService.hpp"
 #include "TBranch.h"
 #include "TFile.h"
 #include "TTree.h"
 
 namespace Framework {
 
-// Forward declaration
+// Forward declarations
 class LoggingService;
+class OutputFileService;
 
 /**
  * @brief Service for managing ROOT TTrees/N-tuples
  *
  * Provides centralized TTree management for event-by-event data output.
+ * Uses OutputFileService for all file operations.
  *
  * Features:
  * - Automatic TTree creation and management
  * - Branch registration and filling
- * - Integrated with HistogramService (same output file)
+ * - Uses OutputFileService for centralized file management
  * - Multiple TTrees support
  *
  * Example:
@@ -49,29 +52,24 @@ class NTupleService : public Service {
         : Service(std::move(name)) {}
 
     auto initialize() -> StatusCode override {
-        if (m_incremental_enabled && !m_output_file.empty()) {
-            m_output_file_ptr = std::make_unique<TFile>(m_output_file.c_str(), "RECREATE");
-            if (m_output_file_ptr->IsZombie() || !m_output_file_ptr->IsOpen()) {
-                if (m_log) m_log->error(name(), "Failed to open file for incremental writing: {}", m_output_file);
-                return StatusCode::FAILURE();
-            }
-            if (m_log) m_log->info(name(), "Opened output file for incremental writing: {}", m_output_file);
+        if (!m_output_svc) {
+            if (m_log) m_log->error(name(), "OutputFileService not set! Call set_output_file_service() before initialize()");
+            return StatusCode::FAILURE();
         }
-        if (m_log) m_log->info(name(), "Initialized");
+        
+        if (!m_output_svc->is_file_open()) {
+            if (m_log) m_log->error(name(), "OutputFileService file is not open");
+            return StatusCode::FAILURE();
+        }
+        
+        if (m_log) m_log->info(name(), "Initialized with OutputFileService");
         return StatusCode::SUCCESS();
     }
 
     auto finalize() -> StatusCode override {
-        // Write TTrees first while any attached file is still open so trees that
-        // reference the file (via SetDirectory) can safely access their data.
-        if (!m_output_file.empty()) write_trees();
-
-        if (m_output_file_ptr && m_output_file_ptr->IsOpen()) {
-            m_output_file_ptr->Close();
-            m_output_file_ptr.reset();
-        }
+        if (m_log) m_log->info(name(), "Finalizing NTupleService, writing {} trees", m_trees.size());
+        write_trees();
         if (m_log) m_log->info(name(), "Finalized");
-
         return StatusCode::SUCCESS();
     }
 
@@ -81,47 +79,67 @@ class NTupleService : public Service {
     auto set_logger(LoggingService* log) -> void { m_log = log; }
 
     /**
-     * @brief Set the output ROOT file
-     *
-     * Note: Can be the same file as HistogramService for convenience
+     * @brief Set the OutputFileService (REQUIRED)
+     * Must be called before initialize()
      */
-    auto set_output_file(const std::string& filename) -> void { m_output_file = filename; }
+    auto set_output_file_service(OutputFileService* svc) -> void {
+        m_output_svc = svc;
+    }
 
     /**
-     * @brief Get the output file path
+     * @brief Get the output file path from OutputFileService
      */
-    auto get_output_file() const -> const std::string& { return m_output_file; }
+    auto get_output_file() const -> std::string {
+        return m_output_svc ? m_output_svc->get_output_file() : "";
+    }
 
     /**
      * @brief Create a new TTree
      *
      * @param name Tree name
      * @param title Tree title
-     * @param auto_save Auto-save every N entries (0 = at end only)
+     * @param directory Optional directory path in the file
      */
-    auto create_tree(const std::string& name, const std::string& title = "", int auto_save = 0) -> TTree* {
+    auto create_tree(const std::string& name, const std::string& title = "", const std::string& directory = "") -> TTree* {
+        std::lock_guard<std::mutex> lock(m_tree_mutex_);
+        
         if (m_trees.find(name) != m_trees.end()) {
             fmt::print(stderr, "WARNING: Tree '{}' already exists\n", name);
             return m_trees[name].get();
         }
 
+        if (!m_output_svc || !m_output_svc->is_file_open()) {
+            fmt::print(stderr, "ERROR: OutputFileService not available for tree creation\n");
+            return nullptr;
+        }
+
+        // Navigate to directory if specified
+        {
+            std::lock_guard<std::mutex> file_lock(m_output_svc->mutex());
+            TFile* file = m_output_svc->get_file();
+            if (!file) return nullptr;
+            
+            if (!directory.empty()) {
+                // Create directory path if needed
+                m_output_svc->cd(directory);
+            } else {
+                file->cd();
+            }
+        }
+
         std::string tree_title = title.empty() ? name : title;
         auto tree = std::make_unique<TTree>(name.c_str(), tree_title.c_str());
 
-        // If incremental writing is enabled, attach to file immediately
-        if (m_incremental_enabled && m_output_file_ptr && m_output_file_ptr->IsOpen()) {
-            m_output_file_ptr->cd();
-            tree->SetDirectory(m_output_file_ptr.get());
-            tree->SetAutoSave(100000000);  // Auto-save every 100MB
-        } else {
-            tree->SetDirectory(nullptr);  // Don't let ROOT own it
-        }
-
-        tree->SetAutoFlush(-100000);     // Flush every 100KB
-        tree->SetCircular(500000000LL);  // Keep max 500MB of baskets
+        // Attach to file for incremental writing to avoid 1GB buffer limit
+        // Tree is automatically associated with current directory (the file)
+        // We'll explicitly detach before file closes to avoid segfault
+        tree->SetAutoFlush(-30000000);  // Flush every 30MB
+        tree->SetAutoSave(-300000000);   // AutoSave every 300MB
 
         TTree* ptr = tree.get();
         m_trees[name] = std::move(tree);
+        m_tree_directories[name] = directory;
+        
         return ptr;
     }
 
@@ -146,7 +164,13 @@ class NTupleService : public Service {
         std::lock_guard<std::mutex> lock(m_tree_mutex_);
 
         TTree* tree = get_tree(tree_name);
-        if (!tree) tree = create_tree(tree_name);
+        if (!tree) {
+            // Temporarily release lock to create tree (which acquires its own lock)
+            lock.~lock_guard();
+            tree = create_tree(tree_name);
+            new (&lock) std::lock_guard<std::mutex>(m_tree_mutex_);
+            if (!tree) return;
+        }
 
         TBranch* branch = nullptr;
         if (leaf_list.empty()) {
@@ -166,7 +190,13 @@ class NTupleService : public Service {
         std::lock_guard<std::mutex> lock(m_tree_mutex_);
 
         TTree* tree = get_tree(tree_name);
-        if (!tree) tree = create_tree(tree_name);
+        if (!tree) {
+            lock.~lock_guard();
+            tree = create_tree(tree_name);
+            new (&lock) std::lock_guard<std::mutex>(m_tree_mutex_);
+            if (!tree) return;
+        }
+        
         TBranch* branch = tree->Branch(branch_name.c_str(), address);
         if (branch) branch->SetBasketSize(8000);
     }
@@ -195,46 +225,13 @@ class NTupleService : public Service {
     }
 
     /**
-     * @brief Enable incremental writing for very large datasets
-     *
-     * Call this after setting output file but before filling trees.
-     * Opens the file and associates trees with it for auto-saving.
-     * This is REQUIRED for very large datasets to avoid 1GB buffer overflow.
-     */
-    auto enable_incremental_writing(int autosave_bytes = 100000000) -> void {
-        std::lock_guard<std::mutex> lock(m_tree_mutex_);
-
-        if (m_output_file.empty()) {
-            if (m_log) m_log->warning(name(), "Cannot enable incremental writing: no output file set");
-            return;
-        }
-
-        m_output_file_ptr = std::make_unique<TFile>(m_output_file.c_str(), "RECREATE", "", 9);
-
-        if (m_output_file_ptr->IsZombie() || !m_output_file_ptr->IsOpen()) {
-            if (m_log) m_log->error(name(), "Failed to open file for incremental writing: {}", m_output_file);
-            m_output_file_ptr.reset();
-            return;
-        }
-
-        for (auto& [tree_name, tree] : m_trees) {
-            m_output_file_ptr->cd();
-            tree->SetDirectory(m_output_file_ptr.get());
-            tree->SetAutoSave(autosave_bytes);  // Auto-save every 100MB
-        }
-
-        m_incremental_enabled = true;
-        if (m_log) m_log->info(name(), "Enabled incremental writing to: {} (AutoSave every {} bytes)", m_output_file, autosave_bytes);
-    }
-
-    /**
      * @brief Write all trees to output file (thread-safe)
      */
     auto write_trees() -> void {
         std::lock_guard<std::mutex> lock(m_tree_mutex_);
 
-        if (m_output_file.empty()) {
-            if (m_log) m_log->warning(name(), "No output file set for TTrees");
+        if (!m_output_svc || !m_output_svc->is_file_open()) {
+            if (m_log) m_log->warning(name(), "OutputFileService not available for writing TTrees");
             return;
         }
 
@@ -243,31 +240,34 @@ class NTupleService : public Service {
             return;
         }
 
-        if (m_log) m_log->info(name(), "Writing {} TTrees to: {}", m_trees.size(), m_output_file);
+        if (m_log) m_log->info(name(), "Writing {} TTrees via OutputFileService", m_trees.size());
 
-        TFile* file_ptr = nullptr;
-
-        if (m_log) m_log->info(name(), "Using existing open file for writing TTrees");
-        file_ptr = m_output_file_ptr.get();
-        file_ptr->cd();
+        std::lock_guard<std::mutex> file_lock(m_output_svc->mutex());
+        TFile* file = m_output_svc->get_file();
+        if (!file) return;
 
         for (auto& [n, tree] : m_trees) {
-            if (m_log) m_log->info(name(), "Writing tree '{}'", n);
+            // Navigate to the tree's directory
+            const std::string& dir = m_tree_directories[n];
+            if (!dir.empty()) {
+                file->cd(dir.c_str());
+            } else {
+                file->cd();
+            }
+            
             Long64_t entries = tree->GetEntries();
-            if (m_log) m_log->info(this->name(), "  Wrote tree '{}' ({} entries)", n, entries);
+            
+            // Flush any remaining baskets and write
             tree->FlushBaskets();
-            file_ptr->cd();
-            tree->Write();
+            tree->Write("", TObject::kOverwrite);
+            
+            // IMPORTANT: Detach from directory to prevent segfault when file closes
             tree->SetDirectory(nullptr);
+            
+            if (m_log) m_log->info(this->name(), "  Wrote tree '{}' ({} entries)", n, entries);
         }
 
-        file_ptr->Write();
-        file_ptr->Close();
-
         if (m_log) m_log->info(this->name(), "Successfully wrote {} TTrees", m_trees.size());
-
-        m_output_file_ptr->Close();
-        if (m_log) m_log->info(name(), "Closed output file: {}", m_output_file);
     }
 
     /**
@@ -277,7 +277,7 @@ class NTupleService : public Service {
         std::lock_guard<std::mutex> lock(m_tree_mutex_);
 
         fmt::print("\nN-tuple Summary:\n");
-        fmt::print("  Output file: {}\n", m_output_file);
+        fmt::print("  Output file: {}\n", get_output_file());
         fmt::print("  Total trees: {}\n", m_trees.size());
 
         if (!m_trees.empty()) {
@@ -315,12 +315,11 @@ class NTupleService : public Service {
     }
 
    private:
-    std::string m_output_file;
     std::map<std::string, std::unique_ptr<TTree>> m_trees;
+    std::map<std::string, std::string> m_tree_directories;  // Track directory for each tree
     mutable std::mutex m_tree_mutex_;
     LoggingService* m_log = nullptr;
-    std::unique_ptr<TFile> m_output_file_ptr;  // For incremental writing
-    bool m_incremental_enabled = false;        // Track if incremental writing is active
+    OutputFileService* m_output_svc = nullptr;
 };
 
 /**

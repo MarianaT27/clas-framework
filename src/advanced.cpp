@@ -14,6 +14,7 @@
 #include "Framework/Application.hpp"
 #include "Framework/AlgorithmTypes.hpp"
 #include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/OutputFileService.hpp"
 #include "Framework/Services/ConditionsService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Services/SamplingFractionService.hpp"
@@ -50,9 +51,14 @@ int main(int argc, char** argv) {
 
     fmt::print("Configuring Services:\n");
 
+    auto output_svc = std::make_unique<Framework::OutputFileService>();
+    output_svc->set_output_file("advanced_analysis.root");
+    Framework::OutputFileService* output_svc_ptr = output_svc.get();
+    fmt::print("  ✓ OutputFileService → advanced_analysis.root\n");
+
     auto hist_svc = std::make_unique<Framework::HistogramService>();
-    hist_svc->set_output_file("advanced_analysis.root");
-    fmt::print("  ✓ HistogramService → advanced_analysis.root\n");
+    hist_svc->set_output_file_service(output_svc_ptr);
+    fmt::print("  ✓ HistogramService\n");
 
     auto cond_svc = std::make_unique<Framework::ConditionsService>();
     cond_svc->set_run_number(5032);
@@ -64,6 +70,7 @@ int main(int argc, char** argv) {
     auto sf_svc = std::make_unique<Framework::SamplingFractionService>();
     fmt::print("  ✓ SamplingFractionService\n");
 
+    app.service_manager().add_service(std::move(output_svc));
     app.service_manager().add_service(std::move(hist_svc));
     app.service_manager().add_service(std::move(cond_svc));
     app.service_manager().add_service(std::move(particle_svc));

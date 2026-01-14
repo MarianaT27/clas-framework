@@ -381,7 +381,7 @@ int main(int argc, char* argv[]) {
     job_config.email_on_fail = !cfg.email.empty();
 
     // Add thread count to extra args
-    cfg.extra_args.push_back(fmt::format("--num-threads={}", cfg.num_threads));
+    cfg.extra_args.push_back(fmt::format("--num_threads={}", cfg.num_threads));
     job_config.extra_args = cfg.extra_args;
 
     // Default JLab modules

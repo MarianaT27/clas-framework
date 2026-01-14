@@ -17,6 +17,7 @@
 #include "Framework/SimpleAlgorithm.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/OutputFileService.hpp"
 #include "Framework/Ranges.hpp"
 #include "CLAS/PIDs.hpp"
 #include "CLAS/FileUtils.hpp"
@@ -225,8 +226,13 @@ int main(int argc, char* argv[]) {
     // ========================================================================
     fmt::print("Setting up services...\n");
 
+    auto output_svc = std::make_unique<OutputFileService>();
+    output_svc->set_output_file("algorithm_example_output.root");
+    OutputFileService* output_svc_ptr = output_svc.get();
+    app.service_manager().add_service(std::move(output_svc));
+
     auto hist_svc = std::make_unique<HistogramService>();
-    hist_svc->set_output_file("algorithm_example_output.root");
+    hist_svc->set_output_file_service(output_svc_ptr);
     app.service_manager().add_service(std::move(hist_svc));
 
     // ========================================================================

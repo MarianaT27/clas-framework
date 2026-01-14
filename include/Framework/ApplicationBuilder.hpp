@@ -24,6 +24,7 @@
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/MetadataService.hpp"
 #include "Framework/Services/NTupleService.hpp"
+#include "Framework/Services/OutputFileService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Services/ProfilingService.hpp"
 #include "Framework/Services/RootFileService.hpp"
@@ -226,6 +227,7 @@ private:
 
         // Core services
         auto log_svc = std::make_unique<LoggingService>();
+        auto output_svc = std::make_unique<OutputFileService>();
         auto hist_svc = std::make_unique<HistogramService>();
         auto ntuple_svc = std::make_unique<NTupleService>();
         auto conditions_svc = std::make_unique<ConditionsService>();
@@ -238,10 +240,17 @@ private:
         auto metadata_svc = std::make_unique<MetadataService>();
         auto profiling_svc = std::make_unique<ProfilingService>();
 
-        // Configure with output file
-        hist_svc->set_output_file(m_output_file);
-        ntuple_svc->set_output_file(m_output_file);
-        ntuple_svc->enable_incremental_writing();
+        // Configure OutputFileService with output file
+        output_svc->set_output_file(m_output_file);
+        
+        // Get raw pointer to OutputFileService before moving it
+        OutputFileService* output_svc_ptr = output_svc.get();
+        
+        // Wire HistogramService and NTupleService to use OutputFileService
+        hist_svc->set_output_file_service(output_svc_ptr);
+        ntuple_svc->set_output_file_service(output_svc_ptr);
+        
+        // Configure other file services
         root_svc->set_default_output(m_output_file);
         metadata_svc->set_output_file(m_output_file);
         hipo_svc->set_input_files(m_input_files);
@@ -254,7 +263,9 @@ private:
         }
 
         // Add services in dependency order
+        // OutputFileService MUST be added and initialized FIRST
         mgr.add_service(std::move(log_svc));
+        mgr.add_service(std::move(output_svc));  // Must be before hist_svc and ntuple_svc
         mgr.add_service(std::move(hipo_svc));
         mgr.add_service(std::move(root_svc));
         mgr.add_service(std::move(conditions_svc));

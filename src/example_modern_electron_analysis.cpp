@@ -42,6 +42,7 @@
 
 // Service headers
 #include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/OutputFileService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 
 // CLAS headers
@@ -555,9 +556,15 @@ auto main(int argc, char* argv[]) -> int {
 
     Application app("ModernElectronAnalysis");
 
+    // Add output file service
+    auto output_svc = std::make_unique<OutputFileService>();
+    output_svc->set_output_file(output_file);
+    OutputFileService* output_svc_ptr = output_svc.get();
+    app.service_manager().add_service(std::move(output_svc));
+
     // Add histogram service
     auto hist_svc = std::make_unique<HistogramService>();
-    hist_svc->set_output_file(output_file);
+    hist_svc->set_output_file_service(output_svc_ptr);
     app.service_manager().add_service(std::move(hist_svc));
 
     // ========================================================================

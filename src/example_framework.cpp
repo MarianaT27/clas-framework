@@ -13,6 +13,7 @@
 #include "Framework/Application.hpp"
 #include "Framework/Services/ConfigService.hpp"
 #include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/OutputFileService.hpp"
 #include "Framework/Services/ConditionsService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Services/SamplingFractionService.hpp"
@@ -82,8 +83,12 @@ int main(int argc, char* argv[]) {
     Framework::Application app(app_name);
 
     // Configure services
+    auto output_svc = std::make_unique<Framework::OutputFileService>();
+    output_svc->set_output_file(hist_file);
+    Framework::OutputFileService* output_svc_ptr = output_svc.get();
+
     auto hist_svc = std::make_unique<Framework::HistogramService>();
-    hist_svc->set_output_file(hist_file);
+    hist_svc->set_output_file_service(output_svc_ptr);
 
     auto cond_svc = std::make_unique<Framework::ConditionsService>();
     cond_svc->set_run_number(run_number);
@@ -96,6 +101,7 @@ int main(int argc, char* argv[]) {
 
     // Add services (ConfigService is added for potential use by algorithms)
     app.service_manager().add_service(std::move(config_svc));
+    app.service_manager().add_service(std::move(output_svc));
     app.service_manager().add_service(std::move(hist_svc));
     app.service_manager().add_service(std::move(cond_svc));
     app.service_manager().add_service(std::move(particle_svc));

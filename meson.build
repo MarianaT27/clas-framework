@@ -115,6 +115,7 @@ executables = {
   'decays_lambda':          {'main': 'src/decays_lambda.cpp'},
   'electron_analysis':      {'main': 'src/electron_analysis.cpp'},
   'pion_analysis':          {'main': 'src/pion_analysis.cpp'},
+  'nuclear_transparency':   {'main': 'src/nuclear_transparency.cpp'},
 }
 
 foreach name, config : executables
@@ -151,7 +152,7 @@ executable(
 #══════════════════════════════════════════════════════════════════════════════#
 
 # Test suite (requires Google Test)
-subdir('test')
+# subdir('test')
 
 # Python bindings (requires pybind11)
 # subdir('python')

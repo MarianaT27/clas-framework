@@ -222,6 +222,10 @@ class CutBuilder {
         });
     }
 
+    auto require(std::string name, bool pass) -> CutBuilder& {
+        return cut(std::move(name), [pass]() { return pass; });
+    }
+
     /**
      * @brief Evaluate all cuts in sequence, updating cutflow
      * @return true if all cuts pass, false on first failure
