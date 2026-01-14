@@ -1,6 +1,8 @@
 #pragma once
 
 #include <optional>
+#include <vector>
+#include "CLAS/Banks.hpp"
 #include "CLAS/Detectors.hpp"
 #include "CLAS/Particle.hpp"
 #include "CLAS/ReadBank.hpp"
@@ -99,7 +101,7 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
 
         auto& hipo_event = event.hipo_event();
-        auto [REC_Calorimeter, REC_Traj] = hipo_event.banks("REC::Calorimeter", "REC::Traj");
+        auto [REC_Calorimeter, REC_Traj, REC_Track] = hipo_event.banks("REC::Calorimeter", "REC::Traj", "REC::Track");
 
         if (electrons.empty()) {
             event.set_decision("HasGoodElectron", false);
@@ -118,12 +120,34 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         // Get detector info for electron
         CLAS::CalorimeterBank calorimeter = CLAS::read_Calorimeter_bank(*REC_Calorimeter, electron.index());
         CLAS::DCTrajBank traj = CLAS::read_Traj_bank(*REC_Traj, electron.index());
+        CLAS::TrackBank trk_r1 = CLAS::read_Track_bank(*REC_Track, traj.region1.index);
+        CLAS::TrackBank trk_r2 = CLAS::read_Track_bank(*REC_Track, traj.region2.index);
+        CLAS::TrackBank trk_r3 = CLAS::read_Track_bank(*REC_Track, traj.region3.index);
 
         // Calculate derived quantities
         const double p = electron.p();
         const double E_tot = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;
         const double SF = E_tot / p;
         const int sector = calorimeter.pcal.sector;
+
+        (*kinematics_groups["before_cuts"])["p"].fill(p);
+        (*kinematics_groups["before_cuts"])["theta"].fill(electron.theta());
+        (*kinematics_groups["before_cuts"])["phi"].fill(electron.phi());
+        (*kinematics_groups["before_cuts"])["vz"].fill(electron.vz());
+        (*kinematics_groups["before_cuts"])["sector"].fill(static_cast<double>(sector));
+        (*kinematics_groups["before_cuts"])["vz"].fill(electron.vz());
+        (*kinematics_groups["before_cuts"])["vx"].fill(electron.vx());
+        (*kinematics_groups["before_cuts"])["vy"].fill(electron.vy());
+        (*kinematics_groups["before_cuts"])["chi2pid"].fill(electron.chi2pid());
+        (*kinematics_groups["before_cuts"])["beta"].fill(electron.beta());
+        (*kinematics_groups["before_cuts"])["pcal_E"].fill(calorimeter.pcal.energy);
+        (*kinematics_groups["before_cuts"])["ecin_E"].fill(calorimeter.inner.energy);
+        (*kinematics_groups["before_cuts"])["ecout_E"].fill(calorimeter.outer.energy);
+        (*kinematics_groups["before_cuts"])["ecal_E"].fill(E_tot);
+        (*kinematics_groups["before_cuts"])["sampling_fraction"].fill(SF);
+        (*kinematics_groups["before_cuts"])["dc_chi2_R1"].fill(trk_r1.chi2 / trk_r1.ndf);
+        (*kinematics_groups["before_cuts"])["dc_chi2_R2"].fill(trk_r2.chi2 / trk_r2.ndf);
+        (*kinematics_groups["before_cuts"])["dc_chi2_R3"].fill(trk_r3.chi2 / trk_r3.ndf);
 
         auto* cuts_svc = m_electron_cuts_svc->get();
 
@@ -146,17 +170,24 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         event.store_particles<CLAS::Particle>("SelectedElectrons", {electron});
 
         // Fill histograms after selection using templates
-        (*m_kinematics_hists)["p"].fill(p);
-        (*m_kinematics_hists)["theta"].fill(electron.theta());
-        (*m_kinematics_hists)["phi"].fill(electron.phi());
-        m_kinematics_hists->hist2d("p_vs_theta").fill(electron.theta(), p);
-        m_kinematics_hists->hist2d("phi_vs_theta").fill(electron.theta(), electron.phi());
-
-        // Fill electron ID histograms
-        (*m_electron_id_hists)["chi2pid"].fill(electron.chi2pid());
-        (*m_electron_id_hists)["vz"].fill(electron.vz());
-        (*m_electron_id_hists)["sampling_fraction"].fill(SF);
-        m_electron_id_hists->hist2d("sf_vs_p").fill(p, SF);
+        (*kinematics_groups["after_cuts"])["p"].fill(p);
+        (*kinematics_groups["after_cuts"])["theta"].fill(electron.theta());
+        (*kinematics_groups["after_cuts"])["phi"].fill(electron.phi());
+        (*kinematics_groups["after_cuts"])["vz"].fill(electron.vz());
+        (*kinematics_groups["after_cuts"])["sector"].fill(static_cast<double>(sector));
+        (*kinematics_groups["after_cuts"])["vz"].fill(electron.vz());
+        (*kinematics_groups["after_cuts"])["vx"].fill(electron.vx());
+        (*kinematics_groups["after_cuts"])["vy"].fill(electron.vy());
+        (*kinematics_groups["after_cuts"])["chi2pid"].fill(electron.chi2pid());
+        (*kinematics_groups["after_cuts"])["beta"].fill(electron.beta());
+        (*kinematics_groups["after_cuts"])["pcal_E"].fill(calorimeter.pcal.energy);
+        (*kinematics_groups["after_cuts"])["ecin_E"].fill(calorimeter.inner.energy);
+        (*kinematics_groups["after_cuts"])["ecout_E"].fill(calorimeter.outer.energy);
+        (*kinematics_groups["after_cuts"])["ecal_E"].fill(E_tot);
+        (*kinematics_groups["after_cuts"])["sampling_fraction"].fill(SF);
+        (*kinematics_groups["after_cuts"])["dc_chi2_R1"].fill(trk_r1.chi2 / trk_r1.ndf);
+        (*kinematics_groups["after_cuts"])["dc_chi2_R2"].fill(trk_r2.chi2 / trk_r2.ndf);
+        (*kinematics_groups["after_cuts"])["dc_chi2_R3"].fill(trk_r3.chi2 / trk_r3.ndf);
 
         // Fill N-tuple if service is available
         if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
@@ -200,8 +231,7 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
     Framework::ServiceHandle<Framework::ElectronCutsService>* m_electron_cuts_svc = nullptr;
 
     // Histogram groups using templates
-    std::unique_ptr<Framework::HistogramGroup> m_kinematics_hists;
-    std::unique_ptr<Framework::HistogramGroup> m_electron_id_hists;
+    std::map<std::string, std::unique_ptr<Framework::HistogramGroup>> kinematics_groups;
 
     // N-tuple variables
     double m_e_p = 0.0;
@@ -213,8 +243,9 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
     auto book_histograms() -> void {
         if (!m_hist_svc || !m_hist_svc->is_valid()) return;
         // Use histogram templates for standard electron histograms
-        m_kinematics_hists = Framework::HistogramTemplates::ParticleKinematics::create(m_hist_svc->get(), "/Electron/Kinematics");
-        m_electron_id_hists = Framework::HistogramTemplates::ElectronID::create(m_hist_svc->get(), "/Electron/ID");
+        kinematics_groups = Framework::HistogramTemplates::ElectronHistograms::create_with_stages(
+                m_hist_svc->get(), "/Electron/Kinematics", {"before_cuts", "after_cuts"});
+
     }
 
     auto setup_ntuple() -> void {

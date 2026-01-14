@@ -612,57 +612,251 @@ class HistogramRegistry {
  *
  * These templates provide standard histogram configurations for common
  * particle physics quantities, reducing boilerplate in analysis code.
+ *
+ * Templates support "before" and "after" cuts stages for systematic studies.
  */
 namespace HistogramTemplates {
 
 /**
- * @brief Standard particle kinematics histograms
+ * @brief Standard particle kinematics histograms (comprehensive)
  *
  * Creates histograms for:
- * - Momentum (p)
- * - Polar angle (theta)
- * - Azimuthal angle (phi)
- * - p vs theta (2D)
- * - phi vs theta (2D)
+ * - Basic kinematics: p, px, py, pz, theta, phi, E, pt
+ * - Vertex: vx, vy, vz, vr
+ * - 2D correlations: p vs theta, phi vs theta, pt vs eta
  */
 struct ParticleKinematics {
     static auto create(HistogramService* svc, const std::string& base_path)
         -> std::unique_ptr<HistogramGroup> {
         auto group = std::make_unique<HistogramGroup>(svc, base_path);
 
+        // Basic kinematics (1D)
         group->add_hist1D("p", "Momentum;p [GeV/c];Events", 100, 0.0, 10.0);
+        group->add_hist1D("px", "Momentum X;p_{x} [GeV/c];Events", 100, -5.0, 5.0);
+        group->add_hist1D("py", "Momentum Y;p_{y} [GeV/c];Events", 100, -5.0, 5.0);
+        group->add_hist1D("pz", "Momentum Z;p_{z} [GeV/c];Events", 100, -2.0, 12.0);
+        group->add_hist1D("pt", "Transverse Momentum;p_{T} [GeV/c];Events", 100, 0.0, 5.0);
+        group->add_hist1D("E", "Energy;E [GeV];Events", 100, 0.0, 12.0);
         group->add_hist1D("theta", "Polar Angle;#theta [deg];Events", 180, 0.0, 180.0);
         group->add_hist1D("phi", "Azimuthal Angle;#phi [deg];Events", 360, -180.0, 180.0);
+
+        // Vertex (1D)
+        group->add_hist1D("vx", "Vertex X;v_{x} [cm];Events", 100, -5.0, 5.0);
+        group->add_hist1D("vy", "Vertex Y;v_{y} [cm];Events", 100, -5.0, 5.0);
+        group->add_hist1D("vz", "Vertex Z;v_{z} [cm];Events", 200, -40.0, 40.0);
+        group->add_hist1D("vr", "Vertex R;v_{r} [cm];Events", 100, 0.0, 5.0);
+
+        // 2D correlations
         group->add_hist2D("p_vs_theta", "p vs #theta;#theta [deg];p [GeV/c]",
-                          180, 0.0, 180.0, 100, 0.0, 10.0);
+                          90, 0.0, 90.0, 100, 0.0, 10.0);
         group->add_hist2D("phi_vs_theta", "#phi vs #theta;#theta [deg];#phi [deg]",
-                          180, 0.0, 180.0, 360, -180.0, 180.0);
+                          90, 0.0, 90.0, 180, -180.0, 180.0);
+        group->add_hist2D("pt_vs_eta", "p_{T} vs #eta;#eta;p_{T} [GeV/c]",
+                          100, -2.0, 6.0, 100, 0.0, 5.0);
+        group->add_hist2D("vz_vs_phi", "v_{z} vs #phi;#phi [deg];v_{z} [cm]",
+                          180, -180.0, 180.0, 100, -40.0, 40.0);
 
         return group;
     }
 };
 
 /**
- * @brief Standard electron identification histograms
+ * @brief Comprehensive electron histograms with before/after cuts stages
  *
  * Creates histograms for:
- * - Chi2 PID
- * - Vertex Z
- * - Sampling fraction
- * - Sampling fraction vs momentum (2D)
+ * - Kinematics: p, theta, phi, vz
+ * - PID: chi2pid, beta, sampling fraction
+ * - Calorimeter: PCAL/ECIN/ECOUT energies, SF by layer
+ * - DC: chi2/NDF, edge distance
+ * - 2D correlations for cut optimization
+ */
+struct ElectronHistograms {
+    static auto create(HistogramService* svc, const std::string& base_path)
+        -> std::unique_ptr<HistogramGroup> {
+        auto group = std::make_unique<HistogramGroup>(svc, base_path);
+
+        // ============================================================
+        // Basic Kinematics
+        // ============================================================
+        group->add_hist1D("p", "Electron Momentum;p [GeV/c];Events", 100, 0.0, 12.0);
+        group->add_hist1D("theta", "Electron #theta;#theta [deg];Events", 90, 0.0, 45.0);
+        group->add_hist1D("phi", "Electron #phi;#phi [deg];Events", 360, -180.0, 180.0);
+        group->add_hist1D("pt", "Electron p_{T};p_{T} [GeV/c];Events", 100, 0.0, 4.0);
+        group->add_hist1D("sector", "Electron Sector;Sector;Events", 7, 0.5, 7.5);
+
+        // ============================================================
+        // Vertex
+        // ============================================================
+        group->add_hist1D("", "Vertex Z;v_{z} [cm];Events", 200, -40.0, 40.0);
+        group->add_hist1D("vx", "Vertex X;v_{x} [cm];Events", 100, -2.0, 2.0);
+        group->add_hist1D("vy", "Vertex Y;v_{y} [cm];Events", 100, -2.0, 2.0);
+
+        // ============================================================
+        // Particle Identification
+        // ============================================================
+        group->add_hist1D("chi2pid", "Electron #chi^{2}_{PID};#chi^{2}_{PID};Events", 200, -10.0, 10.0);
+        group->add_hist1D("beta", "Electron #beta;#beta;Events", 100, 0.9, 1.1);
+        group->add_hist1D("nphe", "Number of Photoelectrons;N_{phe};Events", 100, 0.0, 50.0);
+
+        // ============================================================
+        // Calorimeter
+        // ============================================================
+        group->add_hist1D("pcal_E", "PCAL Energy;E_{PCAL} [GeV];Events", 100, 0.0, 2.0);
+        group->add_hist1D("ecin_E", "ECIN Energy;E_{ECIN} [GeV];Events", 100, 0.0, 2.0);
+        group->add_hist1D("ecout_E", "ECOUT Energy;E_{ECOUT} [GeV];Events", 100, 0.0, 2.0);
+        group->add_hist1D("ecal_E", "Total ECal Energy;E_{ECal} [GeV];Events", 100, 0.0, 4.0);
+        group->add_hist1D("sampling_fraction", "Sampling Fraction;SF;Events", 100, 0.0, 0.5);
+
+        // ============================================================
+        // Drift Chambers
+        // ============================================================
+        group->add_hist1D("dc_chi2_R1", "DC #chi^{2}/NDF R1;#chi^{2}/NDF;Events", 100, 0.0, 10.0);
+        group->add_hist1D("dc_chi2_R2", "DC #chi^{2}/NDF R2;#chi^{2}/NDF;Events", 100, 0.0, 10.0);
+        group->add_hist1D("dc_chi2_R3", "DC #chi^{2}/NDF R3;#chi^{2}/NDF;Events", 100, 0.0, 10.0);
+
+        // ============================================================
+        // Fiducial Cuts (PCAL)
+        // ============================================================
+        group->add_hist1D("pcal_lu", "PCAL Local U;PCAL_{lu} [cm];Events", 100, 0.0, 450.0);
+        group->add_hist1D("pcal_lv", "PCAL Local V;PCAL_{lv} [cm];Events", 100, 0.0, 450.0);
+        group->add_hist1D("pcal_lw", "PCAL Local W;PCAL_{lw} [cm];Events", 100, 0.0, 450.0);
+
+        // ============================================================
+        // 2D Correlations for Cut Studies
+        // ============================================================
+        group->add_hist2D("sf_vs_p", "SF vs p;p [GeV/c];SF",
+                          100, 0.0, 12.0, 100, 0.0, 0.5);
+        group->add_hist2D("chi2pid_vs_p", "#chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}",
+                          100, 0.0, 12.0, 200, -10.0, 10.0);
+        group->add_hist2D("vz_vs_phi", "v_{z} vs #phi;#phi [deg];v_{z} [cm]",
+                          180, -180.0, 180.0, 100, -40.0, 40.0);
+        group->add_hist2D("vz_vs_theta", "v_{z} vs #theta;#theta [deg];v_{z} [cm]",
+                          90, 0.0, 45.0, 100, -40.0, 40.0);
+        group->add_hist2D("theta_vs_phi", "#theta vs #phi;#phi [deg];#theta [deg]",
+                          180, -180.0, 180.0, 90, 0.0, 45.0);
+        group->add_hist2D("p_vs_theta", "p vs #theta;#theta [deg];p [GeV/c]",
+                          90, 0.0, 45.0, 100, 0.0, 12.0);
+        group->add_hist2D("pcal_lv_vs_lu", "PCAL lv vs lu;PCAL_{lu} [cm];PCAL_{lv} [cm]",
+                          100, 0.0, 450.0, 100, 0.0, 450.0);
+        group->add_hist2D("ecin_vs_pcal", "E_{ECIN} vs E_{PCAL};E_{PCAL} [GeV];E_{ECIN} [GeV]",
+                          100, 0.0, 2.0, 100, 0.0, 2.0);
+
+        return group;
+    }
+
+    /**
+     * @brief Create before/after cut histograms
+     * @param svc Histogram service
+     * @param base_path Base path (e.g., "/Electron")
+     * @param stages List of cut stages {"before_cuts", "after_fiducial", "after_pid", ...}
+     */
+    static auto create_with_stages(HistogramService* svc, const std::string& base_path,
+                                   const std::vector<std::string>& stages)
+        -> std::map<std::string, std::unique_ptr<HistogramGroup>> {
+        std::map<std::string, std::unique_ptr<HistogramGroup>> groups;
+        for (const auto& stage : stages) {
+            std::string path = fmt::format("{}/{}", base_path, stage);
+            groups[stage] = create(svc, path);
+        }
+        return groups;
+    }
+};
+
+/**
+ * @brief Standard electron identification histograms (legacy, simpler version)
  */
 struct ElectronID {
     static auto create(HistogramService* svc, const std::string& base_path)
         -> std::unique_ptr<HistogramGroup> {
         auto group = std::make_unique<HistogramGroup>(svc, base_path);
 
-        group->add_hist1D("chi2pid", "Chi2 PID;#chi^{2}_{PID};Events", 100, -10.0, 10.0);
-        group->add_hist1D("vz", "Vertex Z;v_{z} [cm];Events", 100, -30.0, 30.0);
+        group->add_hist1D("chi2pid", "#chi^{2}_{PID};#chi^{2}_{PID};Events", 200, -10.0, 10.0);
+        group->add_hist1D("vz", "Vertex Z;v_{z} [cm];Events", 200, -40.0, 40.0);
         group->add_hist1D("sampling_fraction", "Sampling Fraction;SF;Events", 100, 0.0, 0.5);
         group->add_hist2D("sf_vs_p", "SF vs p;p [GeV/c];SF",
-                          100, 0.0, 10.0, 100, 0.0, 0.5);
+                          100, 0.0, 12.0, 100, 0.0, 0.5);
 
         return group;
+    }
+};
+
+/**
+ * @brief Comprehensive hadron (pion/kaon/proton) histograms
+ *
+ * Creates histograms for:
+ * - Kinematics: p, theta, phi, pt
+ * - PID: chi2pid, beta, time-of-flight
+ * - 2D correlations for cut optimization
+ */
+struct HadronHistograms {
+    static auto create(HistogramService* svc, const std::string& base_path,
+                       [[maybe_unused]] double mass_hypothesis = 0.13957)  // Default: pion mass
+        -> std::unique_ptr<HistogramGroup> {
+        auto group = std::make_unique<HistogramGroup>(svc, base_path);
+
+        // ============================================================
+        // Basic Kinematics
+        // ============================================================
+        group->add_hist1D("p", "Momentum;p [GeV/c];Events", 100, 0.0, 8.0);
+        group->add_hist1D("theta", "#theta;#theta [deg];Events", 180, 0.0, 180.0);
+        group->add_hist1D("phi", "#phi;#phi [deg];Events", 360, -180.0, 180.0);
+        group->add_hist1D("pt", "p_{T};p_{T} [GeV/c];Events", 100, 0.0, 3.0);
+        group->add_hist1D("eta", "#eta;#eta;Events", 100, -2.0, 6.0);
+        group->add_hist1D("sector", "Sector;Sector;Events", 7, 0.5, 7.5);
+
+        // ============================================================
+        // Vertex
+        // ============================================================
+        group->add_hist1D("vz", "Vertex Z;v_{z} [cm];Events", 200, -40.0, 40.0);
+        group->add_hist1D("vx", "Vertex X;v_{x} [cm];Events", 100, -2.0, 2.0);
+        group->add_hist1D("vy", "Vertex Y;v_{y} [cm];Events", 100, -2.0, 2.0);
+        group->add_hist1D("dvz", "#Deltav_{z} (hadron - electron);#Deltav_{z} [cm];Events", 100, -20.0, 20.0);
+
+        // ============================================================
+        // Particle Identification
+        // ============================================================
+        group->add_hist1D("chi2pid", "#chi^{2}_{PID};#chi^{2}_{PID};Events", 200, -15.0, 15.0);
+        group->add_hist1D("beta", "#beta;#beta;Events", 100, 0.0, 1.5);
+        group->add_hist1D("delta_beta", "#Delta#beta;#Delta#beta;Events", 100, -0.2, 0.2);
+
+        // ============================================================
+        // Time of Flight
+        // ============================================================
+        group->add_hist1D("tof_time", "TOF Time;t [ns];Events", 100, 0.0, 100.0);
+        group->add_hist1D("tof_path", "TOF Path Length;L [cm];Events", 100, 0.0, 800.0);
+
+        // ============================================================
+        // 2D Correlations for Cut Studies
+        // ============================================================
+        group->add_hist2D("beta_vs_p", "#beta vs p;p [GeV/c];#beta",
+                          100, 0.0, 8.0, 100, 0.0, 1.5);
+        group->add_hist2D("chi2pid_vs_p", "#chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}",
+                          100, 0.0, 8.0, 200, -15.0, 15.0);
+        group->add_hist2D("delta_beta_vs_p", "#Delta#beta vs p;p [GeV/c];#Delta#beta",
+                          100, 0.0, 8.0, 100, -0.2, 0.2);
+        group->add_hist2D("theta_vs_phi", "#theta vs #phi;#phi [deg];#theta [deg]",
+                          180, -180.0, 180.0, 90, 0.0, 180.0);
+        group->add_hist2D("p_vs_theta", "p vs #theta;#theta [deg];p [GeV/c]",
+                          90, 0.0, 180.0, 100, 0.0, 8.0);
+        group->add_hist2D("vz_vs_phi", "v_{z} vs #phi;#phi [deg];v_{z} [cm]",
+                          180, -180.0, 180.0, 100, -40.0, 40.0);
+
+        return group;
+    }
+
+    /**
+     * @brief Create before/after cut histograms for hadrons
+     */
+    static auto create_with_stages(HistogramService* svc, const std::string& base_path,
+                                   const std::vector<std::string>& stages,
+                                   double mass_hypothesis = 0.13957)
+        -> std::map<std::string, std::unique_ptr<HistogramGroup>> {
+        std::map<std::string, std::unique_ptr<HistogramGroup>> groups;
+        for (const auto& stage : stages) {
+            std::string path = fmt::format("{}/{}", base_path, stage);
+            groups[stage] = create(svc, path, mass_hypothesis);
+        }
+        return groups;
     }
 };
 
@@ -674,27 +868,89 @@ struct PhotonID {
         -> std::unique_ptr<HistogramGroup> {
         auto group = std::make_unique<HistogramGroup>(svc, base_path);
 
-        group->add_hist1D("beta", "Photon Beta;#beta;Events", 100, 0.0, 1.5);
+        group->add_hist1D("beta", "Photon #beta;#beta;Events", 100, 0.0, 1.5);
         group->add_hist1D("energy", "Photon Energy;E [GeV];Events", 100, 0.0, 5.0);
+        group->add_hist1D("theta", "Photon #theta;#theta [deg];Events", 90, 0.0, 45.0);
+        group->add_hist1D("phi", "Photon #phi;#phi [deg];Events", 360, -180.0, 180.0);
         group->add_hist2D("beta_vs_p", "#beta vs p;p [GeV/c];#beta",
                           100, 0.0, 5.0, 100, 0.0, 1.5);
+        group->add_hist2D("E_vs_theta", "E vs #theta;#theta [deg];E [GeV]",
+                          90, 0.0, 45.0, 100, 0.0, 5.0);
 
         return group;
     }
 };
 
 /**
- * @brief Standard pion identification histograms
+ * @brief Standard pion identification histograms (legacy)
  */
 struct PionID {
     static auto create(HistogramService* svc, const std::string& base_path)
         -> std::unique_ptr<HistogramGroup> {
         auto group = std::make_unique<HistogramGroup>(svc, base_path);
 
-        group->add_hist1D("chi2pid", "Chi2 PID;#chi^{2}_{PID};Events", 100, -10.0, 10.0);
-        group->add_hist1D("beta", "Pion Beta;#beta;Events", 100, 0.0, 1.5);
+        group->add_hist1D("chi2pid", "#chi^{2}_{PID};#chi^{2}_{PID};Events", 200, -15.0, 15.0);
+        group->add_hist1D("beta", "#beta;#beta;Events", 100, 0.0, 1.5);
+        group->add_hist1D("p", "Momentum;p [GeV/c];Events", 100, 0.0, 8.0);
+        group->add_hist1D("theta", "#theta;#theta [deg];Events", 180, 0.0, 180.0);
         group->add_hist2D("beta_vs_p", "#beta vs p;p [GeV/c];#beta",
-                          100, 0.0, 5.0, 100, 0.0, 1.5);
+                          100, 0.0, 8.0, 100, 0.0, 1.5);
+        group->add_hist2D("chi2pid_vs_p", "#chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}",
+                          100, 0.0, 8.0, 200, -15.0, 15.0);
+
+        return group;
+    }
+};
+
+/**
+ * @brief DIS kinematics histograms
+ *
+ * Creates histograms for DIS variables:
+ * - Q2, W, x_Bjorken, y, nu
+ * - 2D correlations
+ */
+struct DISKinematics {
+    static auto create(HistogramService* svc, const std::string& base_path)
+        -> std::unique_ptr<HistogramGroup> {
+        auto group = std::make_unique<HistogramGroup>(svc, base_path);
+
+        // 1D DIS variables
+        group->add_hist1D("Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0.0, 12.0);
+        group->add_hist1D("W", "W;W [GeV];Events", 100, 0.0, 5.0);
+        group->add_hist1D("xB", "x_{Bjorken};x_{B};Events", 100, 0.0, 1.0);
+        group->add_hist1D("y", "y;y;Events", 100, 0.0, 1.0);
+        group->add_hist1D("nu", "#nu;#nu [GeV];Events", 100, 0.0, 12.0);
+
+        // 2D correlations
+        group->add_hist2D("Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]",
+                          100, 0.0, 5.0, 100, 0.0, 12.0);
+        group->add_hist2D("Q2_vs_xB", "Q^{2} vs x_{B};x_{B};Q^{2} [GeV^{2}]",
+                          100, 0.0, 1.0, 100, 0.0, 12.0);
+        group->add_hist2D("y_vs_xB", "y vs x_{B};x_{B};y",
+                          100, 0.0, 1.0, 100, 0.0, 1.0);
+        group->add_hist2D("W_vs_xB", "W vs x_{B};x_{B};W [GeV]",
+                          100, 0.0, 1.0, 100, 0.0, 5.0);
+
+        return group;
+    }
+};
+
+/**
+ * @brief Missing mass/momentum histograms
+ */
+struct MissingKinematics {
+    static auto create(HistogramService* svc, const std::string& base_path)
+        -> std::unique_ptr<HistogramGroup> {
+        auto group = std::make_unique<HistogramGroup>(svc, base_path);
+
+        group->add_hist1D("Mx", "Missing Mass;M_{x} [GeV];Events", 200, 0.0, 4.0);
+        group->add_hist1D("Mx2", "Missing Mass Squared;M_{x}^{2} [GeV^{2}];Events", 200, -2.0, 8.0);
+        group->add_hist1D("Pmiss", "Missing Momentum;P_{miss} [GeV/c];Events", 100, 0.0, 5.0);
+        group->add_hist1D("Emiss", "Missing Energy;E_{miss} [GeV];Events", 100, -2.0, 5.0);
+        group->add_hist2D("Mx_vs_Q2", "M_{x} vs Q^{2};Q^{2} [GeV^{2}];M_{x} [GeV]",
+                          100, 0.0, 12.0, 100, 0.0, 4.0);
+        group->add_hist2D("Mx_vs_W", "M_{x} vs W;W [GeV];M_{x} [GeV]",
+                          100, 0.0, 5.0, 100, 0.0, 4.0);
 
         return group;
     }
