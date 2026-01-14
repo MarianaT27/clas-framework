@@ -79,7 +79,14 @@ int main(int argc, char* argv[]) {
     // ========================================================================
     // Find input files
     // ========================================================================
-    std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files(input_path);
+    std::vector<std::string> input_files;
+    if (input_path.ends_with(".hipo")) {
+        fmt::print("Input is a single HIPO file.\n");
+        input_files.push_back(input_path);
+    } else {
+        fmt::print("Input is a directory; searching for HIPO files...\n");
+        input_files = CLAS::FileUtils::read_recursive_hipo_files(input_path);
+    }
 
     if (input_files.empty()) {
         fmt::print("ERROR: No HIPO files found in {}\n", input_path);
@@ -135,6 +142,7 @@ int main(int argc, char* argv[]) {
 
     // Note: max_events not directly supported; percentage-based processing available
     (void)max_events;
+    fmt::print("Note: Max events option is not directly supported; processing all events.\n");
 
     // Initialize
     fmt::print("--- Initialization ---\n");

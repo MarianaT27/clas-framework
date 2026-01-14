@@ -116,6 +116,7 @@ executables = {
   'electron_analysis':      {'main': 'src/electron_analysis.cpp'},
   'pion_analysis':          {'main': 'src/pion_analysis.cpp'},
   'nuclear_transparency':   {'main': 'src/nuclear_transparency.cpp'},
+  'dipion_filter':         {'main': 'src/dipion_filter.cpp'},
 }
 
 foreach name, config : executables
