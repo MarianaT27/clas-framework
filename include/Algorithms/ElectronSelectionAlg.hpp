@@ -88,6 +88,9 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
 
         Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
 
+        auto vz_range = m_electron_cuts_svc->get()->get_vz_range(CLAS::RunGroup::RG_D, m_target);
+        Log::info(name(), "Using Vz range: [{:.2f}, {:.2f}] for {}", vz_range.min, vz_range.max, CLAS::to_string(m_target));
+
         return Framework::StatusCode::SUCCESS();
     }
 
@@ -133,7 +136,6 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         kinematics_groups["before_cuts"]->hist1d("p").fill(p);
         kinematics_groups["before_cuts"]->hist1d("theta").fill(electron.theta());
         kinematics_groups["before_cuts"]->hist1d("phi").fill(electron.phi());
-        kinematics_groups["before_cuts"]->hist1d("vz").fill(electron.vz());
         kinematics_groups["before_cuts"]->hist1d("sector").fill(static_cast<double>(sector));
         kinematics_groups["before_cuts"]->hist1d("vz").fill(electron.vz());
         kinematics_groups["before_cuts"]->hist1d("vx").fill(electron.vx());
@@ -148,6 +150,18 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         kinematics_groups["before_cuts"]->hist1d("dc_chi2_R1").fill(trk_r1.chi2 / trk_r1.ndf);
         kinematics_groups["before_cuts"]->hist1d("dc_chi2_R2").fill(trk_r2.chi2 / trk_r2.ndf);
         kinematics_groups["before_cuts"]->hist1d("dc_chi2_R3").fill(trk_r3.chi2 / trk_r3.ndf);
+        kinematics_groups["before_cuts"]->hist1d("pcal_lu").fill(calorimeter.pcal.lu);
+        kinematics_groups["before_cuts"]->hist1d("pcal_lv").fill(calorimeter.pcal.lv);
+        kinematics_groups["before_cuts"]->hist1d("pcal_lw").fill(calorimeter.pcal.lw);
+        kinematics_groups["before_cuts"]->hist2d("sf_vs_p").fill(p, SF);
+        kinematics_groups["before_cuts"]->hist2d("chi2pid_vs_p").fill(p, electron.chi2pid());
+        kinematics_groups["before_cuts"]->hist2d("vz_vs_phi").fill(electron.phi(), electron.vz());
+        kinematics_groups["before_cuts"]->hist2d("vz_vs_theta").fill(electron.theta(), electron.vz());
+        kinematics_groups["before_cuts"]->hist2d("theta_vs_phi").fill(electron.phi(), electron.theta());
+        kinematics_groups["before_cuts"]->hist2d("p_vs_theta").fill(electron.theta(), p);
+        kinematics_groups["before_cuts"]->hist2d("pcal_lv_vs_lu").fill(calorimeter.pcal.lu, calorimeter.pcal.lv);
+        kinematics_groups["before_cuts"]->hist2d("ecin_vs_pcal").fill(calorimeter.pcal.energy, calorimeter.inner.energy);
+        
 
         auto* cuts_svc = m_electron_cuts_svc->get();
 
@@ -173,7 +187,6 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         kinematics_groups["after_cuts"]->hist1d("p").fill(p);
         kinematics_groups["after_cuts"]->hist1d("theta").fill(electron.theta());
         kinematics_groups["after_cuts"]->hist1d("phi").fill(electron.phi());
-        kinematics_groups["after_cuts"]->hist1d("vz").fill(electron.vz());
         kinematics_groups["after_cuts"]->hist1d("sector").fill(static_cast<double>(sector));
         kinematics_groups["after_cuts"]->hist1d("vz").fill(electron.vz());
         kinematics_groups["after_cuts"]->hist1d("vx").fill(electron.vx());
@@ -188,6 +201,17 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         kinematics_groups["after_cuts"]->hist1d("dc_chi2_R1").fill(trk_r1.chi2 / trk_r1.ndf);
         kinematics_groups["after_cuts"]->hist1d("dc_chi2_R2").fill(trk_r2.chi2 / trk_r2.ndf);
         kinematics_groups["after_cuts"]->hist1d("dc_chi2_R3").fill(trk_r3.chi2 / trk_r3.ndf);
+        kinematics_groups["after_cuts"]->hist1d("pcal_lu").fill(calorimeter.pcal.lu);
+        kinematics_groups["after_cuts"]->hist1d("pcal_lv").fill(calorimeter.pcal.lv);
+        kinematics_groups["after_cuts"]->hist1d("pcal_lw").fill(calorimeter.pcal.lw);
+        kinematics_groups["after_cuts"]->hist2d("sf_vs_p").fill(p, SF);
+        kinematics_groups["after_cuts"]->hist2d("chi2pid_vs_p").fill(p, electron.chi2pid());
+        kinematics_groups["after_cuts"]->hist2d("vz_vs_phi").fill(electron.phi(), electron.vz());
+        kinematics_groups["after_cuts"]->hist2d("vz_vs_theta").fill(electron.theta(), electron.vz());
+        kinematics_groups["after_cuts"]->hist2d("theta_vs_phi").fill(electron.phi(), electron.theta());
+        kinematics_groups["after_cuts"]->hist2d("p_vs_theta").fill(electron.theta(), p);
+        kinematics_groups["after_cuts"]->hist2d("pcal_lv_vs_lu").fill(calorimeter.pcal.lu, calorimeter.pcal.lv);
+        kinematics_groups["after_cuts"]->hist2d("ecin_vs_pcal").fill(calorimeter.pcal.energy, calorimeter.inner.energy);
 
         // Fill N-tuple if service is available
         if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {

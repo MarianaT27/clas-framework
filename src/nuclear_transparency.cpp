@@ -101,8 +101,7 @@ struct NuclearTransparencyConfig {
     return config;
 }
 
-[[nodiscard]] auto find_default_input_files(CLAS::Target target, CLAS::Polarity polarity)
-    -> std::vector<std::string> {
+[[nodiscard]] auto find_default_input_files(CLAS::Target target, CLAS::Polarity polarity) -> std::vector<std::string> {
 
     struct DataSource {
         CLAS::Target target;
@@ -166,7 +165,7 @@ auto main(int argc, char* argv[]) -> int {
         .with_target(CLAS::to_string(config->target))
         .add_service<Framework::ElectronCutsService>()
         .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
-        .add_algorithm<Algorithms::ElectronSelectionAlg>()
+        .add_algorithm<Algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", config->target, config->polarity)
         .add_algorithm<Algorithms::DISSelectionAlg>("DISSelection", Physics::DISAnalysis::standard_dis_region())
         .add_algorithm<Algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", config->min_energy, config->mass_window)
         .build();

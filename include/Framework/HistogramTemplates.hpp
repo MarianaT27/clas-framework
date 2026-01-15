@@ -687,7 +687,7 @@ struct ElectronHistograms {
         // ============================================================
         // Vertex
         // ============================================================
-        group->add_hist1D("", "Vertex Z;v_{z} [cm];Events", 200, -40.0, 40.0);
+        group->add_hist1D("vz", "Vertex Z;v_{z} [cm];Events", 200, -40.0, 40.0);
         group->add_hist1D("vx", "Vertex X;v_{x} [cm];Events", 100, -2.0, 2.0);
         group->add_hist1D("vy", "Vertex Y;v_{y} [cm];Events", 100, -2.0, 2.0);
 
@@ -728,8 +728,7 @@ struct ElectronHistograms {
                           100, 0.0, 12.0, 100, 0.0, 0.5);
         group->add_hist2D("chi2pid_vs_p", "#chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}",
                           100, 0.0, 12.0, 200, -10.0, 10.0);
-        group->add_hist2D("vz_vs_phi", "v_{z} vs #phi;#phi [deg];v_{z} [cm]",
-                          180, -180.0, 180.0, 100, -40.0, 40.0);
+        group->add_hist2D("vz_vs_phi", "v_{z} vs #phi;#phi [deg];v_{z} [cm]", 180, -180.0, 180.0, 100, -40.0, 40.0);
         group->add_hist2D("vz_vs_theta", "v_{z} vs #theta;#theta [deg];v_{z} [cm]",
                           90, 0.0, 45.0, 100, -40.0, 40.0);
         group->add_hist2D("theta_vs_phi", "#theta vs #phi;#phi [deg];#theta [deg]",
