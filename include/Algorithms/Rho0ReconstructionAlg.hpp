@@ -183,14 +183,16 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         for (const auto& pip : pions_plus_raw) {
             if (h_piplus_momentum_raw) h_piplus_momentum_raw->Fill(pip.p());
             if (h_piplus_theta_raw) h_piplus_theta_raw->Fill(pip.theta());
+            if (h_piplus_chi2pid_raw) h_piplus_chi2pid_raw->Fill(pip.chi2pid());
         }
 
         for (const auto& pim : pions_minus_raw) {
             if (h_piminus_momentum_raw) h_piminus_momentum_raw->Fill(pim.p());
             if (h_piminus_theta_raw) h_piminus_theta_raw->Fill(pim.theta());
+            if (h_piminus_chi2pid_raw) h_piminus_chi2pid_raw->Fill(pim.chi2pid());
         }
 
-        // Apply momentum cuts
+        // Apply momentum and chi2pid cuts
         auto pions_plus = select_pions(pions_plus_raw);
         auto pions_minus = select_pions(pions_minus_raw);
 
@@ -198,11 +200,13 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         for (const auto& pip : pions_plus) {
             if (h_piplus_momentum) h_piplus_momentum->Fill(pip.p());
             if (h_piplus_theta) h_piplus_theta->Fill(pip.theta());
+            if (h_piplus_chi2pid) h_piplus_chi2pid->Fill(pip.chi2pid());
         }
 
         for (const auto& pim : pions_minus) {
             if (h_piminus_momentum) h_piminus_momentum->Fill(pim.p());
             if (h_piminus_theta) h_piminus_theta->Fill(pim.theta());
+            if (h_piminus_chi2pid) h_piminus_chi2pid->Fill(pim.chi2pid());
         }
 
         if (pions_plus.empty()) return Framework::StatusCode::FILTERED();
@@ -629,6 +633,8 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     TH1D* h_piplus_theta_raw = nullptr;
     TH1D* h_piminus_momentum_raw = nullptr;
     TH1D* h_piminus_theta_raw = nullptr;
+    TH1D* h_piplus_chi2pid_raw = nullptr;
+    TH1D* h_piminus_chi2pid_raw = nullptr;
     TH1D* h_n_piplus = nullptr;
     TH1D* h_n_piminus = nullptr;
 
@@ -637,6 +643,8 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     TH1D* h_piplus_theta = nullptr;
     TH1D* h_piminus_momentum = nullptr;
     TH1D* h_piminus_theta = nullptr;
+    TH1D* h_piplus_chi2pid = nullptr;
+    TH1D* h_piminus_chi2pid = nullptr;
 
     // Histograms - Rho0 candidates
     TH1D* h_pipim_mass_all = nullptr;
@@ -762,14 +770,20 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         h_piplus_theta_raw = svc->book_hist1D("/Rho0/piplus_theta_raw", "Raw #pi^{+} Theta;#theta [deg];Events", 180, 0, 180);
         h_piminus_momentum_raw = svc->book_hist1D("/Rho0/piminus_momentum_raw", "Raw #pi^{-} Momentum;p [GeV/c];Events", 100, 0, 10);
         h_piminus_theta_raw = svc->book_hist1D("/Rho0/piminus_theta_raw", "Raw #pi^{-} Theta;#theta [deg];Events", 180, 0, 180);
+        h_piplus_chi2pid_raw = svc->book_hist1D("/Rho0/piplus_chi2pid_raw", "Raw #pi^{+} chi2pid;chi2pid;Events", 100, -20, 20);
+        h_piminus_chi2pid_raw = svc->book_hist1D("/Rho0/piminus_chi2pid_raw", "Raw #pi^{-} chi2pid;chi2pid;Events", 100, -20, 20);
+        
         h_n_piplus = svc->book_hist1D("/Rho0/n_piplus", "Number of #pi^{+};N_{#pi^{+}};Events", 10, 0, 10);
         h_n_piminus = svc->book_hist1D("/Rho0/n_piminus", "Number of #pi^{-};N_{#pi^{-}};Events", 10, 0, 10);
 
         // Selected pion histograms
         h_piplus_momentum = svc->book_hist1D("/Rho0/piplus_momentum", "#pi^{+} Momentum;p [GeV/c];Events", 100, 0, 10);
         h_piplus_theta = svc->book_hist1D("/Rho0/piplus_theta", "#pi^{+} Theta;#theta [deg];Events", 180, 0, 180);
+        h_piplus_chi2pid = svc->book_hist1D("/Rho0/piplus_chi2pid", "#pi^{+} chi2pid;chi2pid;Events", 100, -20, 20);
+
         h_piminus_momentum = svc->book_hist1D("/Rho0/piminus_momentum", "#pi^{-} Momentum;p [GeV/c];Events", 100, 0, 10);
         h_piminus_theta = svc->book_hist1D("/Rho0/piminus_theta", "#pi^{-} Theta;#theta [deg];Events", 180, 0, 180);
+        h_piminus_chi2pid = svc->book_hist1D("/Rho0/piminus_chi2pid", "#pi^{-} chi2pid;chi2pid;Events", 100, -20, 20);
 
         // Rho0 candidate histograms
         h_pipim_mass_all = svc->book_hist1D("/Rho0/pipim_mass_all", "All #pi^{+}#pi^{-} Invariant Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
