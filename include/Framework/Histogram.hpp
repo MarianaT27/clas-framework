@@ -216,6 +216,10 @@ class HistogramGroup {
         return m_hist1d[name];
     }
 
+    auto hist1d(const std::string& name) -> Hist1D& {
+        return m_hist1d[name];
+    }
+
     /**
      * @brief Get 2D histogram by name
      */

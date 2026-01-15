@@ -130,24 +130,24 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         const double SF = E_tot / p;
         const int sector = calorimeter.pcal.sector;
 
-        (*kinematics_groups["before_cuts"])["p"].fill(p);
-        (*kinematics_groups["before_cuts"])["theta"].fill(electron.theta());
-        (*kinematics_groups["before_cuts"])["phi"].fill(electron.phi());
-        (*kinematics_groups["before_cuts"])["vz"].fill(electron.vz());
-        (*kinematics_groups["before_cuts"])["sector"].fill(static_cast<double>(sector));
-        (*kinematics_groups["before_cuts"])["vz"].fill(electron.vz());
-        (*kinematics_groups["before_cuts"])["vx"].fill(electron.vx());
-        (*kinematics_groups["before_cuts"])["vy"].fill(electron.vy());
-        (*kinematics_groups["before_cuts"])["chi2pid"].fill(electron.chi2pid());
-        (*kinematics_groups["before_cuts"])["beta"].fill(electron.beta());
-        (*kinematics_groups["before_cuts"])["pcal_E"].fill(calorimeter.pcal.energy);
-        (*kinematics_groups["before_cuts"])["ecin_E"].fill(calorimeter.inner.energy);
-        (*kinematics_groups["before_cuts"])["ecout_E"].fill(calorimeter.outer.energy);
-        (*kinematics_groups["before_cuts"])["ecal_E"].fill(E_tot);
-        (*kinematics_groups["before_cuts"])["sampling_fraction"].fill(SF);
-        (*kinematics_groups["before_cuts"])["dc_chi2_R1"].fill(trk_r1.chi2 / trk_r1.ndf);
-        (*kinematics_groups["before_cuts"])["dc_chi2_R2"].fill(trk_r2.chi2 / trk_r2.ndf);
-        (*kinematics_groups["before_cuts"])["dc_chi2_R3"].fill(trk_r3.chi2 / trk_r3.ndf);
+        kinematics_groups["before_cuts"]->hist1d("p").fill(p);
+        kinematics_groups["before_cuts"]->hist1d("theta").fill(electron.theta());
+        kinematics_groups["before_cuts"]->hist1d("phi").fill(electron.phi());
+        kinematics_groups["before_cuts"]->hist1d("vz").fill(electron.vz());
+        kinematics_groups["before_cuts"]->hist1d("sector").fill(static_cast<double>(sector));
+        kinematics_groups["before_cuts"]->hist1d("vz").fill(electron.vz());
+        kinematics_groups["before_cuts"]->hist1d("vx").fill(electron.vx());
+        kinematics_groups["before_cuts"]->hist1d("vy").fill(electron.vy());
+        kinematics_groups["before_cuts"]->hist1d("chi2pid").fill(electron.chi2pid());
+        kinematics_groups["before_cuts"]->hist1d("beta").fill(electron.beta());
+        kinematics_groups["before_cuts"]->hist1d("pcal_E").fill(calorimeter.pcal.energy);
+        kinematics_groups["before_cuts"]->hist1d("ecin_E").fill(calorimeter.inner.energy);
+        kinematics_groups["before_cuts"]->hist1d("ecout_E").fill(calorimeter.outer.energy);
+        kinematics_groups["before_cuts"]->hist1d("ecal_E").fill(E_tot);
+        kinematics_groups["before_cuts"]->hist1d("sampling_fraction").fill(SF);
+        kinematics_groups["before_cuts"]->hist1d("dc_chi2_R1").fill(trk_r1.chi2 / trk_r1.ndf);
+        kinematics_groups["before_cuts"]->hist1d("dc_chi2_R2").fill(trk_r2.chi2 / trk_r2.ndf);
+        kinematics_groups["before_cuts"]->hist1d("dc_chi2_R3").fill(trk_r3.chi2 / trk_r3.ndf);
 
         auto* cuts_svc = m_electron_cuts_svc->get();
 
@@ -170,24 +170,24 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         event.store_particles<CLAS::Particle>("SelectedElectrons", {electron});
 
         // Fill histograms after selection using templates
-        (*kinematics_groups["after_cuts"])["p"].fill(p);
-        (*kinematics_groups["after_cuts"])["theta"].fill(electron.theta());
-        (*kinematics_groups["after_cuts"])["phi"].fill(electron.phi());
-        (*kinematics_groups["after_cuts"])["vz"].fill(electron.vz());
-        (*kinematics_groups["after_cuts"])["sector"].fill(static_cast<double>(sector));
-        (*kinematics_groups["after_cuts"])["vz"].fill(electron.vz());
-        (*kinematics_groups["after_cuts"])["vx"].fill(electron.vx());
-        (*kinematics_groups["after_cuts"])["vy"].fill(electron.vy());
-        (*kinematics_groups["after_cuts"])["chi2pid"].fill(electron.chi2pid());
-        (*kinematics_groups["after_cuts"])["beta"].fill(electron.beta());
-        (*kinematics_groups["after_cuts"])["pcal_E"].fill(calorimeter.pcal.energy);
-        (*kinematics_groups["after_cuts"])["ecin_E"].fill(calorimeter.inner.energy);
-        (*kinematics_groups["after_cuts"])["ecout_E"].fill(calorimeter.outer.energy);
-        (*kinematics_groups["after_cuts"])["ecal_E"].fill(E_tot);
-        (*kinematics_groups["after_cuts"])["sampling_fraction"].fill(SF);
-        (*kinematics_groups["after_cuts"])["dc_chi2_R1"].fill(trk_r1.chi2 / trk_r1.ndf);
-        (*kinematics_groups["after_cuts"])["dc_chi2_R2"].fill(trk_r2.chi2 / trk_r2.ndf);
-        (*kinematics_groups["after_cuts"])["dc_chi2_R3"].fill(trk_r3.chi2 / trk_r3.ndf);
+        kinematics_groups["after_cuts"]->hist1d("p").fill(p);
+        kinematics_groups["after_cuts"]->hist1d("theta").fill(electron.theta());
+        kinematics_groups["after_cuts"]->hist1d("phi").fill(electron.phi());
+        kinematics_groups["after_cuts"]->hist1d("vz").fill(electron.vz());
+        kinematics_groups["after_cuts"]->hist1d("sector").fill(static_cast<double>(sector));
+        kinematics_groups["after_cuts"]->hist1d("vz").fill(electron.vz());
+        kinematics_groups["after_cuts"]->hist1d("vx").fill(electron.vx());
+        kinematics_groups["after_cuts"]->hist1d("vy").fill(electron.vy());
+        kinematics_groups["after_cuts"]->hist1d("chi2pid").fill(electron.chi2pid());
+        kinematics_groups["after_cuts"]->hist1d("beta").fill(electron.beta());
+        kinematics_groups["after_cuts"]->hist1d("pcal_E").fill(calorimeter.pcal.energy);
+        kinematics_groups["after_cuts"]->hist1d("ecin_E").fill(calorimeter.inner.energy);
+        kinematics_groups["after_cuts"]->hist1d("ecout_E").fill(calorimeter.outer.energy);
+        kinematics_groups["after_cuts"]->hist1d("ecal_E").fill(E_tot);
+        kinematics_groups["after_cuts"]->hist1d("sampling_fraction").fill(SF);
+        kinematics_groups["after_cuts"]->hist1d("dc_chi2_R1").fill(trk_r1.chi2 / trk_r1.ndf);
+        kinematics_groups["after_cuts"]->hist1d("dc_chi2_R2").fill(trk_r2.chi2 / trk_r2.ndf);
+        kinematics_groups["after_cuts"]->hist1d("dc_chi2_R3").fill(trk_r3.chi2 / trk_r3.ndf);
 
         // Fill N-tuple if service is available
         if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
