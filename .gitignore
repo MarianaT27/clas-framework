@@ -31,6 +31,12 @@
 *.out
 *.app
 
+# ROOT files
+*.root
+
+# MacOS files
+.DS_Store
+
 # Folders
 .vscode/
 .idea/
