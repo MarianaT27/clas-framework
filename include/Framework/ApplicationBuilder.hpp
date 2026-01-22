@@ -246,13 +246,14 @@ private:
         // Get raw pointer to OutputFileService before moving it
         OutputFileService* output_svc_ptr = output_svc.get();
         
-        // Wire HistogramService and NTupleService to use OutputFileService
+        // Wire HistogramService, NTupleService, and MetadataService to use OutputFileService
         hist_svc->set_output_file_service(output_svc_ptr);
         ntuple_svc->set_output_file_service(output_svc_ptr);
-        
+        metadata_svc->set_output_file_service(output_svc_ptr);
+
         // Configure other file services
         root_svc->set_default_output(m_output_file);
-        metadata_svc->set_output_file(m_output_file);
+        metadata_svc->set_output_file(m_output_file);  // Fallback if OutputFileService not available
         hipo_svc->set_input_files(m_input_files);
 
         // Configure metadata

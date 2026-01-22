@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include "Framework/IService.hpp"
+#include "Framework/Services/OutputFileService.hpp"
 #include "TFile.h"
 #include "TObjString.h"
 #include "TTree.h"
@@ -55,10 +56,20 @@ class MetadataService : public Service {
     }
 
     /**
-     * @brief Set output ROOT file
+     * @brief Set output ROOT file (used as fallback if no OutputFileService)
      */
     auto set_output_file(const std::string& filename) -> void {
         m_output_file = filename;
+    }
+
+    /**
+     * @brief Set OutputFileService to use for writing metadata
+     *
+     * When set, metadata will be written to the file managed by OutputFileService
+     * instead of opening the file independently. This avoids file access conflicts.
+     */
+    auto set_output_file_service(OutputFileService* svc) -> void {
+        m_output_svc = svc;
     }
 
     /**
@@ -195,21 +206,35 @@ class MetadataService : public Service {
 
     /**
      * @brief Write metadata to ROOT file
+     *
+     * If OutputFileService is set, writes directly to its managed file.
+     * Otherwise, opens the file in UPDATE mode (legacy behavior).
      */
     auto write_metadata() -> void {
-        if (m_output_file.empty()) {
-            return;
-        }
+        // Determine which file to use
+        TFile* file_ptr = nullptr;
+        std::unique_ptr<TFile> owned_file;
 
-        Framework::Log::info("MetadataService", "Writing metadata to: {}", m_output_file);
-
-        TFile file(m_output_file.c_str(), "UPDATE");
-        if (file.IsZombie() || !file.IsOpen()) {
-            fmt::print(stderr, "ERROR: Failed to open file for metadata\n");
+        if (m_output_svc && m_output_svc->is_file_open()) {
+            // Use OutputFileService's file handle (preferred)
+            file_ptr = m_output_svc->get_file();
+            Framework::Log::info("MetadataService", "Writing metadata to: {}",
+                                 m_output_svc->get_output_file());
+        } else if (!m_output_file.empty()) {
+            // Fallback: open file directly (legacy behavior)
+            Framework::Log::info("MetadataService", "Writing metadata to: {}", m_output_file);
+            owned_file = std::make_unique<TFile>(m_output_file.c_str(), "UPDATE");
+            if (owned_file->IsZombie() || !owned_file->IsOpen()) {
+                fmt::print(stderr, "ERROR: Failed to open file for metadata\n");
+                return;
+            }
+            file_ptr = owned_file.get();
+        } else {
             return;
         }
 
         // Create metadata tree
+        file_ptr->cd();
         TTree tree("metadata", "Analysis Metadata");
 
         // Branch variables
@@ -243,9 +268,9 @@ class MetadataService : public Service {
         tree.Write();
 
         // Write additional metadata as TObjStrings
-        file.cd();
-        file.mkdir("metadata_details");
-        file.cd("metadata_details");
+        file_ptr->cd();
+        file_ptr->mkdir("metadata_details");
+        file_ptr->cd("metadata_details");
 
         // Input files
         TObjString input_files_str(fmt::format("{}", fmt::join(m_input_files, "\n")).c_str());
@@ -269,11 +294,16 @@ class MetadataService : public Service {
             meta_str.Write(key.c_str());
         }
 
-        file.Close();
+        // Only close if we own the file
+        if (owned_file) {
+            owned_file->Close();
+        }
+
         Framework::Log::info("MetadataService", "Metadata written successfully");
     }
 
    private:
+    OutputFileService* m_output_svc = nullptr;
     std::string m_output_file;
     std::string m_version;
     std::string m_git_hash;
