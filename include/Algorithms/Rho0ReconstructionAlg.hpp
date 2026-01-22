@@ -491,21 +491,9 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
 
         Framework::Log::info(name(), "Saved {} unique runs to metadata", m_runs.size());
 
-        // Print runs to console
-        fmt::print("\n");
-        fmt::print("╔═══════════════════════════════════════════════════════════════════════╗\n");
-        fmt::print("║                      Run Metadata                                     ║\n");
-        fmt::print("╠═══════════════════════════════════════════════════════════════════════╣\n");
-        fmt::print("║ Total runs: {:58} ║\n", m_runs.size());
-        fmt::print("║ Runs: ");
-        int count = 0;
-        for (int run : m_runs) {
-            if (count > 0) fmt::print(", ");
-            if (count > 0 && count % 10 == 0) fmt::print("\n║       ");
-            fmt::print("{}", run);
-            count++;
-        }
-        fmt::print("\n╚═══════════════════════════════════════════════════════════════════════╝\n");
+        // Print runs to console using logger table
+        std::vector<int> runs_vec(m_runs.begin(), m_runs.end());
+        Framework::Log::print_run_metadata("Run Metadata", m_runs.size(), runs_vec);
     }
 
     // Public helper methods
@@ -919,34 +907,42 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         save_lc_fit_results_to_file(fit_results, total_rho0, std::sqrt(total_rho0_err_sq));
 
 
-        // Print summary table
+        // Print summary table using logger
         if (!fit_results.empty()) {
-            fmt::print("\n");
-            fmt::print("╔═══════════════════════════════════════════════════════════════════════╗\n");
-            fmt::print("║                      ρ⁰ Yield Summary                                 ║\n");
-            fmt::print("╠═══════════════════════════════════════════════════════════════════════╣\n");
-            fmt::print("║ {:20} │ {:>12} │ {:>14} │ {:>10} ║\n", "Q² Bin", "N(ρ⁰)", "Mass [GeV]", "χ²/NDF");
-            fmt::print("╟──────────────────────┼──────────────┼────────────────┼────────────╢\n");
+            std::vector<std::string> columns = {"LC Bin", "N(ρ⁰)", "Mass [GeV]", "χ²/NDF"};
+            std::vector<std::vector<std::string>> rows;
 
             for (const auto& [bin_name, result] : fit_results) {
                 if (bin_name != "All") {
-                    fmt::print("║ {:20} │ {:>6.0f} ± {:<4.0f} │ {:.4f} ± {:.4f} │ {:>10.2f} ║\n",
-                              bin_name, result.n_rho0, result.n_rho0_err,
-                              result.mass, result.mass_err, result.chi2_ndf);
+                    rows.push_back({
+                        bin_name,
+                        fmt::format("{:.0f} ± {:.0f}", result.n_rho0, result.n_rho0_err),
+                        fmt::format("{:.4f} ± {:.4f}", result.mass, result.mass_err),
+                        fmt::format("{:.2f}", result.chi2_ndf)
+                    });
                 }
             }
 
-            fmt::print("╟──────────────────────┼──────────────┼────────────────┼────────────╢\n");
-            fmt::print("║ {:20} │ {:>6.0f} ± {:<4.0f} │                │            ║\n",
-                      "Total (Q² bins)", total_rho0, std::sqrt(total_rho0_err_sq));
+            // Add total row
+            rows.push_back({
+                "Total (LC bins)",
+                fmt::format("{:.0f} ± {:.0f}", total_rho0, std::sqrt(total_rho0_err_sq)),
+                "",
+                ""
+            });
 
+            // Add integrated fit result if available
             if (fit_results.count("All")) {
                 const auto& all_result = fit_results["All"];
-                fmt::print("║ {:20} │ {:>6.0f} ± {:<4.0f} │ {:.4f} ± {:.4f} │ {:>10.2f} ║\n",
-                          "All (integrated)", all_result.n_rho0, all_result.n_rho0_err,
-                          all_result.mass, all_result.mass_err, all_result.chi2_ndf);
+                rows.push_back({
+                    "All (integrated)",
+                    fmt::format("{:.0f} ± {:.0f}", all_result.n_rho0, all_result.n_rho0_err),
+                    fmt::format("{:.4f} ± {:.4f}", all_result.mass, all_result.mass_err),
+                    fmt::format("{:.2f}", all_result.chi2_ndf)
+                });
             }
-            fmt::print("╚═══════════════════════════════════════════════════════════════════════╝\n");
+
+            Framework::Log::print_yield_summary_table("ρ⁰ Yield Summary", columns, rows);
         }
     }
 
@@ -1264,15 +1260,15 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
 
         result.valid = true;
 
-        // Print results
-        fmt::print("\n");
-        fmt::print("┌───────────────────────────────────────────────────────────────┐\n");
-        fmt::print("│ Fit Results: {:48} │\n", label);
-        fmt::print("├───────────────────────────────────────────────────────────────┤\n");
-        fmt::print("│ Mass       = {:.4f} ± {:.4f} GeV/c²                           │\n", result.mass, result.mass_err);
-        fmt::print("│ N(ρ⁰)      = {:.0f} ± {:.0f}                                    │\n", result.n_rho0, result.n_rho0_err);
-        fmt::print("│ χ²/NDF     = {:.1f} / {} = {:.2f}                               │\n", chi2, ndf, result.chi2_ndf);
-        fmt::print("└───────────────────────────────────────────────────────────────┘\n");
+        // Print results using logger table
+        Framework::Log::print_fit_results_table(
+            fmt::format("Fit Results: {}", label),
+            {
+                {"Mass", fmt::format("{:.4f} ± {:.4f}", result.mass, result.mass_err), "GeV/c²"},
+                {"N(ρ⁰)", fmt::format("{:.0f} ± {:.0f}", result.n_rho0, result.n_rho0_err), ""},
+                {"χ²/NDF", fmt::format("{:.1f} / {} = {:.2f}", chi2, ndf, result.chi2_ndf), ""}
+            }
+        );
 
         // Store fit function in both the histogram and the result
         result.fit_function = std::shared_ptr<TF1>(static_cast<TF1*>(fit_func->Clone()));

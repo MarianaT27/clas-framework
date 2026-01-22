@@ -880,6 +880,365 @@ class LoggingService : public Service {
         }
     }
 
+    /**
+     * @brief Print a fit results table
+     * @param title Table title (e.g., "Fit Results: LC_1.0_1.5")
+     * @param rows Vector of (label, value, unit) tuples
+     */
+    auto print_fit_results_table(
+        const std::string& title,
+        const std::vector<std::tuple<std::string, std::string, std::string>>& rows
+    ) -> void {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        // Column widths
+        constexpr int LABEL_WIDTH = 15;
+        constexpr int VALUE_WIDTH = 25;
+        constexpr int UNIT_WIDTH = 12;
+        constexpr int TOTAL_WIDTH = LABEL_WIDTH + VALUE_WIDTH + UNIT_WIDTH + 10;
+
+        // Box drawing characters
+        const char* TL = "\342\224\214";  // ┌
+        const char* TR = "\342\224\220";  // ┐
+        const char* BL = "\342\224\224";  // └
+        const char* BR = "\342\224\230";  // ┘
+        const char* H = "\342\224\200";   // ─
+        const char* V = "\342\224\202";   // │
+        const char* LM = "\342\224\234";  // ├
+        const char* RM = "\342\224\244";  // ┤
+
+        auto repeat = [](const char* ch, int n) {
+            std::string result;
+            for (int i = 0; i < n; ++i) result += ch;
+            return result;
+        };
+
+        std::string top = std::string(TL) + repeat(H, TOTAL_WIDTH - 2) + TR;
+        std::string sep = std::string(LM) + repeat(H, TOTAL_WIDTH - 2) + RM;
+        std::string bottom = std::string(BL) + repeat(H, TOTAL_WIDTH - 2) + BR;
+
+        if (m_console_output) {
+            if (m_colored_output) {
+                fmt::print("\n\033[36m{}\033[0m\n", top);
+                fmt::print("\033[36m{}\033[0m\033[1;37m {:^{}} \033[0m\033[36m{}\033[0m\n",
+                           V, title, TOTAL_WIDTH - 2, V);
+                fmt::print("\033[36m{}\033[0m\n", sep);
+
+                for (const auto& [label, value, unit] : rows) {
+                    fmt::print("\033[36m{}\033[0m\033[37m {:<{}} \033[0m"
+                               "\033[1;33m{:>{}} \033[0m"
+                               "\033[37m{:<{}} \033[0m\033[36m{}\033[0m\n",
+                               V, label, LABEL_WIDTH,
+                               value, VALUE_WIDTH,
+                               unit, UNIT_WIDTH, V);
+                }
+                fmt::print("\033[36m{}\033[0m\n", bottom);
+            } else {
+                fmt::print("\n{}\n", top);
+                fmt::print("{} {:^{}} {}\n", V, title, TOTAL_WIDTH - 2, V);
+                fmt::print("{}\n", sep);
+
+                for (const auto& [label, value, unit] : rows) {
+                    fmt::print("{} {:<{}} {:>{}} {:<{}} {}\n",
+                               V, label, LABEL_WIDTH,
+                               value, VALUE_WIDTH,
+                               unit, UNIT_WIDTH, V);
+                }
+                fmt::print("{}\n", bottom);
+            }
+        }
+
+        if (m_file_stream.is_open()) {
+            write_to_file_raw("\n+" + std::string(TOTAL_WIDTH - 2, '-') + "+\n");
+            write_to_file_raw(fmt::format("| {:^{}} |\n", title, TOTAL_WIDTH - 2));
+            write_to_file_raw("+" + std::string(TOTAL_WIDTH - 2, '-') + "+\n");
+            for (const auto& [label, value, unit] : rows) {
+                write_to_file_raw(fmt::format("| {:<{}} {:>{}} {:<{}} |\n",
+                                             label, LABEL_WIDTH, value, VALUE_WIDTH, unit, UNIT_WIDTH));
+            }
+            write_to_file_raw("+" + std::string(TOTAL_WIDTH - 2, '-') + "+\n");
+        }
+    }
+
+    /**
+     * @brief Print a yield summary table
+     * @param title Table title
+     * @param columns Column headers
+     * @param rows Data rows - each row is a vector of strings
+     * @param footer Optional footer text
+     */
+    auto print_yield_summary_table(
+        const std::string& title,
+        const std::vector<std::string>& columns,
+        const std::vector<std::vector<std::string>>& rows,
+        const std::string& footer = ""
+    ) -> void {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        // Column widths (adaptive based on number of columns)
+        std::vector<int> widths;
+        if (columns.size() == 4) {
+            widths = {20, 14, 16, 12};  // Q² Bin, N(ρ⁰), Mass, χ²/NDF
+        } else {
+            // Default widths
+            for (size_t i = 0; i < columns.size(); ++i) {
+                widths.push_back(15);
+            }
+        }
+
+        // Calculate total width
+        int total_width = 1;  // Left border
+        for (int w : widths) {
+            total_width += w + 3;  // width + " | "
+        }
+
+        // Box drawing characters
+        const char* TL = "\342\224\214";  // ┌
+        const char* TR = "\342\224\220";  // ┐
+        const char* BL = "\342\224\224";  // └
+        const char* BR = "\342\224\230";  // ┘
+        const char* H = "\342\224\200";   // ─
+        const char* V = "\342\224\202";   // │
+        const char* TM = "\342\224\254";  // ┬
+        const char* BM = "\342\224\264";  // ┴
+        const char* LM = "\342\224\234";  // ├
+        const char* RM = "\342\224\244";  // ┤
+        const char* X = "\342\224\274";   // ┼
+
+        auto repeat = [](const char* ch, int n) {
+            std::string result;
+            for (int i = 0; i < n; ++i) result += ch;
+            return result;
+        };
+
+        // Build horizontal lines
+        auto make_sep = [&](const char* left, const char* mid, const char* right) {
+            std::string line = left;
+            for (size_t i = 0; i < widths.size(); ++i) {
+                line += repeat(H, widths[i] + 2);
+                if (i < widths.size() - 1) line += mid;
+            }
+            line += right;
+            return line;
+        };
+
+        std::string top = std::string(TL) + repeat(H, total_width - 2) + TR;
+        std::string title_sep = make_sep(LM, TM, RM);
+        std::string header_sep = make_sep(LM, X, RM);
+        std::string footer_sep = make_sep(LM, BM, RM);
+        std::string bottom = std::string(BL) + repeat(H, total_width - 2) + BR;
+
+        if (m_console_output) {
+            if (m_colored_output) {
+                // Top + title
+                fmt::print("\n\033[36m{}\033[0m\n", top);
+                fmt::print("\033[36m{}\033[0m\033[1;37m{:^{}}\033[0m\033[36m{}\033[0m\n",
+                           V, title, total_width - 2, V);
+                fmt::print("\033[36m{}\033[0m\n", title_sep);
+
+                // Column headers
+                fmt::print("\033[36m{}\033[0m", V);
+                for (size_t i = 0; i < columns.size() && i < widths.size(); ++i) {
+                    fmt::print("\033[1;37m {:^{}} \033[0m\033[36m{}\033[0m",
+                               columns[i], widths[i], V);
+                }
+                fmt::print("\n");
+                fmt::print("\033[36m{}\033[0m\n", header_sep);
+
+                // Data rows
+                for (const auto& row : rows) {
+                    fmt::print("\033[36m{}\033[0m", V);
+                    for (size_t i = 0; i < row.size() && i < widths.size(); ++i) {
+                        // Right-align numbers
+                        bool is_num = !row[i].empty() && (std::isdigit(row[i][0]) || row[i][0] == '-');
+                        if (is_num) {
+                            fmt::print("\033[33m {:>{}} \033[0m\033[36m{}\033[0m", row[i], widths[i], V);
+                        } else {
+                            fmt::print("\033[37m {:<{}} \033[0m\033[36m{}\033[0m", row[i], widths[i], V);
+                        }
+                    }
+                    fmt::print("\n");
+                }
+
+                // Footer
+                if (!footer.empty()) {
+                    fmt::print("\033[36m{}\033[0m\n", footer_sep);
+                    fmt::print("\033[36m{}\033[0m\033[1;32m {:<{}} \033[0m\033[36m{}\033[0m\n",
+                               V, footer, total_width - 3, V);
+                }
+                fmt::print("\033[36m{}\033[0m\n", bottom);
+            } else {
+                fmt::print("\n{}\n", top);
+                fmt::print("{}{:^{}}{}\n", V, title, total_width - 2, V);
+                fmt::print("{}\n", title_sep);
+
+                // Headers
+                fmt::print("{}", V);
+                for (size_t i = 0; i < columns.size() && i < widths.size(); ++i) {
+                    fmt::print(" {:^{}} {}", columns[i], widths[i], V);
+                }
+                fmt::print("\n{}\n", header_sep);
+
+                // Data
+                for (const auto& row : rows) {
+                    fmt::print("{}", V);
+                    for (size_t i = 0; i < row.size() && i < widths.size(); ++i) {
+                        bool is_num = !row[i].empty() && (std::isdigit(row[i][0]) || row[i][0] == '-');
+                        if (is_num) {
+                            fmt::print(" {:>{}} {}", row[i], widths[i], V);
+                        } else {
+                            fmt::print(" {:<{}} {}", row[i], widths[i], V);
+                        }
+                    }
+                    fmt::print("\n");
+                }
+
+                if (!footer.empty()) {
+                    fmt::print("{}\n", footer_sep);
+                    fmt::print("{} {:<{}} {}\n", V, footer, total_width - 3, V);
+                }
+                fmt::print("{}\n", bottom);
+            }
+        }
+
+        // File output (ASCII)
+        if (m_file_stream.is_open()) {
+            write_to_file_raw("\n+" + std::string(total_width - 2, '-') + "+\n");
+            write_to_file_raw(fmt::format("|{:^{}}|\n", title, total_width - 2));
+            write_to_file_raw("+" + std::string(total_width - 2, '-') + "+\n");
+
+            std::string header_line = "|";
+            for (size_t i = 0; i < columns.size() && i < widths.size(); ++i) {
+                header_line += fmt::format(" {:^{}} |", columns[i], widths[i]);
+            }
+            write_to_file_raw(header_line + "\n");
+            write_to_file_raw("+" + std::string(total_width - 2, '-') + "+\n");
+
+            for (const auto& row : rows) {
+                std::string line = "|";
+                for (size_t i = 0; i < row.size() && i < widths.size(); ++i) {
+                    bool is_num = !row[i].empty() && (std::isdigit(row[i][0]) || row[i][0] == '-');
+                    if (is_num) {
+                        line += fmt::format(" {:>{}} |", row[i], widths[i]);
+                    } else {
+                        line += fmt::format(" {:<{}} |", row[i], widths[i]);
+                    }
+                }
+                write_to_file_raw(line + "\n");
+            }
+
+            if (!footer.empty()) {
+                write_to_file_raw("+" + std::string(total_width - 2, '-') + "+\n");
+                write_to_file_raw(fmt::format("| {:<{}} |\n", footer, total_width - 3));
+            }
+            write_to_file_raw("+" + std::string(total_width - 2, '-') + "+\n");
+        }
+    }
+
+    /**
+     * @brief Print a run metadata summary
+     * @param title Table title
+     * @param total_runs Number of runs
+     * @param runs Vector of run numbers
+     */
+    auto print_run_metadata(
+        const std::string& title,
+        size_t total_runs,
+        const std::vector<int>& runs
+    ) -> void {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        constexpr int WIDTH = 72;
+
+        const char* TL = "\342\224\214";  // ┌
+        const char* TR = "\342\224\220";  // ┐
+        const char* BL = "\342\224\224";  // └
+        const char* BR = "\342\224\230";  // ┘
+        const char* H = "\342\224\200";   // ─
+        const char* V = "\342\224\202";   // │
+        const char* LM = "\342\224\234";  // ├
+        const char* RM = "\342\224\244";  // ┤
+
+        auto repeat = [](const char* ch, int n) {
+            std::string result;
+            for (int i = 0; i < n; ++i) result += ch;
+            return result;
+        };
+
+        std::string top = std::string(TL) + repeat(H, WIDTH) + TR;
+        std::string sep = std::string(LM) + repeat(H, WIDTH) + RM;
+        std::string bottom = std::string(BL) + repeat(H, WIDTH) + BR;
+
+        // Build run list with line wrapping
+        std::vector<std::string> run_lines;
+        std::string current_line;
+        int runs_per_line = 10;
+        int count = 0;
+        for (int run : runs) {
+            if (count > 0) current_line += ", ";
+            current_line += std::to_string(run);
+            count++;
+            if (count % runs_per_line == 0) {
+                run_lines.push_back(current_line);
+                current_line.clear();
+            }
+        }
+        if (!current_line.empty()) {
+            run_lines.push_back(current_line);
+        }
+
+        if (m_console_output) {
+            if (m_colored_output) {
+                fmt::print("\n\033[36m{}\033[0m\n", top);
+                fmt::print("\033[36m{}\033[0m\033[1;37m {:^{}} \033[0m\033[36m{}\033[0m\n",
+                           V, title, WIDTH, V);
+                fmt::print("\033[36m{}\033[0m\n", sep);
+                fmt::print("\033[36m{}\033[0m\033[37m Total runs: \033[1;33m{:<{}}\033[0m\033[36m{}\033[0m\n",
+                           V, total_runs, WIDTH - 13, V);
+                fmt::print("\033[36m{}\033[0m\033[37m Runs: \033[0m", V);
+
+                for (size_t i = 0; i < run_lines.size(); ++i) {
+                    if (i > 0) {
+                        fmt::print("\033[36m{}\033[0m       ", V);
+                    }
+                    fmt::print("\033[33m{:<{}}\033[0m\033[36m{}\033[0m\n",
+                               run_lines[i], WIDTH - 7, V);
+                }
+                fmt::print("\033[36m{}\033[0m\n", bottom);
+            } else {
+                fmt::print("\n{}\n", top);
+                fmt::print("{} {:^{}} {}\n", V, title, WIDTH, V);
+                fmt::print("{}\n", sep);
+                fmt::print("{} Total runs: {:<{}} {}\n", V, total_runs, WIDTH - 13, V);
+
+                for (size_t i = 0; i < run_lines.size(); ++i) {
+                    if (i == 0) {
+                        fmt::print("{} Runs: {:<{}} {}\n", V, run_lines[i], WIDTH - 7, V);
+                    } else {
+                        fmt::print("{}       {:<{}} {}\n", V, run_lines[i], WIDTH - 7, V);
+                    }
+                }
+                fmt::print("{}\n", bottom);
+            }
+        }
+
+        if (m_file_stream.is_open()) {
+            write_to_file_raw("\n+" + std::string(WIDTH, '-') + "+\n");
+            write_to_file_raw(fmt::format("| {:^{}} |\n", title, WIDTH));
+            write_to_file_raw("+" + std::string(WIDTH, '-') + "+\n");
+            write_to_file_raw(fmt::format("| Total runs: {:<{}} |\n", total_runs, WIDTH - 13));
+
+            for (size_t i = 0; i < run_lines.size(); ++i) {
+                if (i == 0) {
+                    write_to_file_raw(fmt::format("| Runs: {:<{}} |\n", run_lines[i], WIDTH - 7));
+                } else {
+                    write_to_file_raw(fmt::format("|       {:<{}} |\n", run_lines[i], WIDTH - 7));
+                }
+            }
+            write_to_file_raw("+" + std::string(WIDTH, '-') + "+\n");
+        }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Timer Utilities
     // ─────────────────────────────────────────────────────────────────────────
@@ -1293,6 +1652,39 @@ class Log {
         double efficiency
     ) -> void {
         if (s_instance) s_instance->print_cutflow_table(title, cuts, efficiency);
+    }
+
+    /**
+     * @brief Print a fit results table
+     */
+    static auto print_fit_results_table(
+        const std::string& title,
+        const std::vector<std::tuple<std::string, std::string, std::string>>& rows
+    ) -> void {
+        if (s_instance) s_instance->print_fit_results_table(title, rows);
+    }
+
+    /**
+     * @brief Print a yield summary table
+     */
+    static auto print_yield_summary_table(
+        const std::string& title,
+        const std::vector<std::string>& columns,
+        const std::vector<std::vector<std::string>>& rows,
+        const std::string& footer = ""
+    ) -> void {
+        if (s_instance) s_instance->print_yield_summary_table(title, columns, rows, footer);
+    }
+
+    /**
+     * @brief Print run metadata summary
+     */
+    static auto print_run_metadata(
+        const std::string& title,
+        size_t total_runs,
+        const std::vector<int>& runs
+    ) -> void {
+        if (s_instance) s_instance->print_run_metadata(title, total_runs, runs);
     }
 
    private:
