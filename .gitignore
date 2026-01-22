@@ -36,6 +36,7 @@
 
 # MacOS files
 .DS_Store
+.nfs*
 
 # Folders
 .vscode/
