@@ -21,6 +21,7 @@
 #include "CLAS/ReadBank.hpp"
 #include "CLAS/Target.hpp"
 #include "Framework/Cutflow.hpp"
+#include "Framework/Decisions.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/Property.hpp"
 #include "Framework/SimpleAlgorithm.hpp"
@@ -83,7 +84,7 @@ class PionAnalysisAlg : public Framework::SimpleAlgorithm<PionAnalysisAlg> {
      */
     auto process(Framework::Event& event) -> Framework::StatusCode override {
         // Require selected electron
-        if (!event.passes_decision("HasGoodElectron")) {
+        if (!event.passes_decision_typed(Framework::Decisions::HasGoodElectron)) {
             return Framework::StatusCode::FILTERED();
         }
 

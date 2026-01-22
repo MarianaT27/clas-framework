@@ -127,9 +127,6 @@ public:
     /// Number of cuts
     [[nodiscard]] auto size() const -> std::size_t { return m_cuts.size(); }
 
-    /// Set logger for cutflow
-    auto set_logger(LoggingService* log) -> void { m_cutflow.set_logger(log); }
-
     /// Print cutflow
     auto print() const -> void { m_cutflow.print(); }
 

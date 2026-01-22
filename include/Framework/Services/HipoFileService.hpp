@@ -31,15 +31,16 @@ namespace Framework {
  */
 class HipoFileService : public Service {
 public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "HipoFileService"; }
+
     explicit HipoFileService(std::string name = "HipoFileService")
         : Service(std::move(name)) {}
 
     auto initialize() -> StatusCode override {
-        if (m_log) {
-            m_log->info(name(), "Initializing HipoFileService");
-            m_log->info(name(), "  Input files: {}", m_input_files.size());
-            if (!m_output_file.empty()) m_log->info(name(), "  Output file: {}", m_output_file);
-        }
+        Log::info(name(), "Initializing HipoFileService");
+        Log::info(name(), "  Input files: {}", m_input_files.size());
+        if (!m_output_file.empty()) Log::info(name(), "  Output file: {}", m_output_file);
 
         // Open output file if specified
         if (!m_output_file.empty() && m_enable_output) {
@@ -56,24 +57,15 @@ public:
             m_writer->close();
             m_writer.reset();
 
-            if (m_log) {
-                m_log->info(name(), "Wrote {} events to {}", m_events_written, m_output_file);
-            }
+            Log::info(name(), "Wrote {} events to {}", m_events_written, m_output_file);
         }
 
-        if (m_log) {
-            m_log->info(name(), "Finalized - {} events read, {} events written", m_events_read, m_events_written);
-        }
+        Log::info(name(), "Finalized - {} events read, {} events written", m_events_read, m_events_written);
 
         return StatusCode::SUCCESS();
     }
 
     // ========== Configuration ==========
-
-    /**
-     * @brief Set logging service
-     */
-    auto set_logger(LoggingService* log) -> void { m_log = log; }
 
     /**
      * @brief Add an input HIPO file
@@ -134,11 +126,9 @@ public:
     auto open_reader(const std::string& filename) -> std::unique_ptr<hipo::reader> {
         auto reader = std::make_unique<hipo::reader>();
         reader->open(filename.c_str());
-        
-        if (m_log) {
-            m_log->debug(name(), "Opened reader for: {}", filename);
-        }
-        
+
+        Log::debug(name(), "Opened reader for: {}", filename);
+
         return reader;
     }
 
@@ -209,12 +199,10 @@ private:
     size_t m_events_read = 0;
     size_t m_events_written = 0;
 
-    LoggingService* m_log = nullptr;
-
     auto open_output_file() -> bool {
         try {
             m_writer = std::make_unique<hipo::writer>();
-            
+
             // Copy dictionary from first input file if available
             if (!m_input_files.empty()) {
                 auto dict = get_dictionary();
@@ -225,17 +213,13 @@ private:
                     }
                 }
             }
-            
+
             m_writer->open(m_output_file.c_str());
-            
-            if (m_log) {
-                m_log->info(name(), "Opened output file: {}", m_output_file);
-            }
+
+            Log::info(name(), "Opened output file: {}", m_output_file);
             return true;
         } catch (const std::exception& e) {
-            if (m_log) {
-                m_log->error(name(), "Failed to open output file: {}", e.what());
-            }
+            Log::error(name(), "Failed to open output file: {}", e.what());
             return false;
         }
     }

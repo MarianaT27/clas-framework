@@ -162,7 +162,6 @@ class ElasticEPAlg : public Framework::Algorithm {
         m_cutflow.add_cut("Momentum Correlation");
         m_cutflow.add_cut("Angle Correlation");
 
-        m_cutflow.set_logger(m_log_svc.get());
         Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
 
         return Framework::StatusCode::SUCCESS();

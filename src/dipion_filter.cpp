@@ -80,7 +80,7 @@ auto main(int argc, char** argv) -> int {
     // ========================================================================
     auto input_files = CLAS::FileUtils::read_recursive_hipo_files(input_path);
     if (input_files.empty()) {
-        fmt::print(stderr, "No HIPO files found in {}\n", input_path);
+        Framework::Log::error("Main", "No HIPO files found in {}", input_path);
         return EXIT_FAILURE;
     }
 
@@ -135,12 +135,12 @@ auto main(int argc, char** argv) -> int {
 
         // Run analysis
         if (auto sc = app.initialize(); sc.is_failure()) {
-            fmt::print(stderr, "  ERROR: Initialization failed: {}\n", sc.message());
+            Framework::Log::error("Main", "Initialization failed: {}", sc.message());
             continue;
         }
 
         if (auto sc = app.run(); sc.is_failure()) {
-            fmt::print(stderr, "  ERROR: Processing failed: {}\n", sc.message());
+            Framework::Log::error("Main", "Processing failed: {}", sc.message());
         }
 
         (void)app.finalize();

@@ -39,6 +39,9 @@ namespace Framework {
  */
 class MetadataService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "MetadataService"; }
+
     explicit MetadataService(std::string name = "MetadataService")
         : Service(std::move(name)) {}
 
@@ -225,7 +228,7 @@ class MetadataService : public Service {
             Framework::Log::info("MetadataService", "Writing metadata to: {}", m_output_file);
             owned_file = std::make_unique<TFile>(m_output_file.c_str(), "UPDATE");
             if (owned_file->IsZombie() || !owned_file->IsOpen()) {
-                fmt::print(stderr, "ERROR: Failed to open file for metadata\n");
+                Framework::Log::error("MetadataService", "Failed to open file for metadata");
                 return;
             }
             file_ptr = owned_file.get();

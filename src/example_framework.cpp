@@ -12,9 +12,10 @@
 
 #include "Framework/Application.hpp"
 #include "Framework/Services/ConfigService.hpp"
-#include "Framework/Services/HistogramService.hpp"
-#include "Framework/Services/OutputFileService.hpp"
 #include "Framework/Services/ConditionsService.hpp"
+#include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/LoggingService.hpp"
+#include "Framework/Services/OutputFileService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Services/SamplingFractionService.hpp"
 #include "Algorithms/ElectronSelectionAlg.hpp"
@@ -32,7 +33,7 @@ int main(int argc, char* argv[]) {
     auto config_svc = std::make_unique<Framework::ConfigService>(config_path);
     auto config_sc = config_svc->initialize();
     if (config_sc.is_failure()) {
-        fmt::print(stderr, "ERROR: Failed to load configuration: {}\n", config_sc.message());
+        Framework::Log::error("Main", "Failed to load configuration: {}", config_sc.message());
         return 1;
     }
 
@@ -43,7 +44,7 @@ int main(int argc, char* argv[]) {
         "output.histogram_file"
     });
     if (validate_result.is_error()) {
-        fmt::print(stderr, "ERROR: Configuration validation failed: {}\n", 
+        Framework::Log::error("Main", "Configuration validation failed: {}",
                    validate_result.error_message());
         return 1;
     }
@@ -118,7 +119,7 @@ int main(int argc, char* argv[]) {
     // Configure input from config
     std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
-        fmt::print(stderr, "ERROR: No input files found in {}\n", data_dir);
+        Framework::Log::error("Main", "No input files found in {}", data_dir);
         return 1;
     }
     app.set_input_files(input_files);
@@ -138,19 +139,19 @@ int main(int argc, char* argv[]) {
     // Run the analysis
     auto sc = app.initialize();
     if (sc.is_failure()) {
-        fmt::print(stderr, "ERROR: Initialization failed\n");
+        Framework::Log::error("Main", "Initialization failed");
         return 1;
     }
 
     sc = app.run();
     if (sc.is_failure()) {
-        fmt::print(stderr, "ERROR: Event processing failed\n");
+        Framework::Log::error("Main", "Event processing failed");
         return 1;
     }
 
     sc = app.finalize();
     if (sc.is_failure()) {
-        fmt::print(stderr, "WARNING: Finalization had issues\n");
+        Framework::Log::warning("Main", "Finalization had issues");
     }
 
     fmt::print("\n✓ Analysis complete!\n");

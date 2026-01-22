@@ -11,9 +11,6 @@
 
 namespace Framework {
 
-// Forward declaration
-class LoggingService;
-
 /**
  * @brief Service for managing the output ROOT file
  *
@@ -33,6 +30,9 @@ class LoggingService;
  */
 class OutputFileService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "OutputFileService"; }
+
     explicit OutputFileService(std::string name = "OutputFileService")
         : Service(std::move(name)) {}
 
@@ -43,41 +43,24 @@ class OutputFileService : public Service {
     auto initialize() -> StatusCode override {
         if (m_output_file.empty()) {
             m_output_file = "output.root";
-            if (m_log) {
-                m_log->info(name(), "Using default output file 'output.root'");
-            }
+            Log::info(name(), "Using default output file 'output.root'");
         }
 
         // Open the file
         if (!open_file()) {
-            if (m_log) {
-                m_log->error(name(), "Failed to open output file: {}", m_output_file);
-            }
+            Log::error(name(), "Failed to open output file: {}", m_output_file);
             return StatusCode::FAILURE();
         }
 
-        if (m_log) {
-            m_log->info(name(), "Opened output file: {}", m_output_file);
-        }
+        Log::info(name(), "Opened output file: {}", m_output_file);
         return StatusCode::SUCCESS();
     }
 
     auto finalize() -> StatusCode override {
-        if (m_log) {
-            m_log->info(name(), "Finalizing OutputFileService, closing file: {}", m_output_file);
-        }
+        Log::info(name(), "Finalizing OutputFileService, closing file: {}", m_output_file);
         close_file();
-        if (m_log) {
-            m_log->info(name(), "Finalized - file closed successfully");
-        }
+        Log::info(name(), "Finalized - file closed successfully");
         return StatusCode::SUCCESS();
-    }
-
-    /**
-     * @brief Set logging service for structured output
-     */
-    auto set_logger(LoggingService* log) -> void {
-        m_log = log;
     }
 
     /**
@@ -86,9 +69,7 @@ class OutputFileService : public Service {
      */
     auto set_output_file(const std::string& filename) -> void {
         if (m_file) {
-            if (m_log) {
-                m_log->warning(name(), "Cannot change output file after initialization");
-            }
+            Log::warning(name(), "Cannot change output file after initialization");
             return;
         }
         m_output_file = filename;
@@ -201,7 +182,6 @@ class OutputFileService : public Service {
     std::string m_output_file;
     std::unique_ptr<TFile> m_file;
     std::mutex m_mutex;
-    LoggingService* m_log = nullptr;
 
     auto open_file() -> bool {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -292,9 +272,7 @@ class OutputFileService : public Service {
             if (!subdir) {
                 subdir = current->mkdir(dir_name.c_str());
                 if (!subdir) {
-                    if (m_log) {
-                        m_log->error(name(), "Failed to create directory: {}", dir_name);
-                    }
+                    Log::error(name(), "Failed to create directory: {}", dir_name);
                     return nullptr;
                 }
             }

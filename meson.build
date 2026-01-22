@@ -153,7 +153,7 @@ executable(
 #══════════════════════════════════════════════════════════════════════════════#
 
 # Test suite (requires Google Test)
-# subdir('test')
+subdir('test')
 
 # Python bindings (requires pybind11)
 # subdir('python')

@@ -39,6 +39,9 @@ using ParticleMap = std::map<CLAS::PIDs, std::vector<CLAS::Particle>>;
  */
 class ParticleSelectorService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "ParticleSelectorService"; }
+
     explicit ParticleSelectorService(std::string name = "ParticleSelectorService")
         : Service(std::move(name)) {}
 

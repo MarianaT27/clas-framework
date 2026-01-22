@@ -40,6 +40,9 @@ namespace Framework {
  */
 class ConfigService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "ConfigService"; }
+
     /**
      * @brief Construct ConfigService with path to TOML config file
      * @param config_path Path to the TOML configuration file

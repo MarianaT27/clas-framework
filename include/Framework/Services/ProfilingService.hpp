@@ -50,6 +50,9 @@ struct AlgorithmStats {
  */
 class ProfilingService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "ProfilingService"; }
+
     using TimePoint = std::chrono::high_resolution_clock::time_point;
     using Timer = std::pair<std::string, TimePoint>;
 

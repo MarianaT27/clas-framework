@@ -32,13 +32,14 @@ namespace Framework {
  */
 class RootFileService : public Service {
 public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "RootFileService"; }
+
     explicit RootFileService(std::string name = "RootFileService")
         : Service(std::move(name)) {}
 
     auto initialize() -> StatusCode override {
-        if (m_log) {
-            m_log->info(name(), "Initializing RootFileService");
-        }
+        Log::info(name(), "Initializing RootFileService");
 
         // Open default output file if specified
         if (!m_default_output.empty()) {
@@ -47,34 +48,23 @@ public:
             }
         }
 
-        if (m_log) {
-            m_log->info(name(), "Initialized with {} file(s)", m_files.size());
-        }
+        Log::info(name(), "Initialized with {} file(s)", m_files.size());
 
         return StatusCode::SUCCESS();
     }
 
     auto finalize() -> StatusCode override {
-        if (m_log) {
-            m_log->info(name(), "Finalizing - closing {} file(s)", m_files.size());
-        }
+        Log::info(name(), "Finalizing - closing {} file(s)", m_files.size());
 
         // Close all open files
         close_all_files();
 
-        if (m_log) {
-            m_log->info(name(), "Finalized");
-        }
+        Log::info(name(), "Finalized");
 
         return StatusCode::SUCCESS();
     }
 
     // ========== Configuration ==========
-
-    /**
-     * @brief Set logging service
-     */
-    auto set_logger(LoggingService* log) -> void { m_log = log; }
 
     /**
      * @brief Set the default output file path
@@ -107,9 +97,7 @@ public:
 
         // Check if alias already exists
         if (m_files.find(alias) != m_files.end()) {
-            if (m_log) {
-                m_log->warning(name(), "File alias '{}' already exists, closing existing file", alias);
-            }
+            Log::warning(name(), "File alias '{}' already exists, closing existing file", alias);
             close_file_internal(alias);
         }
 
@@ -117,24 +105,18 @@ public:
             auto file = std::make_unique<TFile>(filename.c_str(), option.c_str(), "", compression);
 
             if (file->IsZombie() || !file->IsOpen()) {
-                if (m_log) {
-                    m_log->error(name(), "Failed to open file: {}", filename);
-                }
+                Log::error(name(), "Failed to open file: {}", filename);
                 return false;
             }
 
             m_files[alias] = std::move(file);
             m_file_paths[alias] = filename;
 
-            if (m_log) {
-                m_log->info(name(), "Opened file '{}': {} ({})", alias, filename, option);
-            }
+            Log::info(name(), "Opened file '{}': {} ({})", alias, filename, option);
 
             return true;
         } catch (const std::exception& e) {
-            if (m_log) {
-                m_log->error(name(), "Exception opening file {}: {}", filename, e.what());
-            }
+            Log::error(name(), "Exception opening file {}: {}", filename, e.what());
             return false;
         }
     }
@@ -186,9 +168,7 @@ public:
             if (file && file->IsOpen()) {
                 file->Write();
                 file->Close();
-                if (m_log) {
-                    m_log->info(name(), "Closed file '{}': {}", alias, m_file_paths[alias]);
-                }
+                Log::info(name(), "Closed file '{}': {}", alias, m_file_paths[alias]);
             }
         }
 
@@ -206,16 +186,12 @@ public:
 
         auto it = m_files.find(alias);
         if (it == m_files.end() || !it->second || !it->second->IsOpen()) {
-            if (m_log) {
-                m_log->error(name(), "Cannot write: file '{}' not open", alias);
-            }
+            Log::error(name(), "Cannot write: file '{}' not open", alias);
             return false;
         }
 
         it->second->Write();
-        if (m_log) {
-            m_log->debug(name(), "Wrote file '{}'", alias);
-        }
+        Log::debug(name(), "Wrote file '{}'", alias);
         return true;
     }
 
@@ -287,9 +263,7 @@ public:
 
         auto it = m_files.find(alias);
         if (it == m_files.end() || !it->second || !it->second->IsOpen()) {
-            if (m_log) {
-                m_log->error(name(), "Cannot write object: file '{}' not open", alias);
-            }
+            Log::error(name(), "Cannot write object: file '{}' not open", alias);
             return false;
         }
 
@@ -361,7 +335,6 @@ private:
     std::map<std::string, std::unique_ptr<TFile>> m_files;
     std::map<std::string, std::string> m_file_paths;
     mutable std::mutex m_mutex;
-    LoggingService* m_log = nullptr;
 
     auto close_file_internal(const std::string& alias) -> bool {
         auto it = m_files.find(alias);
@@ -372,9 +345,7 @@ private:
         if (it->second && it->second->IsOpen()) {
             it->second->Write();
             it->second->Close();
-            if (m_log) {
-                m_log->info(name(), "Closed file '{}': {}", alias, m_file_paths[alias]);
-            }
+            Log::info(name(), "Closed file '{}': {}", alias, m_file_paths[alias]);
         }
 
         m_files.erase(it);

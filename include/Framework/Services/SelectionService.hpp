@@ -49,6 +49,9 @@ namespace Framework {
  */
 class SelectionService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "SelectionService"; }
+
     using SelectionFunction = std::function<bool(const Event&)>;
 
     explicit SelectionService(std::string name = "SelectionService")

@@ -4,6 +4,7 @@
 #include <CLAS/PIDs.hpp>
 #include <CLAS/Particle.hpp>
 #include <Physics/ParticleUtils.hpp>
+#include "Framework/TypedEventStore.hpp"
 
 #include <any>
 #include <functional>
@@ -313,6 +314,111 @@ class Event {
         return result.value_or(false);
     }
 
+    // ========================================================================
+    // Type-safe event store API (compile-time type checking)
+    // ========================================================================
+
+    /**
+     * @brief Store a value with a typed key (type-safe API)
+     *
+     * This method provides compile-time type safety by using TypedKey<T>.
+     * Type mismatches are caught at compile time rather than runtime.
+     *
+     * @tparam T The value type (inferred from key)
+     * @param key The typed key
+     * @param value The value to store
+     *
+     * Example usage:
+     * @code
+     * event.store_typed(Keys::Q2, 4.5);
+     * event.store_typed(Keys::Electrons, selected_electrons);
+     * @endcode
+     */
+    template <typename T>
+    auto store_typed(TypedKey<T> key, T value) -> void {
+        m_typed_store.store(key, std::move(value));
+    }
+
+    /**
+     * @brief Retrieve a value by typed key (type-safe API)
+     *
+     * Returns the stored value if it exists and the type matches.
+     * Returns std::nullopt if the key doesn't exist or type mismatches.
+     *
+     * @tparam T The value type (inferred from key)
+     * @param key The typed key
+     * @return std::optional<T> The value, or nullopt if not found/type mismatch
+     *
+     * Example usage:
+     * @code
+     * auto q2 = event.retrieve_typed(Keys::Q2);
+     * if (q2) {
+     *     std::cout << "Q2 = " << *q2 << std::endl;
+     * }
+     * @endcode
+     */
+    template <typename T>
+    auto retrieve_typed(TypedKey<T> key) const -> std::optional<T> {
+        return m_typed_store.retrieve(key);
+    }
+
+    /**
+     * @brief Check if a typed key exists in the store
+     *
+     * @tparam T The value type (inferred from key)
+     * @param key The typed key
+     * @return bool True if key exists with matching type
+     */
+    template <typename T>
+    auto contains_typed(TypedKey<T> key) const -> bool {
+        return m_typed_store.contains(key);
+    }
+
+    /**
+     * @brief Check if an algorithm decision was passed (type-safe API)
+     *
+     * @param key The typed decision key (must be TypedKey<bool>)
+     * @return bool True if the decision passed, false otherwise
+     *
+     * Example usage:
+     * @code
+     * if (event.passes_decision_typed(Keys::HasGoodElectron)) {
+     *     // Process event with good electron
+     * }
+     * @endcode
+     */
+    auto passes_decision_typed(TypedKey<bool> key) -> bool {
+        return m_typed_store.retrieve(key).value_or(false);
+    }
+
+    /**
+     * @brief Set an algorithm decision flag (type-safe API)
+     *
+     * @param key The typed decision key (must be TypedKey<bool>)
+     * @param passed Whether the decision passed
+     */
+    auto set_decision_typed(TypedKey<bool> key, bool passed) -> void {
+        m_typed_store.store(key, passed);
+    }
+
+    /**
+     * @brief Get access to the underlying typed event store
+     *
+     * @return TypedEventStore& Reference to the typed store
+     */
+    auto typed_store() -> TypedEventStore& {
+        return m_typed_store;
+    }
+
+    /**
+     * @brief Get const access to the underlying typed event store
+     *
+     * @return const TypedEventStore& Const reference to the typed store
+     */
+    auto typed_store() const -> const TypedEventStore& {
+        return m_typed_store;
+    }
+
    private:
     hipo::iter_event& m_hipo_event;
     ParticleMap m_particles;
@@ -321,6 +427,7 @@ class Event {
     long m_event_number = -1;
     int m_file_index = -1;
     std::map<std::string, std::any> m_store;
+    TypedEventStore m_typed_store;
 
     /**
      * @brief Get a bank safely, logging a warning if it doesn't exist

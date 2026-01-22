@@ -18,9 +18,8 @@
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Services/SamplingFractionService.hpp"
+#include "Framework/ThreadSafeHistogram.hpp"
 #include "Physics/Kinematics.hpp"
-#include "TH1D.h"
-#include "TH2D.h"
 
 namespace Algorithms {
 
@@ -359,72 +358,72 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
     double m_nt_sampling_fraction = 0.0;
     int m_nt_sector = 0;
 
-    // Histograms - organized by category
+    // Histograms - organized by category (thread-safe wrappers)
     struct {
-        TH1D* momentum = nullptr;
-        TH1D* theta = nullptr;
-        TH1D* phi = nullptr;
-        TH1D* vz = nullptr;
-        TH1D* chi2pid = nullptr;
-        TH2D* p_vs_theta = nullptr;
-        TH2D* phi_vs_theta = nullptr;
+        Framework::ThreadSafeHist1D* momentum = nullptr;
+        Framework::ThreadSafeHist1D* theta = nullptr;
+        Framework::ThreadSafeHist1D* phi = nullptr;
+        Framework::ThreadSafeHist1D* vz = nullptr;
+        Framework::ThreadSafeHist1D* chi2pid = nullptr;
+        Framework::ThreadSafeHist2D* p_vs_theta = nullptr;
+        Framework::ThreadSafeHist2D* phi_vs_theta = nullptr;
     } h_electron;
 
     struct {
-        TH2D* lu_vs_lv_pcal = nullptr;
-        TH2D* lu_vs_lw_pcal = nullptr;
-        TH2D* lu_vs_lv_inner = nullptr;
-        TH2D* lu_vs_lw_inner = nullptr;
-        TH2D* lu_vs_lv_outer = nullptr;
-        TH2D* lu_vs_lw_outer = nullptr;
+        Framework::ThreadSafeHist2D* lu_vs_lv_pcal = nullptr;
+        Framework::ThreadSafeHist2D* lu_vs_lw_pcal = nullptr;
+        Framework::ThreadSafeHist2D* lu_vs_lv_inner = nullptr;
+        Framework::ThreadSafeHist2D* lu_vs_lw_inner = nullptr;
+        Framework::ThreadSafeHist2D* lu_vs_lv_outer = nullptr;
+        Framework::ThreadSafeHist2D* lu_vs_lw_outer = nullptr;
     } h_calorimeter;
 
     struct {
-        std::map<std::string, TH2D*> chi2ndf_vs_edge_r1;
-        std::map<std::string, TH2D*> chi2ndf_vs_edge_r2;
-        std::map<std::string, TH2D*> chi2ndf_vs_edge_r3;
+        std::map<std::string, Framework::ThreadSafeHist2D*> chi2ndf_vs_edge_r1;
+        std::map<std::string, Framework::ThreadSafeHist2D*> chi2ndf_vs_edge_r2;
+        std::map<std::string, Framework::ThreadSafeHist2D*> chi2ndf_vs_edge_r3;
     } h_dc;
 
     // Track histograms structure (for neg/pos tracks, pions, etc.)
-    // Each histogram is stored per sector (1-6)
+    // Each histogram is stored per sector (1-6) - using thread-safe wrappers
     struct TrackHistograms {
         bool booked = false;
         // Calorimeter (per sector)
-        std::map<int, TH1D*> nphe;
-        std::map<int, TH2D*> EPCal_vs_ECal;
-        std::map<int, TH1D*> EPCal;
-        std::map<int, TH2D*> EPCal_vs_ECal_cut;
-        std::map<int, TH1D*> EPCal_cut;
-        std::map<int, TH2D*> Etot_vs_SF;
-        std::map<int, TH2D*> Etot_vs_SF_cut;
-        std::map<int, TH2D*> p_vs_SF;
-        std::map<int, TH2D*> lv_vs_SF;
-        std::map<int, TH2D*> lw_vs_SF;
-        std::map<int, TH2D*> lu_vs_SF_low;
-        std::map<int, TH2D*> lu_vs_SF_high;
-        std::map<int, TH2D*> lu_vs_SF_low_with_cut;
-        std::map<int, TH2D*> lu_vs_SF_high_with_cut;
+        std::map<int, Framework::ThreadSafeHist1D*> nphe;
+        std::map<int, Framework::ThreadSafeHist2D*> EPCal_vs_ECal;
+        std::map<int, Framework::ThreadSafeHist1D*> EPCal;
+        std::map<int, Framework::ThreadSafeHist2D*> EPCal_vs_ECal_cut;
+        std::map<int, Framework::ThreadSafeHist1D*> EPCal_cut;
+        std::map<int, Framework::ThreadSafeHist2D*> Etot_vs_SF;
+        std::map<int, Framework::ThreadSafeHist2D*> Etot_vs_SF_cut;
+        std::map<int, Framework::ThreadSafeHist2D*> p_vs_SF;
+        std::map<int, Framework::ThreadSafeHist2D*> lv_vs_SF;
+        std::map<int, Framework::ThreadSafeHist2D*> lw_vs_SF;
+        std::map<int, Framework::ThreadSafeHist2D*> lu_vs_SF_low;
+        std::map<int, Framework::ThreadSafeHist2D*> lu_vs_SF_high;
+        std::map<int, Framework::ThreadSafeHist2D*> lu_vs_SF_low_with_cut;
+        std::map<int, Framework::ThreadSafeHist2D*> lu_vs_SF_high_with_cut;
         // DC fiducial (per sector)
-        std::map<int, TH2D*> edge_vs_theta_r1;
-        std::map<int, TH2D*> edge_vs_theta_r2;
-        std::map<int, TH2D*> edge_vs_theta_r3;
-        std::map<int, TH2D*> edge_vs_chi2ndf_r1;
-        std::map<int, TH2D*> edge_vs_chi2ndf_r2;
-        std::map<int, TH2D*> edge_vs_chi2ndf_r3;
+        std::map<int, Framework::ThreadSafeHist2D*> edge_vs_theta_r1;
+        std::map<int, Framework::ThreadSafeHist2D*> edge_vs_theta_r2;
+        std::map<int, Framework::ThreadSafeHist2D*> edge_vs_theta_r3;
+        std::map<int, Framework::ThreadSafeHist2D*> edge_vs_chi2ndf_r1;
+        std::map<int, Framework::ThreadSafeHist2D*> edge_vs_chi2ndf_r2;
+        std::map<int, Framework::ThreadSafeHist2D*> edge_vs_chi2ndf_r3;
     };
 
     TrackHistograms h_neg_tracks;
     TrackHistograms h_electron_tracks;
 
-    // Histograms for each cut stage (dynamically created)
+    // Histograms for each cut stage (thread-safe wrappers)
     struct CutStageHistograms {
         bool booked = false;
-        TH1D* momentum = nullptr;
-        TH1D* theta = nullptr;
-        TH1D* phi = nullptr;
-        TH1D* vz = nullptr;
-        TH2D* sampling_fraction = nullptr;
-        TH1D* dc_edge_r1 = nullptr;
+        Framework::ThreadSafeHist1D* momentum = nullptr;
+        Framework::ThreadSafeHist1D* theta = nullptr;
+        Framework::ThreadSafeHist1D* phi = nullptr;
+        Framework::ThreadSafeHist1D* vz = nullptr;
+        Framework::ThreadSafeHist2D* sampling_fraction = nullptr;
+        Framework::ThreadSafeHist1D* dc_edge_r1 = nullptr;
     };
 
     std::map<std::string, CutStageHistograms> m_cut_stage_histograms;
@@ -441,80 +440,80 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
     }
 
     auto book_histograms() -> void {
-        // Electron kinematics
-        h_electron.momentum = m_hist_svc->book_hist1D(
+        // Electron kinematics (thread-safe)
+        h_electron.momentum = m_hist_svc->book_safe_hist1D(
             "/Electron/momentum", "Electron Momentum;p [GeV/c];Events", 120, 0, 12);
-        h_electron.theta = m_hist_svc->book_hist1D(
+        h_electron.theta = m_hist_svc->book_safe_hist1D(
             "/Electron/theta", "Electron #theta;#theta [deg];Events", 180, 0, 180);
-        h_electron.phi = m_hist_svc->book_hist1D(
+        h_electron.phi = m_hist_svc->book_safe_hist1D(
             "/Electron/phi", "Electron #phi;#phi [deg];Events", 180, -180, 180);
-        h_electron.vz = m_hist_svc->book_hist1D(
+        h_electron.vz = m_hist_svc->book_safe_hist1D(
             "/Electron/vz", "Electron v_{z};v_{z} [cm];Events", 200, -20, 20);
-        h_electron.chi2pid = m_hist_svc->book_hist1D(
+        h_electron.chi2pid = m_hist_svc->book_safe_hist1D(
             "/Electron/chi2pid", "Electron #chi^{2}_{PID};#chi^{2};Events", 200, -10, 10);
 
-        h_electron.p_vs_theta = m_hist_svc->book_hist2D(
+        h_electron.p_vs_theta = m_hist_svc->book_safe_hist2D(
             "/Electron/p_vs_theta", "p vs #theta;#theta [deg];p [GeV/c]",
             180, 0, 180, 120, 0, 12);
-        h_electron.phi_vs_theta = m_hist_svc->book_hist2D(
+        h_electron.phi_vs_theta = m_hist_svc->book_safe_hist2D(
             "/Electron/phi_vs_theta", "#phi vs #theta;#theta [deg];#phi [deg]",
             180, 0, 180, 180, -180, 180);
 
-        // Calorimeter - PCAL
-        h_calorimeter.lu_vs_lv_pcal = m_hist_svc->book_hist2D(
+        // Calorimeter - PCAL (thread-safe)
+        h_calorimeter.lu_vs_lv_pcal = m_hist_svc->book_safe_hist2D(
             "/Calorimeter/lu_vs_lv_pcal", "PCAL lu vs lv;lv;lu", 100, 0, 500, 100, 0, 500);
-        h_calorimeter.lu_vs_lw_pcal = m_hist_svc->book_hist2D(
+        h_calorimeter.lu_vs_lw_pcal = m_hist_svc->book_safe_hist2D(
             "/Calorimeter/lu_vs_lw_pcal", "PCAL lu vs lw;lw;lu", 100, 0, 500, 100, 0, 500);
 
-        // Calorimeter - Inner EC
-        h_calorimeter.lu_vs_lv_inner = m_hist_svc->book_hist2D(
+        // Calorimeter - Inner EC (thread-safe)
+        h_calorimeter.lu_vs_lv_inner = m_hist_svc->book_safe_hist2D(
             "/Calorimeter/lu_vs_lv_inner", "Inner EC lu vs lv;lv;lu", 100, 0, 500, 100, 0, 500);
-        h_calorimeter.lu_vs_lw_inner = m_hist_svc->book_hist2D(
+        h_calorimeter.lu_vs_lw_inner = m_hist_svc->book_safe_hist2D(
             "/Calorimeter/lu_vs_lw_inner", "Inner EC lu vs lw;lw;lu", 100, 0, 500, 100, 0, 500);
 
-        // Calorimeter - Outer EC
-        h_calorimeter.lu_vs_lv_outer = m_hist_svc->book_hist2D(
+        // Calorimeter - Outer EC (thread-safe)
+        h_calorimeter.lu_vs_lv_outer = m_hist_svc->book_safe_hist2D(
             "/Calorimeter/lu_vs_lv_outer", "Outer EC lu vs lv;lv;lu", 100, 0, 500, 100, 0, 500);
-        h_calorimeter.lu_vs_lw_outer = m_hist_svc->book_hist2D(
+        h_calorimeter.lu_vs_lw_outer = m_hist_svc->book_safe_hist2D(
             "/Calorimeter/lu_vs_lw_outer", "Outer EC lu vs lw;lw;lu", 100, 0, 500, 100, 0, 500);
 
-        // DC Chi2/ndf vs edge for momentum bins
+        // DC Chi2/ndf vs edge for momentum bins (thread-safe)
         std::vector<std::string> p_bins = {"1_2", "2_3", "3_4", "4_5", "5_6", "6_7", "7_8", "8_9", "9_10"};
         for (const auto& bin : p_bins) {
-            h_dc.chi2ndf_vs_edge_r1[bin] = m_hist_svc->book_hist2D(
+            h_dc.chi2ndf_vs_edge_r1[bin] = m_hist_svc->book_safe_hist2D(
                 fmt::format("/DC/chi2ndf_vs_edge_r1_{}", bin),
                 fmt::format("Region 1: p={} GeV;edge;#chi^{{2}}/ndf", bin),
                 200, 0, 50, 200, 0, 10);
         }
         for (const auto& bin : p_bins) {
-            h_dc.chi2ndf_vs_edge_r2[bin] = m_hist_svc->book_hist2D(
+            h_dc.chi2ndf_vs_edge_r2[bin] = m_hist_svc->book_safe_hist2D(
                 fmt::format("/DC/chi2ndf_vs_edge_r2_{}", bin),
                 fmt::format("Region 2: p={} GeV;edge;#chi^{{2}}/ndf", bin),
                 200, 0, 50, 200, 0, 10);
         }
         for (const auto& bin : p_bins) {
-            h_dc.chi2ndf_vs_edge_r3[bin] = m_hist_svc->book_hist2D(
+            h_dc.chi2ndf_vs_edge_r3[bin] = m_hist_svc->book_safe_hist2D(
                 fmt::format("/DC/chi2ndf_vs_edge_r3_{}", bin),
                 fmt::format("Region 3: p={} GeV;edge;#chi^{{2}}/ndf", bin),
                 200, 0, 50, 200, 0, 10);
         }
 
-        // DC Chi2/ndf vs edge for theta bins
+        // DC Chi2/ndf vs edge for theta bins (thread-safe)
         std::vector<std::string> theta_bins = {"5_10", "10_15", "15_20", "20_25", "25_30", "30_35", "35_40"};
         for (const auto& bin : theta_bins) {
-            h_dc.chi2ndf_vs_edge_r1[bin] = m_hist_svc->book_hist2D(
+            h_dc.chi2ndf_vs_edge_r1[bin] = m_hist_svc->book_safe_hist2D(
                 fmt::format("/DC/chi2ndf_vs_edge_r1_theta_{}", bin),
                 fmt::format("Region 1: #theta={} deg;edge;#chi^{{2}}/ndf", bin),
                 200, 0, 50, 200, 0, 10);
         }
         for (const auto& bin : theta_bins) {
-            h_dc.chi2ndf_vs_edge_r2[bin] = m_hist_svc->book_hist2D(
+            h_dc.chi2ndf_vs_edge_r2[bin] = m_hist_svc->book_safe_hist2D(
                 fmt::format("/DC/chi2ndf_vs_edge_r2_theta_{}", bin),
                 fmt::format("Region 2: #theta={} deg;edge;#chi^{{2}}/ndf", bin),
                 200, 0, 50, 200, 0, 10);
         }
         for (const auto& bin : theta_bins) {
-            h_dc.chi2ndf_vs_edge_r3[bin] = m_hist_svc->book_hist2D(
+            h_dc.chi2ndf_vs_edge_r3[bin] = m_hist_svc->book_safe_hist2D(
                 fmt::format("/DC/chi2ndf_vs_edge_r3_theta_{}", bin),
                 fmt::format("Region 3: #theta={} deg;edge;#chi^{{2}}/ndf", bin),
                 200, 0, 50, 200, 0, 10);
@@ -560,22 +559,22 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         auto& cut_hists = m_cut_stage_histograms[cut_name];
         std::string base = fmt::format("/Electron/CutStages/{}", cut_name);
 
-        cut_hists.momentum = m_hist_svc->book_hist1D(
+        cut_hists.momentum = m_hist_svc->book_safe_hist1D(
             base + "/p", fmt::format("Electron p after {};p [GeV/c];Events", cut_name),
             120, 0, 12);
-        cut_hists.theta = m_hist_svc->book_hist1D(
+        cut_hists.theta = m_hist_svc->book_safe_hist1D(
             base + "/theta", fmt::format("Electron #theta after {};#theta [deg];Events", cut_name),
             180, 0, 180);
-        cut_hists.phi = m_hist_svc->book_hist1D(
+        cut_hists.phi = m_hist_svc->book_safe_hist1D(
             base + "/phi", fmt::format("Electron #phi after {};#phi [deg];Events", cut_name),
             180, -180, 180);
-        cut_hists.vz = m_hist_svc->book_hist1D(
+        cut_hists.vz = m_hist_svc->book_safe_hist1D(
             base + "/vz", fmt::format("Electron v_{{z}} after {};v_{{z}} [cm];Events", cut_name),
             200, -20, 20);
-        cut_hists.sampling_fraction = m_hist_svc->book_hist2D(
+        cut_hists.sampling_fraction = m_hist_svc->book_safe_hist2D(
             base + "/sf_vs_p", fmt::format("SF vs p after {};p [GeV/c];E/p", cut_name),
             120, 0, 12, 100, 0, 0.5);
-        cut_hists.dc_edge_r1 = m_hist_svc->book_hist1D(
+        cut_hists.dc_edge_r1 = m_hist_svc->book_safe_hist1D(
             base + "/dc_edge_r1", fmt::format("DC Edge R1 after {};edge [cm];Events", cut_name),
             100, 0, 50);
 
@@ -603,16 +602,16 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
         // Get pre-booked histograms for this cut stage
         auto& cut_hists = m_cut_stage_histograms.at(cut_name);
 
-        // Fill histograms
-        cut_hists.momentum->Fill(electron.p());
-        cut_hists.theta->Fill(electron.theta());
-        cut_hists.phi->Fill(electron.phi());
-        cut_hists.vz->Fill(electron.vz());
+        // Fill thread-safe histograms
+        cut_hists.momentum->fill(electron.p());
+        cut_hists.theta->fill(electron.theta());
+        cut_hists.phi->fill(electron.phi());
+        cut_hists.vz->fill(electron.vz());
 
         const double E_tot = calo.pcal.energy + calo.inner.energy + calo.outer.energy;
         const double SF = E_tot / electron.p();
-        cut_hists.sampling_fraction->Fill(electron.p(), SF);
-        cut_hists.dc_edge_r1->Fill(traj.region1.edge);
+        cut_hists.sampling_fraction->fill(electron.p(), SF);
+        cut_hists.dc_edge_r1->fill(traj.region1.edge);
     }
 
     /**
@@ -621,101 +620,101 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
     auto book_track_histograms(TrackHistograms& h, const std::string& category) -> void {
         std::string base = fmt::format("/Tracks/{}", category);
 
-        // Book histograms for each sector (1-6)
+        // Book thread-safe histograms for each sector (1-6)
         for (int sector = 1; sector <= 6; ++sector) {
             std::string sec_suffix = fmt::format("_S{}", sector);
 
-            h.nphe[sector] = m_hist_svc->book_hist1D(
+            h.nphe[sector] = m_hist_svc->book_safe_hist1D(
                 base + "/nphe" + sec_suffix,
                 fmt::format("Cherenkov nphe (Sector {});nphe;Tracks", sector),
                 51, 0, 50);
 
-            h.EPCal_vs_ECal[sector] = m_hist_svc->book_hist2D(
+            h.EPCal_vs_ECal[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/EPCal_vs_ECal" + sec_suffix,
                 fmt::format("E_{{PCal}} vs E_{{Cal}} (Sector {});E_{{PCal}} [GeV];E_{{Cal}} [GeV]", sector),
                 200, 0, 0.6, 200, 0, 0.6);
 
-            h.EPCal[sector] = m_hist_svc->book_hist1D(
+            h.EPCal[sector] = m_hist_svc->book_safe_hist1D(
                 base + "/EPCal" + sec_suffix,
                 fmt::format("E_{{PCal}} (Sector {});E_{{PCal}} [GeV];Tracks", sector),
                 200, 0, 1);
 
-            h.EPCal_vs_ECal_cut[sector] = m_hist_svc->book_hist2D(
+            h.EPCal_vs_ECal_cut[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/EPCal_vs_ECal_cut" + sec_suffix,
                 fmt::format("E_{{PCal}} vs E_{{Cal}} (cut, Sector {});E_{{PCal}} [GeV];E_{{Cal}} [GeV]", sector),
                 200, 0, 0.6, 200, 0, 0.6);
 
-            h.EPCal_cut[sector] = m_hist_svc->book_hist1D(
+            h.EPCal_cut[sector] = m_hist_svc->book_safe_hist1D(
                 base + "/EPCal_cut" + sec_suffix,
                 fmt::format("E_{{PCal}} (cut, Sector {});E_{{PCal}} [GeV];Tracks", sector),
                 200, 0, 1);
 
-            h.Etot_vs_SF[sector] = m_hist_svc->book_hist2D(
+            h.Etot_vs_SF[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/Etot_vs_SF" + sec_suffix,
                 fmt::format("E_{{tot}} vs SF (Sector {});E_{{tot}} [GeV];E/p", sector),
                 200, 0, 2, 200, 0, 0.5);
 
-            h.Etot_vs_SF_cut[sector] = m_hist_svc->book_hist2D(
+            h.Etot_vs_SF_cut[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/Etot_vs_SF_cut" + sec_suffix,
                 fmt::format("E_{{tot}} vs SF (cut, Sector {});E_{{tot}} [GeV];E/p", sector),
                 200, 0, 2, 200, 0, 0.5);
 
-            h.p_vs_SF[sector] = m_hist_svc->book_hist2D(
+            h.p_vs_SF[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/p_vs_SF" + sec_suffix,
                 fmt::format("p vs SF (Sector {});p [GeV];E/p", sector),
                 200, 0, 11, 200, 0, 0.4);
 
-            h.edge_vs_theta_r1[sector] = m_hist_svc->book_hist2D(
+            h.edge_vs_theta_r1[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/edge_vs_theta_r1" + sec_suffix,
                 fmt::format("Edge vs #theta (R1, Sector {});edge [cm];#theta [deg]", sector),
                 200, 0, 50, 200, 0, 40);
 
-            h.edge_vs_theta_r2[sector] = m_hist_svc->book_hist2D(
+            h.edge_vs_theta_r2[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/edge_vs_theta_r2" + sec_suffix,
                 fmt::format("Edge vs #theta (R2, Sector {});edge [cm];#theta [deg]", sector),
                 200, 0, 50, 200, 0, 40);
 
-            h.edge_vs_theta_r3[sector] = m_hist_svc->book_hist2D(
+            h.edge_vs_theta_r3[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/edge_vs_theta_r3" + sec_suffix,
                 fmt::format("Edge vs #theta (R3, Sector {});edge [cm];#theta [deg]", sector),
                 200, 0, 50, 200, 0, 40);
 
-            h.edge_vs_chi2ndf_r1[sector] = m_hist_svc->book_hist2D(
+            h.edge_vs_chi2ndf_r1[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/edge_vs_chi2ndf_r1" + sec_suffix,
                 fmt::format("Edge vs #chi^{{2}}/ndf (R1, Sector {});edge [cm];#chi^{{2}}/ndf", sector),
                 200, 0, 50, 200, 0, 10);
 
-            h.edge_vs_chi2ndf_r2[sector] = m_hist_svc->book_hist2D(
+            h.edge_vs_chi2ndf_r2[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/edge_vs_chi2ndf_r2" + sec_suffix,
                 fmt::format("Edge vs #chi^{{2}}/ndf (R2, Sector {});edge [cm];#chi^{{2}}/ndf", sector),
                 200, 0, 50, 200, 0, 10);
 
-            h.edge_vs_chi2ndf_r3[sector] = m_hist_svc->book_hist2D(
+            h.edge_vs_chi2ndf_r3[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/edge_vs_chi2ndf_r3" + sec_suffix,
                 fmt::format("Edge vs #chi^{{2}}/ndf (R3, Sector {});edge [cm];#chi^{{2}}/ndf", sector),
                 200, 0, 50, 200, 0, 10);
 
-            h.lv_vs_SF[sector] = m_hist_svc->book_hist2D(
+            h.lv_vs_SF[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/lv_vs_SF" + sec_suffix,
                 fmt::format("lv vs SF (Sector {});lv;E/p", sector),
                 100, 0, 70, 200, 0, 0.5);
-            h.lw_vs_SF[sector] = m_hist_svc->book_hist2D(
+            h.lw_vs_SF[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/lw_vs_SF" + sec_suffix,
                 fmt::format("lw vs SF (Sector {});lw;E/p", sector),
                 100, 0, 70, 200, 0, 0.5);
-            h.lu_vs_SF_low[sector] = m_hist_svc->book_hist2D(
+            h.lu_vs_SF_low[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/lu_vs_SF_low" + sec_suffix,
                 fmt::format("lu vs SF (low, Sector {});lu;E/p", sector),
                 100, 0, 170, 200, 0, 0.5);
-            h.lu_vs_SF_high[sector] = m_hist_svc->book_hist2D(
+            h.lu_vs_SF_high[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/lu_vs_SF_high" + sec_suffix,
                 fmt::format("lu vs SF (high, Sector {});lu;E/p", sector),
                 100, 350, 450, 200, 0, 0.5);
-            h.lu_vs_SF_low_with_cut[sector] = m_hist_svc->book_hist2D(
+            h.lu_vs_SF_low_with_cut[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/lu_vs_SF_low_with_cut" + sec_suffix,
                 fmt::format("lu vs SF with cut (low, Sector {});lu;E/p", sector),
                 100, 0, 170, 200, 0, 0.5);
-            h.lu_vs_SF_high_with_cut[sector] = m_hist_svc->book_hist2D(
+            h.lu_vs_SF_high_with_cut[sector] = m_hist_svc->book_safe_hist2D(
                 base + "/lu_vs_SF_high_with_cut" + sec_suffix,
                 fmt::format("lu vs SF with cut (high, Sector {});lu;E/p", sector),
                 100, 350, 450, 200, 0, 0.5);
@@ -755,12 +754,12 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
             if (E_pcal == 0) continue; // Should not happen for electrons because of EB cut EPCal > 0.06 GeV
 
-            // Fill calorimeter histograms for this sector
-            histograms.nphe[sector]->Fill(nphe);
-            histograms.EPCal_vs_ECal[sector]->Fill(E_pcal, E_cal);
-            histograms.EPCal[sector]->Fill(E_pcal);
-            histograms.Etot_vs_SF[sector]->Fill(E_tot, SF);
-            histograms.p_vs_SF[sector]->Fill(track.p(), SF);
+            // Fill thread-safe calorimeter histograms for this sector
+            histograms.nphe[sector]->fill(nphe);
+            histograms.EPCal_vs_ECal[sector]->fill(E_pcal, E_cal);
+            histograms.EPCal[sector]->fill(E_pcal);
+            histograms.Etot_vs_SF[sector]->fill(E_tot, SF);
+            histograms.p_vs_SF[sector]->fill(track.p(), SF);
 
             // Apply EB-like cuts for cut histograms
             constexpr double EB_MIN_CHERENKOV_NPHE = 2.0;
@@ -769,11 +768,11 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             const bool passes_pcal = E_pcal > EB_MIN_PCAL_ENERGY;
 
             if (passes_nphe) {
-                histograms.EPCal_vs_ECal_cut[sector]->Fill(E_pcal, E_cal);
-                histograms.EPCal_cut[sector]->Fill(E_pcal);
+                histograms.EPCal_vs_ECal_cut[sector]->fill(E_pcal, E_cal);
+                histograms.EPCal_cut[sector]->fill(E_pcal);
             }
             if (passes_pcal && passes_nphe) {
-                histograms.Etot_vs_SF_cut[sector]->Fill(E_tot, SF);
+                histograms.Etot_vs_SF_cut[sector]->fill(E_tot, SF);
             }
 
             // DC fiducial: edge vs theta for each region
@@ -789,54 +788,54 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
             const double theta_r2 = compute_local_theta(traj.region2.x, traj.region2.y, traj.region2.z, trk_r2.sector);
             const double theta_r3 = compute_local_theta(traj.region3.x, traj.region3.y, traj.region3.z, trk_r3.sector);
 
-            histograms.edge_vs_theta_r1[sector]->Fill(traj.region1.edge, theta_r1);
-            histograms.edge_vs_theta_r2[sector]->Fill(traj.region2.edge, theta_r2);
-            histograms.edge_vs_theta_r3[sector]->Fill(traj.region3.edge, theta_r3);
+            histograms.edge_vs_theta_r1[sector]->fill(traj.region1.edge, theta_r1);
+            histograms.edge_vs_theta_r2[sector]->fill(traj.region2.edge, theta_r2);
+            histograms.edge_vs_theta_r3[sector]->fill(traj.region3.edge, theta_r3);
 
             // Edge vs chi2/ndf
             const double chi2ndf_r1 = trk_r1.ndf > 0 ? trk_r1.chi2 / trk_r1.ndf : std::numeric_limits<double>::quiet_NaN();
             const double chi2ndf_r2 = trk_r2.ndf > 0 ? trk_r2.chi2 / trk_r2.ndf : std::numeric_limits<double>::quiet_NaN();
             const double chi2ndf_r3 = trk_r3.ndf > 0 ? trk_r3.chi2 / trk_r3.ndf : std::numeric_limits<double>::quiet_NaN();
 
-            histograms.edge_vs_chi2ndf_r1[sector]->Fill(traj.region1.edge, chi2ndf_r1);
-            histograms.edge_vs_chi2ndf_r2[sector]->Fill(traj.region2.edge, chi2ndf_r2);
-            histograms.edge_vs_chi2ndf_r3[sector]->Fill(traj.region3.edge, chi2ndf_r3);
+            histograms.edge_vs_chi2ndf_r1[sector]->fill(traj.region1.edge, chi2ndf_r1);
+            histograms.edge_vs_chi2ndf_r2[sector]->fill(traj.region2.edge, chi2ndf_r2);
+            histograms.edge_vs_chi2ndf_r3[sector]->fill(traj.region3.edge, chi2ndf_r3);
 
             // SF vs lv,w
-            histograms.lv_vs_SF[sector]->Fill(calo.pcal.lv, SF);
-            histograms.lw_vs_SF[sector]->Fill(calo.pcal.lw, SF);
+            histograms.lv_vs_SF[sector]->fill(calo.pcal.lv, SF);
+            histograms.lw_vs_SF[sector]->fill(calo.pcal.lw, SF);
 
             // Low end and high end of lu
-            histograms.lu_vs_SF_low[sector]->Fill(calo.pcal.lu, SF);
-            histograms.lu_vs_SF_high[sector]->Fill(calo.pcal.lu, SF);
+            histograms.lu_vs_SF_low[sector]->fill(calo.pcal.lu, SF);
+            histograms.lu_vs_SF_high[sector]->fill(calo.pcal.lu, SF);
             if (calo.pcal.lv > 9 && calo.pcal.lw > 9) {
-                histograms.lu_vs_SF_low_with_cut[sector]->Fill(calo.pcal.lu, SF);
-                histograms.lu_vs_SF_high_with_cut[sector]->Fill(calo.pcal.lu, SF);
+                histograms.lu_vs_SF_low_with_cut[sector]->fill(calo.pcal.lu, SF);
+                histograms.lu_vs_SF_high_with_cut[sector]->fill(calo.pcal.lu, SF);
             }
         }
     }
 
     auto fill_final_histograms(const CLAS::Particle& electron, const CLAS::CalorimeterBank& calo, const CLAS::DCTrajBank& traj, const CLAS::TrackBank& track) -> void {
-        // Fill electron kinematics
-        h_electron.momentum->Fill(electron.p());
-        h_electron.theta->Fill(electron.theta());
-        h_electron.phi->Fill(electron.phi());
-        h_electron.vz->Fill(electron.vz());
-        h_electron.chi2pid->Fill(electron.chi2pid());
-        h_electron.p_vs_theta->Fill(electron.theta(), electron.p());
-        h_electron.phi_vs_theta->Fill(electron.theta(), electron.phi());
+        // Fill thread-safe electron kinematics histograms
+        h_electron.momentum->fill(electron.p());
+        h_electron.theta->fill(electron.theta());
+        h_electron.phi->fill(electron.phi());
+        h_electron.vz->fill(electron.vz());
+        h_electron.chi2pid->fill(electron.chi2pid());
+        h_electron.p_vs_theta->fill(electron.theta(), electron.p());
+        h_electron.phi_vs_theta->fill(electron.theta(), electron.phi());
 
         // Fill calorimeter - PCAL
-        h_calorimeter.lu_vs_lv_pcal->Fill(calo.pcal.lv, calo.pcal.lu);
-        h_calorimeter.lu_vs_lw_pcal->Fill(calo.pcal.lw, calo.pcal.lu);
+        h_calorimeter.lu_vs_lv_pcal->fill(calo.pcal.lv, calo.pcal.lu);
+        h_calorimeter.lu_vs_lw_pcal->fill(calo.pcal.lw, calo.pcal.lu);
 
         // Fill calorimeter - Inner EC
-        h_calorimeter.lu_vs_lv_inner->Fill(calo.inner.lv, calo.inner.lu);
-        h_calorimeter.lu_vs_lw_inner->Fill(calo.inner.lw, calo.inner.lu);
+        h_calorimeter.lu_vs_lv_inner->fill(calo.inner.lv, calo.inner.lu);
+        h_calorimeter.lu_vs_lw_inner->fill(calo.inner.lw, calo.inner.lu);
 
         // Fill calorimeter - Outer EC
-        h_calorimeter.lu_vs_lv_outer->Fill(calo.outer.lv, calo.outer.lu);
-        h_calorimeter.lu_vs_lw_outer->Fill(calo.outer.lw, calo.outer.lu);
+        h_calorimeter.lu_vs_lv_outer->fill(calo.outer.lv, calo.outer.lu);
+        h_calorimeter.lu_vs_lw_outer->fill(calo.outer.lw, calo.outer.lu);
 
         // Fill DC histograms by momentum bin
         fill_dc_momentum_binned(electron.p(), traj, track);
@@ -859,15 +858,15 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         const std::string bin_key = fmt::format("{}_{}", p_low, p_high);
 
-        // Fill histogram if it exists for this bin
+        // Fill thread-safe histogram if it exists for this bin
         if (auto it = h_dc.chi2ndf_vs_edge_r1.find(bin_key); it != h_dc.chi2ndf_vs_edge_r1.end()) {
-            it->second->Fill(traj.region1.edge, chi2ndf);
+            it->second->fill(traj.region1.edge, chi2ndf);
         }
         if (auto it = h_dc.chi2ndf_vs_edge_r2.find(bin_key); it != h_dc.chi2ndf_vs_edge_r2.end()) {
-            it->second->Fill(traj.region2.edge, chi2ndf);
+            it->second->fill(traj.region2.edge, chi2ndf);
         }
         if (auto it = h_dc.chi2ndf_vs_edge_r3.find(bin_key); it != h_dc.chi2ndf_vs_edge_r3.end()) {
-            it->second->Fill(traj.region3.edge, chi2ndf);
+            it->second->fill(traj.region3.edge, chi2ndf);
         }
     }
 
@@ -885,15 +884,15 @@ class ElectronAnalysisAlg : public Framework::Algorithm {
 
         const std::string bin_key = fmt::format("{}_{}", theta_low, theta_high);
 
-        // Fill histogram if it exists for this bin
+        // Fill thread-safe histogram if it exists for this bin
         if (auto it = h_dc.chi2ndf_vs_edge_r1.find(bin_key); it != h_dc.chi2ndf_vs_edge_r1.end()) {
-            it->second->Fill(traj.region1.edge, chi2ndf);
+            it->second->fill(traj.region1.edge, chi2ndf);
         }
         if (auto it = h_dc.chi2ndf_vs_edge_r2.find(bin_key); it != h_dc.chi2ndf_vs_edge_r2.end()) {
-            it->second->Fill(traj.region2.edge, chi2ndf);
+            it->second->fill(traj.region2.edge, chi2ndf);
         }
         if (auto it = h_dc.chi2ndf_vs_edge_r3.find(bin_key); it != h_dc.chi2ndf_vs_edge_r3.end()) {
-            it->second->Fill(traj.region3.edge, chi2ndf);
+            it->second->fill(traj.region3.edge, chi2ndf);
         }
     }
 };

@@ -12,6 +12,7 @@
 #include "Framework/Event.hpp"
 #include "Framework/Property.hpp"
 #include "Framework/SimpleAlgorithm.hpp"
+#include "Framework/ThreadSafeHistogram.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/PhotonCutsService.hpp"
@@ -74,20 +75,20 @@ class Pi0ReconstructionAlg : public Framework::SimpleAlgorithm<Pi0Reconstruction
     // Add mutex for thread safety
     mutable std::mutex m_ntuple_mutex;
 
-    // Histograms (non-owning pointers managed by HistogramService)
-    TH1D* h_photon_energy_raw = nullptr;
-    TH1D* h_photon_theta_raw = nullptr;
-    TH1D* h_photon_phi_raw = nullptr;
-    TH1D* h_photon_energy = nullptr;
-    TH1D* h_photon_theta = nullptr;
-    TH1D* h_n_photons = nullptr;
-    TH1D* h_gg_mass_all = nullptr;
-    TH1D* h_gg_mass_traditional = nullptr;
-    TH1D* h_gg_mass_selected = nullptr;
-    TH1D* h_gg_mass_AI = nullptr;
-    TH1D* h_pi0_momentum = nullptr;
-    TH1D* h_pi0_theta = nullptr;
-    TH1D* h_opening_angle = nullptr;
+    // Thread-safe histograms (wrappers managed by HistogramService)
+    Framework::ThreadSafeHist1D* h_photon_energy_raw = nullptr;
+    Framework::ThreadSafeHist1D* h_photon_theta_raw = nullptr;
+    Framework::ThreadSafeHist1D* h_photon_phi_raw = nullptr;
+    Framework::ThreadSafeHist1D* h_photon_energy = nullptr;
+    Framework::ThreadSafeHist1D* h_photon_theta = nullptr;
+    Framework::ThreadSafeHist1D* h_n_photons = nullptr;
+    Framework::ThreadSafeHist1D* h_gg_mass_all = nullptr;
+    Framework::ThreadSafeHist1D* h_gg_mass_traditional = nullptr;
+    Framework::ThreadSafeHist1D* h_gg_mass_selected = nullptr;
+    Framework::ThreadSafeHist1D* h_gg_mass_AI = nullptr;
+    Framework::ThreadSafeHist1D* h_pi0_momentum = nullptr;
+    Framework::ThreadSafeHist1D* h_pi0_theta = nullptr;
+    Framework::ThreadSafeHist1D* h_opening_angle = nullptr;
 
     // NTuple branch variables
     double m_e_p = 0.0;

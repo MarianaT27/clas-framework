@@ -259,18 +259,66 @@ inline const TypedKey<double> Nu{"nu"};
 inline const TypedKey<double> Xbj{"x_bjorken"};
 inline const TypedKey<double> Y{"y"};
 
-// Event flags
+// Pi0 reconstruction variables
+inline const TypedKey<double> Pi0Mass{"pi0_mass"};
+inline const TypedKey<double> Pi0Momentum{"pi0_momentum"};
+inline const TypedKey<double> Pi0Theta{"pi0_theta"};
+inline const TypedKey<double> Pi0Phi{"pi0_phi"};
+inline const TypedKey<double> PhotonOpeningAngle{"photon_opening_angle"};
+
+// Event flags / Algorithm decisions
 inline const TypedKey<bool> HasGoodElectron{"has_good_electron"};
 inline const TypedKey<bool> HasTriggerElectron{"has_trigger_electron"};
+inline const TypedKey<bool> HasGoodDISElectron{"has_good_dis_electron"};
 inline const TypedKey<bool> IsDIS{"is_dis"};
 inline const TypedKey<bool> PassedFiducialCuts{"passed_fiducial_cuts"};
+inline const TypedKey<bool> HasPi0{"has_pi0"};
+inline const TypedKey<bool> HasPhotonPair{"has_photon_pair"};
+inline const TypedKey<bool> PassedElectronCuts{"passed_electron_cuts"};
+inline const TypedKey<bool> PassedPhotonCuts{"passed_photon_cuts"};
+
+// Selected particle collections (algorithm outputs)
+inline const TypedKey<std::vector<CLAS::Particle>> SelectedElectrons{"selected_electrons"};
+inline const TypedKey<std::vector<CLAS::Particle>> SelectedPhotons{"selected_photons"};
+inline const TypedKey<std::vector<CLAS::Particle>> SelectedProtons{"selected_protons"};
+inline const TypedKey<std::vector<CLAS::Particle>> SelectedPiPlus{"selected_pi_plus"};
+inline const TypedKey<std::vector<CLAS::Particle>> SelectedPiMinus{"selected_pi_minus"};
 
 // Trigger electron (single particle)
 inline const TypedKey<CLAS::Particle> TriggerElectron{"trigger_electron"};
+inline const TypedKey<CLAS::Particle> BestElectron{"best_electron"};
 
 // Beam and target info
 inline const TypedKey<double> BeamEnergy{"beam_energy"};
 inline const TypedKey<double> TargetMass{"target_mass"};
+
+// =============================================================================
+// DIS kinematic variables (algorithm-compatible naming)
+// =============================================================================
+inline const TypedKey<double> DIS_Q2{"dis_Q2"};
+inline const TypedKey<double> DIS_W{"dis_W"};
+inline const TypedKey<double> DIS_xB{"dis_xB"};
+inline const TypedKey<double> DIS_y{"dis_y"};
+inline const TypedKey<double> DIS_nu{"dis_nu"};
+
+// Selected DIS electron
+inline const TypedKey<std::vector<CLAS::Particle>> SelectedDISElectron{"SelectedDISElectron"};
+
+// =============================================================================
+// Algorithm-compatible selected particle keys (capital naming convention)
+// =============================================================================
+inline const TypedKey<std::vector<CLAS::Particle>> SelectedElectronsCapital{"SelectedElectrons"};
+inline const TypedKey<std::vector<CLAS::Particle>> SelectedPiPlusCapital{"SelectedPiPlus"};
+inline const TypedKey<std::vector<CLAS::Particle>> SelectedPiMinusCapital{"SelectedPiMinus"};
+
+// =============================================================================
+// Lambda reconstruction variables
+// =============================================================================
+inline const TypedKey<double> LambdaMass{"lambda_mass"};
+inline const TypedKey<double> LambdaMomentum{"lambda_p"};
+inline const TypedKey<double> LambdaTheta{"lambda_theta"};
+inline const TypedKey<double> LambdaCoplanarity{"lambda_coplanarity"};
+inline const TypedKey<double> LambdaMissingMass{"lambda_missing_mass"};
 
 }  // namespace Keys
 

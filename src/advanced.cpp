@@ -157,7 +157,7 @@ int main(int argc, char** argv) {
 
     std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
-        fmt::print(stderr, "ERROR: No .hipo files found in {}\n", data_dir);
+        Framework::Log::error("Main", "No .hipo files found in {}", data_dir);
         fmt::print("\nUsage: {} [data_dir] [max_events] [num_threads]\n", argv[0]);
         return 1;
     }
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
 
     auto sc = app.initialize();
     if (sc.is_failure()) {
-        fmt::print(stderr, "\nERROR: Initialization failed\n");
+        Framework::Log::error("Main", "Initialization failed");
         return 1;
     }
 
@@ -199,7 +199,7 @@ int main(int argc, char** argv) {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
     if (sc.is_failure()) {
-        fmt::print(stderr, "\nERROR: Event processing failed\n");
+        Framework::Log::error("Main", "Event processing failed");
         return 1;
     }
 
@@ -209,7 +209,7 @@ int main(int argc, char** argv) {
 
     sc = app.finalize();
     if (sc.is_failure()) {
-        fmt::print(stderr, "\nWARNING: Finalization had issues\n");
+        Framework::Log::warning("Main", "Finalization had issues");
     }
 
     // ═══════════════════════════════════════════════════════════════════

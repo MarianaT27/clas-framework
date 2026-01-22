@@ -19,6 +19,7 @@
 #include "CLAS/PIDs.hpp"
 #include "CLAS/Particle.hpp"
 #include "Framework/Cutflow.hpp"
+#include "Framework/Decisions.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Property.hpp"
@@ -158,24 +159,24 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         }
 
         // Check for good electron decision from upstream algorithm
-        if (!event.passes_decision("HasGoodDISElectron")) return Framework::StatusCode::FILTERED();
+        if (!event.passes_decision_typed(Framework::Decisions::HasGoodDISElectron)) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Has Good DIS Electron");
 
-        // Get DIS kinematics from upstream
-        auto Q2_opt = event.retrieve<double>("dis_Q2");
-        auto nu_opt = event.retrieve<double>("dis_nu");
+        // Get DIS kinematics from upstream (using typed retrieval)
+        auto Q2_opt = event.retrieve_typed(Framework::Keys::DIS_Q2);
+        auto nu_opt = event.retrieve_typed(Framework::Keys::DIS_nu);
         if (!Q2_opt || !nu_opt) return Framework::StatusCode::FILTERED();
         double Q2 = *Q2_opt;
         double nu = *nu_opt;
 
         // Get beam and electron for t calculation
-        auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
-        if (!electrons || electrons->empty()) return Framework::StatusCode::FILTERED();
-        const auto& electron = (*electrons)[0];
+        auto electrons_opt = event.retrieve_typed(Framework::Keys::SelectedElectronsCapital);
+        if (!electrons_opt || electrons_opt->empty()) return Framework::StatusCode::FILTERED();
+        const auto& electron = electrons_opt->front();
 
         // Get pre-selected pions from PionSelectionAlg
-        auto* selected_piplus_ptr = event.get_particles<CLAS::Particle>("SelectedPiPlus");
-        auto* selected_piminus_ptr = event.get_particles<CLAS::Particle>("SelectedPiMinus");
+        auto selected_piplus_opt = event.retrieve_typed(Framework::Keys::SelectedPiPlusCapital);
+        auto selected_piminus_opt = event.retrieve_typed(Framework::Keys::SelectedPiMinusCapital);
 
         // Get raw pions for histograms
         const auto& pions_plus_raw = event.particles(CLAS::PIDs::PIPLUS);
@@ -201,11 +202,11 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         std::vector<CLAS::Particle> pions_plus;
         std::vector<CLAS::Particle> pions_minus;
 
-        if (selected_piplus_ptr) {
-            pions_plus = *selected_piplus_ptr;
+        if (selected_piplus_opt) {
+            pions_plus = *selected_piplus_opt;
         }
-        if (selected_piminus_ptr) {
-            pions_minus = *selected_piminus_ptr;
+        if (selected_piminus_opt) {
+            pions_minus = *selected_piminus_opt;
         }
 
         // Fill selected pion histograms

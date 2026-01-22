@@ -158,7 +158,6 @@ class DecaysLambdaAlg : public Framework::Algorithm {
         m_cutflow.add_cut("Decay Length Cut");
         m_cutflow.add_cut("Vertex Detach Cut");
 
-        m_cutflow.set_logger(m_log_svc.get());
         Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
 
         return Framework::StatusCode::SUCCESS();

@@ -71,11 +71,9 @@ class Application {
 
     /**
      * @brief Set logging service for structured output
-     * Also sets the global Log singleton for easy access from anywhere
+     * Sets the global Log singleton for easy access from anywhere
      */
     auto set_logger(LoggingService* log) -> void {
-        m_log = log;
-        // Set the global logger singleton for easy access
         Log::set_instance(log);
     }
 
@@ -91,48 +89,36 @@ class Application {
         }
 
         // Auto-detect LoggingService if not manually set
-        if (!m_log) {
-            m_log = m_svc_mgr.get_service<LoggingService>("LoggingService");
-            if (m_log) {
-                Log::set_instance(m_log);
+        if (!Log::is_available()) {
+            auto* log = m_svc_mgr.get_service<LoggingService>("LoggingService");
+            if (log) {
+                Log::set_instance(log);
             }
         }
 
-        if (m_log) {
-            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
-            m_log->info("Application", "  Initializing Application: {}", m_name);
-            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
-            m_log->info("Application", "");
-            m_log->info("Application", "Services initialized");
-        }
+        Log::info("Application", "═══════════════════════════════════════════════════════════════");
+        Log::info("Application", "  Initializing Application: {}", m_name);
+        Log::info("Application", "═══════════════════════════════════════════════════════════════");
+        Log::info("Application", "");
+        Log::info("Application", "Services initialized");
 
-        if (m_log) {
-            m_log->info("Application", "");
-            m_log->info("Application", "Initializing Algorithms:");
-        }
+        Log::info("Application", "");
+        Log::info("Application", "Initializing Algorithms:");
 
         // Initialize algorithms
         for (auto& alg : m_algorithms) {
             alg->set_service_manager(&m_svc_mgr);
-            if (m_log) {
-                m_log->info("Application", "  - {}", alg->name());
-            }
+            Log::info("Application", "  - {}", alg->name());
             sc = alg->initialize();
             if (sc.is_failure()) {
-                if (m_log) {
-                    m_log->error("Application", "Failed to initialize algorithm '{}'", alg->name());
-                } else {
-                    fmt::print(stderr, "ERROR: Failed to initialize algorithm '{}'\n", alg->name());
-                }
+                Log::error("Application", "Failed to initialize algorithm '{}'", alg->name());
                 return sc;
             }
         }
 
-        if (m_log) {
-            m_log->info("Application", "");
-            m_log->info("Application", "Initialization complete!");
-            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
-        }
+        Log::info("Application", "");
+        Log::info("Application", "Initialization complete!");
+        Log::info("Application", "═══════════════════════════════════════════════════════════════");
         return StatusCode::SUCCESS();
     }
 
@@ -142,21 +128,15 @@ class Application {
      */
     auto run() -> StatusCode {
         if (m_input_files.empty()) {
-            if (m_log) {
-                m_log->error("Application", "No input files specified");
-            } else {
-                fmt::print(stderr, "ERROR: No input files specified\n");
-            }
+            Log::error("Application", "No input files specified");
             return StatusCode::FAILURE();
         }
 
-        if (m_log) {
-            m_log->info("Application", "");
-            m_log->info("Application", "Starting event processing...");
-            m_log->info("Application", "  Input files: {}", m_input_files.size());
-            m_log->info("Application", "  Algorithms: {}", m_algorithms.size());
-            m_log->info("Application", "  Threads: {}", m_num_threads);
-        }
+        Log::info("Application", "");
+        Log::info("Application", "Starting event processing...");
+        Log::info("Application", "  Input files: {}", m_input_files.size());
+        Log::info("Application", "  Algorithms: {}", m_algorithms.size());
+        Log::info("Application", "  Threads: {}", m_num_threads);
 
         // Create HIPO chain for parallel processing
         hipo::chain chain(m_num_threads, true, false);
@@ -208,43 +188,31 @@ class Application {
      * @return StatusCode Success or failure
      */
     auto finalize() -> StatusCode {
-        if (m_log) {
-            m_log->info("Application", "");
-            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
-            m_log->info("Application", "  Finalizing Application");
-            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
-            m_log->info("Application", "");
-            m_log->info("Application", "Finalizing Algorithms:");
-        }
+        Log::info("Application", "");
+        Log::info("Application", "═══════════════════════════════════════════════════════════════");
+        Log::info("Application", "  Finalizing Application");
+        Log::info("Application", "═══════════════════════════════════════════════════════════════");
+        Log::info("Application", "");
+        Log::info("Application", "Finalizing Algorithms:");
 
         // Finalize algorithms
         for (auto& alg : m_algorithms) {
-            if (m_log) {
-                m_log->info("Application", "  - {}", alg->name());
-            }
+            Log::info("Application", "  - {}", alg->name());
             auto sc = alg->finalize();
             if (sc.is_failure()) {
-                if (m_log) {
-                    m_log->warning("Application", "Failed to finalize algorithm '{}'", alg->name());
-                } else {
-                    fmt::print(stderr, "WARNING: Failed to finalize algorithm '{}'\n", alg->name());
-                }
+                Log::warning("Application", "Failed to finalize algorithm '{}'", alg->name());
             }
         }
 
-        if (m_log) {
-            m_log->info("Application", "");
-            m_log->info("Application", "Finalizing Services:");
-        }
+        Log::info("Application", "");
+        Log::info("Application", "Finalizing Services:");
 
         // Finalize services
         auto sc = m_svc_mgr.finalize_all();
 
-        if (m_log) {
-            m_log->info("Application", "");
-            m_log->info("Application", "Finalization complete!");
-            m_log->info("Application", "═══════════════════════════════════════════════════════════════");
-        }
+        Log::info("Application", "");
+        Log::info("Application", "Finalization complete!");
+        Log::info("Application", "═══════════════════════════════════════════════════════════════");
         return sc;
     }
 
@@ -264,7 +232,6 @@ class Application {
     double m_percentage = 100;
     int m_num_threads = 1;
     mutable long m_exception_count = 0;
-    LoggingService* m_log = nullptr;
 };
 
 }  // namespace Framework

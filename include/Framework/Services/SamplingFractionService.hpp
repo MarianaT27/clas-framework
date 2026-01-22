@@ -69,6 +69,9 @@ struct SectorSFParameters {
  */
 class SamplingFractionService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "SamplingFractionService"; }
+
     static constexpr int NUM_SECTORS = 6;
     static constexpr double DEFAULT_N_SIGMA = 3.5;
 

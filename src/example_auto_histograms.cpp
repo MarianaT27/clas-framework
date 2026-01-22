@@ -10,6 +10,7 @@
 #include "Framework/Application.hpp"
 #include "Framework/IAlgorithm.hpp"
 #include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/OutputFileService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
 #include "Framework/Histogram.hpp"
@@ -39,14 +40,14 @@ public:
         // Get histogram service
         m_hist_svc = service<Framework::HistogramService>("HistogramService");
         if (!m_hist_svc) {
-            fmt::print(stderr, "ERROR: Failed to get HistogramService\n");
+            Framework::Log::error("HistogramDemo", "Failed to get HistogramService");
             return Framework::StatusCode::FAILURE();
         }
 
         // Get particle selector service
         m_particle_svc = service<Framework::ParticleSelectorService>("ParticleSelectorService");
         if (!m_particle_svc) {
-            fmt::print(stderr, "ERROR: Failed to get ParticleSelectorService\n");
+            Framework::Log::error("HistogramDemo", "Failed to get ParticleSelectorService");
             return Framework::StatusCode::FAILURE();
         }
 
@@ -228,7 +229,7 @@ int main(int argc, char** argv) {
     fmt::print("\nConfiguring Input:\n");
     std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
-        fmt::print(stderr, "ERROR: No .hipo files found in {}\n", data_dir);
+        Framework::Log::error("Main", "No .hipo files found in {}", data_dir);
         fmt::print("\nUsage: {} [data_dir] [max_events]\n", argv[0]);
         return 1;
     }
@@ -248,7 +249,7 @@ int main(int argc, char** argv) {
 
     auto sc = app.initialize();
     if (sc.is_failure()) {
-        fmt::print(stderr, "\nERROR: Initialization failed\n");
+        Framework::Log::error("Main", "Initialization failed");
         return 1;
     }
 
@@ -264,7 +265,7 @@ int main(int argc, char** argv) {
     auto end_time = std::chrono::high_resolution_clock::now();
 
     if (sc.is_failure()) {
-        fmt::print(stderr, "\nERROR: Event processing failed\n");
+        Framework::Log::error("Main", "Event processing failed");
         return 1;
     }
 
@@ -277,7 +278,7 @@ int main(int argc, char** argv) {
 
     sc = app.finalize();
     if (sc.is_failure()) {
-        fmt::print(stderr, "\nWARNING: Finalization had issues\n");
+        Framework::Log::warning("Main", "Finalization had issues");
     }
 
     // Summary

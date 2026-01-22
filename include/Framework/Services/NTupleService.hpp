@@ -15,8 +15,7 @@
 
 namespace Framework {
 
-// Forward declarations
-class LoggingService;
+// Forward declaration
 class OutputFileService;
 
 /**
@@ -48,35 +47,33 @@ class OutputFileService;
  */
 class NTupleService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "NTupleService"; }
+
     explicit NTupleService(std::string name = "NTupleService")
         : Service(std::move(name)) {}
 
     auto initialize() -> StatusCode override {
         if (!m_output_svc) {
-            if (m_log) m_log->error(name(), "OutputFileService not set! Call set_output_file_service() before initialize()");
+            Log::error(name(), "OutputFileService not set! Call set_output_file_service() before initialize()");
             return StatusCode::FAILURE();
         }
-        
+
         if (!m_output_svc->is_file_open()) {
-            if (m_log) m_log->error(name(), "OutputFileService file is not open");
+            Log::error(name(), "OutputFileService file is not open");
             return StatusCode::FAILURE();
         }
-        
-        if (m_log) m_log->info(name(), "Initialized with OutputFileService");
+
+        Log::info(name(), "Initialized with OutputFileService");
         return StatusCode::SUCCESS();
     }
 
     auto finalize() -> StatusCode override {
-        if (m_log) m_log->info(name(), "Finalizing NTupleService, writing {} trees", m_trees.size());
+        Log::info(name(), "Finalizing NTupleService, writing {} trees", m_trees.size());
         write_trees();
-        if (m_log) m_log->info(name(), "Finalized");
+        Log::info(name(), "Finalized");
         return StatusCode::SUCCESS();
     }
-
-    /**
-     * @brief Set logging service for structured output
-     */
-    auto set_logger(LoggingService* log) -> void { m_log = log; }
 
     /**
      * @brief Set the OutputFileService (REQUIRED)
@@ -102,14 +99,14 @@ class NTupleService : public Service {
      */
     auto create_tree(const std::string& name, const std::string& title = "", const std::string& directory = "") -> TTree* {
         std::lock_guard<std::mutex> lock(m_tree_mutex_);
-        
+
         if (m_trees.find(name) != m_trees.end()) {
-            fmt::print(stderr, "WARNING: Tree '{}' already exists\n", name);
+            Log::warning(this->name(), "Tree '{}' already exists", name);
             return m_trees[name].get();
         }
 
         if (!m_output_svc || !m_output_svc->is_file_open()) {
-            fmt::print(stderr, "ERROR: OutputFileService not available for tree creation\n");
+            Log::error(this->name(), "OutputFileService not available for tree creation");
             return nullptr;
         }
 
@@ -211,7 +208,7 @@ class NTupleService : public Service {
         if (tree) {
             tree->Fill();
         } else {
-            fmt::print(stderr, "WARNING: Tree '{}' not found\n", tree_name);
+            Log::warning(this->name(), "Tree '{}' not found", tree_name);
         }
     }
 
@@ -231,16 +228,16 @@ class NTupleService : public Service {
         std::lock_guard<std::mutex> lock(m_tree_mutex_);
 
         if (!m_output_svc || !m_output_svc->is_file_open()) {
-            if (m_log) m_log->warning(name(), "OutputFileService not available for writing TTrees");
+            Log::warning(name(), "OutputFileService not available for writing TTrees");
             return;
         }
 
         if (m_trees.empty()) {
-            if (m_log) m_log->info(name(), "No TTrees to write");
+            Log::info(name(), "No TTrees to write");
             return;
         }
 
-        if (m_log) m_log->info(name(), "Writing {} TTrees via OutputFileService", m_trees.size());
+        Log::info(name(), "Writing {} TTrees via OutputFileService", m_trees.size());
 
         std::lock_guard<std::mutex> file_lock(m_output_svc->mutex());
         TFile* file = m_output_svc->get_file();
@@ -254,20 +251,20 @@ class NTupleService : public Service {
             } else {
                 file->cd();
             }
-            
+
             Long64_t entries = tree->GetEntries();
-            
+
             // Flush any remaining baskets and write
             tree->FlushBaskets();
             tree->Write("", TObject::kOverwrite);
-            
+
             // IMPORTANT: Detach from directory to prevent segfault when file closes
             tree->SetDirectory(nullptr);
-            
-            if (m_log) m_log->info(this->name(), "  Wrote tree '{}' ({} entries)", n, entries);
+
+            Log::info(this->name(), "  Wrote tree '{}' ({} entries)", n, entries);
         }
 
-        if (m_log) m_log->info(this->name(), "Successfully wrote {} TTrees", m_trees.size());
+        Log::info(this->name(), "Successfully wrote {} TTrees", m_trees.size());
     }
 
     /**
@@ -318,7 +315,6 @@ class NTupleService : public Service {
     std::map<std::string, std::unique_ptr<TTree>> m_trees;
     std::map<std::string, std::string> m_tree_directories;  // Track directory for each tree
     mutable std::mutex m_tree_mutex_;
-    LoggingService* m_log = nullptr;
     OutputFileService* m_output_svc = nullptr;
 };
 

@@ -8,11 +8,9 @@
 #include <vector>
 #include "CLAS/Target.hpp"
 #include "Framework/IService.hpp"
+#include "Framework/Services/LoggingService.hpp"
 
 namespace Framework {
-
-// Forward declaration
-class LoggingService;
 
 /**
  * @brief Interval of Validity for calibration constants
@@ -43,30 +41,22 @@ struct IntervalOfValidity {
  */
 class ConditionsService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "ConditionsService"; }
+
     explicit ConditionsService(std::string name = "ConditionsService")
         : Service(std::move(name)) {}
 
     auto initialize() -> StatusCode override {
         // Initialize default conditions
         load_default_conditions();
-        if (m_log) {
-            m_log->info(name(), "Initialized");
-        }
+        Log::info(name(), "Initialized");
         return StatusCode::SUCCESS();
     }
 
     auto finalize() -> StatusCode override {
-        if (m_log) {
-            m_log->info(name(), "Finalized");
-        }
+        Log::info(name(), "Finalized");
         return StatusCode::SUCCESS();
-    }
-
-    /**
-     * @brief Set logging service for structured output
-     */
-    auto set_logger(LoggingService* log) -> void {
-        m_log = log;
     }
 
     /**
@@ -75,7 +65,7 @@ class ConditionsService : public Service {
      */
     auto set_run_number(int run) -> void {
         m_current_run = run;
-        fmt::print("ConditionsService: Set run number to {}\n", run);
+        Log::info(name(), "Set run number to {}", run);
     }
 
     /**
@@ -147,15 +137,14 @@ class ConditionsService : public Service {
 
         // Check if IOV is valid for current run
         if (!it->second.iov.contains(m_current_run)) {
-            fmt::print(stderr, "WARNING: No valid IOV for '{}' at run {}\n",
-                       key, m_current_run);
+            Log::warning(name(), "No valid IOV for '{}' at run {}", key, m_current_run);
             return default_value;
         }
 
         try {
             return std::any_cast<T>(it->second.value);
         } catch (const std::bad_any_cast&) {
-            fmt::print(stderr, "ERROR: Type mismatch for condition '{}'\n", key);
+            Log::error(name(), "Type mismatch for condition '{}'", key);
             return default_value;
         }
     }
@@ -166,7 +155,7 @@ class ConditionsService : public Service {
      * @return StatusCode Success or failure
      */
     auto load_from_database(const std::string& db_path) -> StatusCode {
-        fmt::print("ConditionsService: Loading from database: {}\n", db_path);
+        Log::info(name(), "Loading from database: {}", db_path);
         // TODO: Implement SQLite reading
         // For now, just return success
         return StatusCode::SUCCESS();
@@ -180,7 +169,6 @@ class ConditionsService : public Service {
 
     int m_current_run = 0;
     std::map<std::string, ConditionData> m_conditions;
-    LoggingService* m_log = nullptr;
 
     auto load_default_conditions() -> void {
         // Load default time offsets, energy scales, etc.

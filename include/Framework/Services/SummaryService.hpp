@@ -28,6 +28,9 @@ namespace Framework {
  */
 class SummaryService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "SummaryService"; }
+
     explicit SummaryService(std::string name = "SummaryService")
         : Service(std::move(name)) {}
 

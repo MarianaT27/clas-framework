@@ -9,6 +9,7 @@
 #include "CLAS/Target.hpp"
 #include "Framework/CutBuilder.hpp"
 #include "Framework/Cutflow.hpp"
+#include "Framework/Decisions.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/HistogramTemplates.hpp"
 #include "Framework/Property.hpp"
@@ -107,7 +108,7 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         auto [REC_Calorimeter, REC_Traj, REC_Track] = hipo_event.banks("REC::Calorimeter", "REC::Traj", "REC::Track");
 
         if (electrons.empty()) {
-            event.set_decision("HasGoodElectron", false);
+            event.set_decision_typed(Framework::Decisions::HasGoodElectron, false);
             return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Has Electron");
@@ -115,7 +116,7 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         // Select trigger electron
         const std::optional<CLAS::Particle>& possible_electron = Physics::ParticleUtils::find_trigger_electron(electrons, {CLAS::FD, CLAS::BD});
         if (!possible_electron.has_value()) {
-            event.set_decision("HasGoodElectron", false);
+            event.set_decision_typed(Framework::Decisions::HasGoodElectron, false);
             return Framework::StatusCode::FILTERED();
         }
         const CLAS::Particle& electron = possible_electron.value();
@@ -175,13 +176,13 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
             .evaluate();
 
         if (!passed) {
-            event.set_decision("HasGoodElectron", false);
+            event.set_decision_typed(Framework::Decisions::HasGoodElectron, false);
             return Framework::StatusCode::FILTERED();
         }
 
         // Electron passed all cuts - set decision and store for downstream algorithms
-        event.set_decision("HasGoodElectron", true);
-        event.store_particles<CLAS::Particle>("SelectedElectrons", {electron});
+        event.set_decision_typed(Framework::Decisions::HasGoodElectron, true);
+        event.store_typed(Framework::Keys::SelectedElectronsCapital, std::vector<CLAS::Particle>{electron});
 
         // Fill histograms after selection using templates
         kinematics_groups["after_cuts"]->hist1d("p").fill(p);

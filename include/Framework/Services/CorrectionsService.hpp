@@ -38,6 +38,9 @@ namespace Framework {
  */
 class CorrectionsService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "CorrectionsService"; }
+
     // Correction function types
     using Correction1D = std::function<double(double)>;
     using Correction2D = std::function<double(double, double)>;

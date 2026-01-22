@@ -48,7 +48,7 @@ class ServiceManager {
                      std::vector<std::string> dependencies) -> StatusCode {
         const std::string& name = service->name();
         if (m_services.find(name) != m_services.end()) {
-            fmt::print(stderr, "ERROR: Service '{}' already exists\n", name);
+            Framework::Log::error("ServiceManager", "Service '{}' already exists", name);
             return StatusCode::failure(fmt::format("Service '{}' already exists", name));
         }
         m_services[name] = std::move(service);
@@ -73,17 +73,10 @@ class ServiceManager {
     auto get_service(const std::string& name) -> T* {
         auto it = m_services.find(name);
         if (it == m_services.end()) {
-            fmt::print(stderr, "WARNING: Service '{}' not found\n", name);
+            Framework::Log::warning("ServiceManager", "Service '{}' not found", name);
             return nullptr;
         }
         return dynamic_cast<T*>(it->second.get());
-    }
-
-    /**
-     * @brief Set the logging service to use for service initialization/finalization
-     */
-    auto set_logger(LoggingService* log) -> void {
-        m_log = log;
     }
 
     /**
@@ -252,7 +245,6 @@ class ServiceManager {
    private:
     std::map<std::string, std::unique_ptr<IService>> m_services;
     std::map<std::string, std::vector<std::string>> m_dependencies;
-    LoggingService* m_log = nullptr;
 };
 
 }  // namespace Framework
@@ -266,7 +258,7 @@ namespace Framework {
 template <ServiceConcept T>
 auto Algorithm::service(const std::string& service_name) -> T* {
     if (!m_svc_mgr) {
-        fmt::print(stderr, "ERROR: ServiceManager not set for algorithm '{}'\n", m_name);
+        Framework::Log::error("Algorithm", "ServiceManager not set for algorithm '{}'", m_name);
         return nullptr;
     }
     return m_svc_mgr->get_service<T>(service_name);

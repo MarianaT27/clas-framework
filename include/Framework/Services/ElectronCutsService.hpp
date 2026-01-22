@@ -74,6 +74,9 @@ class SamplingFractionService;
  */
 class ElectronCutsService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "ElectronCutsService"; }
+
     // ============================================================================
     // Constants
     // ============================================================================

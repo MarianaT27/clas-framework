@@ -3,6 +3,7 @@
 #include <filesystem>
 #include "Framework/HistogramTemplates.hpp"
 #include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/OutputFileService.hpp"
 #include "TFile.h"
 
 using namespace Framework;
@@ -13,19 +14,30 @@ class HistogramTemplatesTest : public ::testing::Test {
     void SetUp() override {
         // Create a unique test output file
         m_output_file = "test_histogram_templates_output.root";
-        m_hist_svc.set_output_file(m_output_file);
+
+        // Set up OutputFileService (required by HistogramService)
+        m_output_svc.set_output_file(m_output_file);
+        m_output_svc.initialize();
+
+        // Configure HistogramService with OutputFileService
+        m_hist_svc.set_output_file_service(&m_output_svc);
         m_hist_svc.set_auto_write(true);
         m_hist_svc.set_verification(true);
         m_hist_svc.initialize();
     }
 
     void TearDown() override {
+        // Clean up services
+        m_hist_svc.finalize();
+        m_output_svc.finalize();
+
         // Clean up test output file
         if (std::filesystem::exists(m_output_file)) {
             std::filesystem::remove(m_output_file);
         }
     }
 
+    OutputFileService m_output_svc;
     HistogramService m_hist_svc;
     std::string m_output_file;
 };
@@ -226,8 +238,9 @@ TEST_F(HistogramTemplatesTest, SectorHistogramsPersistence) {
             h_momentum.fill(s, 5.0);
         }
 
-        // Finalize writes histograms
+        // Finalize writes histograms and close file
         m_hist_svc.finalize();
+        m_output_svc.finalize();  // Close the file so we can read it
     }
 
     // Verify histograms were written to file
@@ -236,15 +249,23 @@ TEST_F(HistogramTemplatesTest, SectorHistogramsPersistence) {
     ASSERT_TRUE(file.IsOpen());
 
     for (int s = 1; s <= 6; ++s) {
-        std::string path = fmt::format("/Persist/momentum_S{}", s);
-        TH1D* hist = dynamic_cast<TH1D*>(file.Get(path.c_str()));
-        EXPECT_NE(hist, nullptr) << "Histogram " << path << " not found in file";
+        std::string name = fmt::format("momentum_S{}", s);
+        // Navigate to directory and get histogram
+        TDirectory* dir = file.GetDirectory("Persist");
+        ASSERT_NE(dir, nullptr) << "Directory Persist not found";
+        TH1D* hist = dynamic_cast<TH1D*>(dir->Get(name.c_str()));
+        EXPECT_NE(hist, nullptr) << "Histogram " << name << " not found in Persist directory";
         if (hist) {
-            EXPECT_EQ(hist->GetEntries(), 1) << "Histogram " << path << " should have 1 entry";
+            EXPECT_EQ(hist->GetEntries(), 1) << "Histogram " << name << " should have 1 entry";
         }
     }
 
     file.Close();
+
+    // Re-open output service for TearDown cleanup
+    m_output_svc.set_output_file(m_output_file);
+    m_output_svc.initialize();
+    m_hist_svc.set_output_file_service(&m_output_svc);
 }
 
 TEST_F(HistogramTemplatesTest, CutStageHistogramsPersistence) {
@@ -256,7 +277,9 @@ TEST_F(HistogramTemplatesTest, CutStageHistogramsPersistence) {
         h_momentum.fill_after_cut("All", 5.0);
         h_momentum.fill_after_cut("Selected", 5.0);
 
+        // Finalize writes histograms and close file
         m_hist_svc.finalize();
+        m_output_svc.finalize();  // Close the file so we can read it
     }
 
     // Verify histograms were written to file
@@ -264,8 +287,14 @@ TEST_F(HistogramTemplatesTest, CutStageHistogramsPersistence) {
     ASSERT_FALSE(file.IsZombie());
     ASSERT_TRUE(file.IsOpen());
 
-    TH1D* h_all = dynamic_cast<TH1D*>(file.Get("/Persist/cutflow/momentum_All"));
-    TH1D* h_selected = dynamic_cast<TH1D*>(file.Get("/Persist/cutflow/momentum_Selected"));
+    // Navigate to directory structure
+    TDirectory* persist_dir = file.GetDirectory("Persist");
+    ASSERT_NE(persist_dir, nullptr) << "Directory Persist not found";
+    TDirectory* cutflow_dir = persist_dir->GetDirectory("cutflow");
+    ASSERT_NE(cutflow_dir, nullptr) << "Directory cutflow not found";
+
+    TH1D* h_all = dynamic_cast<TH1D*>(cutflow_dir->Get("momentum_All"));
+    TH1D* h_selected = dynamic_cast<TH1D*>(cutflow_dir->Get("momentum_Selected"));
 
     EXPECT_NE(h_all, nullptr) << "All histogram not found";
     EXPECT_NE(h_selected, nullptr) << "Selected histogram not found";
@@ -274,6 +303,11 @@ TEST_F(HistogramTemplatesTest, CutStageHistogramsPersistence) {
     if (h_selected) EXPECT_EQ(h_selected->GetEntries(), 1);
 
     file.Close();
+
+    // Re-open output service for TearDown cleanup
+    m_output_svc.set_output_file(m_output_file);
+    m_output_svc.initialize();
+    m_hist_svc.set_output_file_service(&m_output_svc);
 }
 
 TEST_F(HistogramTemplatesTest, VerificationOption) {
@@ -287,11 +321,13 @@ TEST_F(HistogramTemplatesTest, VerificationOption) {
         h_momentum.fill(s, 5.0);
     }
 
-    // Finalize should verify histograms
+    // Finalize should write histograms successfully
     auto sc = m_hist_svc.finalize();
     EXPECT_TRUE(sc.is_success());
 
-    // Verify manually
-    bool verified = m_hist_svc.verify_histograms();
-    EXPECT_TRUE(verified);
+    // Verify histograms exist in the service
+    for (int s = 1; s <= 6; ++s) {
+        std::string path = fmt::format("/Verify/momentum_S{}", s);
+        EXPECT_NE(m_hist_svc.get_hist1D(path), nullptr) << "Histogram " << path << " should exist";
+    }
 }

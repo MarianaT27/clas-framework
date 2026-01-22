@@ -2,11 +2,13 @@
 
 #include "Framework/CutBuilder.hpp"
 #include "Framework/Cutflow.hpp"
+#include "Framework/Decisions.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/Property.hpp"
 #include "Framework/SimpleAlgorithm.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/NTupleService.hpp"
+#include "Framework/ThreadSafeHistogram.hpp"
 #include "Physics/DISAnalysis.hpp"
 
 namespace Algorithms {
@@ -83,14 +85,19 @@ class DISSelectionAlg : public Framework::SimpleAlgorithm<DISSelectionAlg> {
         m_cutflow.pass("All Events");
 
         // Check for good electron decision from upstream algorithm
-        if (!event.passes_decision("HasGoodElectron")) {
+        if (!event.passes_decision_typed(Framework::Decisions::HasGoodElectron)) {
             return Framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Has Electron");
 
+        // Get selected electrons using typed retrieval
+        auto electrons_opt = event.retrieve_typed(Framework::Keys::SelectedElectronsCapital);
+        if (!electrons_opt || electrons_opt->empty()) {
+            return Framework::StatusCode::FILTERED();
+        }
+
         Physics::DISAnalysis::DISKinematics kin =
-            Physics::DISAnalysis::calculate_kinematics(
-                event.get_particles<CLAS::Particle>("SelectedElectrons")->front());
+            Physics::DISAnalysis::calculate_kinematics(electrons_opt->front());
 
         // Apply DIS region cuts using CutBuilder
         bool passed = Framework::CutBuilder(m_cutflow)
@@ -104,27 +111,26 @@ class DISSelectionAlg : public Framework::SimpleAlgorithm<DISSelectionAlg> {
         }
 
         // Electron passed all cuts - set decision and store for downstream algorithms
-        event.set_decision("HasGoodDISElectron", true);
-        event.store_particles<CLAS::Particle>("SelectedDISElectron",
-            {event.get_particles<CLAS::Particle>("SelectedElectrons")->front()});
-        event.store("dis_Q2", kin.q2);
-        event.store("dis_W", kin.w);
-        event.store("dis_xB", kin.xb);
-        event.store("dis_y", kin.y);
-        event.store("dis_nu", kin.nu);
+        event.set_decision_typed(Framework::Decisions::HasGoodDISElectron, true);
+        event.store_typed(Framework::Keys::SelectedDISElectron, std::vector<CLAS::Particle>{electrons_opt->front()});
+        event.store_typed(Framework::Keys::DIS_Q2, kin.q2);
+        event.store_typed(Framework::Keys::DIS_W, kin.w);
+        event.store_typed(Framework::Keys::DIS_xB, kin.xb);
+        event.store_typed(Framework::Keys::DIS_y, kin.y);
+        event.store_typed(Framework::Keys::DIS_nu, kin.nu);
 
-        // Fill histograms
-        if (h_Q2) h_Q2->Fill(kin.q2);
-        if (h_W) h_W->Fill(kin.w);
-        if (h_nu) h_nu->Fill(kin.nu);
-        if (h_xB) h_xB->Fill(kin.xb);
-        if (h_y) h_y->Fill(kin.y);
+        // Fill histograms (thread-safe)
+        if (h_Q2) h_Q2->fill(kin.q2);
+        if (h_W) h_W->fill(kin.w);
+        if (h_nu) h_nu->fill(kin.nu);
+        if (h_xB) h_xB->fill(kin.xb);
+        if (h_y) h_y->fill(kin.y);
 
         // Fill N-tuple if service is available
         if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
-            auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
-            if (electrons && !electrons->empty()) {
-                const auto& electron = (*electrons)[0];
+            // electrons_opt is already retrieved above
+            if (electrons_opt && !electrons_opt->empty()) {
+                const auto& electron = electrons_opt->front();
                 m_e_p = electron.p();
                 m_e_theta = electron.theta();
                 m_e_phi = electron.phi();
@@ -173,12 +179,12 @@ class DISSelectionAlg : public Framework::SimpleAlgorithm<DISSelectionAlg> {
     Framework::ServiceHandle<Framework::HistogramService>* m_hist_svc = nullptr;
     Framework::ServiceHandle<Framework::NTupleService>* m_ntuple_svc = nullptr;
 
-    // Histograms (non-owning pointers managed by HistogramService)
-    TH1D* h_Q2 = nullptr;
-    TH1D* h_W = nullptr;
-    TH1D* h_nu = nullptr;
-    TH1D* h_xB = nullptr;
-    TH1D* h_y = nullptr;
+    // Thread-safe histograms (managed by HistogramService)
+    Framework::ThreadSafeHist1D* h_Q2 = nullptr;
+    Framework::ThreadSafeHist1D* h_W = nullptr;
+    Framework::ThreadSafeHist1D* h_nu = nullptr;
+    Framework::ThreadSafeHist1D* h_xB = nullptr;
+    Framework::ThreadSafeHist1D* h_y = nullptr;
 
     // N-tuple variables
     double m_e_p = 0.0;
@@ -195,11 +201,11 @@ class DISSelectionAlg : public Framework::SimpleAlgorithm<DISSelectionAlg> {
     auto book_histograms() -> void {
         if (!m_hist_svc || !m_hist_svc->is_valid()) return;
         auto* svc = m_hist_svc->get();
-        h_Q2 = svc->book_hist1D("/DIS/Q2", "Q^{2};Q^{2} [GeV^{2}/c^{2}];Events", 120, 0, 12);
-        h_W = svc->book_hist1D("/DIS/W", "W;W [GeV];Events", 180, 0, 10);
-        h_nu = svc->book_hist1D("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
-        h_xB = svc->book_hist1D("/DIS/xB", "x_{B};x_{B} [GeV];Events", 200, 0, 1.2);
-        h_y = svc->book_hist1D("/DIS/y", "y;y;Events", 200, 0, 1);
+        h_Q2 = svc->book_safe_hist1D("/DIS/Q2", "Q^{2};Q^{2} [GeV^{2}/c^{2}];Events", 120, 0, 12);
+        h_W = svc->book_safe_hist1D("/DIS/W", "W;W [GeV];Events", 180, 0, 10);
+        h_nu = svc->book_safe_hist1D("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
+        h_xB = svc->book_safe_hist1D("/DIS/xB", "x_{B};x_{B} [GeV];Events", 200, 0, 1.2);
+        h_y = svc->book_safe_hist1D("/DIS/y", "y;y;Events", 200, 0, 1);
     }
 
     auto setup_ntuple() -> void {

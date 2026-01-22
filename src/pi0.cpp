@@ -145,7 +145,7 @@ auto main(int argc, char* argv[]) -> int {
     if (!config) return EXIT_SUCCESS;
 
     if (!config->is_valid()) {
-        fmt::print(stderr, "ERROR: Invalid configuration or no input files found\n");
+        Framework::Log::error("Main", "Invalid configuration or no input files found");
         return EXIT_FAILURE;
     }
 
@@ -168,7 +168,7 @@ auto main(int argc, char* argv[]) -> int {
         .build();
 
     if (auto sc = app.initialize(); sc.is_failure()) {
-        fmt::print(stderr, "Initialization failed: {}\n", sc.message());
+        Framework::Log::error("Main", "Initialization failed: {}", sc.message());
         return EXIT_FAILURE;
     }
 
@@ -181,13 +181,13 @@ auto main(int argc, char* argv[]) -> int {
     Framework::Log::info("Main", "  Min photon energy: {} GeV", config->min_energy);
 
     if (auto sc = app.run(); sc.is_failure()) {
-        fmt::print(stderr, "Processing failed: {}\n", sc.message());
+        Framework::Log::error("Main", "Processing failed: {}", sc.message());
         return EXIT_FAILURE;
     }
 
     auto result = app.finalize();
     if (result.is_failure()) {
-        fmt::print(stderr, "Finalization failed: {}\n", result.message());
+        Framework::Log::error("Main", "Finalization failed: {}", result.message());
         return EXIT_FAILURE;
     }
     Framework::Log::info("Main", "Analysis complete: {}", config->output_file);

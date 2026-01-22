@@ -23,6 +23,7 @@
 #include "CLAS/StringUtils.hpp"
 #include "CLAS/Target.hpp"
 #include "Framework/BatchSystem.hpp"
+#include "Framework/Services/LoggingService.hpp"
 
 namespace fs = std::filesystem;
 
@@ -66,7 +67,7 @@ struct BatchConfig {
 auto load_config_from_json(const std::string& path) -> std::optional<BatchConfig> {
     std::ifstream file(path);
     if (!file.is_open()) {
-        fmt::print(stderr, "ERROR: Cannot open config file: {}\n", path);
+        Framework::Log::error("Batch", "Cannot open config file: {}", path);
         return std::nullopt;
     }
 
@@ -310,8 +311,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (cfg.data_dir.empty()) {
-        fmt::print(stderr, "ERROR: No data source specified.\n");
-        fmt::print(stderr, "Use --data-dir, --target/--polarity, or --config\n");
+        Framework::Log::error("Batch", "No data source specified. Use --data-dir, --target/--polarity, or --config");
         return EXIT_FAILURE;
     }
 
@@ -320,7 +320,7 @@ int main(int argc, char* argv[]) {
     // ─────────────────────────────────────────────────────────────────────────
 
     if (!fs::exists(cfg.executable)) {
-        fmt::print(stderr, "ERROR: Executable not found: {}\n", cfg.executable);
+        Framework::Log::error("Batch", "Executable not found: {}", cfg.executable);
         return EXIT_FAILURE;
     }
 
@@ -343,7 +343,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> input_files = CLAS::FileUtils::read_recursive_hipo_files(cfg.data_dir);
 
     if (input_files.empty()) {
-        fmt::print(stderr, "ERROR: No .hipo files found in {}\n", cfg.data_dir);
+        Framework::Log::error("Batch", "No .hipo files found in {}", cfg.data_dir);
         return EXIT_FAILURE;
     }
 
@@ -355,8 +355,7 @@ int main(int argc, char* argv[]) {
 
     auto batch_system = parse_batch_system(cfg.system);
     if (!batch_system) {
-        fmt::print(stderr, "ERROR: Unknown batch system '{}'\n", cfg.system);
-        fmt::print(stderr, "Valid options: slurm, pbs, condor, local\n");
+        Framework::Log::error("Batch", "Unknown batch system '{}'. Valid options: slurm, pbs, condor, local", cfg.system);
         return EXIT_FAILURE;
     }
 
@@ -433,7 +432,7 @@ int main(int argc, char* argv[]) {
     auto job_ids = Framework::BatchSystem::submit_jobs(job_config, *batch_system);
 
     if (job_ids.empty()) {
-        fmt::print(stderr, "ERROR: Failed to generate batch scripts\n");
+        Framework::Log::error("Batch", "Failed to generate batch scripts");
         return EXIT_FAILURE;
     }
 

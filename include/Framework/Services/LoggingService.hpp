@@ -43,6 +43,9 @@ enum class LogLevel {
  */
 class LoggingService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "LoggingService"; }
+
     explicit LoggingService(std::string name = "LoggingService")
         : Service(std::move(name)) {}
 

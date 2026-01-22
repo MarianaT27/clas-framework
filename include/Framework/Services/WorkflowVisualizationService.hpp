@@ -39,6 +39,9 @@ namespace Framework {
  */
 class WorkflowVisualizationService : public Service {
    public:
+    /// Static service name for compile-time access
+    static constexpr std::string_view service_name() { return "WorkflowVisualizationService"; }
+
     /**
      * @brief Node type in the workflow
      */

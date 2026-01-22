@@ -27,7 +27,7 @@ auto main(int argc, char** argv) -> int {
     // Find input files
     auto input_files = CLAS::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
-        fmt::print(stderr, "No HIPO files found in {}\n", data_dir);
+        Framework::Log::error("Main", "No HIPO files found in {}", data_dir);
         return EXIT_FAILURE;
     }
 
@@ -50,12 +50,12 @@ auto main(int argc, char** argv) -> int {
 
     // Run analysis
     if (auto sc = app.initialize(); sc.is_failure()) {
-        fmt::print(stderr, "Initialization failed: {}\n", sc.message());
+        Framework::Log::error("Main", "Initialization failed: {}", sc.message());
         return EXIT_FAILURE;
     }
 
     if (auto sc = app.run(); sc.is_failure()) {
-        fmt::print(stderr, "Processing failed: {}\n", sc.message());
+        Framework::Log::error("Main", "Processing failed: {}", sc.message());
         return EXIT_FAILURE;
     }
 
