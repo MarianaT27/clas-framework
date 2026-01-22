@@ -152,6 +152,7 @@ auto Pi0ReconstructionAlg::process(Framework::Event& event) -> Framework::Status
     hipo::bank& RUN_config = hipo_event.get("RUN::config");
     hipo::bank& REC_Particle = hipo_event.get("REC::Particle");
     hipo::bank& REC_Calorimeter = hipo_event.get("REC::Calorimeter");
+    hipo::bank& REC_Scintillator = hipo_event.get("REC::Scintillator");
 
     auto selected_photons = select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
 
