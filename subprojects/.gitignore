@@ -1,8 +1,6 @@
 # Ignore downloaded subprojects (they are fetched via wrap files)
 *
 
-# But track the packagefiles directory (contains patches for subprojects)
+# But track wrap files
 !.gitignore
 !*.wrap
-!packagefiles
-!packagefiles/**

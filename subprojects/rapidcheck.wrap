@@ -1,9 +1,0 @@
-[wrap-git]
-directory = rapidcheck
-url = https://github.com/emil-e/rapidcheck.git
-revision = 9e4a55d77bffdd08fd4bd6bad5f93153a721d836
-depth = 1
-patch_directory = rapidcheck
-
-[provide]
-rapidcheck = rapidcheck_dep
