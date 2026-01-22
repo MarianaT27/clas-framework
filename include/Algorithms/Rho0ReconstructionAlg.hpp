@@ -190,28 +190,8 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         const auto& electron = electrons_opt->front();
 
         // Get pre-selected pions from PionSelectionAlg
-        auto selected_piplus_opt = event.retrieve_typed(Framework::Keys::SelectedPiPlusCapital);
-        auto selected_piminus_opt = event.retrieve_typed(Framework::Keys::SelectedPiMinusCapital);
-
-        // Get raw pions for histograms
-        const auto& pions_plus_raw = event.particles(CLAS::PIDs::PIPLUS);
-        const auto& pions_minus_raw = event.particles(CLAS::PIDs::PIMINUS);
-
-        // Fill raw histograms
-        if (h_n_piplus) h_n_piplus->Fill(static_cast<double>(pions_plus_raw.size()));
-        if (h_n_piminus) h_n_piminus->Fill(static_cast<double>(pions_minus_raw.size()));
-
-        for (const auto& pip : pions_plus_raw) {
-            if (h_piplus_momentum_raw) h_piplus_momentum_raw->Fill(pip.p());
-            if (h_piplus_theta_raw) h_piplus_theta_raw->Fill(pip.theta());
-            if (h_piplus_chi2pid_raw) h_piplus_chi2pid_raw->Fill(pip.chi2pid());
-        }
-
-        for (const auto& pim : pions_minus_raw) {
-            if (h_piminus_momentum_raw) h_piminus_momentum_raw->Fill(pim.p());
-            if (h_piminus_theta_raw) h_piminus_theta_raw->Fill(pim.theta());
-            if (h_piminus_chi2pid_raw) h_piminus_chi2pid_raw->Fill(pim.chi2pid());
-        }
+        auto selected_piplus_opt = event.retrieve_typed(Framework::Keys::SelectedPiPlus);
+        auto selected_piminus_opt = event.retrieve_typed(Framework::Keys::SelectedPiMinus);
 
         // Use pre-selected pions from PionSelectionAlg
         std::vector<CLAS::Particle> pions_plus;
@@ -222,19 +202,6 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         }
         if (selected_piminus_opt) {
             pions_minus = *selected_piminus_opt;
-        }
-
-        // Fill selected pion histograms
-        for (const auto& pip : pions_plus) {
-            if (h_piplus_momentum) h_piplus_momentum->Fill(pip.p());
-            if (h_piplus_theta) h_piplus_theta->Fill(pip.theta());
-            if (h_piplus_chi2pid) h_piplus_chi2pid->Fill(pip.chi2pid());
-        }
-
-        for (const auto& pim : pions_minus) {
-            if (h_piminus_momentum) h_piminus_momentum->Fill(pim.p());
-            if (h_piminus_theta) h_piminus_theta->Fill(pim.theta());
-            if (h_piminus_chi2pid) h_piminus_chi2pid->Fill(pim.chi2pid());
         }
 
         if (pions_plus.empty()) return Framework::StatusCode::FILTERED();
@@ -769,7 +736,7 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     std::vector<double> m_rho0_lc;
     std::vector<double> m_rho0_t;
     std::vector<double> m_delta_vz_pim;
-    std::vector<double> m_delta_vz_pip
+    std::vector<double> m_delta_vz_pip;
 
     auto fill_q2_binned_histogram(double Q2, double mass) -> void {
         for (size_t i = 0; i < Q2_BINS.size(); ++i) {

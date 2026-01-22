@@ -13,6 +13,7 @@
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
+#include "Framework/Decisions.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
 
@@ -76,7 +77,7 @@ class PionSelectionAlg : public Framework::Algorithm {
 
     auto execute(Framework::Event& event) -> Framework::StatusCode override {
         // Only process pions if a good electron was found
-        if (!event.passes_decision("HasGoodElectron")) {
+        if (!event.passes_decision_typed(Framework::Decisions::HasGoodDISElectron)) {
             return Framework::StatusCode::FILTERED();
         }
 
@@ -103,12 +104,12 @@ class PionSelectionAlg : public Framework::Algorithm {
         auto selected_piminus = process_pions(pions_minus, *REC_Scintillator, start_time, false);
 
         // Store selected pions in event for downstream algorithms
-        event.store_particles("SelectedPiPlus", selected_piplus);
-        event.store_particles("SelectedPiMinus", selected_piminus);
+        event.store_typed(Framework::Keys::SelectedPiPlus, selected_piplus);
+        event.store_typed(Framework::Keys::SelectedPiMinus, selected_piminus);
 
         // Set decision based on whether we have good pions
-        bool has_good_pions = !selected_piplus.empty() && !selected_piminus.empty();
-        event.set_decision("HasGoodPions", has_good_pions);
+        event.set_decision_typed(Framework::Decisions::HasGoodPiMinus, !selected_piminus.empty());
+        event.set_decision_typed(Framework::Decisions::HasGoodPiPlus, !selected_piplus.empty());
 
         return Framework::StatusCode::SUCCESS();
     }
