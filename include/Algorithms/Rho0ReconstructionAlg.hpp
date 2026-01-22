@@ -20,6 +20,7 @@
 #include "CLAS/Particle.hpp"
 #include "Framework/Cutflow.hpp"
 #include "Framework/Event.hpp"
+#include "Framework/Services/LoggingService.hpp"
 #include "Framework/Property.hpp"
 #include "Framework/SimpleAlgorithm.hpp"
 #include "Framework/Services/HistogramService.hpp"
@@ -118,7 +119,7 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
 
     auto on_initialize() -> Framework::StatusCode override {
         Framework::Log::info(name(), "Initializing Rho0ReconstructionAlg");
-        Framework::Log::info(name(), "  Pion selection: FD, |chi2pid| < {}, p > {} GeV/c", m_pion_chi2pid_max.get(), m_min_pion_momentum.get());
+        Framework::Log::info(name(), "  Pion selection: Using pre-selected pions from PionSelectionAlg");
         Framework::Log::info(name(), "  Rho0 mass window: +/-{} GeV (nominal mass: {} GeV)", m_rho0_mass_window.get(), RHO0_MASS);
         Framework::Log::info(name(), "  Kinematic cuts: zh > {}, lc < {} fm, {} < -t < {} GeV², |Δvz| < {} cm",
                             m_zh_min.get(), m_lc_max.get(), m_t_min.get(), m_t_max.get(), m_delta_vz_max.get());
@@ -172,7 +173,11 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         if (!electrons || electrons->empty()) return Framework::StatusCode::FILTERED();
         const auto& electron = (*electrons)[0];
 
-        // Get pi+ and pi- particles from event
+        // Get pre-selected pions from PionSelectionAlg
+        auto* selected_piplus_ptr = event.get_particles<CLAS::Particle>("SelectedPiPlus");
+        auto* selected_piminus_ptr = event.get_particles<CLAS::Particle>("SelectedPiMinus");
+
+        // Get raw pions for histograms
         const auto& pions_plus_raw = event.particles(CLAS::PIDs::PIPLUS);
         const auto& pions_minus_raw = event.particles(CLAS::PIDs::PIMINUS);
 
@@ -192,9 +197,16 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
             if (h_piminus_chi2pid_raw) h_piminus_chi2pid_raw->Fill(pim.chi2pid());
         }
 
-        // Apply momentum and chi2pid cuts
-        auto pions_plus = select_pions(pions_plus_raw);
-        auto pions_minus = select_pions(pions_minus_raw);
+        // Use pre-selected pions from PionSelectionAlg
+        std::vector<CLAS::Particle> pions_plus;
+        std::vector<CLAS::Particle> pions_minus;
+
+        if (selected_piplus_ptr) {
+            pions_plus = *selected_piplus_ptr;
+        }
+        if (selected_piminus_ptr) {
+            pions_minus = *selected_piminus_ptr;
+        }
 
         // Fill selected pion histograms
         for (const auto& pip : pions_plus) {
@@ -266,10 +278,16 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
             bool passed_delta_vz_pip = delta_vz_pip < m_delta_vz_max.get();
             bool passed_zh = zh > m_zh_min.get();
             bool passed_lc = lc < m_lc_max.get();
+            bool passed_Q2 = (Q2 > 1.0);  // Basic Q² cut to avoid very low Q²
             bool passed_t = (minus_t > m_t_min.get()) && (minus_t < m_t_max.get());
 
             if (passed_delta_vz_pim && passed_delta_vz_pip && passed_zh && passed_lc && passed_t) {
                 passed_candidates.emplace_back(pip, pim, rho0_mass);
+            }
+
+            // Fill lc-binned invariant mass histograms
+            if (passed_delta_vz_pim && passed_delta_vz_pip && passed_zh && passed_Q2 && passed_t) {
+                fill_lc_binned_histogram(lc, rho0_mass);
             }
 
             // TODO: Should be one by one to update cutflow correctly
@@ -672,6 +690,9 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     // Q²-binned invariant mass histograms
     std::map<std::string, TH1D*> h_pipim_mass_q2_bins;
 
+    // lc-binned invariant mass histograms
+    std::map<std::string, TH1D*> h_pipim_mass_lc_bins;
+
     // Q² bin edges: 1.0-2.0, 2.0-2.5, 2.5-3.0, 3.0-4.5, 4.5-6 GeV²
     static constexpr std::array<std::pair<double, double>, 5> Q2_BINS = {{
         {1.0, 2.0},
@@ -679,6 +700,16 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         {2.5, 3.0},
         {3.0, 4.5},
         {4.5, 6.0}
+    }};
+
+    static constexpr std::array<std::pair<double, double>, 7> LC_BINS = {{
+        {0.0, 0.2},
+        {0.2, 0.4},
+        {0.4, 0.6},
+        {0.6, 0.8},
+        {0.8, 1.0},
+        {1.0, 1.5},
+        {1.5, 2.0},
     }};
 
     /**
@@ -761,6 +792,17 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         }
     }
 
+    auto fill_lc_binned_histogram(double lc, double mass) -> void {
+        for (size_t i = 0; i < LC_BINS.size(); ++i) {
+            if (lc >= LC_BINS[i].first && lc < LC_BINS[i].second) {
+                std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", LC_BINS[i].first, LC_BINS[i].second);
+                auto it = h_pipim_mass_lc_bins.find(bin_name);
+                if (it != h_pipim_mass_lc_bins.end() && it->second) it->second->Fill(mass);
+                break;
+            }
+        }
+    }
+
     auto book_histograms() -> void {
         if (!m_hist_svc || !m_hist_svc->is_valid()) return;
         auto* svc = m_hist_svc->get();
@@ -818,6 +860,14 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
             std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", q2_min, q2_max);
             h_pipim_mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.2);
         }
+
+        // lc-binned invariant mass histograms
+        for (const auto& [lc_min, lc_max] : LC_BINS) {
+            std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", lc_min, lc_max);
+            std::string hist_path = fmt::format("/Rho0/LC_bins/pipim_mass_{}", bin_name);
+            std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
+            h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.2);
+        } 
     }
 
     auto setup_ntuple() -> void {
@@ -888,7 +938,29 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         }
 
         // Save fit results to ROOT file
-        save_fit_results_to_file(fit_results, total_rho0, std::sqrt(total_rho0_err_sq));
+        save_Q2_fit_results_to_file(fit_results, total_rho0, std::sqrt(total_rho0_err_sq));
+
+        // Fit lc-binned histograms
+        for (const auto& [bin_name, hist] : h_pipim_mass_lc_bins) {
+            if (hist && hist->GetEntries() > 50) {
+                auto result = fit_histogram(hist, bin_name);
+                if (result.valid) {
+                    fit_results[bin_name] = result;
+                    Framework::Log::info(name(), "LC Bin {}: N(rho0) = {:.1f} ± {:.1f}, Mass = {:.4f} ± {:.4f} GeV, Chi2/NDF = {:.2f}",
+                        bin_name, result.n_rho0, result.n_rho0_err,
+                        result.mass, result.mass_err, result.chi2_ndf);
+                    total_rho0 += result.n_rho0;
+                    total_rho0_err_sq += result.n_rho0_err * result.n_rho0_err;
+                }
+                else {
+                    Framework::Log::info(name(), "LC Bin {}: Fit failed", bin_name);
+                }
+            }
+        }
+
+        // Save fit results to ROOT file
+        save_lc_fit_results_to_file(fit_results, total_rho0, std::sqrt(total_rho0_err_sq));
+
 
         // Print summary table
         if (!fit_results.empty()) {
@@ -924,7 +996,7 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     /**
      * @brief Save fit results to ROOT file as a TTree
      */
-    auto save_fit_results_to_file(const std::map<std::string, FitResult>& results, double total_n_rho0, double total_n_rho0_err) -> void {
+    auto save_Q2_fit_results_to_file(const std::map<std::string, FitResult>& results, double total_n_rho0, double total_n_rho0_err) -> void {
         if (!m_output_svc || !m_output_svc->is_valid()) return;
 
         auto* out_svc = m_output_svc->get();
@@ -1045,6 +1117,119 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
 
         Framework::Log::info(name(), "All fit functions saved to 'Rho0/Fits' directory");
     }
+
+    auto save_lc_fit_results_to_file(const std::map<std::string, FitResult>& results, double total_n_rho0, double total_n_rho0_err) -> void {
+        if (!m_output_svc || !m_output_svc->is_valid()) return;
+
+        auto* out_svc = m_output_svc->get();
+        if (!out_svc->is_file_open()) {
+            Framework::Log::error(name(), "Output file is not open for writing fit results");
+            return;
+        }
+
+        // Acquire lock once and do all operations
+        std::lock_guard<std::mutex> lock(out_svc->mutex());
+        
+        TFile* file = out_svc->get_file();
+        if (!file) {
+            Framework::Log::error(name(), "Failed to get file pointer");
+            return;
+        }
+
+        // Navigate to Rho0 directory
+        file->cd();
+        if (!file->GetDirectory("Rho0")) {
+            file->mkdir("Rho0");
+        }
+        file->cd("Rho0");
+
+        // Create a TTree to store fit results (after cd'ing to the correct directory)
+        auto* tree = new TTree("rho0_lc_fit_results", "Rho0 lc Fit Results");
+
+        // Variables for the tree
+        char lc_bin[64];
+        double lc_min, lc_max;
+        double n_rho0, n_rho0_err;
+        double mass, mass_err;
+        double chi2_ndf;
+
+        tree->Branch("lc_bin", lc_bin, "lc_bin/C");
+        tree->Branch("lc_min", &lc_min, "lc_min/D");
+        tree->Branch("lc_max", &lc_max, "lc_max/D");
+        tree->Branch("n_rho0", &n_rho0, "n_rho0/D");
+        tree->Branch("n_rho0_err", &n_rho0_err, "n_rho0_err/D");
+        tree->Branch("mass", &mass, "mass/D");
+        tree->Branch("mass_err", &mass_err, "mass_err/D");
+        tree->Branch("chi2_ndf", &chi2_ndf, "chi2_ndf/D");
+
+        // Fill tree with lc bin results
+        for (size_t i = 0; i < LC_BINS.size(); ++i) {
+            std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", LC_BINS[i].first, LC_BINS[i].second);
+            auto it = results.find(bin_name);
+            strncpy(lc_bin, bin_name.c_str(), sizeof(lc_bin) - 1);
+            lc_bin[sizeof(lc_bin) - 1] = '\0';
+            lc_min = LC_BINS[i].first;
+            lc_max = LC_BINS[i].second;
+            if (it != results.end() && it->second.valid) {
+                n_rho0 = it->second.n_rho0;
+                n_rho0_err = it->second.n_rho0_err;
+                mass = it->second.mass;
+                mass_err = it->second.mass_err;
+                chi2_ndf = it->second.chi2_ndf;
+            } else {
+                n_rho0 = 0;
+                n_rho0_err = 0;
+                mass = 0;
+                mass_err = 0;
+                chi2_ndf = 0;
+            }
+            tree->Fill();
+        }
+        // Add total row
+        strncpy(lc_bin, "Total", sizeof(lc_bin) - 1);
+        lc_min = LC_BINS.front().first;
+        lc_max = LC_BINS.back().second;
+        n_rho0 = total_n_rho0;
+        n_rho0_err = total_n_rho0_err;
+        if (results.count("All") && results.at("All").valid) {
+            mass = results.at("All").mass;
+            mass_err = results.at("All").mass_err;
+            chi2_ndf = results.at("All").chi2_ndf;
+        } else {
+            mass = 0;
+            mass_err = 0;
+            chi2_ndf = 0;
+        }
+        tree->Fill();
+        // Write tree to the file
+        tree->Write("", TObject::kOverwrite);
+        Framework::Log::info(name(), "Fit results saved to TTree 'Rho0/rho0_lc_fit_results' with {} entries", tree->GetEntries());
+        // Save fit functions separately for easy access in Python
+        file->cd();
+        if (!file->GetDirectory("Rho0/Fits_LC")) {
+            file->mkdir("Rho0/Fits_LC");
+        }
+        file->cd("Rho0/Fits_LC");
+        // Save fit function for each lc bin
+        for (size_t i = 0; i < LC_BINS.size(); ++i) {
+            std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", LC_BINS[i].first, LC_BINS[i].second);
+            auto it = results.find(bin_name);
+            if (it != results.end() && it->second.valid && it->second.fit_function) {
+                std::string func_name = fmt::format("fit_{}", bin_name);
+                it->second.fit_function->SetName(func_name.c_str());
+                it->second.fit_function->Write("", TObject::kOverwrite);
+                Framework::Log::info(name(), "  Saved fit function '{}'", func_name);
+            }
+        }
+        // Save fit function for integrated (All) result
+        if (results.count("All") && results.at("All").valid && results.at("All").fit_function) {
+            auto& all_func = results.at("All").fit_function;
+            all_func->SetName("fit_All_LC");
+            all_func->Write("", TObject::kOverwrite);
+            Framework::Log::info(name(), "  Saved fit function 'fit_All_LC'");
+        }
+        Framework::Log::info(name(), "All fit functions saved to 'Rho0/Fits_LC' directory");
+    }   
 
     /**
      * @brief Fit a single histogram with BW + pol3

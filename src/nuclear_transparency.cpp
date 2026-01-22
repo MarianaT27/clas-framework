@@ -16,6 +16,7 @@
 #include "Algorithms/DISSelectionAlg.hpp"
 #include "Algorithms/ElectronSelectionAlg.hpp"
 #include "Algorithms/EventMonitor.hpp"
+#include "Algorithms/PionSelectionAlg.hpp"
 #include "Algorithms/Rho0ReconstructionAlg.hpp"
 #include "CLAS/FileUtils.hpp"
 #include "CLAS/StringUtils.hpp"
@@ -167,6 +168,7 @@ auto main(int argc, char* argv[]) -> int {
         .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
         .add_algorithm<Algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", config->target, config->polarity)
         .add_algorithm<Algorithms::DISSelectionAlg>("DISSelection", Physics::DISAnalysis::standard_dis_region())
+        .add_algorithm<Algorithms::PionSelectionAlg>("PionSelection", config->target, true)
         .add_algorithm<Algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", config->min_energy, config->mass_window)
         .build();
 

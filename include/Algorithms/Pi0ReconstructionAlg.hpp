@@ -82,7 +82,9 @@ class Pi0ReconstructionAlg : public Framework::SimpleAlgorithm<Pi0Reconstruction
     TH1D* h_photon_theta = nullptr;
     TH1D* h_n_photons = nullptr;
     TH1D* h_gg_mass_all = nullptr;
+    TH1D* h_gg_mass_traditional = nullptr;
     TH1D* h_gg_mass_selected = nullptr;
+    TH1D* h_gg_mass_AI = nullptr;
     TH1D* h_pi0_momentum = nullptr;
     TH1D* h_pi0_theta = nullptr;
     TH1D* h_opening_angle = nullptr;
