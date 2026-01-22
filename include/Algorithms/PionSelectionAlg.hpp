@@ -94,13 +94,21 @@ class PionSelectionAlg : public Framework::Algorithm {
             *REC_Particle,
             {CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS});
 
-        // Process π⁺
+        // Process π⁺ and collect selected pions
         const auto& pions_plus = m_particle_svc->get_pions_plus(particles);
-        process_pions(pions_plus, *REC_Scintillator, start_time, true);
+        auto selected_piplus = process_pions(pions_plus, *REC_Scintillator, start_time, true);
 
-        // Process π⁻
+        // Process π⁻ and collect selected pions
         const auto& pions_minus = m_particle_svc->get_pions_minus(particles);
-        process_pions(pions_minus, *REC_Scintillator, start_time, false);
+        auto selected_piminus = process_pions(pions_minus, *REC_Scintillator, start_time, false);
+
+        // Store selected pions in event for downstream algorithms
+        event.store_particles("SelectedPiPlus", selected_piplus);
+        event.store_particles("SelectedPiMinus", selected_piminus);
+
+        // Set decision based on whether we have good pions
+        bool has_good_pions = !selected_piplus.empty() && !selected_piminus.empty();
+        event.set_decision("HasGoodPions", has_good_pions);
 
         return Framework::StatusCode::SUCCESS();
     }
@@ -194,6 +202,7 @@ class PionSelectionAlg : public Framework::Algorithm {
         // π⁺ cutflow
         m_cutflow_piplus.add_cut("All Events");
         m_cutflow_piplus.add_cut("Has π⁺");
+        m_cutflow_piplus.add_cut("Forward detector");
         m_cutflow_piplus.add_cut("Chi2 PID");
         m_cutflow_piplus.add_cut("Momentum");
         m_cutflow_piplus.add_cut("Vertex Z");
@@ -203,6 +212,7 @@ class PionSelectionAlg : public Framework::Algorithm {
         // π⁻ cutflow
         m_cutflow_piminus.add_cut("All Events");
         m_cutflow_piminus.add_cut("Has π⁻");
+        m_cutflow_piminus.add_cut("Forward detector");
         m_cutflow_piminus.add_cut("Chi2 PID");
         m_cutflow_piminus.add_cut("Momentum");
         m_cutflow_piminus.add_cut("Vertex Z");
@@ -286,19 +296,26 @@ class PionSelectionAlg : public Framework::Algorithm {
 
     /**
      * @brief Process pions (either π⁺ or π⁻)
+     * @return Vector of selected pions that pass all cuts
      */
     auto process_pions(const std::vector<CLAS::Particle>& pions,
                        hipo::bank& REC_Scintillator,
                        double start_time,
-                       bool is_piplus) -> void {
+                       bool is_piplus) -> std::vector<CLAS::Particle> {
+        std::vector<CLAS::Particle> selected_pions;
         auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
         cutflow.pass("All Events");
 
-        if (pions.empty()) return;
+        if (pions.empty()) return selected_pions;
 
         // Process each pion
         for (const auto& pion : pions) {
             cutflow.pass(is_piplus ? "Has π⁺" : "Has π⁻");
+
+            // Forward detector cut
+            if (pion.status() < 2000 || pion.status() > 4000) continue;
+            cutflow.pass("Forward detector");
+
 
             // Chi2 PID cut
             if (!pass_chi2pid_cut(pion.chi2pid())) continue;
@@ -329,9 +346,14 @@ class PionSelectionAlg : public Framework::Algorithm {
             if (!pass_delta_t_cut(p, delta_t)) continue;
             cutflow.pass("Delta-t");
 
+            // Pion passed all cuts - add to selected list
+            selected_pions.push_back(pion);
+
             // Fill histograms
             fill_histograms(pion, delta_t, is_piplus);
         }
+
+        return selected_pions;
     }
 
     /**

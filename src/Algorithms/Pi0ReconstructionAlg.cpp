@@ -1,6 +1,11 @@
 #include "Algorithms/Pi0ReconstructionAlg.hpp"
 #include <Math/Vector4D.h>
 #include <limits>
+#include <vector>
+#include "CLAS/Constants.hpp"
+#include "CLAS/Particle.hpp"
+#include "Math/GenVector/VectorUtil.h"
+
 
 namespace Algorithms {
 
@@ -167,10 +172,39 @@ auto Pi0ReconstructionAlg::process(Framework::Event& event) -> Framework::Status
     if (selected_photons.size() < 2) return Framework::StatusCode::FILTERED();
     m_cutflow.pass("Has >= 2 Photons");
 
+
+    for (size_t i = 0; i < photons.size(); ++i) {
+        for (size_t j = i + 1; j < photons.size(); ++j) {
+            double mass = calculate_invariant_mass(photons[i], photons[j]);
+            if (h_gg_mass_all) h_gg_mass_all->Fill(mass);
+        }
+    }
+
+    // Get photons with basic cuts applied
+    const auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
+    auto electron = (*electrons)[0];
+    std::vector<CLAS::Particle> traditional_photons;
+    for (auto const& photon : photons) {
+        if (photon.E() < 0.2) continue;
+        if (ROOT::Math::VectorUtil::Angle(electron.PxPyPzVector(), photon.PxPyPzVector()) * 180.0 / M_PI < 8.0) continue;
+        auto REC_Scintillator_bank = CLAS::read_Scintillator_bank(REC_Scintillator, photon.index());
+        double path_length = REC_Scintillator_bank.path;
+        double beta = photon.beta();
+        double delta_t = REC_Scintillator_bank.time - (path_length / (beta * CLAS::Constants::SPEED_OF_LIGHT));
+        if (delta_t < -1.67 || delta_t > 1.55) continue;
+        traditional_photons.push_back(photon);
+    }
+    for (size_t i = 0; i < traditional_photons.size(); ++i) {
+        for (size_t j = i + 1; j < traditional_photons.size(); ++j) {
+            double mass = calculate_invariant_mass(traditional_photons[i], traditional_photons[j]);
+            if (h_gg_mass_traditional) h_gg_mass_traditional->Fill(mass);
+        }
+    } 
+
     for (size_t i = 0; i < selected_photons.size(); ++i) {
         for (size_t j = i + 1; j < selected_photons.size(); ++j) {
             double mass = calculate_invariant_mass(selected_photons[i], selected_photons[j]);
-            if (h_gg_mass_all) h_gg_mass_all->Fill(mass);
+            if (h_gg_mass_AI) h_gg_mass_AI->Fill(mass);
         }
     }
 
@@ -298,6 +332,8 @@ auto Pi0ReconstructionAlg::book_histograms() -> void {
     h_photon_theta = svc->book_hist1D("/Pi0/photon_theta", "Photon Theta;#theta [deg];Events", 180, 0, 180);
     h_n_photons = svc->book_hist1D("/Pi0/n_photons", "Number of Photons;N_{#gamma};Events", 20, 0, 20);
     h_gg_mass_all = svc->book_hist1D("/Pi0/gg_mass_all", "All #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
+    h_gg_mass_traditional = svc->book_hist1D("/Pi0/gg_mass_traditional", "Traditional #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
+    h_gg_mass_AI = svc->book_hist1D("/Pi0/gg_mass_AI", "AI-selected #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
     h_gg_mass_selected = svc->book_hist1D("/Pi0/gg_mass_selected", "Selected #pi^{0} Candidate Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0.0, 0.35);
     h_pi0_momentum = svc->book_hist1D("/Pi0/pi0_momentum", "#pi^{0} Momentum;p [GeV/c];Events", 100, 0, 10);
     h_pi0_theta = svc->book_hist1D("/Pi0/pi0_theta", "#pi^{0} Theta;#theta [deg];Events", 180, 0, 180);
