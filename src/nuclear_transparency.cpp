@@ -81,10 +81,8 @@ struct NuclearTransparencyConfig {
     config.min_energy = args["min_energy"].as<double>();
 
     config.output_file = args["output"].as<std::string>();
-    config.output_file = CLAS::StringUtils::replace_all(
-        config.output_file, "{target}", CLAS::to_string(config.target));
-    config.output_file = CLAS::StringUtils::replace_all(
-        config.output_file, "{polarity}", CLAS::to_string(config.polarity));
+    config.output_file = CLAS::StringUtils::replace_all(config.output_file, "{target}", CLAS::to_string(config.target));
+    config.output_file = CLAS::StringUtils::replace_all(config.output_file, "{polarity}", CLAS::to_string(config.polarity));
 
     std::string input_str = args["input"].as<std::string>();
     if (!input_str.empty()) {
@@ -154,7 +152,7 @@ auto main(int argc, char* argv[]) -> int {
         return EXIT_FAILURE;
     }
 
-    // Build application using fluent API
+    // Build application
     auto app = Framework::make_application("Nuclear Transparency Analysis")
         .with_input_files(config->input_files)
         .with_output(config->output_file)

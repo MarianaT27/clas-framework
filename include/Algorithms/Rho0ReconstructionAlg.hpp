@@ -746,41 +746,7 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     std::vector<double> m_rho0_lc;
     std::vector<double> m_rho0_t;
     std::vector<double> m_delta_vz_pim;
-    std::vector<double> m_delta_vz_pip;
-
-    /**
-     * @brief Check if particle is in Forward Detector (status 2000-4000)
-     */
-    static auto is_forward_detector(const CLAS::Particle& particle) -> bool {
-        int status = std::abs(particle.status());
-        return status >= 2000 && status < 4000;
-    }
-
-    /**
-     * @brief Select pions with quality cuts
-     * - Forward detector
-     * - |chi2pid| < threshold
-     * - Momentum > threshold
-     */
-    auto select_pions(const std::vector<CLAS::Particle>& pions) const -> std::vector<CLAS::Particle> {
-        std::vector<CLAS::Particle> selected;
-        selected.reserve(pions.size());
-
-        for (const auto& pion : pions) {
-            // Forward detector cut
-            if (!is_forward_detector(pion)) continue;
-
-            // Chi2pid cut
-            if (std::abs(pion.chi2pid()) >= m_pion_chi2pid_max.get()) continue;
-
-            // Momentum cut
-            if (pion.p() < m_min_pion_momentum.get()) continue;
-
-            selected.push_back(pion);
-        }
-
-        return selected;
-    }
+    std::vector<double> m_delta_vz_pip
 
     auto fill_q2_binned_histogram(double Q2, double mass) -> void {
         for (size_t i = 0; i < Q2_BINS.size(); ++i) {
