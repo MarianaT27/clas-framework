@@ -61,7 +61,10 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
      * @brief Custom initialization after services are injected
      */
     auto on_initialize() -> Framework::StatusCode override {
-        Log::info(name(), "Initializing algorithm");
+        Log::subsection(fmt::format("{} Configuration", name()));
+        Log::config(name(), "Target", CLAS::to_string(m_target));
+        Log::config(name(), "Polarity", CLAS::to_string(m_polarity));
+        Log::config(name(), "NTuple output", m_enable_ntuple.get() ? "enabled" : "disabled");
 
         // Configure ElectronCutsService
         if (m_electron_cuts_svc && m_electron_cuts_svc->is_valid()) {
@@ -87,10 +90,9 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         m_cutflow.add_cut("PCAL Fiducial");
         m_cutflow.add_cut("DC Chi2/NDF");
 
-        Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
-
         auto vz_range = m_electron_cuts_svc->get()->get_vz_range(CLAS::RunGroup::RG_D, m_target);
-        Log::info(name(), "Using Vz range: [{:.2f}, {:.2f}] for {}", vz_range.min, vz_range.max, CLAS::to_string(m_target));
+        Log::config(name(), "Vz range", fmt::format("[{:.2f}, {:.2f}] cm", vz_range.min, vz_range.max));
+        Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
 
         return Framework::StatusCode::SUCCESS();
     }
@@ -231,13 +233,16 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
      * @brief Finalization - print cutflow summary
      */
     auto on_finalize() -> Framework::StatusCode override {
-        Log::info(name(), "Finalizing algorithm");
+        Log::subsection(fmt::format("{} Summary", name()));
+
         if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
             auto entries = m_ntuple_svc->get()->get_entries("electron_kinematics");
-            Log::info(name(), "N-tuple has {} entries", entries);
+            Log::stat(name(), "N-tuple entries", entries);
         }
 
+        Log::blank();
         m_cutflow.print();
+        Log::success(name(), "Finalization complete");
         return Framework::StatusCode::SUCCESS();
     }
 

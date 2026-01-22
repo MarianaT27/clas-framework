@@ -127,16 +127,15 @@ class LambdaReconstructionAlg : public Framework::Algorithm {
         auto log_sc = initialize_handle(m_log_svc);
         if (log_sc.is_failure()) Log::error(name(), "WARNING: LoggingService not available");
 
-        Log::info(name(), "Initializing Lambda reconstruction algorithm");
-        Log::info(name(), "  Mass window: {} GeV", m_mass_window);
-        Log::info(name(), "  Chi2pid: {}", m_max_chi2pid);
-        Log::info(name(), "  Min proton momentum: {} GeV", m_min_proton_p);
-        Log::info(name(), "  Min pion momentum: {} GeV", m_min_pion_p);
-        Log::info(name(), "  Max vertex dz: {} cm", m_max_delta_vz);
-        Log::info(name(), "  Max coplanarity: {} deg", m_max_coplanarity);
-        Log::info(name(), "  Beam energy: {} GeV", m_beam_energy);
-        Log::info(name(), "  Min displaced vz: {} cm", m_min_displaced_vz);
-        Log::info(name(), "  Max displaced vz: {} cm", m_max_displaced_vz);
+        Log::subsection(fmt::format("{} Configuration", name()));
+        Log::config(name(), "Mass window", fmt::format("{} GeV", m_mass_window));
+        Log::config(name(), "Chi2pid max", m_max_chi2pid);
+        Log::config(name(), "Min proton p", fmt::format("{} GeV", m_min_proton_p));
+        Log::config(name(), "Min pion p", fmt::format("{} GeV", m_min_pion_p));
+        Log::config(name(), "Max vertex dz", fmt::format("{} cm", m_max_delta_vz));
+        Log::config(name(), "Max coplanarity", fmt::format("{} deg", m_max_coplanarity));
+        Log::config(name(), "Beam energy", fmt::format("{} GeV", m_beam_energy));
+        Log::config(name(), "Displaced vz range", fmt::format("[{}, {}] cm", m_min_displaced_vz, m_max_displaced_vz));
 
         auto hist_sc = initialize_handle(m_hist_svc);
         if (hist_sc.is_failure()) {
@@ -439,12 +438,16 @@ class LambdaReconstructionAlg : public Framework::Algorithm {
     }
 
     auto finalize() -> Framework::StatusCode override {
-        Log::info(name(), "Finalizing Lambda reconstruction algorithm");
+        Log::subsection(fmt::format("{} Summary", name()));
+
         if (m_ntuple_svc) {
             auto entries = m_ntuple_svc->get_entries("lambda_analysis");
-            Log::info(name(), "N-tuple has {} entries", entries);
+            Log::stat(name(), "N-tuple entries", entries);
         }
+
+        Log::blank();
         m_cutflow.print();
+        Log::success(name(), "Finalization complete");
         return Framework::StatusCode::SUCCESS();
     }
 

@@ -113,9 +113,10 @@ auto Pi0ReconstructionAlg::find_all_unique_pi0_candidates(const std::vector<CLAS
 
 
 auto Pi0ReconstructionAlg::on_initialize() -> Framework::StatusCode {
-    Log::info(name(), "Initializing Pi0ReconstructionAlg");
-    Log::info(name(), "  Min photon energy: {} GeV", m_min_photon_energy.get());
-    Log::info(name(), "  Pi0 mass window: ±{} GeV", m_pi0_mass_window.get());
+    Log::subsection(fmt::format("{} Configuration", name()));
+    Log::config(name(), "Min photon energy", fmt::format("{} GeV", m_min_photon_energy.get()));
+    Log::config(name(), "Pi0 mass window", fmt::format("±{} GeV", m_pi0_mass_window.get()));
+    Log::config(name(), "NTuple output", m_enable_ntuple.get() ? "enabled" : "disabled");
 
     book_histograms();
 
@@ -309,14 +310,16 @@ auto Pi0ReconstructionAlg::process(Framework::Event& event) -> Framework::Status
     return Framework::StatusCode::SUCCESS();
 }
 auto Pi0ReconstructionAlg::on_finalize() -> Framework::StatusCode {
-    Log::info(name(), "Finalizing Pi0ReconstructionAlg");
+    Log::subsection(fmt::format("{} Summary", name()));
+
     if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
         auto entries = m_ntuple_svc->get()->get_entries("pi0_events");
-        Log::info(name(), "N-tuple has {} entries", entries);
+        Log::stat(name(), "N-tuple entries", entries);
     }
 
-    fmt::print("\n");
+    Log::blank();
     m_cutflow.print();
+    Log::success(name(), "Finalization complete");
 
     return Framework::StatusCode::SUCCESS();
 }

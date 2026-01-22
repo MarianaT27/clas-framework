@@ -160,18 +160,25 @@ auto main(int argc, char* argv[]) -> int {
         return EXIT_FAILURE;
     }
 
-    Framework::Log::info("Main", "Electron Analysis Configuration:");
-    Framework::Log::info("Main", "  Target: {}", CLAS::to_string(config->target));
-    Framework::Log::info("Main", "  Polarity: {}", CLAS::to_string(config->polarity));
-    Framework::Log::info("Main", "  Input files: {}", config->input_files.size());
-    Framework::Log::info("Main", "  Output: {}", config->output_file);
+    // Print configuration using enhanced logger
+    Framework::Log::section("Electron Analysis");
+    Framework::Log::config("Config", "Target", CLAS::to_string(config->target));
+    Framework::Log::config("Config", "Polarity", CLAS::to_string(config->polarity));
+    Framework::Log::config("Config", "Input files", config->input_files.size());
+    Framework::Log::config("Config", "Threads", config->num_threads);
+    Framework::Log::config("Config", "Output", config->output_file);
+    Framework::Log::blank();
 
-    if (auto sc = app.run(); sc.is_failure()) {
-        Framework::Log::error("Main", "Processing failed: {}", sc.message());
-        return EXIT_FAILURE;
+    // Run with timing
+    {
+        auto timer = Framework::Log::scoped("Main", "Event processing");
+        if (auto sc = app.run(); sc.is_failure()) {
+            Framework::Log::error("Main", "Processing failed: {}", sc.message());
+            return EXIT_FAILURE;
+        }
     }
 
     app.finalize();
-    Framework::Log::info("Main", "Analysis complete: {}", config->output_file);
+    Framework::Log::success("Main", "Analysis complete: {}", config->output_file);
     return EXIT_SUCCESS;
 }

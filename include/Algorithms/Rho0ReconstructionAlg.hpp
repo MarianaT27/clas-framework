@@ -119,12 +119,26 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     }
 
     auto on_initialize() -> Framework::StatusCode override {
-        Framework::Log::info(name(), "Initializing Rho0ReconstructionAlg");
-        Framework::Log::info(name(), "  Pion selection: Using pre-selected pions from PionSelectionAlg");
-        Framework::Log::info(name(), "  Rho0 mass window: +/-{} GeV (nominal mass: {} GeV)", m_rho0_mass_window.get(), RHO0_MASS);
-        Framework::Log::info(name(), "  Kinematic cuts: zh > {}, lc < {} fm, {} < -t < {} GeV², |Δvz| < {} cm",
-                            m_zh_min.get(), m_lc_max.get(), m_t_min.get(), m_t_max.get(), m_delta_vz_max.get());
-        Framework::Log::info(name(), "  Fitting enabled: {}", m_enable_fitting.get());
+        using Log = Framework::Log;
+
+        Log::subsection(fmt::format("{} Configuration", name()));
+        Log::config(name(), "Pion selection", "Using pre-selected pions from PionSelectionAlg");
+        Log::config(name(), "Rho0 mass window", fmt::format("±{} GeV (nominal: {} GeV)", m_rho0_mass_window.get(), RHO0_MASS));
+        Log::config(name(), "Min pion momentum", fmt::format("{} GeV/c", m_min_pion_momentum.get()));
+        Log::config(name(), "Max |chi2pid|", m_pion_chi2pid_max.get());
+        Log::blank();
+
+        Log::subsection("Kinematic Cuts");
+        Log::config(name(), "zh min", m_zh_min.get());
+        Log::config(name(), "lc max", fmt::format("{} fm", m_lc_max.get()));
+        Log::config(name(), "-t range", fmt::format("[{}, {}] GeV²", m_t_min.get(), m_t_max.get()));
+        Log::config(name(), "Max |Δvz|", fmt::format("{} cm", m_delta_vz_max.get()));
+        Log::blank();
+
+        Log::subsection("Output Options");
+        Log::config(name(), "NTuple output", m_enable_ntuple.get() ? "enabled" : "disabled");
+        Log::config(name(), "BW+pol3 fitting", m_enable_fitting.get() ? "enabled" : "disabled");
+        Log::blank();
 
         book_histograms();
 
@@ -143,7 +157,8 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         m_cutflow.add_cut("lc < 1 fm");
         m_cutflow.add_cut("0.1 < -t < 0.5");
 
-        Framework::Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
+        Log::stat(name(), "Cutflow stages", m_cutflow.num_cuts());
+        Log::success(name(), "Initialization complete");
 
         return Framework::StatusCode::SUCCESS();
     }
@@ -436,11 +451,17 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     
 
     auto on_finalize() -> Framework::StatusCode override {
-        Framework::Log::info(name(), "Finalizing Rho0ReconstructionAlg");
+        using Log = Framework::Log;
+
+        Log::subsection(fmt::format("{} Summary", name()));
+
         if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
             auto entries = m_ntuple_svc->get()->get_entries("rho0_events");
-            Framework::Log::info(name(), "N-tuple has {} entries", entries);
+            Log::stat(name(), "N-tuple entries", entries);
         }
+
+        Log::stat(name(), "Unique runs processed", m_runs.size());
+        Log::blank();
 
         // Perform BW + pol3 fitting if enabled
         if (m_enable_fitting.get()) {
@@ -450,8 +471,10 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         // Save run metadata to ROOT file
         save_run_metadata();
 
-        fmt::print("\n");
+        Log::blank();
         m_cutflow.print();
+
+        Log::success(name(), "Finalization complete");
 
         return Framework::StatusCode::SUCCESS();
     }
