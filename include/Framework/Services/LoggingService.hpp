@@ -741,7 +741,8 @@ class LoggingService : public Service {
         constexpr int CUT_WIDTH = 35;
         constexpr int COUNT_WIDTH = 12;
         constexpr int EFF_WIDTH = 10;
-        constexpr int TOTAL_WIDTH = CUT_WIDTH + COUNT_WIDTH + EFF_WIDTH + EFF_WIDTH + 9;  // +9 for borders and spacing
+        // Total = 4 columns + 4*2 spaces + 5 borders = 67 + 8 + 5 = 80
+        constexpr int TOTAL_WIDTH = CUT_WIDTH + COUNT_WIDTH + EFF_WIDTH + EFF_WIDTH + 13;
 
         // Box drawing characters
         const char* TL = "\342\224\214";  // ┌
@@ -761,16 +762,23 @@ class LoggingService : public Service {
             return result;
         };
 
-        // Build horizontal lines
+        // Box drawing: ┼ for cross intersections
+        const char* X = "\342\224\274";   // ┼
+
+        // Build horizontal lines (WIDTH + 2 to account for space before and after content)
         std::string top = std::string(TL) + repeat(H, TOTAL_WIDTH - 2) + TR;
-        std::string header_sep = std::string(LM) + repeat(H, CUT_WIDTH + 1) + TM +
-                                 repeat(H, COUNT_WIDTH + 1) + TM +
-                                 repeat(H, EFF_WIDTH + 1) + TM +
-                                 repeat(H, EFF_WIDTH + 1) + RM;
-        std::string footer_sep = std::string(LM) + repeat(H, CUT_WIDTH + 1) + BM +
-                                 repeat(H, COUNT_WIDTH + 1) + BM +
-                                 repeat(H, EFF_WIDTH + 1) + BM +
-                                 repeat(H, EFF_WIDTH + 1) + RM;
+        std::string title_sep = std::string(LM) + repeat(H, CUT_WIDTH + 2) + TM +
+                                repeat(H, COUNT_WIDTH + 2) + TM +
+                                repeat(H, EFF_WIDTH + 2) + TM +
+                                repeat(H, EFF_WIDTH + 2) + RM;
+        std::string header_sep = std::string(LM) + repeat(H, CUT_WIDTH + 2) + X +
+                                 repeat(H, COUNT_WIDTH + 2) + X +
+                                 repeat(H, EFF_WIDTH + 2) + X +
+                                 repeat(H, EFF_WIDTH + 2) + RM;
+        std::string footer_sep = std::string(LM) + repeat(H, CUT_WIDTH + 2) + BM +
+                                 repeat(H, COUNT_WIDTH + 2) + BM +
+                                 repeat(H, EFF_WIDTH + 2) + BM +
+                                 repeat(H, EFF_WIDTH + 2) + RM;
         std::string bottom = std::string(BL) + repeat(H, TOTAL_WIDTH - 2) + BR;
 
         if (m_console_output) {
@@ -779,11 +787,11 @@ class LoggingService : public Service {
                 fmt::print("\n\033[36m{}\033[0m\n", top);
                 fmt::print("\033[36m{}\033[0m\033[1;37m{:^{}}\033[0m\033[36m{}\033[0m\n",
                            V, "Cutflow: " + title, TOTAL_WIDTH - 2, V);
-                fmt::print("\033[36m{}\033[0m\n", header_sep);
+                fmt::print("\033[36m{}\033[0m\n", title_sep);
             } else {
                 fmt::print("\n{}\n", top);
                 fmt::print("{}{:^{}}{}\n", V, "Cutflow: " + title, TOTAL_WIDTH - 2, V);
-                fmt::print("{}\n", header_sep);
+                fmt::print("{}\n", title_sep);
             }
 
             // Column headers
