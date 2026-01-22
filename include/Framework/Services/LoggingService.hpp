@@ -848,11 +848,11 @@ class LoggingService : public Service {
                 fmt::print("\033[36m{}\033[0m\n", footer_sep);
                 std::string eff_color = efficiency >= 90 ? "\033[1;32m" : (efficiency >= 50 ? "\033[1;33m" : "\033[1;31m");
                 fmt::print("\033[36m{}\033[0m{} {:<{}} \033[0m\033[36m{}\033[0m\n",
-                           V, eff_color, eff_str, TOTAL_WIDTH - 3, V);
+                           V, eff_color, eff_str, TOTAL_WIDTH - 4, V);
                 fmt::print("\033[36m{}\033[0m\n", bottom);
             } else {
                 fmt::print("{}\n", footer_sep);
-                fmt::print("{} {:<{}} {}\n", V, eff_str, TOTAL_WIDTH - 3, V);
+                fmt::print("{} {:<{}} {}\n", V, eff_str, TOTAL_WIDTH - 4, V);
                 fmt::print("{}\n", bottom);
             }
         }
@@ -875,7 +875,7 @@ class LoggingService : public Service {
             }
 
             write_to_file_raw("+" + std::string(TOTAL_WIDTH - 2, '-') + "+\n");
-            write_to_file_raw(fmt::format("| {:<{}} |\n", eff_str_file, TOTAL_WIDTH - 3));
+            write_to_file_raw(fmt::format("| {:<{}} |\n", eff_str_file, TOTAL_WIDTH - 4));
             write_to_file_raw("+" + std::string(TOTAL_WIDTH - 2, '-') + "+\n");
         }
     }
