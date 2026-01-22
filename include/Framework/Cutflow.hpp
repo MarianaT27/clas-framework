@@ -7,6 +7,7 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include "Framework/Services/LoggingService.hpp"
@@ -93,50 +94,39 @@ class Cutflow {
         const std::size_t init = count(m_cuts.front());
         std::size_t prev = init;
 
-        // Header
-        if (Log::is_available()) {
-            Log::info(m_name, "────────────────────────────────────────────────────────────");
-            Log::info(m_name, "Cutflow: {}", m_name);
-            Log::info(m_name, "────────────────────────────────────────────────────────────");
-        } else {
-            fmt::print("\n");
-            fmt::print("════════════════════════════════════════════════════════════\n");
-            fmt::print("  Cutflow: {}\n", m_name);
-            fmt::print("════════════════════════════════════════════════════════════\n");
-            fmt::print("{:<35} {:>10} {:>8} {:>8}\n", "Cut", "Events", "Abs Eff", "Rel Eff");
-            fmt::print("────────────────────────────────────────────────────────────\n");
-        }
+        // Build cut data for table
+        std::vector<std::tuple<std::string, std::size_t, double, double>> cut_data;
+        cut_data.reserve(m_cuts.size());
 
-        // Cuts
         for (std::size_t i = 0; i < m_cuts.size(); ++i) {
             const auto& cut = m_cuts[i];
             const std::size_t cnt = count(cut);
             const double abs_eff = init > 0 ? 100.0 * cnt / init : 0.0;
             const double rel_eff = prev > 0 ? 100.0 * cnt / prev : 0.0;
-
-            if (Log::is_available()) {
-                if (i == 0) {
-                    Log::info(m_name, "{:<35} {:>10}   Abs: 100.0%   Rel: 100.0%", cut, cnt);
-                } else {
-                    Log::info(m_name, "{:<35} {:>10}   Abs: {:>5.1f}%   Rel: {:>5.1f}%", cut, cnt, abs_eff, rel_eff);
-                }
-            } else {
-                if (i == 0) {
-                    fmt::print("{:<35} {:>10} {:>8} {:>8}\n", cut, cnt, "100.0%", "100.0%");
-                } else {
-                    fmt::print("{:<35} {:>10} {:>7.1f}% {:>7.1f}%\n", cut, cnt, abs_eff, rel_eff);
-                }
-            }
+            cut_data.emplace_back(cut, cnt, abs_eff, rel_eff);
             prev = cnt;
         }
 
-        // Footer
+        // Use Log's table printer if available
         if (Log::is_available()) {
-            Log::info(m_name, "────────────────────────────────────────────────────────────");
-            Log::info(m_name, "Overall efficiency: {:.2f}%", efficiency() * 100.0);
+            Log::print_cutflow_table(m_name, cut_data, efficiency() * 100.0);
         } else {
-            fmt::print("════════════════════════════════════════════════════════════\n");
-            fmt::print("  Overall efficiency: {:.2f}%\n\n", efficiency() * 100.0);
+            // Fallback to simple text output
+            fmt::print("\n");
+            fmt::print("+------------------------------------------------------------------------+\n");
+            fmt::print("|{:^72}|\n", "Cutflow: " + m_name);
+            fmt::print("+-----------------------------------+------------+----------+----------+\n");
+            fmt::print("| {:<33} | {:>10} | {:>8} | {:>8} |\n", "Cut", "Events", "Abs Eff", "Rel Eff");
+            fmt::print("+-----------------------------------+------------+----------+----------+\n");
+
+            for (const auto& [cut_name, cnt, abs_eff, rel_eff] : cut_data) {
+                fmt::print("| {:<33} | {:>10} | {:>6.1f}%  | {:>6.1f}%  |\n",
+                          cut_name, cnt, abs_eff, rel_eff);
+            }
+
+            fmt::print("+-----------------------------------+------------+----------+----------+\n");
+            fmt::print("| {:<70} |\n", fmt::format("Overall efficiency: {:.2f}%", efficiency() * 100.0));
+            fmt::print("+------------------------------------------------------------------------+\n");
         }
     }
 

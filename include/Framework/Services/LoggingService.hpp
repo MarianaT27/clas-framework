@@ -453,6 +453,426 @@ class LoggingService : public Service {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Table Formatting Utilities
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @brief Table builder for creating formatted tables
+     *
+     * Example usage:
+     * @code
+     * log->table("My Table")
+     *     .columns({"Name", "Value", "Unit"})
+     *     .widths({20, 10, 8})
+     *     .row("Temperature", 25.5, "°C")
+     *     .row("Pressure", 1013, "hPa")
+     *     .footer("Total measurements: 2")
+     *     .print();
+     * @endcode
+     */
+    class TableBuilder {
+       public:
+        TableBuilder(LoggingService* svc, std::string title)
+            : m_svc(svc), m_title(std::move(title)) {}
+
+        auto columns(std::initializer_list<std::string> cols) -> TableBuilder& {
+            m_columns.assign(cols);
+            return *this;
+        }
+
+        auto widths(std::initializer_list<int> w) -> TableBuilder& {
+            m_widths.assign(w);
+            return *this;
+        }
+
+        template <typename... Args>
+        auto row(Args&&... args) -> TableBuilder& {
+            std::vector<std::string> cells;
+            (cells.push_back(fmt::format("{}", std::forward<Args>(args))), ...);
+            m_rows.push_back(std::move(cells));
+            return *this;
+        }
+
+        auto footer(const std::string& text) -> TableBuilder& {
+            m_footer = text;
+            return *this;
+        }
+
+        auto print() -> void {
+            if (!m_svc) return;
+            m_svc->print_table(*this);
+        }
+
+       private:
+        friend class LoggingService;
+        LoggingService* m_svc;
+        std::string m_title;
+        std::vector<std::string> m_columns;
+        std::vector<int> m_widths;
+        std::vector<std::vector<std::string>> m_rows;
+        std::string m_footer;
+    };
+
+    /**
+     * @brief Create a new table builder
+     */
+    [[nodiscard]] auto table(const std::string& title) -> TableBuilder {
+        return TableBuilder(this, title);
+    }
+
+    /**
+     * @brief Print a formatted table
+     */
+    auto print_table(const TableBuilder& tb) -> void {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        // Calculate total width
+        int total_width = 1;  // Left border
+        for (size_t i = 0; i < tb.m_widths.size(); ++i) {
+            total_width += tb.m_widths[i] + 3;  // width + " | "
+        }
+        total_width -= 1;  // Last column doesn't need trailing space
+
+        // Box drawing characters
+        const char* TL = "\342\224\214";  // ┌
+        const char* TR = "\342\224\220";  // ┐
+        const char* BL = "\342\224\224";  // └
+        const char* BR = "\342\224\230";  // ┘
+        const char* H = "\342\224\200";   // ─
+        const char* V = "\342\224\202";   // │
+        const char* TM = "\342\224\254";  // ┬
+        const char* BM = "\342\224\264";  // ┴
+        const char* LM = "\342\224\234";  // ├
+        const char* RM = "\342\224\244";  // ┤
+        const char* X = "\342\224\274";   // ┼
+
+        auto make_horizontal = [&](const char* left, const char* mid, const char* right) {
+            std::string line = left;
+            for (size_t i = 0; i < tb.m_widths.size(); ++i) {
+                for (int j = 0; j < tb.m_widths[i] + 2; ++j) {
+                    line += H;
+                }
+                if (i < tb.m_widths.size() - 1) {
+                    line += mid;
+                }
+            }
+            line += right;
+            return line;
+        };
+
+        auto make_row = [&](const std::vector<std::string>& cells, [[maybe_unused]] bool header = false) {
+            std::string line = V;
+            for (size_t i = 0; i < tb.m_widths.size() && i < cells.size(); ++i) {
+                std::string cell = cells[i];
+                int width = tb.m_widths[i];
+
+                // Truncate if too long
+                if (static_cast<int>(cell.length()) > width) {
+                    cell = cell.substr(0, width - 2) + "..";
+                }
+
+                // Right-align numbers, left-align text
+                bool is_number = !cell.empty() && (std::isdigit(cell[0]) || cell[0] == '-' || cell[0] == '+');
+                if (is_number) {
+                    line += fmt::format(" {:>{}} ", cell, width);
+                } else {
+                    line += fmt::format(" {:<{}} ", cell, width);
+                }
+
+                line += V;
+            }
+            return line;
+        };
+
+        // Print table
+        if (m_console_output) {
+            // Title row
+            std::string top_line = make_horizontal(TL, TM, TR);
+            int content_width = total_width - 2;  // Minus borders
+            std::string title_centered = tb.m_title;
+            int padding = (content_width - static_cast<int>(title_centered.length())) / 2;
+            if (padding < 0) padding = 0;
+
+            if (m_colored_output) {
+                fmt::print("\n\033[36m{}\033[0m\n", top_line);
+                fmt::print("\033[36m{}\033[0m\033[1;37m{:^{}}\033[0m\033[36m{}\033[0m\n",
+                           V, tb.m_title, content_width, V);
+            } else {
+                fmt::print("\n{}\n", top_line);
+                fmt::print("{}{:^{}}{}\n", V, tb.m_title, content_width, V);
+            }
+
+            // Header separator
+            std::string header_sep = make_horizontal(LM, X, RM);
+            if (m_colored_output) {
+                fmt::print("\033[36m{}\033[0m\n", header_sep);
+            } else {
+                fmt::print("{}\n", header_sep);
+            }
+
+            // Column headers
+            if (!tb.m_columns.empty()) {
+                std::string header_row = make_row(tb.m_columns, true);
+                if (m_colored_output) {
+                    fmt::print("\033[36m{}\033[0m\n", V);
+                    // Print header with bold text
+                    fmt::print("\033[36m{}\033[0m", V);
+                    for (size_t i = 0; i < tb.m_widths.size() && i < tb.m_columns.size(); ++i) {
+                        std::string cell = tb.m_columns[i];
+                        int width = tb.m_widths[i];
+                        if (static_cast<int>(cell.length()) > width) {
+                            cell = cell.substr(0, width - 2) + "..";
+                        }
+                        fmt::print("\033[1;37m {:<{}} \033[0m\033[36m{}\033[0m", cell, width, V);
+                    }
+                    fmt::print("\n");
+                } else {
+                    fmt::print("{}\n", make_row(tb.m_columns));
+                }
+
+                // Header-data separator
+                if (m_colored_output) {
+                    fmt::print("\033[36m{}\033[0m\n", header_sep);
+                } else {
+                    fmt::print("{}\n", header_sep);
+                }
+            }
+
+            // Data rows
+            for (const auto& row : tb.m_rows) {
+                if (m_colored_output) {
+                    fmt::print("\033[36m{}\033[0m", V);
+                    for (size_t i = 0; i < tb.m_widths.size() && i < row.size(); ++i) {
+                        std::string cell = row[i];
+                        int width = tb.m_widths[i];
+                        if (static_cast<int>(cell.length()) > width) {
+                            cell = cell.substr(0, width - 2) + "..";
+                        }
+                        // Right-align numbers
+                        bool is_number = !cell.empty() && (std::isdigit(cell[0]) || cell[0] == '-' || cell[0] == '+');
+                        if (is_number) {
+                            fmt::print("\033[33m {:>{}} \033[0m\033[36m{}\033[0m", cell, width, V);
+                        } else {
+                            fmt::print("\033[37m {:<{}} \033[0m\033[36m{}\033[0m", cell, width, V);
+                        }
+                    }
+                    fmt::print("\n");
+                } else {
+                    fmt::print("{}\n", make_row(row));
+                }
+            }
+
+            // Footer
+            if (!tb.m_footer.empty()) {
+                std::string footer_sep = make_horizontal(LM, BM, RM);
+                if (m_colored_output) {
+                    fmt::print("\033[36m{}\033[0m\n", footer_sep);
+                    fmt::print("\033[36m{}\033[0m\033[1;32m {:<{}} \033[0m\033[36m{}\033[0m\n",
+                               V, tb.m_footer, content_width - 1, V);
+                } else {
+                    fmt::print("{}\n", footer_sep);
+                    fmt::print("{} {:<{}} {}\n", V, tb.m_footer, content_width - 1, V);
+                }
+            }
+
+            // Bottom border
+            std::string bottom_line = make_horizontal(BL, BM, BR);
+            if (m_colored_output) {
+                fmt::print("\033[36m{}\033[0m\n", bottom_line);
+            } else {
+                fmt::print("{}\n", bottom_line);
+            }
+        }
+
+        // Write to file (simplified ASCII version)
+        if (m_file_stream.is_open()) {
+            write_to_file_raw("\n");
+            write_to_file_raw("+" + std::string(total_width - 2, '-') + "+\n");
+            int content_width = total_width - 2;
+            write_to_file_raw("|" + fmt::format("{:^{}}", tb.m_title, content_width) + "|\n");
+            write_to_file_raw("+" + std::string(total_width - 2, '-') + "+\n");
+
+            // Headers
+            if (!tb.m_columns.empty()) {
+                std::string header_line = "|";
+                for (size_t i = 0; i < tb.m_widths.size() && i < tb.m_columns.size(); ++i) {
+                    header_line += fmt::format(" {:<{}} |", tb.m_columns[i], tb.m_widths[i]);
+                }
+                write_to_file_raw(header_line + "\n");
+                write_to_file_raw("+" + std::string(total_width - 2, '-') + "+\n");
+            }
+
+            // Data
+            for (const auto& row : tb.m_rows) {
+                std::string line = "|";
+                for (size_t i = 0; i < tb.m_widths.size() && i < row.size(); ++i) {
+                    bool is_number = !row[i].empty() && (std::isdigit(row[i][0]) || row[i][0] == '-');
+                    if (is_number) {
+                        line += fmt::format(" {:>{}} |", row[i], tb.m_widths[i]);
+                    } else {
+                        line += fmt::format(" {:<{}} |", row[i], tb.m_widths[i]);
+                    }
+                }
+                write_to_file_raw(line + "\n");
+            }
+
+            if (!tb.m_footer.empty()) {
+                write_to_file_raw("+" + std::string(total_width - 2, '-') + "+\n");
+                write_to_file_raw("| " + fmt::format("{:<{}}", tb.m_footer, content_width - 2) + " |\n");
+            }
+            write_to_file_raw("+" + std::string(total_width - 2, '-') + "+\n");
+        }
+    }
+
+    /**
+     * @brief Print a simple cutflow-style table
+     * @param title Table title
+     * @param cuts Vector of (cut_name, count, abs_eff, rel_eff) tuples
+     * @param efficiency Overall efficiency as percentage
+     */
+    auto print_cutflow_table(
+        const std::string& title,
+        const std::vector<std::tuple<std::string, size_t, double, double>>& cuts,
+        double efficiency
+    ) -> void {
+        std::lock_guard<std::mutex> lock(m_mutex);
+
+        // Column widths
+        constexpr int CUT_WIDTH = 35;
+        constexpr int COUNT_WIDTH = 12;
+        constexpr int EFF_WIDTH = 10;
+        constexpr int TOTAL_WIDTH = CUT_WIDTH + COUNT_WIDTH + EFF_WIDTH + EFF_WIDTH + 9;  // +9 for borders and spacing
+
+        // Box drawing characters
+        const char* TL = "\342\224\214";  // ┌
+        const char* TR = "\342\224\220";  // ┐
+        const char* BL = "\342\224\224";  // └
+        const char* BR = "\342\224\230";  // ┘
+        const char* H = "\342\224\200";   // ─
+        const char* V = "\342\224\202";   // │
+        const char* TM = "\342\224\254";  // ┬
+        const char* BM = "\342\224\264";  // ┴
+        const char* LM = "\342\224\234";  // ├
+        const char* RM = "\342\224\244";  // ┤
+
+        auto repeat = [](const char* ch, int n) {
+            std::string result;
+            for (int i = 0; i < n; ++i) result += ch;
+            return result;
+        };
+
+        // Build horizontal lines
+        std::string top = std::string(TL) + repeat(H, TOTAL_WIDTH - 2) + TR;
+        std::string header_sep = std::string(LM) + repeat(H, CUT_WIDTH + 1) + TM +
+                                 repeat(H, COUNT_WIDTH + 1) + TM +
+                                 repeat(H, EFF_WIDTH + 1) + TM +
+                                 repeat(H, EFF_WIDTH + 1) + RM;
+        std::string footer_sep = std::string(LM) + repeat(H, CUT_WIDTH + 1) + BM +
+                                 repeat(H, COUNT_WIDTH + 1) + BM +
+                                 repeat(H, EFF_WIDTH + 1) + BM +
+                                 repeat(H, EFF_WIDTH + 1) + RM;
+        std::string bottom = std::string(BL) + repeat(H, TOTAL_WIDTH - 2) + BR;
+
+        if (m_console_output) {
+            // Top border + title
+            if (m_colored_output) {
+                fmt::print("\n\033[36m{}\033[0m\n", top);
+                fmt::print("\033[36m{}\033[0m\033[1;37m{:^{}}\033[0m\033[36m{}\033[0m\n",
+                           V, "Cutflow: " + title, TOTAL_WIDTH - 2, V);
+                fmt::print("\033[36m{}\033[0m\n", header_sep);
+            } else {
+                fmt::print("\n{}\n", top);
+                fmt::print("{}{:^{}}{}\n", V, "Cutflow: " + title, TOTAL_WIDTH - 2, V);
+                fmt::print("{}\n", header_sep);
+            }
+
+            // Column headers
+            if (m_colored_output) {
+                fmt::print("\033[36m{}\033[0m\033[1;37m {:<{}} \033[0m\033[36m{}\033[0m"
+                           "\033[1;37m {:>{}} \033[0m\033[36m{}\033[0m"
+                           "\033[1;37m {:>{}} \033[0m\033[36m{}\033[0m"
+                           "\033[1;37m {:>{}} \033[0m\033[36m{}\033[0m\n",
+                           V, "Cut", CUT_WIDTH, V,
+                           "Events", COUNT_WIDTH, V,
+                           "Abs Eff", EFF_WIDTH, V,
+                           "Rel Eff", EFF_WIDTH, V);
+                fmt::print("\033[36m{}\033[0m\n", header_sep);
+            } else {
+                fmt::print("{} {:<{}} {} {:>{}} {} {:>{}} {} {:>{}} {}\n",
+                           V, "Cut", CUT_WIDTH, V,
+                           "Events", COUNT_WIDTH, V,
+                           "Abs Eff", EFF_WIDTH, V,
+                           "Rel Eff", EFF_WIDTH, V);
+                fmt::print("{}\n", header_sep);
+            }
+
+            // Data rows
+            for (const auto& [cut_name, count, abs_eff, rel_eff] : cuts) {
+                std::string count_str = fmt::format("{}", count);
+                std::string abs_str = fmt::format("{:>6.1f}%", abs_eff);
+                std::string rel_str = fmt::format("{:>6.1f}%", rel_eff);
+
+                if (m_colored_output) {
+                    // Color code efficiency (green for high, yellow for medium, red for low)
+                    std::string abs_color = abs_eff >= 90 ? "\033[32m" : (abs_eff >= 50 ? "\033[33m" : "\033[31m");
+                    std::string rel_color = rel_eff >= 95 ? "\033[32m" : (rel_eff >= 80 ? "\033[33m" : "\033[31m");
+
+                    fmt::print("\033[36m{}\033[0m\033[37m {:<{}} \033[0m\033[36m{}\033[0m"
+                               "\033[1;33m {:>{}} \033[0m\033[36m{}\033[0m"
+                               "{} {:>{}} \033[0m\033[36m{}\033[0m"
+                               "{} {:>{}} \033[0m\033[36m{}\033[0m\n",
+                               V, cut_name, CUT_WIDTH, V,
+                               count_str, COUNT_WIDTH, V,
+                               abs_color, abs_str, EFF_WIDTH, V,
+                               rel_color, rel_str, EFF_WIDTH, V);
+                } else {
+                    fmt::print("{} {:<{}} {} {:>{}} {} {:>{}} {} {:>{}} {}\n",
+                               V, cut_name, CUT_WIDTH, V,
+                               count_str, COUNT_WIDTH, V,
+                               abs_str, EFF_WIDTH, V,
+                               rel_str, EFF_WIDTH, V);
+                }
+            }
+
+            // Footer with overall efficiency
+            std::string eff_str = fmt::format("Overall efficiency: {:.2f}%", efficiency);
+            if (m_colored_output) {
+                fmt::print("\033[36m{}\033[0m\n", footer_sep);
+                std::string eff_color = efficiency >= 90 ? "\033[1;32m" : (efficiency >= 50 ? "\033[1;33m" : "\033[1;31m");
+                fmt::print("\033[36m{}\033[0m{} {:<{}} \033[0m\033[36m{}\033[0m\n",
+                           V, eff_color, eff_str, TOTAL_WIDTH - 3, V);
+                fmt::print("\033[36m{}\033[0m\n", bottom);
+            } else {
+                fmt::print("{}\n", footer_sep);
+                fmt::print("{} {:<{}} {}\n", V, eff_str, TOTAL_WIDTH - 3, V);
+                fmt::print("{}\n", bottom);
+            }
+        }
+
+        // Write to log file (ASCII version)
+        if (m_file_stream.is_open()) {
+            std::string eff_str_file = fmt::format("Overall efficiency: {:.2f}%", efficiency);
+            write_to_file_raw("\n+" + std::string(TOTAL_WIDTH - 2, '-') + "+\n");
+            write_to_file_raw(fmt::format("|{:^{}}|\n", "Cutflow: " + title, TOTAL_WIDTH - 2));
+            write_to_file_raw("+" + std::string(TOTAL_WIDTH - 2, '-') + "+\n");
+            write_to_file_raw(fmt::format("| {:<{}} | {:>{}} | {:>{}} | {:>{}} |\n",
+                                         "Cut", CUT_WIDTH, "Events", COUNT_WIDTH - 1,
+                                         "Abs Eff", EFF_WIDTH - 1, "Rel Eff", EFF_WIDTH - 1));
+            write_to_file_raw("+" + std::string(TOTAL_WIDTH - 2, '-') + "+\n");
+
+            for (const auto& [cut_name, count, abs_eff, rel_eff] : cuts) {
+                write_to_file_raw(fmt::format("| {:<{}} | {:>{}} | {:>6.1f}%   | {:>6.1f}%   |\n",
+                                             cut_name, CUT_WIDTH, count, COUNT_WIDTH - 1,
+                                             abs_eff, rel_eff));
+            }
+
+            write_to_file_raw("+" + std::string(TOTAL_WIDTH - 2, '-') + "+\n");
+            write_to_file_raw(fmt::format("| {:<{}} |\n", eff_str_file, TOTAL_WIDTH - 3));
+            write_to_file_raw("+" + std::string(TOTAL_WIDTH - 2, '-') + "+\n");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Timer Utilities
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -854,6 +1274,17 @@ class Log {
         -> std::unique_ptr<LoggingService::ScopedLog> {
         if (s_instance) return s_instance->scoped(source, operation);
         return nullptr;
+    }
+
+    /**
+     * @brief Print a cutflow table
+     */
+    static auto print_cutflow_table(
+        const std::string& title,
+        const std::vector<std::tuple<std::string, size_t, double, double>>& cuts,
+        double efficiency
+    ) -> void {
+        if (s_instance) s_instance->print_cutflow_table(title, cuts, efficiency);
     }
 
    private:
