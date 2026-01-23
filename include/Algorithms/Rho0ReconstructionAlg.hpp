@@ -6,8 +6,8 @@
 #include <TMath.h>
 #include <TParameter.h>
 #include <TTree.h>
+#include <algorithm>
 #include <cmath>
-#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -16,7 +16,6 @@
 #include <tuple>
 #include <vector>
 #include "CLAS/Constants.hpp"
-#include "CLAS/PIDs.hpp"
 #include "CLAS/Particle.hpp"
 #include "Framework/Cutflow.hpp"
 #include "Framework/Decisions.hpp"
@@ -64,6 +63,47 @@ inline Double_t BWPlusPol3(Double_t* x, Double_t* par) {
     return BreitWigner(x, par) + Pol3Background(x, par);
 }
 
+// ============================================================================
+// Data structures for rho0 reconstruction
+// ============================================================================
+
+/**
+ * @brief Holds all computed data for a single rho0 candidate
+ *
+ * This struct consolidates particle references, kinematic variables, and
+ * cut decisions to avoid redundant calculations and simplify data flow.
+ */
+struct Rho0Candidate {
+    // Particle references
+    CLAS::Particle pip;
+    CLAS::Particle pim;
+
+    // Reconstructed rho0 properties
+    double mass = 0.0;
+    double momentum = 0.0;
+    double theta = 0.0;  // degrees
+    double phi = 0.0;    // degrees
+    double opening_angle = 0.0;  // degrees
+
+    // Kinematic variables
+    double zh = 0.0;
+    double lc = 0.0;
+    double t = 0.0;       // Mandelstam t (negative)
+    double minus_t = 0.0; // -t (positive)
+
+    // Vertex differences
+    double delta_vz_pip = 0.0;
+    double delta_vz_pim = 0.0;
+
+    // Cut decisions (cached to avoid recomputation)
+    bool passes_delta_vz_pip = false;
+    bool passes_delta_vz_pim = false;
+    bool passes_zh = false;
+    bool passes_lc = false;
+    bool passes_t = false;
+    bool passes_all_cuts = false;
+};
+
 /**
  * @brief Algorithm for rho0 reconstruction from charged pion pairs (pi+ pi-)
  *
@@ -93,17 +133,10 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     static constexpr double HBARC = 0.197327;                        // GeV·fm (for coherence length)
 
     explicit Rho0ReconstructionAlg(
-        std::string name = "Rho0ReconstructionAlg",
-        double min_pion_momentum = 0.3,    // GeV/c
-        double rho0_mass_window = 0.15     // GeV (±150 MeV around 770 MeV due to broad width)
+        std::string name = "Rho0ReconstructionAlg"
     )
         : SimpleAlgorithm(std::move(name))
-        , m_min_pion_momentum{"min_pion_momentum", min_pion_momentum, "Minimum pion momentum [GeV/c]"}
-        , m_rho0_mass_window{"rho0_mass_window", rho0_mass_window, "Rho0 mass window [GeV]"}
         , m_cutflow("Rho0 Reconstruction") {
-        declare_property(m_min_pion_momentum);
-        declare_property(m_rho0_mass_window);
-        declare_property(m_pion_chi2pid_max);
         declare_property(m_zh_min);
         declare_property(m_lc_max);
         declare_property(m_t_min);
@@ -124,9 +157,6 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
 
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::config(name(), "Pion selection", "Using pre-selected pions from PionSelectionAlg");
-        Log::config(name(), "Rho0 mass window", fmt::format("±{} GeV (nominal: {} GeV)", m_rho0_mass_window.get(), RHO0_MASS));
-        Log::config(name(), "Min pion momentum", fmt::format("{} GeV/c", m_min_pion_momentum.get()));
-        Log::config(name(), "Max |chi2pid|", m_pion_chi2pid_max.get());
         Log::blank();
 
         Log::subsection("Kinematic Cuts");
@@ -178,32 +208,21 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         if (!event.passes_decision_typed(Framework::Decisions::HasGoodDISElectron)) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Has Good DIS Electron");
 
-        // Get DIS kinematics from upstream (using typed retrieval)
+        // Get DIS kinematics from upstream
         auto Q2_opt = event.retrieve_typed(Framework::Keys::DIS_Q2);
         auto nu_opt = event.retrieve_typed(Framework::Keys::DIS_nu);
         if (!Q2_opt || !nu_opt) return Framework::StatusCode::FILTERED();
         double Q2 = *Q2_opt;
         double nu = *nu_opt;
 
-        // Get beam and electron for t calculation
+        // Get electron
         auto electrons_opt = event.retrieve_typed(Framework::Keys::SelectedElectronsCapital);
         if (!electrons_opt || electrons_opt->empty()) return Framework::StatusCode::FILTERED();
         const auto& electron = electrons_opt->front();
 
         // Get pre-selected pions from PionSelectionAlg
-        auto selected_piplus_opt = event.retrieve_typed(Framework::Keys::SelectedPiPlus);
-        auto selected_piminus_opt = event.retrieve_typed(Framework::Keys::SelectedPiMinus);
-
-        // Use pre-selected pions from PionSelectionAlg
-        std::vector<CLAS::Particle> pions_plus;
-        std::vector<CLAS::Particle> pions_minus;
-
-        if (selected_piplus_opt) {
-            pions_plus = *selected_piplus_opt;
-        }
-        if (selected_piminus_opt) {
-            pions_minus = *selected_piminus_opt;
-        }
+        auto pions_plus = event.retrieve_typed(Framework::Keys::SelectedPiPlus).value_or(std::vector<CLAS::Particle>{});
+        auto pions_minus = event.retrieve_typed(Framework::Keys::SelectedPiMinus).value_or(std::vector<CLAS::Particle>{});
 
         if (pions_plus.empty()) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Has >= 1 Pi+");
@@ -211,208 +230,36 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         if (pions_minus.empty()) return Framework::StatusCode::FILTERED();
         m_cutflow.pass("Has >= 1 Pi-");
 
-        // Fill all pi+pi- invariant mass combinations
-        for (const auto& pip : pions_plus) {
-            for (const auto& pim : pions_minus) {
-                double mass = calculate_invariant_mass(pip, pim);
-                if (h_pipim_mass_all) h_pipim_mass_all->Fill(mass);
-            }
-        }
-
-        // Find rho0 candidates
-        auto candidates_opt = find_all_rho0_candidates(pions_plus, pions_minus);
-        if (!candidates_opt.has_value()) return Framework::StatusCode::FILTERED();
-
-        auto rho0_candidates = candidates_opt.value();
-        m_cutflow.pass("Rho0 Found");
-
-        // Calculate beam 4-momentum (default 10.53 GeV along z)
+        // Calculate virtual photon 4-momentum
         Physics::BeamConfig beam;
         ROOT::Math::PxPyPzEVector beam_4vec(beam.px, beam.py, beam.pz, beam.energy);
-        ROOT::Math::PxPyPzEVector electron_4vec = electron.PxPyPzEVector();
-        ROOT::Math::PxPyPzEVector virtual_photon = beam_4vec - electron_4vec;
+        ROOT::Math::PxPyPzEVector virtual_photon = beam_4vec - electron.PxPyPzEVector();
 
-        // Process candidates with kinematic cuts
-        std::vector<std::tuple<CLAS::Particle, CLAS::Particle, double>> passed_candidates;
+        // Build candidates with all kinematics computed once
+        auto candidates = build_rho0_candidates(pions_plus, pions_minus, electron, virtual_photon, nu, Q2);
+        if (candidates.empty()) return Framework::StatusCode::FILTERED();
+        m_cutflow.pass("Rho0 Found");
 
-        for (const auto& [pip, pim, rho0_mass] : rho0_candidates) {
-            auto p_rho0 = pip.PxPyPzEVector() + pim.PxPyPzEVector();
-            double E_rho0 = p_rho0.E();
+        // Fill pre-cut histograms
+        fill_pre_cut_histograms(candidates);
 
-            // Calculate kinematic variables
-            double zh = E_rho0 / nu;
-            double lc = calculate_coherence_length(nu, Q2);
-            double t = calculate_t(virtual_photon, p_rho0);
-            double minus_t = -t;
+        // Fill lc-binned histograms (with specific cut combination)
+        fill_lc_binned_histograms(candidates, Q2);
 
-            // Calculate delta vz between electron and pions
-            double e_vz = electron.vz();
-            double delta_vz_pip = std::abs(e_vz - pip.vz());
-            double delta_vz_pim = std::abs(e_vz - pim.vz());
+        // Update cutflow counters
+        update_cutflow(candidates);
 
-            // Fill kinematic histograms before cuts
-            if (h_zh) h_zh->Fill(zh);
-            if (h_lc) h_lc->Fill(lc);
-            if (h_t) h_t->Fill(minus_t);
-            if (h_delta_vz_pim) h_delta_vz_pim->Fill(delta_vz_pim);
-            if (h_delta_vz_pip) h_delta_vz_pip->Fill(delta_vz_pip);
+        // Check if any candidates passed all cuts
+        if (count_passing_candidates(candidates) == 0) return Framework::StatusCode::FILTERED();
 
-            // Apply kinematic cuts
-            bool passed_delta_vz_pim = delta_vz_pim < m_delta_vz_max.get();
-            bool passed_delta_vz_pip = delta_vz_pip < m_delta_vz_max.get();
-            bool passed_zh = zh > m_zh_min.get();
-            bool passed_lc = lc < m_lc_max.get();
-            bool passed_Q2 = (Q2 > 1.0);  // Basic Q² cut to avoid very low Q²
-            bool passed_t = (minus_t > m_t_min.get()) && (minus_t < m_t_max.get());
+        // Fill post-cut histograms
+        fill_post_cut_histograms(candidates, Q2);
 
-            if (passed_delta_vz_pim && passed_delta_vz_pip && passed_zh && passed_lc && passed_t) {
-                passed_candidates.emplace_back(pip, pim, rho0_mass);
-            }
-
-            // Fill lc-binned invariant mass histograms
-            if (passed_delta_vz_pim && passed_delta_vz_pip && passed_zh && passed_Q2 && passed_t) {
-                fill_lc_binned_histogram(lc, rho0_mass);
-            }
-
-            // TODO: Should be one by one to update cutflow correctly
-            if (delta_vz_pim < m_delta_vz_max.get()) m_cutflow.pass("delta_vz_pim Cut");
-            if (delta_vz_pip < m_delta_vz_max.get()) m_cutflow.pass("delta_vz_pip Cut");
-            if (zh > m_zh_min.get()) m_cutflow.pass("zh > 0.9");
-            if (lc < m_lc_max.get()) m_cutflow.pass("lc < 1 fm");
-            if (minus_t > m_t_min.get() && minus_t < m_t_max.get()) m_cutflow.pass("0.1 < -t < 0.5");
-        }
-
-        // Update cutflow for kinematic cuts (at least one candidate passed)
-        if (passed_candidates.empty()) return Framework::StatusCode::FILTERED();
-
-        // Use local vectors to avoid holding the lock during calculations
-        std::vector<double> local_pip_p, local_pip_theta, local_pip_phi;
-        std::vector<double> local_pim_p, local_pim_theta, local_pim_phi;
-        std::vector<double> local_rho0_masses, local_rho0_ps, local_rho0_thetas, local_rho0_phis;
-        std::vector<double> local_zh, local_lc, local_t, local_delta_vz_pim, local_delta_vz_pip;
-        double local_e_p{}, local_e_theta{}, local_e_phi{}, local_e_vz{};
-        double local_Q2 = Q2;
-
-        for (const auto& [pip, pim, rho0_mass] : passed_candidates) {
-            auto p1 = pip.PxPyPzEVector();
-            auto p2 = pim.PxPyPzEVector();
-            auto p_rho0 = p1 + p2;
-
-            double rho0_p = std::sqrt(p_rho0.Px() * p_rho0.Px() + p_rho0.Py() * p_rho0.Py() + p_rho0.Pz() * p_rho0.Pz());
-            double rho0_theta = std::acos(p_rho0.Pz() / rho0_p) * 180.0 / M_PI;
-            double rho0_phi = std::atan2(p_rho0.Py(), p_rho0.Px()) * 180.0 / M_PI;
-
-            // Calculate kinematic variables
-            double zh = p_rho0.E() / nu;
-            double lc = calculate_coherence_length(nu, Q2);
-            double t = calculate_t(virtual_photon, p_rho0);
-            double minus_t = -t;
-
-            // Calculate opening angle between pions
-            auto p1_3 = pip.PxPyPzVector();
-            auto p2_3 = pim.PxPyPzVector();
-            double cos_angle = p1_3.Dot(p2_3) / (p1_3.R() * p2_3.R());
-            double opening_angle = std::acos(cos_angle) * 180.0 / M_PI;
-
-            // Fill histograms
-            if (h_pipim_mass_selected) h_pipim_mass_selected->Fill(rho0_mass);
-            if (h_rho0_momentum) h_rho0_momentum->Fill(rho0_p);
-            if (h_rho0_theta) h_rho0_theta->Fill(rho0_theta);
-            if (h_rho0_phi) h_rho0_phi->Fill(rho0_phi);
-            if (h_opening_angle) h_opening_angle->Fill(opening_angle);
-            if (h_pipim_mass_vs_momentum) h_pipim_mass_vs_momentum->Fill(rho0_p, rho0_mass);
-
-            // Calculate delta vz for selected histogram
-            double e_vz = electron.vz();
-            double delta_vz_pim_val = std::abs(e_vz - pim.vz());
-            double delta_vz_pip_val = std::abs(e_vz - pip.vz());
-
-            // Fill kinematic histograms after cuts
-            if (h_zh_selected) h_zh_selected->Fill(zh);
-            if (h_lc_selected) h_lc_selected->Fill(lc);
-            if (h_t_selected) h_t_selected->Fill(minus_t);
-            if (h_delta_vz_pim_selected) h_delta_vz_pim_selected->Fill(delta_vz_pim_val);
-            if (h_delta_vz_pip_selected) h_delta_vz_pip_selected->Fill(delta_vz_pip_val);
-
-            // Fill Q²-binned invariant mass histograms
-            fill_q2_binned_histogram(Q2, rho0_mass);
-
-            // Fill local vectors for ntuple
-            local_pip_p.push_back(pip.p());
-            local_pip_theta.push_back(pip.theta());
-            local_pip_phi.push_back(pip.phi());
-            local_pim_p.push_back(pim.p());
-            local_pim_theta.push_back(pim.theta());
-            local_pim_phi.push_back(pim.phi());
-            local_rho0_masses.push_back(rho0_mass);
-            local_rho0_ps.push_back(rho0_p);
-            local_rho0_thetas.push_back(rho0_theta);
-            local_rho0_phis.push_back(rho0_phi);
-            local_zh.push_back(zh);
-            local_lc.push_back(lc);
-            local_t.push_back(minus_t);
-            local_delta_vz_pim.push_back(delta_vz_pim_val);
-            local_delta_vz_pip.push_back(delta_vz_pip_val);
-        }
-
-        // Store rho0 candidates in event for downstream algorithms
-        std::vector<CLAS::Particle> stored_candidates;
-        for (const auto& [pip, pim, mass] : passed_candidates) {
-            stored_candidates.push_back(pip);
-            stored_candidates.push_back(pim);
-        }
-        event.store_particles("Rho0_PionPairs", stored_candidates);
+        // Store candidates in event for downstream algorithms
+        store_candidates_in_event(candidates, event);
 
         // Fill ntuple
-        if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get() && !passed_candidates.empty()) {
-            local_e_p = electron.p();
-            local_e_theta = electron.theta();
-            local_e_phi = electron.phi();
-            local_e_vz = electron.vz();
-
-            std::lock_guard<std::mutex> lock(m_ntuple_mutex);
-
-            m_e_p = local_e_p;
-            m_e_theta = local_e_theta;
-            m_e_phi = local_e_phi;
-            m_e_vz = local_e_vz;
-            m_Q2 = local_Q2;
-
-            m_pip_p = std::move(local_pip_p);
-            m_pip_theta = std::move(local_pip_theta);
-            m_pip_phi = std::move(local_pip_phi);
-            m_pim_p = std::move(local_pim_p);
-            m_pim_theta = std::move(local_pim_theta);
-            m_pim_phi = std::move(local_pim_phi);
-
-            m_rho0_masses = std::move(local_rho0_masses);
-            m_rho0_ps = std::move(local_rho0_ps);
-            m_rho0_thetas = std::move(local_rho0_thetas);
-            m_rho0_phis = std::move(local_rho0_phis);
-            m_rho0_zh = std::move(local_zh);
-            m_rho0_lc = std::move(local_lc);
-            m_rho0_t = std::move(local_t);
-            m_delta_vz_pim = std::move(local_delta_vz_pim);
-            m_delta_vz_pip = std::move(local_delta_vz_pip);
-
-            m_ntuple_svc->get()->fill("rho0_events");
-
-            m_pip_p.clear();
-            m_pip_theta.clear();
-            m_pip_phi.clear();
-            m_pim_p.clear();
-            m_pim_theta.clear();
-            m_pim_phi.clear();
-            m_rho0_masses.clear();
-            m_rho0_ps.clear();
-            m_rho0_thetas.clear();
-            m_rho0_phis.clear();
-            m_rho0_zh.clear();
-            m_rho0_lc.clear();
-            m_rho0_t.clear();
-            m_delta_vz_pim.clear();
-            m_delta_vz_pip.clear();
-        }
+        fill_ntuple(candidates, electron, Q2);
 
         return Framework::StatusCode::SUCCESS();
     }
@@ -519,91 +366,251 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         return delta.M2();
     }
 
-    auto find_best_rho0(
+    /**
+     * @brief Build fully-computed Rho0Candidate objects from pion pairs
+     *
+     * Computes all kinematic variables once and applies cuts, storing results
+     * in the candidate struct to avoid redundant calculations downstream.
+     */
+    auto build_rho0_candidates(
         const std::vector<CLAS::Particle>& pions_plus,
-        const std::vector<CLAS::Particle>& pions_minus
-    ) const -> std::optional<std::tuple<CLAS::Particle, CLAS::Particle, double>> {
-        if (pions_plus.empty() || pions_minus.empty()) return std::nullopt;
+        const std::vector<CLAS::Particle>& pions_minus,
+        const CLAS::Particle& electron,
+        const ROOT::Math::PxPyPzEVector& virtual_photon,
+        double nu,
+        double Q2
+    ) const -> std::vector<Rho0Candidate> {
+        std::vector<Rho0Candidate> candidates;
+        if (pions_plus.empty() || pions_minus.empty()) return candidates;
 
-        std::optional<std::tuple<CLAS::Particle, CLAS::Particle, double>> best;
-        double best_mass_diff = std::numeric_limits<double>::max();
+        double e_vz = electron.vz();
 
         for (const auto& pip : pions_plus) {
             for (const auto& pim : pions_minus) {
-                double mass = calculate_invariant_mass(pip, pim);
-                double mass_diff = std::abs(mass - RHO0_MASS);
-                if (mass_diff < m_rho0_mass_window.get() && mass_diff < best_mass_diff) {
-                    best_mass_diff = mass_diff;
-                    best = std::make_tuple(pip, pim, mass);
-                }
+                Rho0Candidate cand;
+                cand.pip = pip;
+                cand.pim = pim;
+
+                // Compute rho0 4-momentum
+                auto p_rho0 = pip.PxPyPzEVector() + pim.PxPyPzEVector();
+                cand.mass = p_rho0.M();
+                cand.momentum = std::sqrt(p_rho0.Px() * p_rho0.Px() +
+                                          p_rho0.Py() * p_rho0.Py() +
+                                          p_rho0.Pz() * p_rho0.Pz());
+                cand.theta = std::acos(p_rho0.Pz() / cand.momentum) * 180.0 / M_PI;
+                cand.phi = std::atan2(p_rho0.Py(), p_rho0.Px()) * 180.0 / M_PI;
+
+                // Compute opening angle
+                auto p1_3 = pip.PxPyPzVector();
+                auto p2_3 = pim.PxPyPzVector();
+                double cos_angle = p1_3.Dot(p2_3) / (p1_3.R() * p2_3.R());
+                cand.opening_angle = std::acos(cos_angle) * 180.0 / M_PI;
+
+                // Compute kinematic variables
+                cand.zh = p_rho0.E() / nu;
+                cand.lc = calculate_coherence_length(nu, Q2);
+                cand.t = calculate_t(virtual_photon, p_rho0);
+                cand.minus_t = -cand.t;
+
+                // Compute vertex differences
+                cand.delta_vz_pip = std::abs(e_vz - pip.vz());
+                cand.delta_vz_pim = std::abs(e_vz - pim.vz());
+
+                // Apply cuts and cache results
+                cand.passes_delta_vz_pip = cand.delta_vz_pip < m_delta_vz_max.get();
+                cand.passes_delta_vz_pim = cand.delta_vz_pim < m_delta_vz_max.get();
+                cand.passes_zh = cand.zh > m_zh_min.get();
+                cand.passes_lc = cand.lc < m_lc_max.get();
+                cand.passes_t = (cand.minus_t > m_t_min.get()) && (cand.minus_t < m_t_max.get());
+                cand.passes_all_cuts = cand.passes_delta_vz_pip && cand.passes_delta_vz_pim &&
+                                       cand.passes_zh && cand.passes_lc && cand.passes_t;
+
+                candidates.push_back(std::move(cand));
             }
         }
 
-        return best;
+        return candidates;
     }
 
-    auto find_all_rho0_candidates(
-        const std::vector<CLAS::Particle>& pions_plus,
-        const std::vector<CLAS::Particle>& pions_minus
-    ) const -> std::optional<std::vector<std::tuple<CLAS::Particle, CLAS::Particle, double>>> {
-        if (pions_plus.empty() || pions_minus.empty()) return std::nullopt;
+    /**
+     * @brief Fill histograms for candidates before kinematic cuts
+     */
+    auto fill_pre_cut_histograms(const std::vector<Rho0Candidate>& candidates) -> void {
+        for (const auto& cand : candidates) {
+            if (h_pipim_mass_all) h_pipim_mass_all->Fill(cand.mass);
+            if (h_zh) h_zh->Fill(cand.zh);
+            if (h_lc) h_lc->Fill(cand.lc);
+            if (h_t) h_t->Fill(cand.minus_t);
+            if (h_delta_vz_pim) h_delta_vz_pim->Fill(cand.delta_vz_pim);
+            if (h_delta_vz_pip) h_delta_vz_pip->Fill(cand.delta_vz_pip);
+        }
+    }
 
-        std::vector<std::tuple<CLAS::Particle, CLAS::Particle, double>> candidates;
-        for (const auto& pip : pions_plus) {
-            for (const auto& pim : pions_minus) {
-                double mass = calculate_invariant_mass(pip, pim);
-                candidates.emplace_back(pip, pim, mass);
+    /**
+     * @brief Fill histograms for candidates that passed all cuts
+     */
+    auto fill_post_cut_histograms(const std::vector<Rho0Candidate>& candidates, double Q2) -> void {
+        for (const auto& cand : candidates) {
+            if (!cand.passes_all_cuts) continue;
+
+            if (h_pipim_mass_selected) h_pipim_mass_selected->Fill(cand.mass);
+            if (h_rho0_momentum) h_rho0_momentum->Fill(cand.momentum);
+            if (h_rho0_theta) h_rho0_theta->Fill(cand.theta);
+            if (h_rho0_phi) h_rho0_phi->Fill(cand.phi);
+            if (h_opening_angle) h_opening_angle->Fill(cand.opening_angle);
+            if (h_pipim_mass_vs_momentum) h_pipim_mass_vs_momentum->Fill(cand.momentum, cand.mass);
+
+            if (h_zh_selected) h_zh_selected->Fill(cand.zh);
+            if (h_lc_selected) h_lc_selected->Fill(cand.lc);
+            if (h_t_selected) h_t_selected->Fill(cand.minus_t);
+            if (h_delta_vz_pim_selected) h_delta_vz_pim_selected->Fill(cand.delta_vz_pim);
+            if (h_delta_vz_pip_selected) h_delta_vz_pip_selected->Fill(cand.delta_vz_pip);
+
+            fill_q2_binned_histogram(Q2, cand.mass);
+        }
+    }
+
+    /**
+     * @brief Fill lc-binned histograms for candidates passing vertex, zh, Q2, and t cuts
+     */
+    auto fill_lc_binned_histograms(const std::vector<Rho0Candidate>& candidates, double Q2) -> void {
+        bool passes_Q2 = (Q2 > 1.0);
+        for (const auto& cand : candidates) {
+            if (cand.passes_delta_vz_pim && cand.passes_delta_vz_pip &&
+                cand.passes_zh && passes_Q2 && cand.passes_t) {
+                fill_lc_binned_histogram(cand.lc, cand.mass);
             }
         }
-
-        return candidates.empty() ? std::nullopt : std::make_optional(candidates);
     }
 
-    // std::vector<std::tuple<CLAS::Particle, CLAS::Particle, double>> candidates;
-    // std::vector<bool> used_plus(pions_plus.size(), false);
-    // std::vector<bool> used_minus(pions_minus.size(), false);
-// 
-        // while (true) {
-        //     double best_mass_diff = std::numeric_limits<double>::max();
-        //     size_t best_i = 0, best_j = 0;
-        //     bool found_pair = false;
-// 
-        //     for (size_t i = 0; i < pions_plus.size(); ++i) {
-        //         if (used_plus[i]) continue;
-// 
-        //         for (size_t j = 0; j < pions_minus.size(); ++j) {
-        //             if (used_minus[j]) continue;
-// 
-        //             double mass = calculate_invariant_mass(pions_plus[i], pions_minus[j]);
-        //             double mass_diff = std::abs(mass - RHO0_MASS);
-// 
-        //             if (mass_diff < m_rho0_mass_window.get() && mass_diff < best_mass_diff) {
-        //                 best_mass_diff = mass_diff;
-        //                 best_i = i;
-        //                 best_j = j;
-        //                 found_pair = true;
-        //             }
-        //         }
-        //     }
-// 
-        //     if (!found_pair) break;
-// 
-        //     double mass = calculate_invariant_mass(pions_plus[best_i], pions_minus[best_j]);
-        //     candidates.emplace_back(pions_plus[best_i], pions_minus[best_j], mass);
-        //     used_plus[best_i] = true;
-        //     used_minus[best_j] = true;
-        // }
-// 
-        // return candidates.empty() ? std::nullopt : std::make_optional(candidates);
+    /**
+     * @brief Update cutflow counters based on candidate cut results
+     */
+    auto update_cutflow(const std::vector<Rho0Candidate>& candidates) -> void {
+        bool any_passed_delta_vz_pim = false;
+        bool any_passed_delta_vz_pip = false;
+        bool any_passed_zh = false;
+        bool any_passed_lc = false;
+        bool any_passed_t = false;
 
-    auto min_pion_momentum() const -> double { return m_min_pion_momentum.get(); }
-    auto rho0_mass_window() const -> double { return m_rho0_mass_window.get(); }
+        for (const auto& cand : candidates) {
+            any_passed_delta_vz_pim |= cand.passes_delta_vz_pim;
+            any_passed_delta_vz_pip |= cand.passes_delta_vz_pip;
+            any_passed_zh |= cand.passes_zh;
+            any_passed_lc |= cand.passes_lc;
+            any_passed_t |= cand.passes_t;
+        }
+
+        if (any_passed_delta_vz_pim) m_cutflow.pass("delta_vz_pim Cut");
+        if (any_passed_delta_vz_pip) m_cutflow.pass("delta_vz_pip Cut");
+        if (any_passed_zh) m_cutflow.pass("zh > 0.9");
+        if (any_passed_lc) m_cutflow.pass("lc < 1 fm");
+        if (any_passed_t) m_cutflow.pass("0.1 < -t < 0.5");
+    }
+
+    /**
+     * @brief Fill ntuple with candidate data
+     */
+    auto fill_ntuple(const std::vector<Rho0Candidate>& candidates, const CLAS::Particle& electron, double Q2) -> void {
+        if (!m_ntuple_svc || !m_ntuple_svc->is_valid() || !m_enable_ntuple.get()) return;
+
+        // Collect data from passing candidates
+        std::vector<double> local_pip_p, local_pip_theta, local_pip_phi;
+        std::vector<double> local_pim_p, local_pim_theta, local_pim_phi;
+        std::vector<double> local_rho0_masses, local_rho0_ps, local_rho0_thetas, local_rho0_phis;
+        std::vector<double> local_zh, local_lc, local_t, local_delta_vz_pim, local_delta_vz_pip;
+
+        for (const auto& cand : candidates) {
+            if (!cand.passes_all_cuts) continue;
+
+            local_pip_p.push_back(cand.pip.p());
+            local_pip_theta.push_back(cand.pip.theta());
+            local_pip_phi.push_back(cand.pip.phi());
+            local_pim_p.push_back(cand.pim.p());
+            local_pim_theta.push_back(cand.pim.theta());
+            local_pim_phi.push_back(cand.pim.phi());
+            local_rho0_masses.push_back(cand.mass);
+            local_rho0_ps.push_back(cand.momentum);
+            local_rho0_thetas.push_back(cand.theta);
+            local_rho0_phis.push_back(cand.phi);
+            local_zh.push_back(cand.zh);
+            local_lc.push_back(cand.lc);
+            local_t.push_back(cand.minus_t);
+            local_delta_vz_pim.push_back(cand.delta_vz_pim);
+            local_delta_vz_pip.push_back(cand.delta_vz_pip);
+        }
+
+        if (local_rho0_masses.empty()) return;
+
+        std::lock_guard<std::mutex> lock(m_ntuple_mutex);
+
+        m_e_p = electron.p();
+        m_e_theta = electron.theta();
+        m_e_phi = electron.phi();
+        m_e_vz = electron.vz();
+        m_Q2 = Q2;
+
+        m_pip_p = std::move(local_pip_p);
+        m_pip_theta = std::move(local_pip_theta);
+        m_pip_phi = std::move(local_pip_phi);
+        m_pim_p = std::move(local_pim_p);
+        m_pim_theta = std::move(local_pim_theta);
+        m_pim_phi = std::move(local_pim_phi);
+
+        m_rho0_masses = std::move(local_rho0_masses);
+        m_rho0_ps = std::move(local_rho0_ps);
+        m_rho0_thetas = std::move(local_rho0_thetas);
+        m_rho0_phis = std::move(local_rho0_phis);
+        m_rho0_zh = std::move(local_zh);
+        m_rho0_lc = std::move(local_lc);
+        m_rho0_t = std::move(local_t);
+        m_delta_vz_pim = std::move(local_delta_vz_pim);
+        m_delta_vz_pip = std::move(local_delta_vz_pip);
+
+        m_ntuple_svc->get()->fill("rho0_events");
+
+        // Clear vectors for next event
+        m_pip_p.clear();
+        m_pip_theta.clear();
+        m_pip_phi.clear();
+        m_pim_p.clear();
+        m_pim_theta.clear();
+        m_pim_phi.clear();
+        m_rho0_masses.clear();
+        m_rho0_ps.clear();
+        m_rho0_thetas.clear();
+        m_rho0_phis.clear();
+        m_rho0_zh.clear();
+        m_rho0_lc.clear();
+        m_rho0_t.clear();
+        m_delta_vz_pim.clear();
+        m_delta_vz_pip.clear();
+    }
+
+    /**
+     * @brief Store passing candidates in event for downstream algorithms
+     */
+    auto store_candidates_in_event(const std::vector<Rho0Candidate>& candidates, Framework::Event& event) -> void {
+        std::vector<CLAS::Particle> stored_particles;
+        for (const auto& cand : candidates) {
+            if (cand.passes_all_cuts) {
+                stored_particles.push_back(cand.pip);
+                stored_particles.push_back(cand.pim);
+            }
+        }
+        event.store_particles("Rho0_PionPairs", stored_particles);
+    }
+
+    /**
+     * @brief Count candidates that pass all cuts
+     */
+    [[nodiscard]] auto count_passing_candidates(const std::vector<Rho0Candidate>& candidates) const -> size_t {
+        return std::count_if(candidates.begin(), candidates.end(),
+                             [](const Rho0Candidate& c) { return c.passes_all_cuts; });
+    }
 
    private:
     // Properties
-    Framework::Property<double> m_min_pion_momentum{"min_pion_momentum", 0.3, "Minimum pion momentum [GeV/c]"};
-    Framework::Property<double> m_rho0_mass_window{"rho0_mass_window", 0.15, "Rho0 mass window [GeV]"};
-    Framework::Property<double> m_pion_chi2pid_max{"pion_chi2pid_max", 10.0, "Maximum |chi2pid| for pions"};
     Framework::Property<double> m_zh_min{"zh_min", 0.9, "Minimum zh (energy fraction)"};
     Framework::Property<double> m_lc_max{"lc_max", 1.0, "Maximum coherence length [fm]"};
     Framework::Property<double> m_t_min{"t_min", 0.1, "Minimum -t [GeV²]"};
@@ -625,24 +632,6 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
 
     // Mutex for thread safety
     mutable std::mutex m_ntuple_mutex;
-
-    // Histograms - Raw pions
-    TH1D* h_piplus_momentum_raw = nullptr;
-    TH1D* h_piplus_theta_raw = nullptr;
-    TH1D* h_piminus_momentum_raw = nullptr;
-    TH1D* h_piminus_theta_raw = nullptr;
-    TH1D* h_piplus_chi2pid_raw = nullptr;
-    TH1D* h_piminus_chi2pid_raw = nullptr;
-    TH1D* h_n_piplus = nullptr;
-    TH1D* h_n_piminus = nullptr;
-
-    // Histograms - Selected pions
-    TH1D* h_piplus_momentum = nullptr;
-    TH1D* h_piplus_theta = nullptr;
-    TH1D* h_piminus_momentum = nullptr;
-    TH1D* h_piminus_theta = nullptr;
-    TH1D* h_piplus_chi2pid = nullptr;
-    TH1D* h_piminus_chi2pid = nullptr;
 
     // Histograms - Rho0 candidates
     TH1D* h_pipim_mass_all = nullptr;
@@ -752,26 +741,6 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     auto book_histograms() -> void {
         Framework::safe(m_hist_svc).with([this](auto* svc) {
 
-        // Raw pion histograms
-        h_piplus_momentum_raw = svc->book_hist1D("/Rho0/piplus_momentum_raw", "Raw #pi^{+} Momentum;p [GeV/c];Events", 100, 0, 10);
-        h_piplus_theta_raw = svc->book_hist1D("/Rho0/piplus_theta_raw", "Raw #pi^{+} Theta;#theta [deg];Events", 180, 0, 180);
-        h_piminus_momentum_raw = svc->book_hist1D("/Rho0/piminus_momentum_raw", "Raw #pi^{-} Momentum;p [GeV/c];Events", 100, 0, 10);
-        h_piminus_theta_raw = svc->book_hist1D("/Rho0/piminus_theta_raw", "Raw #pi^{-} Theta;#theta [deg];Events", 180, 0, 180);
-        h_piplus_chi2pid_raw = svc->book_hist1D("/Rho0/piplus_chi2pid_raw", "Raw #pi^{+} chi2pid;chi2pid;Events", 100, -20, 20);
-        h_piminus_chi2pid_raw = svc->book_hist1D("/Rho0/piminus_chi2pid_raw", "Raw #pi^{-} chi2pid;chi2pid;Events", 100, -20, 20);
-        
-        h_n_piplus = svc->book_hist1D("/Rho0/n_piplus", "Number of #pi^{+};N_{#pi^{+}};Events", 10, 0, 10);
-        h_n_piminus = svc->book_hist1D("/Rho0/n_piminus", "Number of #pi^{-};N_{#pi^{-}};Events", 10, 0, 10);
-
-        // Selected pion histograms
-        h_piplus_momentum = svc->book_hist1D("/Rho0/piplus_momentum", "#pi^{+} Momentum;p [GeV/c];Events", 100, 0, 10);
-        h_piplus_theta = svc->book_hist1D("/Rho0/piplus_theta", "#pi^{+} Theta;#theta [deg];Events", 180, 0, 180);
-        h_piplus_chi2pid = svc->book_hist1D("/Rho0/piplus_chi2pid", "#pi^{+} chi2pid;chi2pid;Events", 100, -20, 20);
-
-        h_piminus_momentum = svc->book_hist1D("/Rho0/piminus_momentum", "#pi^{-} Momentum;p [GeV/c];Events", 100, 0, 10);
-        h_piminus_theta = svc->book_hist1D("/Rho0/piminus_theta", "#pi^{-} Theta;#theta [deg];Events", 180, 0, 180);
-        h_piminus_chi2pid = svc->book_hist1D("/Rho0/piminus_chi2pid", "#pi^{-} chi2pid;chi2pid;Events", 100, -20, 20);
-
         // Rho0 candidate histograms
         h_pipim_mass_all = svc->book_hist1D("/Rho0/pipim_mass_all", "All #pi^{+}#pi^{-} Invariant Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
         h_pipim_mass_selected = svc->book_hist1D("/Rho0/pipim_mass_selected", "Selected #rho^{0} Candidate Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0.4, 1.2);
@@ -788,15 +757,15 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         h_zh = svc->book_hist1D("/Rho0/zh", "z_{h} (before cuts);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
         h_lc = svc->book_hist1D("/Rho0/lc", "Coherence Length (before cuts);l_{c} [fm];Events", 100, 0, 5);
         h_t = svc->book_hist1D("/Rho0/t", "-t (before cuts);-t [GeV^{2}];Events", 100, 0, 2);
-        h_delta_vz_pim = svc->book_hist1D("/Rho0/delta_vz_pim", "#Delta v_{z} (before cuts);|v_{z}^{e} - v_{z}^{#pi^{-}}| [cm];Events", 100, -50, 50);
-        h_delta_vz_pip = svc->book_hist1D("/Rho0/delta_vz_pip", "#Delta v_{z} (before cuts);|v_{z}^{e} - v_{z}^{#pi^{+}}| [cm];Events", 100, -50, 50);
+        h_delta_vz_pim = svc->book_hist1D("/Rho0/delta_vz_pim", "#Delta v_{z} (before cuts);|v_{z}^{e} - v_{z}^{#pi^{-}}| [cm];Events", 100, 0, 50);
+        h_delta_vz_pip = svc->book_hist1D("/Rho0/delta_vz_pip", "#Delta v_{z} (before cuts);|v_{z}^{e} - v_{z}^{#pi^{+}}| [cm];Events", 100, 0, 50);
 
         // Kinematic variable histograms (after cuts)
         h_zh_selected = svc->book_hist1D("/Rho0/zh_selected", "z_{h} (after cuts);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
         h_lc_selected = svc->book_hist1D("/Rho0/lc_selected", "Coherence Length (after cuts);l_{c} [fm];Events", 100, 0, 5);
         h_t_selected = svc->book_hist1D("/Rho0/t_selected", "-t (after cuts);-t [GeV^{2}];Events", 100, 0, 2);
-        h_delta_vz_pim_selected = svc->book_hist1D("/Rho0/delta_vz_pim_selected", "#Delta v_{z} (after cuts);|v_{z}^{e} - v_{z}^{#pi^{-}}| [cm];Events", 100, -50, 50);
-        h_delta_vz_pip_selected = svc->book_hist1D("/Rho0/delta_vz_pip_selected", "#Delta v_{z} (after cuts);|v_{z}^{e} - v_{z}^{#pi^{+}}| [cm];Events", 100, -50, 50);
+        h_delta_vz_pim_selected = svc->book_hist1D("/Rho0/delta_vz_pim_selected", "#Delta v_{z} (after cuts);|v_{z}^{e} - v_{z}^{#pi^{-}}| [cm];Events", 100, 0, 50);
+        h_delta_vz_pip_selected = svc->book_hist1D("/Rho0/delta_vz_pip_selected", "#Delta v_{z} (after cuts);|v_{z}^{e} - v_{z}^{#pi^{+}}| [cm];Events", 100, 0, 50);
 
         // Q²-binned invariant mass histograms
         for (const auto& [q2_min, q2_max] : Q2_BINS) {
@@ -948,9 +917,28 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     }
 
     /**
-     * @brief Save fit results to ROOT file as a TTree
+     * @brief Configuration for saving fit results
      */
-    auto save_Q2_fit_results_to_file(const std::map<std::string, FitResult>& results, double total_n_rho0, double total_n_rho0_err) -> void {
+    struct FitResultsConfig {
+        std::string bin_prefix;      // "Q2" or "LC"
+        std::string tree_name;       // "rho0_fit_results" or "rho0_lc_fit_results"
+        std::string tree_title;      // Tree description
+        std::string fits_dir;        // "Fits" or "Fits_LC"
+        std::string all_func_name;   // "fit_All" or "fit_All_LC"
+    };
+
+    /**
+     * @brief Save fit results to ROOT file as a TTree (generic implementation)
+     * @tparam BinArray Array type containing bin edges
+     */
+    template<typename BinArray>
+    auto save_fit_results_to_file(
+        const std::map<std::string, FitResult>& results,
+        double total_n_rho0,
+        double total_n_rho0_err,
+        const BinArray& bins,
+        const FitResultsConfig& config
+    ) -> void {
         if (!m_output_svc || !m_output_svc->is_valid()) return;
 
         auto* out_svc = m_output_svc->get();
@@ -961,7 +949,7 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
 
         // Acquire lock once and do all operations
         std::lock_guard<std::mutex> lock(out_svc->mutex());
-        
+
         TFile* file = out_svc->get_file();
         if (!file) {
             Framework::Log::error(name(), "Failed to get file pointer");
@@ -975,34 +963,38 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         }
         file->cd("Rho0");
 
-        // Create a TTree to store fit results (after cd'ing to the correct directory)
-        auto* tree = new TTree("rho0_fit_results", "Rho0 Fit Results");
+        // Create a TTree to store fit results
+        auto* tree = new TTree(config.tree_name.c_str(), config.tree_title.c_str());
 
         // Variables for the tree
-        char q2_bin[64];
-        double q2_min, q2_max;
+        char bin_name_buf[64];
+        double bin_min, bin_max;
         double n_rho0, n_rho0_err;
         double mass, mass_err;
         double chi2_ndf;
 
-        tree->Branch("q2_bin", q2_bin, "q2_bin/C");
-        tree->Branch("q2_min", &q2_min, "q2_min/D");
-        tree->Branch("q2_max", &q2_max, "q2_max/D");
+        std::string bin_branch = fmt::format("{}_bin", config.bin_prefix);
+        std::string min_branch = fmt::format("{}_min", config.bin_prefix);
+        std::string max_branch = fmt::format("{}_max", config.bin_prefix);
+
+        tree->Branch(bin_branch.c_str(), bin_name_buf, fmt::format("{}/C", bin_branch).c_str());
+        tree->Branch(min_branch.c_str(), &bin_min, fmt::format("{}/D", min_branch).c_str());
+        tree->Branch(max_branch.c_str(), &bin_max, fmt::format("{}/D", max_branch).c_str());
         tree->Branch("n_rho0", &n_rho0, "n_rho0/D");
         tree->Branch("n_rho0_err", &n_rho0_err, "n_rho0_err/D");
         tree->Branch("mass", &mass, "mass/D");
         tree->Branch("mass_err", &mass_err, "mass_err/D");
         tree->Branch("chi2_ndf", &chi2_ndf, "chi2_ndf/D");
 
-        // Fill tree with Q² bin results
-        for (size_t i = 0; i < Q2_BINS.size(); ++i) {
-            std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
+        // Fill tree with bin results
+        for (size_t i = 0; i < bins.size(); ++i) {
+            std::string bin_name = fmt::format("{}_{:.1f}_{:.1f}", config.bin_prefix, bins[i].first, bins[i].second);
             auto it = results.find(bin_name);
 
-            strncpy(q2_bin, bin_name.c_str(), sizeof(q2_bin) - 1);
-            q2_bin[sizeof(q2_bin) - 1] = '\0';
-            q2_min = Q2_BINS[i].first;
-            q2_max = Q2_BINS[i].second;
+            strncpy(bin_name_buf, bin_name.c_str(), sizeof(bin_name_buf) - 1);
+            bin_name_buf[sizeof(bin_name_buf) - 1] = '\0';
+            bin_min = bins[i].first;
+            bin_max = bins[i].second;
 
             if (it != results.end() && it->second.valid) {
                 n_rho0 = it->second.n_rho0;
@@ -1021,9 +1013,9 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         }
 
         // Add total row
-        strncpy(q2_bin, "Total", sizeof(q2_bin) - 1);
-        q2_min = Q2_BINS.front().first;
-        q2_max = Q2_BINS.back().second;
+        strncpy(bin_name_buf, "Total", sizeof(bin_name_buf) - 1);
+        bin_min = bins.front().first;
+        bin_max = bins.back().second;
         n_rho0 = total_n_rho0;
         n_rho0_err = total_n_rho0_err;
         if (results.count("All") && results.at("All").valid) {
@@ -1039,20 +1031,21 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
 
         // Write tree to the file
         tree->Write("", TObject::kOverwrite);
-        Framework::Log::info(name(), "Fit results saved to TTree 'Rho0/rho0_fit_results' with {} entries", tree->GetEntries());
+        Framework::Log::info(name(), "Fit results saved to TTree 'Rho0/{}' with {} entries", config.tree_name, tree->GetEntries());
 
         // Save fit functions separately for easy access in Python
+        std::string fits_path = fmt::format("Rho0/{}", config.fits_dir);
         file->cd();
-        if (!file->GetDirectory("Rho0/Fits")) {
-            file->mkdir("Rho0/Fits");
+        if (!file->GetDirectory(fits_path.c_str())) {
+            file->mkdir(fits_path.c_str());
         }
-        file->cd("Rho0/Fits");
+        file->cd(fits_path.c_str());
 
-        // Save fit function for each Q² bin
-        for (size_t i = 0; i < Q2_BINS.size(); ++i) {
-            std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
+        // Save fit function for each bin
+        for (size_t i = 0; i < bins.size(); ++i) {
+            std::string bin_name = fmt::format("{}_{:.1f}_{:.1f}", config.bin_prefix, bins[i].first, bins[i].second);
             auto it = results.find(bin_name);
-            
+
             if (it != results.end() && it->second.valid && it->second.fit_function) {
                 std::string func_name = fmt::format("fit_{}", bin_name);
                 it->second.fit_function->SetName(func_name.c_str());
@@ -1064,125 +1057,40 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         // Save fit function for integrated (All) result
         if (results.count("All") && results.at("All").valid && results.at("All").fit_function) {
             auto& all_func = results.at("All").fit_function;
-            all_func->SetName("fit_All");
+            all_func->SetName(config.all_func_name.c_str());
             all_func->Write("", TObject::kOverwrite);
-            Framework::Log::info(name(), "  Saved fit function 'fit_All'");
+            Framework::Log::info(name(), "  Saved fit function '{}'", config.all_func_name);
         }
 
-        Framework::Log::info(name(), "All fit functions saved to 'Rho0/Fits' directory");
+        Framework::Log::info(name(), "All fit functions saved to '{}' directory", fits_path);
     }
 
+    /**
+     * @brief Save Q² fit results to ROOT file
+     */
+    auto save_Q2_fit_results_to_file(const std::map<std::string, FitResult>& results, double total_n_rho0, double total_n_rho0_err) -> void {
+        FitResultsConfig config{
+            .bin_prefix = "Q2",
+            .tree_name = "rho0_fit_results",
+            .tree_title = "Rho0 Fit Results",
+            .fits_dir = "Fits",
+            .all_func_name = "fit_All"
+        };
+        save_fit_results_to_file(results, total_n_rho0, total_n_rho0_err, Q2_BINS, config);
+    }
+
+    /**
+     * @brief Save lc fit results to ROOT file
+     */
     auto save_lc_fit_results_to_file(const std::map<std::string, FitResult>& results, double total_n_rho0, double total_n_rho0_err) -> void {
-        if (!m_output_svc || !m_output_svc->is_valid()) return;
-
-        auto* out_svc = m_output_svc->get();
-        if (!out_svc->is_file_open()) {
-            Framework::Log::error(name(), "Output file is not open for writing fit results");
-            return;
-        }
-
-        // Acquire lock once and do all operations
-        std::lock_guard<std::mutex> lock(out_svc->mutex());
-        
-        TFile* file = out_svc->get_file();
-        if (!file) {
-            Framework::Log::error(name(), "Failed to get file pointer");
-            return;
-        }
-
-        // Navigate to Rho0 directory
-        file->cd();
-        if (!file->GetDirectory("Rho0")) {
-            file->mkdir("Rho0");
-        }
-        file->cd("Rho0");
-
-        // Create a TTree to store fit results (after cd'ing to the correct directory)
-        auto* tree = new TTree("rho0_lc_fit_results", "Rho0 lc Fit Results");
-
-        // Variables for the tree
-        char lc_bin[64];
-        double lc_min, lc_max;
-        double n_rho0, n_rho0_err;
-        double mass, mass_err;
-        double chi2_ndf;
-
-        tree->Branch("lc_bin", lc_bin, "lc_bin/C");
-        tree->Branch("lc_min", &lc_min, "lc_min/D");
-        tree->Branch("lc_max", &lc_max, "lc_max/D");
-        tree->Branch("n_rho0", &n_rho0, "n_rho0/D");
-        tree->Branch("n_rho0_err", &n_rho0_err, "n_rho0_err/D");
-        tree->Branch("mass", &mass, "mass/D");
-        tree->Branch("mass_err", &mass_err, "mass_err/D");
-        tree->Branch("chi2_ndf", &chi2_ndf, "chi2_ndf/D");
-
-        // Fill tree with lc bin results
-        for (size_t i = 0; i < LC_BINS.size(); ++i) {
-            std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", LC_BINS[i].first, LC_BINS[i].second);
-            auto it = results.find(bin_name);
-            strncpy(lc_bin, bin_name.c_str(), sizeof(lc_bin) - 1);
-            lc_bin[sizeof(lc_bin) - 1] = '\0';
-            lc_min = LC_BINS[i].first;
-            lc_max = LC_BINS[i].second;
-            if (it != results.end() && it->second.valid) {
-                n_rho0 = it->second.n_rho0;
-                n_rho0_err = it->second.n_rho0_err;
-                mass = it->second.mass;
-                mass_err = it->second.mass_err;
-                chi2_ndf = it->second.chi2_ndf;
-            } else {
-                n_rho0 = 0;
-                n_rho0_err = 0;
-                mass = 0;
-                mass_err = 0;
-                chi2_ndf = 0;
-            }
-            tree->Fill();
-        }
-        // Add total row
-        strncpy(lc_bin, "Total", sizeof(lc_bin) - 1);
-        lc_min = LC_BINS.front().first;
-        lc_max = LC_BINS.back().second;
-        n_rho0 = total_n_rho0;
-        n_rho0_err = total_n_rho0_err;
-        if (results.count("All") && results.at("All").valid) {
-            mass = results.at("All").mass;
-            mass_err = results.at("All").mass_err;
-            chi2_ndf = results.at("All").chi2_ndf;
-        } else {
-            mass = 0;
-            mass_err = 0;
-            chi2_ndf = 0;
-        }
-        tree->Fill();
-        // Write tree to the file
-        tree->Write("", TObject::kOverwrite);
-        Framework::Log::info(name(), "Fit results saved to TTree 'Rho0/rho0_lc_fit_results' with {} entries", tree->GetEntries());
-        // Save fit functions separately for easy access in Python
-        file->cd();
-        if (!file->GetDirectory("Rho0/Fits_LC")) {
-            file->mkdir("Rho0/Fits_LC");
-        }
-        file->cd("Rho0/Fits_LC");
-        // Save fit function for each lc bin
-        for (size_t i = 0; i < LC_BINS.size(); ++i) {
-            std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", LC_BINS[i].first, LC_BINS[i].second);
-            auto it = results.find(bin_name);
-            if (it != results.end() && it->second.valid && it->second.fit_function) {
-                std::string func_name = fmt::format("fit_{}", bin_name);
-                it->second.fit_function->SetName(func_name.c_str());
-                it->second.fit_function->Write("", TObject::kOverwrite);
-                Framework::Log::info(name(), "  Saved fit function '{}'", func_name);
-            }
-        }
-        // Save fit function for integrated (All) result
-        if (results.count("All") && results.at("All").valid && results.at("All").fit_function) {
-            auto& all_func = results.at("All").fit_function;
-            all_func->SetName("fit_All_LC");
-            all_func->Write("", TObject::kOverwrite);
-            Framework::Log::info(name(), "  Saved fit function 'fit_All_LC'");
-        }
-        Framework::Log::info(name(), "All fit functions saved to 'Rho0/Fits_LC' directory");
+        FitResultsConfig config{
+            .bin_prefix = "LC",
+            .tree_name = "rho0_lc_fit_results",
+            .tree_title = "Rho0 lc Fit Results",
+            .fits_dir = "Fits_LC",
+            .all_func_name = "fit_All_LC"
+        };
+        save_fit_results_to_file(results, total_n_rho0, total_n_rho0_err, LC_BINS, config);
     }   
 
     /**
@@ -1237,7 +1145,6 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         result.mass = fit_func->GetParameter(0);
         result.mass_err = fit_func->GetParError(0);
         double amplitude = fit_func->GetParameter(1);
-        double amplitude_err = fit_func->GetParError(1);
         double chi2 = fit_func->GetChisquare();
         int ndf = fit_func->GetNDF();
         result.chi2_ndf = ndf > 0 ? chi2 / ndf : 0.0;

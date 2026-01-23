@@ -66,13 +66,8 @@ struct ElectronCutContext {
  */
 class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelectionAlg> {
    public:
-    explicit ElectronSelectionAlg(std::string name = "ElectronSelectionAlg",
-                                   CLAS::Target target = CLAS::Target::LD2,
-                                   CLAS::Polarity polarity = CLAS::Polarity::Outbending)
-        : SimpleAlgorithm(std::move(name))
-        , m_target(target)
-        , m_polarity(polarity)
-        , m_cutflow("Electron Selection") {
+    explicit ElectronSelectionAlg(std::string name = "ElectronSelectionAlg", CLAS::Target target = CLAS::Target::LD2, CLAS::Polarity polarity = CLAS::Polarity::Outbending)
+        : SimpleAlgorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow("Electron Selection") {
         declare_property(m_enable_ntuple);
     }
 
@@ -96,9 +91,7 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         Log::config(name(), "NTuple output", m_enable_ntuple.get() ? "enabled" : "disabled");
 
         // Configure ElectronCutsService
-        Framework::safe(m_electron_cuts_svc).with([this](auto* svc) {
-            svc->set_target(m_target);
-            svc->set_polarity(m_polarity);
+        Framework::safe(m_electron_cuts_svc).with([this](auto* svc) {svc->set_target(m_target); svc->set_polarity(m_polarity);
             Framework::safe(m_sf_svc).with([svc](auto* sf) { svc->set_sf_service(sf); });
         });
 
@@ -110,34 +103,19 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
 
         // Setup N-Tuple using NTupleWriter
         if (m_enable_ntuple.get()) {
-            Framework::safe(m_ntuple_svc).with([this](auto* svc) {
-                m_ntuple.init(svc, "electron_kinematics");
-            });
+            Framework::safe(m_ntuple_svc).with([this](auto* svc) { m_ntuple.init(svc, "electron_kinematics"); });
         }
 
         // Define cutflow with predicates (single definition, auto-tracking)
-        auto* cuts_svc = m_electron_cuts_svc->get();
-        m_cutflow
-            .define_always("All Events")
+        Framework::ElectronCutsService* cuts_svc = m_electron_cuts_svc->get();
+        m_cutflow.define_always("All Events")
             .define("Has Electron", [](const ElectronCutContext&) { return true; })  // Already filtered before context
-            .define("Chi2 PID", [cuts_svc](const ElectronCutContext& ctx) {
-                return cuts_svc->pass_chi2pid_cut(ctx.electron.chi2pid());
-            })
-            .define("Momentum > 0.8 GeV", [cuts_svc](const ElectronCutContext& ctx) {
-                return cuts_svc->pass_momentum_cut(ctx.electron.p());
-            })
-            .define("Vertex Z", [cuts_svc](const ElectronCutContext& ctx) {
-                return cuts_svc->pass_vz_cut(ctx.electron.vz());
-            })
-            .define("Sampling Fraction", [cuts_svc](const ElectronCutContext& ctx) {
-                return cuts_svc->pass_sampling_fraction_cut(ctx.SF, ctx.electron.p(), ctx.sector);
-            })
-            .define("PCAL Fiducial", [cuts_svc](const ElectronCutContext& ctx) {
-                return cuts_svc->pass_pcal_fiducial_cut(ctx.calo.pcal.lv, ctx.calo.pcal.lw);
-            })
-            .define("DC Chi2/NDF", [cuts_svc](const ElectronCutContext& ctx) {
-                return cuts_svc->pass_dc_edge_cut(ctx.traj.region1.edge, ctx.traj.region2.edge, ctx.traj.region3.edge);
-            });
+            .define("Chi2 PID", [cuts_svc](const ElectronCutContext& ctx) { return cuts_svc->pass_chi2pid_cut(ctx.electron.chi2pid()); })
+            .define("Momentum > 0.8 GeV", [cuts_svc](const ElectronCutContext& ctx) { return cuts_svc->pass_momentum_cut(ctx.electron.p()); })
+            .define("Vertex Z", [cuts_svc](const ElectronCutContext& ctx) { return cuts_svc->pass_vz_cut(ctx.electron.vz()); })
+            .define("Sampling Fraction", [cuts_svc](const ElectronCutContext& ctx) { return cuts_svc->pass_sampling_fraction_cut(ctx.SF, ctx.electron.p(), ctx.sector); })
+            .define("PCAL Fiducial", [cuts_svc](const ElectronCutContext& ctx) { return cuts_svc->pass_pcal_fiducial_cut(ctx.calo.pcal.lv, ctx.calo.pcal.lw); })
+            .define("DC Chi2/NDF", [cuts_svc](const ElectronCutContext& ctx) { return cuts_svc->pass_dc_edge_cut(ctx.traj.region1.edge, ctx.traj.region2.edge, ctx.traj.region3.edge); });
 
         auto vz_range = cuts_svc->get_vz_range(CLAS::RunGroup::RG_D, m_target);
         Log::config(name(), "Vz range", fmt::format("[{:.2f}, {:.2f}] cm", vz_range.min, vz_range.max));
@@ -182,13 +160,12 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         const int sector = calorimeter.pcal.sector;
 
         // Fill before cuts - ONE LINE instead of 28!
-        Framework::HistogramFiller::fill_electron(
-            kinematics_groups["before_cuts"].get(), electron, calorimeter, trk_r1, trk_r2, trk_r3, SF);
+        Framework::HistogramFiller::fill_electron(kinematics_groups["before_cuts"].get(), electron, calorimeter, trk_r1, trk_r2, trk_r3, SF);
 
         // Create context for cut evaluation
         ElectronCutContext ctx{electron, calorimeter, traj, SF, sector};
 
-        // Evaluate all cuts with automatic tracking
+        // Evaluate all cuts
         if (!m_cutflow.evaluate(ctx)) {
             event.set_decision_typed(Framework::Decisions::HasGoodElectron, false);
             return Framework::StatusCode::FILTERED();
@@ -198,9 +175,8 @@ class ElectronSelectionAlg : public Framework::SimpleAlgorithm<ElectronSelection
         event.set_decision_typed(Framework::Decisions::HasGoodElectron, true);
         event.store_typed(Framework::Keys::SelectedElectronsCapital, std::vector<CLAS::Particle>{electron});
 
-        // Fill after cuts - ONE LINE instead of 28!
-        Framework::HistogramFiller::fill_electron(
-            kinematics_groups["after_cuts"].get(), electron, calorimeter, trk_r1, trk_r2, trk_r3, SF);
+        // Fill after cuts
+        Framework::HistogramFiller::fill_electron(kinematics_groups["after_cuts"].get(), electron, calorimeter, trk_r1, trk_r2, trk_r3, SF);
 
         // Fill N-tuple using NTupleWriter
         if (m_ntuple) {
