@@ -257,7 +257,7 @@ class ElectronCutsService : public Service {
         return get_vz_range(m_config.run_group, m_config.target);
     }
 
-    [[nodiscard]] static auto get_vz_range(CLAS::RunGroup run_group, CLAS::Target target) -> VzRange {
+    [[nodiscard]] static auto get_vz_range(CLAS::RunGroup /*run_group*/, CLAS::Target target) -> VzRange {
         // RG-D cuts (default for now - other run groups use same cuts)
         // TODO: Add specific cuts for RG-A, RG-B, RG-C if they differ
         static constexpr std::array<std::pair<CLAS::Target, VzRange>, 5> RG_D_VZ_RANGES = {

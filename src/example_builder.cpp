@@ -59,7 +59,7 @@ auto main(int argc, char** argv) -> int {
         return EXIT_FAILURE;
     }
 
-    app.finalize();
+    (void)app.finalize();
 
     fmt::print("Analysis complete!\n");
     return EXIT_SUCCESS;

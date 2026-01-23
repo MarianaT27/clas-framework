@@ -317,7 +317,7 @@ class StructureFunctionHelper {
      * @brief Calculate F2 structure function from cross section
      * Simplified formula for quick estimates
      */
-    static auto estimate_F2(double sigma_r, double xb) -> double {
+    static auto estimate_F2(double sigma_r, double /*xb*/) -> double {
         // σ_r ≈ F2 - y²/(1+(1-y)²) FL
         // Approximate: F2 ≈ σ_r (neglecting FL contribution)
         return sigma_r;

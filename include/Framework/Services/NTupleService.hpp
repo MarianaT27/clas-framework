@@ -158,14 +158,14 @@ class NTupleService : public Service {
      */
     template <typename T>
     auto register_branch(const std::string& tree_name, const std::string& branch_name, T* address, const std::string& leaf_list = "") -> void {
-        std::lock_guard<std::mutex> lock(m_tree_mutex_);
+        std::unique_lock<std::mutex> lock(m_tree_mutex_);
 
         TTree* tree = get_tree(tree_name);
         if (!tree) {
-            // Temporarily release lock to create tree (which acquires its own lock)
-            lock.~lock_guard();
+            // Release lock to create tree (which acquires its own lock)
+            lock.unlock();
             tree = create_tree(tree_name);
-            new (&lock) std::lock_guard<std::mutex>(m_tree_mutex_);
+            lock.lock();
             if (!tree) return;
         }
 
@@ -184,16 +184,16 @@ class NTupleService : public Service {
      */
     template <typename T>
     auto register_vector_branch(const std::string& tree_name, const std::string& branch_name, std::vector<T>* address) -> void {
-        std::lock_guard<std::mutex> lock(m_tree_mutex_);
+        std::unique_lock<std::mutex> lock(m_tree_mutex_);
 
         TTree* tree = get_tree(tree_name);
         if (!tree) {
-            lock.~lock_guard();
+            lock.unlock();
             tree = create_tree(tree_name);
-            new (&lock) std::lock_guard<std::mutex>(m_tree_mutex_);
+            lock.lock();
             if (!tree) return;
         }
-        
+
         TBranch* branch = tree->Branch(branch_name.c_str(), address);
         if (branch) branch->SetBasketSize(8000);
     }

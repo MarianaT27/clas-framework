@@ -237,9 +237,7 @@ class readerIndex {
 
    public:
     readerIndex() = default;
-    ;
     ~readerIndex() = default;
-    ;
 
     bool canAdvance();
     bool advance();
@@ -325,7 +323,7 @@ class reader {
         open(file);
     }
 
-    reader(const reader& r) {}
+    reader(const reader& /*r*/) {}
 
     ~reader();
 

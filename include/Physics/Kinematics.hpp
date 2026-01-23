@@ -160,7 +160,6 @@ class KinematicCalculator {
         double E_tot = p1.E() + p2.E();
 
         double p_tot = std::sqrt(px_tot * px_tot + py_tot * py_tot + pz_tot * pz_tot);
-        double beta = p_tot / E_tot;
         double gamma = E_tot / std::sqrt(E_tot * E_tot - p_tot * p_tot);
 
         BoostVector boost;

@@ -206,7 +206,7 @@ private:
  *
  * @code
  * hipo::chain ch(4);  // 4 threads
- * ch.add_pattern("data/*.hipo");
+ * ch.add_pattern("data/\*.hipo");
  *
  * // Sequential iteration
  * for (auto& [event, file_idx, event_idx] : ch) {
@@ -284,7 +284,7 @@ public:
 
     /**
      * @brief Add files matching a glob pattern
-     * @param pattern Glob pattern (e.g., "data/*.hipo", "run_???.hipo")
+     * @param pattern Glob pattern (e.g., "data/\*.hipo", "run_???.hipo")
      * @return Number of files matched and added
      */
     int add_pattern(std::string_view pattern) {
