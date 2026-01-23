@@ -35,10 +35,6 @@ struct NuclearTransparencyConfig {
     std::string output_file;
     std::vector<std::string> input_files;
 
-    // Nuclear transparency-specific cuts
-    double mass_window = 1.0;
-    double min_energy = 0.3;
-
     [[nodiscard]] auto is_valid() const -> bool {
         return !input_files.empty() && !output_file.empty() && percentage > 0;
     }
@@ -61,8 +57,6 @@ struct NuclearTransparencyConfig {
         ("num_threads", "Thread count", cxxopts::value<int>()->default_value("1"))
         ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("nuclear_transparency_analysis_{target}_{polarity}.root"))
         ("input", "Input (file, directory, or comma-separated)", cxxopts::value<std::string>()->default_value(""))
-        ("mass_window", "Pi0 mass window [GeV]", cxxopts::value<double>()->default_value("1.0"))
-        ("min_energy", "Minimum photon energy [GeV]", cxxopts::value<double>()->default_value("0.3"))
         ("h,help", "Show help");
 
     auto args = options.parse(argc, argv);
@@ -77,8 +71,6 @@ struct NuclearTransparencyConfig {
     config.polarity = CLAS::string_to_polarity(args["polarity"].as<std::string>());
     config.percentage = args["percentage"].as<double>();
     config.num_threads = args["num_threads"].as<int>();
-    config.mass_window = args["mass_window"].as<double>();
-    config.min_energy = args["min_energy"].as<double>();
 
     config.output_file = args["output"].as<std::string>();
     config.output_file = CLAS::StringUtils::replace_all(config.output_file, "{target}", CLAS::to_string(config.target));
@@ -167,7 +159,7 @@ auto main(int argc, char* argv[]) -> int {
         .add_algorithm<Algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", config->target, config->polarity)
         .add_algorithm<Algorithms::DISSelectionAlg>("DISSelection", Physics::DISAnalysis::standard_dis_region())
         .add_algorithm<Algorithms::PionSelectionAlg>("PionSelection", config->target, true)
-        .add_algorithm<Algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", config->min_energy, config->mass_window)
+        .add_algorithm<Algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction")
         .build();
 
     if (auto sc = app.initialize(); sc.is_failure()) {
@@ -183,9 +175,6 @@ auto main(int argc, char* argv[]) -> int {
     Framework::Log::config("Config", "Input files", config->input_files.size());
     Framework::Log::config("Config", "Threads", config->num_threads);
     Framework::Log::config("Config", "Output", config->output_file);
-    Framework::Log::subsection("Rho0 Cuts");
-    Framework::Log::config("Cuts", "Mass window", fmt::format("{} GeV", config->mass_window));
-    Framework::Log::config("Cuts", "Min pion energy", fmt::format("{} GeV", config->min_energy));
     Framework::Log::blank();
 
     // Run with timing
