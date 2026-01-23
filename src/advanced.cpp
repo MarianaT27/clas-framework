@@ -70,11 +70,11 @@ int main(int argc, char** argv) {
     auto sf_svc = std::make_unique<Framework::SamplingFractionService>();
     fmt::print("  ✓ SamplingFractionService\n");
 
-    (void)app.service_manager().add_service(std::move(output_svc));
-    (void)app.service_manager().add_service(std::move(hist_svc));
-    (void)app.service_manager().add_service(std::move(cond_svc));
-    (void)app.service_manager().add_service(std::move(particle_svc));
-    (void)app.service_manager().add_service(std::move(sf_svc));
+    app.service_manager().add_service(std::move(output_svc));
+    app.service_manager().add_service(std::move(hist_svc));
+    app.service_manager().add_service(std::move(cond_svc));
+    app.service_manager().add_service(std::move(particle_svc));
+    app.service_manager().add_service(std::move(sf_svc));
 
     // ═══════════════════════════════════════════════════════════════════
     // Configure Algorithm Workflow

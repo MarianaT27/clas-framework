@@ -24,7 +24,7 @@ namespace Framework {
  * - C.44: Prefer default constructors to be simple and non-throwing
  * - ES.28: Use lambdas for complex initialization
  */
-class [[nodiscard]] StatusCode {
+class StatusCode {
 public:
     enum class Code : std::uint8_t {
         SUCCESS = 0,   ///< Operation succeeded, event passes

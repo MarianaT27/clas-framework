@@ -39,7 +39,7 @@ class EventMonitor : public Framework::MonitoringAlgorithm {
 
         // Initialize service handle (optional - histogram service may not be available)
         if (m_svc_mgr) {
-            (void)m_hist_svc.initialize(*m_svc_mgr);
+            m_hist_svc.initialize(*m_svc_mgr);
         }
 
         // Get ParticleSelectorService

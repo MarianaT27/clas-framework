@@ -265,17 +265,17 @@ private:
 
         // Add services in dependency order
         // OutputFileService MUST be added and initialized FIRST
-        (void)mgr.add_service(std::move(log_svc));
-        (void)mgr.add_service(std::move(output_svc));  // Must be before hist_svc and ntuple_svc
-        (void)mgr.add_service(std::move(hipo_svc));
-        (void)mgr.add_service(std::move(root_svc));
-        (void)mgr.add_service(std::move(conditions_svc));
-        (void)mgr.add_service(std::move(hist_svc));
-        (void)mgr.add_service(std::move(ntuple_svc));
-        (void)mgr.add_service(std::move(particle_svc));
-        (void)mgr.add_service(std::move(sf_svc));
-        (void)mgr.add_service(std::move(metadata_svc));
-        (void)mgr.add_service(std::move(profiling_svc));
+        mgr.add_service(std::move(log_svc));
+        mgr.add_service(std::move(output_svc));  // Must be before hist_svc and ntuple_svc
+        mgr.add_service(std::move(hipo_svc));
+        mgr.add_service(std::move(root_svc));
+        mgr.add_service(std::move(conditions_svc));
+        mgr.add_service(std::move(hist_svc));
+        mgr.add_service(std::move(ntuple_svc));
+        mgr.add_service(std::move(particle_svc));
+        mgr.add_service(std::move(sf_svc));
+        mgr.add_service(std::move(metadata_svc));
+        mgr.add_service(std::move(profiling_svc));
     }
 };
 
