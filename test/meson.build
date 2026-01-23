@@ -66,9 +66,8 @@ test_application_exception = executable(
 test_ranges = executable(
   'test_ranges',
   'test_ranges.cpp',
-  '../src/CLAS/Particle.cpp',
   include_directories: [test_inc],
-  dependencies: [gtest_dep, gtest_main_dep, fmt_dep, root_dep],
+  dependencies: [framework_dep, gtest_dep, gtest_main_dep, fmt_dep, root_dep],
 )
 
 # Register tests
@@ -105,9 +104,8 @@ test('Generator Tests', test_generator)
 test_event_processing_integration = executable(
   'test_event_processing_integration',
   'test_event_processing_integration.cpp',
-  '../src/CLAS/Particle.cpp',
   include_directories: [test_inc, hipo_inc],
-  dependencies: [gtest_dep, gtest_main_dep, fmt_dep, hipo_dep, root_dep],
+  dependencies: [framework_dep, gtest_dep, gtest_main_dep, fmt_dep, hipo_dep, root_dep],
 )
 
 test('Event Processing Integration Tests', test_event_processing_integration)
@@ -116,9 +114,8 @@ test('Event Processing Integration Tests', test_event_processing_integration)
 test_histogram_templates = executable(
   'test_histogram_templates',
   'test_histogram_templates.cpp',
-  '../src/Framework/Histogram.cpp',
   include_directories: [test_inc],
-  dependencies: [gtest_dep, gtest_main_dep, fmt_dep, root_dep],
+  dependencies: [framework_dep, gtest_dep, gtest_main_dep, fmt_dep, root_dep],
 )
 
 test('Histogram Templates Tests', test_histogram_templates)

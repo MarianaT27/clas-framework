@@ -87,17 +87,30 @@ root_dep = declare_dependency(
 
 inc = include_directories('include')
 
-# Shared framework sources used by most executables
-framework_core = files(
+# Common dependencies for all executables
+common_deps = [hipo_dep, fmt_dep, root_dep]
+full_deps   = common_deps + [toml_dep, cxxopts_dep]
+
+# Framework sources - compiled once into a static library
+framework_sources = files(
   'src/CLAS/Particle.cpp',
   'src/Framework/Histogram.cpp',
   'src/Algorithms/Pi0ReconstructionAlg.cpp',
   'src/Framework/Services/PhotonCutsService.cpp',
 )
 
-# Common dependencies for all executables
-common_deps = [hipo_dep, fmt_dep, root_dep]
-full_deps   = common_deps + [toml_dep, cxxopts_dep]
+# Build framework as static library (compiled once, linked many times)
+framework_lib = static_library(
+  'framework',
+  framework_sources,
+  include_directories: inc,
+  dependencies: [common_deps, toml_dep],
+)
+
+# Dependency object for linking
+framework_dep = declare_dependency(
+  link_with: framework_lib,
+)
 
 #══════════════════════════════════════════════════════════════════════════════#
 #                              EXECUTABLES                                      #
@@ -122,22 +135,18 @@ executables = {
 foreach name, config : executables
   executable(
     name,
-    framework_core + files(config['main']),
+    files(config['main']),
     include_directories: inc,
-    dependencies: full_deps,
+    dependencies: [framework_dep, full_deps],
   )
 endforeach
 
-# Pi0 - requires additional algorithm sources
+# Pi0 - uses same framework library as others
 executable(
   'pi0',
-  framework_core + files(
-    'src/Framework/Services/PhotonCutsService.cpp',
-    'src/Algorithms/Pi0ReconstructionAlg.cpp',
-    'src/pi0.cpp',
-  ),
+  files('src/pi0.cpp'),
   include_directories: inc,
-  dependencies: full_deps,
+  dependencies: [framework_dep, full_deps],
 )
 
 # Generic batch job submitter - works with any analysis executable
