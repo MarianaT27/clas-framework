@@ -921,7 +921,7 @@ class LoggingService : public Service {
             if (m_colored_output) {
                 fmt::print("\n\033[36m{}\033[0m\n", top);
                 fmt::print("\033[36m{}\033[0m\033[1;37m {:^{}} \033[0m\033[36m{}\033[0m\n",
-                           V, title, TOTAL_WIDTH - 2, V);
+                           V, title, TOTAL_WIDTH - 4, V);
                 fmt::print("\033[36m{}\033[0m\n", sep);
 
                 for (const auto& [label, value, unit] : rows) {
@@ -930,19 +930,19 @@ class LoggingService : public Service {
                                "\033[37m{:<{}} \033[0m\033[36m{}\033[0m\n",
                                V, label, LABEL_WIDTH,
                                value, VALUE_WIDTH,
-                               unit, UNIT_WIDTH, V);
+                               unit, UNIT_WIDTH + 4, V);
                 }
                 fmt::print("\033[36m{}\033[0m\n", bottom);
             } else {
                 fmt::print("\n{}\n", top);
-                fmt::print("{} {:^{}} {}\n", V, title, TOTAL_WIDTH - 2, V);
+                fmt::print("{} {:^{}} {}\n", V, title, TOTAL_WIDTH - 4, V);
                 fmt::print("{}\n", sep);
 
                 for (const auto& [label, value, unit] : rows) {
                     fmt::print("{} {:<{}} {:>{}} {:<{}} {}\n",
                                V, label, LABEL_WIDTH,
                                value, VALUE_WIDTH,
-                               unit, UNIT_WIDTH, V);
+                               unit, UNIT_WIDTH + 4, V);
                 }
                 fmt::print("{}\n", bottom);
             }
@@ -1191,7 +1191,7 @@ class LoggingService : public Service {
             if (m_colored_output) {
                 fmt::print("\n\033[36m{}\033[0m\n", top);
                 fmt::print("\033[36m{}\033[0m\033[1;37m {:^{}} \033[0m\033[36m{}\033[0m\n",
-                           V, title, WIDTH, V);
+                           V, title, WIDTH - 2, V);
                 fmt::print("\033[36m{}\033[0m\n", sep);
                 fmt::print("\033[36m{}\033[0m\033[37m Total runs: \033[1;33m{:<{}}\033[0m\033[36m{}\033[0m\n",
                            V, total_runs, WIDTH - 13, V);
