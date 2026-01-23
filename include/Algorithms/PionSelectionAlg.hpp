@@ -7,13 +7,14 @@
 #include "CLAS/ReadBank.hpp"
 #include "CLAS/Target.hpp"
 #include "Framework/Cutflow.hpp"
+#include "Framework/Decisions.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/IAlgorithm.hpp"
+#include "Framework/NTupleStruct.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/ParticleSelectorService.hpp"
-#include "Framework/Decisions.hpp"
 #include "TH1D.h"
 #include "TH2D.h"
 
@@ -21,6 +22,21 @@ namespace Algorithms {
 
 // Import Log singleton for convenient logging
 using Framework::Log;
+
+/**
+ * @brief N-Tuple data structure for pion kinematics
+ */
+struct PionNTupleData {
+    double p = 0.0;
+    double theta = 0.0;
+    double phi = 0.0;
+    double vz = 0.0;
+    double chi2pid = 0.0;
+    double beta = 0.0;
+    double delta_t = 0.0;
+
+    NTUPLE_FIELDS(p, theta, phi, vz, chi2pid, beta, delta_t)
+};
 
 /**
  * @brief Pion (π⁺/π⁻) selection and analysis algorithm
@@ -155,23 +171,9 @@ class PionSelectionAlg : public Framework::Algorithm {
     Framework::NTupleService* m_ntuple_svc = nullptr;
     Framework::ParticleSelectorService* m_particle_svc = nullptr;
 
-    // N-tuple variables for π⁺
-    double m_nt_piplus_p = 0.0;
-    double m_nt_piplus_theta = 0.0;
-    double m_nt_piplus_phi = 0.0;
-    double m_nt_piplus_vz = 0.0;
-    double m_nt_piplus_chi2pid = 0.0;
-    double m_nt_piplus_beta = 0.0;
-    double m_nt_piplus_delta_t = 0.0;
-
-    // N-tuple variables for π⁻
-    double m_nt_piminus_p = 0.0;
-    double m_nt_piminus_theta = 0.0;
-    double m_nt_piminus_phi = 0.0;
-    double m_nt_piminus_vz = 0.0;
-    double m_nt_piminus_chi2pid = 0.0;
-    double m_nt_piminus_beta = 0.0;
-    double m_nt_piminus_delta_t = 0.0;
+    // N-tuple writers (replace individual variables + manual registration)
+    Framework::NTupleWriter<PionNTupleData> m_ntuple_piplus;
+    Framework::NTupleWriter<PionNTupleData> m_ntuple_piminus;
 
     // Histograms for π⁺
     struct {
@@ -272,23 +274,9 @@ class PionSelectionAlg : public Framework::Algorithm {
     }
 
     auto setup_ntuples() -> void {
-        // Setup N-tuple for π⁺
-        m_ntuple_svc->register_branch("pion_plus", "p", &m_nt_piplus_p);
-        m_ntuple_svc->register_branch("pion_plus", "theta", &m_nt_piplus_theta);
-        m_ntuple_svc->register_branch("pion_plus", "phi", &m_nt_piplus_phi);
-        m_ntuple_svc->register_branch("pion_plus", "vz", &m_nt_piplus_vz);
-        m_ntuple_svc->register_branch("pion_plus", "chi2pid", &m_nt_piplus_chi2pid);
-        m_ntuple_svc->register_branch("pion_plus", "beta", &m_nt_piplus_beta);
-        m_ntuple_svc->register_branch("pion_plus", "delta_t", &m_nt_piplus_delta_t);
-
-        // Setup N-tuple for π⁻
-        m_ntuple_svc->register_branch("pion_minus", "p", &m_nt_piminus_p);
-        m_ntuple_svc->register_branch("pion_minus", "theta", &m_nt_piminus_theta);
-        m_ntuple_svc->register_branch("pion_minus", "phi", &m_nt_piminus_phi);
-        m_ntuple_svc->register_branch("pion_minus", "vz", &m_nt_piminus_vz);
-        m_ntuple_svc->register_branch("pion_minus", "chi2pid", &m_nt_piminus_chi2pid);
-        m_ntuple_svc->register_branch("pion_minus", "beta", &m_nt_piminus_beta);
-        m_ntuple_svc->register_branch("pion_minus", "delta_t", &m_nt_piminus_delta_t);
+        // Setup N-tuple using NTupleWriter
+        m_ntuple_piplus.init(m_ntuple_svc, "pion_plus");
+        m_ntuple_piminus.init(m_ntuple_svc, "pion_minus");
 
         if (Log::is_available()) {
             Log::info(name(), "N-tuple branches registered for π⁺ and π⁻");
@@ -448,16 +436,16 @@ class PionSelectionAlg : public Framework::Algorithm {
             h_piplus.delta_t_vs_p->Fill(p, delta_t);
             h_piplus.p_vs_theta->Fill(theta, p);
 
-            // Fill π⁺ N-tuple
-            if (m_ntuple_svc) {
-                m_nt_piplus_p = p;
-                m_nt_piplus_theta = theta;
-                m_nt_piplus_phi = phi;
-                m_nt_piplus_vz = vz;
-                m_nt_piplus_chi2pid = chi2pid;
-                m_nt_piplus_beta = beta;
-                m_nt_piplus_delta_t = delta_t;
-                m_ntuple_svc->fill("pion_plus");
+            // Fill π⁺ N-tuple using NTupleWriter
+            if (m_ntuple_piplus) {
+                m_ntuple_piplus.data().p = p;
+                m_ntuple_piplus.data().theta = theta;
+                m_ntuple_piplus.data().phi = phi;
+                m_ntuple_piplus.data().vz = vz;
+                m_ntuple_piplus.data().chi2pid = chi2pid;
+                m_ntuple_piplus.data().beta = beta;
+                m_ntuple_piplus.data().delta_t = delta_t;
+                m_ntuple_piplus.fill();
             }
         } else {
             // Fill π⁻ histograms
@@ -471,16 +459,16 @@ class PionSelectionAlg : public Framework::Algorithm {
             h_piminus.delta_t_vs_p->Fill(p, delta_t);
             h_piminus.p_vs_theta->Fill(theta, p);
 
-            // Fill π⁻ N-tuple
-            if (m_ntuple_svc) {
-                m_nt_piminus_p = p;
-                m_nt_piminus_theta = theta;
-                m_nt_piminus_phi = phi;
-                m_nt_piminus_vz = vz;
-                m_nt_piminus_chi2pid = chi2pid;
-                m_nt_piminus_beta = beta;
-                m_nt_piminus_delta_t = delta_t;
-                m_ntuple_svc->fill("pion_minus");
+            // Fill π⁻ N-tuple using NTupleWriter
+            if (m_ntuple_piminus) {
+                m_ntuple_piminus.data().p = p;
+                m_ntuple_piminus.data().theta = theta;
+                m_ntuple_piminus.data().phi = phi;
+                m_ntuple_piminus.data().vz = vz;
+                m_ntuple_piminus.data().chi2pid = chi2pid;
+                m_ntuple_piminus.data().beta = beta;
+                m_ntuple_piminus.data().delta_t = delta_t;
+                m_ntuple_piminus.fill();
             }
         }
     }

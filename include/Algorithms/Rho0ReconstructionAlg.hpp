@@ -21,12 +21,13 @@
 #include "Framework/Cutflow.hpp"
 #include "Framework/Decisions.hpp"
 #include "Framework/Event.hpp"
-#include "Framework/Services/LoggingService.hpp"
 #include "Framework/Property.hpp"
-#include "Framework/SimpleAlgorithm.hpp"
+#include "Framework/ServiceHelpers.hpp"
 #include "Framework/Services/HistogramService.hpp"
+#include "Framework/Services/LoggingService.hpp"
 #include "Framework/Services/NTupleService.hpp"
 #include "Framework/Services/OutputFileService.hpp"
+#include "Framework/SimpleAlgorithm.hpp"
 #include "Physics/DISAnalysis.hpp"
 
 namespace Algorithms {
@@ -142,8 +143,8 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
 
         book_histograms();
 
-        if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
-            setup_ntuple();
+        if (m_enable_ntuple.get()) {
+            Framework::safe(m_ntuple_svc).with([this](auto*) { setup_ntuple(); });
         }
 
         m_cutflow.add_cut("All Events");
@@ -749,8 +750,7 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
     }
 
     auto book_histograms() -> void {
-        if (!m_hist_svc || !m_hist_svc->is_valid()) return;
-        auto* svc = m_hist_svc->get();
+        Framework::safe(m_hist_svc).with([this](auto* svc) {
 
         // Raw pion histograms
         h_piplus_momentum_raw = svc->book_hist1D("/Rho0/piplus_momentum_raw", "Raw #pi^{+} Momentum;p [GeV/c];Events", 100, 0, 10);
@@ -806,18 +806,18 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
             h_pipim_mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.2);
         }
 
-        // lc-binned invariant mass histograms
-        for (const auto& [lc_min, lc_max] : LC_BINS) {
-            std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", lc_min, lc_max);
-            std::string hist_path = fmt::format("/Rho0/LC_bins/pipim_mass_{}", bin_name);
-            std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
-            h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.2);
-        } 
+            // lc-binned invariant mass histograms
+            for (const auto& [lc_min, lc_max] : LC_BINS) {
+                std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", lc_min, lc_max);
+                std::string hist_path = fmt::format("/Rho0/LC_bins/pipim_mass_{}", bin_name);
+                std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
+                h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.2);
+            }
+        });
     }
 
     auto setup_ntuple() -> void {
-        if (!m_ntuple_svc || !m_ntuple_svc->is_valid()) return;
-        auto* svc = m_ntuple_svc->get();
+        Framework::safe(m_ntuple_svc).with([this](auto* svc) {
 
         // Electron kinematics
         svc->register_branch("rho0_events", "e_p", &m_e_p);
@@ -842,14 +842,15 @@ class Rho0ReconstructionAlg : public Framework::SimpleAlgorithm<Rho0Reconstructi
         svc->register_branch("rho0_events", "rho0_thetas", &m_rho0_thetas);
         svc->register_branch("rho0_events", "rho0_phis", &m_rho0_phis);
 
-        // Kinematic variables
-        svc->register_branch("rho0_events", "rho0_zh", &m_rho0_zh);
-        svc->register_branch("rho0_events", "rho0_lc", &m_rho0_lc);
-        svc->register_branch("rho0_events", "rho0_t", &m_rho0_t);
-        svc->register_branch("rho0_events", "delta_vz_pim", &m_delta_vz_pim);
-        svc->register_branch("rho0_events", "delta_vz_pip", &m_delta_vz_pip);
+            // Kinematic variables
+            svc->register_branch("rho0_events", "rho0_zh", &m_rho0_zh);
+            svc->register_branch("rho0_events", "rho0_lc", &m_rho0_lc);
+            svc->register_branch("rho0_events", "rho0_t", &m_rho0_t);
+            svc->register_branch("rho0_events", "delta_vz_pim", &m_delta_vz_pim);
+            svc->register_branch("rho0_events", "delta_vz_pip", &m_delta_vz_pip);
 
-        Framework::Log::info(name(), "N-tuple branches registered for rho0_events");
+            Framework::Log::info(name(), "N-tuple branches registered for rho0_events");
+        });
     }
 
     /**

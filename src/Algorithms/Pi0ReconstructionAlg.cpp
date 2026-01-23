@@ -4,6 +4,7 @@
 #include <vector>
 #include "CLAS/Constants.hpp"
 #include "CLAS/Particle.hpp"
+#include "Framework/ServiceHelpers.hpp"
 #include "Math/GenVector/VectorUtil.h"
 
 
@@ -120,8 +121,8 @@ auto Pi0ReconstructionAlg::on_initialize() -> Framework::StatusCode {
 
     book_histograms();
 
-    if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
-        setup_ntuple();
+    if (m_enable_ntuple.get()) {
+        Framework::safe(m_ntuple_svc).with([this](auto*) { setup_ntuple(); });
     }
 
     m_cutflow.add_cut("All Events");
@@ -255,46 +256,46 @@ auto Pi0ReconstructionAlg::process(Framework::Event& event) -> Framework::Status
         local_pi0_phis.push_back(pi0_phi);
     }
 
-    if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get() && !pi0_candidates.empty()) {
-        auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
-        if (electrons && !electrons->empty()) {
-            const auto& electron = (*electrons)[0];
-            local_e_p = electron.p();
-            local_e_theta = electron.theta();
-            local_e_phi = electron.phi();
-            local_e_vz = electron.vz();
-        }
-        
-        // CRITICAL SECTION: Lock mutex before modifying shared vectors
-        {
+    if (m_enable_ntuple.get() && !pi0_candidates.empty()) {
+        Framework::safe(m_ntuple_svc).with([&, this](auto* svc) {
+            auto* electrons = event.get_particles<CLAS::Particle>("SelectedElectrons");
+            if (electrons && !electrons->empty()) {
+                const auto& electron = (*electrons)[0];
+                local_e_p = electron.p();
+                local_e_theta = electron.theta();
+                local_e_phi = electron.phi();
+                local_e_vz = electron.vz();
+            }
+
+            // CRITICAL SECTION: Lock mutex before modifying shared vectors
             std::lock_guard<std::mutex> lock(m_ntuple_mutex);
-            
+
             // Copy electron data
             m_e_p = local_e_p;
             m_e_theta = local_e_theta;
             m_e_phi = local_e_phi;
             m_e_vz = local_e_vz;
-            
+
             // Copy photon data
             mgs_E = std::move(local_gs_E);
             mgs_theta = std::move(local_gs_theta);
             mgs_phi = std::move(local_gs_phi);
-            
+
             // Copy pi0 data
             mpi0_masses = std::move(local_pi0_masses);
             mpi0_ps = std::move(local_pi0_ps);
             mpi0_thetas = std::move(local_pi0_thetas);
             mpi0_phis = std::move(local_pi0_phis);
-            
+
             // Sanity check
             if (mgs_E.size() % 2 != 0) {
-                Log::warning(name(), "Event has odd number of photons: {} candidates, {} photons", 
+                Log::warning(name(), "Event has odd number of photons: {} candidates, {} photons",
                             pi0_candidates.size(), mgs_E.size());
             }
-            
+
             // Fill the ntuple while holding the lock
-            m_ntuple_svc->get()->fill("pi0_events");
-            
+            svc->fill("pi0_events");
+
             // Clear vectors for next event (still inside lock)
             mgs_E.clear();
             mgs_theta.clear();
@@ -303,8 +304,7 @@ auto Pi0ReconstructionAlg::process(Framework::Event& event) -> Framework::Status
             mpi0_ps.clear();
             mpi0_thetas.clear();
             mpi0_phis.clear();
-        }
-        // Mutex automatically released here
+        });
     }
 
     return Framework::StatusCode::SUCCESS();
@@ -312,10 +312,10 @@ auto Pi0ReconstructionAlg::process(Framework::Event& event) -> Framework::Status
 auto Pi0ReconstructionAlg::on_finalize() -> Framework::StatusCode {
     Log::subsection(fmt::format("{} Summary", name()));
 
-    if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
-        auto entries = m_ntuple_svc->get()->get_entries("pi0_events");
+    Framework::safe(m_ntuple_svc).with([this](auto* svc) {
+        auto entries = svc->get_entries("pi0_events");
         Log::stat(name(), "N-tuple entries", entries);
-    }
+    });
 
     Log::blank();
     m_cutflow.print();
@@ -325,24 +325,23 @@ auto Pi0ReconstructionAlg::on_finalize() -> Framework::StatusCode {
 }
 
 auto Pi0ReconstructionAlg::book_histograms() -> void {
-    if (!m_hist_svc || !m_hist_svc->is_valid()) return;
-    auto* svc = m_hist_svc->get();
+    Framework::safe(m_hist_svc).with([this](auto* svc) {
+        // Book thread-safe histograms for parallel event processing
+        h_photon_energy_raw = svc->book_safe_hist1D("/Pi0/photon_energy_raw", "Raw Photon Energy;E [GeV];Events", 100, 0, 5);
+        h_photon_theta_raw = svc->book_safe_hist1D("/Pi0/photon_theta_raw", "Raw Photon Theta;#theta [deg];Events", 180, 0, 40);
+        h_photon_phi_raw = svc->book_safe_hist1D("/Pi0/photon_phi_raw", "Raw Photon Phi;#phi [deg];Events", 360, -180, 180);
 
-    // Book thread-safe histograms for parallel event processing
-    h_photon_energy_raw = svc->book_safe_hist1D("/Pi0/photon_energy_raw", "Raw Photon Energy;E [GeV];Events", 100, 0, 5);
-    h_photon_theta_raw = svc->book_safe_hist1D("/Pi0/photon_theta_raw", "Raw Photon Theta;#theta [deg];Events", 180, 0, 40);
-    h_photon_phi_raw = svc->book_safe_hist1D("/Pi0/photon_phi_raw", "Raw Photon Phi;#phi [deg];Events", 360, -180, 180);
-
-    h_photon_energy = svc->book_safe_hist1D("/Pi0/photon_energy", "Photon Energy;E [GeV];Events", 100, 0, 5);
-    h_photon_theta = svc->book_safe_hist1D("/Pi0/photon_theta", "Photon Theta;#theta [deg];Events", 180, 0, 180);
-    h_n_photons = svc->book_safe_hist1D("/Pi0/n_photons", "Number of Photons;N_{#gamma};Events", 20, 0, 20);
-    h_gg_mass_all = svc->book_safe_hist1D("/Pi0/gg_mass_all", "All #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
-    h_gg_mass_traditional = svc->book_safe_hist1D("/Pi0/gg_mass_traditional", "Traditional #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
-    h_gg_mass_AI = svc->book_safe_hist1D("/Pi0/gg_mass_AI", "AI-selected #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
-    h_gg_mass_selected = svc->book_safe_hist1D("/Pi0/gg_mass_selected", "Selected #pi^{0} Candidate Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0.0, 0.35);
-    h_pi0_momentum = svc->book_safe_hist1D("/Pi0/pi0_momentum", "#pi^{0} Momentum;p [GeV/c];Events", 100, 0, 10);
-    h_pi0_theta = svc->book_safe_hist1D("/Pi0/pi0_theta", "#pi^{0} Theta;#theta [deg];Events", 180, 0, 180);
-    h_opening_angle = svc->book_safe_hist1D("/Pi0/opening_angle", "Photon Opening Angle;#theta_{#gamma#gamma} [deg];Events", 180, 0, 180);
+        h_photon_energy = svc->book_safe_hist1D("/Pi0/photon_energy", "Photon Energy;E [GeV];Events", 100, 0, 5);
+        h_photon_theta = svc->book_safe_hist1D("/Pi0/photon_theta", "Photon Theta;#theta [deg];Events", 180, 0, 180);
+        h_n_photons = svc->book_safe_hist1D("/Pi0/n_photons", "Number of Photons;N_{#gamma};Events", 20, 0, 20);
+        h_gg_mass_all = svc->book_safe_hist1D("/Pi0/gg_mass_all", "All #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
+        h_gg_mass_traditional = svc->book_safe_hist1D("/Pi0/gg_mass_traditional", "Traditional #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
+        h_gg_mass_AI = svc->book_safe_hist1D("/Pi0/gg_mass_AI", "AI-selected #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
+        h_gg_mass_selected = svc->book_safe_hist1D("/Pi0/gg_mass_selected", "Selected #pi^{0} Candidate Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0.0, 0.35);
+        h_pi0_momentum = svc->book_safe_hist1D("/Pi0/pi0_momentum", "#pi^{0} Momentum;p [GeV/c];Events", 100, 0, 10);
+        h_pi0_theta = svc->book_safe_hist1D("/Pi0/pi0_theta", "#pi^{0} Theta;#theta [deg];Events", 180, 0, 180);
+        h_opening_angle = svc->book_safe_hist1D("/Pi0/opening_angle", "Photon Opening Angle;#theta_{#gamma#gamma} [deg];Events", 180, 0, 180);
+    });
 }
 
 auto Pi0ReconstructionAlg::setup_ntuple() -> void {

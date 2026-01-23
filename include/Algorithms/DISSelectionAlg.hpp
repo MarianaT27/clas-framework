@@ -4,7 +4,9 @@
 #include "Framework/Cutflow.hpp"
 #include "Framework/Decisions.hpp"
 #include "Framework/Event.hpp"
+#include "Framework/NTupleStruct.hpp"
 #include "Framework/Property.hpp"
+#include "Framework/ServiceHelpers.hpp"
 #include "Framework/SimpleAlgorithm.hpp"
 #include "Framework/Services/HistogramService.hpp"
 #include "Framework/Services/NTupleService.hpp"
@@ -16,12 +18,31 @@ namespace Algorithms {
 using Framework::Log;
 
 /**
+ * @brief N-Tuple data structure for DIS kinematics
+ */
+struct DISNTupleData {
+    double e_p = 0.0;
+    double e_theta = 0.0;
+    double e_phi = 0.0;
+    double e_vz = 0.0;
+    double e_chi2pid = 0.0;
+    double Q2 = 0.0;
+    double W = 0.0;
+    double nu = 0.0;
+    double xB = 0.0;
+    double y = 0.0;
+
+    NTUPLE_FIELDS(e_p, e_theta, e_phi, e_vz, e_chi2pid, Q2, W, nu, xB, y)
+};
+
+/**
  * @brief Algorithm for DIS event selection
  *
  * Modernized using SimpleAlgorithm CRTP pattern with:
  * - Automatic service injection via require_service<T>()
  * - Property system for configuration
  * - CutBuilder for fluent cut definitions
+ * - NTupleWriter for simplified N-tuple management
  */
 class DISSelectionAlg : public Framework::SimpleAlgorithm<DISSelectionAlg> {
    public:
@@ -59,8 +80,13 @@ class DISSelectionAlg : public Framework::SimpleAlgorithm<DISSelectionAlg> {
         Log::info(name(), "Initializing DIS selection algorithm");
 
         book_histograms();
-        if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
-            setup_ntuple();
+
+        // Setup N-tuple using NTupleWriter
+        if (m_enable_ntuple.get()) {
+            Framework::safe(m_ntuple_svc).with([this](auto* svc) {
+                m_ntuple.init(svc, "dis_kinematics");
+                Log::info(name(), "N-tuple branches registered for DIS kinematics");
+            });
         }
 
         m_cutflow.add_cut("All Events");
@@ -126,23 +152,20 @@ class DISSelectionAlg : public Framework::SimpleAlgorithm<DISSelectionAlg> {
         if (h_xB) h_xB->fill(kin.xb);
         if (h_y) h_y->fill(kin.y);
 
-        // Fill N-tuple if service is available
-        if (m_ntuple_svc && m_ntuple_svc->is_valid() && m_enable_ntuple.get()) {
-            // electrons_opt is already retrieved above
-            if (electrons_opt && !electrons_opt->empty()) {
-                const auto& electron = electrons_opt->front();
-                m_e_p = electron.p();
-                m_e_theta = electron.theta();
-                m_e_phi = electron.phi();
-                m_e_vz = electron.vz();
-                m_e_chi2pid = electron.chi2pid();
-            }
-            m_Q2 = kin.q2;
-            m_W = kin.w;
-            m_nu = kin.nu;
-            m_xB = kin.xb;
-            m_y = kin.y;
-            m_ntuple_svc->get()->fill("dis_kinematics");
+        // Fill N-tuple using NTupleWriter
+        if (m_ntuple && m_enable_ntuple.get()) {
+            const auto& electron = electrons_opt->front();
+            m_ntuple.data().e_p = electron.p();
+            m_ntuple.data().e_theta = electron.theta();
+            m_ntuple.data().e_phi = electron.phi();
+            m_ntuple.data().e_vz = electron.vz();
+            m_ntuple.data().e_chi2pid = electron.chi2pid();
+            m_ntuple.data().Q2 = kin.q2;
+            m_ntuple.data().W = kin.w;
+            m_ntuple.data().nu = kin.nu;
+            m_ntuple.data().xB = kin.xb;
+            m_ntuple.data().y = kin.y;
+            m_ntuple.fill();
         }
 
         return Framework::StatusCode::SUCCESS();
@@ -153,10 +176,11 @@ class DISSelectionAlg : public Framework::SimpleAlgorithm<DISSelectionAlg> {
      */
     auto on_finalize() -> Framework::StatusCode override {
         Log::info(name(), "Finalizing DIS selection algorithm");
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
-            auto entries = m_ntuple_svc->get()->get_entries("dis_kinematics");
+
+        Framework::safe(m_ntuple_svc).with([this](auto* svc) {
+            auto entries = svc->get_entries("dis_kinematics");
             Log::info(name(), "N-tuple has {} entries", entries);
-        }
+        });
 
         m_cutflow.print();
         return Framework::StatusCode::SUCCESS();
@@ -186,42 +210,17 @@ class DISSelectionAlg : public Framework::SimpleAlgorithm<DISSelectionAlg> {
     Framework::ThreadSafeHist1D* h_xB = nullptr;
     Framework::ThreadSafeHist1D* h_y = nullptr;
 
-    // N-tuple variables
-    double m_e_p = 0.0;
-    double m_e_theta = 0.0;
-    double m_e_phi = 0.0;
-    double m_e_vz = 0.0;
-    double m_e_chi2pid = 0.0;
-    double m_Q2 = 0.0;
-    double m_W = 0.0;
-    double m_nu = 0.0;
-    double m_xB = 0.0;
-    double m_y = 0.0;
+    // N-tuple writer (replaces individual variables + manual registration)
+    Framework::NTupleWriter<DISNTupleData> m_ntuple;
 
     auto book_histograms() -> void {
-        if (!m_hist_svc || !m_hist_svc->is_valid()) return;
-        auto* svc = m_hist_svc->get();
-        h_Q2 = svc->book_safe_hist1D("/DIS/Q2", "Q^{2};Q^{2} [GeV^{2}/c^{2}];Events", 120, 0, 12);
-        h_W = svc->book_safe_hist1D("/DIS/W", "W;W [GeV];Events", 180, 0, 10);
-        h_nu = svc->book_safe_hist1D("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
-        h_xB = svc->book_safe_hist1D("/DIS/xB", "x_{B};x_{B} [GeV];Events", 200, 0, 1.2);
-        h_y = svc->book_safe_hist1D("/DIS/y", "y;y;Events", 200, 0, 1);
-    }
-
-    auto setup_ntuple() -> void {
-        if (!m_ntuple_svc || !m_ntuple_svc->is_valid()) return;
-        auto* svc = m_ntuple_svc->get();
-        svc->register_branch("dis_kinematics", "e_p", &m_e_p);
-        svc->register_branch("dis_kinematics", "e_theta", &m_e_theta);
-        svc->register_branch("dis_kinematics", "e_phi", &m_e_phi);
-        svc->register_branch("dis_kinematics", "e_vz", &m_e_vz);
-        svc->register_branch("dis_kinematics", "e_chi2pid", &m_e_chi2pid);
-        svc->register_branch("dis_kinematics", "Q2", &m_Q2);
-        svc->register_branch("dis_kinematics", "W", &m_W);
-        svc->register_branch("dis_kinematics", "nu", &m_nu);
-        svc->register_branch("dis_kinematics", "xB", &m_xB);
-        svc->register_branch("dis_kinematics", "y", &m_y);
-        Log::info(name(), "N-tuple branches registered for DIS kinematics");
+        Framework::safe(m_hist_svc).with([this](auto* svc) {
+            h_Q2 = svc->book_safe_hist1D("/DIS/Q2", "Q^{2};Q^{2} [GeV^{2}/c^{2}];Events", 120, 0, 12);
+            h_W = svc->book_safe_hist1D("/DIS/W", "W;W [GeV];Events", 180, 0, 10);
+            h_nu = svc->book_safe_hist1D("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
+            h_xB = svc->book_safe_hist1D("/DIS/xB", "x_{B};x_{B} [GeV];Events", 200, 0, 1.2);
+            h_y = svc->book_safe_hist1D("/DIS/y", "y;y;Events", 200, 0, 1);
+        });
     }
 };
 

@@ -11,6 +11,7 @@
 #include "Framework/Cutflow.hpp"
 #include "Framework/Event.hpp"
 #include "Framework/Property.hpp"
+#include "Framework/ServiceHelpers.hpp"
 #include "Framework/SimpleAlgorithm.hpp"
 #include "Framework/ThreadSafeHistogram.hpp"
 #include "Framework/Services/HistogramService.hpp"
