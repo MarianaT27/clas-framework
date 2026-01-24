@@ -95,9 +95,9 @@ clas-analysis-1/
 | `clas12::physics` | Physics utilities | `<clas12/physics/...>` |
 | `clas12::algorithms` | Standard algorithms | `<clas12/algorithms/...>` |
 
-## ApplicationBuilder (Recommended)
+## ApplicationBuilder
 
-The `ApplicationBuilder` provides a fluent API for cleaner application setup:
+The `ApplicationBuilder` provides a fluent API for application setup:
 
 ```cpp
 #include <clas12/framework/core/ApplicationBuilder.hpp>
@@ -138,48 +138,21 @@ app.finalize();
 | `add_algorithm<T>(args...)` | Add an algorithm with constructor args |
 | `build()` | Build and return the Application |
 
-## Application (Traditional)
-
-The `Application` class can also be used directly:
-
-```cpp
-#include <clas12/framework/core/Application.hpp>
-
-clas12::framework::Application app("MyAnalysis");
-
-// Configure
-app.set_input_files({"data.hipo"});
-app.set_num_threads(4);
-
-// Lifecycle
-app.initialize();  // Initialize services and algorithms
-app.run();         // Process events
-app.finalize();    // Cleanup and write output
-```
-
-### Key Methods
-
-| Method | Description |
-|--------|-------------|
-| `add_algorithm()` | Add an algorithm to the processing sequence |
-| `service_manager()` | Access the service manager |
-| `set_input_files()` | Set input HIPO files |
-| `set_num_threads()` | Set parallel processing threads |
-| `set_percentage()` | Process a percentage of events |
-
 ## ServiceManager
 
-Manages the lifecycle of all services:
+The `ServiceManager` manages the lifecycle of all services. When using `ApplicationBuilder`, services are added automatically via `with_standard_services()`. For custom services:
 
 ```cpp
-auto& svc_mgr = app.service_manager();
+// Add custom service after build()
+auto app = make_application("MyAnalysis")
+    .with_standard_services()
+    .build();
 
-// Add services
-svc_mgr.add_service(std::make_unique<clas12::framework::HistogramService>());
-svc_mgr.add_service(std::make_unique<clas12::framework::LoggingService>());
-
-// Retrieve services (in algorithms)
-auto* hist_svc = svc_mgr.get_service<clas12::framework::HistogramService>("HistogramService");
+// Access service manager for advanced configuration
+auto* cond_svc = app.service_manager().get_service<clas12::framework::ConditionsService>("ConditionsService");
+if (cond_svc) {
+    cond_svc->set_run_number(5032);
+}
 ```
 
 ## Algorithm Lifecycle
@@ -237,7 +210,7 @@ private:
 The `Event` class provides a high-level interface to HIPO data:
 
 ```cpp
-auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
     // Access particles (lazy loaded)
     const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
     const auto& photons = event.particles(clas12::PIDs::PHOTON);

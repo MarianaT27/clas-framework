@@ -8,6 +8,7 @@
  */
 
 #include <clas12/framework/core/Application.hpp>
+#include <clas12/framework/core/ApplicationBuilder.hpp>
 #include <clas12/framework/core/IAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -193,52 +194,32 @@ int main(int argc, char** argv) {
     fmt::print("╚════════════════════════════════════════════════════════════════╝\n");
     fmt::print("\n");
 
-    // Create application
-    clas12::framework::Application app("Histogram Demo");
-
-    // Configure Services
-    fmt::print("Configuring Services:\n");
-
-    // Add ParticleSelectorService
-    auto particle_svc = std::make_unique<clas12::framework::ParticleSelectorService>();
-    fmt::print("  ✓ ParticleSelectorService\n");
-    app.service_manager().add_service(std::unique_ptr<clas12::framework::IService>(std::move(particle_svc)));
-
-    // Add OutputFileService (required for HistogramService)
-    auto output_svc = std::make_unique<clas12::framework::OutputFileService>();
-    output_svc->set_output_file("demo_histograms.root");
-    clas12::framework::OutputFileService* output_svc_ptr = output_svc.get();
-    fmt::print("  ✓ OutputFileService\n");
-    fmt::print("  ✓ Output file: demo_histograms.root\n");
-    app.service_manager().add_service(std::unique_ptr<clas12::framework::IService>(std::move(output_svc)));
-
-    // Add HistogramService
-    auto hist_svc = std::make_unique<clas12::framework::HistogramService>();
-    hist_svc->set_output_file_service(output_svc_ptr);
-    hist_svc->set_auto_write(true);  // Enable automatic writing (default)
-    fmt::print("  ✓ HistogramService → auto-write enabled\n");
-    app.service_manager().add_service(std::unique_ptr<clas12::framework::IService>(std::move(hist_svc)));
-
-    // Add algorithm
-    fmt::print("\nConfiguring Algorithm:\n");
-    auto demo = std::make_unique<HistogramDemo>("HistogramDemo");
-    fmt::print("  ✓ HistogramDemo algorithm\n");
-    app.add_algorithm(std::move(demo));
-
-    // Configure input
-    fmt::print("\nConfiguring Input:\n");
+    // Get input files first (needed for builder)
     std::vector<std::string> input_files = clas12::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
         clas12::framework::Log::error("Main", "No .hipo files found in {}", data_dir);
         fmt::print("\nUsage: {} [data_dir] [max_events]\n", argv[0]);
         return 1;
     }
+
+    fmt::print("Configuring Application with ApplicationBuilder:\n");
     fmt::print("  Data directory: {}\n", data_dir);
     fmt::print("  Input files: {}\n", input_files.size());
     fmt::print("  Max events: {}\n", max_events);
+    fmt::print("  Output file: demo_histograms.root\n");
 
-    app.set_input_files(input_files);
-    // app.set_max_events(max_events);
+    // Create application using ApplicationBuilder
+    auto app = clas12::framework::make_application("Histogram Demo")
+        .with_input_files(input_files)
+        .with_output("demo_histograms.root")
+        .with_standard_services()
+        .add_algorithm<HistogramDemo>("HistogramDemo")
+        .build();
+
+    fmt::print("  ✓ ParticleSelectorService (via with_standard_services)\n");
+    fmt::print("  ✓ OutputFileService (via with_standard_services)\n");
+    fmt::print("  ✓ HistogramService → auto-write enabled (via with_standard_services)\n");
+    fmt::print("  ✓ HistogramDemo algorithm\n");
 
     // Initialize
     fmt::print("\n");

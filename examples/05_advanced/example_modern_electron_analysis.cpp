@@ -552,50 +552,22 @@ auto main(int argc, char* argv[]) -> int {
     // ========================================================================
     // Create application using ApplicationBuilder (fluent API)
     // ========================================================================
-    fmt::print("\n--- Setting up Application ---\n");
+    fmt::print("\n--- Setting up Application with ApplicationBuilder ---\n");
 
-    Application app("ModernElectronAnalysis");
+    auto app = make_application("ModernElectronAnalysis")
+        .with_input_files(input_files)
+        .with_output(output_file)
+        .with_standard_services()
+        .add_algorithm<ModernElectronSelectionAlg>()
+        .add_algorithm<DISKinematicsAlg>()
+        .add_algorithm<ElectronHistogramAlg>()
+        .build();
 
-    // Add output file service
-    auto output_svc = std::make_unique<OutputFileService>();
-    output_svc->set_output_file(output_file);
-    OutputFileService* output_svc_ptr = output_svc.get();
-    app.service_manager().add_service(std::move(output_svc));
-
-    // Add histogram service
-    auto hist_svc = std::make_unique<HistogramService>();
-    hist_svc->set_output_file_service(output_svc_ptr);
-    app.service_manager().add_service(std::move(hist_svc));
-
-    // ========================================================================
-    // Add algorithms demonstrating modern features
-    // ========================================================================
-    fmt::print("\n--- Adding Algorithms ---\n");
-
-    // Algorithm 1: Electron Selection (SimpleAlgorithm + CutBuilder + Ranges)
-    auto selection_alg = std::make_unique<ModernElectronSelectionAlg>();
     fmt::print("  [+] ModernElectronSelection (SimpleAlgorithm + CutBuilder + Ranges)\n");
-    app.add_algorithm(std::move(selection_alg));
-
-    // Algorithm 2: DIS Kinematics (SimpleAlgorithm + TypedEventStore)
-    auto kinematics_alg = std::make_unique<DISKinematicsAlg>();
     fmt::print("  [+] DISKinematics (SimpleAlgorithm + TypedEventStore)\n");
-    app.add_algorithm(std::move(kinematics_alg));
-
-    // Algorithm 3: Additional histograms (SimpleAlgorithm)
-    auto histogram_alg = std::make_unique<ElectronHistogramAlg>();
     fmt::print("  [+] ElectronHistograms (SimpleAlgorithm)\n");
-    app.add_algorithm(std::move(histogram_alg));
-
-    // ========================================================================
-    // Configure and run
-    // ========================================================================
-    if (!input_files.empty()) {
-        app.set_input_files(input_files);
-    }
 
     if (max_events > 0) {
-        // Note: Application doesn't have set_max_events, but we can limit via percentage
         fmt::print("Max events: {} (will process all available)\n", max_events);
     }
 

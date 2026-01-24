@@ -14,7 +14,7 @@ meson compile -C build
 
 ## Basic Analysis Structure
 
-Using the **ApplicationBuilder** pattern (recommended):
+Using the **ApplicationBuilder** pattern:
 
 ```cpp
 #include <clas12/framework/core/ApplicationBuilder.hpp>
@@ -28,38 +28,6 @@ int main() {
         .add_algorithm<MyAlgorithm>("MyAlg", arg1, arg2)
         .build();
 
-    app.initialize();
-    app.run();
-    app.finalize();
-
-    return 0;
-}
-```
-
-Or using the traditional approach:
-
-```cpp
-#include <clas12/framework/core/Application.hpp>
-#include <clas12/framework/services/HistogramService.hpp>
-
-int main() {
-    // 1. Create application
-    clas12::framework::Application app("MyAnalysis");
-
-    // 2. Add services
-    auto hist_svc = std::make_unique<clas12::framework::HistogramService>();
-    hist_svc->set_output_file("output.root");
-    app.service_manager().add_service(std::move(hist_svc));
-
-    // 3. Add algorithms
-    auto my_alg = std::make_unique<MyAlgorithm>();
-    app.add_algorithm(std::move(my_alg));
-
-    // 4. Configure input
-    app.set_input_files({"data.hipo"});
-    app.set_num_threads(4);
-
-    // 5. Run
     app.initialize();
     app.run();
     app.finalize();
@@ -99,18 +67,19 @@ Services provide shared functionality:
 
 ### Algorithms
 
-Algorithms process events with a lifecycle:
+Algorithms inherit from `SimpleAlgorithm<T>` and follow this lifecycle:
 
-1. `initialize()` - Setup (book histograms, get services)
-2. `execute(event)` - Process each event
-3. `finalize()` - Cleanup (print statistics)
+1. `configure()` - Request services via `require_service<T>()`
+2. `on_initialize()` - Setup (book histograms, configure resources)
+3. `process(event)` - Process each event
+4. `on_finalize()` - Cleanup (print statistics)
 
 ### Events
 
 The `Event` class provides access to particle data:
 
 ```cpp
-auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
     // Get electrons
     const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
 

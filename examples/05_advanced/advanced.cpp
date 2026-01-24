@@ -12,6 +12,7 @@
  */
 
 #include <clas12/framework/core/Application.hpp>
+#include <clas12/framework/core/ApplicationBuilder.hpp>
 #include <clas12/framework/core/AlgorithmTypes.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
@@ -42,39 +43,35 @@ int main(int argc, char** argv) {
     fmt::print("╚════════════════════════════════════════════════════════════════╝\n");
     fmt::print("\n");
 
-    // Create application
-    clas12::framework::Application app("CLAS12 Advanced Analysis");
+    // Get input files first (needed for builder)
+    std::vector<std::string> input_files = clas12::FileUtils::read_recursive_hipo_files(data_dir);
+    if (input_files.empty()) {
+        clas12::framework::Log::error("Main", "No .hipo files found in {}", data_dir);
+        fmt::print("\nUsage: {} [data_dir] [max_events] [num_threads]\n", argv[0]);
+        return 1;
+    }
 
-    // ═══════════════════════════════════════════════════════════════════
-    // Configure Services
-    // ═══════════════════════════════════════════════════════════════════
-
-    fmt::print("Configuring Services:\n");
-
-    auto output_svc = std::make_unique<clas12::framework::OutputFileService>();
-    output_svc->set_output_file("advanced_analysis.root");
-    clas12::framework::OutputFileService* output_svc_ptr = output_svc.get();
+    // Create application using ApplicationBuilder
+    fmt::print("Configuring Application with ApplicationBuilder:\n");
     fmt::print("  ✓ OutputFileService → advanced_analysis.root\n");
-
-    auto hist_svc = std::make_unique<clas12::framework::HistogramService>();
-    hist_svc->set_output_file_service(output_svc_ptr);
     fmt::print("  ✓ HistogramService\n");
-
-    auto cond_svc = std::make_unique<clas12::framework::ConditionsService>();
-    cond_svc->set_run_number(5032);
     fmt::print("  ✓ ConditionsService → Run 5032\n");
-
-    auto particle_svc = std::make_unique<clas12::framework::ParticleSelectorService>();
     fmt::print("  ✓ ParticleSelectorService\n");
-
-    auto sf_svc = std::make_unique<clas12::framework::SamplingFractionService>();
     fmt::print("  ✓ SamplingFractionService\n");
 
-    app.service_manager().add_service(std::move(output_svc));
-    app.service_manager().add_service(std::move(hist_svc));
-    app.service_manager().add_service(std::move(cond_svc));
-    app.service_manager().add_service(std::move(particle_svc));
-    app.service_manager().add_service(std::move(sf_svc));
+    auto app = clas12::framework::make_application("CLAS12 Advanced Analysis")
+        .with_input_files(input_files)
+        .with_output("advanced_analysis.root")
+        .with_threads(num_threads)
+        .with_standard_services()
+        .add_service<clas12::framework::SamplingFractionService>()
+        .build();
+
+    // Configure ConditionsService with run number
+    auto* cond_svc = app.service_manager().get_service<clas12::framework::ConditionsService>("ConditionsService");
+    if (cond_svc) {
+        cond_svc->set_run_number(5032);
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // Configure Algorithm Workflow
@@ -150,26 +147,14 @@ int main(int argc, char** argv) {
     fmt::print("\n");
 
     // ═══════════════════════════════════════════════════════════════════
-    // Configure Input
+    // Input Summary (already configured via builder)
     // ═══════════════════════════════════════════════════════════════════
 
-    fmt::print("Configuring Input:\n");
-
-    std::vector<std::string> input_files = clas12::FileUtils::read_recursive_hipo_files(data_dir);
-    if (input_files.empty()) {
-        clas12::framework::Log::error("Main", "No .hipo files found in {}", data_dir);
-        fmt::print("\nUsage: {} [data_dir] [max_events] [num_threads]\n", argv[0]);
-        return 1;
-    }
-
+    fmt::print("Input Configuration:\n");
     fmt::print("  Data directory: {}\n", data_dir);
     fmt::print("  Input files: {}\n", input_files.size());
     fmt::print("  Max events: {}\n", max_events == -1 ? "all" : std::to_string(max_events));
     fmt::print("  Threads: {}\n", num_threads);
-
-    app.set_input_files(input_files);
-    // app.set_max_events(max_events);
-    app.set_num_threads(num_threads);
 
     // ═══════════════════════════════════════════════════════════════════
     // Initialize

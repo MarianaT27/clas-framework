@@ -14,6 +14,7 @@
 #include <fmt/format.h>
 
 #include <clas12/framework/core/Application.hpp>
+#include <clas12/framework/core/ApplicationBuilder.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -218,40 +219,28 @@ int main(int argc, char* argv[]) {
         data_dir = argv[1];
     }
 
-    // Create application
-    Application app("AlgorithmExample");
+    // Get input files first to configure builder
+    std::vector<std::string> input_files = clas12::FileUtils::read_recursive_hipo_files(data_dir);
 
     // ========================================================================
-    // Set up services
+    // Create application using ApplicationBuilder
     // ========================================================================
-    fmt::print("Setting up services...\n");
+    fmt::print("Setting up application with ApplicationBuilder...\n");
 
-    auto output_svc = std::make_unique<OutputFileService>();
-    output_svc->set_output_file("algorithm_example_output.root");
-    OutputFileService* output_svc_ptr = output_svc.get();
-    app.service_manager().add_service(std::move(output_svc));
+    auto app = make_application("AlgorithmExample")
+        .with_input_files(input_files)
+        .with_output("algorithm_example_output.root")
+        .with_threads(1)
+        .with_standard_services()
+        .add_algorithm<ElectronCounterAlg>()
+        .add_algorithm<PhotonAnalysisAlg>()
+        .build();
 
-    auto hist_svc = std::make_unique<HistogramService>();
-    hist_svc->set_output_file_service(output_svc_ptr);
-    app.service_manager().add_service(std::move(hist_svc));
-
-    // ========================================================================
-    // Example 1: Add SimpleAlgorithm instances
-    // ========================================================================
-    fmt::print("\nAdding SimpleAlgorithm instances...\n");
-
-    // Create and configure ElectronCounterAlg
-    auto electron_alg = std::make_unique<ElectronCounterAlg>();
-    // Properties can be configured before adding to application
-    // (In real usage, this would come from TOML config)
-    app.add_algorithm(std::move(electron_alg));
-
-    // Add PhotonAnalysisAlg
-    auto photon_alg = std::make_unique<PhotonAnalysisAlg>();
-    app.add_algorithm(std::move(photon_alg));
+    fmt::print("  ✓ Services configured via with_standard_services()\n");
+    fmt::print("  ✓ SimpleAlgorithm instances added\n");
 
     // ========================================================================
-    // Example 2: Add LambdaAlgorithm instances
+    // Add LambdaAlgorithm instances (added after build due to captures)
     // ========================================================================
     fmt::print("\nAdding LambdaAlgorithm instances...\n");
 
@@ -295,9 +284,8 @@ int main(int argc, char* argv[]) {
     app.add_algorithm(std::move(stats_alg));
 
     // ========================================================================
-    // Configure input and run
+    // Run application
     // ========================================================================
-    std::vector<std::string> input_files = clas12::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
         fmt::print("WARNING: No input files found in {}\n", data_dir);
         fmt::print("Running initialization only to verify algorithm infrastructure...\n\n");
@@ -324,9 +312,6 @@ int main(int argc, char* argv[]) {
 
         return 0;
     }
-
-    app.set_input_files(input_files);
-    app.set_num_threads(1);
 
     fmt::print("\nInput files: {}\n", input_files.size());
 

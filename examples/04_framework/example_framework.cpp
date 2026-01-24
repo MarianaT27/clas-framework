@@ -11,6 +11,7 @@
  */
 
 #include <clas12/framework/core/Application.hpp>
+#include <clas12/framework/core/ApplicationBuilder.hpp>
 #include <clas12/framework/services/ConfigService.hpp>
 #include <clas12/framework/services/ConditionsService.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
@@ -80,51 +81,32 @@ int main(int argc, char* argv[]) {
         polarity = clas12::Polarity::Inbending;
     }
 
-    // Create application with name from config
-    clas12::framework::Application app(app_name);
-
-    // Configure services
-    auto output_svc = std::make_unique<clas12::framework::OutputFileService>();
-    output_svc->set_output_file(hist_file);
-    clas12::framework::OutputFileService* output_svc_ptr = output_svc.get();
-
-    auto hist_svc = std::make_unique<clas12::framework::HistogramService>();
-    hist_svc->set_output_file_service(output_svc_ptr);
-
-    auto cond_svc = std::make_unique<clas12::framework::ConditionsService>();
-    cond_svc->set_run_number(run_number);
-
-    // Add ParticleSelectorService
-    auto particle_svc = std::make_unique<clas12::framework::ParticleSelectorService>();
-
-    // Add SamplingFractionService
-    auto sf_svc = std::make_unique<clas12::framework::SamplingFractionService>();
-
-    // Add services (ConfigService is added for potential use by algorithms)
-    app.service_manager().add_service(std::move(config_svc));
-    app.service_manager().add_service(std::move(output_svc));
-    app.service_manager().add_service(std::move(hist_svc));
-    app.service_manager().add_service(std::move(cond_svc));
-    app.service_manager().add_service(std::move(particle_svc));
-    app.service_manager().add_service(std::move(sf_svc));
-
-    // Add algorithms with configuration from TOML
-    auto electron_alg = std::make_unique<clas12::algorithms::ElectronSelectionAlg>(
-        "ElectronSelection",
-        target,
-        polarity
-    );
-    app.add_algorithm(std::move(electron_alg));
-
-    // Configure input from config
+    // Get input files from configured directory
     std::vector<std::string> input_files = clas12::FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
         clas12::framework::Log::error("Main", "No input files found in {}", data_dir);
         return 1;
     }
-    app.set_input_files(input_files);
-    // app.set_max_events(max_events);
-    app.set_num_threads(num_threads);
+
+    // Create application using ApplicationBuilder with config values
+    auto app = clas12::framework::make_application(app_name)
+        .with_input_files(input_files)
+        .with_output(hist_file)
+        .with_threads(num_threads)
+        .with_standard_services()
+        .add_service<clas12::framework::SamplingFractionService>()
+        .add_algorithm<clas12::algorithms::ElectronSelectionAlg>(
+            "ElectronSelection", target, polarity)
+        .build();
+
+    // Add pre-configured ConfigService (already initialized above)
+    app.service_manager().add_service(std::move(config_svc));
+
+    // Configure ConditionsService with run number from config
+    auto* cond_svc = app.service_manager().get_service<clas12::framework::ConditionsService>("ConditionsService");
+    if (cond_svc) {
+        cond_svc->set_run_number(run_number);
+    }
 
     fmt::print("Configuration loaded from: {}\n", config_path);
     fmt::print("  Application: {}\n", app_name);
