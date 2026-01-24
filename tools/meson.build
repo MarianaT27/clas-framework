@@ -1,0 +1,9 @@
+# Utility tools
+# Batch job submission and other helper utilities
+
+# Batch job submitter - works with any analysis executable
+executable(
+  'batch',
+  files('batch.cpp'),
+  dependencies: [clas12_dep, hipo_dep, fmt_dep, cxxopts_dep, root_dep],
+)

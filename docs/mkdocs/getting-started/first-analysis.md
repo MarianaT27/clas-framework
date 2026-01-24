@@ -2,35 +2,64 @@
 
 This guide walks you through creating a complete analysis from scratch.
 
-## Step 1: Create Your Algorithm
+## Quick Start: Using the Scaffolding System
 
-Create a new header file `include/Algorithms/MyAnalysisAlg.hpp`:
+The fastest way to create a new analysis is using the scaffolding script:
+
+```bash
+# Create a new analysis with an algorithm
+python templates/create_analysis.py \
+    --name my_analysis \
+    --type generic \
+    --with-algorithm \
+    --output analyses/my_analysis
+
+# Build
+meson compile -C build
+
+# Run
+./build/analyses/my_analysis data/sample.hipo
+```
+
+This creates a complete analysis directory with:
+
+- Main executable file
+- Custom algorithm header
+- Meson build configuration
+- Proper include paths and namespaces
+
+## Manual Approach: Step by Step
+
+### Step 1: Create Your Algorithm
+
+Create a new header file in your analysis directory:
 
 ```cpp
 #pragma once
 
-#include "Framework/IAlgorithm.hpp"
-#include "Framework/Event.hpp"
-#include "Framework/Cutflow.hpp"
-#include "Framework/Services/HistogramService.hpp"
-#include "Framework/Services/LoggingService.hpp"
-#include "TH1D.h"
+#include <clas12/framework/core/IAlgorithm.hpp>
+#include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/services/HistogramService.hpp>
+#include <clas12/framework/services/LoggingService.hpp>
+#include <clas12/PIDs.hpp>
+#include <TH1D.h>
 
-namespace Algorithms {
+namespace my_analysis {
 
-class MyAnalysisAlg : public Framework::Algorithm {
+class MyAnalysisAlg : public clas12::framework::Algorithm {
 public:
     explicit MyAnalysisAlg(std::string name = "MyAnalysis")
         : Algorithm(std::move(name))
         , m_cutflow("My Cutflow") {}
 
-    auto initialize() -> Framework::StatusCode override {
+    auto initialize() -> clas12::framework::StatusCode override {
         // Get histogram service
-        m_hist_svc = service<Framework::HistogramService>("HistogramService");
-        
+        m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
+
         if (!m_hist_svc) {
-            Framework::Log::error(name(), "Could not get HistogramService");
-            return Framework::StatusCode::FAILURE();
+            clas12::framework::Log::error(name(), "Could not get HistogramService");
+            return clas12::framework::StatusCode::FAILURE();
         }
 
         // Book histograms
@@ -51,17 +80,17 @@ public:
         m_cutflow.add_cut("Has Electron");
         m_cutflow.add_cut("Momentum > 1 GeV");
 
-        Framework::Log::info(name(), "Initialized successfully");
-        return Framework::StatusCode::SUCCESS();
+        clas12::framework::Log::info(name(), "Initialized successfully");
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_cutflow.pass("All Events");
 
         // Get electrons
-        const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
+        const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
         if (electrons.empty()) {
-            return Framework::StatusCode::SUCCESS();
+            return clas12::framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Has Electron");
 
@@ -70,7 +99,7 @@ public:
 
         // Apply momentum cut
         if (e.p() < 1.0) {
-            return Framework::StatusCode::SUCCESS();
+            return clas12::framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Momentum > 1 GeV");
 
@@ -78,34 +107,34 @@ public:
         h_momentum->Fill(e.p());
         h_theta->Fill(e.theta());
 
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto finalize() -> Framework::StatusCode override {
-        Framework::Log::info(name(), "Finalizing...");
+    auto finalize() -> clas12::framework::StatusCode override {
+        clas12::framework::Log::info(name(), "Finalizing...");
         m_cutflow.print();
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
 private:
-    Framework::Cutflow m_cutflow;
-    Framework::HistogramService* m_hist_svc = nullptr;
+    clas12::framework::Cutflow m_cutflow;
+    clas12::framework::HistogramService* m_hist_svc = nullptr;
     TH1D* h_momentum = nullptr;
     TH1D* h_theta = nullptr;
 };
 
-}  // namespace Algorithms
+}  // namespace my_analysis
 ```
 
-## Step 2: Create the Main Program
+### Step 2: Create the Main Program
 
-Create `src/my_analysis.cpp`:
+Create `analyses/my_analysis/my_analysis.cpp`:
 
 ```cpp
-#include "Framework/Application.hpp"
-#include "Framework/Services/HistogramService.hpp"
-#include "Framework/Services/LoggingService.hpp"
-#include "Algorithms/MyAnalysisAlg.hpp"
+#include <clas12/framework/core/Application.hpp>
+#include <clas12/framework/services/HistogramService.hpp>
+#include <clas12/framework/services/LoggingService.hpp>
+#include "MyAnalysisAlg.hpp"
 
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -114,20 +143,20 @@ int main(int argc, char** argv) {
     }
 
     // Create application
-    Framework::Application app("MyAnalysis");
+    clas12::framework::Application app("MyAnalysis");
 
     // Add logging service
-    auto log_svc = std::make_unique<Framework::LoggingService>();
-    log_svc->set_log_level(Framework::LogLevel::INFO);
+    auto log_svc = std::make_unique<clas12::framework::LoggingService>();
+    log_svc->set_log_level(clas12::framework::LogLevel::INFO);
     app.service_manager().add_service(std::move(log_svc));
 
     // Add histogram service
-    auto hist_svc = std::make_unique<Framework::HistogramService>();
+    auto hist_svc = std::make_unique<clas12::framework::HistogramService>();
     hist_svc->set_output_file("my_output.root");
     app.service_manager().add_service(std::move(hist_svc));
 
     // Add algorithm
-    app.add_algorithm(std::make_unique<Algorithms::MyAnalysisAlg>());
+    app.add_algorithm(std::make_unique<my_analysis::MyAnalysisAlg>());
 
     // Configure input
     app.set_input_files({argv[1]});
@@ -142,33 +171,32 @@ int main(int argc, char** argv) {
 }
 ```
 
-## Step 3: Add to Build System
+### Step 3: Add to Build System
 
-Add to `meson.build`:
+Create `analyses/my_analysis/meson.build`:
 
 ```meson
-my_analysis_sources = files(
-  'src/CLAS/Particle.cpp',
-  'src/Framework/Histogram.cpp',
-  'src/my_analysis.cpp',
-)
-
 executable(
-  'my_analysis',
-  my_analysis_sources,
-  include_directories: [inc],
-  dependencies: [hipo_dep, fmt_dep, toml_dep, root_dep],
+    'my_analysis',
+    files('my_analysis.cpp'),
+    dependencies: [clas12_dep, clas12_alg_dep, hipo_dep, fmt_dep, toml_dep, root_dep, cxxopts_dep],
 )
 ```
 
-## Step 4: Build and Run
+Add to `analyses/meson.build`:
+
+```meson
+subdir('my_analysis')
+```
+
+### Step 4: Build and Run
 
 ```bash
 # Rebuild
 meson compile -C build
 
 # Run your analysis
-./build/my_analysis data/data.hipo
+./build/analyses/my_analysis data/data.hipo
 
 # Check output
 root -l my_output.root
@@ -181,8 +209,8 @@ root [2] momentum->Draw()
 For simpler setup, use the ApplicationBuilder pattern:
 
 ```cpp
-#include "Framework/ApplicationBuilder.hpp"
-#include "Algorithms/MyAnalysisAlg.hpp"
+#include <clas12/framework/core/ApplicationBuilder.hpp>
+#include "MyAnalysisAlg.hpp"
 
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -190,12 +218,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    auto app = Framework::make_application("MyAnalysis")
+    auto app = clas12::framework::make_application("MyAnalysis")
         .with_input_files({argv[1]})
         .with_output("my_output.root")
         .with_threads(4)
         .with_standard_services()
-        .add_algorithm<Algorithms::MyAnalysisAlg>("MyAnalysis")
+        .add_algorithm<my_analysis::MyAnalysisAlg>("MyAnalysis")
         .build();
 
     app.initialize();
@@ -230,6 +258,7 @@ Momentum > 1 GeV                        42108     42.1%     93.1%
 
 ## Next Steps
 
+- [Creating Analyses](../user-guide/scaffolding.md) - More on the scaffolding system
 - Add more cuts using [Physics Cuts](../user-guide/cuts.md)
 - Calculate kinematics with [Kinematics](../user-guide/kinematics.md)
 - Run on batch with [Batch System](../user-guide/batch-system.md)

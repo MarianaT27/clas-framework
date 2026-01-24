@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include "Framework/Cutflow.hpp"
+#include <clas12/framework/core/Cutflow.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 TEST(CutflowTest, BasicFunctionality) {
     Cutflow cutflow("Test Cutflow");

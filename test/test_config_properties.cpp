@@ -4,9 +4,9 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
-#include "Framework/Services/ConfigService.hpp"
+#include <clas12/framework/services/ConfigService.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 namespace {
 // Helper to create a temporary config file

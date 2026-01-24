@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 #include <rapidcheck.h>
 #include <rapidcheck/gtest.h>
-#include "Framework/StatusCode.hpp"
+#include <clas12/framework/core/StatusCode.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 /**
  * **Feature: code-quality-improvements, Property 2: StatusCode Error Message Preservation**

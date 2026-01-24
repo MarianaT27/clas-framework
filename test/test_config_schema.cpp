@@ -7,11 +7,11 @@
 
 #include <gtest/gtest.h>
 
-#include "Framework/ConfigSchema.hpp"
+#include <clas12/framework/core/ConfigSchema.hpp>
 
 #include <sstream>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 // ============================================================================
 // FixedString Tests

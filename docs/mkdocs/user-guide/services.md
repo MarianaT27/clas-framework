@@ -2,6 +2,8 @@
 
 Services are long-lived objects that provide shared functionality to algorithms. They are initialized once at application startup and finalized after all events are processed.
 
+All services are in the `clas12::framework` namespace and can be included from `<clas12/framework/services/...>`.
+
 ## HistogramService
 
 Centralized histogram management with automatic ROOT file writing.
@@ -9,7 +11,9 @@ Centralized histogram management with automatic ROOT file writing.
 ### Setup
 
 ```cpp
-auto hist_svc = std::make_unique<Framework::HistogramService>();
+#include <clas12/framework/services/HistogramService.hpp>
+
+auto hist_svc = std::make_unique<clas12::framework::HistogramService>();
 hist_svc->set_output_file("output.root");
 app.service_manager().add_service(std::move(hist_svc));
 ```
@@ -17,8 +21,8 @@ app.service_manager().add_service(std::move(hist_svc));
 ### Usage
 
 ```cpp
-auto initialize() -> Framework::StatusCode override {
-    m_hist_svc = service<Framework::HistogramService>("HistogramService");
+auto initialize() -> clas12::framework::StatusCode override {
+    m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
 
     // Book 1D histogram
     h_momentum = m_hist_svc->book_hist1D(
@@ -35,13 +39,13 @@ auto initialize() -> Framework::StatusCode override {
         100, 0, 10    // y: p bins
     );
 
-    return Framework::StatusCode::SUCCESS();
+    return clas12::framework::StatusCode::SUCCESS();
 }
 
-auto execute(Framework::Event& event) -> Framework::StatusCode override {
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
     h_momentum->Fill(electron.p());
     h_p_vs_theta->Fill(electron.theta(), electron.p());
-    return Framework::StatusCode::SUCCESS();
+    return clas12::framework::StatusCode::SUCCESS();
 }
 ```
 
@@ -61,8 +65,10 @@ Structured logging with levels and colors.
 ### Setup
 
 ```cpp
-auto log_svc = std::make_unique<Framework::LoggingService>();
-log_svc->set_log_level(Framework::LogLevel::INFO);
+#include <clas12/framework/services/LoggingService.hpp>
+
+auto log_svc = std::make_unique<clas12::framework::LoggingService>();
+log_svc->set_log_level(clas12::framework::LogLevel::INFO);
 log_svc->set_log_file("analysis.log");  // Optional
 app.service_manager().add_service(std::move(log_svc));
 ```
@@ -71,10 +77,10 @@ app.service_manager().add_service(std::move(log_svc));
 
 ```cpp
 // Use the global Log singleton (automatically configured)
-Framework::Log::info(name(), "Processing {} events", n_events);
-Framework::Log::debug(name(), "Electron momentum: {:.3f} GeV", e.p());
-Framework::Log::warning(name(), "Value {} out of range", value);
-Framework::Log::error(name(), "Failed to read bank");
+clas12::framework::Log::info(name(), "Processing {} events", n_events);
+clas12::framework::Log::debug(name(), "Electron momentum: {:.3f} GeV", e.p());
+clas12::framework::Log::warning(name(), "Value {} out of range", value);
+clas12::framework::Log::error(name(), "Failed to read bank");
 ```
 
 ### Log Levels
@@ -96,7 +102,9 @@ ROOT TTree management for event-by-event data.
 ### Setup
 
 ```cpp
-auto ntuple_svc = std::make_unique<Framework::NTupleService>();
+#include <clas12/framework/services/NTupleService.hpp>
+
+auto ntuple_svc = std::make_unique<clas12::framework::NTupleService>();
 ntuple_svc->set_output_file("output.root");
 app.service_manager().add_service(std::move(ntuple_svc));
 ```
@@ -104,30 +112,30 @@ app.service_manager().add_service(std::move(ntuple_svc));
 ### Usage
 
 ```cpp
-class MyAlgorithm : public Framework::Algorithm {
+class MyAlgorithm : public clas12::framework::Algorithm {
 private:
-    Framework::NTupleService* m_ntuple_svc = nullptr;
+    clas12::framework::NTupleService* m_ntuple_svc = nullptr;
     double m_e_p = 0.0;
     double m_q2 = 0.0;
 
-    auto initialize() -> Framework::StatusCode override {
-        m_ntuple_svc = service<Framework::NTupleService>("NTupleService");
+    auto initialize() -> clas12::framework::StatusCode override {
+        m_ntuple_svc = service<clas12::framework::NTupleService>("NTupleService");
 
         // Register branches
         m_ntuple_svc->register_branch("electron_data", "e_p", &m_e_p);
         m_ntuple_svc->register_branch("electron_data", "q2", &m_q2);
 
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_e_p = electron.p();
         m_q2 = kin.q2;
 
         // Fill N-tuple
         m_ntuple_svc->fill("electron_data");
 
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 };
 ```
@@ -149,7 +157,9 @@ Run-dependent calibrations with Interval of Validity (IOV).
 ### Setup
 
 ```cpp
-auto cond_svc = std::make_unique<Framework::ConditionsService>();
+#include <clas12/framework/services/ConditionsService.hpp>
+
+auto cond_svc = std::make_unique<clas12::framework::ConditionsService>();
 cond_svc->set_run_number(5032);
 app.service_manager().add_service(std::move(cond_svc));
 ```
@@ -157,17 +167,17 @@ app.service_manager().add_service(std::move(cond_svc));
 ### Usage
 
 ```cpp
-auto initialize() -> Framework::StatusCode override {
-    m_cond_svc = service<Framework::ConditionsService>("ConditionsService");
+auto initialize() -> clas12::framework::StatusCode override {
+    m_cond_svc = service<clas12::framework::ConditionsService>("ConditionsService");
 
     // Get run-dependent constants
     double time_offset = m_cond_svc->get_time_offset("FTOF", sector);
 
     // Set custom calibrations with IOV
-    Framework::IntervalOfValidity iov{5000, 5100};  // Runs 5000-5100
+    clas12::framework::IntervalOfValidity iov{5000, 5100};  // Runs 5000-5100
     m_cond_svc->set_value("my_calibration", 1.23, iov);
 
-    return Framework::StatusCode::SUCCESS();
+    return clas12::framework::StatusCode::SUCCESS();
 }
 ```
 
@@ -180,7 +190,9 @@ Centralized HIPO file I/O management for reading and writing HIPO files.
 ### Setup
 
 ```cpp
-auto hipo_svc = std::make_unique<Framework::HipoFileService>();
+#include <clas12/framework/services/HipoFileService.hpp>
+
+auto hipo_svc = std::make_unique<clas12::framework::HipoFileService>();
 hipo_svc->add_input_file("data/run_5032.hipo");
 hipo_svc->set_output_file("filtered_events.hipo");
 app.service_manager().add_service(std::move(hipo_svc));
@@ -189,22 +201,22 @@ app.service_manager().add_service(std::move(hipo_svc));
 ### Usage
 
 ```cpp
-auto initialize() -> Framework::StatusCode override {
-    m_hipo_svc = service<Framework::HipoFileService>("HipoFileService");
+auto initialize() -> clas12::framework::StatusCode override {
+    m_hipo_svc = service<clas12::framework::HipoFileService>("HipoFileService");
 
     // Get dictionary from input files
     auto* dict = m_hipo_svc->get_dictionary();
 
-    return Framework::StatusCode::SUCCESS();
+    return clas12::framework::StatusCode::SUCCESS();
 }
 
-auto execute(Framework::Event& event) -> Framework::StatusCode override {
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
     // Write filtered events to output
     if (passes_selection) {
         m_hipo_svc->write_event(event.hipo_event());
     }
 
-    return Framework::StatusCode::SUCCESS();
+    return clas12::framework::StatusCode::SUCCESS();
 }
 ```
 
@@ -217,50 +229,6 @@ auto execute(Framework::Event& event) -> Framework::StatusCode override {
 
 ---
 
-## RootFileService
-
-Centralized ROOT file management for coordinating multiple output files.
-
-### Setup
-
-```cpp
-auto root_svc = std::make_unique<Framework::RootFileService>();
-root_svc->set_default_output("analysis.root");
-app.service_manager().add_service(std::move(root_svc));
-```
-
-### Usage
-
-```cpp
-auto initialize() -> Framework::StatusCode override {
-    m_root_svc = service<Framework::RootFileService>("RootFileService");
-
-    // Open additional output files
-    m_root_svc->open_file("systematics", "systematics.root", "RECREATE");
-
-    // Create directory structure
-    m_root_svc->mkdir("default", "Electrons/Kinematics");
-
-    return Framework::StatusCode::SUCCESS();
-}
-
-auto finalize() -> Framework::StatusCode override {
-    // Write objects to specific files
-    m_root_svc->write_object("systematics", my_histogram);
-
-    return Framework::StatusCode::SUCCESS();
-}
-```
-
-### Features
-
-- Multiple file management with aliases
-- Thread-safe file operations
-- Directory structure creation
-- Automatic file lifecycle management
-
----
-
 ## PhotonCutsService
 
 AI/ML-based photon selection using Gradient Boosted Tree (GBT) models.
@@ -268,7 +236,9 @@ AI/ML-based photon selection using Gradient Boosted Tree (GBT) models.
 ### Setup
 
 ```cpp
-auto photon_svc = std::make_unique<Framework::PhotonCutsService>();
+#include <clas12/framework/services/PhotonCutsService.hpp>
+
+auto photon_svc = std::make_unique<clas12::framework::PhotonCutsService>();
 photon_svc->set_pass(1);  // Reconstruction pass
 app.service_manager().add_service(std::move(photon_svc));
 ```
@@ -276,7 +246,7 @@ app.service_manager().add_service(std::move(photon_svc));
 ### Usage
 
 ```cpp
-auto execute(Framework::Event& event) -> Framework::StatusCode override {
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
     auto& hipo_event = event.hipo_event();
     auto& RUN_config = hipo_event["RUN::config"];
     auto& REC_Particle = hipo_event["REC::Particle"];
@@ -287,11 +257,11 @@ auto execute(Framework::Event& event) -> Framework::StatusCode override {
         RUN_config, REC_Particle, REC_Calorimeter);
 
     // Individual cuts are also available
-    bool pass_fiducial = Framework::PhotonCutsService::pass_pcal_fiducial_cut(v, w);
-    bool pass_fd = Framework::PhotonCutsService::pass_forward_detector_cut(theta_deg);
-    bool pass_energy = Framework::PhotonCutsService::pass_energy_cut(E);
+    bool pass_fiducial = clas12::framework::PhotonCutsService::pass_pcal_fiducial_cut(v, w);
+    bool pass_fd = clas12::framework::PhotonCutsService::pass_forward_detector_cut(theta_deg);
+    bool pass_energy = clas12::framework::PhotonCutsService::pass_energy_cut(E);
 
-    return Framework::StatusCode::SUCCESS();
+    return clas12::framework::StatusCode::SUCCESS();
 }
 ```
 
@@ -312,10 +282,12 @@ Service-based particle extraction and filtering.
 ### Setup
 
 ```cpp
-auto particle_svc = std::make_unique<Framework::ParticleSelectorService>();
+#include <clas12/framework/services/ParticleSelectorService.hpp>
+
+auto particle_svc = std::make_unique<clas12::framework::ParticleSelectorService>();
 particle_svc->set_default_types({
-    CLAS::PIDs::ELECTRON, CLAS::PIDs::PHOTON,
-    CLAS::PIDs::PROTON, CLAS::PIDs::PIPLUS, CLAS::PIDs::PIMINUS
+    clas12::PIDs::ELECTRON, clas12::PIDs::PHOTON,
+    clas12::PIDs::PROTON, clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS
 });
 app.service_manager().add_service(std::move(particle_svc));
 ```
@@ -323,7 +295,7 @@ app.service_manager().add_service(std::move(particle_svc));
 ### Usage
 
 ```cpp
-auto execute(Framework::Event& event) -> Framework::StatusCode override {
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
     auto& bank = event.get_bank("REC::Particle");
 
     // Extract all particles
@@ -337,7 +309,7 @@ auto execute(Framework::Event& event) -> Framework::StatusCode override {
     auto good_electrons = m_particle_svc->with_momentum_range(electrons, 1.0, 10.0);
     auto fd_electrons = m_particle_svc->get_forward_detector(good_electrons);
 
-    return Framework::StatusCode::SUCCESS();
+    return clas12::framework::StatusCode::SUCCESS();
 }
 ```
 
@@ -362,23 +334,25 @@ Target/polarity-dependent sampling fraction cuts for electron identification.
 ### Setup
 
 ```cpp
-auto sf_svc = std::make_unique<Framework::SamplingFractionService>();
+#include <clas12/framework/services/SamplingFractionService.hpp>
+
+auto sf_svc = std::make_unique<clas12::framework::SamplingFractionService>();
 app.service_manager().add_service(std::move(sf_svc));
 ```
 
 ### Usage
 
 ```cpp
-auto execute(Framework::Event& event) -> Framework::StatusCode override {
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
     // Calculate sampling fraction
     double SF = (pcal_e + ecin_e + ecout_e) / electron.p();
 
     // Check if passes cut
     bool passes = m_sf_svc->passes_cut(
         SF, electron.p(), sector,
-        CLAS::Target::LD2, CLAS::Polarity::Outbending);
+        clas12::Target::LD2, clas12::Polarity::Outbending);
 
-    return Framework::StatusCode::SUCCESS();
+    return clas12::framework::StatusCode::SUCCESS();
 }
 ```
 
@@ -391,7 +365,9 @@ Store analysis metadata for reproducibility.
 ### Setup
 
 ```cpp
-auto metadata_svc = std::make_unique<Framework::MetadataService>();
+#include <clas12/framework/services/MetadataService.hpp>
+
+auto metadata_svc = std::make_unique<clas12::framework::MetadataService>();
 metadata_svc->set_output_file("output.root");
 metadata_svc->set_version("2.0");
 metadata_svc->set_beam_energy(10.53);
@@ -418,12 +394,12 @@ app.service_manager().add_service(std::move(metadata_svc));
 Type-safe service access with validation at initialization:
 
 ```cpp
-class MyAlgorithm : public Framework::Algorithm {
+class MyAlgorithm : public clas12::framework::Algorithm {
 private:
-    Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
-    Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
+    clas12::framework::ServiceHandle<clas12::framework::HistogramService> m_hist_svc{"HistogramService"};
+    clas12::framework::ServiceHandle<clas12::framework::LoggingService> m_log_svc{"LoggingService"};
 
-    auto initialize() -> Framework::StatusCode override {
+    auto initialize() -> clas12::framework::StatusCode override {
         // Initialize handles - validates service availability
         auto hist_sc = initialize_handle(m_hist_svc);
         if (hist_sc.is_failure()) {
@@ -435,7 +411,7 @@ private:
             h_momentum = m_hist_svc->book_hist1D("/Analysis/p", "Momentum", 100, 0, 10);
         }
 
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 };
 ```
@@ -449,25 +425,25 @@ Implement the `IService` interface:
 ```cpp
 #pragma once
 
-#include "Framework/IService.hpp"
+#include <clas12/framework/core/IService.hpp>
 
-namespace Framework {
+namespace my_analysis {
 
-class MyCustomService : public IService {
+class MyCustomService : public clas12::framework::IService {
 public:
     auto name() const -> const std::string& override {
         static std::string n = "MyCustomService";
         return n;
     }
 
-    auto initialize() -> StatusCode override {
+    auto initialize() -> clas12::framework::StatusCode override {
         // Setup
-        return StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto finalize() -> StatusCode override {
+    auto finalize() -> clas12::framework::StatusCode override {
         // Cleanup
-        return StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
     // Custom methods
@@ -479,15 +455,29 @@ private:
     // Private members
 };
 
-}  // namespace Framework
+}  // namespace my_analysis
 ```
 
 Register and use:
 
 ```cpp
-app.service_manager().add_service(std::make_unique<Framework::MyCustomService>());
+app.service_manager().add_service(std::make_unique<my_analysis::MyCustomService>());
 
 // In algorithm
-auto* my_svc = service<Framework::MyCustomService>("MyCustomService");
+auto* my_svc = service<my_analysis::MyCustomService>("MyCustomService");
 my_svc->do_something();
 ```
+
+## Include Paths Reference
+
+| Service | Include Path |
+|---------|-------------|
+| HistogramService | `<clas12/framework/services/HistogramService.hpp>` |
+| LoggingService | `<clas12/framework/services/LoggingService.hpp>` |
+| NTupleService | `<clas12/framework/services/NTupleService.hpp>` |
+| ConditionsService | `<clas12/framework/services/ConditionsService.hpp>` |
+| HipoFileService | `<clas12/framework/services/HipoFileService.hpp>` |
+| PhotonCutsService | `<clas12/framework/services/PhotonCutsService.hpp>` |
+| ParticleSelectorService | `<clas12/framework/services/ParticleSelectorService.hpp>` |
+| SamplingFractionService | `<clas12/framework/services/SamplingFractionService.hpp>` |
+| MetadataService | `<clas12/framework/services/MetadataService.hpp>` |

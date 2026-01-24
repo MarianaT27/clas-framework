@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include "Framework/CutBuilder.hpp"
-#include "Framework/Cutflow.hpp"
-#include "Framework/StatusCode.hpp"
+#include <clas12/framework/core/CutBuilder.hpp>
+#include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/core/StatusCode.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 // =============================================================================
 // CutResult Tests

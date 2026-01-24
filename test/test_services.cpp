@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
-#include "Framework/ServiceManager.hpp"
-#include "Framework/Services/ConditionsService.hpp"
+#include <clas12/framework/core/ServiceManager.hpp>
+#include <clas12/framework/services/ConditionsService.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 TEST(ServiceManagerTest, AddAndRetrieveService) {
     ServiceManager svc_mgr;

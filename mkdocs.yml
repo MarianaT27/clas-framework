@@ -111,6 +111,7 @@ nav:
     - Your First Analysis: getting-started/first-analysis.md
   - User Guide:
     - Framework Guide: user-guide/framework.md
+    - Creating Analyses: user-guide/scaffolding.md
     - ApplicationBuilder: user-guide/application-builder.md
     - Services: user-guide/services.md
     - Algorithms: user-guide/algorithms.md

@@ -4,15 +4,31 @@ This guide helps you migrate existing analysis code to the modern C++20/23 frame
 
 ## Overview of Changes
 
-The modernized framework introduces several new features that reduce boilerplate and improve code clarity:
+The modernized framework uses `SimpleAlgorithm<T>` as the **unified base class** for all algorithms. Legacy specialized classes have been consolidated:
 
-| Old API | Modern API | Benefit |
-|---------|------------|---------|
-| `Algorithm` base class | `SimpleAlgorithm<T>` CRTP | Automatic service injection |
+| Old API | Modern API | Notes |
+|---------|------------|-------|
+| `Algorithm` | `SimpleAlgorithm<T>` | Unified base class with CRTP |
+| `FilterAlgorithm` | `SimpleAlgorithm<T>` | Use `StatusCode::FILTERED()` + `event.set_decision()` |
+| `ProducerAlgorithm` | `SimpleAlgorithm<T>` | Use `event.store()` to store products |
+| `AnalysisAlgorithm` | `SimpleAlgorithm<T>` | Direct replacement |
+| `MonitoringAlgorithm` | `SimpleAlgorithm<T>` | Direct replacement |
+| `service<T>()` | `require_service<T>()` | Service injection in `configure()` |
 | Manual particle loops | Range adaptors | Composable, lazy filtering |
 | Manual cut tracking | `CutBuilder` | Fluent API, auto cutflow |
 | `std::any` event store | `TypedEventStore` | Compile-time type safety |
 | Manual property handling | `Property<T>` | Declarative configuration |
+
+## Method Name Changes
+
+| Old Method | New Method | Called When |
+|------------|------------|-------------|
+| `initialize()` | `configure()` + `on_initialize()` | `configure()` for services, `on_initialize()` for setup |
+| `execute(event)` | `process(event)` | For each event |
+| `finalize()` | `on_finalize()` | At end of processing |
+| `filter(event) -> bool` | `process(event) -> StatusCode` | Use `FILTERED()` return |
+| `produce(event)` | `process(event)` | Direct replacement |
+| `monitor(event)` | `process(event)` | Direct replacement |
 
 ## Step-by-Step Migration
 
@@ -49,25 +65,123 @@ private:
 class MyAnalysis : public SimpleAlgorithm<MyAnalysis> {
 public:
     MyAnalysis() : SimpleAlgorithm("MyAnalysis") {}
-    
+
     auto configure() -> void override {
         // Services are automatically injected
         m_hist_svc = &require_service<HistogramService>("HistogramService");
     }
-    
+
     auto on_initialize() -> StatusCode override {
         // Custom initialization (services already available)
         return StatusCode::SUCCESS();
     }
-    
+
     auto process(Event& event) -> StatusCode override {
         // ... processing (replaces execute())
     }
-    
+
     auto on_finalize() -> StatusCode override {
         return StatusCode::SUCCESS();
     }
-    
+
+private:
+    ServiceHandle<HistogramService>* m_hist_svc = nullptr;
+};
+```
+
+### 1b. Migrating FilterAlgorithm
+
+**Before:**
+```cpp
+class MyFilter : public FilterAlgorithm {
+public:
+    MyFilter() : FilterAlgorithm("MyFilter") {}
+
+    auto filter(Event& event) -> bool override {
+        // Return true to pass, false to filter
+        return has_electron;
+    }
+};
+```
+
+**After:**
+```cpp
+class MyFilter : public SimpleAlgorithm<MyFilter> {
+public:
+    MyFilter() : SimpleAlgorithm("MyFilter") {}
+
+    auto process(Event& event) -> StatusCode override {
+        if (!has_electron) {
+            event.set_decision(name(), false);
+            return StatusCode::FILTERED();
+        }
+
+        event.set_decision(name(), true);
+        return StatusCode::SUCCESS();
+    }
+};
+```
+
+### 1c. Migrating ProducerAlgorithm
+
+**Before:**
+```cpp
+class MyProducer : public ProducerAlgorithm {
+public:
+    MyProducer() : ProducerAlgorithm("MyProducer") {}
+
+    auto produce(Event& event) -> StatusCode override {
+        // Create and store products
+        event.store("products", my_products);
+        return StatusCode::SUCCESS();
+    }
+};
+```
+
+**After:**
+```cpp
+class MyProducer : public SimpleAlgorithm<MyProducer> {
+public:
+    MyProducer() : SimpleAlgorithm("MyProducer") {}
+
+    auto process(Event& event) -> StatusCode override {
+        // Create and store products (same pattern)
+        event.store("products", my_products);
+        return StatusCode::SUCCESS();
+    }
+};
+```
+
+### 1d. Migrating MonitoringAlgorithm
+
+**Before:**
+```cpp
+class MyMonitor : public MonitoringAlgorithm {
+public:
+    MyMonitor() : MonitoringAlgorithm("MyMonitor") {}
+
+    auto monitor(Event& event) -> StatusCode override {
+        // Monitor events
+        return StatusCode::SUCCESS();
+    }
+};
+```
+
+**After:**
+```cpp
+class MyMonitor : public SimpleAlgorithm<MyMonitor> {
+public:
+    MyMonitor() : SimpleAlgorithm("MyMonitor") {}
+
+    auto configure() -> void override {
+        m_hist_svc = &require_service<HistogramService>("HistogramService");
+    }
+
+    auto process(Event& event) -> StatusCode override {
+        // Monitor events (same logic)
+        return StatusCode::SUCCESS();
+    }
+
 private:
     ServiceHandle<HistogramService>* m_hist_svc = nullptr;
 };
@@ -274,29 +388,44 @@ namespace Keys {
 | `evaluate()` | Run all cuts, return bool | `.evaluate()` |
 | `apply()` | Run all cuts, return StatusCode | `.apply()` |
 
-## Backward Compatibility
+## Migration Checklist
 
-The modern API is fully backward compatible. You can:
+When migrating an algorithm to `SimpleAlgorithm<T>`:
 
-- Mix old and new algorithm styles in the same application
-- Gradually migrate algorithms one at a time
-- Use new features (ranges, CutBuilder) in old-style algorithms
+- [ ] Change base class from `Algorithm`/`FilterAlgorithm`/etc. to `SimpleAlgorithm<YourClass>`
+- [ ] Move service retrieval from `initialize()` to `configure()` using `require_service<T>()`
+- [ ] Change service member types from `T*` to `ServiceHandle<T>*`
+- [ ] Rename `initialize()` to `on_initialize()`
+- [ ] Rename `execute()`/`filter()`/`produce()`/`monitor()` to `process()`
+- [ ] Rename `finalize()` to `on_finalize()`
+- [ ] Update service access from `m_svc->method()` to `m_svc->get()->method()`
+- [ ] For filters: return `StatusCode::FILTERED()` instead of `false`, add `event.set_decision()`
+
+## Using Modern Features
+
+All modern features work with `SimpleAlgorithm<T>`:
 
 ```cpp
-// Old-style algorithm using new features
-class HybridAnalysis : public Algorithm {
-    auto execute(Event& event) -> StatusCode override {
-        // Use range adaptors in old-style algorithm
+class ModernAnalysis : public SimpleAlgorithm<ModernAnalysis> {
+    auto configure() -> void override {
+        m_particle_svc = &require_service<ParticleSelectorService>("ParticleSelectorService");
+    }
+
+    auto process(Event& event) -> StatusCode override {
+        // Use range adaptors
         auto electrons = event.all_particles()
             | Ranges::by_pid(CLAS::PIDs::ELECTRON)
             | Ranges::in_detector(CLAS::FD);
-        
+
         // Use CutBuilder
         bool passed = CutBuilder(m_cutflow)
             .require_gt("Momentum", p, 1.0)
             .evaluate();
-        
+
         return passed ? StatusCode::SUCCESS() : StatusCode::FILTERED();
     }
+
+private:
+    ServiceHandle<ParticleSelectorService>* m_particle_svc = nullptr;
 };
 ```

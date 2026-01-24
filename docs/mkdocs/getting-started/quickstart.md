@@ -9,7 +9,7 @@ Get up and running with the CLAS12 Analysis Framework in 5 minutes.
 meson compile -C build
 
 # Run the example analysis
-./build/main_improved data/data.hipo
+./build/examples/example_simple_algorithm data/data.hipo
 ```
 
 ## Basic Analysis Structure
@@ -17,10 +17,10 @@ meson compile -C build
 Using the **ApplicationBuilder** pattern (recommended):
 
 ```cpp
-#include "Framework/ApplicationBuilder.hpp"
+#include <clas12/framework/core/ApplicationBuilder.hpp>
 
 int main() {
-    auto app = Framework::make_application("MyAnalysis")
+    auto app = clas12::framework::make_application("MyAnalysis")
         .with_input_files({"data.hipo"})
         .with_output("output.root")
         .with_threads(4)
@@ -39,15 +39,15 @@ int main() {
 Or using the traditional approach:
 
 ```cpp
-#include "Framework/Application.hpp"
-#include "Framework/Services/HistogramService.hpp"
+#include <clas12/framework/core/Application.hpp>
+#include <clas12/framework/services/HistogramService.hpp>
 
 int main() {
     // 1. Create application
-    Framework::Application app("MyAnalysis");
+    clas12::framework::Application app("MyAnalysis");
 
     // 2. Add services
-    auto hist_svc = std::make_unique<Framework::HistogramService>();
+    auto hist_svc = std::make_unique<clas12::framework::HistogramService>();
     hist_svc->set_output_file("output.root");
     app.service_manager().add_service(std::move(hist_svc));
 
@@ -69,6 +69,15 @@ int main() {
 ```
 
 ## Key Concepts
+
+### Namespaces
+
+| Namespace | Description |
+|-----------|-------------|
+| `clas12::framework` | Core framework (Application, Algorithm, Services) |
+| `clas12` | CLAS12-specific (Particle, PIDs, Target, etc.) |
+| `clas12::algorithms` | Standard algorithms (ElectronSelectionAlg, etc.) |
+| `clas12::physics` | Physics utilities (Kinematics, DISAnalysis, etc.) |
 
 ### Services
 
@@ -101,18 +110,31 @@ Algorithms process events with a lifecycle:
 The `Event` class provides access to particle data:
 
 ```cpp
-auto execute(Framework::Event& event) -> Framework::StatusCode override {
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
     // Get electrons
-    const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
-    
+    const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
+
     for (const auto& e : electrons) {
         h_momentum->Fill(e.p());
         h_theta->Fill(e.theta());
     }
-    
-    return Framework::StatusCode::SUCCESS();
+
+    return clas12::framework::StatusCode::SUCCESS();
 }
 ```
+
+## Include Paths
+
+| Component | Include Path |
+|-----------|-------------|
+| Framework core | `<clas12/framework/core/Application.hpp>` |
+| Framework services | `<clas12/framework/services/HistogramService.hpp>` |
+| CLAS12 utilities | `<clas12/Particle.hpp>`, `<clas12/PIDs.hpp>` |
+| Physics | `<clas12/physics/Kinematics.hpp>` |
+| Algorithms | `<clas12/algorithms/selection/ElectronSelectionAlg.hpp>` |
+
+!!! tip "Convenience Headers"
+    Use `<clas12/framework/Core.hpp>` to include all framework components, or `<clas12/CLAS12.hpp>` to include all CLAS12 utilities.
 
 ## Example Output
 
@@ -150,5 +172,6 @@ Chi2 PID                                4211     42.1%     93.1%
 ## Next Steps
 
 - [Your First Analysis](first-analysis.md) - Write a complete analysis
+- [Creating Analyses](../user-guide/scaffolding.md) - Use the scaffolding system
 - [Framework Guide](../user-guide/framework.md) - Deep dive into the framework
 - [Examples](../examples/electron-analysis.md) - See complete examples

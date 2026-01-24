@@ -3,9 +3,9 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include "Framework/StatusCode.hpp"
+#include <clas12/framework/core/StatusCode.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 /**
  * Test that verifies exception handling in algorithm execution.

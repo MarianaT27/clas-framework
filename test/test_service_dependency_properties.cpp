@@ -5,10 +5,10 @@
 #include <set>
 #include <string>
 #include <vector>
-#include "Framework/IService.hpp"
-#include "Framework/ServiceManager.hpp"
+#include <clas12/framework/core/IService.hpp>
+#include <clas12/framework/core/ServiceManager.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 /**
  * Test service that tracks initialization order

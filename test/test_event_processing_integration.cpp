@@ -17,13 +17,13 @@
 #include <filesystem>
 #include <chrono>
 
-#include "Framework/Generator.hpp"
-#include "Framework/EventStream.hpp"
-#include "Framework/Event.hpp"
-#include "Framework/Ranges.hpp"
-#include "CLAS/PIDs.hpp"
+#include <clas12/framework/core/Generator.hpp>
+#include <clas12/framework/core/EventStream.hpp>
+#include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/Ranges.hpp>
+#include <clas12/PIDs.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 // ============================================================================
 // Test Fixture with Real HIPO Data
@@ -159,7 +159,7 @@ TEST_F(EventProcessingIntegrationTest, EventStreamWithFilter) {
     
     // Add filter for events with electrons
     stream.filter([](Event& e) {
-        return !e.particles(CLAS::PIDs::ELECTRON).empty();
+        return !e.particles(clas12::PIDs::ELECTRON).empty();
     });
     
     EXPECT_TRUE(stream.has_filters()) << "Stream should have filters";
@@ -170,7 +170,7 @@ TEST_F(EventProcessingIntegrationTest, EventStreamWithFilter) {
         electron_event_count++;
         Event& event = event_opt->get();
         // Verify filter worked
-        EXPECT_FALSE(event.particles(CLAS::PIDs::ELECTRON).empty()) 
+        EXPECT_FALSE(event.particles(clas12::PIDs::ELECTRON).empty()) 
             << "Filtered events should have electrons";
     }
     
@@ -184,10 +184,10 @@ TEST_F(EventProcessingIntegrationTest, EventStreamMultipleFilters) {
     
     // Chain multiple filters (AND logic)
     stream.filter([](Event& e) {
-        return !e.particles(CLAS::PIDs::ELECTRON).empty();
+        return !e.particles(clas12::PIDs::ELECTRON).empty();
     }).filter([](Event& e) {
         // At least one electron with momentum > 0.5 GeV
-        for (const auto& electron : e.particles(CLAS::PIDs::ELECTRON)) {
+        for (const auto& electron : e.particles(clas12::PIDs::ELECTRON)) {
             if (electron.p() > 0.5) return true;
         }
         return false;
@@ -202,7 +202,7 @@ TEST_F(EventProcessingIntegrationTest, EventStreamMultipleFilters) {
         
         // Verify both filters applied
         bool has_high_p_electron = false;
-        for (const auto& electron : event.particles(CLAS::PIDs::ELECTRON)) {
+        for (const auto& electron : event.particles(clas12::PIDs::ELECTRON)) {
             if (electron.p() > 0.5) {
                 has_high_p_electron = true;
                 break;
@@ -352,7 +352,7 @@ TEST_F(EventProcessingIntegrationTest, RangeAdaptorsWithRealData) {
         
         // Use range adaptors to filter particles
         auto electrons = event.all_particles() 
-            | Ranges::by_pid(CLAS::PIDs::ELECTRON);
+            | Ranges::by_pid(clas12::PIDs::ELECTRON);
         
         for (const auto& e : electrons) {
             total_electrons++;
@@ -377,8 +377,8 @@ TEST_F(EventProcessingIntegrationTest, ComposedRangeFilters) {
         
         // Compose multiple filters
         auto fd_electrons = event.all_particles()
-            | Ranges::by_pid(CLAS::PIDs::ELECTRON)
-            | Ranges::in_detector(CLAS::FD)
+            | Ranges::by_pid(clas12::PIDs::ELECTRON)
+            | Ranges::in_detector(clas12::FD)
             | Ranges::by_min_momentum(0.5);
         
         for (const auto& e : fd_electrons) {
@@ -409,7 +409,7 @@ TEST_F(EventProcessingIntegrationTest, TraditionalPatternStillWorks) {
         
         // Traditional execute-style logic
         Event event(hipo_event);
-        auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
+        auto& electrons = event.particles(clas12::PIDs::ELECTRON);
         
         if (!electrons.empty()) {
             passed++;
@@ -431,7 +431,7 @@ TEST_F(EventProcessingIntegrationTest, EventStoreWithRealData) {
         Event event(hipo_event);
         
         // Store computed values
-        auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
+        auto& electrons = event.particles(clas12::PIDs::ELECTRON);
         event.store("n_electrons", static_cast<int>(electrons.size()));
         event.store("has_electron", !electrons.empty());
         

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include "Framework/Result.hpp"
+#include <clas12/framework/core/Result.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 // ============================================================================
 // Result<T> Tests

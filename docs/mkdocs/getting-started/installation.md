@@ -58,7 +58,29 @@ meson test -C build
 ### 5. Verify Installation
 
 ```bash
-./build/main_improved --help
+./build/examples/example_simple_algorithm --help
+```
+
+## Project Structure
+
+After building, you'll have the following structure:
+
+```
+build/
+├── libclas12-framework.so   # Core framework library
+├── libclas12.so             # CLAS12 utilities library
+├── libclas12-algorithms.so  # Standard algorithms library
+├── analyses/                # User analyses
+│   ├── electron_analysis
+│   ├── pion_analysis
+│   ├── pi0
+│   └── ...
+├── examples/                # Learning examples
+│   ├── example_simple_algorithm
+│   ├── example_builder
+│   └── ...
+└── tools/                   # Utilities
+    └── batch
 ```
 
 ## Environment Setup

@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
 #include <cstdio>
 #include <filesystem>
-#include "Framework/HistogramTemplates.hpp"
-#include "Framework/Services/HistogramService.hpp"
-#include "Framework/Services/OutputFileService.hpp"
+#include <clas12/framework/core/HistogramTemplates.hpp>
+#include <clas12/framework/services/HistogramService.hpp>
+#include <clas12/framework/services/OutputFileService.hpp>
 #include "TFile.h"
 
-using namespace Framework;
+using namespace clas12::framework;
 
 // Test fixture for histogram template tests
 class HistogramTemplatesTest : public ::testing::Test {

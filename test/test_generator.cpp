@@ -11,9 +11,9 @@
 #include <vector>
 #include <string>
 
-#include "Framework/Generator.hpp"
+#include <clas12/framework/core/Generator.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 // ============================================================================
 // Basic Generator Tests

@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
-#include "Framework/SimpleAlgorithm.hpp"
-#include "Framework/IService.hpp"
-#include "Framework/ServiceManager.hpp"
+#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/IService.hpp>
+#include <clas12/framework/core/ServiceManager.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 // ============================================================================
 // Test Services

@@ -4,120 +4,238 @@ Algorithms are the building blocks of analysis. They process events and can acce
 
 ## Built-in Algorithms
 
-The framework provides several ready-to-use algorithms:
+The framework provides several ready-to-use algorithms organized by category:
 
-| Algorithm | Description |
-|-----------|-------------|
-| `ElectronSelectionAlg` | Electron identification with full cut suite |
-| `ElectronAnalysisAlg` | Electron analysis with histograms and N-tuples |
-| `DISSelectionAlg` | DIS event selection with configurable kinematic regions |
-| `Pi0ReconstructionAlg` | π⁰ reconstruction from photon pairs |
-| `EventMonitor` | Real-time event processing statistics |
-| `PionSelectionAlg` | Pion identification |
-| `LambdaReconstructionAlg` | Λ reconstruction |
-| `TriggerElectronFilter` | Filter events with trigger electron |
+### Selection Algorithms
+
+| Algorithm | Location | Description |
+|-----------|----------|-------------|
+| `ElectronSelectionAlg` | `selection/` | Electron identification with full cut suite |
+| `DISSelectionAlg` | `selection/` | DIS event selection with configurable kinematic regions |
+| `PionSelectionAlg` | `selection/` | Pion identification |
+
+### Reconstruction Algorithms
+
+| Algorithm | Location | Description |
+|-----------|----------|-------------|
+| `Pi0ReconstructionAlg` | `reconstruction/` | π⁰ reconstruction from photon pairs |
+| `LambdaReconstructionAlg` | `reconstruction/` | Λ reconstruction |
+| `Rho0ReconstructionAlg` | `reconstruction/` | ρ⁰ reconstruction |
+
+### Analysis Algorithms
+
+| Algorithm | Location | Description |
+|-----------|----------|-------------|
+| `ElectronAnalysisAlg` | `analysis/` | Electron analysis with histograms and N-tuples |
+| `PionAnalysisAlg` | `analysis/` | Pion analysis with histograms |
+
+### Filter Algorithms
+
+| Algorithm | Location | Description |
+|-----------|----------|-------------|
+| `TriggerElectronFilter` | `filters/` | Filter events with trigger electron |
+| `DiPionFilterAlg` | `filters/` | Filter events with di-pion pairs |
+
+### Monitoring Algorithms
+
+| Algorithm | Location | Description |
+|-----------|----------|-------------|
+| `EventMonitor` | `monitoring/` | Real-time event processing statistics |
 
 ### Using Built-in Algorithms
 
 ```cpp
-#include "Framework/ApplicationBuilder.hpp"
-#include "Algorithms/ElectronSelectionAlg.hpp"
-#include "Algorithms/DISSelectionAlg.hpp"
-#include "Algorithms/Pi0ReconstructionAlg.hpp"
-#include "Algorithms/EventMonitor.hpp"
+#include <clas12/framework/core/ApplicationBuilder.hpp>
+#include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
+#include <clas12/algorithms/selection/DISSelectionAlg.hpp>
+#include <clas12/algorithms/reconstruction/Pi0ReconstructionAlg.hpp>
+#include <clas12/algorithms/monitoring/EventMonitor.hpp>
 
-auto app = Framework::make_application("My Analysis")
+auto app = clas12::framework::make_application("My Analysis")
     .with_standard_services()
-    .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
-    .add_algorithm<Algorithms::ElectronSelectionAlg>(
-        "ElectronSelection", CLAS::Target::LD2, CLAS::Polarity::Outbending)
-    .add_algorithm<Algorithms::DISSelectionAlg>(
-        "DISSelection", Physics::DISAnalysis::standard_dis_region())
-    .add_algorithm<Algorithms::Pi0ReconstructionAlg>(
+    .add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
+    .add_algorithm<clas12::algorithms::ElectronSelectionAlg>(
+        "ElectronSelection", clas12::Target::LD2, clas12::Polarity::Outbending)
+    .add_algorithm<clas12::algorithms::DISSelectionAlg>(
+        "DISSelection", clas12::physics::DISAnalysis::standard_dis_region())
+    .add_algorithm<clas12::algorithms::Pi0ReconstructionAlg>(
         "Pi0Reconstruction", 0.2, 0.3)  // mass_window, min_energy
     .build();
 ```
 
-## Algorithm Base Classes
+## SimpleAlgorithm Base Class
 
-The framework provides specialized base classes:
+All algorithms in the framework use the unified `SimpleAlgorithm<T>` CRTP base class. This provides:
 
-| Base Class | Purpose |
-|------------|---------|
-| `Algorithm` | Standard algorithm with initialize/execute/finalize |
-| `MonitoringAlgorithm` | For event monitoring (uses `monitor()` instead of `execute()`) |
-| `FilterAlgorithm` | For event filtering (uses `filter()` returning bool) |
+- **Automatic service injection** via `require_service<T>()` in `configure()`
+- **Clean lifecycle separation** between configuration and initialization
+- **Consistent interface** across all algorithm types
 
-## Algorithm Types
+```cpp
+#include <clas12/framework/core/SimpleAlgorithm.hpp>
+
+class MyAlgorithm : public clas12::framework::SimpleAlgorithm<MyAlgorithm> {
+public:
+    explicit MyAlgorithm(std::string name = "MyAlgorithm")
+        : SimpleAlgorithm(std::move(name)) {}
+
+    auto configure() -> void override {
+        // Request services (called automatically before on_initialize)
+        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
+    }
+
+    auto on_initialize() -> clas12::framework::StatusCode override {
+        // Book histograms, setup resources
+        return clas12::framework::StatusCode::SUCCESS();
+    }
+
+    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+        // Process each event
+        return clas12::framework::StatusCode::SUCCESS();
+    }
+
+    auto on_finalize() -> clas12::framework::StatusCode override {
+        // Print statistics, cleanup
+        return clas12::framework::StatusCode::SUCCESS();
+    }
+
+private:
+    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+};
+```
+
+## Algorithm Patterns
 
 ### Filter Algorithms
 
-Return true/false to select events:
+Filter events by returning `StatusCode::FILTERED()` and setting decisions:
 
 ```cpp
-class TriggerElectronFilter : public Framework::Algorithm {
+#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/PIDs.hpp>
+
+class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerElectronFilter> {
 public:
-    auto execute(Framework::Event& event) -> Framework::StatusCode override {
-        const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
-        
-        bool has_trigger = !electrons.empty() && 
-                          std::abs(electrons[0].status()) >= 2000;
-        
-        event.set_decision("HasTriggerElectron", has_trigger);
-        
-        return Framework::StatusCode::SUCCESS();
+    explicit TriggerElectronFilter(std::string name = "TriggerElectronFilter")
+        : SimpleAlgorithm(std::move(name)) {}
+
+    auto configure() -> void override {
+        m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
     }
+
+    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+        auto& hipo_event = event.hipo_event();
+        auto& REC_Particle = hipo_event["REC::Particle"];
+
+        auto particles = m_particle_svc->get()->extract_particles(
+            REC_Particle, {clas12::PIDs::ELECTRON});
+        const auto& electrons = m_particle_svc->get()->get_electrons(particles);
+
+        if (electrons.empty()) {
+            event.set_decision(name(), false);
+            return clas12::framework::StatusCode::FILTERED();
+        }
+
+        event.set_decision(name(), true);
+        return clas12::framework::StatusCode::SUCCESS();
+    }
+
+private:
+    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
 };
 ```
 
 ### Analysis Algorithms
 
-Fill histograms and compute physics:
+Fill histograms and compute physics quantities:
 
 ```cpp
-class ElectronAnalysisAlg : public Framework::Algorithm {
+class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAnalysisAlg> {
 public:
-    auto execute(Framework::Event& event) -> Framework::StatusCode override {
-        if (!event.passes_decision("HasTriggerElectron")) {
-            return Framework::StatusCode::SUCCESS();
-        }
-        
-        const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
-        for (const auto& e : electrons) {
-            h_momentum->Fill(e.p());
-            h_theta->Fill(e.theta());
-        }
-        
-        return Framework::StatusCode::SUCCESS();
+    explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysisAlg")
+        : SimpleAlgorithm(std::move(name)) {}
+
+    auto configure() -> void override {
+        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
+        m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
     }
+
+    auto on_initialize() -> clas12::framework::StatusCode override {
+        h_momentum = m_hist_svc->get()->book_hist1D("/Electron/p", "Momentum;p [GeV];Events", 100, 0, 10);
+        h_theta = m_hist_svc->get()->book_hist1D("/Electron/theta", "Theta;#theta [deg];Events", 100, 0, 45);
+        return clas12::framework::StatusCode::SUCCESS();
+    }
+
+    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+        if (!event.passes_decision("TriggerElectronFilter")) {
+            return clas12::framework::StatusCode::SUCCESS();
+        }
+
+        auto& hipo_event = event.hipo_event();
+        auto& REC_Particle = hipo_event["REC::Particle"];
+        auto particles = m_particle_svc->get()->extract_particles(REC_Particle, {clas12::PIDs::ELECTRON});
+
+        for (const auto& e : m_particle_svc->get()->get_electrons(particles)) {
+            h_momentum->Fill(e.p());
+            h_theta->Fill(e.theta() * 180.0 / M_PI);
+        }
+
+        return clas12::framework::StatusCode::SUCCESS();
+    }
+
+private:
+    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
+    TH1D* h_momentum = nullptr;
+    TH1D* h_theta = nullptr;
 };
 ```
 
 ### Producer Algorithms
 
-Create new data products:
+Create new data products and store them in the event:
 
 ```cpp
-class Pi0Producer : public Framework::Algorithm {
+#include <clas12/physics/CompositeParticle.hpp>
+
+class Pi0Producer : public clas12::framework::SimpleAlgorithm<Pi0Producer> {
 public:
-    auto execute(Framework::Event& event) -> Framework::StatusCode override {
-        const auto& photons = event.particles(CLAS::PIDs::PHOTON);
-        
-        std::vector<Physics::CompositeParticle> pi0_candidates;
-        
-        for (size_t i = 0; i < photons.size(); ++i) {
-            for (size_t j = i + 1; j < photons.size(); ++j) {
-                Physics::CompositeParticle pi0({photons[i], photons[j]});
-                if (pi0.invariant_mass() > 0.1 && pi0.invariant_mass() < 0.17) {
-                    pi0_candidates.push_back(pi0);
-                }
+    explicit Pi0Producer(std::string name = "Pi0Producer", double mass_center = 0.135, double mass_width = 0.050)
+        : SimpleAlgorithm(std::move(name)), m_mass_center(mass_center), m_mass_width(mass_width) {}
+
+    auto configure() -> void override {
+        m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
+    }
+
+    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+        auto& hipo_event = event.hipo_event();
+        auto& REC_Particle = hipo_event["REC::Particle"];
+
+        auto particles = m_particle_svc->get()->extract_particles(REC_Particle, {clas12::PIDs::PHOTON});
+        const auto& photons = m_particle_svc->get()->get_photons(particles);
+
+        auto pi0_candidates = clas12::physics::CompositeParticleBuilder::reconstruct_pi0(photons);
+
+        std::vector<clas12::physics::CompositeParticle> good_pi0s;
+        for (const auto& pi0 : pi0_candidates) {
+            if (pi0.in_mass_window(m_mass_center, m_mass_width)) {
+                good_pi0s.push_back(pi0);
             }
         }
-        
-        event.store_particles("Pi0Candidates", pi0_candidates);
-        
-        return Framework::StatusCode::SUCCESS();
+
+        event.store("Pi0Candidates", good_pi0s);
+
+        if (!good_pi0s.empty()) {
+            event.set_decision("HasPi0", true);
+        }
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
+
+private:
+    double m_mass_center;
+    double m_mass_width;
+    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
 };
 ```
 
@@ -138,87 +256,99 @@ app.add_algorithm(std::make_unique<Pi0AnalysisAlg>());
 
 ## Accessing Services
 
-### Using ServiceHandle (Recommended)
+### Using require_service<T>() (Recommended)
+
+With `SimpleAlgorithm<T>`, services are requested in `configure()` and accessed via `ServiceHandle` pointers:
 
 ```cpp
-class MyAlgorithm : public Framework::Algorithm {
-private:
-    Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
-    Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
+class MyAlgorithm : public clas12::framework::SimpleAlgorithm<MyAlgorithm> {
+public:
+    auto configure() -> void override {
+        // Required service - throws if not available
+        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
 
-    auto initialize() -> Framework::StatusCode override {
-        // Initialize required service
-        if (auto sc = initialize_handle(m_hist_svc); sc.is_failure()) {
-            return sc;
-        }
-
-        // Initialize optional service
-        initialize_handle(m_log_svc);
-
-        // Use service
-        if (m_hist_svc) {
-            h_momentum = m_hist_svc->book_hist1D("/Analysis/p", "Momentum", 100, 0, 10);
-        }
-
-        return Framework::StatusCode::SUCCESS();
+        // Optional service - returns nullptr if not available
+        m_ntuple_svc = &optional_service<clas12::framework::NTupleService>("NTupleService");
     }
+
+    auto on_initialize() -> clas12::framework::StatusCode override {
+        // Services are guaranteed to be valid after configure()
+        h_momentum = m_hist_svc->get()->book_hist1D("/Analysis/p", "Momentum", 100, 0, 10);
+
+        // Check optional service before use
+        if (m_ntuple_svc->is_valid()) {
+            m_ntuple_svc->get()->create_ntuple("/Analysis/ntuple");
+        }
+
+        return clas12::framework::StatusCode::SUCCESS();
+    }
+
+private:
+    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
+    TH1D* h_momentum = nullptr;
 };
 ```
 
-### Using service<T>() Helper
+### Service Access Pattern
 
-```cpp
-auto initialize() -> Framework::StatusCode override {
-    m_hist_svc = service<Framework::HistogramService>("HistogramService");
-    m_log_svc = service<Framework::LoggingService>("LoggingService");
-    
-    if (!m_hist_svc) {
-        Framework::Log::error(name(), "HistogramService not found");
-        return Framework::StatusCode::FAILURE();
-    }
-    
-    return Framework::StatusCode::SUCCESS();
-}
-```
+| Method | Description |
+|--------|-------------|
+| `require_service<T>(name)` | Request required service (throws if unavailable) |
+| `optional_service<T>(name)` | Request optional service (returns nullptr handle) |
+| `m_svc->is_valid()` | Check if service handle is valid |
+| `m_svc->get()->method()` | Access service methods |
 
 ## Using Cutflow
 
 Track selection efficiency:
 
 ```cpp
-class MyAlgorithm : public Framework::Algorithm {
-private:
-    Framework::Cutflow m_cutflow{"My Selection"};
-
+class MyAlgorithm : public clas12::framework::SimpleAlgorithm<MyAlgorithm> {
 public:
-    auto initialize() -> Framework::StatusCode override {
+    explicit MyAlgorithm(std::string name = "MyAlgorithm")
+        : SimpleAlgorithm(std::move(name)), m_cutflow("My Selection") {}
+
+    auto configure() -> void override {
+        m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
+    }
+
+    auto on_initialize() -> clas12::framework::StatusCode override {
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Has Electron");
         m_cutflow.add_cut("Momentum > 1 GeV");
         m_cutflow.add_cut("Forward Angle");
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_cutflow.pass("All Events");
-        
-        const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
-        if (electrons.empty()) return Framework::StatusCode::SUCCESS();
+
+        auto& hipo_event = event.hipo_event();
+        auto& REC_Particle = hipo_event["REC::Particle"];
+        auto particles = m_particle_svc->get()->extract_particles(REC_Particle, {clas12::PIDs::ELECTRON});
+        const auto& electrons = m_particle_svc->get()->get_electrons(particles);
+
+        if (electrons.empty()) return clas12::framework::StatusCode::FILTERED();
         m_cutflow.pass("Has Electron");
-        
-        if (electrons[0].p() < 1.0) return Framework::StatusCode::SUCCESS();
+
+        if (electrons[0].p() < 1.0) return clas12::framework::StatusCode::FILTERED();
         m_cutflow.pass("Momentum > 1 GeV");
-        
-        if (electrons[0].theta() > 35.0) return Framework::StatusCode::SUCCESS();
+
+        if (electrons[0].theta() > 35.0 * M_PI / 180.0) return clas12::framework::StatusCode::FILTERED();
         m_cutflow.pass("Forward Angle");
-        
-        return Framework::StatusCode::SUCCESS();
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto finalize() -> Framework::StatusCode override {
+    auto on_finalize() -> clas12::framework::StatusCode override {
         m_cutflow.print();
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
+
+private:
+    clas12::framework::Cutflow m_cutflow;
+    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
 };
 ```
 
@@ -242,32 +372,52 @@ Forward Angle                           38542     38.5%     91.5%
 Algorithms can be configured via constructor parameters:
 
 ```cpp
-class ElectronSelectionAlg : public Framework::Algorithm {
+class ElectronSelectionAlg : public clas12::framework::SimpleAlgorithm<ElectronSelectionAlg> {
 public:
     ElectronSelectionAlg(
         std::string name,
-        CLAS::Target target,
-        CLAS::Polarity polarity,
+        clas12::Target target,
+        clas12::Polarity polarity,
         bool enable_systematics = false
-    ) : Algorithm(std::move(name))
+    ) : SimpleAlgorithm(std::move(name))
       , m_target(target)
       , m_polarity(polarity)
       , m_enable_systematics(enable_systematics) {}
 
+    auto configure() -> void override {
+        m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
+    }
+
+    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+        // Use m_target, m_polarity in selection logic
+        return clas12::framework::StatusCode::SUCCESS();
+    }
+
 private:
-    CLAS::Target m_target;
-    CLAS::Polarity m_polarity;
+    clas12::Target m_target;
+    clas12::Polarity m_polarity;
     bool m_enable_systematics;
+    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
 };
 
 // Usage
 auto alg = std::make_unique<ElectronSelectionAlg>(
     "ElectronSelection",
-    CLAS::Target::LD2,
-    CLAS::Polarity::Outbending,
+    clas12::Target::LD2,
+    clas12::Polarity::Outbending,
     false
 );
 ```
+
+## Include Paths Reference
+
+| Component | Include Path |
+|-----------|-------------|
+| Selection algorithms | `<clas12/algorithms/selection/ElectronSelectionAlg.hpp>` |
+| Reconstruction algorithms | `<clas12/algorithms/reconstruction/Pi0ReconstructionAlg.hpp>` |
+| Analysis algorithms | `<clas12/algorithms/analysis/ElectronAnalysisAlg.hpp>` |
+| Filter algorithms | `<clas12/algorithms/filters/TriggerElectronFilter.hpp>` |
+| Monitoring algorithms | `<clas12/algorithms/monitoring/EventMonitor.hpp>` |
 
 ## Best Practices
 
@@ -277,11 +427,14 @@ auto alg = std::make_unique<ElectronSelectionAlg>(
 !!! tip "Use Event Store"
     Pass data between algorithms using `event.store()` and `event.retrieve()`.
 
-!!! tip "Check Services"
-    Always verify services were retrieved successfully in `initialize()`.
+!!! tip "Use require_service in configure()"
+    Request all services in `configure()` using `require_service<T>()`. This ensures services are available before `on_initialize()` is called.
 
 !!! tip "Track Efficiency"
     Use `Cutflow` to track selection efficiency at every step.
 
 !!! tip "Handle Errors"
-    Return `StatusCode::FAILURE()` for fatal errors, log warnings for recoverable issues.
+    Return `StatusCode::FAILURE()` for fatal errors, `StatusCode::FILTERED()` for filtered events, and log warnings for recoverable issues.
+
+!!! tip "Use SimpleAlgorithm<T>"
+    Always inherit from `SimpleAlgorithm<T>` for automatic service injection and a clean lifecycle separation.

@@ -3,13 +3,13 @@
 #include <ranges>
 #include <algorithm>
 
-#include "Framework/Ranges.hpp"
-#include "CLAS/Particle.hpp"
-#include "CLAS/PIDs.hpp"
-#include "CLAS/Detectors.hpp"
+#include <clas12/framework/core/Ranges.hpp>
+#include <clas12/Particle.hpp>
+#include <clas12/PIDs.hpp>
+#include <clas12/Detectors.hpp>
 
-using namespace Framework::Ranges;
-using namespace CLAS;
+using namespace clas12::framework::Ranges;
+using namespace clas12;
 
 // Helper function to create test particles
 auto make_particle(int pdg, int status, int index, int charge, 

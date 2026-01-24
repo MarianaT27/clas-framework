@@ -38,6 +38,9 @@ The CLAS12 Analysis Framework is a modern C++20 framework designed to make parti
 !!! success "Built-in Algorithms"
     Ready-to-use algorithms: ElectronSelectionAlg, DISSelectionAlg, Pi0ReconstructionAlg, EventMonitor.
 
+!!! success "Scaffolding System"
+    Python script to generate complete analysis directories with algorithms, build files, and proper structure.
+
 ## Quick Start
 
 ```bash
@@ -50,8 +53,45 @@ meson setup build
 meson compile -C build
 
 # Run example
-./build/main_improved data/data.hipo
+./build/examples/example_simple_algorithm data/data.hipo
 ```
+
+## Project Structure
+
+The framework is organized into modular components:
+
+```
+clas-analysis-1/
+├── framework/          # Core reusable framework library
+│   └── include/clas12/framework/
+│       ├── Core.hpp    # All-in-one convenience include
+│       ├── core/       # Algorithm, Application, Event, etc.
+│       └── services/   # HistogramService, NTupleService, etc.
+├── clas12/             # CLAS12-specific components
+│   └── include/clas12/
+│       ├── CLAS12.hpp  # All-in-one convenience include
+│       ├── Particle.hpp, PIDs.hpp, etc.
+│       └── physics/    # Kinematics, DISAnalysis, etc.
+├── algorithms/         # Standard physics algorithms
+│   └── include/clas12/algorithms/
+│       ├── selection/  # ElectronSelectionAlg, PionSelectionAlg
+│       ├── reconstruction/  # Pi0ReconstructionAlg, LambdaReconstructionAlg
+│       └── monitoring/ # EventMonitor
+├── analyses/           # User analysis executables
+├── examples/           # Learning examples with READMEs
+├── templates/          # Scaffolding for new analyses
+│   └── create_analysis.py
+└── tools/              # Utility tools (batch submission)
+```
+
+## Namespaces
+
+| Namespace | Description |
+|-----------|-------------|
+| `clas12::framework` | Core framework (Application, Algorithm, Services) |
+| `clas12` | CLAS12-specific (Particle, PIDs, Target, etc.) |
+| `clas12::algorithms` | Standard algorithms (ElectronSelectionAlg, etc.) |
+| `clas12::physics` | Physics utilities (Kinematics, DISAnalysis, etc.) |
 
 ## Architecture
 
@@ -81,19 +121,19 @@ graph TB
 Using the new **ApplicationBuilder** pattern (recommended):
 
 ```cpp
-#include "Framework/ApplicationBuilder.hpp"
-#include "Algorithms/ElectronSelectionAlg.hpp"
-#include "Algorithms/EventMonitor.hpp"
+#include <clas12/framework/core/ApplicationBuilder.hpp>
+#include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
+#include <clas12/algorithms/monitoring/EventMonitor.hpp>
 
 int main() {
-    auto app = Framework::make_application("MyAnalysis")
+    auto app = clas12::framework::make_application("MyAnalysis")
         .with_input_files({"data/run_5032.hipo"})
         .with_output("output.root")
         .with_threads(4)
         .with_standard_services()
-        .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
-        .add_algorithm<Algorithms::ElectronSelectionAlg>(
-            "ElectronSelection", CLAS::Target::LD2, CLAS::Polarity::Outbending)
+        .add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
+        .add_algorithm<clas12::algorithms::ElectronSelectionAlg>(
+            "ElectronSelection", clas12::Target::LD2, clas12::Polarity::Outbending)
         .build();
 
     app.initialize();
@@ -107,18 +147,18 @@ int main() {
 Or using the traditional approach:
 
 ```cpp
-#include "Framework/Application.hpp"
-#include "Framework/Services/HistogramService.hpp"
-#include "Algorithms/ElectronSelectionAlg.hpp"
+#include <clas12/framework/core/Application.hpp>
+#include <clas12/framework/services/HistogramService.hpp>
+#include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
 
 int main() {
-    Framework::Application app("MyAnalysis");
+    clas12::framework::Application app("MyAnalysis");
 
-    auto hist_svc = std::make_unique<Framework::HistogramService>();
+    auto hist_svc = std::make_unique<clas12::framework::HistogramService>();
     hist_svc->set_output_file("output.root");
     app.service_manager().add_service(std::move(hist_svc));
 
-    auto electron_alg = std::make_unique<Algorithms::ElectronSelectionAlg>();
+    auto electron_alg = std::make_unique<clas12::algorithms::ElectronSelectionAlg>();
     app.add_algorithm(std::move(electron_alg));
 
     app.set_input_files({"data/run_5032.hipo"});
@@ -130,12 +170,30 @@ int main() {
 }
 ```
 
+## Creating Your Own Analysis
+
+Use the scaffolding script to generate a new analysis:
+
+```bash
+# Create a new electron analysis
+python templates/create_analysis.py \
+    --name my_electron_study \
+    --type electron \
+    --with-algorithm \
+    --output analyses/my_electron_study
+
+# Build and run
+meson compile -C build
+./build/analyses/my_electron_study data/sample.hipo
+```
+
 ## Documentation
 
 | Section | Description |
 |---------|-------------|
 | [Getting Started](getting-started/installation.md) | Installation and setup |
 | [User Guide](user-guide/framework.md) | Detailed framework documentation |
+| [Creating Analyses](user-guide/scaffolding.md) | Using the scaffolding system |
 | [Examples](examples/electron-analysis.md) | Complete analysis examples |
 | [API Reference](api/index.md) | Full API documentation |
 

@@ -1,5 +1,5 @@
 project(
-  'clas12-framework',
+  'clas12-analysis',
   'cpp',
   version: '2.0',
   default_options: [
@@ -68,7 +68,12 @@ toml_dep   = subproject('tomlplusplus').get_variable('tomlplusplus_dep')
 lz4_dep    = subproject('lz4').get_variable('liblz4_dep')
 cxxopts_dep = dependency('cxxopts')
 
-subdir('hipo4')
+#══════════════════════════════════════════════════════════════════════════════#
+#                              EXTERNAL LIBRARIES                               #
+#══════════════════════════════════════════════════════════════════════════════#
+
+# HIPO4 library
+subdir('extern/hipo4')
 
 #══════════════════════════════════════════════════════════════════════════════#
 #                              ROOT DEPENDENCY                                  #
@@ -82,87 +87,33 @@ root_dep = declare_dependency(
 )
 
 #══════════════════════════════════════════════════════════════════════════════#
-#                              COMMON SOURCES                                   #
+#                              CORE LIBRARIES                                   #
 #══════════════════════════════════════════════════════════════════════════════#
 
-inc = include_directories('include')
+# Framework - Core reusable analysis framework
+subdir('framework')
 
-# Common dependencies for all executables
-common_deps = [hipo_dep, fmt_dep, root_dep]
-full_deps   = common_deps + [toml_dep, cxxopts_dep]
+# CLAS12 - CLAS12-specific components
+subdir('clas12')
 
-# Framework sources - compiled once into a static library
-framework_sources = files(
-  'src/CLAS/Particle.cpp',
-  'src/Framework/Histogram.cpp',
-  'src/Algorithms/Pi0ReconstructionAlg.cpp',
-  'src/Framework/Services/PhotonCutsService.cpp',
-)
-
-# Build framework as static library (compiled once, linked many times)
-framework_lib = static_library(
-  'framework',
-  framework_sources,
-  include_directories: inc,
-  dependencies: [common_deps, toml_dep],
-)
-
-# Dependency object for linking
-framework_dep = declare_dependency(
-  link_with: framework_lib,
-)
+# Algorithms - Standard physics algorithms
+subdir('algorithms')
 
 #══════════════════════════════════════════════════════════════════════════════#
 #                              EXECUTABLES                                      #
 #══════════════════════════════════════════════════════════════════════════════#
 
-# Helper to build standard executables with framework core
-executables = {
-  'framework_example':      {'main': 'src/example_framework.cpp'},
-  'advanced':               {'main': 'src/advanced.cpp'},
-  'example_auto_histograms': {'main': 'src/example_auto_histograms.cpp'},
-  'example_builder':        {'main': 'src/example_builder.cpp'},
-  'example_simple_algorithm': {'main': 'src/example_simple_algorithm.cpp'},
-  'example_modern_electron_analysis': {'main': 'src/example_modern_electron_analysis.cpp'},
-  'lambda':                 {'main': 'src/lambda.cpp'},
-  'decays_lambda':          {'main': 'src/decays_lambda.cpp'},
-  'electron_analysis':      {'main': 'src/electron_analysis.cpp'},
-  'pion_analysis':          {'main': 'src/pion_analysis.cpp'},
-  'nuclear_transparency':   {'main': 'src/nuclear_transparency.cpp'},
-  'dipion_filter':         {'main': 'src/dipion_filter.cpp'},
-}
+# User analyses
+subdir('analyses')
 
-foreach name, config : executables
-  executable(
-    name,
-    files(config['main']),
-    include_directories: inc,
-    dependencies: [framework_dep, full_deps],
-  )
-endforeach
+# Learning examples
+subdir('examples')
 
-# Pi0 - uses same framework library as others
-executable(
-  'pi0',
-  files('src/pi0.cpp'),
-  include_directories: inc,
-  dependencies: [framework_dep, full_deps],
-)
-
-# Generic batch job submitter - works with any analysis executable
-executable(
-  'batch',
-  files('src/batch.cpp'),
-  include_directories: inc,
-  dependencies: common_deps + [cxxopts_dep],
-)
+# Utility tools
+subdir('tools')
 
 #══════════════════════════════════════════════════════════════════════════════#
-#                              OPTIONAL COMPONENTS                              #
+#                              TESTS                                            #
 #══════════════════════════════════════════════════════════════════════════════#
 
-# Test suite (requires Google Test)
 subdir('test')
-
-# Python bindings (requires pybind11)
-# subdir('python')

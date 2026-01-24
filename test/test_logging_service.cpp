@@ -3,9 +3,9 @@
 #include <fstream>
 #include <regex>
 #include <sstream>
-#include "Framework/Services/LoggingService.hpp"
+#include <clas12/framework/services/LoggingService.hpp>
 
-using namespace Framework;
+using namespace clas12::framework;
 
 namespace {
 
