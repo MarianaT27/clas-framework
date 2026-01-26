@@ -1,5 +1,6 @@
 #pragma once
 
+#include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/core/CutBuilder.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
@@ -10,7 +11,6 @@
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
-#include <clas12/framework/core/ThreadSafeHistogram.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
 namespace clas12::algorithms {
@@ -203,23 +203,24 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
     clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
 
-    // Thread-safe histograms (managed by HistogramService)
-    clas12::framework::ThreadSafeHist1D* h_Q2 = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_W = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_nu = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_xB = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_y = nullptr;
+    // Lock-free atomic histograms (managed by HistogramService)
+    clas12::framework::AtomicHistogram1D* h_Q2 = nullptr;
+    clas12::framework::AtomicHistogram1D* h_W = nullptr;
+    clas12::framework::AtomicHistogram1D* h_nu = nullptr;
+    clas12::framework::AtomicHistogram1D* h_xB = nullptr;
+    clas12::framework::AtomicHistogram1D* h_y = nullptr;
 
     // N-tuple writer (replaces individual variables + manual registration)
     clas12::framework::NTupleWriter<DISNTupleData> m_ntuple;
 
     auto book_histograms() -> void {
         clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
-            h_Q2 = svc->book_safe_hist1D("/DIS/Q2", "Q^{2};Q^{2} [GeV^{2}/c^{2}];Events", 120, 0, 12);
-            h_W = svc->book_safe_hist1D("/DIS/W", "W;W [GeV];Events", 180, 0, 10);
-            h_nu = svc->book_safe_hist1D("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
-            h_xB = svc->book_safe_hist1D("/DIS/xB", "x_{B};x_{B} [GeV];Events", 200, 0, 1.2);
-            h_y = svc->book_safe_hist1D("/DIS/y", "y;y;Events", 200, 0, 1);
+            // Use lock-free atomic histograms for parallel accumulation
+            h_Q2 = svc->book_atomic_q2_hist("/DIS/Q2", "Q^{2}");
+            h_W = svc->book_atomic_w_hist("/DIS/W", "W");
+            h_nu = svc->book_atomic_hist1D("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
+            h_xB = svc->book_atomic_xb_hist("/DIS/xB", "x_{B}");
+            h_y = svc->book_atomic_hist1D("/DIS/y", "y;y;Events", 200, 0, 1);
         });
     }
 };

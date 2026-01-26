@@ -12,7 +12,7 @@ namespace clas12::framework {
  * @brief Batch job system for HPC clusters
  *
  * Provides tools for:
- * - Job submission to SLURM, PBS, Condor
+ * - Job submission to SLURM
  * - Input file splitting
  * - Job configuration
  * - Status monitoring
@@ -24,10 +24,8 @@ class BatchSystem {
      * @brief Supported batch systems
      */
     enum class System {
-        SLURM,   // Simple Linux Utility for Resource Management
-        PBS,     // Portable Batch System
-        Condor,  // HTCondor
-        Local    // Local execution (for testing)
+        SLURM,  // Simple Linux Utility for Resource Management
+        Local   // Local execution (for testing)
     };
 
     /**
@@ -198,169 +196,6 @@ class BatchSystem {
     }
 
     /**
-     * @brief Generate PBS submission script
-     */
-    static auto generate_pbs_script(
-        const JobConfig& config,
-        int job_index,
-        const std::vector<std::string>& input_chunk) -> std::string {
-        std::ostringstream script;
-
-        // PBS directives
-        script << "#!/bin/bash\n";
-        script << "#PBS -N " << config.job_name << "_" << job_index << "\n";
-        script << "#PBS -o " << config.log_dir << "/" << config.job_name
-               << "_" << job_index << ".out\n";
-        script << "#PBS -e " << config.log_dir << "/" << config.job_name
-               << "_" << job_index << ".err\n";
-        script << "#PBS -l nodes=1:ppn=" << config.n_cores << "\n";
-        script << "#PBS -l mem=" << config.memory_gb << "gb\n";
-        script << "#PBS -l walltime=" << config.time_limit << "\n";
-
-        if (!config.queue.empty()) {
-            script << "#PBS -q " << config.queue << "\n";
-        }
-
-        // Email notifications
-        if (!config.email.empty()) {
-            script << "#PBS -M " << config.email << "\n";
-            std::string mail_options;
-            if (config.email_on_start) mail_options += "b";
-            if (config.email_on_end) mail_options += "e";
-            if (config.email_on_fail) mail_options += "a";
-            if (!mail_options.empty()) {
-                script << "#PBS -m " << mail_options << "\n";
-            }
-        }
-
-        script << "\n";
-
-        // Change to working directory
-        script << "cd $PBS_O_WORKDIR\n";
-        script << "\n";
-
-        // Load modules
-        for (const auto& module : config.modules) {
-            script << "module load " << module << "\n";
-        }
-
-        // Environment variables
-        for (const auto& env : config.env_vars) {
-            script << "export " << env << "\n";
-        }
-
-        script << "\n";
-
-        // Job info
-        script << "echo \"Job started at: $(date)\"\n";
-        script << "echo \"Running on node: $(hostname)\"\n";
-        script << "echo \"Job ID: $PBS_JOBID\"\n";
-        script << "\n";
-
-        // Create output directory
-        std::string output_subdir = config.output_dir + "/job_" + std::to_string(job_index);
-        script << "mkdir -p " << output_subdir << "\n";
-        script << "cd " << output_subdir << "\n";
-        script << "\n";
-
-        // Build comma-separated input file list
-        std::string input_list;
-        for (size_t i = 0; i < input_chunk.size(); ++i) {
-            if (i > 0) input_list += ",";
-            input_list += input_chunk[i];
-        }
-
-        // Run analysis with all input files
-        script << "echo \"Processing " << input_chunk.size() << " files\"\n";
-        script << config.executable;
-        script << " --input=" << input_list;
-
-        // Add extra arguments
-        for (const auto& arg : config.extra_args) {
-            script << " " << arg;
-        }
-
-        script << "\n";
-        script << "if [ $? -ne 0 ]; then\n";
-        script << "    echo \"ERROR: Analysis failed\"\n";
-        script << "    exit 1\n";
-        script << "fi\n";
-        script << "\n";
-
-        script << "echo \"Job completed at: $(date)\"\n";
-
-        return script.str();
-    }
-
-    /**
-     * @brief Generate Condor submission file
-     */
-    static auto generate_condor_submit(
-        const JobConfig& config,
-        int job_index,
-        const std::vector<std::string>& input_chunk) -> std::string {
-        std::ostringstream submit;
-
-        submit << "# HTCondor submission file\n";
-        submit << "universe = vanilla\n";
-        submit << "executable = " << config.executable << "\n";
-
-        // Build comma-separated input file list
-        std::string input_list;
-        for (size_t i = 0; i < input_chunk.size(); ++i) {
-            if (i > 0) input_list += ",";
-            input_list += input_chunk[i];
-        }
-
-        // Arguments
-        submit << "arguments = --input=" << input_list;
-        for (const auto& arg : config.extra_args) {
-            submit << " " << arg;
-        }
-        submit << "\n";
-
-        // Resources
-        submit << "request_cpus = " << config.n_cores << "\n";
-        submit << "request_memory = " << config.memory_gb << "GB\n";
-
-        // Output
-        submit << "output = " << config.log_dir << "/" << config.job_name
-               << "_" << job_index << ".out\n";
-        submit << "error = " << config.log_dir << "/" << config.job_name
-               << "_" << job_index << ".err\n";
-        submit << "log = " << config.log_dir << "/" << config.job_name
-               << "_" << job_index << ".log\n";
-
-        // Environment
-        if (!config.env_vars.empty()) {
-            submit << "environment = \"";
-            for (const auto& env : config.env_vars) {
-                submit << env << " ";
-            }
-            submit << "\"\n";
-        }
-
-        // Email notifications
-        if (!config.email.empty()) {
-            submit << "notify_user = " << config.email << "\n";
-            if (config.email_on_end || config.email_on_fail) {
-                submit << "notification = ";
-                if (config.email_on_end && config.email_on_fail) {
-                    submit << "Always\n";
-                } else if (config.email_on_fail) {
-                    submit << "Error\n";
-                } else {
-                    submit << "Complete\n";
-                }
-            }
-        }
-
-        submit << "queue\n";
-
-        return submit.str();
-    }
-
-    /**
      * @brief Write script to file
      */
     static auto write_script(
@@ -429,18 +264,6 @@ class BatchSystem {
                     submit_command = "sbatch " + script_file;
                     break;
 
-                case System::PBS:
-                    script_content = generate_pbs_script(abs_config, i, chunks[i]);
-                    script_file = abs_batch_dir + "/job_" + std::to_string(i) + ".pbs";
-                    submit_command = "qsub " + script_file;
-                    break;
-
-                case System::Condor:
-                    script_content = generate_condor_submit(abs_config, i, chunks[i]);
-                    script_file = abs_batch_dir + "/job_" + std::to_string(i) + ".condor";
-                    submit_command = "condor_submit " + script_file;
-                    break;
-
                 case System::Local:
                     // For local execution, just save the script
                     script_content = generate_slurm_script(abs_config, i, chunks[i]);
@@ -469,10 +292,6 @@ class BatchSystem {
         switch (sys) {
             case System::SLURM:
                 return "SLURM";
-            case System::PBS:
-                return "PBS";
-            case System::Condor:
-                return "Condor";
             case System::Local:
                 return "Local";
             default:

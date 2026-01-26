@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cmath>
-#include <clas12/framework/core/CutBuilder.hpp>
+#include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
@@ -10,8 +10,6 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
-#include "TH1D.h"
-#include "TH2D.h"
 
 namespace clas12::algorithms {
 
@@ -30,7 +28,6 @@ using clas12::framework::Log;
  * Uses SimpleAlgorithm CRTP pattern with:
  * - Automatic service injection via require_service<T>()
  * - Property system for configuration
- * - CutBuilder for fluent cut definitions
  */
 class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAlg> {
    public:
@@ -53,7 +50,7 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
      * @brief Set minimum Q2 cut
      */
     auto set_q2_min(double value) -> DiPionFilterAlg& {
-        (void)m_q2_min.set(value);
+        m_q2_min.set(value);
         return *this;
     }
 
@@ -61,7 +58,7 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
      * @brief Set minimum W cut
      */
     auto set_w_min(double value) -> DiPionFilterAlg& {
-        (void)m_w_min.set(value);
+        m_w_min.set(value);
         return *this;
     }
 
@@ -69,7 +66,7 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
      * @brief Set minimum pion momentum cut
      */
     auto set_pion_p_min(double value) -> DiPionFilterAlg& {
-        (void)m_pion_p_min.set(value);
+        m_pion_p_min.set(value);
         return *this;
     }
 
@@ -77,7 +74,7 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
      * @brief Set maximum |chi2pid| cut for pions
      */
     auto set_pion_chi2pid_max(double value) -> DiPionFilterAlg& {
-        (void)m_pion_chi2pid_max.set(value);
+        m_pion_chi2pid_max.set(value);
         return *this;
     }
 
@@ -85,7 +82,7 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
      * @brief Enable or disable histogram output
      */
     auto set_enable_histograms(bool value) -> DiPionFilterAlg& {
-        (void)m_enable_histograms.set(value);
+        m_enable_histograms.set(value);
         return *this;
     }
 
@@ -298,39 +295,46 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
     // Statistics
     size_t m_events_passed = 0;
 
-    // Histograms
-    TH1D* h_Q2 = nullptr;
-    TH1D* h_W = nullptr;
-    TH1D* h_piplus_p = nullptr;
-    TH1D* h_piminus_p = nullptr;
-    TH1D* h_piplus_chi2pid = nullptr;
-    TH1D* h_piminus_chi2pid = nullptr;
-    TH2D* h_Q2_vs_W = nullptr;
+    // Lock-free atomic histograms
+    clas12::framework::AtomicHistogram1D* h_Q2 = nullptr;
+    clas12::framework::AtomicHistogram1D* h_W = nullptr;
+    clas12::framework::AtomicHistogram1D* h_piplus_p = nullptr;
+    clas12::framework::AtomicHistogram1D* h_piminus_p = nullptr;
+    clas12::framework::AtomicHistogram1D* h_piplus_chi2pid = nullptr;
+    clas12::framework::AtomicHistogram1D* h_piminus_chi2pid = nullptr;
+    clas12::framework::AtomicHistogram2D* h_Q2_vs_W = nullptr;
 
     auto book_histograms() -> void {
         if (!m_hist_svc || !m_hist_svc->is_valid()) return;
         auto* svc = m_hist_svc->get();
 
-        h_Q2 = svc->book_hist1D("/DiPion/Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 10);
-        h_W = svc->book_hist1D("/DiPion/W", "W;W [GeV];Events", 100, 1, 5);
-        h_piplus_p = svc->book_hist1D("/DiPion/piplus_p", "#pi^{+} Momentum;p [GeV];Events", 100, 0, 6);
-        h_piminus_p = svc->book_hist1D("/DiPion/piminus_p", "#pi^{-} Momentum;p [GeV];Events", 100, 0, 6);
-        h_piplus_chi2pid = svc->book_hist1D("/DiPion/piplus_chi2pid", "#pi^{+} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
-        h_piminus_chi2pid = svc->book_hist1D("/DiPion/piminus_chi2pid", "#pi^{-} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
-        h_Q2_vs_W = svc->book_hist2D("/DiPion/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]", 100, 1, 5, 100, 0, 10);
+        // Use lock-free atomic histogram templates for DIS kinematics
+        h_Q2 = svc->book_atomic_q2_hist("/DiPion/Q2", "Q^{2}");
+        h_W = svc->book_atomic_w_hist("/DiPion/W", "W");
+
+        // Use atomic momentum templates for pion histograms
+        h_piplus_p = svc->book_atomic_momentum_hist("/DiPion/piplus_p", "#pi^{+} Momentum", 100, 0, 6);
+        h_piminus_p = svc->book_atomic_momentum_hist("/DiPion/piminus_p", "#pi^{-} Momentum", 100, 0, 6);
+
+        // Chi2PID histograms (lock-free atomic)
+        h_piplus_chi2pid = svc->book_atomic_hist1D("/DiPion/piplus_chi2pid", "#pi^{+} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
+        h_piminus_chi2pid = svc->book_atomic_hist1D("/DiPion/piminus_chi2pid", "#pi^{-} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
+
+        // Q2 vs W (lock-free atomic 2D)
+        h_Q2_vs_W = svc->book_atomic_hist2D("/DiPion/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]", 100, 1, 5, 100, 0, 10);
     }
 
     auto fill_histograms([[maybe_unused]] const clas12::Particle& electron,
                          const clas12::physics::DISAnalysis::DISKinematics& kin,
                          const clas12::Particle& piplus,
                          const clas12::Particle& piminus) -> void {
-        if (h_Q2) h_Q2->Fill(kin.q2);
-        if (h_W) h_W->Fill(kin.w);
-        if (h_piplus_p) h_piplus_p->Fill(piplus.p());
-        if (h_piminus_p) h_piminus_p->Fill(piminus.p());
-        if (h_piplus_chi2pid) h_piplus_chi2pid->Fill(piplus.chi2pid());
-        if (h_piminus_chi2pid) h_piminus_chi2pid->Fill(piminus.chi2pid());
-        if (h_Q2_vs_W) h_Q2_vs_W->Fill(kin.w, kin.q2);
+        if (h_Q2) h_Q2->fill(kin.q2);
+        if (h_W) h_W->fill(kin.w);
+        if (h_piplus_p) h_piplus_p->fill(piplus.p());
+        if (h_piminus_p) h_piminus_p->fill(piminus.p());
+        if (h_piplus_chi2pid) h_piplus_chi2pid->fill(piplus.chi2pid());
+        if (h_piminus_chi2pid) h_piminus_chi2pid->fill(piminus.chi2pid());
+        if (h_Q2_vs_W) h_Q2_vs_W->fill(kin.w, kin.q2);
     }
 };
 

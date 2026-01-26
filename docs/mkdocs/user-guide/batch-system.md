@@ -30,12 +30,12 @@ Options:
   --target          Target type (LD2, CxC, CuSn)
   --polarity        Magnetic field polarity (Inbending, Outbending)
   --job-name        Job name prefix
-  --system          Batch system: slurm, pbs, condor, local (default: slurm)
+  --system          Batch system: slurm, local (default: slurm)
   --files-per-job   Input files per job (default: 10)
   --num-threads     Threads per job (default: 8)
   --memory          Memory per job in GB (default: 16)
   --time            Time limit HH:MM:SS (default: 12:00:00)
-  --partition       SLURM partition / PBS queue (default: production)
+  --partition       SLURM partition (default: production)
   --output-dir      Output directory (default: ./output)
   --log-dir         Log directory (default: ./logs)
   --email           Email for notifications
@@ -48,8 +48,6 @@ Options:
 | System | Flag | Submit Command | Monitor |
 |--------|------|----------------|---------|
 | SLURM | `--system=slurm` | `sbatch` | `squeue -u $USER` |
-| PBS | `--system=pbs` | `qsub` | `qstat -u $USER` |
-| HTCondor | `--system=condor` | `condor_submit` | `condor_q` |
 | Local | `--system=local` | `bash` | `ps aux` |
 
 ## Examples
@@ -81,17 +79,6 @@ Pi0-specific options (passed via `--extra-args`):
   --data-dir=/volatile/clas12/users/myname/data \
   --output-dir=/volatile/clas12/users/myname/output \
   --email=myname@jlab.org \
-  --submit
-```
-
-### Lambda Analysis on PBS
-
-```bash
-./builddir/batch ./builddir/lambda \
-  --system=pbs \
-  --target=CxC \
-  --polarity=Inbending \
-  --partition=standard \
   --submit
 ```
 

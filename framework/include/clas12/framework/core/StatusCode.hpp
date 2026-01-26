@@ -6,6 +6,11 @@
 
 namespace clas12::framework {
 
+// Forward declarations for Result bridge
+template <typename T>
+class Result;
+class Error;
+
 /**
  * @brief Status code for algorithm and service operations
  *
@@ -74,6 +79,39 @@ public:
         return is_failure() ? *this : other;
     }
 
+    // ========================================================================
+    // Result<T> Bridge - Convert between StatusCode and Result types
+    // ========================================================================
+
+    /**
+     * @brief Convert StatusCode to Result<void>
+     *
+     * Allows seamless interop between StatusCode and Result-based APIs.
+     * - SUCCESS/FILTERED -> Result::ok()
+     * - FAILURE -> Result::error(message)
+     *
+     * @return Result<void> Success if not failure, error otherwise
+     */
+    [[nodiscard]] inline auto to_result() const -> Result<void>;
+
+    /**
+     * @brief Create StatusCode from a Result
+     *
+     * @tparam T Value type of the Result
+     * @param result The Result to convert
+     * @return StatusCode SUCCESS if ok, FAILURE with error message if error
+     */
+    template <typename T>
+    [[nodiscard]] static auto from_result(const Result<T>& result) -> StatusCode;
+
+    /**
+     * @brief Create StatusCode from a Result<void>
+     *
+     * @param result The Result<void> to convert
+     * @return StatusCode SUCCESS if ok, FAILURE with error message if error
+     */
+    [[nodiscard]] static inline auto from_result(const Result<void>& result) -> StatusCode;
+
     // String representation for debugging
     [[nodiscard]] auto to_string() const -> std::string {
         switch (m_code) {
@@ -88,5 +126,39 @@ private:
     Code m_code;
     std::string m_message;
 };
+
+}  // namespace clas12::framework
+
+// Include Result.hpp for bridge implementations
+// This must come after StatusCode is fully defined
+#include <clas12/framework/core/Result.hpp>
+
+namespace clas12::framework {
+
+// ============================================================================
+// StatusCode-Result Bridge Implementations
+// ============================================================================
+
+inline auto StatusCode::to_result() const -> Result<void> {
+    if (is_failure()) {
+        return Result<void>::error(m_message.empty() ? "Operation failed" : m_message);
+    }
+    return Result<void>::ok();
+}
+
+template <typename T>
+auto StatusCode::from_result(const Result<T>& result) -> StatusCode {
+    if (result.is_ok()) {
+        return StatusCode::SUCCESS();
+    }
+    return StatusCode::failure(result.error().message());
+}
+
+inline auto StatusCode::from_result(const Result<void>& result) -> StatusCode {
+    if (result.is_ok()) {
+        return StatusCode::SUCCESS();
+    }
+    return StatusCode::failure(result.error().message());
+}
 
 }  // namespace clas12::framework

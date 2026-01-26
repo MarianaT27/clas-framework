@@ -1,14 +1,15 @@
 #pragma once
 
+#include <array>
 #include <fmt/format.h>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
-#include <clas12/framework/core/ThreadSafeHistogram.hpp>
 #include "TFile.h"
 #include "TH1D.h"
 #include "TH2D.h"
@@ -51,6 +52,9 @@ class HistogramService : public Service {
     }
 
     auto finalize() -> StatusCode override {
+        // Convert atomic histograms to ROOT format before writing
+        convert_atomic_histograms();
+
         if (m_auto_write) {
             write_histograms();
         } else {
@@ -58,6 +62,49 @@ class HistogramService : public Service {
         }
         Log::info(name(), "Finalized");
         return StatusCode::SUCCESS();
+    }
+
+    /**
+     * @brief Convert all atomic histograms to ROOT TH1D/TH2D format
+     *
+     * Called automatically during finalize(). Atomic histograms are
+     * converted to ROOT format and stored in the regular histogram maps.
+     */
+    auto convert_atomic_histograms() -> void {
+        // Convert 1D atomic histograms
+        for (const auto& [path, atomic_hist] : m_atomic_hist1D) {
+            if (m_hist1D.find(path) != m_hist1D.end()) {
+                // Merge into existing histogram
+                atomic_hist->merge_into(m_hist1D[path].get());
+            } else {
+                // Create new histogram from atomic
+                std::string hist_name = extract_name(path);
+                const auto& meta = m_atomic_hist1D_meta[path];
+                auto root_hist = atomic_hist->to_root(hist_name, meta.title);
+                root_hist->SetDirectory(nullptr);
+                m_hist1D[path] = std::move(root_hist);
+            }
+        }
+
+        // Convert 2D atomic histograms
+        for (const auto& [path, atomic_hist] : m_atomic_hist2D) {
+            if (m_hist2D.find(path) != m_hist2D.end()) {
+                // Merge into existing histogram
+                atomic_hist->merge_into(m_hist2D[path].get());
+            } else {
+                // Create new histogram from atomic
+                std::string hist_name = extract_name(path);
+                const auto& meta = m_atomic_hist2D_meta[path];
+                auto root_hist = atomic_hist->to_root(hist_name, meta.title);
+                root_hist->SetDirectory(nullptr);
+                m_hist2D[path] = std::move(root_hist);
+            }
+        }
+
+        if (!m_atomic_hist1D.empty() || !m_atomic_hist2D.empty()) {
+            Log::info(name(), "Converted {} atomic 1D and {} atomic 2D histograms to ROOT format",
+                      m_atomic_hist1D.size(), m_atomic_hist2D.size());
+        }
     }
 
     /**
@@ -224,117 +271,6 @@ class HistogramService : public Service {
         return nullptr;
     }
 
-    // ========================================================================
-    // Thread-Safe Histogram Booking Methods
-    // ========================================================================
-
-    /**
-     * @brief Book a thread-safe 1D histogram
-     *
-     * Returns a ThreadSafeHist1D wrapper that provides mutex-protected fill operations.
-     * Use this method when processing events in parallel.
-     *
-     * @param path Full path (e.g., "/ElectronKinematics/momentum")
-     * @param title Histogram title with axis labels
-     * @param nbins Number of bins
-     * @param xmin Minimum x value
-     * @param xmax Maximum x value
-     * @return ThreadSafeHist1D* Pointer to thread-safe histogram wrapper
-     */
-    auto book_safe_hist1D(const std::string& path, const std::string& title,
-                          int nbins, double xmin, double xmax) -> ThreadSafeHist1D* {
-        auto* raw_hist = book_hist1D(path, title, nbins, xmin, xmax);
-        if (!raw_hist) return nullptr;
-
-        // Use piecewise_construct for in-place construction (mutex is non-copyable)
-        m_safe_hist1D.emplace(std::piecewise_construct,
-                              std::forward_as_tuple(path),
-                              std::forward_as_tuple(raw_hist));
-        return &m_safe_hist1D.at(path);
-    }
-
-    /**
-     * @brief Book a thread-safe 2D histogram
-     *
-     * Returns a ThreadSafeHist2D wrapper that provides mutex-protected fill operations.
-     *
-     * @param path Full path
-     * @param title Histogram title with axis labels
-     * @param nbinsx Number of x bins
-     * @param xmin Minimum x value
-     * @param xmax Maximum x value
-     * @param nbinsy Number of y bins
-     * @param ymin Minimum y value
-     * @param ymax Maximum y value
-     * @return ThreadSafeHist2D* Pointer to thread-safe histogram wrapper
-     */
-    auto book_safe_hist2D(const std::string& path, const std::string& title,
-                          int nbinsx, double xmin, double xmax,
-                          int nbinsy, double ymin, double ymax) -> ThreadSafeHist2D* {
-        auto* raw_hist = book_hist2D(path, title, nbinsx, xmin, xmax, nbinsy, ymin, ymax);
-        if (!raw_hist) return nullptr;
-
-        // Use piecewise_construct for in-place construction (mutex is non-copyable)
-        m_safe_hist2D.emplace(std::piecewise_construct,
-                              std::forward_as_tuple(path),
-                              std::forward_as_tuple(raw_hist));
-        return &m_safe_hist2D.at(path);
-    }
-
-    /**
-     * @brief Book a thread-safe TProfile
-     *
-     * Returns a ThreadSafeProfile wrapper that provides mutex-protected fill operations.
-     *
-     * @param path Full path
-     * @param title Histogram title with axis labels
-     * @param nbins Number of bins
-     * @param xmin Minimum x value
-     * @param xmax Maximum x value
-     * @return ThreadSafeProfile* Pointer to thread-safe profile wrapper
-     */
-    auto book_safe_profile(const std::string& path, const std::string& title,
-                           int nbins, double xmin, double xmax) -> ThreadSafeProfile* {
-        auto* raw_prof = book_profile(path, title, nbins, xmin, xmax);
-        if (!raw_prof) return nullptr;
-
-        // Use piecewise_construct for in-place construction (mutex is non-copyable)
-        m_safe_profiles.emplace(std::piecewise_construct,
-                                std::forward_as_tuple(path),
-                                std::forward_as_tuple(raw_prof));
-        return &m_safe_profiles.at(path);
-    }
-
-    /**
-     * @brief Get a thread-safe 1D histogram by path
-     * @param path Histogram path
-     * @return ThreadSafeHist1D* Pointer to wrapper, or nullptr if not found
-     */
-    auto get_safe_hist1D(const std::string& path) -> ThreadSafeHist1D* {
-        auto it = m_safe_hist1D.find(path);
-        return (it != m_safe_hist1D.end()) ? &it->second : nullptr;
-    }
-
-    /**
-     * @brief Get a thread-safe 2D histogram by path
-     * @param path Histogram path
-     * @return ThreadSafeHist2D* Pointer to wrapper, or nullptr if not found
-     */
-    auto get_safe_hist2D(const std::string& path) -> ThreadSafeHist2D* {
-        auto it = m_safe_hist2D.find(path);
-        return (it != m_safe_hist2D.end()) ? &it->second : nullptr;
-    }
-
-    /**
-     * @brief Get a thread-safe profile by path
-     * @param path Profile path
-     * @return ThreadSafeProfile* Pointer to wrapper, or nullptr if not found
-     */
-    auto get_safe_profile(const std::string& path) -> ThreadSafeProfile* {
-        auto it = m_safe_profiles.find(path);
-        return (it != m_safe_profiles.end()) ? &it->second : nullptr;
-    }
-
     /**
      * @brief Write all histograms via OutputFileService
      */
@@ -386,16 +322,462 @@ class HistogramService : public Service {
         m_verify_output = enable;
     }
 
+    // ========================================================================
+    // Physics-Specific Histogram Templates
+    // ========================================================================
+
+    /**
+     * @brief Book a momentum histogram with standard CLAS12 binning
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title (";Momentum [GeV/c];Counts" added automatically)
+     * @param nbins Number of bins (default: 100)
+     * @param pmin Minimum momentum (default: 0 GeV/c)
+     * @param pmax Maximum momentum (default: 11 GeV/c, typical beam energy)
+     * @return TH1D* Pointer to the histogram
+     */
+    auto book_momentum_hist(const std::string& path, const std::string& title,
+                            int nbins = 100, double pmin = 0.0, double pmax = 11.0) -> TH1D* {
+        std::string full_title = title + ";Momentum [GeV/c];Counts";
+        return book_hist1D(path, full_title, nbins, pmin, pmax);
+    }
+
+    /**
+     * @brief Book a theta angle histogram with standard binning
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbins Number of bins (default: 180)
+     * @return TH1D* Pointer to the histogram (0-180 degrees)
+     */
+    auto book_theta_hist(const std::string& path, const std::string& title,
+                         int nbins = 180) -> TH1D* {
+        std::string full_title = title + ";#theta [deg];Counts";
+        return book_hist1D(path, full_title, nbins, 0.0, 180.0);
+    }
+
+    /**
+     * @brief Book a phi angle histogram with standard binning
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbins Number of bins (default: 360)
+     * @return TH1D* Pointer to the histogram (-180 to 180 degrees)
+     */
+    auto book_phi_hist(const std::string& path, const std::string& title,
+                       int nbins = 360) -> TH1D* {
+        std::string full_title = title + ";#phi [deg];Counts";
+        return book_hist1D(path, full_title, nbins, -180.0, 180.0);
+    }
+
+    /**
+     * @brief Book an energy histogram with standard binning
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbins Number of bins (default: 100)
+     * @param emin Minimum energy (default: 0 GeV)
+     * @param emax Maximum energy (default: 11 GeV)
+     * @return TH1D* Pointer to the histogram
+     */
+    auto book_energy_hist(const std::string& path, const std::string& title,
+                          int nbins = 100, double emin = 0.0, double emax = 11.0) -> TH1D* {
+        std::string full_title = title + ";Energy [GeV];Counts";
+        return book_hist1D(path, full_title, nbins, emin, emax);
+    }
+
+    /**
+     * @brief Book an invariant mass histogram
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbins Number of bins
+     * @param mmin Minimum mass [GeV/c²]
+     * @param mmax Maximum mass [GeV/c²]
+     * @return TH1D* Pointer to the histogram
+     */
+    auto book_mass_hist(const std::string& path, const std::string& title,
+                        int nbins, double mmin, double mmax) -> TH1D* {
+        std::string full_title = title + ";M [GeV/c^{2}];Counts";
+        return book_hist1D(path, full_title, nbins, mmin, mmax);
+    }
+
+    /**
+     * @brief Book a vertex Z histogram with standard binning
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbins Number of bins (default: 100)
+     * @param zmin Minimum Z (default: -40 cm)
+     * @param zmax Maximum Z (default: 40 cm)
+     * @return TH1D* Pointer to the histogram
+     */
+    auto book_vertex_z_hist(const std::string& path, const std::string& title,
+                            int nbins = 100, double zmin = -40.0, double zmax = 40.0) -> TH1D* {
+        std::string full_title = title + ";Vertex Z [cm];Counts";
+        return book_hist1D(path, full_title, nbins, zmin, zmax);
+    }
+
+    /**
+     * @brief Book a Q² histogram with standard binning for DIS
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbins Number of bins (default: 100)
+     * @param q2min Minimum Q² (default: 0 GeV²)
+     * @param q2max Maximum Q² (default: 12 GeV²)
+     * @return TH1D* Pointer to the histogram
+     */
+    auto book_q2_hist(const std::string& path, const std::string& title,
+                      int nbins = 100, double q2min = 0.0, double q2max = 12.0) -> TH1D* {
+        std::string full_title = title + ";Q^{2} [GeV^{2}];Counts";
+        return book_hist1D(path, full_title, nbins, q2min, q2max);
+    }
+
+    /**
+     * @brief Book an x_B (Bjorken x) histogram
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbins Number of bins (default: 100)
+     * @return TH1D* Pointer to the histogram (0 to 1)
+     */
+    auto book_xb_hist(const std::string& path, const std::string& title,
+                      int nbins = 100) -> TH1D* {
+        std::string full_title = title + ";x_{B};Counts";
+        return book_hist1D(path, full_title, nbins, 0.0, 1.0);
+    }
+
+    /**
+     * @brief Book a W (invariant mass of hadronic system) histogram
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbins Number of bins (default: 100)
+     * @param wmin Minimum W (default: 0 GeV)
+     * @param wmax Maximum W (default: 5 GeV)
+     * @return TH1D* Pointer to the histogram
+     */
+    auto book_w_hist(const std::string& path, const std::string& title,
+                     int nbins = 100, double wmin = 0.0, double wmax = 5.0) -> TH1D* {
+        std::string full_title = title + ";W [GeV];Counts";
+        return book_hist1D(path, full_title, nbins, wmin, wmax);
+    }
+
+    /**
+     * @brief Book a 2D kinematic histogram (theta vs momentum)
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbinsp Number of momentum bins (default: 50)
+     * @param pmin Minimum momentum (default: 0)
+     * @param pmax Maximum momentum (default: 11)
+     * @param nbinsth Number of theta bins (default: 90)
+     * @return TH2D* Pointer to the histogram
+     */
+    auto book_theta_vs_p(const std::string& path, const std::string& title,
+                         int nbinsp = 50, double pmin = 0.0, double pmax = 11.0,
+                         int nbinsth = 90) -> TH2D* {
+        std::string full_title = title + ";Momentum [GeV/c];#theta [deg];Counts";
+        return book_hist2D(path, full_title, nbinsp, pmin, pmax, nbinsth, 0.0, 180.0);
+    }
+
+    /**
+     * @brief Book a 2D kinematic histogram (phi vs theta)
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbinsth Number of theta bins (default: 90)
+     * @param nbinsphi Number of phi bins (default: 180)
+     * @return TH2D* Pointer to the histogram
+     */
+    auto book_phi_vs_theta(const std::string& path, const std::string& title,
+                           int nbinsth = 90, int nbinsphi = 180) -> TH2D* {
+        std::string full_title = title + ";#theta [deg];#phi [deg];Counts";
+        return book_hist2D(path, full_title, nbinsth, 0.0, 180.0, nbinsphi, -180.0, 180.0);
+    }
+
+    /**
+     * @brief Book a 2D DIS kinematic histogram (Q² vs x_B)
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbinsxb Number of x_B bins (default: 50)
+     * @param nbinsq2 Number of Q² bins (default: 50)
+     * @param q2max Maximum Q² (default: 12)
+     * @return TH2D* Pointer to the histogram
+     */
+    auto book_q2_vs_xb(const std::string& path, const std::string& title,
+                       int nbinsxb = 50, int nbinsq2 = 50, double q2max = 12.0) -> TH2D* {
+        std::string full_title = title + ";x_{B};Q^{2} [GeV^{2}];Counts";
+        return book_hist2D(path, full_title, nbinsxb, 0.0, 1.0, nbinsq2, 0.0, q2max);
+    }
+
+    /**
+     * @brief Clone a histogram with a new suffix
+     *
+     * Creates a copy of an existing histogram with a modified path.
+     * Useful for creating sector-specific or cut-variation histograms.
+     *
+     * @param base_path Path to the original histogram
+     * @param suffix Suffix to append (e.g., "_sector1", "_afterCut")
+     * @return TH1D* Pointer to the cloned histogram, or nullptr if base not found
+     */
+    auto clone_hist1D_with_suffix(const std::string& base_path,
+                                   const std::string& suffix) -> TH1D* {
+        auto* base = get_hist1D(base_path);
+        if (!base) {
+            Log::warning(name(), "Cannot clone: histogram '{}' not found", base_path);
+            return nullptr;
+        }
+
+        std::string new_path = base_path + suffix;
+        if (m_hist1D.find(new_path) != m_hist1D.end()) {
+            Log::warning(name(), "Histogram '{}' already exists", new_path);
+            return m_hist1D[new_path].get();
+        }
+
+        std::string new_name = extract_name(new_path);
+        auto clone = std::unique_ptr<TH1D>(static_cast<TH1D*>(base->Clone(new_name.c_str())));
+        clone->Reset();
+        clone->SetDirectory(nullptr);
+
+        TH1D* ptr = clone.get();
+        m_hist1D[new_path] = std::move(clone);
+        return ptr;
+    }
+
+    /**
+     * @brief Clone a 2D histogram with a new suffix
+     *
+     * @param base_path Path to the original histogram
+     * @param suffix Suffix to append
+     * @return TH2D* Pointer to the cloned histogram, or nullptr if base not found
+     */
+    auto clone_hist2D_with_suffix(const std::string& base_path,
+                                   const std::string& suffix) -> TH2D* {
+        auto* base = get_hist2D(base_path);
+        if (!base) {
+            Log::warning(name(), "Cannot clone: histogram '{}' not found", base_path);
+            return nullptr;
+        }
+
+        std::string new_path = base_path + suffix;
+        if (m_hist2D.find(new_path) != m_hist2D.end()) {
+            Log::warning(name(), "Histogram '{}' already exists", new_path);
+            return m_hist2D[new_path].get();
+        }
+
+        std::string new_name = extract_name(new_path);
+        auto clone = std::unique_ptr<TH2D>(static_cast<TH2D*>(base->Clone(new_name.c_str())));
+        clone->Reset();
+        clone->SetDirectory(nullptr);
+
+        TH2D* ptr = clone.get();
+        m_hist2D[new_path] = std::move(clone);
+        return ptr;
+    }
+
+    /**
+     * @brief Book histograms for all 6 sectors
+     *
+     * Creates 6 copies of a histogram template, one for each CLAS12 sector.
+     *
+     * @param base_path Base path (e.g., "/Electrons/momentum")
+     * @param title Base title
+     * @param nbins Number of bins
+     * @param xmin Minimum x value
+     * @param xmax Maximum x value
+     * @return std::array<TH1D*, 6> Array of pointers to sector histograms
+     */
+    auto book_sector_hist1D(const std::string& base_path, const std::string& title,
+                            int nbins, double xmin, double xmax) -> std::array<TH1D*, 6> {
+        std::array<TH1D*, 6> hists{};
+        for (int sector = 1; sector <= 6; ++sector) {
+            std::string path = fmt::format("{}_sector{}", base_path, sector);
+            std::string sect_title = fmt::format("{} (Sector {})", title, sector);
+            hists[sector - 1] = book_hist1D(path, sect_title, nbins, xmin, xmax);
+        }
+        return hists;
+    }
+
+    // ========================================================================
+    // Lock-Free Atomic Histogram Booking (for true parallel accumulation)
+    // ========================================================================
+
+    /**
+     * @brief Book a lock-free 1D atomic histogram
+     *
+     * Atomic histograms use compare-exchange operations for lock-free filling.
+     * Multiple threads can fill simultaneously without any synchronization.
+     * On finalize, atomic histograms are automatically converted to ROOT format.
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbins Number of bins
+     * @param xmin Minimum x value
+     * @param xmax Maximum x value
+     * @return AtomicHistogram1D* Pointer to the atomic histogram
+     */
+    auto book_atomic_hist1D(const std::string& path, const std::string& title,
+                            int nbins, double xmin, double xmax) -> AtomicHistogram1D* {
+        if (m_atomic_hist1D.find(path) != m_atomic_hist1D.end()) {
+            Log::warning(name(), "Atomic histogram '{}' already exists", path);
+            return m_atomic_hist1D[path].get();
+        }
+
+        auto hist = std::make_unique<AtomicHistogram1D>(nbins, xmin, xmax);
+        AtomicHistogram1D* ptr = hist.get();
+        m_atomic_hist1D[path] = std::move(hist);
+        m_atomic_hist1D_meta[path] = {title};
+        return ptr;
+    }
+
+    /**
+     * @brief Book a lock-free 2D atomic histogram
+     *
+     * @param path Full path for the histogram
+     * @param title Histogram title
+     * @param nbinsx Number of x bins
+     * @param xmin Minimum x value
+     * @param xmax Maximum x value
+     * @param nbinsy Number of y bins
+     * @param ymin Minimum y value
+     * @param ymax Maximum y value
+     * @return AtomicHistogram2D* Pointer to the atomic histogram
+     */
+    auto book_atomic_hist2D(const std::string& path, const std::string& title,
+                            int nbinsx, double xmin, double xmax,
+                            int nbinsy, double ymin, double ymax) -> AtomicHistogram2D* {
+        if (m_atomic_hist2D.find(path) != m_atomic_hist2D.end()) {
+            Log::warning(name(), "Atomic histogram '{}' already exists", path);
+            return m_atomic_hist2D[path].get();
+        }
+
+        auto hist = std::make_unique<AtomicHistogram2D>(nbinsx, xmin, xmax, nbinsy, ymin, ymax);
+        AtomicHistogram2D* ptr = hist.get();
+        m_atomic_hist2D[path] = std::move(hist);
+        m_atomic_hist2D_meta[path] = {title};
+        return ptr;
+    }
+
+    /**
+     * @brief Get an atomic 1D histogram by path
+     * @param path Histogram path
+     * @return AtomicHistogram1D* Pointer to histogram or nullptr if not found
+     */
+    auto get_atomic_hist1D(const std::string& path) -> AtomicHistogram1D* {
+        auto it = m_atomic_hist1D.find(path);
+        return (it != m_atomic_hist1D.end()) ? it->second.get() : nullptr;
+    }
+
+    /**
+     * @brief Get an atomic 2D histogram by path
+     * @param path Histogram path
+     * @return AtomicHistogram2D* Pointer to histogram or nullptr if not found
+     */
+    auto get_atomic_hist2D(const std::string& path) -> AtomicHistogram2D* {
+        auto it = m_atomic_hist2D.find(path);
+        return (it != m_atomic_hist2D.end()) ? it->second.get() : nullptr;
+    }
+
+    /**
+     * @brief Get number of booked atomic 1D histograms
+     */
+    auto num_atomic_hist1D() const -> size_t {
+        return m_atomic_hist1D.size();
+    }
+
+    /**
+     * @brief Get number of booked atomic 2D histograms
+     */
+    auto num_atomic_hist2D() const -> size_t {
+        return m_atomic_hist2D.size();
+    }
+
+    // ========================================================================
+    // Physics-Specific Atomic Histogram Templates
+    // ========================================================================
+
+    /**
+     * @brief Book a lock-free atomic momentum histogram
+     */
+    auto book_atomic_momentum_hist(const std::string& path, const std::string& title,
+                                   int nbins = 100, double pmin = 0.0, double pmax = 11.0) -> AtomicHistogram1D* {
+        std::string full_title = title + ";Momentum [GeV/c];Counts";
+        return book_atomic_hist1D(path, full_title, nbins, pmin, pmax);
+    }
+
+    /**
+     * @brief Book a lock-free atomic theta histogram
+     */
+    auto book_atomic_theta_hist(const std::string& path, const std::string& title,
+                                int nbins = 180) -> AtomicHistogram1D* {
+        std::string full_title = title + ";#theta [deg];Counts";
+        return book_atomic_hist1D(path, full_title, nbins, 0.0, 180.0);
+    }
+
+    /**
+     * @brief Book a lock-free atomic phi histogram
+     */
+    auto book_atomic_phi_hist(const std::string& path, const std::string& title,
+                              int nbins = 360) -> AtomicHistogram1D* {
+        std::string full_title = title + ";#phi [deg];Counts";
+        return book_atomic_hist1D(path, full_title, nbins, -180.0, 180.0);
+    }
+
+    /**
+     * @brief Book a lock-free atomic Q² histogram
+     */
+    auto book_atomic_q2_hist(const std::string& path, const std::string& title,
+                             int nbins = 100, double q2min = 0.0, double q2max = 12.0) -> AtomicHistogram1D* {
+        std::string full_title = title + ";Q^{2} [GeV^{2}];Counts";
+        return book_atomic_hist1D(path, full_title, nbins, q2min, q2max);
+    }
+
+    /**
+     * @brief Book a lock-free atomic W histogram
+     */
+    auto book_atomic_w_hist(const std::string& path, const std::string& title,
+                            int nbins = 100, double wmin = 0.0, double wmax = 5.0) -> AtomicHistogram1D* {
+        std::string full_title = title + ";W [GeV];Counts";
+        return book_atomic_hist1D(path, full_title, nbins, wmin, wmax);
+    }
+
+    /**
+     * @brief Book a lock-free atomic x_B histogram
+     */
+    auto book_atomic_xb_hist(const std::string& path, const std::string& title,
+                             int nbins = 100) -> AtomicHistogram1D* {
+        std::string full_title = title + ";x_{B};Counts";
+        return book_atomic_hist1D(path, full_title, nbins, 0.0, 1.0);
+    }
+
+    /**
+     * @brief Book a lock-free atomic theta vs p 2D histogram
+     */
+    auto book_atomic_theta_vs_p(const std::string& path, const std::string& title,
+                                int nbinsp = 50, double pmin = 0.0, double pmax = 11.0,
+                                int nbinsth = 90) -> AtomicHistogram2D* {
+        std::string full_title = title + ";Momentum [GeV/c];#theta [deg];Counts";
+        return book_atomic_hist2D(path, full_title, nbinsp, pmin, pmax, nbinsth, 0.0, 180.0);
+    }
+
    private:
     bool m_auto_write = true;     // Automatically write histograms on finalize
     bool m_verify_output = false; // Verify histograms after writing (disabled by default)
     std::map<std::string, std::unique_ptr<TH1D>> m_hist1D;
     std::map<std::string, std::unique_ptr<TH2D>> m_hist2D;
     std::map<std::string, std::unique_ptr<TProfile>> m_profiles;
-    // Thread-safe wrappers (stored by value, not unique_ptr, since they wrap raw pointers)
-    std::map<std::string, ThreadSafeHist1D> m_safe_hist1D;
-    std::map<std::string, ThreadSafeHist2D> m_safe_hist2D;
-    std::map<std::string, ThreadSafeProfile> m_safe_profiles;
+    // Lock-free atomic histograms for parallel accumulation
+    std::map<std::string, std::unique_ptr<AtomicHistogram1D>> m_atomic_hist1D;
+    std::map<std::string, std::unique_ptr<AtomicHistogram2D>> m_atomic_hist2D;
+    // Metadata for atomic histograms (needed for ROOT conversion)
+    struct AtomicHistMeta {
+        std::string title;
+    };
+    std::map<std::string, AtomicHistMeta> m_atomic_hist1D_meta;
+    std::map<std::string, AtomicHistMeta> m_atomic_hist2D_meta;
     OutputFileService* m_output_svc = nullptr;
 
     auto extract_name(const std::string& path) -> std::string {

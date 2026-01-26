@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fmt/format.h>
 #include <map>
 #include <memory>
 #include <string>
@@ -14,6 +15,22 @@ class Event;
 class ServiceManager;
 template <ServiceConcept T>
 class ServiceHandle;
+
+/**
+ * @brief Algorithm lifecycle states
+ *
+ * Tracks the current state of an algorithm to prevent invalid state transitions.
+ * - Uninitialized: Algorithm created but not yet initialized
+ * - Initialized: initialize() called successfully, ready to process events
+ * - Running: Currently executing (within execute() call)
+ * - Finalized: finalize() called, algorithm is done
+ */
+enum class AlgorithmState : std::uint8_t {
+    Uninitialized = 0,  ///< Algorithm created, not yet initialized
+    Initialized = 1,    ///< Ready to process events
+    Running = 2,        ///< Currently processing an event
+    Finalized = 3       ///< Finalized, no more processing allowed
+};
 
 /**
  * @brief Base interface for all algorithms in the framework
@@ -74,10 +91,28 @@ class IAlgorithm {
      * @param svc_mgr Pointer to the service manager
      */
     virtual auto set_service_manager(ServiceManager* svc_mgr) -> void = 0;
+
+    /**
+     * @brief Get the current algorithm state
+     * @return AlgorithmState Current lifecycle state
+     */
+    [[nodiscard]] virtual auto state() const -> AlgorithmState = 0;
+
+    /**
+     * @brief Check if algorithm is in a valid state to process events
+     * @return bool True if initialized and not finalized
+     */
+    [[nodiscard]] virtual auto is_ready() const -> bool {
+        auto s = state();
+        return s == AlgorithmState::Initialized || s == AlgorithmState::Running;
+    }
 };
 
 /**
  * @brief Base class for algorithm implementations
+ *
+ * Provides state tracking and service access for algorithms.
+ * Derived classes should call set_state() to update the lifecycle state.
  */
 class Algorithm : public IAlgorithm {
    public:
@@ -89,9 +124,67 @@ class Algorithm : public IAlgorithm {
         m_svc_mgr = svc_mgr;
     }
 
+    /**
+     * @brief Get the current algorithm state
+     * @return AlgorithmState Current lifecycle state
+     */
+    [[nodiscard]] auto state() const -> AlgorithmState override {
+        return m_state;
+    }
+
    protected:
     std::string m_name;
     ServiceManager* m_svc_mgr = nullptr;
+    AlgorithmState m_state = AlgorithmState::Uninitialized;
+
+    /**
+     * @brief Set the algorithm state
+     *
+     * Called by derived classes to update state during lifecycle transitions.
+     *
+     * @param new_state The new state to set
+     */
+    auto set_state(AlgorithmState new_state) -> void {
+        m_state = new_state;
+    }
+
+    /**
+     * @brief Validate state transition
+     *
+     * Checks if transitioning to the given state is valid from the current state.
+     * State validation is permissive for backward compatibility:
+     * - Initialize can only be called once (from Uninitialized)
+     * - Execute requires Initialized or Running state
+     * - Finalize can be called from any state (for cleanup safety)
+     *
+     * @param target_state The state we want to transition to
+     * @return StatusCode SUCCESS if valid, FAILURE with message if invalid
+     */
+    [[nodiscard]] auto validate_state_transition(AlgorithmState target_state) const -> StatusCode {
+        switch (target_state) {
+            case AlgorithmState::Initialized:
+                if (m_state != AlgorithmState::Uninitialized) {
+                    return StatusCode::failure(
+                        fmt::format("Algorithm '{}': Cannot initialize from state {}",
+                                    m_name, static_cast<int>(m_state)));
+                }
+                break;
+            case AlgorithmState::Running:
+                if (m_state != AlgorithmState::Initialized && m_state != AlgorithmState::Running) {
+                    return StatusCode::failure(
+                        fmt::format("Algorithm '{}': Cannot execute from state {}",
+                                    m_name, static_cast<int>(m_state)));
+                }
+                break;
+            case AlgorithmState::Finalized:
+                // Allow finalize from any state for backward compatibility
+                // and safe cleanup even if initialization failed
+                break;
+            default:
+                break;
+        }
+        return StatusCode::SUCCESS();
+    }
 
     /**
      * @brief Retrieve a service by name

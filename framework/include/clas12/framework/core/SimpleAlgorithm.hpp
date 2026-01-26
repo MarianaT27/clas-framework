@@ -213,26 +213,47 @@ public:
      * @return StatusCode indicating success or failure
      */
     auto initialize() -> StatusCode final {
+        // Validate state transition
+        auto state_check = this->validate_state_transition(AlgorithmState::Initialized);
+        if (state_check.is_failure()) {
+            return state_check;
+        }
+
         // Step 1: Call configure() to let derived class declare services
         static_cast<Derived*>(this)->configure();
 
-        // Step 2: Auto-inject all declared services
-        for (auto& [name, handle] : m_service_handles) {
+        // Step 2: Auto-inject all declared required services
+        for (auto& [name, handle] : m_required_service_handles) {
             if (!m_svc_mgr) {
                 return StatusCode::failure(
                     fmt::format("Algorithm '{}': ServiceManager not set", m_name));
             }
-            
+
             auto sc = handle->initialize(*m_svc_mgr);
             if (sc.is_failure()) {
                 return StatusCode::failure(
-                    fmt::format("Algorithm '{}': Failed to get service '{}': {}",
+                    fmt::format("Algorithm '{}': Failed to get required service '{}': {}",
                                 m_name, name, sc.message()));
             }
         }
 
+        // Step 2b: Auto-inject all declared optional services (don't fail on missing)
+        for (auto& [name, handle] : m_optional_service_handles) {
+            if (m_svc_mgr) {
+                // Ignore failures for optional services
+                (void)handle->initialize(*m_svc_mgr);
+            }
+        }
+
         // Step 3: Call on_initialize() for custom initialization
-        return static_cast<Derived*>(this)->on_initialize();
+        auto result = static_cast<Derived*>(this)->on_initialize();
+
+        // Update state on success
+        if (result.is_success()) {
+            this->set_state(AlgorithmState::Initialized);
+        }
+
+        return result;
     }
 
     /**
@@ -245,7 +266,22 @@ public:
      * @return StatusCode from process()
      */
     auto execute(Event& event) -> StatusCode final {
-        return static_cast<Derived*>(this)->process(event);
+        // Validate state transition
+        auto state_check = this->validate_state_transition(AlgorithmState::Running);
+        if (state_check.is_failure()) {
+            return state_check;
+        }
+
+        // Track running state during execution
+        auto previous_state = this->state();
+        this->set_state(AlgorithmState::Running);
+
+        auto result = static_cast<Derived*>(this)->process(event);
+
+        // Restore to initialized state after processing
+        this->set_state(previous_state);
+
+        return result;
     }
 
     /**
@@ -257,7 +293,18 @@ public:
      * @return StatusCode from on_finalize()
      */
     auto finalize() -> StatusCode final {
-        return static_cast<Derived*>(this)->on_finalize();
+        // Validate state transition
+        auto state_check = this->validate_state_transition(AlgorithmState::Finalized);
+        if (state_check.is_failure()) {
+            return state_check;
+        }
+
+        auto result = static_cast<Derived*>(this)->on_finalize();
+
+        // Update state regardless of result
+        this->set_state(AlgorithmState::Finalized);
+
+        return result;
     }
 
 protected:
@@ -277,29 +324,68 @@ protected:
     auto require_service(const std::string& service_name) -> ServiceHandle<T>& {
         auto wrapper = std::make_unique<ServiceHandleWrapper<T>>(service_name);
         auto& handle = wrapper->handle();
-        m_service_handles[service_name] = std::move(wrapper);
+        m_required_service_handles[service_name] = std::move(wrapper);
         return handle;
     }
 
     /**
-     * @brief Get the number of declared services
+     * @brief Declare an optional service dependency
+     *
+     * Call this in configure() to declare services that this algorithm can use
+     * but does not require. If the service is not available, initialization
+     * will still succeed but the handle will be invalid.
+     *
+     * @tparam T Service type (must satisfy ServiceConcept)
+     * @param service_name Name of the service to retrieve
+     * @return ServiceHandle<T>& Reference to the service handle (may be invalid after init)
+     */
+    template <ServiceConcept T>
+    auto optional_service(const std::string& service_name) -> ServiceHandle<T>& {
+        auto wrapper = std::make_unique<ServiceHandleWrapper<T>>(service_name);
+        auto& handle = wrapper->handle();
+        m_optional_service_handles[service_name] = std::move(wrapper);
+        return handle;
+    }
+
+    /**
+     * @brief Get the number of declared services (required + optional)
      * @return std::size_t Number of services
      */
     [[nodiscard]] auto service_count() const -> std::size_t {
-        return m_service_handles.size();
+        return m_required_service_handles.size() + m_optional_service_handles.size();
     }
 
     /**
      * @brief Check if a service with the given name is declared
      * @param name Service name
-     * @return bool True if declared
+     * @return bool True if declared (as required or optional)
      */
     [[nodiscard]] auto has_service(const std::string& name) const -> bool {
-        return m_service_handles.contains(name);
+        return m_required_service_handles.contains(name) ||
+               m_optional_service_handles.contains(name);
+    }
+
+    /**
+     * @brief Check if a required service with the given name is declared
+     * @param name Service name
+     * @return bool True if declared as required
+     */
+    [[nodiscard]] auto has_required_service(const std::string& name) const -> bool {
+        return m_required_service_handles.contains(name);
+    }
+
+    /**
+     * @brief Check if an optional service with the given name is declared
+     * @param name Service name
+     * @return bool True if declared as optional
+     */
+    [[nodiscard]] auto has_optional_service(const std::string& name) const -> bool {
+        return m_optional_service_handles.contains(name);
     }
 
 private:
-    std::map<std::string, std::unique_ptr<IServiceHandleBase>> m_service_handles;
+    std::map<std::string, std::unique_ptr<IServiceHandleBase>> m_required_service_handles;
+    std::map<std::string, std::unique_ptr<IServiceHandleBase>> m_optional_service_handles;
 };
 
 
@@ -373,10 +459,22 @@ public:
      * @return StatusCode from init function, or SUCCESS if not set
      */
     auto initialize() -> StatusCode override {
-        if (m_init) {
-            return m_init();
+        // Validate state transition
+        auto state_check = validate_state_transition(AlgorithmState::Initialized);
+        if (state_check.is_failure()) {
+            return state_check;
         }
-        return StatusCode::SUCCESS();
+
+        StatusCode result = StatusCode::SUCCESS();
+        if (m_init) {
+            result = m_init();
+        }
+
+        if (result.is_success()) {
+            set_state(AlgorithmState::Initialized);
+        }
+
+        return result;
     }
 
     /**
@@ -385,7 +483,20 @@ public:
      * @return StatusCode from process function
      */
     auto execute(Event& event) -> StatusCode override {
-        return m_process(event);
+        // Validate state transition
+        auto state_check = validate_state_transition(AlgorithmState::Running);
+        if (state_check.is_failure()) {
+            return state_check;
+        }
+
+        auto previous_state = state();
+        set_state(AlgorithmState::Running);
+
+        auto result = m_process(event);
+
+        set_state(previous_state);
+
+        return result;
     }
 
     /**
@@ -393,10 +504,20 @@ public:
      * @return StatusCode from finalize function, or SUCCESS if not set
      */
     auto finalize() -> StatusCode override {
-        if (m_finalize) {
-            return m_finalize();
+        // Validate state transition
+        auto state_check = validate_state_transition(AlgorithmState::Finalized);
+        if (state_check.is_failure()) {
+            return state_check;
         }
-        return StatusCode::SUCCESS();
+
+        StatusCode result = StatusCode::SUCCESS();
+        if (m_finalize) {
+            result = m_finalize();
+        }
+
+        set_state(AlgorithmState::Finalized);
+
+        return result;
     }
 
     /**

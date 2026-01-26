@@ -8,12 +8,12 @@
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/ReadBank.hpp>
+#include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/ServiceHelpers.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
-#include <clas12/framework/core/ThreadSafeHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/services/PhotonCutsService.hpp>
@@ -76,20 +76,20 @@ class Pi0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Pi0Recons
     // Add mutex for thread safety
     mutable std::mutex m_ntuple_mutex;
 
-    // Thread-safe histograms (wrappers managed by HistogramService)
-    clas12::framework::ThreadSafeHist1D* h_photon_energy_raw = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_photon_theta_raw = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_photon_phi_raw = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_photon_energy = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_photon_theta = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_n_photons = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_gg_mass_all = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_gg_mass_traditional = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_gg_mass_selected = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_gg_mass_AI = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_pi0_momentum = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_pi0_theta = nullptr;
-    clas12::framework::ThreadSafeHist1D* h_opening_angle = nullptr;
+    // Lock-free atomic histograms (managed by HistogramService)
+    clas12::framework::AtomicHistogram1D* h_photon_energy_raw = nullptr;
+    clas12::framework::AtomicHistogram1D* h_photon_theta_raw = nullptr;
+    clas12::framework::AtomicHistogram1D* h_photon_phi_raw = nullptr;
+    clas12::framework::AtomicHistogram1D* h_photon_energy = nullptr;
+    clas12::framework::AtomicHistogram1D* h_photon_theta = nullptr;
+    clas12::framework::AtomicHistogram1D* h_n_photons = nullptr;
+    clas12::framework::AtomicHistogram1D* h_gg_mass_all = nullptr;
+    clas12::framework::AtomicHistogram1D* h_gg_mass_traditional = nullptr;
+    clas12::framework::AtomicHistogram1D* h_gg_mass_selected = nullptr;
+    clas12::framework::AtomicHistogram1D* h_gg_mass_AI = nullptr;
+    clas12::framework::AtomicHistogram1D* h_pi0_momentum = nullptr;
+    clas12::framework::AtomicHistogram1D* h_pi0_theta = nullptr;
+    clas12::framework::AtomicHistogram1D* h_opening_angle = nullptr;
 
     // NTuple branch variables
     double m_e_p = 0.0;

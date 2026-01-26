@@ -326,21 +326,21 @@ auto Pi0ReconstructionAlg::on_finalize() -> clas12::framework::StatusCode {
 
 auto Pi0ReconstructionAlg::book_histograms() -> void {
     clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
-        // Book thread-safe histograms for parallel event processing
-        h_photon_energy_raw = svc->book_safe_hist1D("/Pi0/photon_energy_raw", "Raw Photon Energy;E [GeV];Events", 100, 0, 5);
-        h_photon_theta_raw = svc->book_safe_hist1D("/Pi0/photon_theta_raw", "Raw Photon Theta;#theta [deg];Events", 180, 0, 40);
-        h_photon_phi_raw = svc->book_safe_hist1D("/Pi0/photon_phi_raw", "Raw Photon Phi;#phi [deg];Events", 360, -180, 180);
+        // Book lock-free atomic histograms for parallel event processing
+        h_photon_energy_raw = svc->book_atomic_hist1D("/Pi0/photon_energy_raw", "Raw Photon Energy;E [GeV];Events", 100, 0, 5);
+        h_photon_theta_raw = svc->book_atomic_hist1D("/Pi0/photon_theta_raw", "Raw Photon Theta;#theta [deg];Events", 180, 0, 40);
+        h_photon_phi_raw = svc->book_atomic_phi_hist("/Pi0/photon_phi_raw", "Raw Photon Phi");
 
-        h_photon_energy = svc->book_safe_hist1D("/Pi0/photon_energy", "Photon Energy;E [GeV];Events", 100, 0, 5);
-        h_photon_theta = svc->book_safe_hist1D("/Pi0/photon_theta", "Photon Theta;#theta [deg];Events", 180, 0, 180);
-        h_n_photons = svc->book_safe_hist1D("/Pi0/n_photons", "Number of Photons;N_{#gamma};Events", 20, 0, 20);
-        h_gg_mass_all = svc->book_safe_hist1D("/Pi0/gg_mass_all", "All #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
-        h_gg_mass_traditional = svc->book_safe_hist1D("/Pi0/gg_mass_traditional", "Traditional #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
-        h_gg_mass_AI = svc->book_safe_hist1D("/Pi0/gg_mass_AI", "AI-selected #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
-        h_gg_mass_selected = svc->book_safe_hist1D("/Pi0/gg_mass_selected", "Selected #pi^{0} Candidate Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0.0, 0.35);
-        h_pi0_momentum = svc->book_safe_hist1D("/Pi0/pi0_momentum", "#pi^{0} Momentum;p [GeV/c];Events", 100, 0, 10);
-        h_pi0_theta = svc->book_safe_hist1D("/Pi0/pi0_theta", "#pi^{0} Theta;#theta [deg];Events", 180, 0, 180);
-        h_opening_angle = svc->book_safe_hist1D("/Pi0/opening_angle", "Photon Opening Angle;#theta_{#gamma#gamma} [deg];Events", 180, 0, 180);
+        h_photon_energy = svc->book_atomic_hist1D("/Pi0/photon_energy", "Photon Energy;E [GeV];Events", 100, 0, 5);
+        h_photon_theta = svc->book_atomic_theta_hist("/Pi0/photon_theta", "Photon Theta");
+        h_n_photons = svc->book_atomic_hist1D("/Pi0/n_photons", "Number of Photons;N_{#gamma};Events", 20, 0, 20);
+        h_gg_mass_all = svc->book_atomic_hist1D("/Pi0/gg_mass_all", "All #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
+        h_gg_mass_traditional = svc->book_atomic_hist1D("/Pi0/gg_mass_traditional", "Traditional #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
+        h_gg_mass_AI = svc->book_atomic_hist1D("/Pi0/gg_mass_AI", "AI-selected #gamma#gamma Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0, 0.5);
+        h_gg_mass_selected = svc->book_atomic_hist1D("/Pi0/gg_mass_selected", "Selected #pi^{0} Candidate Mass;M_{#gamma#gamma} [GeV/c^{2}];Events", 200, 0.0, 0.35);
+        h_pi0_momentum = svc->book_atomic_momentum_hist("/Pi0/pi0_momentum", "#pi^{0} Momentum");
+        h_pi0_theta = svc->book_atomic_theta_hist("/Pi0/pi0_theta", "#pi^{0} Theta");
+        h_opening_angle = svc->book_atomic_theta_hist("/Pi0/opening_angle", "Photon Opening Angle");
     });
 }
 

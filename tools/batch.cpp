@@ -2,13 +2,13 @@
  * @file batch.cpp
  * @brief Generic batch job submission for any CLAS12 analysis
  *
- * Submits any analysis executable to HPC clusters (SLURM/PBS/Condor).
+ * Submits any analysis executable to HPC clusters (SLURM).
  * Decoupled from specific analyses - works with any executable that accepts --input.
  *
  * Usage:
  *   ./batch --executable=./pi0 --target=LD2 --polarity=Outbending
  *   ./batch --executable=./electron_analysis --config=my_config.json
- *   ./batch --executable=./lambda --data-dir=/path/to/data --system=pbs
+ *   ./batch --executable=./lambda --data-dir=/path/to/data --system=slurm
  */
 
 #include <cstdlib>
@@ -151,8 +151,6 @@ auto resolve_data_directory(clas12::Target target, clas12::Polarity polarity) ->
 
 auto parse_batch_system(const std::string& name) -> std::optional<clas12::framework::BatchSystem::System> {
     if (name == "slurm") return clas12::framework::BatchSystem::System::SLURM;
-    if (name == "pbs")   return clas12::framework::BatchSystem::System::PBS;
-    if (name == "condor") return clas12::framework::BatchSystem::System::Condor;
     if (name == "local") return clas12::framework::BatchSystem::System::Local;
     return std::nullopt;
 }
@@ -176,12 +174,12 @@ int main(int argc, char* argv[]) {
 
         // Job configuration
         ("job-name", "Job name prefix", cxxopts::value<std::string>()->default_value(""))
-        ("system", "Batch system (slurm, pbs, condor, local)", cxxopts::value<std::string>()->default_value("slurm"))
+        ("system", "Batch system (slurm, local)", cxxopts::value<std::string>()->default_value("slurm"))
         ("files-per-job", "Input files per job", cxxopts::value<int>()->default_value("10"))
         ("num-threads", "Threads per job", cxxopts::value<int>()->default_value("8"))
         ("memory", "Memory per job (GB)", cxxopts::value<int>()->default_value("16"))
         ("time", "Time limit (HH:MM:SS)", cxxopts::value<std::string>()->default_value("12:00:00"))
-        ("partition", "SLURM partition / PBS queue", cxxopts::value<std::string>()->default_value("production"))
+        ("partition", "SLURM partition", cxxopts::value<std::string>()->default_value("production"))
 
         // Output
         ("output-dir", "Output directory", cxxopts::value<std::string>()->default_value("./output"))
@@ -213,8 +211,8 @@ int main(int argc, char* argv[]) {
         fmt::print("  # Use JSON config file\n");
         fmt::print("  ./batch ./lambda --config=config/batch_job.json\n");
         fmt::print("\n");
-        fmt::print("  # Submit to PBS with extra arguments\n");
-        fmt::print("  ./batch ./improved --system=pbs --extra-args=\"--max-events=100000\"\n");
+        fmt::print("  # Run locally with extra arguments\n");
+        fmt::print("  ./batch ./improved --system=local --extra-args=\"--max-events=100000\"\n");
         fmt::print("\n");
         return args.count("help") ? EXIT_SUCCESS : EXIT_FAILURE;
     }
@@ -355,7 +353,7 @@ int main(int argc, char* argv[]) {
 
     auto batch_system = parse_batch_system(cfg.system);
     if (!batch_system) {
-        clas12::framework::Log::error("Batch", "Unknown batch system '{}'. Valid options: slurm, pbs, condor, local", cfg.system);
+        clas12::framework::Log::error("Batch", "Unknown batch system '{}'. Valid options: slurm, local", cfg.system);
         return EXIT_FAILURE;
     }
 
@@ -452,12 +450,6 @@ int main(int argc, char* argv[]) {
             case clas12::framework::BatchSystem::System::SLURM:
                 fmt::print("  for script in batch_scripts/*.slurm; do sbatch $script; done\n");
                 break;
-            case clas12::framework::BatchSystem::System::PBS:
-                fmt::print("  for script in batch_scripts/*.pbs; do qsub $script; done\n");
-                break;
-            case clas12::framework::BatchSystem::System::Condor:
-                fmt::print("  for script in batch_scripts/*.condor; do condor_submit $script; done\n");
-                break;
             case clas12::framework::BatchSystem::System::Local:
                 fmt::print("  for script in batch_scripts/*.sh; do bash $script & done\n");
                 break;
@@ -472,12 +464,6 @@ int main(int argc, char* argv[]) {
         switch (*batch_system) {
             case clas12::framework::BatchSystem::System::SLURM:
                 fmt::print("  squeue -u $USER\n");
-                break;
-            case clas12::framework::BatchSystem::System::PBS:
-                fmt::print("  qstat -u $USER\n");
-                break;
-            case clas12::framework::BatchSystem::System::Condor:
-                fmt::print("  condor_q\n");
                 break;
             case clas12::framework::BatchSystem::System::Local:
                 fmt::print("  ps aux | grep {}\n", cfg.job_name);

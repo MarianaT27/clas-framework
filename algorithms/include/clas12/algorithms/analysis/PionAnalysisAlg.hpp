@@ -20,6 +20,7 @@
 #include <clas12/Constants.hpp>
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
+#include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -27,11 +28,8 @@
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
-#include "TH1D.h"
-#include "TH2D.h"
 
 #include <cmath>
-#include <memory>
 #include <string>
 
 namespace clas12::algorithms {
@@ -143,43 +141,43 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
     clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
 
-    // Histogram set for each pion charge
+    // Lock-free atomic histogram set for each pion charge
     struct PionHistograms {
         // Calorimeter: lv, lw vs SF
-        TH2D* sf_vs_lv = nullptr;
-        TH2D* sf_vs_lw = nullptr;
-        TH1D* sf = nullptr;
-        TH1D* lv = nullptr;
-        TH1D* lw = nullptr;
+        clas12::framework::AtomicHistogram2D* sf_vs_lv = nullptr;
+        clas12::framework::AtomicHistogram2D* sf_vs_lw = nullptr;
+        clas12::framework::AtomicHistogram1D* sf = nullptr;
+        clas12::framework::AtomicHistogram1D* lv = nullptr;
+        clas12::framework::AtomicHistogram1D* lw = nullptr;
 
         // DC: chi2/ndf vs edge
-        TH2D* chi2ndf_vs_edge_r1 = nullptr;
-        TH2D* chi2ndf_vs_edge_r2 = nullptr;
-        TH2D* chi2ndf_vs_edge_r3 = nullptr;
-        TH1D* chi2ndf = nullptr;
-        TH1D* edge_r1 = nullptr;
-        TH1D* edge_r2 = nullptr;
-        TH1D* edge_r3 = nullptr;
+        clas12::framework::AtomicHistogram2D* chi2ndf_vs_edge_r1 = nullptr;
+        clas12::framework::AtomicHistogram2D* chi2ndf_vs_edge_r2 = nullptr;
+        clas12::framework::AtomicHistogram2D* chi2ndf_vs_edge_r3 = nullptr;
+        clas12::framework::AtomicHistogram1D* chi2ndf = nullptr;
+        clas12::framework::AtomicHistogram1D* edge_r1 = nullptr;
+        clas12::framework::AtomicHistogram1D* edge_r2 = nullptr;
+        clas12::framework::AtomicHistogram1D* edge_r3 = nullptr;
 
         struct SectorHistograms {
             bool booked = false;
             // Calorimeter (per sector)
-            std::map<int, TH1D*> nphe;
-            std::map<int, TH2D*> EPCal_vs_ECal;
-            std::map<int, TH1D*> EPCal;
-            std::map<int, TH2D*> p_vs_SF;
-            std::map<int, TH2D*> lv_vs_SF;
-            std::map<int, TH2D*> lw_vs_SF;
+            std::map<int, clas12::framework::AtomicHistogram1D*> nphe;
+            std::map<int, clas12::framework::AtomicHistogram2D*> EPCal_vs_ECal;
+            std::map<int, clas12::framework::AtomicHistogram1D*> EPCal;
+            std::map<int, clas12::framework::AtomicHistogram2D*> p_vs_SF;
+            std::map<int, clas12::framework::AtomicHistogram2D*> lv_vs_SF;
+            std::map<int, clas12::framework::AtomicHistogram2D*> lw_vs_SF;
             // DC fiducial (per sector)
-            std::map<int, TH2D*> edge_vs_chi2ndf_r1;
-            std::map<int, TH2D*> edge_vs_chi2ndf_r2;
-            std::map<int, TH2D*> edge_vs_chi2ndf_r3;
+            std::map<int, clas12::framework::AtomicHistogram2D*> edge_vs_chi2ndf_r1;
+            std::map<int, clas12::framework::AtomicHistogram2D*> edge_vs_chi2ndf_r2;
+            std::map<int, clas12::framework::AtomicHistogram2D*> edge_vs_chi2ndf_r3;
         };
         SectorHistograms sector_histograms;
 
         // Kinematics
-        TH1D* momentum = nullptr;
-        TH1D* theta = nullptr;
+        clas12::framework::AtomicHistogram1D* momentum = nullptr;
+        clas12::framework::AtomicHistogram1D* theta = nullptr;
     };
 
     PionHistograms h_piplus;
@@ -205,71 +203,71 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
 
     void book_pion_histograms(const std::string& dir, PionHistograms& h, const std::string& label) {
         auto* svc = m_hist_svc->get();
-        // Sampling fraction histograms
-        h.sf = svc->book_hist1D(dir + "/sf", fmt::format("{} Sampling Fraction;SF;Events", label), 100, 0, 0.4);
-        h.lv = svc->book_hist1D(dir + "/lv", fmt::format("{} PCAL lv;lv [cm];Events", label), 100, 0, 500);
-        h.lw = svc->book_hist1D(dir + "/lw", fmt::format("{} PCAL lw;lw [cm];Events", label), 100, 0, 500);
-        h.sf_vs_lv = svc->book_hist2D(dir + "/sf_vs_lv", fmt::format("{} Sf vs lv;lv [cm];SF", label), 200, 0, 70, 200, 0, 0.4);
-        h.sf_vs_lw = svc->book_hist2D(dir + "/sf_vs_lw", fmt::format("{} Sf vs lw;lw [cm];SF", label), 200, 0, 70, 200, 0, 0.4);
-        
-        // DC chi2/ndf vs edge histograms
-        h.chi2ndf = svc->book_hist1D(dir + "/chi2ndf", fmt::format("{} DC #chi^{{2}}/NDF;#chi^{{2}}/NDF;Events", label), 100, 0, 20);
-        h.edge_r1 = svc->book_hist1D(dir + "/edge_r1", fmt::format("{} DC Edge R1;Edge [cm];Events", label), 100, -10, 50);
-        h.edge_r2 = svc->book_hist1D(dir + "/edge_r2", fmt::format("{} DC Edge R2;Edge [cm];Events", label), 100, -10, 50);
-        h.edge_r3 = svc->book_hist1D(dir + "/edge_r3", fmt::format("{} DC Edge R3;Edge [cm];Events", label), 100, -10, 50);
+        // Sampling fraction histograms (lock-free atomic)
+        h.sf = svc->book_atomic_hist1D(dir + "/sf", fmt::format("{} Sampling Fraction;SF;Events", label), 100, 0, 0.4);
+        h.lv = svc->book_atomic_hist1D(dir + "/lv", fmt::format("{} PCAL lv;lv [cm];Events", label), 100, 0, 500);
+        h.lw = svc->book_atomic_hist1D(dir + "/lw", fmt::format("{} PCAL lw;lw [cm];Events", label), 100, 0, 500);
+        h.sf_vs_lv = svc->book_atomic_hist2D(dir + "/sf_vs_lv", fmt::format("{} Sf vs lv;lv [cm];SF", label), 200, 0, 70, 200, 0, 0.4);
+        h.sf_vs_lw = svc->book_atomic_hist2D(dir + "/sf_vs_lw", fmt::format("{} Sf vs lw;lw [cm];SF", label), 200, 0, 70, 200, 0, 0.4);
 
-        h.chi2ndf_vs_edge_r1 = svc->book_hist2D(dir + "/chi2ndf_vs_edge_r1", fmt::format("{} #chi^{{2}}/NDF vs Edge R1;Edge R1 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
-        h.chi2ndf_vs_edge_r2 = svc->book_hist2D(dir + "/chi2ndf_vs_edge_r2", fmt::format("{} #chi^{{2}}/NDF vs Edge R2;Edge R2 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
-        h.chi2ndf_vs_edge_r3 = svc->book_hist2D(dir + "/chi2ndf_vs_edge_r3", fmt::format("{} #chi^{{2}}/NDF vs Edge R3;Edge R3 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
-        
-        // Basic kinematics
-        h.momentum = svc->book_hist1D(dir + "/momentum", fmt::format("{} Momentum;p [GeV/c];Events", label), 200, 0, 10);
-        h.theta = svc->book_hist1D(dir + "/theta", fmt::format("{} #theta;#theta [deg];Events", label), 180, 0, 40);
+        // DC chi2/ndf vs edge histograms (lock-free atomic)
+        h.chi2ndf = svc->book_atomic_hist1D(dir + "/chi2ndf", fmt::format("{} DC #chi^{{2}}/NDF;#chi^{{2}}/NDF;Events", label), 100, 0, 20);
+        h.edge_r1 = svc->book_atomic_hist1D(dir + "/edge_r1", fmt::format("{} DC Edge R1;Edge [cm];Events", label), 100, -10, 50);
+        h.edge_r2 = svc->book_atomic_hist1D(dir + "/edge_r2", fmt::format("{} DC Edge R2;Edge [cm];Events", label), 100, -10, 50);
+        h.edge_r3 = svc->book_atomic_hist1D(dir + "/edge_r3", fmt::format("{} DC Edge R3;Edge [cm];Events", label), 100, -10, 50);
+
+        h.chi2ndf_vs_edge_r1 = svc->book_atomic_hist2D(dir + "/chi2ndf_vs_edge_r1", fmt::format("{} #chi^{{2}}/NDF vs Edge R1;Edge R1 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
+        h.chi2ndf_vs_edge_r2 = svc->book_atomic_hist2D(dir + "/chi2ndf_vs_edge_r2", fmt::format("{} #chi^{{2}}/NDF vs Edge R2;Edge R2 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
+        h.chi2ndf_vs_edge_r3 = svc->book_atomic_hist2D(dir + "/chi2ndf_vs_edge_r3", fmt::format("{} #chi^{{2}}/NDF vs Edge R3;Edge R3 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
+
+        // Basic kinematics (lock-free atomic)
+        h.momentum = svc->book_atomic_momentum_hist(dir + "/momentum", fmt::format("{} Momentum", label));
+        h.theta = svc->book_atomic_hist1D(dir + "/theta", fmt::format("{} #theta;#theta [deg];Events", label), 180, 0, 40);
 
         // Book histograms for each sector (1-6)
         for (int sector = 1; sector <= 6; ++sector) {
             std::string sec_suffix = fmt::format("_S{}", sector);
 
-            h.sector_histograms.nphe[sector] = svc->book_hist1D(
+            h.sector_histograms.nphe[sector] = svc->book_atomic_hist1D(
                 dir + "/nphe" + sec_suffix,
                 fmt::format("Cherenkov nphe (Sector {});nphe;Tracks", sector),
                 51, 0, 50);
 
-            h.sector_histograms.EPCal_vs_ECal[sector] = svc->book_hist2D(
+            h.sector_histograms.EPCal_vs_ECal[sector] = svc->book_atomic_hist2D(
                 dir + "/EPCal_vs_ECal" + sec_suffix,
                 fmt::format("E_{{PCal}} vs E_{{Cal}} (Sector {});E_{{PCal}} [GeV];E_{{Cal}} [GeV]", sector),
                 200, 0, 0.6, 200, 0, 0.6);
 
-            h.sector_histograms.EPCal[sector] = svc->book_hist1D(
+            h.sector_histograms.EPCal[sector] = svc->book_atomic_hist1D(
                 dir + "/EPCal" + sec_suffix,
                 fmt::format("E_{{PCal}} (Sector {});E_{{PCal}} [GeV];Tracks", sector),
                 200, 0, 1);
 
-            h.sector_histograms.p_vs_SF[sector] = svc->book_hist2D(
+            h.sector_histograms.p_vs_SF[sector] = svc->book_atomic_hist2D(
                 dir + "/p_vs_SF" + sec_suffix,
                 fmt::format("p vs SF (Sector {});p [GeV];E/p", sector),
                 200, 0, 11, 200, 0, 0.4);
 
-            h.sector_histograms.edge_vs_chi2ndf_r1[sector] = svc->book_hist2D(
+            h.sector_histograms.edge_vs_chi2ndf_r1[sector] = svc->book_atomic_hist2D(
                 dir + "/edge_vs_chi2ndf_r1" + sec_suffix,
                 fmt::format("Edge vs #chi^{{2}}/ndf (R1, Sector {});edge [cm];#chi^{{2}}/ndf", sector),
                 200, 0, 50, 200, 0, 10);
 
-            h.sector_histograms.edge_vs_chi2ndf_r2[sector] = svc->book_hist2D(
+            h.sector_histograms.edge_vs_chi2ndf_r2[sector] = svc->book_atomic_hist2D(
                 dir + "/edge_vs_chi2ndf_r2" + sec_suffix,
                 fmt::format("Edge vs #chi^{{2}}/ndf (R2, Sector {});edge [cm];#chi^{{2}}/ndf", sector),
                 200, 0, 50, 200, 0, 10);
 
-            h.sector_histograms.edge_vs_chi2ndf_r3[sector] = svc->book_hist2D(
+            h.sector_histograms.edge_vs_chi2ndf_r3[sector] = svc->book_atomic_hist2D(
                 dir + "/edge_vs_chi2ndf_r3" + sec_suffix,
                 fmt::format("Edge vs #chi^{{2}}/ndf (R3, Sector {});edge [cm];#chi^{{2}}/ndf", sector),
                 200, 0, 50, 200, 0, 10);
 
-            h.sector_histograms.lv_vs_SF[sector] = svc->book_hist2D(
+            h.sector_histograms.lv_vs_SF[sector] = svc->book_atomic_hist2D(
                 dir + "/lv_vs_SF" + sec_suffix,
                 fmt::format("lv vs SF (Sector {});lv;E/p", sector),
                 200, 0, 70, 200, 0, 0.5);
-            h.sector_histograms.lw_vs_SF[sector] = svc->book_hist2D(
+            h.sector_histograms.lw_vs_SF[sector] = svc->book_atomic_hist2D(
                 dir + "/lw_vs_SF" + sec_suffix,
                 fmt::format("lw vs SF (Sector {});lw;E/p", sector),
                 200, 0, 70, 200, 0, 0.5);
@@ -324,45 +322,45 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
         auto cherenkov = clas12::read_Cherenkov_bank(REC_Calorimeter, pion.index());
         double nphe = cherenkov.nphe;
 
-        // Fill histograms
-        h.momentum->Fill(p);
-        h.theta->Fill(pion.theta());
+        // Fill histograms (lock-free atomic)
+        h.momentum->fill(p);
+        h.theta->fill(pion.theta());
 
         // Calorimeter histograms
-        h.sf->Fill(SF);
-        h.lv->Fill(lv);
-        h.lw->Fill(lw);
-        h.sf_vs_lv->Fill(lv, SF);
-        h.sf_vs_lw->Fill(lw, SF);
+        h.sf->fill(SF);
+        h.lv->fill(lv);
+        h.lw->fill(lw);
+        h.sf_vs_lv->fill(lv, SF);
+        h.sf_vs_lw->fill(lw, SF);
 
         // DC histograms
-        h.chi2ndf->Fill(chi2ndf);
-        h.edge_r1->Fill(edge_r1);
-        h.edge_r2->Fill(edge_r2);
-        h.edge_r3->Fill(edge_r3);
-        h.chi2ndf_vs_edge_r1->Fill(edge_r1, chi2ndf);
-        h.chi2ndf_vs_edge_r2->Fill(edge_r2, chi2ndf);
-        h.chi2ndf_vs_edge_r3->Fill(edge_r3, chi2ndf);
+        h.chi2ndf->fill(chi2ndf);
+        h.edge_r1->fill(edge_r1);
+        h.edge_r2->fill(edge_r2);
+        h.edge_r3->fill(edge_r3);
+        h.chi2ndf_vs_edge_r1->fill(edge_r1, chi2ndf);
+        h.chi2ndf_vs_edge_r2->fill(edge_r2, chi2ndf);
+        h.chi2ndf_vs_edge_r3->fill(edge_r3, chi2ndf);
 
         // Fill sector-specific histograms
         if (h.sector_histograms.booked) {
             int sector = calo.pcal.sector;
             if (sector < 1 || sector > 6) return;
             // Edge vs chi2/ndf
-            h.sector_histograms.edge_vs_chi2ndf_r1[sector]->Fill(edge_r1, chi2ndf);
-            h.sector_histograms.edge_vs_chi2ndf_r2[sector]->Fill(edge_r2, chi2ndf);
-            h.sector_histograms.edge_vs_chi2ndf_r3[sector]->Fill(edge_r3, chi2ndf);
+            h.sector_histograms.edge_vs_chi2ndf_r1[sector]->fill(edge_r1, chi2ndf);
+            h.sector_histograms.edge_vs_chi2ndf_r2[sector]->fill(edge_r2, chi2ndf);
+            h.sector_histograms.edge_vs_chi2ndf_r3[sector]->fill(edge_r3, chi2ndf);
 
             // Calorimeter quantities
             double E_cal = calo.inner.energy + calo.outer.energy;
             double E_pcal = calo.pcal.energy;
             if (E_pcal == 0) return; // Should not happen for pions with calorimeter info
-            h.sector_histograms.lv_vs_SF[sector]->Fill(lv, SF);
-            h.sector_histograms.lw_vs_SF[sector]->Fill(lw, SF);
-            h.sector_histograms.nphe[sector]->Fill(nphe);
-            h.sector_histograms.EPCal_vs_ECal[sector]->Fill(E_pcal, E_cal);
-            h.sector_histograms.EPCal[sector]->Fill(E_pcal);
-            h.sector_histograms.p_vs_SF[sector]->Fill(p, SF);
+            h.sector_histograms.lv_vs_SF[sector]->fill(lv, SF);
+            h.sector_histograms.lw_vs_SF[sector]->fill(lw, SF);
+            h.sector_histograms.nphe[sector]->fill(nphe);
+            h.sector_histograms.EPCal_vs_ECal[sector]->fill(E_pcal, E_cal);
+            h.sector_histograms.EPCal[sector]->fill(E_pcal);
+            h.sector_histograms.p_vs_SF[sector]->fill(p, SF);
         }
     }
 };
