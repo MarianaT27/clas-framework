@@ -2,6 +2,7 @@
 
 #include <clas12/framework/core/Error.hpp>
 
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
