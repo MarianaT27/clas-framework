@@ -69,7 +69,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         declare_property(m_chi2pid_max);
         declare_property(m_momentum_min);
         declare_property(m_momentum_max);
-        declare_property(m_beta_tolerance);
         declare_property(m_enable_ntuple);
     }
 
@@ -193,11 +192,10 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     clas12::framework::Cutflow m_cutflow_piminus;
 
     // Configurable properties
-    clas12::framework::Property<double> m_chi2pid_min{"chi2pid_min", -3.0, "Minimum chi2PID"};
-    clas12::framework::Property<double> m_chi2pid_max{"chi2pid_max", 3.0, "Maximum chi2PID"};
+    clas12::framework::Property<double> m_chi2pid_min{"chi2pid_min", -10.0, "Minimum chi2PID"};
+    clas12::framework::Property<double> m_chi2pid_max{"chi2pid_max", 10.0, "Maximum chi2PID"};
     clas12::framework::Property<double> m_momentum_min{"momentum_min", 0.3, "Minimum pion momentum [GeV]"};
     clas12::framework::Property<double> m_momentum_max{"momentum_max", 10.0, "Maximum pion momentum [GeV]"};
-    clas12::framework::Property<double> m_beta_tolerance{"beta_tolerance", 0.05, "Beta tolerance (fraction)"};
     clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
 
     // Service handles (auto-injected via require_service/optional_service)
@@ -244,7 +242,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         m_cutflow_piplus.add_cut("Chi2 PID");
         m_cutflow_piplus.add_cut("Momentum");
         m_cutflow_piplus.add_cut("Vertex Z");
-        m_cutflow_piplus.add_cut("Beta");
         m_cutflow_piplus.add_cut("Delta-t");
 
         // π⁻ cutflow
@@ -254,7 +251,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         m_cutflow_piminus.add_cut("Chi2 PID");
         m_cutflow_piminus.add_cut("Momentum");
         m_cutflow_piminus.add_cut("Vertex Z");
-        m_cutflow_piminus.add_cut("Beta");
         m_cutflow_piminus.add_cut("Delta-t");
     }
 
@@ -342,11 +338,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             if (!pass_vz_cut(pion.vz())) continue;
             cutflow.pass("Vertex Z");
 
-            // Beta cut
-            double beta = pion.beta();
-            if (!pass_beta_cut(beta, p)) continue;
-            cutflow.pass("Beta");
-
             // Get scintillator info for delta_t
             clas12::ScintillatorBank scintillator = clas12::read_Scintillator_bank(
                 REC_Scintillator, pion.index());
@@ -411,21 +402,13 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         return vz_range.contains(vz);
     }
 
-    auto pass_beta_cut(double beta, double p) -> bool {
-        // Basic beta cut using configurable tolerance
-        double m = clas12::Constants::PIMASS;
-        double beta_expected = p / std::sqrt(p * p + m * m);
-        double delta_beta = std::abs(beta - beta_expected);
-        return delta_beta < m_beta_tolerance.get();
-    }
-
     /**
      * @brief Time-of-flight cut using momentum-dependent parameterization
      *
      * This uses a 3-sigma cut around a momentum-dependent mean with
      * parameterized sigma values from pion calibration studies.
      */
-    auto pass_delta_t_cut(double p, double delta_t) -> bool {
+    auto pass_delta_t_cut(const double p, const double delta_t) -> bool {
         // Parameterization from pion timing studies
         const double popt_mean[4] = {-0.02872196, 0.00598219, 0.00158193, -0.00028493};
         const double popt_sigma[4] = {0.25132972, -0.09788015, 0.01734634, -0.00103597};

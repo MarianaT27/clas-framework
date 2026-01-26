@@ -80,9 +80,9 @@ class DISAnalysis {
     static auto standard_dis_region() -> KinematicRegion {
         return KinematicRegion{
             .q2_min = 1.0,
-            .q2_max = 11.0,
+            .q2_max = 20.0,
             .w_min = 2.0,
-            .w_max = 5.0,
+            .w_max = 25.0,
             .y_min = 0.0,
             .y_max = 0.85};
     }
