@@ -6,7 +6,7 @@
 
 #include <clas12/framework/core/IAlgorithm.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
-
+#include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 
 namespace clas12::framework {
