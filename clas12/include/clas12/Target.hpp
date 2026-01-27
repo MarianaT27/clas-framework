@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <fmt/format.h>
 
 namespace clas12 {
 enum class Target {
@@ -90,3 +91,25 @@ inline auto string_to_rungroup(const std::string& str) -> RunGroup {
 }
 
 }  // namespace clas12
+
+// fmt formatters for clas12 enums
+template <>
+struct fmt::formatter<clas12::Target> : fmt::formatter<std::string> {
+    auto format(clas12::Target t, fmt::format_context& ctx) const {
+        return fmt::formatter<std::string>::format(clas12::to_string(t), ctx);
+    }
+};
+
+template <>
+struct fmt::formatter<clas12::Polarity> : fmt::formatter<std::string> {
+    auto format(clas12::Polarity p, fmt::format_context& ctx) const {
+        return fmt::formatter<std::string>::format(clas12::to_string(p), ctx);
+    }
+};
+
+template <>
+struct fmt::formatter<clas12::RunGroup> : fmt::formatter<std::string> {
+    auto format(clas12::RunGroup rg, fmt::format_context& ctx) const {
+        return fmt::formatter<std::string>::format(clas12::to_string(rg), ctx);
+    }
+};

@@ -77,7 +77,7 @@ auto main(int argc, char* argv[]) -> int {
     clas12::framework::Log::section("CuSn Contamination Analysis");
     clas12::framework::Log::subsection("Configuration");
     clas12::framework::Log::config("Config", "Target", clas12::string_to_target(target));
-    clas12::framework::Log::config("Config", "Polarity", clas12::string_to_target(polarity));
+    clas12::framework::Log::config("Config", "Polarity", clas12::string_to_polarity(polarity));
     clas12::framework::Log::config("Config", "Input files", input_files.size());
     clas12::framework::Log::config("Config", "Threads", num_threads);
     clas12::framework::Log::config("Config", "Output", output_file);

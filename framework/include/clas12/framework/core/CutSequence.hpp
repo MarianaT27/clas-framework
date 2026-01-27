@@ -19,7 +19,7 @@ namespace clas12::framework {
  * - F.50: Use a lambda when a function won't do
  * - I.23: Keep the number of function arguments low
  */
-struct Cut {
+struct SequenceCut {
     std::string name;
     std::function<bool()> predicate;
     std::function<void()> on_pass = nullptr;  // Optional callback after passing
@@ -138,7 +138,7 @@ public:
 
 private:
     Cutflow m_cutflow;
-    std::vector<Cut> m_cuts;
+    std::vector<SequenceCut> m_cuts;
 };
 
 /**
