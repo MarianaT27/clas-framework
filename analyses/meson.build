@@ -51,3 +51,10 @@ executable(
   files('dipion/dipion_filter.cpp'),
   dependencies: analysis_deps,
 )
+
+# CuSn contamination analysis
+executable(
+  'CuSn_contamination',
+  files('CuSn_contamination/CuSn_contamination.cpp', 'CuSn_contamination/CusnContaminationAlg.hpp'),
+  dependencies: analysis_deps,
+)
