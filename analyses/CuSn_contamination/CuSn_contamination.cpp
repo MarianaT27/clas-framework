@@ -29,7 +29,7 @@ auto main(int argc, char* argv[]) -> int {
 
     options.add_options()
         ("h,help", "Show help")
-        ("i,input", "Input HIPO files", cxxopts::value<std::vector<std::string>>())
+        ("i,input", "Input HIPO directory", cxxopts::value<std::string>())
         ("o,output", "Output ROOT file", cxxopts::value<std::string>()->default_value("CuSn_contamination_output.root"))
         ("p,percentage", "Percentage of events to process", cxxopts::value<double>()->default_value("100"))
         ("t,threads", "Number of threads to use", cxxopts::value<int>()->default_value("1"))
@@ -38,7 +38,7 @@ auto main(int argc, char* argv[]) -> int {
         ;
 
     options.parse_positional({"input"});
-    options.positional_help("<input_files...>");
+    options.positional_help("<input_directory>");
 
     auto parser = options.parse(argc, argv);
 
@@ -47,12 +47,14 @@ auto main(int argc, char* argv[]) -> int {
         return parser.count("help") ? 0 : 1;
     }
 
-    auto input_files = parser["input"].as<std::vector<std::string>>();
+    auto input = parser["input"].as<std::string>();
     auto output_file = parser["output"].as<std::string>();
     auto percentage = parser["percentage"].as<double>();
     auto num_threads = parser["threads"].as<int>();
     auto target = parser["target"].as<std::string>();
     auto polarity = parser["polarity"].as<std::string>();
+
+    std::vector<std::string> input_files = clas12::FileUtils::read_recursive_hipo_files(input);
 
     auto app = clas12::framework::make_application("CuSn Contamination Analysis")
         .with_input_files(input_files)

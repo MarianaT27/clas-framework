@@ -11,9 +11,15 @@
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
+#include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
+#include <clas12/framework/core/ServiceHelpers.hpp>
 #include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/Decisions.hpp>
 #include <clas12/Particle.hpp>
+#include <cmath>
+#include "Math/GenVector/PxPyPzE4D.h"
+#include "Math/Vector3Dfwd.h"
 
 namespace CuSnContamination {
 
@@ -56,6 +62,7 @@ public:
         if (m_enable_histograms && m_hist_svc && m_hist_svc->is_valid()) {
             // Book your histograms here
             // m_hist_svc->get()->book_hist1D("hist_name", "Title", 100, 0.0, 10.0);
+            book_histograms();
         }
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -68,18 +75,45 @@ public:
      * @return StatusCode SUCCESS to continue, FILTERED to skip, FAILURE to stop
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        // Example: Get particles from the event
-        // auto electrons = event.particles(clas12::PIDs::ELECTRON);
+        // Get the first electron from the MC::Particle bank
+        hipo::bank& MC_particles = event.get_bank("MC::Particle");
+        ROOT::Math::PxPyPzE4D electron4VecP;
+        ROOT::Math::XYZVector electron3VecV;
+        for (size_t i = 0; i < MC_particles.getRows(); ++i) {
+            int pid = MC_particles.getInt("pid", i);
+            if (pid == 11) {
+                double px = MC_particles.getFloat("px", i);
+                double py = MC_particles.getFloat("py", i);
+                double pz = MC_particles.getFloat("pz", i);
+                double vx = MC_particles.getFloat("vx", i);
+                double vy = MC_particles.getFloat("vy", i);
+                double vz = MC_particles.getFloat("vz", i);
+                double E = std::sqrt(px * px + py * py + pz * pz + 0.000511 * 0.000511);
+                electron4VecP = ROOT::Math::PxPyPzE4D(px, py, pz, E);
+                electron3VecV = ROOT::Math::XYZVector(vx, vy, vz);
+            }
+        }
 
-        // Example: Apply cuts
-        // if (some_condition < m_example_cut) {
-        //     return clas12::framework::StatusCode::FILTERED();
-        // }
+        if (m_enable_histograms && h_p && h_phi && h_theta && h_vz) {
+            h_p->fill(electron4VecP.P());
+            h_phi->fill(electron4VecP.Phi() * 180.0 / M_PI);
+            h_theta->fill(electron4VecP.Theta() * 180.0 / M_PI);
+            h_vz->fill(electron3VecV.Z());
+        }
 
-        // Example: Fill histograms
-        // if (m_hist_svc && m_hist_svc->is_valid()) {
-        //     m_hist_svc->get()->fill("hist_name", value);
-        // }
+        // Get the reconstructed electron from the ElectronSelectionAlg
+        // Check for good electron decision from upstream algorithm
+        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodElectron)) return clas12::framework::StatusCode::FILTERED();
+
+        // Get selected electrons using typed retrieval
+        auto electrons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedElectronsCapital);
+        if (!electrons_opt || electrons_opt->empty()) return clas12::framework::StatusCode::FILTERED();
+        
+        auto recon_electron = electrons_opt->front();
+
+        if (-7.8 < electron3VecV.Z() && electron3VecV.Z() < -7.2) h_vz_Cu->fill(recon_electron.vz());
+        if (-3 < electron3VecV.Z() && electron3VecV.Z() < -2.4) h_vz_Sn->fill(recon_electron.vz());
+
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -106,6 +140,26 @@ private:
 
     // Service handles
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+
+        // Lock-free atomic histograms (managed by HistogramService)
+    clas12::framework::AtomicHistogram1D* h_p = nullptr;
+    clas12::framework::AtomicHistogram1D* h_phi = nullptr;
+    clas12::framework::AtomicHistogram1D* h_theta = nullptr;
+    clas12::framework::AtomicHistogram1D* h_vz = nullptr;
+    clas12::framework::AtomicHistogram1D* h_vz_Cu = nullptr;
+    clas12::framework::AtomicHistogram1D* h_vz_Sn = nullptr;
+
+    auto book_histograms() -> void {
+        clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
+            // Use lock-free atomic histograms for parallel accumulation
+            h_p = svc->book_atomic_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
+            h_phi = svc->book_atomic_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
+            h_theta = svc->book_atomic_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
+            h_vz = svc->book_atomic_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -30, 30);
+            h_vz_Cu = svc->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
+            h_vz_Sn = svc->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
+        });
+    }
 };
 
 }  // namespace myanalysis
