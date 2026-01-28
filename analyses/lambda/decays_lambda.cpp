@@ -109,13 +109,17 @@ auto main(int argc, char* argv[]) -> int {
         return EXIT_FAILURE;
     }
 
-    // Create algorithm with cuts configured
+    // Create algorithm with cuts configured via Property system
     auto decays_lambda_alg = std::make_unique<clas12::algorithms::DecaysLambdaAlg>("DecaysLambdaAnalysis");
-    decays_lambda_alg->set_mass_window(config->mass_window);
-    decays_lambda_alg->set_min_momentum(config->min_momentum);
-    decays_lambda_alg->set_min_decay_length(config->min_decay_length);
-    decays_lambda_alg->set_min_vertex_detach(config->min_vertex_detach);
-    decays_lambda_alg->set_max_vertex_detach(config->max_vertex_detach);
+
+    // Configure properties via TOML table
+    toml::table decays_config;
+    decays_config.insert("mass_window", config->mass_window);
+    decays_config.insert("min_momentum", config->min_momentum);
+    decays_config.insert("min_decay_length", config->min_decay_length);
+    decays_config.insert("min_vertex_detach", config->min_vertex_detach);
+    decays_config.insert("max_vertex_detach", config->max_vertex_detach);
+    decays_lambda_alg->configure_from_toml(decays_config);
 
     // Build application using fluent API
     auto app = clas12::framework::make_application("DECAYS Lambda Analysis")

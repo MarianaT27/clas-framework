@@ -4,10 +4,11 @@
 #include <clas12/Constants.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
+#include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/IAlgorithm.hpp>
-#include <clas12/framework/core/ServiceHandle.hpp>
+#include <clas12/framework/core/Property.hpp>
+#include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -45,14 +46,14 @@ inline double get_target_mass(NuclearTarget target) {
 /**
  * @brief Get PDG ID for recoil particle
  */
-inline int get_recoil_pid(NuclearTarget target) {
+inline clas12::PIDs get_recoil_pid(NuclearTarget target) {
     switch (target) {
         case NuclearTarget::Proton:
             return clas12::PIDs::PROTON;
         case NuclearTarget::Neutron:
             return clas12::PIDs::NEUTRON;
         case NuclearTarget::Deuteron:
-            return 1000010020;  // Deuteron PDG
+            return clas12::PIDs::DEUTERON;
         default:
             return clas12::PIDs::PROTON;
     }
@@ -106,49 +107,32 @@ struct ElasticKinematics {
  *
  * Supports proton, neutron, and deuteron targets.
  */
-class ElasticEPAlg : public clas12::framework::Algorithm {
+class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
    public:
-    explicit ElasticEPAlg(std::string name = "ElasticEPAlg", double beam_energy = 10.6, NuclearTarget target = NuclearTarget::Proton)
-        : Algorithm(std::move(name)), m_beam_energy(beam_energy), m_target(target), m_target_mass(get_target_mass(target)), m_recoil_pid(get_recoil_pid(target)), m_cutflow("Elastic e" + get_target_name(target) + " Selection") {}
-
-    void set_beam_energy(double energy) { m_beam_energy = energy; }
-
-    void set_target(NuclearTarget target) {
-        m_target = target;
-        m_target_mass = get_target_mass(target);
-        m_recoil_pid = get_recoil_pid(target);
+    explicit ElasticEPAlg(std::string name = "ElasticEPAlg", NuclearTarget target = NuclearTarget::Proton)
+        : SimpleAlgorithm(std::move(name)), m_target(target), m_target_mass(get_target_mass(target)), m_recoil_pid(get_recoil_pid(target)), m_cutflow("Elastic e" + get_target_name(target) + " Selection") {
+        declare_property(m_beam_energy);
+        declare_property(m_W_min);
+        declare_property(m_W_max);
+        declare_property(m_delta_phi_max);
+        declare_property(m_delta_p_max);
+        declare_property(m_delta_theta_max);
     }
 
-    void set_W_cut(double min, double max) {
-        m_W_min = min;
-        m_W_max = max;
+    /**
+     * @brief Configure required services
+     */
+    auto configure() -> void override {
+        m_log_svc = &require_service<clas12::framework::LoggingService>("LoggingService");
+        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
+        m_ntuple_svc = &optional_service<clas12::framework::NTupleService>("NTupleService");
     }
 
-    void set_coplanarity_cut(double max_delta_phi) { m_delta_phi_max = max_delta_phi; }
-
-    void set_momentum_cut(double max_delta) { m_delta_p_max = max_delta; }
-
-    void set_angle_cut(double max_delta_theta) { m_delta_theta_max = max_delta_theta; }
-
-    auto initialize() -> clas12::framework::StatusCode override {
-        auto log_sc = initialize_handle(m_log_svc);
-        if (log_sc.is_failure()) Log::error(name(), "WARNING: LoggingService not available");
-
+    auto on_initialize() -> clas12::framework::StatusCode override {
         Log::info(name(), "Initializing elastic e-{} algorithm", get_target_name(m_target));
-        Log::info(name(), "  Beam energy: {} GeV", m_beam_energy);
+        Log::info(name(), "  Beam energy: {} GeV", m_beam_energy.get());
         Log::info(name(), "  Target mass: {} GeV", m_target_mass);
-        Log::info(name(), "  Recoil PID: {}", m_recoil_pid);
-
-        auto hist_sc = initialize_handle(m_hist_svc);
-        if (hist_sc.is_failure()) {
-            Log::error(name(), "Could not get HistogramService: {}", hist_sc.message());
-            return hist_sc;
-        }
-
-        auto ntuple_sc = initialize_handle(m_ntuple_svc);
-        if (ntuple_sc.is_failure()) {
-            Log::warning(name(), "Could not get NTupleService - N-tuple output disabled");
-        }
+        Log::info(name(), "  Recoil PID: {} ({})", static_cast<int>(m_recoil_pid), clas12::pid_name(m_recoil_pid));
 
         book_histograms();
         if (m_ntuple_svc) setup_ntuple();
@@ -167,7 +151,7 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
         return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_cutflow.pass("All Events");
 
         // Check for good electron from upstream
@@ -199,21 +183,21 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
             ElasticKinematics kin = calculate_kinematics(electron, recoil);
 
             // Fill pre-cut histograms
-            if (h_delta_phi_precut) h_delta_phi_precut->Fill(kin.delta_phi);
-            if (h_W_precut) h_W_precut->Fill(kin.W);
+            if (h_delta_phi_precut) h_delta_phi_precut->fill(kin.delta_phi);
+            if (h_W_precut) h_W_precut->fill(kin.W);
 
             // Check coplanarity
-            if (std::abs(kin.delta_phi) > m_delta_phi_max) continue;
+            if (std::abs(kin.delta_phi) > m_delta_phi_max.get()) continue;
 
             // Check W cut
-            if (kin.W < m_W_min || kin.W > m_W_max) continue;
+            if (kin.W < m_W_min.get() || kin.W > m_W_max.get()) continue;
 
             // Check momentum correlation
-            if (std::abs(kin.delta_p_e) > m_delta_p_max) continue;
-            if (std::abs(kin.delta_p_p) > m_delta_p_max) continue;
+            if (std::abs(kin.delta_p_e) > m_delta_p_max.get()) continue;
+            if (std::abs(kin.delta_p_recoil) > m_delta_p_max.get()) continue;
 
             // Check angle correlation
-            if (std::abs(kin.delta_theta_p) > m_delta_theta_max) continue;
+            if (std::abs(kin.delta_theta_recoil) > m_delta_theta_max.get()) continue;
 
             // Found a good elastic candidate
             if (!found_elastic || recoil.p() > best_recoil->p()) {
@@ -251,10 +235,10 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
         return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto finalize() -> clas12::framework::StatusCode override {
+    auto on_finalize() -> clas12::framework::StatusCode override {
         Log::info(name(), "Finalizing elastic e-{} algorithm", get_target_name(m_target));
         if (m_ntuple_svc) {
-            auto entries = m_ntuple_svc->get_entries("elastic_eN");
+            auto entries = m_ntuple_svc->get()->get_entries("elastic_eN");
             Log::info(name(), "N-tuple has {} entries", entries);
         }
         m_cutflow.print();
@@ -262,37 +246,37 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
     }
 
    private:
-    double m_beam_energy;
     NuclearTarget m_target;
     double m_target_mass;
-    int m_recoil_pid;
+    clas12::PIDs m_recoil_pid;
     clas12::framework::Cutflow m_cutflow;
 
-    // Cut parameters
-    double m_W_min = 0.8;            // GeV
-    double m_W_max = 1.05;           // GeV (proton mass ~0.938)
-    double m_delta_phi_max = 5.0;    // degrees
-    double m_delta_p_max = 0.1;      // fractional
-    double m_delta_theta_max = 2.0;  // degrees
+    // Configuration properties
+    clas12::framework::Property<double> m_beam_energy{"beam_energy", 10.6, "Beam energy [GeV]"};
+    clas12::framework::Property<double> m_W_min{"W_min", 0.8, "Minimum W [GeV]"};
+    clas12::framework::Property<double> m_W_max{"W_max", 1.05, "Maximum W [GeV]"};
+    clas12::framework::Property<double> m_delta_phi_max{"delta_phi_max", 5.0, "Maximum coplanarity [deg]"};
+    clas12::framework::Property<double> m_delta_p_max{"delta_p_max", 0.1, "Maximum fractional momentum deviation"};
+    clas12::framework::Property<double> m_delta_theta_max{"delta_theta_max", 2.0, "Maximum angle deviation [deg]"};
 
-    // Services
-    clas12::framework::ServiceHandle<clas12::framework::LoggingService> m_log_svc{"LoggingService"};
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService> m_hist_svc{"HistogramService"};
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService> m_ntuple_svc{"NTupleService"};
+    // Services (pointers set by configure())
+    clas12::framework::ServiceHandle<clas12::framework::LoggingService>* m_log_svc = nullptr;
+    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
 
-    // Histograms
-    TH1D* h_Q2 = nullptr;
-    TH1D* h_W = nullptr;
-    TH1D* h_W_precut = nullptr;
-    TH1D* h_delta_phi = nullptr;
-    TH1D* h_delta_phi_precut = nullptr;
-    TH1D* h_delta_p_e = nullptr;
-    TH1D* h_delta_p_recoil = nullptr;
-    TH1D* h_delta_theta_recoil = nullptr;
-    TH2D* h_p_e_vs_theta_e = nullptr;
-    TH2D* h_p_recoil_vs_theta_recoil = nullptr;
-    TH2D* h_p_e_measured_vs_expected = nullptr;
-    TH2D* h_theta_recoil_measured_vs_expected = nullptr;
+    // Histograms (atomic for thread safety)
+    clas12::framework::AtomicHistogram1D* h_Q2 = nullptr;
+    clas12::framework::AtomicHistogram1D* h_W = nullptr;
+    clas12::framework::AtomicHistogram1D* h_W_precut = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_phi = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_phi_precut = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_p_e = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_p_recoil = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_theta_recoil = nullptr;
+    clas12::framework::AtomicHistogram2D* h_p_e_vs_theta_e = nullptr;
+    clas12::framework::AtomicHistogram2D* h_p_recoil_vs_theta_recoil = nullptr;
+    clas12::framework::AtomicHistogram2D* h_p_e_measured_vs_expected = nullptr;
+    clas12::framework::AtomicHistogram2D* h_theta_recoil_measured_vs_expected = nullptr;
 
     // N-tuple variables
     double m_nt_e_p = 0, m_nt_e_theta = 0, m_nt_e_phi = 0;
@@ -304,7 +288,7 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
         ElasticKinematics kin;
 
         const double M = m_target_mass;
-        const double Eb = m_beam_energy;
+        const double Eb = m_beam_energy.get();
 
         kin.p_e = electron.p();
         kin.theta_e = electron.theta();
@@ -357,46 +341,46 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
 
     void book_histograms() {
         std::string prefix = "/Elastic_" + get_target_name(m_target);
-        h_Q2 = m_hist_svc->book_hist1D(prefix + "/Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 10);
-        h_W = m_hist_svc->book_hist1D(prefix + "/W", "W;W [GeV];Events", 100, m_target_mass - 0.2, m_target_mass + 0.3);
-        h_W_precut = m_hist_svc->book_hist1D(prefix + "/W_precut", "W (pre-cut);W [GeV];Events", 200, 0, 3);
-        h_delta_phi = m_hist_svc->book_hist1D(prefix + "/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 100, -10, 10);
-        h_delta_phi_precut = m_hist_svc->book_hist1D(prefix + "/delta_phi_precut", "#Delta#phi (pre-cut);#Delta#phi [deg];Events", 180, -180, 180);
-        h_delta_p_e = m_hist_svc->book_hist1D(prefix + "/delta_p_e", "#Deltap_{e}/p_{e};#Deltap_{e}/p_{e};Events", 100, -0.2, 0.2);
-        h_delta_p_recoil = m_hist_svc->book_hist1D(prefix + "/delta_p_recoil", "#Deltap_{N}/p_{N};#Deltap_{N}/p_{N};Events", 100, -0.2, 0.2);
-        h_delta_theta_recoil = m_hist_svc->book_hist1D(prefix + "/delta_theta_recoil", "#Delta#theta_{N};#Delta#theta_{N} [deg];Events", 100, -5, 5);
-        h_p_e_vs_theta_e = m_hist_svc->book_hist2D(prefix + "/p_e_vs_theta_e", "p_{e} vs #theta_{e};#theta_{e} [deg];p_{e} [GeV]", 90, 0, 45, 100, 0, 11);
-        h_p_recoil_vs_theta_recoil = m_hist_svc->book_hist2D(prefix + "/p_N_vs_theta_N", "p_{N} vs #theta_{N};#theta_{N} [deg];p_{N} [GeV]", 90, 0, 90, 100, 0, 5);
-        h_p_e_measured_vs_expected = m_hist_svc->book_hist2D(prefix + "/p_e_meas_vs_exp", "p_{e} measured vs expected;p_{e}^{exp} [GeV];p_{e}^{meas} [GeV]", 100, 0, 11, 100, 0, 11);
-        h_theta_recoil_measured_vs_expected = m_hist_svc->book_hist2D(prefix + "/theta_N_meas_vs_exp", "#theta_{N} measured vs expected;#theta_{N}^{exp} [deg];#theta_{N}^{meas} [deg]", 90, 0, 90, 90, 0, 90);
+        h_Q2 = m_hist_svc->get()->book_atomic_hist1D(prefix + "/Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 10);
+        h_W = m_hist_svc->get()->book_atomic_hist1D(prefix + "/W", "W;W [GeV];Events", 100, m_target_mass - 0.2, m_target_mass + 0.3);
+        h_W_precut = m_hist_svc->get()->book_atomic_hist1D(prefix + "/W_precut", "W (pre-cut);W [GeV];Events", 200, 0, 3);
+        h_delta_phi = m_hist_svc->get()->book_atomic_hist1D(prefix + "/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 100, -10, 10);
+        h_delta_phi_precut = m_hist_svc->get()->book_atomic_hist1D(prefix + "/delta_phi_precut", "#Delta#phi (pre-cut);#Delta#phi [deg];Events", 180, -180, 180);
+        h_delta_p_e = m_hist_svc->get()->book_atomic_hist1D(prefix + "/delta_p_e", "#Deltap_{e}/p_{e};#Deltap_{e}/p_{e};Events", 100, -0.2, 0.2);
+        h_delta_p_recoil = m_hist_svc->get()->book_atomic_hist1D(prefix + "/delta_p_recoil", "#Deltap_{N}/p_{N};#Deltap_{N}/p_{N};Events", 100, -0.2, 0.2);
+        h_delta_theta_recoil = m_hist_svc->get()->book_atomic_hist1D(prefix + "/delta_theta_recoil", "#Delta#theta_{N};#Delta#theta_{N} [deg];Events", 100, -5, 5);
+        h_p_e_vs_theta_e = m_hist_svc->get()->book_atomic_hist2D(prefix + "/p_e_vs_theta_e", "p_{e} vs #theta_{e};#theta_{e} [deg];p_{e} [GeV]", 90, 0, 45, 100, 0, 11);
+        h_p_recoil_vs_theta_recoil = m_hist_svc->get()->book_atomic_hist2D(prefix + "/p_N_vs_theta_N", "p_{N} vs #theta_{N};#theta_{N} [deg];p_{N} [GeV]", 90, 0, 90, 100, 0, 5);
+        h_p_e_measured_vs_expected = m_hist_svc->get()->book_atomic_hist2D(prefix + "/p_e_meas_vs_exp", "p_{e} measured vs expected;p_{e}^{exp} [GeV];p_{e}^{meas} [GeV]", 100, 0, 11, 100, 0, 11);
+        h_theta_recoil_measured_vs_expected = m_hist_svc->get()->book_atomic_hist2D(prefix + "/theta_N_meas_vs_exp", "#theta_{N} measured vs expected;#theta_{N}^{exp} [deg];#theta_{N}^{meas} [deg]", 90, 0, 90, 90, 0, 90);
     }
 
     void fill_histograms(const ElasticKinematics& kin) {
-        if (h_Q2) h_Q2->Fill(kin.Q2);
-        if (h_W) h_W->Fill(kin.W);
-        if (h_delta_phi) h_delta_phi->Fill(kin.delta_phi);
-        if (h_delta_p_e) h_delta_p_e->Fill(kin.delta_p_e);
-        if (h_delta_p_recoil) h_delta_p_recoil->Fill(kin.delta_p_recoil);
-        if (h_delta_theta_recoil) h_delta_theta_recoil->Fill(kin.delta_theta_recoil);
-        if (h_p_e_vs_theta_e) h_p_e_vs_theta_e->Fill(kin.theta_e * clas12::Constants::RAD_TO_DEG, kin.p_e);
-        if (h_p_recoil_vs_theta_recoil) h_p_recoil_vs_theta_recoil->Fill(kin.theta_recoil * clas12::Constants::RAD_TO_DEG, kin.p_recoil);
-        if (h_p_e_measured_vs_expected) h_p_e_measured_vs_expected->Fill(kin.p_e_expected, kin.p_e);
-        if (h_theta_recoil_measured_vs_expected) h_theta_recoil_measured_vs_expected->Fill(kin.theta_recoil_expected * clas12::Constants::RAD_TO_DEG, kin.theta_recoil * clas12::Constants::RAD_TO_DEG);
+        if (h_Q2) h_Q2->fill(kin.Q2);
+        if (h_W) h_W->fill(kin.W);
+        if (h_delta_phi) h_delta_phi->fill(kin.delta_phi);
+        if (h_delta_p_e) h_delta_p_e->fill(kin.delta_p_e);
+        if (h_delta_p_recoil) h_delta_p_recoil->fill(kin.delta_p_recoil);
+        if (h_delta_theta_recoil) h_delta_theta_recoil->fill(kin.delta_theta_recoil);
+        if (h_p_e_vs_theta_e) h_p_e_vs_theta_e->fill(kin.theta_e * clas12::Constants::RAD_TO_DEG, kin.p_e);
+        if (h_p_recoil_vs_theta_recoil) h_p_recoil_vs_theta_recoil->fill(kin.theta_recoil * clas12::Constants::RAD_TO_DEG, kin.p_recoil);
+        if (h_p_e_measured_vs_expected) h_p_e_measured_vs_expected->fill(kin.p_e_expected, kin.p_e);
+        if (h_theta_recoil_measured_vs_expected) h_theta_recoil_measured_vs_expected->fill(kin.theta_recoil_expected * clas12::Constants::RAD_TO_DEG, kin.theta_recoil * clas12::Constants::RAD_TO_DEG);
     }
 
     void setup_ntuple() {
-        m_ntuple_svc->register_branch("elastic_eN", "e_p", &m_nt_e_p);
-        m_ntuple_svc->register_branch("elastic_eN", "e_theta", &m_nt_e_theta);
-        m_ntuple_svc->register_branch("elastic_eN", "e_phi", &m_nt_e_phi);
-        m_ntuple_svc->register_branch("elastic_eN", "recoil_p", &m_nt_recoil_p);
-        m_ntuple_svc->register_branch("elastic_eN", "recoil_theta", &m_nt_recoil_theta);
-        m_ntuple_svc->register_branch("elastic_eN", "recoil_phi", &m_nt_recoil_phi);
-        m_ntuple_svc->register_branch("elastic_eN", "Q2", &m_nt_Q2);
-        m_ntuple_svc->register_branch("elastic_eN", "W", &m_nt_W);
-        m_ntuple_svc->register_branch("elastic_eN", "delta_phi", &m_nt_delta_phi);
-        m_ntuple_svc->register_branch("elastic_eN", "delta_p_e", &m_nt_delta_p_e);
-        m_ntuple_svc->register_branch("elastic_eN", "delta_p_recoil", &m_nt_delta_p_recoil);
-        m_ntuple_svc->register_branch("elastic_eN", "delta_theta_recoil", &m_nt_delta_theta_recoil);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "e_p", &m_nt_e_p);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "e_theta", &m_nt_e_theta);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "e_phi", &m_nt_e_phi);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "recoil_p", &m_nt_recoil_p);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "recoil_theta", &m_nt_recoil_theta);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "recoil_phi", &m_nt_recoil_phi);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "Q2", &m_nt_Q2);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "W", &m_nt_W);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "delta_phi", &m_nt_delta_phi);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "delta_p_e", &m_nt_delta_p_e);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "delta_p_recoil", &m_nt_delta_p_recoil);
+        m_ntuple_svc->get()->register_branch("elastic_eN", "delta_theta_recoil", &m_nt_delta_theta_recoil);
         Log::info(name(), "N-tuple branches registered for elastic e-{}", get_target_name(m_target));
     }
 
@@ -413,7 +397,7 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
         m_nt_delta_p_e = kin.delta_p_e;
         m_nt_delta_p_recoil = kin.delta_p_recoil;
         m_nt_delta_theta_recoil = kin.delta_theta_recoil;
-        m_ntuple_svc->fill("elastic_eN");
+        m_ntuple_svc->get()->fill("elastic_eN");
     }
 };
 

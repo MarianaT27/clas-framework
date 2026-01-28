@@ -11,8 +11,8 @@
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/IAlgorithm.hpp>
-#include <clas12/framework/core/ServiceHandle.hpp>
+#include <clas12/framework/core/Property.hpp>
+#include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -63,28 +63,29 @@ struct LambdaCandidate {
  * 3. Calculating invariant mass for each pair
  * 4. Selecting candidates within a mass window around the Λ mass
  */
-class LambdaReconstructionAlg : public clas12::framework::Algorithm {
+class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<LambdaReconstructionAlg> {
    public:
-    explicit LambdaReconstructionAlg(
-        std::string name = "LambdaReconstructionAlg",
-        double mass_window = 0.5  // GeV (±500 MeV around 1.116 GeV)
-        ) : Algorithm(std::move(name)), m_mass_window(mass_window), m_cutflow("Lambda Reconstruction") {}
+    explicit LambdaReconstructionAlg(std::string name = "LambdaReconstructionAlg")
+        : SimpleAlgorithm(std::move(name)), m_cutflow("Lambda Reconstruction") {
+        declare_property(m_mass_window);
+        declare_property(m_min_proton_p);
+        declare_property(m_min_pion_p);
+        declare_property(m_max_delta_vz);
+        declare_property(m_max_chi2pid);
+        declare_property(m_max_coplanarity);
+        declare_property(m_beam_energy);
+        declare_property(m_min_displaced_vz);
+        declare_property(m_max_displaced_vz);
+    }
 
-    void set_mass_window(double window) { m_mass_window = window; }
-
-    void set_min_proton_momentum(double p) { m_min_proton_p = p; }
-
-    void set_min_pion_momentum(double p) { m_min_pion_p = p; }
-
-    void set_max_delta_vz(double dz) { m_max_delta_vz = dz; }
-
-    void set_coplanarity_cut(double max_copla) { m_max_coplanarity = max_copla; }
-
-    void set_beam_energy(double E) { m_beam_energy = E; }
-
-    void set_min_displaced_vz(double dz) { m_min_displaced_vz = dz; }
-
-    void set_max_displaced_vz(double dz) { m_max_displaced_vz = dz; }
+    /**
+     * @brief Configure required services
+     */
+    auto configure() -> void override {
+        m_log_svc = &require_service<clas12::framework::LoggingService>("LoggingService");
+        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
+        m_ntuple_svc = &optional_service<clas12::framework::NTupleService>("NTupleService");
+    }
 
     /**
      * @brief Check if particle is in forward detector
@@ -121,33 +122,24 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
         return 0.0;
     }
 
-    auto initialize() -> clas12::framework::StatusCode override {
-        auto log_sc = initialize_handle(m_log_svc);
-        if (log_sc.is_failure()) Log::error(name(), "WARNING: LoggingService not available");
-
+    auto on_initialize() -> clas12::framework::StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::config(name(), "Mass window", fmt::format("{} GeV", m_mass_window));
-        Log::config(name(), "Chi2pid max", m_max_chi2pid);
-        Log::config(name(), "Min proton p", fmt::format("{} GeV", m_min_proton_p));
-        Log::config(name(), "Min pion p", fmt::format("{} GeV", m_min_pion_p));
-        Log::config(name(), "Max vertex dz", fmt::format("{} cm", m_max_delta_vz));
-        Log::config(name(), "Max coplanarity", fmt::format("{} deg", m_max_coplanarity));
-        Log::config(name(), "Beam energy", fmt::format("{} GeV", m_beam_energy));
-        Log::config(name(), "Displaced vz range", fmt::format("[{}, {}] cm", m_min_displaced_vz, m_max_displaced_vz));
+        Log::config(name(), "Mass window", fmt::format("{} GeV", m_mass_window.get()));
+        Log::config(name(), "Chi2pid max", m_max_chi2pid.get());
+        Log::config(name(), "Min proton p", fmt::format("{} GeV", m_min_proton_p.get()));
+        Log::config(name(), "Min pion p", fmt::format("{} GeV", m_min_pion_p.get()));
+        Log::config(name(), "Max vertex dz", fmt::format("{} cm", m_max_delta_vz.get()));
+        Log::config(name(), "Max coplanarity", fmt::format("{} deg", m_max_coplanarity.get()));
+        Log::config(name(), "Beam energy", fmt::format("{} GeV", m_beam_energy.get()));
+        Log::config(name(), "Displaced vz range", fmt::format("[{}, {}] cm", m_min_displaced_vz.get(), m_max_displaced_vz.get()));
 
-        auto hist_sc = initialize_handle(m_hist_svc);
-        if (hist_sc.is_failure()) {
-            Log::error(name(), "Could not get HistogramService: {}", hist_sc.message());
-            return hist_sc;
-        }
-
-        auto ntuple_sc = initialize_handle(m_ntuple_svc);
-        if (ntuple_sc.is_failure()) {
-            Log::warning(name(), "Could not get NTupleService - N-tuple output disabled");
+        if (!m_hist_svc || !m_hist_svc->is_valid()) {
+            Log::error(name(), "Could not get HistogramService");
+            return clas12::framework::StatusCode::FAILURE();
         }
 
         book_histograms();
-        if (m_ntuple_svc) setup_ntuple();
+        if (m_ntuple_svc && m_ntuple_svc->is_valid()) setup_ntuple();
 
         // Setup cutflow
         m_cutflow.add_cut("All Events");
@@ -168,7 +160,7 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
         return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_cutflow.pass("All Events");
 
         // Get ALL protons and pions from event BEFORE any electron cuts
@@ -230,27 +222,27 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
             if (!is_forward_detector(proton)) continue;
             passed_proton_fd = true;
 
-            if (proton.p() < m_min_proton_p) continue;
+            if (proton.p() < m_min_proton_p.get()) continue;
             passed_proton_p = true;
 
             // Chi2pid cut for proton (good PID quality)
-            if (std::abs(proton.chi2pid()) > m_max_chi2pid) continue;
+            if (std::abs(proton.chi2pid()) > m_max_chi2pid.get()) continue;
 
             for (const auto& pion : pions) {
                 // Require pion in forward detector
                 if (!is_forward_detector(pion)) continue;
                 passed_pion_fd = true;
 
-                if (pion.p() < m_min_pion_p) continue;
+                if (pion.p() < m_min_pion_p.get()) continue;
                 passed_pion_p = true;
 
                 // Chi2pid cut for pion (good PID quality)
-                if (std::abs(pion.chi2pid()) > m_max_chi2pid) continue;
+                if (std::abs(pion.chi2pid()) > m_max_chi2pid.get()) continue;
 
                 // Vertex z difference cut
                 double delta_vz = std::abs(proton.vz() - pion.vz());
                 if (h_delta_vz_precut) h_delta_vz_precut->fill(delta_vz);
-                if (delta_vz > m_max_delta_vz) continue;
+                if (delta_vz > m_max_delta_vz.get()) continue;
                 passed_vertex_dz = true;
 
                 // Calculate invariant mass
@@ -260,7 +252,7 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
                 if (h_ppim_mass_all) h_ppim_mass_all->fill(mass);
 
                 // Check mass window
-                if (std::abs(mass - LAMBDA_MASS) > m_mass_window) continue;
+                if (std::abs(mass - LAMBDA_MASS) > m_mass_window.get()) continue;
                 passed_mass = true;
 
                 // Build candidate with full kinematics
@@ -302,7 +294,7 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
                     candidate.coplanarity = calculate_coplanarity(*electron, candidate.phi);
 
                     // Calculate missing mass M(e,e'Λ)X
-                    double E_beam = m_beam_energy;
+                    double E_beam = m_beam_energy.get();
                     double E_e = electron->E();
                     double E_lambda = std::sqrt(candidate.momentum * candidate.momentum + LAMBDA_MASS * LAMBDA_MASS);
                     double px_miss = -electron->px() - px;
@@ -321,15 +313,15 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
 
                 // Apply displaced vertex cut (Lambda decays downstream)
                 // Require decay vertex to be downstream of primary vertex
-                if (electron && m_min_displaced_vz > -999) {
-                    if (candidate.displaced_vz < m_min_displaced_vz) continue;
-                    if (m_max_displaced_vz > 0 && candidate.displaced_vz > m_max_displaced_vz) continue;
+                if (electron && m_min_displaced_vz.get() > -999) {
+                    if (candidate.displaced_vz < m_min_displaced_vz.get()) continue;
+                    if (m_max_displaced_vz.get() > 0 && candidate.displaced_vz > m_max_displaced_vz.get()) continue;
                 }
                 passed_displaced_vz = true;
                 candidates_after_displaced.push_back(candidate);
 
                 // Apply coplanarity cut
-                if (m_max_coplanarity > 0 && candidate.coplanarity > m_max_coplanarity) continue;
+                if (m_max_coplanarity.get() > 0 && candidate.coplanarity > m_max_coplanarity.get()) continue;
                 passed_coplanarity = true;
                 candidates_after_copla.push_back(candidate);
             }
@@ -353,17 +345,17 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
         if (!passed_mass) return clas12::framework::StatusCode::FILTERED();
         m_cutflow.pass("Lambda Mass Window");
 
-        if (m_min_displaced_vz > -999 && !passed_displaced_vz) return clas12::framework::StatusCode::FILTERED();
-        if (m_min_displaced_vz > -999) m_cutflow.pass("Displaced Vertex");
+        if (m_min_displaced_vz.get() > -999 && !passed_displaced_vz) return clas12::framework::StatusCode::FILTERED();
+        if (m_min_displaced_vz.get() > -999) m_cutflow.pass("Displaced Vertex");
 
-        if (m_max_coplanarity > 0 && !passed_coplanarity) return clas12::framework::StatusCode::FILTERED();
-        if (m_max_coplanarity > 0) m_cutflow.pass("Coplanarity");
+        if (m_max_coplanarity.get() > 0 && !passed_coplanarity) return clas12::framework::StatusCode::FILTERED();
+        if (m_max_coplanarity.get() > 0) m_cutflow.pass("Coplanarity");
 
         // Use candidates after all cuts
         // Priority: coplanarity > displaced > mass window
         std::vector<LambdaCandidate>* final_candidates_ptr = &candidates;
-        if (m_min_displaced_vz > -999) final_candidates_ptr = &candidates_after_displaced;
-        if (m_max_coplanarity > 0) final_candidates_ptr = &candidates_after_copla;
+        if (m_min_displaced_vz.get() > -999) final_candidates_ptr = &candidates_after_displaced;
+        if (m_max_coplanarity.get() > 0) final_candidates_ptr = &candidates_after_copla;
         auto& final_candidates = *final_candidates_ptr;
         if (final_candidates.empty()) return clas12::framework::StatusCode::FILTERED();
 
@@ -398,7 +390,7 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
         }
 
         // Fill N-tuple
-        if (m_ntuple_svc) {
+        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
             std::lock_guard<std::mutex> lock(m_ntuple_mutex);
 
             // Get electron info
@@ -429,17 +421,17 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
                 m_delta_vzs.push_back(cand.delta_vz);
             }
 
-            m_ntuple_svc->fill("lambda_analysis");
+            m_ntuple_svc->get()->fill("lambda_analysis");
         }
 
         return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto finalize() -> clas12::framework::StatusCode override {
+    auto on_finalize() -> clas12::framework::StatusCode override {
         Log::subsection(fmt::format("{} Summary", name()));
 
-        if (m_ntuple_svc) {
-            auto entries = m_ntuple_svc->get_entries("lambda_analysis");
+        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
+            auto entries = m_ntuple_svc->get()->get_entries("lambda_analysis");
             Log::stat(name(), "N-tuple entries", entries);
         }
 
@@ -463,21 +455,22 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
     }
 
    private:
-    double m_mass_window;
-    double m_min_proton_p = 0.3;          // GeV
-    double m_min_pion_p = 0.3;            // GeV
-    double m_max_delta_vz = 2.0;          // cm - tighter vertex z difference cut
-    double m_max_chi2pid = 3.0;           // chi2pid cut for particle ID quality
-    double m_max_coplanarity = 0.0;       // deg - 0 means disabled
-    double m_beam_energy = 10.6;          // GeV
-    double m_min_displaced_vz = -1000.0;  // cm - minimum displaced vertex (decay_vz - primary_vz), -1000 means disabled
-    double m_max_displaced_vz = 0.0;      // cm - maximum displaced vertex, 0 means no upper limit
+    // Configuration properties
+    clas12::framework::Property<double> m_mass_window{"mass_window", 0.5, "Mass window around Lambda mass [GeV]"};
+    clas12::framework::Property<double> m_min_proton_p{"min_proton_p", 0.3, "Minimum proton momentum [GeV]"};
+    clas12::framework::Property<double> m_min_pion_p{"min_pion_p", 0.3, "Minimum pion momentum [GeV]"};
+    clas12::framework::Property<double> m_max_delta_vz{"max_delta_vz", 2.0, "Maximum vertex z difference [cm]"};
+    clas12::framework::Property<double> m_max_chi2pid{"max_chi2pid", 3.0, "Maximum chi2pid for particle ID quality"};
+    clas12::framework::Property<double> m_max_coplanarity{"max_coplanarity", 0.0, "Maximum coplanarity [deg], 0=disabled"};
+    clas12::framework::Property<double> m_beam_energy{"beam_energy", 10.6, "Beam energy [GeV]"};
+    clas12::framework::Property<double> m_min_displaced_vz{"min_displaced_vz", -1000.0, "Minimum displaced vertex z [cm], -1000=disabled"};
+    clas12::framework::Property<double> m_max_displaced_vz{"max_displaced_vz", 0.0, "Maximum displaced vertex z [cm], 0=no limit"};
     clas12::framework::Cutflow m_cutflow;
 
-    // Services
-    clas12::framework::ServiceHandle<clas12::framework::LoggingService> m_log_svc{"LoggingService"};
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService> m_hist_svc{"HistogramService"};
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService> m_ntuple_svc{"NTupleService"};
+    // Services (pointers set by configure())
+    clas12::framework::ServiceHandle<clas12::framework::LoggingService>* m_log_svc = nullptr;
+    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
 
     mutable std::mutex m_ntuple_mutex;
 
@@ -513,38 +506,38 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
     std::vector<double> m_delta_vzs;
 
     void book_histograms() {
-        h_n_protons = m_hist_svc->book_atomic_hist1D("/Lambda/n_protons", "Number of protons;N_{p};Events", 10, 0, 10);
-        h_n_pions = m_hist_svc->book_atomic_hist1D("/Lambda/n_pions", "Number of #pi^{-};N_{#pi^{-}};Events", 10, 0, 10);
-        h_proton_momentum = m_hist_svc->book_atomic_hist1D("/Lambda/proton_p", "Proton momentum;p [GeV];Events", 100, 0, 5);
-        h_pion_momentum = m_hist_svc->book_atomic_hist1D("/Lambda/pion_p", "#pi^{-} momentum;p [GeV];Events", 100, 0, 3);
-        h_ppim_mass_nocuts = m_hist_svc->book_atomic_hist1D("/Lambda/ppim_mass_nocuts", "p#pi^{-} invariant mass (no cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_ppim_mass_all = m_hist_svc->book_atomic_hist1D("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (FD+p cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_ppim_mass_selected = m_hist_svc->book_atomic_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_lambda_momentum = m_hist_svc->book_atomic_hist1D("/Lambda/lambda_p", "#Lambda momentum;p [GeV];Events", 100, 0, 6);
-        h_lambda_theta = m_hist_svc->book_atomic_hist1D("/Lambda/lambda_theta", "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
-        h_coplanarity = m_hist_svc->book_atomic_hist1D("/Lambda/coplanarity", "Coplanarity;#Delta#phi [deg];Events", 90, 0, 90);
-        h_coplanarity_precut = m_hist_svc->book_atomic_hist1D("/Lambda/coplanarity_precut", "Coplanarity (pre-cut);#Delta#phi [deg];Events", 180, 0, 180);
-        h_delta_vz = m_hist_svc->book_atomic_hist1D("/Lambda/delta_vz", "Vertex #Deltaz;#Deltaz [cm];Events", 100, 0, 5);
-        h_delta_vz_precut = m_hist_svc->book_atomic_hist1D("/Lambda/delta_vz_precut", "Vertex #Deltaz (pre-cut);#Deltaz [cm];Events", 100, 0, 20);
-        h_opening_angle = m_hist_svc->book_atomic_hist1D("/Lambda/opening_angle", "Opening angle p-#pi^{-};#theta_{open} [deg];Events", 90, 0, 90);
-        h_missing_mass = m_hist_svc->book_atomic_hist1D("/Lambda/missing_mass", "Missing mass M(e,e'#Lambda)X;M_{X} [GeV];Events", 200, -1, 3);
-        h_displaced_vz = m_hist_svc->book_atomic_hist1D("/Lambda/displaced_vz", "Displaced vertex z (decay - primary);#Deltaz [cm];Events", 200, -20, 40);
-        h_displaced_vz_precut = m_hist_svc->book_atomic_hist1D("/Lambda/displaced_vz_precut", "Displaced vertex z (pre-cut);#Deltaz [cm];Events", 200, -20, 40);
-        h_decay_length = m_hist_svc->book_atomic_hist1D("/Lambda/decay_length", "Decay length;L [cm];Events", 200, -20, 60);
+        h_n_protons = m_hist_svc->get()->book_atomic_hist1D("/Lambda/n_protons", "Number of protons;N_{p};Events", 10, 0, 10);
+        h_n_pions = m_hist_svc->get()->book_atomic_hist1D("/Lambda/n_pions", "Number of #pi^{-};N_{#pi^{-}};Events", 10, 0, 10);
+        h_proton_momentum = m_hist_svc->get()->book_atomic_hist1D("/Lambda/proton_p", "Proton momentum;p [GeV];Events", 100, 0, 5);
+        h_pion_momentum = m_hist_svc->get()->book_atomic_hist1D("/Lambda/pion_p", "#pi^{-} momentum;p [GeV];Events", 100, 0, 3);
+        h_ppim_mass_nocuts = m_hist_svc->get()->book_atomic_hist1D("/Lambda/ppim_mass_nocuts", "p#pi^{-} invariant mass (no cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
+        h_ppim_mass_all = m_hist_svc->get()->book_atomic_hist1D("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (FD+p cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
+        h_ppim_mass_selected = m_hist_svc->get()->book_atomic_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
+        h_lambda_momentum = m_hist_svc->get()->book_atomic_hist1D("/Lambda/lambda_p", "#Lambda momentum;p [GeV];Events", 100, 0, 6);
+        h_lambda_theta = m_hist_svc->get()->book_atomic_hist1D("/Lambda/lambda_theta", "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
+        h_coplanarity = m_hist_svc->get()->book_atomic_hist1D("/Lambda/coplanarity", "Coplanarity;#Delta#phi [deg];Events", 90, 0, 90);
+        h_coplanarity_precut = m_hist_svc->get()->book_atomic_hist1D("/Lambda/coplanarity_precut", "Coplanarity (pre-cut);#Delta#phi [deg];Events", 180, 0, 180);
+        h_delta_vz = m_hist_svc->get()->book_atomic_hist1D("/Lambda/delta_vz", "Vertex #Deltaz;#Deltaz [cm];Events", 100, 0, 5);
+        h_delta_vz_precut = m_hist_svc->get()->book_atomic_hist1D("/Lambda/delta_vz_precut", "Vertex #Deltaz (pre-cut);#Deltaz [cm];Events", 100, 0, 20);
+        h_opening_angle = m_hist_svc->get()->book_atomic_hist1D("/Lambda/opening_angle", "Opening angle p-#pi^{-};#theta_{open} [deg];Events", 90, 0, 90);
+        h_missing_mass = m_hist_svc->get()->book_atomic_hist1D("/Lambda/missing_mass", "Missing mass M(e,e'#Lambda)X;M_{X} [GeV];Events", 200, -1, 3);
+        h_displaced_vz = m_hist_svc->get()->book_atomic_hist1D("/Lambda/displaced_vz", "Displaced vertex z (decay - primary);#Deltaz [cm];Events", 200, -20, 40);
+        h_displaced_vz_precut = m_hist_svc->get()->book_atomic_hist1D("/Lambda/displaced_vz_precut", "Displaced vertex z (pre-cut);#Deltaz [cm];Events", 200, -20, 40);
+        h_decay_length = m_hist_svc->get()->book_atomic_hist1D("/Lambda/decay_length", "Decay length;L [cm];Events", 200, -20, 60);
     }
 
     void setup_ntuple() {
-        m_ntuple_svc->register_branch("lambda_analysis", "e_p", &m_e_p);
-        m_ntuple_svc->register_branch("lambda_analysis", "e_theta", &m_e_theta);
-        m_ntuple_svc->register_branch("lambda_analysis", "e_phi", &m_e_phi);
-        m_ntuple_svc->register_branch("lambda_analysis", "lambda_mass", &m_lambda_masses);
-        m_ntuple_svc->register_branch("lambda_analysis", "lambda_p", &m_lambda_ps);
-        m_ntuple_svc->register_branch("lambda_analysis", "lambda_theta", &m_lambda_thetas);
-        m_ntuple_svc->register_branch("lambda_analysis", "proton_p", &m_proton_ps);
-        m_ntuple_svc->register_branch("lambda_analysis", "pion_p", &m_pion_ps);
-        m_ntuple_svc->register_branch("lambda_analysis", "coplanarity", &m_coplanarities);
-        m_ntuple_svc->register_branch("lambda_analysis", "missing_mass", &m_missing_masses);
-        m_ntuple_svc->register_branch("lambda_analysis", "delta_vz", &m_delta_vzs);
+        m_ntuple_svc->get()->register_branch("lambda_analysis", "e_p", &m_e_p);
+        m_ntuple_svc->get()->register_branch("lambda_analysis", "e_theta", &m_e_theta);
+        m_ntuple_svc->get()->register_branch("lambda_analysis", "e_phi", &m_e_phi);
+        m_ntuple_svc->get()->register_branch("lambda_analysis", "lambda_mass", &m_lambda_masses);
+        m_ntuple_svc->get()->register_branch("lambda_analysis", "lambda_p", &m_lambda_ps);
+        m_ntuple_svc->get()->register_branch("lambda_analysis", "lambda_theta", &m_lambda_thetas);
+        m_ntuple_svc->get()->register_branch("lambda_analysis", "proton_p", &m_proton_ps);
+        m_ntuple_svc->get()->register_branch("lambda_analysis", "pion_p", &m_pion_ps);
+        m_ntuple_svc->get()->register_branch("lambda_analysis", "coplanarity", &m_coplanarities);
+        m_ntuple_svc->get()->register_branch("lambda_analysis", "missing_mass", &m_missing_masses);
+        m_ntuple_svc->get()->register_branch("lambda_analysis", "delta_vz", &m_delta_vzs);
         Log::info(name(), "N-tuple branches registered for Lambda analysis");
     }
 };

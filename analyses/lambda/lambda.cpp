@@ -124,14 +124,18 @@ auto main(int argc, char* argv[]) -> int {
         return EXIT_FAILURE;
     }
 
-    // Create lambda algorithm with cuts configured
-    auto lambda_alg = std::make_unique<clas12::algorithms::LambdaReconstructionAlg>(
-        "LambdaReconstruction", config->mass_window);
-    lambda_alg->set_max_delta_vz(config->max_delta_vz);
-    lambda_alg->set_coplanarity_cut(config->coplanarity);
-    lambda_alg->set_beam_energy(config->beam_energy);
-    lambda_alg->set_min_displaced_vz(config->min_displaced_vz);
-    lambda_alg->set_max_displaced_vz(config->max_displaced_vz);
+    // Create lambda algorithm with cuts configured via Property system
+    auto lambda_alg = std::make_unique<clas12::algorithms::LambdaReconstructionAlg>("LambdaReconstruction");
+
+    // Configure properties via TOML table
+    toml::table lambda_config;
+    lambda_config.insert("mass_window", config->mass_window);
+    lambda_config.insert("max_delta_vz", config->max_delta_vz);
+    lambda_config.insert("max_coplanarity", config->coplanarity);
+    lambda_config.insert("beam_energy", config->beam_energy);
+    lambda_config.insert("min_displaced_vz", config->min_displaced_vz);
+    lambda_config.insert("max_displaced_vz", config->max_displaced_vz);
+    lambda_alg->configure_from_toml(lambda_config);
 
     // Build application using fluent API
     auto app = clas12::framework::make_application("Lambda Analysis")

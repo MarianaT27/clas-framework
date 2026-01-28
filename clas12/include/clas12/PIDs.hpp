@@ -14,7 +14,8 @@ enum class PIDs {
     PIMINUS = -211,
     KPLUS = 321,
     KMINUS = -321,
-    PHOTON = 22
+    PHOTON = 22,
+    DEUTERON = 1000010020
 };
 
 /**
@@ -55,6 +56,8 @@ inline auto to_pid_enum(int pid) -> std::optional<PIDs> {
             return PIDs::KPLUS;
         case -321:
             return PIDs::KMINUS;
+        case 1000010020:
+            return PIDs::DEUTERON;
         default:
             return std::nullopt;
     }
@@ -88,6 +91,8 @@ inline auto pid_name(PIDs pid) -> std::string {
             return "KaonPlus";
         case PIDs::KMINUS:
             return "KaonMinus";
+        case PIDs::DEUTERON:
+            return "Deuteron";
         default:
             return "Unknown";
     }
