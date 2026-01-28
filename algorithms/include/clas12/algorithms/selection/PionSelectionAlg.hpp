@@ -137,11 +137,11 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
 
         // Process π⁺ and collect selected pions
-        const auto& pions_plus = m_particle_svc->get()->get_pions_plus(particles);
+        const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
         auto selected_piplus = process_pions(pions_plus, *REC_Scintillator, start_time, true);
 
         // Process π⁻ and collect selected pions
-        const auto& pions_minus = m_particle_svc->get()->get_pions_minus(particles);
+        const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
         auto selected_piminus = process_pions(pions_minus, *REC_Scintillator, start_time, false);
 
         // Store selected pions in event for downstream algorithms
@@ -265,15 +265,15 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         h_piplus.chi2pid = svc->book_atomic_hist1D(
             "/Pion/PiPlus/chi2pid", "#pi^{+} #chi^{2}_{PID};#chi^{2};Events", 200, -10, 10);
         h_piplus.beta = svc->book_atomic_hist1D(
-            "/Pion/PiPlus/beta", "#pi^{+} #beta;#beta;Events", 100, 0, 1.2);
+            "/Pion/PiPlus/beta", "#pi^{+} #beta;#beta;Events", 100, 0.7, 1.05);
 
         h_piplus.beta_vs_p = svc->book_atomic_hist2D(
             "/Pion/PiPlus/beta_vs_p", "#pi^{+} #beta vs p;p [GeV/c];#beta",
-            100, 0, 10, 100, 0, 1.2);
+            100, 0, 10, 100, 0.7, 1.05);
         h_piplus.delta_t_vs_p = svc->book_atomic_hist2D(
             "/Pion/PiPlus/delta_t_vs_p", "#pi^{+} #Deltat vs p;p [GeV/c];#Deltat [ns]",
             100, 0, 10, 200, -5, 5);
-        h_piplus.p_vs_theta = svc->book_atomic_theta_vs_p("/Pion/PiPlus/p_vs_theta", "#pi^{+} p vs #theta");
+        h_piplus.p_vs_theta = svc->book_atomic_hist2D("/Pion/PiPlus/p_vs_theta", "#pi^{+} p vs #theta", 200, 0, 50, 200, 0, 10);
 
         // π⁻ histograms - using lock-free atomic histogram templates
         h_piminus.momentum = svc->book_atomic_momentum_hist("/Pion/PiMinus/momentum", "#pi^{-} Momentum");
@@ -283,15 +283,15 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         h_piminus.chi2pid = svc->book_atomic_hist1D(
             "/Pion/PiMinus/chi2pid", "#pi^{-} #chi^{2}_{PID};#chi^{2};Events", 200, -10, 10);
         h_piminus.beta = svc->book_atomic_hist1D(
-            "/Pion/PiMinus/beta", "#pi^{-} #beta;#beta;Events", 100, 0, 1.2);
+            "/Pion/PiMinus/beta", "#pi^{-} #beta;#beta;Events", 100, 0.7, 1.05);
 
         h_piminus.beta_vs_p = svc->book_atomic_hist2D(
             "/Pion/PiMinus/beta_vs_p", "#pi^{-} #beta vs p;p [GeV/c];#beta",
-            100, 0, 10, 100, 0, 1.2);
+            100, 0, 10, 100, 0.7, 1.05);
         h_piminus.delta_t_vs_p = svc->book_atomic_hist2D(
             "/Pion/PiMinus/delta_t_vs_p", "#pi^{-} #Deltat vs p;p [GeV/c];#Deltat [ns]",
             100, 0, 10, 200, -5, 5);
-        h_piminus.p_vs_theta = svc->book_atomic_theta_vs_p("/Pion/PiMinus/p_vs_theta", "#pi^{-} p vs #theta");
+        h_piminus.p_vs_theta = svc->book_atomic_hist2D("/Pion/PiMinus/p_vs_theta", "#pi^{-} p vs #theta", 200, 0, 50, 200, 0, 10);
     }
 
     auto setup_ntuples() -> void {
@@ -318,6 +318,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
         // Process each pion
         for (const auto& pion : pions) {
+            if (pion.pdg() != clas12::PIDs::PIPLUS && pion.pdg() != clas12::PIDs::PIMINUS) continue;  // Skip if PID does not match | should be useless
             cutflow.pass(is_piplus ? "Has π⁺" : "Has π⁻");
 
             // Forward detector cut

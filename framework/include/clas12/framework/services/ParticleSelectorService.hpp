@@ -170,16 +170,17 @@ class ParticleSelectorService : public Service {
     /**
      * @brief Get π+ from a particle map
      */
-    auto get_pions_plus(const ParticleMap& particles) const -> const std::vector<clas12::Particle>& {
+    static auto get_pions_plus(const ParticleMap& particles) -> const std::vector<clas12::Particle>& {
         static const std::vector<clas12::Particle> empty;
         auto it = particles.find(clas12::PIDs::PIPLUS);
         return (it != particles.end()) ? it->second : empty;
     }
 
+
     /**
      * @brief Get π- from a particle map
      */
-    auto get_pions_minus(const ParticleMap& particles) const -> const std::vector<clas12::Particle>& {
+    static auto get_pions_minus(const ParticleMap& particles) -> const std::vector<clas12::Particle>& {
         static const std::vector<clas12::Particle> empty;
         auto it = particles.find(clas12::PIDs::PIMINUS);
         return (it != particles.end()) ? it->second : empty;

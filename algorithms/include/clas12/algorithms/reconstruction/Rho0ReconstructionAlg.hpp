@@ -413,12 +413,12 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 cand.minus_t = -cand.t;
 
                 // Compute vertex differences
-                cand.delta_vz_pip = std::abs(e_vz - pip.vz());
-                cand.delta_vz_pim = std::abs(e_vz - pim.vz());
+                cand.delta_vz_pip = e_vz - pip.vz();
+                cand.delta_vz_pim = e_vz - pim.vz();
 
                 // Apply cuts and cache results
-                cand.passes_delta_vz_pip = cand.delta_vz_pip < m_delta_vz_max.get();
-                cand.passes_delta_vz_pim = cand.delta_vz_pim < m_delta_vz_max.get();
+                cand.passes_delta_vz_pip = std::abs(cand.delta_vz_pip) < m_delta_vz_max.get();
+                cand.passes_delta_vz_pim = std::abs(cand.delta_vz_pim) < m_delta_vz_max.get();
                 cand.passes_zh = cand.zh > m_zh_min.get();
                 cand.passes_lc = cand.lc < m_lc_max.get();
                 cand.passes_t = (cand.minus_t > m_t_min.get()) && (cand.minus_t < m_t_max.get());
@@ -757,22 +757,22 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         h_zh = svc->book_hist1D("/Rho0/zh", "z_{h} (before cuts);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
         h_lc = svc->book_hist1D("/Rho0/lc", "Coherence Length (before cuts);l_{c} [fm];Events", 100, 0, 5);
         h_t = svc->book_hist1D("/Rho0/t", "-t (before cuts);-t [GeV^{2}];Events", 100, 0, 2);
-        h_delta_vz_pim = svc->book_hist1D("/Rho0/delta_vz_pim", "#Delta v_{z} (before cuts);|v_{z}^{e} - v_{z}^{#pi^{-}}| [cm];Events", 100, 0, 50);
-        h_delta_vz_pip = svc->book_hist1D("/Rho0/delta_vz_pip", "#Delta v_{z} (before cuts);|v_{z}^{e} - v_{z}^{#pi^{+}}| [cm];Events", 100, 0, 50);
+        h_delta_vz_pim = svc->book_hist1D("/Rho0/delta_vz_pim", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -50, 50);
+        h_delta_vz_pip = svc->book_hist1D("/Rho0/delta_vz_pip", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -50, 50);
 
         // Kinematic variable histograms (after cuts)
         h_zh_selected = svc->book_hist1D("/Rho0/zh_selected", "z_{h} (after cuts);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
         h_lc_selected = svc->book_hist1D("/Rho0/lc_selected", "Coherence Length (after cuts);l_{c} [fm];Events", 100, 0, 5);
         h_t_selected = svc->book_hist1D("/Rho0/t_selected", "-t (after cuts);-t [GeV^{2}];Events", 100, 0, 2);
-        h_delta_vz_pim_selected = svc->book_hist1D("/Rho0/delta_vz_pim_selected", "#Delta v_{z} (after cuts);|v_{z}^{e} - v_{z}^{#pi^{-}}| [cm];Events", 100, 0, 50);
-        h_delta_vz_pip_selected = svc->book_hist1D("/Rho0/delta_vz_pip_selected", "#Delta v_{z} (after cuts);|v_{z}^{e} - v_{z}^{#pi^{+}}| [cm];Events", 100, 0, 50);
+        h_delta_vz_pim_selected = svc->book_hist1D("/Rho0/delta_vz_pim_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -50, 50);
+        h_delta_vz_pip_selected = svc->book_hist1D("/Rho0/delta_vz_pip_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -50, 50);
 
         // Q²-binned invariant mass histograms
         for (const auto& [q2_min, q2_max] : Q2_BINS) {
             std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
             std::string hist_path = fmt::format("/Rho0/Q2_bins/pipim_mass_{}", bin_name);
             std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", q2_min, q2_max);
-            h_pipim_mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.2);
+            h_pipim_mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
         }
 
             // lc-binned invariant mass histograms
@@ -780,7 +780,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", lc_min, lc_max);
                 std::string hist_path = fmt::format("/Rho0/LC_bins/pipim_mass_{}", bin_name);
                 std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
-                h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.2);
+                h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
             }
         });
     }
@@ -1102,7 +1102,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         if (!hist || hist->GetEntries() < 50) return result;
 
         double fit_min = 0.3;
-        double fit_max = 1.0;
+        double fit_max = 1.2;
         double bin_width = hist->GetBinWidth(1);
 
         // Create fit function: BW + pol3 (6 parameters)
@@ -1122,7 +1122,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         fit_func->SetParameter(5, 0);                   // p3
 
         // Set parameter limits
-        fit_func->SetParLimits(0, fit_min, fit_max);   // Mass between 0.3-1.0 GeV
+        fit_func->SetParLimits(0, fit_min, fit_max);   // Mass between 0.3-1.2 GeV
         fit_func->SetParLimits(1, 0, hist->GetMaximum() * 10);  // Amplitude positive
 
         // Set parameter names

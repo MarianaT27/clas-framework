@@ -40,10 +40,6 @@ struct NuclearTransparencyConfig {
     }
 };
 
-// Forward declaration
-[[nodiscard]] auto find_default_input_files(clas12::Target target, clas12::Polarity polarity)
-    -> std::vector<std::string>;
-
 // ============================================================================
 // Command-line parsing
 // ============================================================================
@@ -86,47 +82,10 @@ struct NuclearTransparencyConfig {
             config.input_files = {input_str};
         }
     } else {
-        config.input_files = find_default_input_files(config.target, config.polarity);
+        clas12::framework::Log::warning("Main", "Please provide input files or directories.");
     }
 
     return config;
-}
-
-[[nodiscard]] auto find_default_input_files(clas12::Target target, clas12::Polarity polarity) -> std::vector<std::string> {
-
-    struct DataSource {
-        clas12::Target target;
-        std::string_view outbending_path;
-        std::string_view inbending_path;
-    };
-
-    constexpr std::array<DataSource, 5> sources = {{
-        {clas12::Target::LD2,
-         "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/",
-         "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-        {clas12::Target::CxC,
-         "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/",
-         "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-        {clas12::Target::CuSn,
-         "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/",
-         "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-        {clas12::Target::Cu,
-         "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/",
-         "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-        {clas12::Target::Sn,
-         "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/",
-         "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-    }};
-
-    for (const auto& src : sources) {
-        if (src.target == target) {
-            std::string path = (polarity == clas12::Polarity::Outbending)
-                ? std::string(src.outbending_path)
-                : std::string(src.inbending_path);
-            return clas12::FileUtils::read_recursive_hipo_files(path);
-        }
-    }
-    return {};
 }
 
 // ============================================================================
@@ -157,7 +116,7 @@ auto main(int argc, char* argv[]) -> int {
         .add_service<clas12::framework::ElectronCutsService>()
         .add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
         .add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", config->target, config->polarity)
-        .add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::physics::DISAnalysis::standard_dis_region())
+        .add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::physics::DISAnalysis::KinematicRegion{.q2_min = 1.0, .w_min = 2.0})
         .add_algorithm<clas12::algorithms::PionSelectionAlg>("PionSelection", config->target, true)
         .add_algorithm<clas12::algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction")
         .build();

@@ -42,13 +42,13 @@ class DISAnalysis {
      */
     struct KinematicRegion {
         double q2_min = 1.0;   // GeV²
-        double q2_max = 11.0;  // GeV²
+        double q2_max = 20.0;  // GeV²
         double w_min = 2.0;    // GeV
-        double w_max = 5.0;    // GeV
+        double w_max = 25.0;   // GeV
         double y_min = 0.0;    // dimensionless
-        double y_max = 0.85;   // dimensionless
+        double y_max = 10.0;   // dimensionless
         double xb_min = 0.0;   // dimensionless
-        double xb_max = 1.0;   // dimensionless
+        double xb_max = 10.0;  // dimensionless
 
         /**
          * @brief Check if kinematics are in this region
@@ -71,7 +71,9 @@ class DISAnalysis {
             .w_min = 0.0,
             .w_max = 50.0,
             .y_min = 0.0,
-            .y_max = 10.0};
+            .y_max = 10.0,
+            .xb_min = 0.0,
+            .xb_max = 10.0};
     }
 
     /**
@@ -84,7 +86,9 @@ class DISAnalysis {
             .w_min = 2.0,
             .w_max = 25.0,
             .y_min = 0.0,
-            .y_max = 0.85};
+            .y_max = 0.85,
+            .xb_min = 0.0,
+            .xb_max = 10.0};
     }
 
     /**
@@ -97,7 +101,9 @@ class DISAnalysis {
             .w_min = 1.08,  // Above pion threshold
             .w_max = 2.0,
             .y_min = 0.0,
-            .y_max = 0.85};
+            .y_max = 0.85,
+            .xb_min = 0.0,
+            .xb_max = 10.0};
     }
 
     /**
