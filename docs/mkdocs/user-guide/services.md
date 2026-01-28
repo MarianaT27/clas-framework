@@ -6,7 +6,7 @@ All services are in the `clas12::framework` namespace and can be included from `
 
 ## HistogramService
 
-Centralized histogram management with automatic ROOT file writing.
+Centralized histogram management with automatic ROOT file writing. All histograms are **thread-safe atomic histograms** by default, enabling lock-free parallel event processing.
 
 ### Setup
 
@@ -21,17 +21,21 @@ app.service_manager().add_service(std::move(hist_svc));
 ### Usage
 
 ```cpp
+// Member variables - use AtomicHistogram types
+clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
+clas12::framework::AtomicHistogram2D* h_p_vs_theta = nullptr;
+
 auto initialize() -> clas12::framework::StatusCode override {
     m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
 
-    // Book 1D histogram
+    // Book 1D histogram (returns AtomicHistogram1D*)
     h_momentum = m_hist_svc->book_hist1D(
         "/Electron/momentum",           // Path in ROOT file
         "Electron Momentum;p [GeV/c];Events",
         100, 0, 10                      // bins, min, max
     );
 
-    // Book 2D histogram
+    // Book 2D histogram (returns AtomicHistogram2D*)
     h_p_vs_theta = m_hist_svc->book_hist2D(
         "/Electron/p_vs_theta",
         "p vs #theta;#theta [deg];p [GeV/c]",
@@ -43,17 +47,59 @@ auto initialize() -> clas12::framework::StatusCode override {
 }
 
 auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-    h_momentum->Fill(electron.p());
-    h_p_vs_theta->Fill(electron.theta(), electron.p());
+    // Use fill() method (lowercase) for atomic histograms
+    h_momentum->fill(electron.p());
+    h_p_vs_theta->fill(electron.theta(), electron.p());
     return clas12::framework::StatusCode::SUCCESS();
 }
 ```
 
+### Physics Histogram Templates
+
+The service provides convenient methods for common physics quantities:
+
+```cpp
+// DIS kinematics
+h_Q2 = m_hist_svc->book_q2_hist("/DIS/Q2", "Q^{2}");
+h_W = m_hist_svc->book_w_hist("/DIS/W", "W");
+h_xB = m_hist_svc->book_xb_hist("/DIS/xB", "x_{B}");
+
+// Particle kinematics
+h_p = m_hist_svc->book_momentum_hist("/Electron/p", "Electron Momentum");
+h_theta = m_hist_svc->book_theta_hist("/Electron/theta", "Electron #theta");
+h_phi = m_hist_svc->book_phi_hist("/Electron/phi", "Electron #phi");
+h_vz = m_hist_svc->book_vz_hist("/Electron/vz", "Electron v_{z}");
+
+// 2D correlations
+h_theta_vs_p = m_hist_svc->book_theta_vs_p("/Electron/theta_vs_p", "Electron #theta vs p");
+```
+
+### AtomicHistogram API
+
+| Method | Description |
+|--------|-------------|
+| `fill(value)` | Fill with value (weight = 1) |
+| `fill(value, weight)` | Fill with value and weight |
+| `entries()` | Get number of entries |
+| `to_root(name, title)` | Convert to ROOT TH1D/TH2D for fitting |
+
+### Converting to ROOT for Fitting
+
+When you need to perform fits or use ROOT-specific features:
+
+```cpp
+// Convert atomic histogram to ROOT format for fitting
+auto root_hist = h_mass->to_root("mass_for_fit", "Invariant Mass");
+root_hist->Fit("gaus", "Q");
+```
+
 ### Features
 
+- **Lock-free atomic filling** - No mutex contention in parallel processing
 - Automatic ROOT file management
-- Thread-safe filling
 - Organized directory structure
+- Physics-aware histogram templates
+- Automatic conversion to ROOT format on finalize
 - No manual histogram deletion needed
 
 ---

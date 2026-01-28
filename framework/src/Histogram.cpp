@@ -9,14 +9,14 @@ namespace clas12::framework {
 
 auto HistogramGroup::add_hist1D(const std::string& name, const std::string& title, int nbins, double xmin, double xmax) -> Hist1D& {
     std::string path = full_path(name);
-    TH1D* hist = m_service->book_hist1D(path, title, nbins, xmin, xmax);
+    AtomicHistogram1D* hist = m_service->book_hist1D(path, title, nbins, xmin, xmax);
     m_hist1d[name] = Hist1D(hist);
     return m_hist1d[name];
 }
 
 auto HistogramGroup::add_hist2D(const std::string& name, const std::string& title, int nbinsx, double xmin, double xmax, int nbinsy, double ymin, double ymax) -> Hist2D& {
     std::string path = full_path(name);
-    TH2D* hist = m_service->book_hist2D(path, title, nbinsx, xmin, xmax, nbinsy, ymin, ymax);
+    AtomicHistogram2D* hist = m_service->book_hist2D(path, title, nbinsx, xmin, xmax, nbinsy, ymin, ymax);
     m_hist2d[name] = Hist2D(hist);
     return m_hist2d[name];
 }
@@ -41,7 +41,7 @@ auto CutflowHistogram::register_cut(const std::string& cut_name) -> void {
     std::string path = m_base_path + "_" + sanitized;
     std::string title = m_title + " (after " + cut_name + ")";
 
-    TH1D* hist = m_service->book_hist1D(path, title, m_nbins, m_xmin, m_xmax);
+    AtomicHistogram1D* hist = m_service->book_hist1D(path, title, m_nbins, m_xmin, m_xmax);
     m_histograms[cut_name] = Hist1D(hist);
 }
 

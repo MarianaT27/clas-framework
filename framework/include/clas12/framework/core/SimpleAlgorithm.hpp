@@ -383,6 +383,86 @@ protected:
         return m_optional_service_handles.contains(name);
     }
 
+    // ========================================================================
+    // Common Service Accessors - Direct access without manual declaration
+    // ========================================================================
+    //
+    // These methods provide direct access to commonly-used services without
+    // requiring manual declaration in configure(). Simply call the accessor
+    // in on_initialize() or process(). Returns nullptr if the service is
+    // not available.
+    //
+    // Usage:
+    // @code
+    // #include <clas12/framework/services/HistogramService.hpp>
+    //
+    // auto on_initialize() -> StatusCode override {
+    //     if (auto* svc = svc<HistogramService>()) {
+    //         svc->book_hist1D("/Electron/p", "Momentum", 100, 0, 10);
+    //     }
+    //     return StatusCode::SUCCESS();
+    // }
+    // @endcode
+
+    /**
+     * @brief Get any service by type (convenience accessor)
+     *
+     * Looks up the service using its static service_name() method.
+     * This eliminates the need to manually declare services in configure()
+     * for simple use cases.
+     *
+     * @tparam T Service type (must satisfy ServiceConcept and have static service_name())
+     * @return T* Pointer to the service, or nullptr if not available
+     *
+     * Usage:
+     * @code
+     * // Instead of declaring in configure() and storing in member:
+     * auto* hist = svc<HistogramService>();
+     * hist->book_hist1D("/Electron/p", "p", 100, 0, 10);
+     *
+     * auto* ntuple = svc<NTupleService>();
+     * ntuple->register_branch("tree", "var", &m_var);
+     * @endcode
+     */
+    template <ServiceConcept T>
+    auto svc() -> T* {
+        if (!m_svc_mgr) {
+            return nullptr;
+        }
+        // Use static service_name() if available, otherwise use type name
+        if constexpr (requires { T::service_name(); }) {
+            return m_svc_mgr->get_service<T>(std::string(T::service_name()));
+        } else {
+            // Fallback: try common naming convention (type name)
+            return nullptr;
+        }
+    }
+
+    /**
+     * @brief Get any service by name (convenience accessor)
+     *
+     * Allows accessing any service by name without prior declaration.
+     * The service must be registered with the ServiceManager.
+     *
+     * @tparam T Service type (must satisfy ServiceConcept)
+     * @param service_name Name of the service to retrieve
+     * @return T* Pointer to the service, or nullptr if not available
+     *
+     * Usage:
+     * @code
+     * // Get a service by explicit name:
+     * auto* hist = svc<HistogramService>("HistogramService");
+     * auto* custom = svc<MyCustomService>("MyCustomService");
+     * @endcode
+     */
+    template <ServiceConcept T>
+    auto svc(const std::string& service_name) -> T* {
+        if (!m_svc_mgr) {
+            return nullptr;
+        }
+        return m_svc_mgr->get_service<T>(service_name);
+    }
+
 private:
     std::map<std::string, std::unique_ptr<IServiceHandleBase>> m_required_service_handles;
     std::map<std::string, std::unique_ptr<IServiceHandleBase>> m_optional_service_handles;

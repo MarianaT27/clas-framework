@@ -215,12 +215,12 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
 
     auto book_histograms() -> void {
         clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
-            // Use lock-free atomic histograms for parallel accumulation
-            h_Q2 = svc->book_atomic_q2_hist("/DIS/Q2", "Q^{2}");
-            h_W = svc->book_atomic_w_hist("/DIS/W", "W");
-            h_nu = svc->book_atomic_hist1D("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
-            h_xB = svc->book_atomic_xb_hist("/DIS/xB", "x_{B}");
-            h_y = svc->book_atomic_hist1D("/DIS/y", "y;y;Events", 200, 0, 1);
+            // All physics histogram methods now use atomic histograms by default
+            h_Q2 = svc->book_q2_hist("/DIS/Q2", "Q^{2}");
+            h_W = svc->book_w_hist("/DIS/W", "W");
+            h_nu = svc->book_hist("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
+            h_xB = svc->book_xb_hist("/DIS/xB", "x_{B}");
+            h_y = svc->book_hist("/DIS/y", "y;y;Events", 200, 0, 1);
         });
     }
 };

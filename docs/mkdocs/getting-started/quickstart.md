@@ -84,8 +84,9 @@ auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode o
     const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
 
     for (const auto& e : electrons) {
-        h_momentum->Fill(e.p());
-        h_theta->Fill(e.theta());
+        // Use fill() for thread-safe atomic histograms
+        h_momentum->fill(e.p());
+        h_theta->fill(e.theta());
     }
 
     return clas12::framework::StatusCode::SUCCESS();

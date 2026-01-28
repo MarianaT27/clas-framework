@@ -40,10 +40,10 @@ Create a new header file in your analysis directory using `SimpleAlgorithm<T>`:
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/PIDs.hpp>
-#include <TH1D.h>
 
 namespace my_analysis {
 
@@ -59,7 +59,7 @@ public:
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        // Book histograms (service is guaranteed valid here)
+        // Book histograms - returns AtomicHistogram1D* (thread-safe)
         h_momentum = m_hist_svc->get()->book_hist1D(
             "/MyAnalysis/momentum",
             "Electron Momentum;p [GeV/c];Events",
@@ -100,9 +100,9 @@ public:
         }
         m_cutflow.pass("Momentum > 1 GeV");
 
-        // Fill histograms
-        h_momentum->Fill(e.p());
-        h_theta->Fill(e.theta());
+        // Fill histograms using fill() - thread-safe atomic operation
+        h_momentum->fill(e.p());
+        h_theta->fill(e.theta());
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -116,8 +116,9 @@ public:
 private:
     clas12::framework::Cutflow m_cutflow;
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    TH1D* h_momentum = nullptr;
-    TH1D* h_theta = nullptr;
+    // Atomic histograms are thread-safe for parallel processing
+    clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
+    clas12::framework::AtomicHistogram1D* h_theta = nullptr;
 };
 
 }  // namespace my_analysis

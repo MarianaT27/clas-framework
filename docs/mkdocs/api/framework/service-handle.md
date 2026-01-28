@@ -5,13 +5,13 @@ Type-safe service access with validation at initialization.
 ## Header
 
 ```cpp
-#include "Framework/ServiceHandle.hpp"
+#include <clas12/framework/core/ServiceHandle.hpp>
 ```
 
 ## Class Definition
 
 ```cpp
-namespace Framework {
+namespace clas12::framework {
 
 template <typename ServiceT>
 class ServiceHandle {
@@ -32,7 +32,7 @@ public:
     auto get() const -> const ServiceT*;
 };
 
-}  // namespace Framework
+}  // namespace clas12::framework
 ```
 
 ## Usage
@@ -42,11 +42,11 @@ public:
 Declare service handles as class members:
 
 ```cpp
-class MyAlgorithm : public Framework::Algorithm {
+class MyAlgorithm : public clas12::framework::Algorithm {
 private:
-    Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
-    Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
-    Framework::ServiceHandle<Framework::NTupleService> m_ntuple_svc{"NTupleService"};
+    clas12::framework::ServiceHandle<clas12::framework::HistogramService> m_hist_svc{"HistogramService"};
+    clas12::framework::ServiceHandle<clas12::framework::LoggingService> m_log_svc{"LoggingService"};
+    clas12::framework::ServiceHandle<clas12::framework::NTupleService> m_ntuple_svc{"NTupleService"};
 };
 ```
 
@@ -55,7 +55,7 @@ private:
 Initialize handles in the `initialize()` method:
 
 ```cpp
-auto initialize() -> Framework::StatusCode override {
+auto initialize() -> clas12::framework::StatusCode override {
     // Initialize required service
     auto hist_sc = initialize_handle(m_hist_svc);
     if (hist_sc.is_failure()) {
@@ -68,7 +68,7 @@ auto initialize() -> Framework::StatusCode override {
         fmt::print(stderr, "WARNING: LoggingService not available\n");
     }
 
-    return Framework::StatusCode::SUCCESS();
+    return clas12::framework::StatusCode::SUCCESS();
 }
 ```
 
@@ -77,8 +77,8 @@ auto initialize() -> Framework::StatusCode override {
 Use the handle like a pointer:
 
 ```cpp
-auto execute(Framework::Event& event) -> Framework::StatusCode override {
-    // Check if valid before use
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    // Check if valid before use - returns AtomicHistogram1D* (thread-safe)
     if (m_hist_svc) {
         m_hist_svc->book_hist1D("/Analysis/p", "Momentum", 100, 0, 10);
     }
@@ -88,7 +88,7 @@ auto execute(Framework::Event& event) -> Framework::StatusCode override {
         svc->book_hist1D("/Analysis/theta", "Theta", 180, 0, 180);
     }
 
-    return Framework::StatusCode::SUCCESS();
+    return clas12::framework::StatusCode::SUCCESS();
 }
 ```
 
@@ -173,21 +173,22 @@ auto initialize_handle(ServiceHandle<T>& handle) -> StatusCode {
 ## Complete Example
 
 ```cpp
-#include "Framework/IAlgorithm.hpp"
-#include "Framework/ServiceHandle.hpp"
-#include "Framework/Services/HistogramService.hpp"
-#include "Framework/Services/LoggingService.hpp"
-#include "Framework/Services/NTupleService.hpp"
+#include <clas12/framework/core/IAlgorithm.hpp>
+#include <clas12/framework/core/ServiceHandle.hpp>
+#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/services/HistogramService.hpp>
+#include <clas12/framework/services/LoggingService.hpp>
+#include <clas12/framework/services/NTupleService.hpp>
 
-class MyAlgorithm : public Framework::Algorithm {
+class MyAlgorithm : public clas12::framework::Algorithm {
 public:
     explicit MyAlgorithm(std::string name = "MyAlgorithm")
         : Algorithm(std::move(name)) {}
 
-    auto initialize() -> Framework::StatusCode override {
+    auto initialize() -> clas12::framework::StatusCode override {
         // Initialize required services
         if (auto sc = initialize_handle(m_hist_svc); sc.is_failure()) {
-            Framework::Log::error(name(), "HistogramService required but not available");
+            clas12::framework::Log::error(name(), "HistogramService required but not available");
             return sc;
         }
 
@@ -195,7 +196,7 @@ public:
         initialize_handle(m_log_svc);
         initialize_handle(m_ntuple_svc);
 
-        // Book histograms
+        // Book histograms - returns AtomicHistogram1D* (thread-safe)
         if (m_hist_svc) {
             h_momentum = m_hist_svc->book_hist1D(
                 "/MyAlgorithm/momentum",
@@ -208,13 +209,13 @@ public:
             m_ntuple_svc->register_branch("my_data", "momentum", &m_momentum);
         }
 
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         // Use services
         if (m_hist_svc && h_momentum) {
-            h_momentum->Fill(electron.p());
+            h_momentum->fill(electron.p());  // Thread-safe atomic fill
         }
 
         if (m_ntuple_svc) {
@@ -222,24 +223,24 @@ public:
             m_ntuple_svc->fill("my_data");
         }
 
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto finalize() -> Framework::StatusCode override {
+    auto finalize() -> clas12::framework::StatusCode override {
         if (m_log_svc) {
-            Framework::Log::info(name(), "Finalized successfully");
+            clas12::framework::Log::info(name(), "Finalized successfully");
         }
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
 private:
     // Service handles
-    Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
-    Framework::ServiceHandle<Framework::LoggingService> m_log_svc{"LoggingService"};
-    Framework::ServiceHandle<Framework::NTupleService> m_ntuple_svc{"NTupleService"};
+    clas12::framework::ServiceHandle<clas12::framework::HistogramService> m_hist_svc{"HistogramService"};
+    clas12::framework::ServiceHandle<clas12::framework::LoggingService> m_log_svc{"LoggingService"};
+    clas12::framework::ServiceHandle<clas12::framework::NTupleService> m_ntuple_svc{"NTupleService"};
 
-    // Histograms
-    TH1D* h_momentum = nullptr;
+    // Atomic histograms are thread-safe for parallel processing
+    clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
 
     // N-tuple variables
     double m_momentum = 0.0;

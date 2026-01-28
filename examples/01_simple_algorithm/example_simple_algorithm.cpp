@@ -98,12 +98,12 @@ public:
         for (const auto& electron : electrons) {
             electron_count++;
             if (m_h_electron_momentum) {
-                m_h_electron_momentum->Fill(electron.p());
+                m_h_electron_momentum->fill(electron.p());
             }
         }
 
         if (m_h_electron_count) {
-            m_h_electron_count->Fill(electron_count);
+            m_h_electron_count->fill(electron_count);
         }
 
         m_total_electrons += electron_count;
@@ -139,9 +139,9 @@ private:
     // Service handle (injected automatically)
     ServiceHandle<HistogramService>* m_hist_svc = nullptr;
 
-    // Histogram pointers
-    TH1D* m_h_electron_momentum = nullptr;
-    TH1D* m_h_electron_count = nullptr;
+    // Histogram pointers (atomic for thread-safety)
+    AtomicHistogram1D* m_h_electron_momentum = nullptr;
+    AtomicHistogram1D* m_h_electron_count = nullptr;
 
     // Counters
     int m_events_processed = 0;
@@ -184,7 +184,7 @@ public:
         for (const auto& photon : photons) {
             if (photon.E() > m_energy_threshold.get()) {
                 if (m_h_photon_energy) {
-                    m_h_photon_energy->Fill(photon.E());
+                    m_h_photon_energy->fill(photon.E());
                 }
                 m_photon_count++;
             }
@@ -202,7 +202,7 @@ public:
 private:
     Property<double> m_energy_threshold{"energy_threshold", 0.1, "Minimum photon energy [GeV]"};
     ServiceHandle<HistogramService>* m_hist_svc = nullptr;
-    TH1D* m_h_photon_energy = nullptr;
+    AtomicHistogram1D* m_h_photon_energy = nullptr;
     int m_photon_count = 0;
 };
 

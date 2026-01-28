@@ -147,7 +147,7 @@ private:
 
 ### Analysis Algorithms
 
-Fill histograms and compute physics quantities:
+Fill histograms and compute physics quantities. Histograms are **thread-safe atomic** by default:
 
 ```cpp
 class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAnalysisAlg> {
@@ -161,6 +161,7 @@ public:
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
+        // book_hist1D returns AtomicHistogram1D* (thread-safe)
         h_momentum = m_hist_svc->get()->book_hist1D("/Electron/p", "Momentum;p [GeV];Events", 100, 0, 10);
         h_theta = m_hist_svc->get()->book_hist1D("/Electron/theta", "Theta;#theta [deg];Events", 100, 0, 45);
         return clas12::framework::StatusCode::SUCCESS();
@@ -176,8 +177,9 @@ public:
         auto particles = m_particle_svc->get()->extract_particles(REC_Particle, {clas12::PIDs::ELECTRON});
 
         for (const auto& e : m_particle_svc->get()->get_electrons(particles)) {
-            h_momentum->Fill(e.p());
-            h_theta->Fill(e.theta() * 180.0 / M_PI);
+            // Use fill() for atomic histograms (lowercase, thread-safe)
+            h_momentum->fill(e.p());
+            h_theta->fill(e.theta() * 180.0 / M_PI);
         }
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -186,8 +188,9 @@ public:
 private:
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
     clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
-    TH1D* h_momentum = nullptr;
-    TH1D* h_theta = nullptr;
+    // Use AtomicHistogram types (thread-safe, lock-free)
+    clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
+    clas12::framework::AtomicHistogram1D* h_theta = nullptr;
 };
 ```
 
@@ -286,7 +289,7 @@ public:
 private:
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
     clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
-    TH1D* h_momentum = nullptr;
+    clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
 };
 ```
 

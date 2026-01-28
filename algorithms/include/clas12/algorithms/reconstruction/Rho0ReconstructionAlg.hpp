@@ -437,12 +437,12 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
      */
     auto fill_pre_cut_histograms(const std::vector<Rho0Candidate>& candidates) -> void {
         for (const auto& cand : candidates) {
-            if (h_pipim_mass_all) h_pipim_mass_all->Fill(cand.mass);
-            if (h_zh) h_zh->Fill(cand.zh);
-            if (h_lc) h_lc->Fill(cand.lc);
-            if (h_t) h_t->Fill(cand.minus_t);
-            if (h_delta_vz_pim) h_delta_vz_pim->Fill(cand.delta_vz_pim);
-            if (h_delta_vz_pip) h_delta_vz_pip->Fill(cand.delta_vz_pip);
+            if (h_pipim_mass_all) h_pipim_mass_all->fill(cand.mass);
+            if (h_zh) h_zh->fill(cand.zh);
+            if (h_lc) h_lc->fill(cand.lc);
+            if (h_t) h_t->fill(cand.minus_t);
+            if (h_delta_vz_pim) h_delta_vz_pim->fill(cand.delta_vz_pim);
+            if (h_delta_vz_pip) h_delta_vz_pip->fill(cand.delta_vz_pip);
         }
     }
 
@@ -453,18 +453,18 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         for (const auto& cand : candidates) {
             if (!cand.passes_all_cuts) continue;
 
-            if (h_pipim_mass_selected) h_pipim_mass_selected->Fill(cand.mass);
-            if (h_rho0_momentum) h_rho0_momentum->Fill(cand.momentum);
-            if (h_rho0_theta) h_rho0_theta->Fill(cand.theta);
-            if (h_rho0_phi) h_rho0_phi->Fill(cand.phi);
-            if (h_opening_angle) h_opening_angle->Fill(cand.opening_angle);
-            if (h_pipim_mass_vs_momentum) h_pipim_mass_vs_momentum->Fill(cand.momentum, cand.mass);
+            if (h_pipim_mass_selected) h_pipim_mass_selected->fill(cand.mass);
+            if (h_rho0_momentum) h_rho0_momentum->fill(cand.momentum);
+            if (h_rho0_theta) h_rho0_theta->fill(cand.theta);
+            if (h_rho0_phi) h_rho0_phi->fill(cand.phi);
+            if (h_opening_angle) h_opening_angle->fill(cand.opening_angle);
+            if (h_pipim_mass_vs_momentum) h_pipim_mass_vs_momentum->fill(cand.momentum, cand.mass);
 
-            if (h_zh_selected) h_zh_selected->Fill(cand.zh);
-            if (h_lc_selected) h_lc_selected->Fill(cand.lc);
-            if (h_t_selected) h_t_selected->Fill(cand.minus_t);
-            if (h_delta_vz_pim_selected) h_delta_vz_pim_selected->Fill(cand.delta_vz_pim);
-            if (h_delta_vz_pip_selected) h_delta_vz_pip_selected->Fill(cand.delta_vz_pip);
+            if (h_zh_selected) h_zh_selected->fill(cand.zh);
+            if (h_lc_selected) h_lc_selected->fill(cand.lc);
+            if (h_t_selected) h_t_selected->fill(cand.minus_t);
+            if (h_delta_vz_pim_selected) h_delta_vz_pim_selected->fill(cand.delta_vz_pim);
+            if (h_delta_vz_pip_selected) h_delta_vz_pip_selected->fill(cand.delta_vz_pip);
 
             fill_q2_binned_histogram(Q2, cand.mass);
         }
@@ -633,34 +633,34 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     // Mutex for thread safety
     mutable std::mutex m_ntuple_mutex;
 
-    // Histograms - Rho0 candidates
-    TH1D* h_pipim_mass_all = nullptr;
-    TH1D* h_pipim_mass_selected = nullptr;
-    TH1D* h_rho0_momentum = nullptr;
-    TH1D* h_rho0_theta = nullptr;
-    TH1D* h_rho0_phi = nullptr;
-    TH1D* h_opening_angle = nullptr;
-    TH2D* h_pipim_mass_vs_momentum = nullptr;
+    // Histograms - Rho0 candidates (atomic for thread-safety)
+    clas12::framework::AtomicHistogram1D* h_pipim_mass_all = nullptr;
+    clas12::framework::AtomicHistogram1D* h_pipim_mass_selected = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rho0_momentum = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rho0_theta = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rho0_phi = nullptr;
+    clas12::framework::AtomicHistogram1D* h_opening_angle = nullptr;
+    clas12::framework::AtomicHistogram2D* h_pipim_mass_vs_momentum = nullptr;
 
     // Histograms - Kinematic variables (before cuts)
-    TH1D* h_zh = nullptr;
-    TH1D* h_lc = nullptr;
-    TH1D* h_t = nullptr;
-    TH1D* h_delta_vz_pim = nullptr;
-    TH1D* h_delta_vz_pip = nullptr;
+    clas12::framework::AtomicHistogram1D* h_zh = nullptr;
+    clas12::framework::AtomicHistogram1D* h_lc = nullptr;
+    clas12::framework::AtomicHistogram1D* h_t = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_vz_pim = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_vz_pip = nullptr;
 
     // Histograms - Kinematic variables (after cuts)
-    TH1D* h_zh_selected = nullptr;
-    TH1D* h_lc_selected = nullptr;
-    TH1D* h_t_selected = nullptr;
-    TH1D* h_delta_vz_pim_selected = nullptr;
-    TH1D* h_delta_vz_pip_selected = nullptr;
+    clas12::framework::AtomicHistogram1D* h_zh_selected = nullptr;
+    clas12::framework::AtomicHistogram1D* h_lc_selected = nullptr;
+    clas12::framework::AtomicHistogram1D* h_t_selected = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_vz_pim_selected = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_vz_pip_selected = nullptr;
 
     // Q²-binned invariant mass histograms
-    std::map<std::string, TH1D*> h_pipim_mass_q2_bins;
+    std::map<std::string, clas12::framework::AtomicHistogram1D*> h_pipim_mass_q2_bins;
 
     // lc-binned invariant mass histograms
-    std::map<std::string, TH1D*> h_pipim_mass_lc_bins;
+    std::map<std::string, clas12::framework::AtomicHistogram1D*> h_pipim_mass_lc_bins;
 
     // Q² bin edges: 1.0-2.0, 2.0-2.5, 2.5-3.0, 3.0-4.5, 4.5-6 GeV²
     static constexpr std::array<std::pair<double, double>, 5> Q2_BINS = {{
@@ -721,7 +721,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             if (Q2 >= Q2_BINS[i].first && Q2 < Q2_BINS[i].second) {
                 std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
                 auto it = h_pipim_mass_q2_bins.find(bin_name);
-                if (it != h_pipim_mass_q2_bins.end() && it->second) it->second->Fill(mass);  
+                if (it != h_pipim_mass_q2_bins.end() && it->second) it->second->fill(mass);
                 break;
             }
         }
@@ -732,7 +732,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             if (lc >= LC_BINS[i].first && lc < LC_BINS[i].second) {
                 std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", LC_BINS[i].first, LC_BINS[i].second);
                 auto it = h_pipim_mass_lc_bins.find(bin_name);
-                if (it != h_pipim_mass_lc_bins.end() && it->second) it->second->Fill(mass);
+                if (it != h_pipim_mass_lc_bins.end() && it->second) it->second->fill(mass);
                 break;
             }
         }
@@ -832,9 +832,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         double total_rho0 = 0.0;
         double total_rho0_err_sq = 0.0;
 
-        // Fit the main selected mass histogram
-        if (h_pipim_mass_selected && h_pipim_mass_selected->GetEntries() > 100) {
-            auto result = fit_histogram(h_pipim_mass_selected, "All Q² (selected)");
+        // Fit the main selected mass histogram (convert atomic to ROOT for fitting)
+        if (h_pipim_mass_selected && h_pipim_mass_selected->entries() > 100) {
+            auto root_hist = h_pipim_mass_selected->to_root("pipim_mass_selected_fit", "Selected Mass");
+            auto result = fit_histogram(root_hist.get(), "All Q² (selected)");
             if (result.valid) {
                 fit_results["All"] = result;
             }
@@ -842,8 +843,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
         // Fit Q²-binned histograms
         for (const auto& [bin_name, hist] : h_pipim_mass_q2_bins) {
-            if (hist && hist->GetEntries() > 50) {
-                auto result = fit_histogram(hist, bin_name);
+            if (hist && hist->entries() > 50) {
+                auto root_hist = hist->to_root(bin_name + "_fit", bin_name);
+                auto result = fit_histogram(root_hist.get(), bin_name);
                 if (result.valid) {
                     fit_results[bin_name] = result;
                     total_rho0 += result.n_rho0;
@@ -857,8 +859,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
         // Fit lc-binned histograms
         for (const auto& [bin_name, hist] : h_pipim_mass_lc_bins) {
-            if (hist && hist->GetEntries() > 50) {
-                auto result = fit_histogram(hist, bin_name);
+            if (hist && hist->entries() > 50) {
+                auto root_hist = hist->to_root(bin_name + "_fit", bin_name);
+                auto result = fit_histogram(root_hist.get(), bin_name);
                 if (result.valid) {
                     fit_results[bin_name] = result;
                     clas12::framework::Log::info(name(), "LC Bin {}: N(rho0) = {:.1f} ± {:.1f}, Mass = {:.4f} ± {:.4f} GeV, Chi2/NDF = {:.2f}",

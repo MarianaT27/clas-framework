@@ -2,6 +2,8 @@
 #include <cstdio>
 #include <filesystem>
 #include <clas12/framework/core/HistogramTemplates.hpp>
+#include <clas12/framework/core/CutflowHistograms.hpp>
+#include <clas12/framework/core/NTupleWriter.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
 #include "TFile.h"
@@ -97,7 +99,7 @@ TEST_F(HistogramTemplatesTest, SectorHistogramsFill) {
 
     // Verify fills
     for (int s = 1; s <= 6; ++s) {
-        EXPECT_EQ(h_momentum[s]->GetEntries(), 1) << "Sector " << s << " should have 1 entry";
+        EXPECT_EQ(h_momentum[s]->entries(), 1) << "Sector " << s << " should have 1 entry";
     }
 }
 
@@ -122,7 +124,7 @@ TEST_F(HistogramTemplatesTest, SectorHistogramsInvalidSector) {
 
     // Valid sectors should still work
     h_momentum.fill(1, 5.0);
-    EXPECT_EQ(h_momentum[1]->GetEntries(), 1);
+    EXPECT_EQ(h_momentum[1]->entries(), 1);
 }
 
 
@@ -154,9 +156,9 @@ TEST_F(HistogramTemplatesTest, CutStageHistogramsFill) {
     h_momentum.fill_after_cut("Fiducial", 5.0);
     // PID cut fails, so we don't fill
 
-    EXPECT_EQ(h_momentum["All"]->GetEntries(), 1);
-    EXPECT_EQ(h_momentum["Fiducial"]->GetEntries(), 1);
-    EXPECT_EQ(h_momentum["PID"]->GetEntries(), 0);
+    EXPECT_EQ(h_momentum["All"]->entries(), 1);
+    EXPECT_EQ(h_momentum["Fiducial"]->entries(), 1);
+    EXPECT_EQ(h_momentum["PID"]->entries(), 0);
 }
 
 TEST_F(HistogramTemplatesTest, CutStageHistogramsFromSpec) {
@@ -180,7 +182,7 @@ TEST_F(HistogramTemplatesTest, CutStageHistogramsInvalidCut) {
 
     // Valid cuts should still work
     h_momentum.fill_after_cut("All", 5.0);
-    EXPECT_EQ(h_momentum["All"]->GetEntries(), 1);
+    EXPECT_EQ(h_momentum["All"]->entries(), 1);
 }
 
 TEST_F(HistogramTemplatesTest, CutStageHistogramsSanitizesNames) {
@@ -212,8 +214,9 @@ TEST_F(HistogramTemplatesTest, HistogramRegistryDeclareAndBook) {
     registry["momentum"].fill(5.0);
     registry["theta"].fill(45.0);
 
-    EXPECT_EQ(m_hist_svc.get_hist1D("/Test/momentum")->GetEntries(), 1);
-    EXPECT_EQ(m_hist_svc.get_hist1D("/Test/theta")->GetEntries(), 1);
+    // Verify fills using atomic histograms directly
+    EXPECT_EQ(m_hist_svc.get_atomic_hist1D("/Test/momentum")->entries(), 1);
+    EXPECT_EQ(m_hist_svc.get_atomic_hist1D("/Test/theta")->entries(), 1);
 }
 
 TEST_F(HistogramTemplatesTest, HistogramRegistryWithoutService) {
@@ -330,4 +333,140 @@ TEST_F(HistogramTemplatesTest, VerificationOption) {
         std::string path = fmt::format("/Verify/momentum_S{}", s);
         EXPECT_NE(m_hist_svc.get_hist1D(path), nullptr) << "Histogram " << path << " should exist";
     }
+}
+
+// ============================================================================
+// AtomicHistogramGroup Tests
+// ============================================================================
+
+TEST_F(HistogramTemplatesTest, AtomicHistogramGroupCreation) {
+    AtomicHistogramGroup group(&m_hist_svc, "/Atomic");
+
+    auto* h1 = group.add_hist1D("momentum", "Momentum;p [GeV/c];Events", 100, 0.0, 10.0);
+    auto* h2 = group.add_hist1D("theta", "Theta;#theta [deg];Events", 180, 0.0, 180.0);
+
+    EXPECT_NE(h1, nullptr);
+    EXPECT_NE(h2, nullptr);
+}
+
+TEST_F(HistogramTemplatesTest, AtomicHistogramGroupFill) {
+    AtomicHistogramGroup group(&m_hist_svc, "/AtomicFill");
+
+    group.add_hist1D("momentum", "Momentum", 100, 0.0, 10.0);
+    group.add_hist2D("p_vs_theta", "p vs theta", 100, 0.0, 10.0, 180, 0.0, 180.0);
+
+    group.fill("momentum", 5.0);
+    group.fill2d("p_vs_theta", 5.0, 45.0);
+
+    // Should not crash with non-existent histogram
+    group.fill("nonexistent", 1.0);
+}
+
+TEST_F(HistogramTemplatesTest, AtomicHistogramGroupGetHistogram) {
+    AtomicHistogramGroup group(&m_hist_svc, "/AtomicGet");
+
+    group.add_hist1D("momentum", "Momentum", 100, 0.0, 10.0);
+
+    auto* h = group.hist1d("momentum");
+    auto* h_missing = group.hist1d("nonexistent");
+
+    EXPECT_NE(h, nullptr);
+    EXPECT_EQ(h_missing, nullptr);
+}
+
+// ============================================================================
+// AtomicHistogramTemplates Tests
+// ============================================================================
+
+TEST_F(HistogramTemplatesTest, ElectronHistogramsTemplate) {
+    auto group = AtomicHistogramTemplates::ElectronHistograms::create(&m_hist_svc, "/Templates/Electron");
+
+    EXPECT_NE(group, nullptr);
+
+    // Should have standard electron histograms
+    group->fill("p", 5.0);
+    group->fill("theta", 25.0);
+    group->fill("phi", 45.0);
+}
+
+TEST_F(HistogramTemplatesTest, HadronHistogramsTemplate) {
+    auto group = AtomicHistogramTemplates::HadronHistograms::create(&m_hist_svc, "/Templates/Hadron");
+
+    EXPECT_NE(group, nullptr);
+
+    group->fill("p", 2.0);
+    group->fill("beta", 0.95);
+}
+
+TEST_F(HistogramTemplatesTest, DISKinematicsTemplate) {
+    auto group = AtomicHistogramTemplates::DISKinematics::create(&m_hist_svc, "/Templates/DIS");
+
+    EXPECT_NE(group, nullptr);
+
+    group->fill("Q2", 2.5);
+    group->fill("W", 2.0);
+    group->fill("xB", 0.3);
+}
+
+// ============================================================================
+// CutflowHistograms Tests
+// ============================================================================
+
+struct TestContext {
+    double momentum = 0.0;
+    double theta = 0.0;
+    int sector = 0;
+};
+
+TEST_F(HistogramTemplatesTest, CutflowHistogramsCreation) {
+    CutflowHistograms<TestContext> analysis("Test Analysis");
+
+    analysis
+        .define_always("All Events")
+        .define("Momentum > 1 GeV", [](const TestContext& ctx) { return ctx.momentum > 1.0; })
+        .define("Theta < 35", [](const TestContext& ctx) { return ctx.theta < 35.0; });
+
+    EXPECT_EQ(analysis.num_cuts(), 3);
+}
+
+TEST_F(HistogramTemplatesTest, CutflowHistogramsEvaluate) {
+    CutflowHistograms<TestContext> analysis("Test Analysis");
+
+    analysis
+        .define_always("All Events")
+        .define("Momentum > 1 GeV", [](const TestContext& ctx) { return ctx.momentum > 1.0; })
+        .define("Theta < 35", [](const TestContext& ctx) { return ctx.theta < 35.0; });
+
+    // Set up a filler
+    analysis.set_filler([](AtomicHistogramGroup* h, const TestContext& ctx) {
+        h->fill("p", ctx.momentum);
+        h->fill("theta", ctx.theta);
+    });
+
+    // Initialize histograms
+    EXPECT_TRUE(analysis.initialize(&m_hist_svc, "/CutflowTest"));
+
+    // Test passing context
+    TestContext passing{2.0, 30.0, 1};
+    EXPECT_TRUE(analysis.evaluate_and_fill(passing));
+
+    // Test failing context (momentum too low)
+    TestContext failing{0.5, 30.0, 1};
+    EXPECT_FALSE(analysis.evaluate_and_fill(failing));
+}
+
+TEST_F(HistogramTemplatesTest, CutflowHistogramsApply) {
+    CutflowHistograms<TestContext> analysis("Test Analysis");
+
+    analysis
+        .define_always("All Events")
+        .define("Momentum > 1 GeV", [](const TestContext& ctx) { return ctx.momentum > 1.0; });
+
+    analysis.initialize(&m_hist_svc, "/CutflowApply");
+
+    TestContext passing{2.0, 30.0, 1};
+    TestContext failing{0.5, 30.0, 1};
+
+    EXPECT_TRUE(analysis.apply(passing).is_success());
+    EXPECT_TRUE(analysis.apply(failing).is_filtered());
 }

@@ -56,19 +56,23 @@ int main() {
 For more control, implement a custom algorithm:
 
 ```cpp
-#include "Framework/Application.hpp"
-#include "Framework/Services/HistogramService.hpp"
-#include "Framework/Services/PhotonCutsService.hpp"
-#include "Physics/CompositeParticle.hpp"
-#include "Physics/Kinematics.hpp"
+#include <clas12/framework/core/Application.hpp>
+#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/services/HistogramService.hpp>
+#include <clas12/framework/services/PhotonCutsService.hpp>
+#include <clas12/physics/CompositeParticle.hpp>
+#include <clas12/physics/Kinematics.hpp>
+#include <clas12/PIDs.hpp>
 
-class Pi0Reconstruction : public Framework::Algorithm {
+class Pi0Reconstruction : public clas12::framework::Algorithm {
 public:
     Pi0Reconstruction() : Algorithm("Pi0Reconstruction"), m_cutflow("Pi0 Selection") {}
 
-    auto initialize() -> Framework::StatusCode override {
-        m_hist_svc = service<Framework::HistogramService>("HistogramService");
+    auto initialize() -> clas12::framework::StatusCode override {
+        m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
 
+        // Book histograms - returns AtomicHistogram1D* (thread-safe)
         h_mgg = m_hist_svc->book_hist1D("/Pi0/mgg", "M_{#gamma#gamma};M_{#gamma#gamma} [GeV];Events", 200, 0, 0.3);
         h_mgg_cut = m_hist_svc->book_hist1D("/Pi0/mgg_cut", "M_{#gamma#gamma} (cuts);M_{#gamma#gamma} [GeV];Events", 200, 0, 0.3);
         h_opening_angle = m_hist_svc->book_hist1D("/Pi0/opening_angle", "Opening Angle;#theta_{#gamma#gamma} [deg];Events", 180, 0, 180);
@@ -81,18 +85,18 @@ public:
         m_cutflow.add_cut("Opening Angle > 5°");
         m_cutflow.add_cut("π⁰ Mass Window");
 
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto execute(Framework::Event& event) -> Framework::StatusCode override {
+    auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_cutflow.pass("All Events");
 
-        const auto& electrons = event.particles(CLAS::PIDs::ELECTRON);
-        if (electrons.empty()) return Framework::StatusCode::SUCCESS();
+        const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
+        if (electrons.empty()) return clas12::framework::StatusCode::SUCCESS();
         m_cutflow.pass("Has Electron");
 
-        const auto& photons = event.particles(CLAS::PIDs::PHOTON);
-        if (photons.size() < 2) return Framework::StatusCode::SUCCESS();
+        const auto& photons = event.particles(clas12::PIDs::PHOTON);
+        if (photons.size() < 2) return clas12::framework::StatusCode::SUCCESS();
         m_cutflow.pass("≥2 Photons");
 
         // Loop over photon pairs
@@ -101,46 +105,47 @@ public:
                 const auto& g1 = photons[i];
                 const auto& g2 = photons[j];
 
-                // Fill photon energy
-                h_photon_E->Fill(g1.E());
-                h_photon_E->Fill(g2.E());
+                // Fill photon energy - thread-safe atomic fill
+                h_photon_E->fill(g1.E());
+                h_photon_E->fill(g2.E());
 
                 // Energy cut
                 if (g1.E() < 0.3 || g2.E() < 0.3) continue;
                 m_cutflow.pass("Photon E > 0.3 GeV");
 
                 // Opening angle
-                double angle = Physics::KinematicCalculator::opening_angle(g1, g2);
-                h_opening_angle->Fill(angle);
+                double angle = clas12::physics::KinematicCalculator::opening_angle(g1, g2);
+                h_opening_angle->fill(angle);  // Thread-safe atomic fill
 
                 if (angle < 5.0) continue;
                 m_cutflow.pass("Opening Angle > 5°");
 
                 // Invariant mass
-                Physics::CompositeParticle pi0({g1, g2});
+                clas12::physics::CompositeParticle pi0({g1, g2});
                 double mgg = pi0.invariant_mass();
-                h_mgg->Fill(mgg);
+                h_mgg->fill(mgg);  // Thread-safe atomic fill
 
                 // π⁰ mass window (0.1 - 0.17 GeV)
                 if (mgg > 0.1 && mgg < 0.17) {
                     m_cutflow.pass("π⁰ Mass Window");
-                    h_mgg_cut->Fill(mgg);
+                    h_mgg_cut->fill(mgg);  // Thread-safe atomic fill
                 }
             }
         }
 
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto finalize() -> Framework::StatusCode override {
+    auto finalize() -> clas12::framework::StatusCode override {
         m_cutflow.print();
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
 private:
-    Framework::HistogramService* m_hist_svc = nullptr;
-    Framework::Cutflow m_cutflow;
-    TH1D *h_mgg, *h_mgg_cut, *h_opening_angle, *h_photon_E;
+    clas12::framework::HistogramService* m_hist_svc = nullptr;
+    clas12::framework::Cutflow m_cutflow;
+    // Atomic histograms are thread-safe for parallel processing
+    clas12::framework::AtomicHistogram1D *h_mgg, *h_mgg_cut, *h_opening_angle, *h_photon_E;
 };
 ```
 

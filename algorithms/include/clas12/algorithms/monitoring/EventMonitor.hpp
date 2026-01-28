@@ -118,7 +118,7 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
         m_total_particles += n_particles;
 
         if (h_particles_per_event) {
-            h_particles_per_event->Fill(n_particles);
+            h_particles_per_event->fill(n_particles);
         }
 
         // Extract particles for detailed monitoring using ParticleSelectorService
@@ -128,7 +128,7 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
         const int n_electrons = m_particle_svc->get()->get_electrons(particles).size();
 
         if (h_electrons_per_event) {
-            h_electrons_per_event->Fill(n_electrons);
+            h_electrons_per_event->fill(n_electrons);
         }
     }
 
@@ -143,7 +143,7 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
             event_end - event_start);
 
         if (h_processing_time) {
-            h_processing_time->Fill(event_duration.count());
+            h_processing_time->fill(event_duration.count());
         }
     }
 
@@ -185,10 +185,10 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
     clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
 
-    // Monitoring histograms
-    TH1D* h_particles_per_event = nullptr;
-    TH1D* h_electrons_per_event = nullptr;
-    TH1D* h_processing_time = nullptr;
+    // Monitoring histograms (atomic for thread-safety)
+    clas12::framework::AtomicHistogram1D* h_particles_per_event = nullptr;
+    clas12::framework::AtomicHistogram1D* h_electrons_per_event = nullptr;
+    clas12::framework::AtomicHistogram1D* h_processing_time = nullptr;
 
     // Statistics counters
     size_t m_events_processed = 0;

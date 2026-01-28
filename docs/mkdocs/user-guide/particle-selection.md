@@ -150,18 +150,19 @@ bool is_central_detector(const CLAS::Particle& p) {
 ### Invariant Mass
 
 ```cpp
-#include "Physics/CompositeParticle.hpp"
+#include <clas12/physics/CompositeParticle.hpp>
+#include <clas12/PIDs.hpp>
 
 // Two-photon invariant mass (π⁰ reconstruction)
-const auto& photons = event.particles(CLAS::PIDs::PHOTON);
+const auto& photons = event.particles(clas12::PIDs::PHOTON);
 
 for (size_t i = 0; i < photons.size(); ++i) {
     for (size_t j = i + 1; j < photons.size(); ++j) {
-        Physics::CompositeParticle pi0({photons[i], photons[j]});
+        clas12::physics::CompositeParticle pi0({photons[i], photons[j]});
         double m_gg = pi0.invariant_mass();
-        
+
         if (m_gg > 0.1 && m_gg < 0.17) {
-            h_pi0_mass->Fill(m_gg);
+            h_pi0_mass->fill(m_gg);  // Thread-safe atomic fill
         }
     }
 }

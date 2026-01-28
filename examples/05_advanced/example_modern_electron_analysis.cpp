@@ -165,9 +165,9 @@ public:
 
         // Fill "before cuts" histograms
         for (const auto& e : electron_candidates) {
-            if (m_h_p_before) m_h_p_before->Fill(e.p());
-            if (m_h_theta_before) m_h_theta_before->Fill(e.theta());
-            if (m_h_vz_before) m_h_vz_before->Fill(e.vz());
+            if (m_h_p_before) m_h_p_before->fill(e.p());
+            if (m_h_theta_before) m_h_theta_before->fill(e.theta());
+            if (m_h_vz_before) m_h_vz_before->fill(e.vz());
         }
 
         // ====================================================================
@@ -200,9 +200,9 @@ public:
         }
 
         // Fill "after cuts" histograms
-        if (m_h_p_after) m_h_p_after->Fill(p);
-        if (m_h_theta_after) m_h_theta_after->Fill(theta);
-        if (m_h_vz_after) m_h_vz_after->Fill(vz);
+        if (m_h_p_after) m_h_p_after->fill(p);
+        if (m_h_theta_after) m_h_theta_after->fill(theta);
+        if (m_h_vz_after) m_h_vz_after->fill(vz);
 
         // ====================================================================
         // Step 4: Store selected electron in TypedEventStore
@@ -262,13 +262,13 @@ private:
     // Type-safe event store (Requirement 8.1, 8.2)
     TypedEventStore m_event_store;
 
-    // Histograms
-    TH1D* m_h_p_before = nullptr;
-    TH1D* m_h_p_after = nullptr;
-    TH1D* m_h_theta_before = nullptr;
-    TH1D* m_h_theta_after = nullptr;
-    TH1D* m_h_vz_before = nullptr;
-    TH1D* m_h_vz_after = nullptr;
+    // Histograms (atomic for thread-safety)
+    AtomicHistogram1D* m_h_p_before = nullptr;
+    AtomicHistogram1D* m_h_p_after = nullptr;
+    AtomicHistogram1D* m_h_theta_before = nullptr;
+    AtomicHistogram1D* m_h_theta_after = nullptr;
+    AtomicHistogram1D* m_h_vz_before = nullptr;
+    AtomicHistogram1D* m_h_vz_after = nullptr;
 
     // Counters
     int m_selected_events = 0;
@@ -369,12 +369,12 @@ public:
         double nu = dis_kin.nu;
 
         // Fill histograms
-        if (m_h_Q2) m_h_Q2->Fill(Q2);
-        if (m_h_W) m_h_W->Fill(W);
-        if (m_h_xbj) m_h_xbj->Fill(xbj);
-        if (m_h_y) m_h_y->Fill(y);
-        if (m_h_Q2_vs_xbj) m_h_Q2_vs_xbj->Fill(xbj, Q2);
-        if (m_h_W_vs_Q2) m_h_W_vs_Q2->Fill(Q2, W);
+        if (m_h_Q2) m_h_Q2->fill(Q2);
+        if (m_h_W) m_h_W->fill(W);
+        if (m_h_xbj) m_h_xbj->fill(xbj);
+        if (m_h_y) m_h_y->fill(y);
+        if (m_h_Q2_vs_xbj) m_h_Q2_vs_xbj->fill(xbj, Q2);
+        if (m_h_W_vs_Q2) m_h_W_vs_Q2->fill(Q2, W);
 
         // ====================================================================
         // Store computed kinematics in TypedEventStore for downstream use
@@ -410,12 +410,12 @@ private:
 
     ServiceHandle<HistogramService>* m_hist_svc = nullptr;
 
-    TH1D* m_h_Q2 = nullptr;
-    TH1D* m_h_W = nullptr;
-    TH1D* m_h_xbj = nullptr;
-    TH1D* m_h_y = nullptr;
-    TH2D* m_h_Q2_vs_xbj = nullptr;
-    TH2D* m_h_W_vs_Q2 = nullptr;
+    AtomicHistogram1D* m_h_Q2 = nullptr;
+    AtomicHistogram1D* m_h_W = nullptr;
+    AtomicHistogram1D* m_h_xbj = nullptr;
+    AtomicHistogram1D* m_h_y = nullptr;
+    AtomicHistogram2D* m_h_Q2_vs_xbj = nullptr;
+    AtomicHistogram2D* m_h_W_vs_Q2 = nullptr;
 
     int m_dis_events = 0;
 };
@@ -465,7 +465,7 @@ public:
 
         for (const auto& e : *electrons_opt) {
             double ratio = e.p() / e.theta();
-            if (m_h_p_theta_ratio) m_h_p_theta_ratio->Fill(ratio);
+            if (m_h_p_theta_ratio) m_h_p_theta_ratio->fill(ratio);
 
             // Compute sector from phi
             double phi = e.phi();
@@ -473,7 +473,7 @@ public:
             if (sector > 6) sector = 6;
             if (sector < 1) sector = 1;
 
-            if (m_h_phi_vs_sector) m_h_phi_vs_sector->Fill(sector, phi);
+            if (m_h_phi_vs_sector) m_h_phi_vs_sector->fill(sector, phi);
         }
 
         return StatusCode::SUCCESS();
@@ -486,8 +486,8 @@ public:
 
 private:
     ServiceHandle<HistogramService>* m_hist_svc = nullptr;
-    TH1D* m_h_p_theta_ratio = nullptr;
-    TH2D* m_h_phi_vs_sector = nullptr;
+    AtomicHistogram1D* m_h_p_theta_ratio = nullptr;
+    AtomicHistogram2D* m_h_phi_vs_sector = nullptr;
 };
 
 // ============================================================================

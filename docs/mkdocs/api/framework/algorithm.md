@@ -44,6 +44,7 @@ protected:
 
 ```cpp
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
 
@@ -59,7 +60,7 @@ public:
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        // Book histograms (services guaranteed valid)
+        // Book histograms - returns AtomicHistogram1D* (thread-safe)
         h_momentum = m_hist_svc->get()->book_hist1D("/MyAlg/p", "p;p [GeV];Events", 100, 0, 10);
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -72,7 +73,7 @@ public:
             REC_Particle, {clas12::PIDs::ELECTRON});
 
         for (const auto& e : m_particle_svc->get()->get_electrons(particles)) {
-            h_momentum->Fill(e.p());
+            h_momentum->fill(e.p());  // Thread-safe atomic fill
         }
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -86,7 +87,8 @@ public:
 private:
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
     clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
-    TH1D* h_momentum = nullptr;
+    // Atomic histograms are thread-safe for parallel processing
+    clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
 };
 ```
 

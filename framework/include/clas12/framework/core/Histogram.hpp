@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <clas12/framework/core/AtomicHistogram.hpp>
 #include "TEfficiency.h"
 #include "TH1D.h"
 #include "TH2D.h"
@@ -13,23 +14,24 @@
 namespace clas12::framework {
 
 /**
- * @brief Type-safe histogram wrapper for 1D histograms
+ * @brief Type-safe histogram wrapper for 1D histograms (thread-safe atomic)
  *
- * Provides a cleaner interface than raw ROOT TH1D with:
+ * Provides a cleaner interface for AtomicHistogram1D with:
  * - Automatic null-pointer checking
  * - Fluent API for filling
  * - Weight support
  * - Optional condition-based filling
+ * - Thread-safe lock-free filling
  */
 class Hist1D {
    public:
-    explicit Hist1D(TH1D* hist = nullptr) : m_hist(hist) {}
+    explicit Hist1D(AtomicHistogram1D* hist = nullptr) : m_hist(hist) {}
 
     /**
      * @brief Fill histogram with value
      */
     auto fill(double value) -> Hist1D& {
-        if (m_hist) m_hist->Fill(value);
+        if (m_hist) m_hist->fill(value);
         return *this;
     }
 
@@ -37,7 +39,7 @@ class Hist1D {
      * @brief Fill histogram with value and weight
      */
     auto fill(double value, double weight) -> Hist1D& {
-        if (m_hist) m_hist->Fill(value, weight);
+        if (m_hist) m_hist->fill(value, weight);
         return *this;
     }
 
@@ -45,7 +47,7 @@ class Hist1D {
      * @brief Fill histogram if condition is true
      */
     auto fill_if(bool condition, double value) -> Hist1D& {
-        if (condition && m_hist) m_hist->Fill(value);
+        if (condition && m_hist) m_hist->fill(value);
         return *this;
     }
 
@@ -53,16 +55,16 @@ class Hist1D {
      * @brief Fill histogram if condition is true, with weight
      */
     auto fill_if(bool condition, double value, double weight) -> Hist1D& {
-        if (condition && m_hist) m_hist->Fill(value, weight);
+        if (condition && m_hist) m_hist->fill(value, weight);
         return *this;
     }
 
     /**
-     * @brief Get underlying ROOT histogram
+     * @brief Get underlying atomic histogram
      */
-    auto get() -> TH1D* { return m_hist; }
+    auto get() -> AtomicHistogram1D* { return m_hist; }
 
-    auto get() const -> const TH1D* { return m_hist; }
+    auto get() const -> const AtomicHistogram1D* { return m_hist; }
 
     /**
      * @brief Check if histogram is valid
@@ -75,57 +77,57 @@ class Hist1D {
     explicit operator bool() const { return is_valid(); }
 
     /**
-     * @brief Allow direct access to ROOT methods via ->
+     * @brief Allow direct access to atomic histogram methods via ->
      */
-    auto operator->() -> TH1D* { return m_hist; }
+    auto operator->() -> AtomicHistogram1D* { return m_hist; }
 
-    auto operator->() const -> const TH1D* { return m_hist; }
+    auto operator->() const -> const AtomicHistogram1D* { return m_hist; }
 
    private:
-    TH1D* m_hist;
+    AtomicHistogram1D* m_hist;
 };
 
 /**
- * @brief Type-safe histogram wrapper for 2D histograms
+ * @brief Type-safe histogram wrapper for 2D histograms (thread-safe atomic)
  */
 class Hist2D {
    public:
-    explicit Hist2D(TH2D* hist = nullptr) : m_hist(hist) {}
+    explicit Hist2D(AtomicHistogram2D* hist = nullptr) : m_hist(hist) {}
 
     auto fill(double x, double y) -> Hist2D& {
-        if (m_hist) m_hist->Fill(x, y);
+        if (m_hist) m_hist->fill(x, y);
         return *this;
     }
 
     auto fill(double x, double y, double weight) -> Hist2D& {
-        if (m_hist) m_hist->Fill(x, y, weight);
+        if (m_hist) m_hist->fill(x, y, weight);
         return *this;
     }
 
     auto fill_if(bool condition, double x, double y) -> Hist2D& {
-        if (condition && m_hist) m_hist->Fill(x, y);
+        if (condition && m_hist) m_hist->fill(x, y);
         return *this;
     }
 
     auto fill_if(bool condition, double x, double y, double weight) -> Hist2D& {
-        if (condition && m_hist) m_hist->Fill(x, y, weight);
+        if (condition && m_hist) m_hist->fill(x, y, weight);
         return *this;
     }
 
-    auto get() -> TH2D* { return m_hist; }
+    auto get() -> AtomicHistogram2D* { return m_hist; }
 
-    auto get() const -> const TH2D* { return m_hist; }
+    auto get() const -> const AtomicHistogram2D* { return m_hist; }
 
     auto is_valid() const -> bool { return m_hist != nullptr; }
 
     explicit operator bool() const { return is_valid(); }
 
-    auto operator->() -> TH2D* { return m_hist; }
+    auto operator->() -> AtomicHistogram2D* { return m_hist; }
 
-    auto operator->() const -> const TH2D* { return m_hist; }
+    auto operator->() const -> const AtomicHistogram2D* { return m_hist; }
 
    private:
-    TH2D* m_hist;
+    AtomicHistogram2D* m_hist;
 };
 
 /**

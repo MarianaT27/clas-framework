@@ -102,9 +102,9 @@ The generated algorithm follows the CRTP-based `SimpleAlgorithm` pattern:
 #pragma once
 
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/PIDs.hpp>
-#include <TH1D.h>
 
 namespace my_analysis {
 
@@ -114,7 +114,7 @@ public:
         : SimpleAlgorithm(std::move(name)) {}
 
     auto do_initialize() -> clas12::framework::StatusCode {
-        // Get histogram service (automatically injected)
+        // Get histogram service - returns AtomicHistogram1D* (thread-safe)
         h_momentum = histogram_service()->book_hist1D(
             "/MyAnalysis/momentum",
             "Momentum;p [GeV/c];Events",
@@ -128,7 +128,7 @@ public:
         const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
 
         for (const auto& e : electrons) {
-            h_momentum->Fill(e.p());
+            h_momentum->fill(e.p());  // Thread-safe atomic fill
         }
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -139,7 +139,8 @@ public:
     }
 
 private:
-    TH1D* h_momentum = nullptr;
+    // Atomic histograms are thread-safe for parallel processing
+    clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
 };
 
 }  // namespace my_analysis

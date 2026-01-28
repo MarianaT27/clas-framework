@@ -117,16 +117,21 @@ void analyze(hipo::event& evt) {
 After:
 
 ```cpp
-class MyAlg : public Framework::Algorithm {
-    auto initialize() -> Framework::StatusCode override {
-        m_hist_svc = service<Framework::HistogramService>("HistogramService");
+class MyAlg : public clas12::framework::Algorithm {
+    auto initialize() -> clas12::framework::StatusCode override {
+        m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
+        // Returns AtomicHistogram1D* (thread-safe)
         h = m_hist_svc->book_hist1D("/path/h", "h", 100, 0, 10);
-        return Framework::StatusCode::SUCCESS();
+        return clas12::framework::StatusCode::SUCCESS();
     }
-    
-    auto execute(Framework::Event& event) -> Framework::StatusCode override {
-        // ...
-        return Framework::StatusCode::SUCCESS();
+
+    auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+        h->fill(value);  // Thread-safe atomic fill
+        return clas12::framework::StatusCode::SUCCESS();
     }
+
+private:
+    clas12::framework::HistogramService* m_hist_svc = nullptr;
+    clas12::framework::AtomicHistogram1D* h = nullptr;
 };
 ```

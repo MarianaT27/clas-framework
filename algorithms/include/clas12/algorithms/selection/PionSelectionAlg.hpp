@@ -257,41 +257,41 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     auto book_histograms() -> void {
         auto* svc = m_hist_svc->get();
 
-        // π⁺ histograms - using lock-free atomic histogram templates
-        h_piplus.momentum = svc->book_atomic_momentum_hist("/Pion/PiPlus/momentum", "#pi^{+} Momentum");
-        h_piplus.theta = svc->book_atomic_theta_hist("/Pion/PiPlus/theta", "#pi^{+} #theta");
-        h_piplus.phi = svc->book_atomic_phi_hist("/Pion/PiPlus/phi", "#pi^{+} #phi");
-        h_piplus.vz = svc->book_atomic_hist1D("/Pion/PiPlus/vz", "#pi^{+} v_{z};v_{z} [cm];Events", 200, -40, 40);
-        h_piplus.chi2pid = svc->book_atomic_hist1D(
+        // π⁺ histograms - all physics methods now use atomic histograms by default
+        h_piplus.momentum = svc->book_momentum_hist("/Pion/PiPlus/momentum", "#pi^{+} Momentum");
+        h_piplus.theta = svc->book_theta_hist("/Pion/PiPlus/theta", "#pi^{+} #theta");
+        h_piplus.phi = svc->book_phi_hist("/Pion/PiPlus/phi", "#pi^{+} #phi");
+        h_piplus.vz = svc->book_hist("/Pion/PiPlus/vz", "#pi^{+} v_{z};v_{z} [cm];Events", 200, -40, 40);
+        h_piplus.chi2pid = svc->book_hist(
             "/Pion/PiPlus/chi2pid", "#pi^{+} #chi^{2}_{PID};#chi^{2};Events", 200, -10, 10);
-        h_piplus.beta = svc->book_atomic_hist1D(
+        h_piplus.beta = svc->book_hist(
             "/Pion/PiPlus/beta", "#pi^{+} #beta;#beta;Events", 100, 0.7, 1.05);
 
-        h_piplus.beta_vs_p = svc->book_atomic_hist2D(
+        h_piplus.beta_vs_p = svc->book_hist2d(
             "/Pion/PiPlus/beta_vs_p", "#pi^{+} #beta vs p;p [GeV/c];#beta",
             100, 0, 10, 100, 0.7, 1.05);
-        h_piplus.delta_t_vs_p = svc->book_atomic_hist2D(
+        h_piplus.delta_t_vs_p = svc->book_hist2d(
             "/Pion/PiPlus/delta_t_vs_p", "#pi^{+} #Deltat vs p;p [GeV/c];#Deltat [ns]",
             100, 0, 10, 200, -5, 5);
-        h_piplus.p_vs_theta = svc->book_atomic_hist2D("/Pion/PiPlus/p_vs_theta", "#pi^{+} p vs #theta", 200, 0, 50, 200, 0, 10);
+        h_piplus.p_vs_theta = svc->book_hist2D("/Pion/PiPlus/p_vs_theta", "#pi^{+} p vs #theta", 200, 0, 50, 200, 0, 10);
 
-        // π⁻ histograms - using lock-free atomic histogram templates
-        h_piminus.momentum = svc->book_atomic_momentum_hist("/Pion/PiMinus/momentum", "#pi^{-} Momentum");
-        h_piminus.theta = svc->book_atomic_theta_hist("/Pion/PiMinus/theta", "#pi^{-} #theta");
-        h_piminus.phi = svc->book_atomic_phi_hist("/Pion/PiMinus/phi", "#pi^{-} #phi");
-        h_piminus.vz = svc->book_atomic_hist1D("/Pion/PiMinus/vz", "#pi^{-} v_{z};v_{z} [cm];Events", 200, -40, 40);
-        h_piminus.chi2pid = svc->book_atomic_hist1D(
+        // π⁻ histograms - all physics methods now use atomic histograms by default
+        h_piminus.momentum = svc->book_momentum_hist("/Pion/PiMinus/momentum", "#pi^{-} Momentum");
+        h_piminus.theta = svc->book_theta_hist("/Pion/PiMinus/theta", "#pi^{-} #theta");
+        h_piminus.phi = svc->book_phi_hist("/Pion/PiMinus/phi", "#pi^{-} #phi");
+        h_piminus.vz = svc->book_hist("/Pion/PiMinus/vz", "#pi^{-} v_{z};v_{z} [cm];Events", 200, -40, 40);
+        h_piminus.chi2pid = svc->book_hist(
             "/Pion/PiMinus/chi2pid", "#pi^{-} #chi^{2}_{PID};#chi^{2};Events", 200, -10, 10);
-        h_piminus.beta = svc->book_atomic_hist1D(
+        h_piminus.beta = svc->book_hist(
             "/Pion/PiMinus/beta", "#pi^{-} #beta;#beta;Events", 100, 0.7, 1.05);
 
-        h_piminus.beta_vs_p = svc->book_atomic_hist2D(
+        h_piminus.beta_vs_p = svc->book_hist2d(
             "/Pion/PiMinus/beta_vs_p", "#pi^{-} #beta vs p;p [GeV/c];#beta",
             100, 0, 10, 100, 0.7, 1.05);
-        h_piminus.delta_t_vs_p = svc->book_atomic_hist2D(
+        h_piminus.delta_t_vs_p = svc->book_hist2d(
             "/Pion/PiMinus/delta_t_vs_p", "#pi^{-} #Deltat vs p;p [GeV/c];#Deltat [ns]",
             100, 0, 10, 200, -5, 5);
-        h_piminus.p_vs_theta = svc->book_atomic_hist2D("/Pion/PiMinus/p_vs_theta", "#pi^{-} p vs #theta", 200, 0, 50, 200, 0, 10);
+        h_piminus.p_vs_theta = svc->book_hist2D("/Pion/PiMinus/p_vs_theta", "#pi^{-} p vs #theta", 200, 0, 50, 200, 0, 10);
     }
 
     auto setup_ntuples() -> void {
