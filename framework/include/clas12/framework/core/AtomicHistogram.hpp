@@ -71,12 +71,14 @@ class AtomicHistogram1D {
      * @brief Fill the histogram with a value
      *
      * Thread-safe: can be called from multiple threads simultaneously.
+     * Silently skips NaN values.
      *
      * @param x Value to fill
      * @param weight Optional weight (default 1.0)
      */
     auto fill(double x, double weight = 1.0) -> void {
         int bin = find_bin(x);
+        if (bin < 0) return;  // Skip NaN values
         atomic_add(m_bins[bin], weight);
         atomic_add(m_sum_w2[bin], weight * weight);
         m_entries.fetch_add(1, std::memory_order_relaxed);
@@ -212,9 +214,12 @@ class AtomicHistogram1D {
      * @brief Find the bin index for a value
      *
      * @param x Value
-     * @return int Bin index (0 = underflow, nbins+1 = overflow)
+     * @return int Bin index (0 = underflow, nbins+1 = overflow, -1 if NaN)
      */
     [[nodiscard]] auto find_bin(double x) const -> int {
+        // Handle NaN - return -1 to signal skip
+        if (std::isnan(x)) return -1;
+
         if (x < m_xmin) return 0;                // underflow
         if (x >= m_xmax) return m_nbins + 1;     // overflow
 
@@ -282,6 +287,7 @@ class AtomicHistogram2D {
      * @brief Fill the histogram with a value
      *
      * Thread-safe: can be called from multiple threads simultaneously.
+     * Silently skips NaN values.
      *
      * @param x X value
      * @param y Y value
@@ -289,6 +295,7 @@ class AtomicHistogram2D {
      */
     auto fill(double x, double y, double weight = 1.0) -> void {
         int bin = find_bin(x, y);
+        if (bin < 0) return;  // Skip NaN values
         atomic_add(m_bins[bin], weight);
         atomic_add(m_sum_w2[bin], weight * weight);
         m_entries.fetch_add(1, std::memory_order_relaxed);
@@ -403,14 +410,17 @@ class AtomicHistogram2D {
 
     /**
      * @brief Find the global bin index for x, y values
+     * @return int Global bin index, or -1 if either x or y is NaN
      */
     [[nodiscard]] auto find_bin(double x, double y) const -> int {
         int binx = find_bin_x(x);
         int biny = find_bin_y(y);
+        if (binx < 0 || biny < 0) return -1;  // NaN in either coordinate
         return get_global_bin(binx, biny);
     }
 
     [[nodiscard]] auto find_bin_x(double x) const -> int {
+        if (std::isnan(x)) return -1;  // Signal NaN
         if (x < m_xmin) return 0;
         if (x >= m_xmax) return m_nbinsx + 1;
         int bin = static_cast<int>((x - m_xmin) / m_bin_width_x) + 1;
@@ -418,6 +428,7 @@ class AtomicHistogram2D {
     }
 
     [[nodiscard]] auto find_bin_y(double y) const -> int {
+        if (std::isnan(y)) return -1;  // Signal NaN
         if (y < m_ymin) return 0;
         if (y >= m_ymax) return m_nbinsy + 1;
         int bin = static_cast<int>((y - m_ymin) / m_bin_width_y) + 1;

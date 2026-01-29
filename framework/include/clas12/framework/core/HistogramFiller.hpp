@@ -113,10 +113,10 @@ public:
         group->hist1d("ecal_E").fill(E_tot);
         group->hist1d("sampling_fraction").fill(SF);
 
-        // DC chi2/NDF
-        group->hist1d("dc_chi2_R1").fill(trk_r1.chi2 / trk_r1.ndf);
-        group->hist1d("dc_chi2_R2").fill(trk_r2.chi2 / trk_r2.ndf);
-        group->hist1d("dc_chi2_R3").fill(trk_r3.chi2 / trk_r3.ndf);
+        // DC chi2/NDF (guard against division by zero when bank data is missing)
+        if (trk_r1.ndf > 0) group->hist1d("dc_chi2_R1").fill(trk_r1.chi2 / trk_r1.ndf);
+        if (trk_r2.ndf > 0) group->hist1d("dc_chi2_R2").fill(trk_r2.chi2 / trk_r2.ndf);
+        if (trk_r3.ndf > 0) group->hist1d("dc_chi2_R3").fill(trk_r3.chi2 / trk_r3.ndf);
 
         // PCAL fiducial
         group->hist1d("pcal_lu").fill(calo.pcal.lu);
