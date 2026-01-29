@@ -21,6 +21,7 @@
 #include <clas12/StringUtils.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
+#include <clas12/framework/services/FiducialService.hpp>
 #include <clas12/framework/services/PhotonCutsService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
@@ -159,6 +160,7 @@ auto main(int argc, char* argv[]) -> int {
         .with_version("2.0")
         .with_beam_energy(10.53)
         .add_service<clas12::framework::ElectronCutsService>()
+        .add_service<clas12::framework::FiducialService>()
         .with_target(clas12::to_string(config->target))
         .add_service<clas12::framework::PhotonCutsService>()
         .add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")

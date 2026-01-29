@@ -22,6 +22,7 @@
 #include <clas12/framework/core/ApplicationBuilder.hpp>
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
+#include <clas12/framework/services/FiducialService.hpp>
 
 // ============================================================================
 // Configuration
@@ -148,6 +149,7 @@ auto main(int argc, char* argv[]) -> int {
         .with_threads(config->num_threads)
         .with_standard_services()
         .add_service<clas12::framework::ElectronCutsService>()
+        .add_service<clas12::framework::FiducialService>()
         .with_version("2.0")
         .with_beam_energy(10.53)
         .with_target(clas12::to_string(config->target))

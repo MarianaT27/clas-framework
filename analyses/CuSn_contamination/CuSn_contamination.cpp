@@ -13,6 +13,7 @@
 #include <clas12/Target.hpp>
 #include <clas12/algorithms/selection/DISSelectionAlg.hpp>
 #include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
+#include <clas12/framework/services/FiducialService.hpp>
 
 #include <cxxopts.hpp>
 #include <fmt/format.h>
@@ -66,6 +67,7 @@ auto main(int argc, char* argv[]) -> int {
         .with_beam_energy(10.53)
         .with_target(clas12::to_string(clas12::string_to_target(target)))
         .add_service<clas12::framework::ElectronCutsService>()
+        .add_service<clas12::framework::FiducialService>()
         .add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::string_to_target(target), clas12::string_to_polarity(polarity))
         .add_algorithm<CuSnContamination::CuSnContaminationAlg>("CuSnContaminationAlg")
         .build();
