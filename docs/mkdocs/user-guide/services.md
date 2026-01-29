@@ -514,6 +514,736 @@ auto* my_svc = service<my_analysis::MyCustomService>("MyCustomService");
 my_svc->do_something();
 ```
 
+---
+
+## MCTruthService
+
+Service for MC truth matching and efficiency studies. Enables comparison of reconstructed particles with generator-level truth.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/MCTruthService.hpp>
+
+auto mc_svc = std::make_unique<clas12::framework::MCTruthService>();
+app.service_manager().add_service(std::move(mc_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    // Load MC particles from bank
+    auto& mc_bank = event.get_bank("MC::Particle");
+    m_mc_svc->load_mc_particles(mc_bank);
+
+    // Get all MC particles
+    const auto& mc_particles = m_mc_svc->mc_particles();
+
+    // Get MC particles of specific type
+    auto mc_protons = m_mc_svc->mc_particles(clas12::PIDs::PROTON);
+
+    // Match reconstructed particle to truth
+    auto& match_bank = event.get_bank("MC::RecMatch");
+    const auto* mc_match = m_mc_svc->match(reco_electron, match_bank);
+
+    if (mc_match) {
+        // Calculate momentum resolution
+        auto resolution = m_mc_svc->momentum_resolution(reco_electron);
+        if (resolution) {
+            h_resolution->fill(*resolution);
+        }
+    }
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### Features
+
+- MC particle extraction from HIPO banks
+- Truth matching using MC::RecMatch bank
+- Momentum/angle resolution calculation
+- Reconstruction efficiency determination
+
+---
+
+## FiducialService
+
+Unified detector fiducial cuts for acceptance modeling.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/FiducialService.hpp>
+
+auto fid_svc = std::make_unique<clas12::framework::FiducialService>();
+fid_svc->register_pcal_fiducial(9.0, 9.0);  // lu_min, lw_min
+fid_svc->register_dc_edge_cuts(1.68, 2.0, 8.75);  // R1, R2, R3 cuts
+app.service_manager().add_service(std::move(fid_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    auto& calo_bank = event.get_bank("REC::Calorimeter");
+    auto& traj_bank = event.get_bank("REC::Traj");
+
+    // Check individual detector regions
+    bool pass_pcal = m_fid_svc->passes_fiducial(
+        electron, DetectorRegion::PCAL, calo_bank, traj_bank);
+
+    // Check all fiducial cuts
+    bool pass_all = m_fid_svc->passes_all_fiducial(electron, banks);
+
+    // Get acceptance weight for efficiency correction
+    double weight = m_fid_svc->acceptance_weight(electron, DetectorRegion::PCAL);
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### Detector Regions
+
+| Region | Description |
+|--------|-------------|
+| `PCAL` | Pre-shower calorimeter |
+| `ECin` | Inner electromagnetic calorimeter |
+| `ECout` | Outer electromagnetic calorimeter |
+| `DC_R1` | Drift chamber region 1 |
+| `DC_R2` | Drift chamber region 2 |
+| `DC_R3` | Drift chamber region 3 |
+| `HTCC` | High threshold Cherenkov counter |
+| `FTOF` | Forward time-of-flight |
+
+---
+
+## GoodRunListService
+
+Data quality filtering based on run conditions.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/GoodRunListService.hpp>
+
+auto grl_svc = std::make_unique<clas12::framework::GoodRunListService>();
+grl_svc->load_from_file("config/good_runs_rgc.json");
+grl_svc->require_flag("beam_stable");
+grl_svc->require_flag("torus_nominal");
+grl_svc->set_run_range(16000, 17000);
+app.service_manager().add_service(std::move(grl_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    // Check if current run passes quality cuts
+    if (!m_grl_svc->check_event(event)) {
+        return clas12::framework::StatusCode::RECOVERABLE();
+    }
+
+    // Get run-specific information
+    auto run_info = m_grl_svc->get_run_info(event.run_number());
+    if (run_info) {
+        double lumi_weight = m_grl_svc->luminosity_weight(event.run_number());
+        h_yield->fill(value, lumi_weight);
+    }
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### GRL JSON Format
+
+```json
+{
+  "runs": [
+    {
+      "run_number": 16042,
+      "is_good": true,
+      "quality_flags": "beam_stable,torus_nominal,solenoid_ok",
+      "luminosity": 1.234e6,
+      "target": "LD2",
+      "beam_energy": 10.6
+    }
+  ]
+}
+```
+
+---
+
+## EventMixingService
+
+Combinatorial background estimation for resonance analyses.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/EventMixingService.hpp>
+
+auto mix_svc = std::make_unique<clas12::framework::EventMixingService>();
+mix_svc->add_vz_bins({-10, -5, 0, 5, 10});
+mix_svc->add_Q2_bins({1.0, 2.0, 3.0, 5.0, 8.0});
+app.service_manager().add_service(std::move(mix_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    // Add particles to mixing pool
+    m_mix_svc->add_to_pool("piplus", event, pi_plus_particles);
+    m_mix_svc->add_to_pool("piminus", event, pi_minus_particles);
+
+    // Get mixed pairs from different events (same kinematic bin)
+    auto mixed_pairs = m_mix_svc->get_mixed_pairs<Particle, Particle>(
+        "piplus", "piminus", event);
+
+    for (const auto& [pip, pim] : mixed_pairs) {
+        double m_mixed = (*pip + *pim).M();
+        h_mixed_mass->fill(m_mixed, m_mix_svc->mixed_event_weight());
+    }
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### Features
+
+- Multi-dimensional binning (vertex z, Q², sector)
+- Configurable pool size per bin
+- Automatic event weight calculation
+- Thread-safe event pooling
+
+---
+
+## SystematicService
+
+Systematic uncertainty framework with histogram cloning.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/SystematicService.hpp>
+
+auto syst_svc = std::make_unique<clas12::framework::SystematicService>();
+syst_svc->add_energy_scale(0.01);       // 1% energy scale
+syst_svc->add_momentum_resolution(0.005); // 0.5% resolution smearing
+app.service_manager().add_service(std::move(syst_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    // Get current variation name
+    std::string var = m_syst_svc->current_variation();
+
+    // Apply variation to particle
+    Particle varied_electron = m_syst_svc->vary(electron);
+
+    // Get event weight for this variation
+    double weight = m_syst_svc->weight(event);
+
+    // Fill histograms (automatically cloned for each variation)
+    h_mass->fill(varied_electron.p(), weight);
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### Registering Custom Variations
+
+```cpp
+m_syst_svc->add_efficiency_variation("pid_eff",
+    [](const Event& e) -> double {
+        return 1.0 + 0.02 * (e.run_number() > 16000 ? 1 : -1);
+    });
+```
+
+---
+
+## MVAService
+
+Machine learning-based classification using TMVA.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/MVAService.hpp>
+
+auto mva_svc = std::make_unique<clas12::framework::MVAService>();
+mva_svc->register_model("electron_id", "weights/electron_bdt.xml");
+app.service_manager().add_service(std::move(mva_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    // Evaluate BDT score
+    float bdt_score = m_mva_svc->evaluate("electron_id", electron);
+
+    // Check if passes threshold
+    if (m_mva_svc->passes_cut("electron_id", electron, 0.85)) {
+        // Good electron candidate
+    }
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### TOML Configuration
+
+```toml
+[MVA]
+electron_id = "weights/electron_bdt.xml"
+electron_threshold = 0.85
+photon_id = "weights/photon_gbt.xml"
+photon_threshold = 0.78
+```
+
+---
+
+## WeightService
+
+Event weights for acceptance, efficiency, and normalization corrections.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/WeightService.hpp>
+
+auto weight_svc = std::make_unique<clas12::framework::WeightService>();
+weight_svc->load_efficiency_map("electron_eff", "efficiency.root", "h_eff_p_theta");
+app.service_manager().add_service(std::move(weight_svc));
+```
+
+### Usage
+
+```cpp
+auto initialize() -> clas12::framework::StatusCode override {
+    // Register weight calculators
+    m_weight_svc->register_weight("luminosity", WeightType::Luminosity,
+        [this](const Event& e) { return m_grl_svc->luminosity_weight(e.run_number()); });
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    // Get total event weight
+    auto total_weight = m_weight_svc->get_total_weight(event);
+    h_yield->fill(x, total_weight.value);
+
+    // 2D efficiency lookup
+    double eff = m_weight_svc->lookup_efficiency("electron_eff",
+        electron.p(), electron.theta());
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### Weight Types
+
+| Type | Description |
+|------|-------------|
+| `Luminosity` | Run luminosity normalization |
+| `Acceptance` | Geometric acceptance |
+| `Efficiency` | Reconstruction/selection efficiency |
+| `Trigger` | Trigger efficiency |
+| `PID` | Particle ID efficiency |
+| `Radiative` | Radiative corrections |
+| `Custom` | User-defined |
+
+---
+
+## VertexFittingService
+
+Primary and secondary vertex reconstruction for displaced decay analyses.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/VertexFittingService.hpp>
+
+auto vtx_svc = std::make_unique<clas12::framework::VertexFittingService>();
+app.service_manager().add_service(std::move(vtx_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    // Fit primary vertex
+    auto pv_result = m_vtx_svc->fit_primary_vertex_robust(tracks, 9.0);
+
+    if (pv_result.is_good()) {
+        // Fit secondary vertex (Lambda decay)
+        auto sv_result = m_vtx_svc->fit_secondary_vertex(proton, pion);
+
+        if (sv_result.is_good()) {
+            // Calculate flight distance and significance
+            auto [flight_dist, flight_err] = m_vtx_svc->flight_distance(pv_result, sv_result);
+
+            // Decay length significance (for lifetime measurements)
+            double dls = m_vtx_svc->decay_length_significance(
+                pv_result, sv_result, lambda_momentum);
+
+            h_flight_distance->fill(flight_dist);
+            h_decay_significance->fill(dls);
+        }
+    }
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### VertexFitResult Structure
+
+| Field | Description |
+|-------|-------------|
+| `converged` | Fit convergence status |
+| `position` | Fitted vertex position (XYZVector) |
+| `covariance` | 3x3 covariance matrix (Eigen) |
+| `chi2`, `ndf` | Fit quality |
+| `probability` | P(chi2, ndf) |
+| `refitted_momenta` | Track momenta at vertex |
+
+---
+
+## DecayTreeFitterService
+
+LHCb-style global topological decay fitting with constraint propagation.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/DecayTreeFitterService.hpp>
+
+auto dtf_svc = std::make_unique<clas12::framework::DecayTreeFitterService>();
+app.service_manager().add_service(std::move(dtf_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    // Fluent interface for complex decays
+    auto result = m_dtf_svc->create_fitter(DecayDescriptor::parse("Lambda0 -> p+ pi-"))
+        ->add_particle("p+", proton)
+        ->add_particle("pi-", pion)
+        ->constrain_mass(1.115683)      // Lambda mass constraint
+        ->constrain_vertex()            // Common vertex
+        ->constrain_pointing(primary_vertex)  // Points to PV
+        ->fit();
+
+    if (result.converged && result.probability > 0.01) {
+        // Use fitted momenta for improved resolution
+        auto fitted_lambda = result.fitted_momenta[0] + result.fitted_momenta[1];
+        h_lambda_mass_dtf->fill(fitted_lambda.M());
+    }
+
+    // Simple two-body fit
+    auto simple_result = m_dtf_svc->fit_two_body(proton, pion, LAMBDA_MASS, primary_vertex);
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### Constraint Types
+
+| Constraint | Description |
+|------------|-------------|
+| `Mass` | Fix invariant mass of particle combination |
+| `Vertex` | Common decay vertex for daughters |
+| `OriginVertex` | Fix vertex to known position |
+| `Pointing` | Momentum points back to origin |
+
+---
+
+## PIDService
+
+Log-likelihood particle identification combining multiple detectors.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/PIDService.hpp>
+
+auto pid_svc = std::make_unique<clas12::framework::PIDService>();
+pid_svc->m_use_tof.set(true);
+pid_svc->m_use_cherenkov.set(true);
+pid_svc->m_use_calorimeter.set(true);
+app.service_manager().add_service(std::move(pid_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    // Full PID evaluation
+    auto pid_result = m_pid_svc->compute_pid(track, event);
+
+    // Delta log-likelihood method (LHCb style)
+    double dll_k_pi = pid_result.get_dll(PIDHypothesis::Kaon, PIDHypothesis::Pion);
+
+    if (dll_k_pi > 0) {
+        // More likely kaon than pion
+    }
+
+    // Simple decisions
+    if (m_pid_svc->is_kaon(track, event, 0.0)) {
+        h_kaon_mass->fill(track.mass());
+    }
+
+    // Get efficiency weight for PID selection
+    double pid_weight = m_pid_svc->efficiency_weight(track, PIDHypothesis::Kaon, 0.0);
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### PID Hypotheses
+
+`Electron`, `Positron`, `Muon`, `Pion`, `Kaon`, `Proton`, `Deuteron`, `Unknown`
+
+### PIDResult Structure
+
+| Field | Description |
+|-------|-------------|
+| `best_hypothesis` | Most likely particle type |
+| `confidence` | Confidence level |
+| `log_likelihoods` | LL for each hypothesis |
+| `delta_ll` | DLL relative to pion |
+
+---
+
+## sPlotService
+
+Statistical background subtraction using sWeights (LHCb/BaBar technique).
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/sPlotService.hpp>
+
+auto splot_svc = std::make_unique<clas12::framework::sPlotService>();
+app.service_manager().add_service(std::move(splot_svc));
+```
+
+### Usage
+
+```cpp
+// Configure sPlot in initialize()
+auto initialize() -> clas12::framework::StatusCode override {
+    m_splot_svc->create_splot("lambda", "mass", 1.08, 1.18)
+               ->add_gaussian_signal("lambda", "signal", 1.1157, 0.002)
+               ->add_polynomial_background("lambda", "bkg", 2);
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+
+// Collect data in execute()
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    m_masses.push_back(lambda_mass);
+    m_cos_theta.push_back(cos_theta);
+    return clas12::framework::StatusCode::SUCCESS();
+}
+
+// Compute weights and fill in finalize()
+auto finalize() -> clas12::framework::StatusCode override {
+    // Fit and compute sWeights
+    auto result = m_splot_svc->compute_sweights("lambda", m_masses);
+
+    if (result.success) {
+        // Fill background-subtracted distribution
+        m_splot_svc->fill_with_sweights("lambda", "signal", h_cos_theta, m_cos_theta);
+
+        fmt::print("Signal yield: {} +/- {}\n",
+                   result.signal_yield(), result.yield_errors.at("signal"));
+    }
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### PDF Types
+
+| Method | Description |
+|--------|-------------|
+| `add_gaussian_signal` | Gaussian signal shape |
+| `add_crystal_ball_signal` | Crystal Ball function |
+| `add_double_gaussian_signal` | Double Gaussian |
+| `add_polynomial_background` | Polynomial background |
+| `add_exponential_background` | Exponential background |
+
+---
+
+## UnfoldingService
+
+Detector response correction for cross-section measurements.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/UnfoldingService.hpp>
+
+auto unfold_svc = std::make_unique<clas12::framework::UnfoldingService>();
+unfold_svc->m_bayesian_iterations.set(4);
+app.service_manager().add_service(std::move(unfold_svc));
+```
+
+### Usage
+
+```cpp
+auto finalize() -> clas12::framework::StatusCode override {
+    // Build response matrix from MC
+    m_unfold_svc->build_response("q2",
+        mc_true_values, mc_reco_values,
+        10, 10,    // nbins_true, nbins_reco
+        1.0, 10.0  // range
+    );
+
+    // Unfold measured distribution
+    auto result = m_unfold_svc->unfold_bayesian("q2", h_measured, 4);
+
+    if (result.success) {
+        // result.unfolded contains corrected distribution
+        auto unfolded = result.unfolded->Clone("h_q2_unfolded");
+
+        // Check closure
+        double chi2 = result.chi2_refolded;
+    }
+
+    // Get diagnostics
+    auto purity = m_unfold_svc->get_purity("q2");
+    auto stability = m_unfold_svc->get_stability("q2");
+    auto efficiency = m_unfold_svc->get_efficiency("q2");
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### Unfolding Methods
+
+| Method | Description |
+|--------|-------------|
+| `Bayesian` | D'Agostini iterative unfolding |
+| `SVD` | Singular Value Decomposition |
+| `BinByBin` | Simple bin-by-bin correction |
+| `MatrixInversion` | Direct matrix inversion |
+
+---
+
+## CrossSectionService
+
+Complete cross-section calculation with acceptance, efficiency, and luminosity.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/CrossSectionService.hpp>
+
+auto xsec_svc = std::make_unique<clas12::framework::CrossSectionService>();
+xsec_svc->m_beam_energy.set(10.6);
+app.service_manager().add_service(std::move(xsec_svc));
+```
+
+### Usage
+
+```cpp
+auto finalize() -> clas12::framework::StatusCode override {
+    // Define measurement
+    m_xsec_svc->define_measurement("q2_xsec", "Q^{2}", "nb/GeV^{2}")
+              ->set_luminosity("q2_xsec", 1.2e6)  // /pb
+              ->set_yield("q2_xsec", h_yield)
+              ->calculate_acceptance("q2_xsec", h_reco_mc, h_gen_mc)
+              ->set_efficiency("q2_xsec", h_efficiency)
+              ->set_radiative_correction("q2_xsec", h_rad_corr);
+
+    // Calculate: σ = N / (L × A × ε × ΔX × R)
+    auto result = m_xsec_svc->calculate("q2_xsec");
+
+    result.print_summary();
+    auto graph = result.to_graph();
+
+    // With systematic uncertainties
+    m_xsec_svc->add_systematic_yield("q2_xsec", "energy_up", h_yield_eup);
+    m_xsec_svc->add_systematic_yield("q2_xsec", "energy_down", h_yield_edown);
+    auto result_syst = m_xsec_svc->calculate_with_systematics("q2_xsec");
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### CrossSectionResult Structure
+
+| Field | Description |
+|-------|-------------|
+| `cross_sections` | Differential cross-section per bin |
+| `stat_errors` | Statistical uncertainties |
+| `syst_errors_up/down` | Systematic uncertainties |
+| `total_cross_section` | Integrated cross-section |
+| `to_graph()` | Convert to TGraphAsymmErrors |
+
+---
+
+## TrackQualityService
+
+Standardized track quality assessment and selection.
+
+### Setup
+
+```cpp
+#include <clas12/framework/services/TrackQualityService.hpp>
+
+auto trkq_svc = std::make_unique<clas12::framework::TrackQualityService>();
+trkq_svc->m_chi2_cut_standard.set(10.0);
+trkq_svc->m_min_ndf.set(5);
+trkq_svc->m_dc_edge_cut.set(5.0);
+app.service_manager().add_service(std::move(trkq_svc));
+```
+
+### Usage
+
+```cpp
+auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    // Assess track quality
+    auto quality_info = m_trkq_svc->assess_quality(track, event);
+
+    // Check specific quality level
+    if (m_trkq_svc->passes_quality(track, event, TrackQuality::Standard)) {
+        // Good track
+    }
+
+    // Filter tracks by quality
+    auto good_tracks = m_trkq_svc->filter_by_quality(tracks, event, TrackQuality::Tight);
+
+    // Get best track from duplicates
+    auto best = m_trkq_svc->best_track(duplicate_tracks, event);
+
+    // Get continuous quality score
+    double score = m_trkq_svc->quality_score(track, event);
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
+```
+
+### Quality Levels
+
+| Level | Chi2/ndf | DC Edge | Description |
+|-------|----------|---------|-------------|
+| `VeryLoose` | < 20 | > 2 cm | Minimal requirements |
+| `Loose` | < 15 | > 3 cm | Relaxed selection |
+| `Standard` | < 10 | > 5 cm | Default selection |
+| `Tight` | < 5 | > 7 cm | Strict selection |
+| `VeryTight` | < 3 | > 10 cm | Very strict |
+
+---
+
 ## Include Paths Reference
 
 | Service | Include Path |
@@ -527,3 +1257,17 @@ my_svc->do_something();
 | ParticleSelectorService | `<clas12/framework/services/ParticleSelectorService.hpp>` |
 | SamplingFractionService | `<clas12/framework/services/SamplingFractionService.hpp>` |
 | MetadataService | `<clas12/framework/services/MetadataService.hpp>` |
+| MCTruthService | `<clas12/framework/services/MCTruthService.hpp>` |
+| FiducialService | `<clas12/framework/services/FiducialService.hpp>` |
+| GoodRunListService | `<clas12/framework/services/GoodRunListService.hpp>` |
+| EventMixingService | `<clas12/framework/services/EventMixingService.hpp>` |
+| SystematicService | `<clas12/framework/services/SystematicService.hpp>` |
+| MVAService | `<clas12/framework/services/MVAService.hpp>` |
+| WeightService | `<clas12/framework/services/WeightService.hpp>` |
+| VertexFittingService | `<clas12/framework/services/VertexFittingService.hpp>` |
+| DecayTreeFitterService | `<clas12/framework/services/DecayTreeFitterService.hpp>` |
+| PIDService | `<clas12/framework/services/PIDService.hpp>` |
+| sPlotService | `<clas12/framework/services/sPlotService.hpp>` |
+| UnfoldingService | `<clas12/framework/services/UnfoldingService.hpp>` |
+| CrossSectionService | `<clas12/framework/services/CrossSectionService.hpp>` |
+| TrackQualityService | `<clas12/framework/services/TrackQualityService.hpp>` |
