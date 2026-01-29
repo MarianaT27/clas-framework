@@ -18,6 +18,7 @@
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
 #include <clas12/algorithms/selection/PionSelectionAlg.hpp>
 #include <clas12/algorithms/reconstruction/Rho0ReconstructionAlg.hpp>
+#include <clas12/framework/services/DecayTreeFitterService.hpp>
 #include <clas12/FileUtils.hpp>
 #include <clas12/StringUtils.hpp>
 #include <clas12/Target.hpp>
@@ -116,6 +117,7 @@ auto main(int argc, char* argv[]) -> int {
         .with_target(clas12::to_string(config->target))
         .add_service<clas12::framework::ElectronCutsService>()
         .add_service<clas12::framework::FiducialService>()
+        .add_service<clas12::framework::DecayTreeFitterService>()
         .add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
         .add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", config->target, config->polarity)
         .add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::physics::DISAnalysis::KinematicRegion{.q2_min = 1.0, .w_min = 2.0})
