@@ -29,14 +29,6 @@
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
-// Optional DTF support - include if Eigen is available
-#if __has_include(<Eigen/Dense>)
-#define CLAS12_HAS_DTF 1
-#include <clas12/framework/services/DecayTreeFitterService.hpp>
-#else
-#define CLAS12_HAS_DTF 0
-#endif
-
 namespace clas12::algorithms {
 
 // ============================================================================
@@ -110,15 +102,6 @@ struct Rho0Candidate {
     bool passes_lc = false;
     bool passes_t = false;
     bool passes_all_cuts = false;
-
-    // DecayTreeFitter results
-    bool dtf_converged = false;
-    double dtf_mass = 0.0;          // Fitted mass [GeV/c²]
-    double dtf_chi2 = -1.0;         // Fit chi-squared
-    int dtf_ndf = 0;                // Degrees of freedom
-    double dtf_probability = 0.0;   // Fit probability
-    ROOT::Math::PxPyPzEVector dtf_pip_p4;  // Fitted pi+ 4-momentum
-    ROOT::Math::PxPyPzEVector dtf_pim_p4;  // Fitted pi- 4-momentum
 };
 
 /**
@@ -161,19 +144,12 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         declare_property(m_delta_vz_max);
         declare_property(m_enable_ntuple);
         declare_property(m_enable_fitting);
-        declare_property(m_enable_dtf);
-        declare_property(m_dtf_min_probability);
     }
 
     auto configure() -> void override {
         m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
         m_ntuple_svc = &require_service<clas12::framework::NTupleService>("NTupleService");
         m_output_svc = &require_service<clas12::framework::OutputFileService>("OutputFileService");
-#if CLAS12_HAS_DTF
-        if (m_enable_dtf.get()) {
-            m_dtf_svc = &require_service<clas12::framework::DecayTreeFitterService>("DecayTreeFitterService");
-        }
-#endif
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
@@ -193,10 +169,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         Log::subsection("Output Options");
         Log::config(name(), "NTuple output", m_enable_ntuple.get() ? "enabled" : "disabled");
         Log::config(name(), "BW+pol3 fitting", m_enable_fitting.get() ? "enabled" : "disabled");
-        Log::config(name(), "DecayTreeFitter", m_enable_dtf.get() ? "enabled" : "disabled");
-        if (m_enable_dtf.get()) {
-            Log::config(name(), "DTF min probability", m_dtf_min_probability.get());
-        }
         Log::blank();
 
         book_histograms();
@@ -453,30 +425,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 cand.passes_all_cuts = cand.passes_delta_vz_pip && cand.passes_delta_vz_pim &&
                                        cand.passes_zh && cand.passes_lc && cand.passes_t;
 
-                // Perform DecayTreeFitter with vertex/pointing constraints (no mass constraint)
-#if CLAS12_HAS_DTF
-                if (m_enable_dtf.get() && m_dtf_svc && m_dtf_svc->is_valid()) {
-                    // Use primary vertex from electron for pointing constraint
-                    ROOT::Math::XYZVector primary_vertex(electron.vx(), electron.vy(), e_vz);
-
-                    // Perform vertex-only fit (no mass constraint) to get improved mass resolution
-                    auto dtf_result = m_dtf_svc->get()->fit_two_body_vertex_only(pip, pim, primary_vertex);
-
-                    cand.dtf_converged = dtf_result.converged;
-                    cand.dtf_chi2 = dtf_result.chi2;
-                    cand.dtf_ndf = dtf_result.ndf;
-                    cand.dtf_probability = dtf_result.probability;
-
-                    if (dtf_result.converged) {
-                        // Store fitted 4-momenta
-                        cand.dtf_pip_p4 = dtf_result.get_momentum(0);
-                        cand.dtf_pim_p4 = dtf_result.get_momentum(1);
-                        // Compute fitted mass (improved resolution from vertex/pointing constraints)
-                        cand.dtf_mass = (cand.dtf_pip_p4 + cand.dtf_pim_p4).M();
-                    }
-                }
-#endif
-
                 candidates.push_back(std::move(cand));
             }
         }
@@ -518,18 +466,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             if (h_delta_vz_pim_selected) h_delta_vz_pim_selected->fill(cand.delta_vz_pim);
             if (h_delta_vz_pip_selected) h_delta_vz_pip_selected->fill(cand.delta_vz_pip);
 
-            // Fill DTF histograms if fit converged
-            if (cand.dtf_converged) {
-                if (h_dtf_mass) h_dtf_mass->fill(cand.dtf_mass);
-                if (h_dtf_chi2) h_dtf_chi2->fill(cand.dtf_chi2);
-                if (h_dtf_probability) h_dtf_probability->fill(cand.dtf_probability);
-                // Mass pull: (M_dtf - M_rho0) normalized by expected resolution (~10 MeV)
-                double mass_pull = (cand.dtf_mass - RHO0_MASS) / 0.010;
-                if (h_dtf_mass_pull) h_dtf_mass_pull->fill(mass_pull);
-                if (h_dtf_mass_vs_unfitted) h_dtf_mass_vs_unfitted->fill(cand.mass, cand.dtf_mass);
-                fill_q2_binned_dtf_histogram(Q2, cand.dtf_mass);
-            }
-
             fill_q2_binned_histogram(Q2, cand.mass);
         }
     }
@@ -543,9 +479,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             if (cand.passes_delta_vz_pim && cand.passes_delta_vz_pip &&
                 cand.passes_zh && passes_Q2 && cand.passes_t) {
                 fill_lc_binned_histogram(cand.lc, cand.mass);
-                if (cand.dtf_converged) {
-                    fill_lc_binned_dtf_histogram(cand.lc, cand.dtf_mass);
-                }
             }
         }
     }
@@ -586,9 +519,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         std::vector<double> local_pim_p, local_pim_theta, local_pim_phi;
         std::vector<double> local_rho0_masses, local_rho0_ps, local_rho0_thetas, local_rho0_phis;
         std::vector<double> local_zh, local_lc, local_t, local_delta_vz_pim, local_delta_vz_pip;
-        // DTF variables
-        std::vector<int> local_dtf_converged;
-        std::vector<double> local_dtf_mass, local_dtf_chi2, local_dtf_probability;
 
         for (const auto& cand : candidates) {
             if (!cand.passes_all_cuts) continue;
@@ -608,12 +538,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             local_t.push_back(cand.minus_t);
             local_delta_vz_pim.push_back(cand.delta_vz_pim);
             local_delta_vz_pip.push_back(cand.delta_vz_pip);
-
-            // DTF variables
-            local_dtf_converged.push_back(cand.dtf_converged ? 1 : 0);
-            local_dtf_mass.push_back(cand.dtf_mass);
-            local_dtf_chi2.push_back(cand.dtf_chi2);
-            local_dtf_probability.push_back(cand.dtf_probability);
         }
 
         if (local_rho0_masses.empty()) return;
@@ -643,12 +567,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         m_delta_vz_pim = std::move(local_delta_vz_pim);
         m_delta_vz_pip = std::move(local_delta_vz_pip);
 
-        // DTF variables
-        m_dtf_converged = std::move(local_dtf_converged);
-        m_dtf_mass = std::move(local_dtf_mass);
-        m_dtf_chi2 = std::move(local_dtf_chi2);
-        m_dtf_probability = std::move(local_dtf_probability);
-
         m_ntuple_svc->get()->fill("rho0_events");
 
         // Clear vectors for next event
@@ -667,12 +585,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         m_rho0_t.clear();
         m_delta_vz_pim.clear();
         m_delta_vz_pip.clear();
-
-        // DTF vectors
-        m_dtf_converged.clear();
-        m_dtf_mass.clear();
-        m_dtf_chi2.clear();
-        m_dtf_probability.clear();
     }
 
     /**
@@ -706,16 +618,11 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     clas12::framework::Property<double> m_delta_vz_max{"delta_vz_max", 5.0, "Maximum |vz_e - vz_pion| [cm]"};
     clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
     clas12::framework::Property<bool> m_enable_fitting{"enable_fitting", true, "Enable BW+pol3 fitting in finalize"};
-    clas12::framework::Property<bool> m_enable_dtf{"enable_dtf", true, "Enable DecayTreeFitter for mass-constrained fits"};
-    clas12::framework::Property<double> m_dtf_min_probability{"dtf_min_probability", 0.01, "Minimum DTF probability for good fit"};
 
     // Service handles
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
     clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
     clas12::framework::ServiceHandle<clas12::framework::OutputFileService>* m_output_svc = nullptr;
-#if CLAS12_HAS_DTF
-    clas12::framework::ServiceHandle<clas12::framework::DecayTreeFitterService>* m_dtf_svc = nullptr;
-#endif
 
     // Cutflow
     clas12::framework::Cutflow m_cutflow;
@@ -754,19 +661,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
     // lc-binned invariant mass histograms
     std::map<std::string, clas12::framework::AtomicHistogram1D*> h_pipim_mass_lc_bins;
-
-    // DTF Q²-binned invariant mass histograms
-    std::map<std::string, clas12::framework::AtomicHistogram1D*> h_dtf_mass_q2_bins;
-
-    // DTF lc-binned invariant mass histograms
-    std::map<std::string, clas12::framework::AtomicHistogram1D*> h_dtf_mass_lc_bins;
-
-    // DTF histograms (only available when CLAS12_HAS_DTF is defined)
-    clas12::framework::AtomicHistogram1D* h_dtf_mass = nullptr;           // DTF fitted mass
-    clas12::framework::AtomicHistogram1D* h_dtf_chi2 = nullptr;           // DTF chi2
-    clas12::framework::AtomicHistogram1D* h_dtf_probability = nullptr;    // DTF probability
-    clas12::framework::AtomicHistogram1D* h_dtf_mass_pull = nullptr;      // (M_dtf - M_rho0) / sigma
-    clas12::framework::AtomicHistogram2D* h_dtf_mass_vs_unfitted = nullptr; // DTF mass vs unfitted mass
 
     // Q² bin edges: 1.0-2.0, 2.0-2.5, 2.5-3.0, 3.0-4.5, 4.5-6 GeV²
     static constexpr std::array<std::pair<double, double>, 5> Q2_BINS = {{
@@ -822,12 +716,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     std::vector<double> m_delta_vz_pim;
     std::vector<double> m_delta_vz_pip;
 
-    // DTF ntuple variables
-    std::vector<int> m_dtf_converged;        // 1 if converged, 0 otherwise
-    std::vector<double> m_dtf_mass;          // Fitted mass
-    std::vector<double> m_dtf_chi2;          // Fit chi2
-    std::vector<double> m_dtf_probability;   // Fit probability
-
     auto fill_q2_binned_histogram(double Q2, double mass) -> void {
         for (size_t i = 0; i < Q2_BINS.size(); ++i) {
             if (Q2 >= Q2_BINS[i].first && Q2 < Q2_BINS[i].second) {
@@ -845,28 +733,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", LC_BINS[i].first, LC_BINS[i].second);
                 auto it = h_pipim_mass_lc_bins.find(bin_name);
                 if (it != h_pipim_mass_lc_bins.end() && it->second) it->second->fill(mass);
-                break;
-            }
-        }
-    }
-
-    auto fill_q2_binned_dtf_histogram(double Q2, double dtf_mass) -> void {
-        for (size_t i = 0; i < Q2_BINS.size(); ++i) {
-            if (Q2 >= Q2_BINS[i].first && Q2 < Q2_BINS[i].second) {
-                std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
-                auto it = h_dtf_mass_q2_bins.find(bin_name);
-                if (it != h_dtf_mass_q2_bins.end() && it->second) it->second->fill(dtf_mass);
-                break;
-            }
-        }
-    }
-
-    auto fill_lc_binned_dtf_histogram(double lc, double dtf_mass) -> void {
-        for (size_t i = 0; i < LC_BINS.size(); ++i) {
-            if (lc >= LC_BINS[i].first && lc < LC_BINS[i].second) {
-                std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", LC_BINS[i].first, LC_BINS[i].second);
-                auto it = h_dtf_mass_lc_bins.find(bin_name);
-                if (it != h_dtf_mass_lc_bins.end() && it->second) it->second->fill(dtf_mass);
                 break;
             }
         }
@@ -916,35 +782,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
                 h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
             }
-
-            // DTF Q²-binned invariant mass histograms
-            for (const auto& [q2_min, q2_max] : Q2_BINS) {
-                std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
-                std::string hist_path = fmt::format("/Rho0/DTF/Q2_bins/dtf_mass_{}", bin_name);
-                std::string title = fmt::format("DTF #pi^{{+}}#pi^{{-}} Mass ({:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{DTF}} [GeV/c^{{2}}];Events", q2_min, q2_max);
-                h_dtf_mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
-            }
-
-            // DTF lc-binned invariant mass histograms
-            for (const auto& [lc_min, lc_max] : LC_BINS) {
-                std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", lc_min, lc_max);
-                std::string hist_path = fmt::format("/Rho0/DTF/LC_bins/dtf_mass_{}", bin_name);
-                std::string title = fmt::format("DTF #pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{DTF}} [GeV/c^{{2}}];Events", lc_min, lc_max);
-                h_dtf_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
-            }
-
-            // DTF histograms (booked regardless of DTF availability for consistent output)
-            h_dtf_mass = svc->book_hist1D("/Rho0/DTF/dtf_mass",
-                "DTF Fitted #rho^{0} Mass;M_{DTF} [GeV/c^{2}];Events", 200, 0.4, 1.2);
-            h_dtf_chi2 = svc->book_hist1D("/Rho0/DTF/dtf_chi2",
-                "DTF #chi^{2};#chi^{2};Events", 100, 0, 50);
-            h_dtf_probability = svc->book_hist1D("/Rho0/DTF/dtf_probability",
-                "DTF Probability;P(#chi^{2});Events", 100, 0, 1);
-            h_dtf_mass_pull = svc->book_hist1D("/Rho0/DTF/dtf_mass_pull",
-                "DTF Mass Pull;(M_{DTF} - M_{#rho^{0}}) / #sigma;Events", 100, -5, 5);
-            h_dtf_mass_vs_unfitted = svc->book_hist2D("/Rho0/DTF/dtf_mass_vs_unfitted",
-                "DTF Mass vs Unfitted Mass;M_{unfitted} [GeV/c^{2}];M_{DTF} [GeV/c^{2}]",
-                100, 0.4, 1.2, 100, 0.4, 1.2);
         });
     }
 
@@ -980,12 +817,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             svc->register_branch("rho0_events", "rho0_t", &m_rho0_t);
             svc->register_branch("rho0_events", "delta_vz_pim", &m_delta_vz_pim);
             svc->register_branch("rho0_events", "delta_vz_pip", &m_delta_vz_pip);
-
-            // DTF variables
-            svc->register_branch("rho0_events", "dtf_converged", &m_dtf_converged);
-            svc->register_branch("rho0_events", "dtf_mass", &m_dtf_mass);
-            svc->register_branch("rho0_events", "dtf_chi2", &m_dtf_chi2);
-            svc->register_branch("rho0_events", "dtf_probability", &m_dtf_probability);
 
             clas12::framework::Log::info(name(), "N-tuple branches registered for rho0_events");
         });
