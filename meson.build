@@ -63,9 +63,10 @@ message('C++20 coroutine support: enabled')
 #                              SUBPROJECTS                                      #
 #══════════════════════════════════════════════════════════════════════════════#
 
-fmt_dep    = subproject('fmt').get_variable('fmt_dep')
-toml_dep   = subproject('tomlplusplus').get_variable('tomlplusplus_dep')
-lz4_dep    = subproject('lz4').get_variable('liblz4_dep')
+fmt_dep     = subproject('fmt').get_variable('fmt_dep')
+toml_dep    = subproject('tomlplusplus').get_variable('tomlplusplus_dep')
+lz4_dep     = subproject('lz4').get_variable('liblz4_dep')
+eigen_dep   = dependency('eigen3')
 cxxopts_dep = dependency('cxxopts')
 
 #══════════════════════════════════════════════════════════════════════════════#

@@ -18,7 +18,14 @@
 #include <Math/Vector3D.h>
 #include <Math/Vector4D.h>
 #include <TMath.h>
+
+// DecayTreeFitter requires Eigen for matrix operations
+#if __has_include(<Eigen/Dense>)
+#define CLAS12_HAS_EIGEN 1
 #include <Eigen/Dense>
+#else
+#define CLAS12_HAS_EIGEN 0
+#endif
 
 namespace clas12::framework {
 
@@ -275,6 +282,10 @@ class DTFFitter {
     auto fit() -> DTFResult {
         DTFResult result;
 
+#if !CLAS12_HAS_EIGEN
+        result.error_message = "DecayTreeFitter requires Eigen library (not available)";
+        return result;
+#else
         if (m_particles.empty()) {
             result.error_message = "No particles added";
             return result;
@@ -391,6 +402,7 @@ class DTFFitter {
         result.fitted_vertices[0] = decay_vertex;
 
         return result;
+#endif  // CLAS12_HAS_EIGEN
     }
 
    private:
@@ -430,6 +442,7 @@ class DTFFitter {
         return n;
     }
 
+#if CLAS12_HAS_EIGEN
     /**
      * @brief Evaluate constraint functions
      */
@@ -535,6 +548,7 @@ class DTFFitter {
 
         return D;
     }
+#endif  // CLAS12_HAS_EIGEN
 };
 
 /**

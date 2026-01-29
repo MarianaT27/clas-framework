@@ -15,7 +15,7 @@ framework_lib = library(
   'clas12-framework',
   framework_sources,
   include_directories: [framework_inc, clas12_header_inc],
-  dependencies: [fmt_dep, toml_dep, root_dep, hipo_dep],
+  dependencies: [fmt_dep, toml_dep, root_dep, hipo_dep, eigen_dep],
   install: true,
 )
 
@@ -23,7 +23,7 @@ framework_lib = library(
 framework_dep = declare_dependency(
   include_directories: [framework_inc, clas12_header_inc],
   link_with: framework_lib,
-  dependencies: [fmt_dep, toml_dep, hipo_dep],
+  dependencies: [fmt_dep, toml_dep, hipo_dep, eigen_dep],
 )
 
 # Install headers
