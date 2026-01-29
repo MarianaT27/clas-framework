@@ -682,6 +682,46 @@ class DecayTreeFitterService : public Service {
     }
 
     /**
+     * @brief Fit two-body decay with vertex/pointing constraints only (no mass constraint)
+     *
+     * This method applies vertex and pointing constraints to improve momentum resolution
+     * but does NOT constrain the invariant mass, allowing the fitted mass to be measured.
+     * Use this when you want to study mass distributions with improved resolution.
+     *
+     * @param daughter1 First decay product
+     * @param daughter2 Second decay product
+     * @param origin Origin vertex (for pointing constraint)
+     * @return DTFResult with fitted quantities
+     */
+    auto fit_two_body_vertex_only(const clas12::Particle& daughter1,
+                                  const clas12::Particle& daughter2,
+                                  const ROOT::Math::XYZVector& origin = {0, 0, 0}) -> DTFResult {
+        ++m_total_fits;
+
+        auto fitter = std::make_unique<DTFFitter>(DecayDescriptor());
+        fitter->add_particle("d1", daughter1)
+              .add_particle("d2", daughter2)
+              .set_max_iterations(m_max_iterations.get())
+              .set_tolerance(m_tolerance.get());
+
+        if (m_use_vertex_constraints.get()) {
+            fitter->constrain_vertex();
+        }
+
+        if (origin.R() > 1e-6) {
+            fitter->constrain_pointing(origin);
+        }
+
+        auto result = fitter->fit();
+
+        if (result.converged) {
+            ++m_successful_fits;
+        }
+
+        return result;
+    }
+
+    /**
      * @brief Fit with mass and pointing constraints
      *
      * Common for displaced decays like Lambda -> p pi

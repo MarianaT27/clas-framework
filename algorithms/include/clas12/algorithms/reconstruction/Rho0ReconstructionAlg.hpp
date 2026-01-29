@@ -453,14 +453,14 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 cand.passes_all_cuts = cand.passes_delta_vz_pip && cand.passes_delta_vz_pim &&
                                        cand.passes_zh && cand.passes_lc && cand.passes_t;
 
-                // Perform DecayTreeFitter mass-constrained fit if enabled
+                // Perform DecayTreeFitter with vertex/pointing constraints (no mass constraint)
 #if CLAS12_HAS_DTF
                 if (m_enable_dtf.get() && m_dtf_svc && m_dtf_svc->is_valid()) {
                     // Use primary vertex from electron for pointing constraint
                     ROOT::Math::XYZVector primary_vertex(electron.vx(), electron.vy(), e_vz);
 
-                    // Perform mass-constrained fit to rho0 mass
-                    auto dtf_result = m_dtf_svc->get()->fit_two_body(pip, pim, RHO0_MASS, primary_vertex);
+                    // Perform vertex-only fit (no mass constraint) to get improved mass resolution
+                    auto dtf_result = m_dtf_svc->get()->fit_two_body_vertex_only(pip, pim, primary_vertex);
 
                     cand.dtf_converged = dtf_result.converged;
                     cand.dtf_chi2 = dtf_result.chi2;
@@ -471,7 +471,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                         // Store fitted 4-momenta
                         cand.dtf_pip_p4 = dtf_result.get_momentum(0);
                         cand.dtf_pim_p4 = dtf_result.get_momentum(1);
-                        // Compute fitted mass (should be close to RHO0_MASS due to constraint)
+                        // Compute fitted mass (improved resolution from vertex/pointing constraints)
                         cand.dtf_mass = (cand.dtf_pip_p4 + cand.dtf_pim_p4).M();
                     }
                 }
@@ -527,6 +527,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 double mass_pull = (cand.dtf_mass - RHO0_MASS) / 0.010;
                 if (h_dtf_mass_pull) h_dtf_mass_pull->fill(mass_pull);
                 if (h_dtf_mass_vs_unfitted) h_dtf_mass_vs_unfitted->fill(cand.mass, cand.dtf_mass);
+                fill_q2_binned_dtf_histogram(Q2, cand.dtf_mass);
             }
 
             fill_q2_binned_histogram(Q2, cand.mass);
@@ -542,6 +543,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             if (cand.passes_delta_vz_pim && cand.passes_delta_vz_pip &&
                 cand.passes_zh && passes_Q2 && cand.passes_t) {
                 fill_lc_binned_histogram(cand.lc, cand.mass);
+                if (cand.dtf_converged) {
+                    fill_lc_binned_dtf_histogram(cand.lc, cand.dtf_mass);
+                }
             }
         }
     }
@@ -751,6 +755,12 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     // lc-binned invariant mass histograms
     std::map<std::string, clas12::framework::AtomicHistogram1D*> h_pipim_mass_lc_bins;
 
+    // DTF Q²-binned invariant mass histograms
+    std::map<std::string, clas12::framework::AtomicHistogram1D*> h_dtf_mass_q2_bins;
+
+    // DTF lc-binned invariant mass histograms
+    std::map<std::string, clas12::framework::AtomicHistogram1D*> h_dtf_mass_lc_bins;
+
     // DTF histograms (only available when CLAS12_HAS_DTF is defined)
     clas12::framework::AtomicHistogram1D* h_dtf_mass = nullptr;           // DTF fitted mass
     clas12::framework::AtomicHistogram1D* h_dtf_chi2 = nullptr;           // DTF chi2
@@ -840,6 +850,28 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         }
     }
 
+    auto fill_q2_binned_dtf_histogram(double Q2, double dtf_mass) -> void {
+        for (size_t i = 0; i < Q2_BINS.size(); ++i) {
+            if (Q2 >= Q2_BINS[i].first && Q2 < Q2_BINS[i].second) {
+                std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
+                auto it = h_dtf_mass_q2_bins.find(bin_name);
+                if (it != h_dtf_mass_q2_bins.end() && it->second) it->second->fill(dtf_mass);
+                break;
+            }
+        }
+    }
+
+    auto fill_lc_binned_dtf_histogram(double lc, double dtf_mass) -> void {
+        for (size_t i = 0; i < LC_BINS.size(); ++i) {
+            if (lc >= LC_BINS[i].first && lc < LC_BINS[i].second) {
+                std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", LC_BINS[i].first, LC_BINS[i].second);
+                auto it = h_dtf_mass_lc_bins.find(bin_name);
+                if (it != h_dtf_mass_lc_bins.end() && it->second) it->second->fill(dtf_mass);
+                break;
+            }
+        }
+    }
+
     auto book_histograms() -> void {
         clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
 
@@ -883,6 +915,22 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 std::string hist_path = fmt::format("/Rho0/LC_bins/pipim_mass_{}", bin_name);
                 std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
                 h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+            }
+
+            // DTF Q²-binned invariant mass histograms
+            for (const auto& [q2_min, q2_max] : Q2_BINS) {
+                std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
+                std::string hist_path = fmt::format("/Rho0/DTF/Q2_bins/dtf_mass_{}", bin_name);
+                std::string title = fmt::format("DTF #pi^{{+}}#pi^{{-}} Mass ({:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{DTF}} [GeV/c^{{2}}];Events", q2_min, q2_max);
+                h_dtf_mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+            }
+
+            // DTF lc-binned invariant mass histograms
+            for (const auto& [lc_min, lc_max] : LC_BINS) {
+                std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", lc_min, lc_max);
+                std::string hist_path = fmt::format("/Rho0/DTF/LC_bins/dtf_mass_{}", bin_name);
+                std::string title = fmt::format("DTF #pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{DTF}} [GeV/c^{{2}}];Events", lc_min, lc_max);
+                h_dtf_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
             }
 
             // DTF histograms (booked regardless of DTF availability for consistent output)
