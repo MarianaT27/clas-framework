@@ -10,6 +10,11 @@
 #include <typeinfo>
 #include <vector>
 
+// Forward declaration for MCParticle
+namespace clas12 {
+class MCParticle;
+}
+
 namespace clas12::framework {
 
 /**
@@ -319,6 +324,22 @@ inline const TypedKey<double> LambdaMomentum{"lambda_p"};
 inline const TypedKey<double> LambdaTheta{"lambda_theta"};
 inline const TypedKey<double> LambdaCoplanarity{"lambda_coplanarity"};
 inline const TypedKey<double> LambdaMissingMass{"lambda_missing_mass"};
+
+// =============================================================================
+// Monte Carlo Truth Keys
+// =============================================================================
+inline const TypedKey<bool> IsMonteCarlo{"is_monte_carlo"};
+inline const TypedKey<bool> HasMCTruth{"has_mc_truth"};
+inline const TypedKey<std::vector<clas12::MCParticle>> MCParticles{"mc_particles"};
+inline const TypedKey<std::vector<clas12::MCParticle>> MCElectrons{"mc_electrons"};
+inline const TypedKey<std::vector<clas12::MCParticle>> MCPhotons{"mc_photons"};
+inline const TypedKey<std::vector<clas12::MCParticle>> MCProtons{"mc_protons"};
+inline const TypedKey<std::vector<clas12::MCParticle>> MCPiPlus{"mc_pi_plus"};
+inline const TypedKey<std::vector<clas12::MCParticle>> MCPiMinus{"mc_pi_minus"};
+
+// MC matching flags
+inline const TypedKey<bool> ElectronMatchedToMC{"electron_matched_to_mc"};
+inline const TypedKey<double> ElectronMCMatchQuality{"electron_mc_match_quality"};
 
 }  // namespace Keys
 

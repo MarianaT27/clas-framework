@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cmath>
 #include <clas12/Constants.hpp>
 #include <clas12/ElectronCuts.hpp>
@@ -35,6 +36,52 @@ struct PionNTupleData {
     double delta_t = 0.0;
 
     NTUPLE_FIELDS(p, theta, phi, vz, chi2pid, beta, delta_t)
+};
+
+/**
+ * @brief Reconstructed pion candidate with full kinematics and cut decisions
+ *
+ * This struct consolidates:
+ * - Particle reference and basic kinematics (p, theta, phi, vz)
+ * - PID quality (chi2pid, beta)
+ * - Timing quantities (delta_t, expected beta)
+ * - Sector information for detector studies
+ * - Cached cut decisions for efficient filtering
+ *
+ * The candidate-based approach allows:
+ * 1. Computing kinematic values once during candidate building
+ * 2. Filling pre-cut histograms before applying selections
+ * 3. Efficiently collecting passing candidates
+ * 4. Simplified N-tuple filling with all variables in one place
+ */
+struct PionCandidate {
+    // Particle reference
+    clas12::Particle pion;
+
+    // Basic kinematics
+    double p = 0.0;           // Momentum [GeV]
+    double theta = 0.0;       // Polar angle [deg]
+    double phi = 0.0;         // Azimuthal angle [deg]
+    double vz = 0.0;          // Vertex z [cm]
+    double chi2pid = 0.0;     // Chi2 PID
+    double beta = 0.0;        // Measured beta
+
+    // Timing quantities
+    double delta_t = 0.0;     // Time-of-flight difference [ns]
+    double beta_expected = 0.0; // Expected beta from momentum
+
+    // Scintillator info
+    int sector = 0;           // FTOF sector (1-6)
+    double tof_time = 0.0;    // Raw TOF time [ns]
+    double tof_path = 0.0;    // Path length [cm]
+
+    // Cached cut decisions
+    bool is_forward_detector = false;
+    bool passes_chi2pid = false;
+    bool passes_momentum = false;
+    bool passes_vz = false;
+    bool passes_delta_t = false;
+    bool passes_all_cuts = false;
 };
 
 /**
@@ -136,13 +183,31 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             *REC_Particle,
             {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
 
-        // Process π⁺ and collect selected pions
+        // Build π⁺ candidates with all kinematics computed once
         const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
-        auto selected_piplus = process_pions(pions_plus, *REC_Scintillator, start_time, true);
+        auto piplus_candidates = build_pion_candidates(pions_plus, *REC_Scintillator, start_time, true);
 
-        // Process π⁻ and collect selected pions
+        // Fill pre-cut histograms, update cutflow, fill post-cut histograms and N-tuple
+        fill_pre_cut_histograms(piplus_candidates, true);
+        update_cutflow(piplus_candidates, true);
+        fill_post_cut_histograms(piplus_candidates, true);
+        fill_ntuple(piplus_candidates, true);
+
+        // Collect passing particles
+        auto selected_piplus = collect_passing_particles(piplus_candidates);
+
+        // Build π⁻ candidates with all kinematics computed once
         const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
-        auto selected_piminus = process_pions(pions_minus, *REC_Scintillator, start_time, false);
+        auto piminus_candidates = build_pion_candidates(pions_minus, *REC_Scintillator, start_time, false);
+
+        // Fill pre-cut histograms, update cutflow, fill post-cut histograms and N-tuple
+        fill_pre_cut_histograms(piminus_candidates, false);
+        update_cutflow(piminus_candidates, false);
+        fill_post_cut_histograms(piminus_candidates, false);
+        fill_ntuple(piminus_candidates, false);
+
+        // Collect passing particles
+        auto selected_piminus = collect_passing_particles(piminus_candidates);
 
         // Store selected pions in event for downstream algorithms
         event.store_typed(clas12::framework::Keys::SelectedPiPlus, selected_piplus);
@@ -208,31 +273,41 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     clas12::framework::NTupleWriter<PionNTupleData> m_ntuple_piplus;
     clas12::framework::NTupleWriter<PionNTupleData> m_ntuple_piminus;
 
-    // Lock-free atomic histograms for π⁺
-    struct {
+    // Lock-free atomic histogram structure for pion analysis
+    struct PionHistograms {
+        // Post-cut 1D histograms
         clas12::framework::AtomicHistogram1D* momentum = nullptr;
         clas12::framework::AtomicHistogram1D* theta = nullptr;
         clas12::framework::AtomicHistogram1D* phi = nullptr;
         clas12::framework::AtomicHistogram1D* vz = nullptr;
         clas12::framework::AtomicHistogram1D* chi2pid = nullptr;
         clas12::framework::AtomicHistogram1D* beta = nullptr;
-        clas12::framework::AtomicHistogram2D* beta_vs_p = nullptr;
-        clas12::framework::AtomicHistogram2D* delta_t_vs_p = nullptr;
-        clas12::framework::AtomicHistogram2D* p_vs_theta = nullptr;
-    } h_piplus;
 
-    // Lock-free atomic histograms for π⁻
-    struct {
-        clas12::framework::AtomicHistogram1D* momentum = nullptr;
-        clas12::framework::AtomicHistogram1D* theta = nullptr;
-        clas12::framework::AtomicHistogram1D* phi = nullptr;
-        clas12::framework::AtomicHistogram1D* vz = nullptr;
-        clas12::framework::AtomicHistogram1D* chi2pid = nullptr;
-        clas12::framework::AtomicHistogram1D* beta = nullptr;
+        // Pre-cut 1D histograms (for efficiency studies)
+        clas12::framework::AtomicHistogram1D* momentum_precut = nullptr;
+        clas12::framework::AtomicHistogram1D* theta_precut = nullptr;
+        clas12::framework::AtomicHistogram1D* phi_precut = nullptr;
+        clas12::framework::AtomicHistogram1D* vz_precut = nullptr;
+        clas12::framework::AtomicHistogram1D* chi2pid_precut = nullptr;
+        clas12::framework::AtomicHistogram1D* delta_t_precut = nullptr;
+
+        // Post-cut 2D histograms
         clas12::framework::AtomicHistogram2D* beta_vs_p = nullptr;
         clas12::framework::AtomicHistogram2D* delta_t_vs_p = nullptr;
         clas12::framework::AtomicHistogram2D* p_vs_theta = nullptr;
-    } h_piminus;
+
+        // Additional 2D correlations (pre-cut for diagnostics)
+        clas12::framework::AtomicHistogram2D* chi2pid_vs_p = nullptr;
+        clas12::framework::AtomicHistogram2D* vz_vs_theta = nullptr;
+        clas12::framework::AtomicHistogram2D* delta_t_vs_theta = nullptr;
+
+        // Sector-level histograms (post-cut)
+        std::array<clas12::framework::AtomicHistogram1D*, 6> momentum_sector = {};
+        std::array<clas12::framework::AtomicHistogram1D*, 6> theta_sector = {};
+    };
+
+    PionHistograms h_piplus;
+    PionHistograms h_piminus;
 
     auto setup_cutflows() -> void {
         // π⁺ cutflow
@@ -257,41 +332,54 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     auto book_histograms() -> void {
         auto* svc = m_hist_svc->get();
 
-        // π⁺ histograms - all physics methods now use atomic histograms by default
-        h_piplus.momentum = svc->book_momentum_hist("/Pion/PiPlus/momentum", "#pi^{+} Momentum");
-        h_piplus.theta = svc->book_theta_hist("/Pion/PiPlus/theta", "#pi^{+} #theta");
-        h_piplus.phi = svc->book_phi_hist("/Pion/PiPlus/phi", "#pi^{+} #phi");
-        h_piplus.vz = svc->book_hist("/Pion/PiPlus/vz", "#pi^{+} v_{z};v_{z} [cm];Events", 200, -40, 40);
-        h_piplus.chi2pid = svc->book_hist(
-            "/Pion/PiPlus/chi2pid", "#pi^{+} #chi^{2}_{PID};#chi^{2};Events", 200, -10, 10);
-        h_piplus.beta = svc->book_hist(
-            "/Pion/PiPlus/beta", "#pi^{+} #beta;#beta;Events", 100, 0.7, 1.05);
+        // Helper lambda to book histograms for a pion charge
+        auto book_pion_histograms = [svc](PionHistograms& h, const std::string& dir, const std::string& label) {
+            // Post-cut 1D histograms
+            h.momentum = svc->book_momentum_hist(dir + "/momentum", label + " Momentum");
+            h.theta = svc->book_theta_hist(dir + "/theta", label + " #theta");
+            h.phi = svc->book_phi_hist(dir + "/phi", label + " #phi");
+            h.vz = svc->book_hist(dir + "/vz", label + " v_{z};v_{z} [cm];Events", 200, -40, 40);
+            h.chi2pid = svc->book_hist(dir + "/chi2pid", label + " #chi^{2}_{PID};#chi^{2};Events", 200, -10, 10);
+            h.beta = svc->book_hist(dir + "/beta", label + " #beta;#beta;Events", 100, 0.7, 1.05);
 
-        h_piplus.beta_vs_p = svc->book_hist2d(
-            "/Pion/PiPlus/beta_vs_p", "#pi^{+} #beta vs p;p [GeV/c];#beta",
-            100, 0, 10, 100, 0.7, 1.05);
-        h_piplus.delta_t_vs_p = svc->book_hist2d(
-            "/Pion/PiPlus/delta_t_vs_p", "#pi^{+} #Deltat vs p;p [GeV/c];#Deltat [ns]",
-            100, 0, 10, 200, -5, 5);
-        h_piplus.p_vs_theta = svc->book_hist2D("/Pion/PiPlus/p_vs_theta", "#pi^{+} p vs #theta", 200, 0, 50, 200, 0, 10);
+            // Pre-cut 1D histograms (for efficiency studies)
+            h.momentum_precut = svc->book_momentum_hist(dir + "/momentum_precut", label + " Momentum (pre-cut)");
+            h.theta_precut = svc->book_theta_hist(dir + "/theta_precut", label + " #theta (pre-cut)");
+            h.phi_precut = svc->book_phi_hist(dir + "/phi_precut", label + " #phi (pre-cut)");
+            h.vz_precut = svc->book_hist(dir + "/vz_precut", label + " v_{z} (pre-cut);v_{z} [cm];Events", 200, -40, 40);
+            h.chi2pid_precut = svc->book_hist(dir + "/chi2pid_precut", label + " #chi^{2}_{PID} (pre-cut);#chi^{2};Events", 200, -10, 10);
+            h.delta_t_precut = svc->book_hist(dir + "/delta_t_precut", label + " #Deltat (pre-cut);#Deltat [ns];Events", 200, -5, 5);
 
-        // π⁻ histograms - all physics methods now use atomic histograms by default
-        h_piminus.momentum = svc->book_momentum_hist("/Pion/PiMinus/momentum", "#pi^{-} Momentum");
-        h_piminus.theta = svc->book_theta_hist("/Pion/PiMinus/theta", "#pi^{-} #theta");
-        h_piminus.phi = svc->book_phi_hist("/Pion/PiMinus/phi", "#pi^{-} #phi");
-        h_piminus.vz = svc->book_hist("/Pion/PiMinus/vz", "#pi^{-} v_{z};v_{z} [cm];Events", 200, -40, 40);
-        h_piminus.chi2pid = svc->book_hist(
-            "/Pion/PiMinus/chi2pid", "#pi^{-} #chi^{2}_{PID};#chi^{2};Events", 200, -10, 10);
-        h_piminus.beta = svc->book_hist(
-            "/Pion/PiMinus/beta", "#pi^{-} #beta;#beta;Events", 100, 0.7, 1.05);
+            // Post-cut 2D histograms
+            h.beta_vs_p = svc->book_hist2d(dir + "/beta_vs_p", label + " #beta vs p;p [GeV/c];#beta",
+                100, 0, 10, 100, 0.7, 1.05);
+            h.delta_t_vs_p = svc->book_hist2d(dir + "/delta_t_vs_p", label + " #Deltat vs p;p [GeV/c];#Deltat [ns]",
+                100, 0, 10, 200, -5, 5);
+            h.p_vs_theta = svc->book_hist2D(dir + "/p_vs_theta", label + " p vs #theta", 200, 0, 50, 200, 0, 10);
 
-        h_piminus.beta_vs_p = svc->book_hist2d(
-            "/Pion/PiMinus/beta_vs_p", "#pi^{-} #beta vs p;p [GeV/c];#beta",
-            100, 0, 10, 100, 0.7, 1.05);
-        h_piminus.delta_t_vs_p = svc->book_hist2d(
-            "/Pion/PiMinus/delta_t_vs_p", "#pi^{-} #Deltat vs p;p [GeV/c];#Deltat [ns]",
-            100, 0, 10, 200, -5, 5);
-        h_piminus.p_vs_theta = svc->book_hist2D("/Pion/PiMinus/p_vs_theta", "#pi^{-} p vs #theta", 200, 0, 50, 200, 0, 10);
+            // Pre-cut 2D correlation histograms (for diagnostics)
+            h.chi2pid_vs_p = svc->book_hist2d(dir + "/chi2pid_vs_p", label + " #chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}",
+                100, 0, 10, 100, -10, 10);
+            h.vz_vs_theta = svc->book_hist2d(dir + "/vz_vs_theta", label + " v_{z} vs #theta;#theta [deg];v_{z} [cm]",
+                90, 0, 45, 100, -40, 40);
+            h.delta_t_vs_theta = svc->book_hist2d(dir + "/delta_t_vs_theta", label + " #Deltat vs #theta;#theta [deg];#Deltat [ns]",
+                90, 0, 45, 100, -3, 3);
+
+            // Sector-level histograms (post-cut)
+            for (int sector = 1; sector <= 6; ++sector) {
+                std::string sec_suffix = fmt::format("_S{}", sector);
+                h.momentum_sector[sector - 1] = svc->book_momentum_hist(
+                    dir + "/momentum" + sec_suffix,
+                    fmt::format("{} Momentum (Sector {})", label, sector));
+                h.theta_sector[sector - 1] = svc->book_theta_hist(
+                    dir + "/theta" + sec_suffix,
+                    fmt::format("{} #theta (Sector {})", label, sector));
+            }
+        };
+
+        // Book histograms for π⁺ and π⁻
+        book_pion_histograms(h_piplus, "/Pion/PiPlus", "#pi^{+}");
+        book_pion_histograms(h_piminus, "/Pion/PiMinus", "#pi^{-}");
     }
 
     auto setup_ntuples() -> void {
@@ -303,82 +391,194 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     }
 
     /**
-     * @brief Process pions (either π⁺ or π⁻)
-     * @return Vector of selected pions that pass all cuts
+     * @brief Build fully-computed PionCandidate objects from particle list
+     *
+     * Computes all kinematic variables once and applies cuts, storing results
+     * in the candidate struct to avoid redundant calculations downstream.
      */
-    auto process_pions(const std::vector<clas12::Particle>& pions,
-                       hipo::bank& REC_Scintillator,
-                       double start_time,
-                       bool is_piplus) -> std::vector<clas12::Particle> {
-        std::vector<clas12::Particle> selected_pions;
-        auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
-        cutflow.pass("All Events");
+    auto build_pion_candidates(
+        const std::vector<clas12::Particle>& pions,
+        hipo::bank& REC_Scintillator,
+        double start_time,
+        bool is_piplus
+    ) -> std::vector<PionCandidate> {
+        std::vector<PionCandidate> candidates;
+        if (pions.empty()) return candidates;
 
-        if (pions.empty()) return selected_pions;
-
-        // Process each pion
         for (const auto& pion : pions) {
-            if (pion.pdg() != clas12::PIDs::PIPLUS && pion.pdg() != clas12::PIDs::PIMINUS) continue;  // Skip if PID does not match | should be useless
-            cutflow.pass(is_piplus ? "Has π⁺" : "Has π⁻");
+            // Skip if PID does not match
+            if (is_piplus && pion.pdg() != clas12::PIDs::PIPLUS) continue;
+            if (!is_piplus && pion.pdg() != clas12::PIDs::PIMINUS) continue;
 
-            // Forward detector cut
-            if (pion.status() < 2000 || pion.status() > 4000) continue;
-            cutflow.pass("Forward detector");
+            PionCandidate cand;
+            cand.pion = pion;
 
+            // Extract basic kinematics
+            cand.p = pion.p();
+            cand.theta = pion.theta();
+            cand.phi = pion.phi();
+            cand.vz = pion.vz();
+            cand.chi2pid = pion.chi2pid();
+            cand.beta = pion.beta();
 
-            // Chi2 PID cut
-            if (!pass_chi2pid_cut(pion.chi2pid())) continue;
-            cutflow.pass("Chi2 PID");
+            // Check forward detector status
+            cand.is_forward_detector = (pion.status() >= 2000 && pion.status() < 4000);
 
-            // Momentum cut
-            double p = pion.p();
-            if (!pass_momentum_cut(p)) continue;
-            cutflow.pass("Momentum");
-
-            // Vertex Z cut
-            if (!pass_vz_cut(pion.vz())) continue;
-            cutflow.pass("Vertex Z");
-
-            // Get scintillator info for delta_t
+            // Get scintillator info
             clas12::ScintillatorBank scintillator = clas12::read_Scintillator_bank(
                 REC_Scintillator, pion.index());
+            cand.sector = scintillator.sector;
+            cand.tof_time = scintillator.time;
+            cand.tof_path = scintillator.path;
 
-            // Calculate delta_t
-            double delta_t = calculate_delta_t(pion, scintillator, start_time);
+            // Calculate timing quantities
+            double m = clas12::Constants::PIMASS;
+            cand.beta_expected = cand.p / std::sqrt(cand.p * cand.p + m * m);
+            double t_expected = cand.tof_path / (cand.beta_expected * clas12::Constants::SPEED_OF_LIGHT);
+            double measured_time = cand.tof_time - start_time;
+            cand.delta_t = measured_time - t_expected;
 
-            // Delta_t cut
-            if (!pass_delta_t_cut(p, delta_t)) continue;
-            cutflow.pass("Delta-t");
+            // Apply cuts and cache results
+            cand.passes_chi2pid = pass_chi2pid_cut(cand.chi2pid);
+            cand.passes_momentum = pass_momentum_cut(cand.p);
+            cand.passes_vz = pass_vz_cut(cand.vz);
+            cand.passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t);
+            cand.passes_all_cuts = cand.is_forward_detector &&
+                                   cand.passes_chi2pid &&
+                                   cand.passes_momentum &&
+                                   cand.passes_vz &&
+                                   cand.passes_delta_t;
 
-            // Pion passed all cuts - add to selected list
-            selected_pions.push_back(pion);
-
-            // Fill histograms
-            fill_histograms(pion, delta_t, is_piplus);
+            candidates.push_back(std::move(cand));
         }
 
-        return selected_pions;
+        return candidates;
     }
 
     /**
-     * @brief Calculate time-of-flight difference (delta_t)
-     * delta_t = measured_time - expected_time
+     * @brief Fill histograms for candidates before kinematic cuts (for efficiency studies)
      */
-    auto calculate_delta_t(const clas12::Particle& pion,
-                           const clas12::ScintillatorBank& scintillator,
-                           double start_time) -> double {
-        double measured_time = scintillator.time - start_time;
-        double path_length = scintillator.path;
-        double p = pion.p();
-        double m = clas12::Constants::PIMASS;
+    auto fill_pre_cut_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
+        auto& h = is_piplus ? h_piplus : h_piminus;
 
-        // Calculate expected beta
-        double beta_expected = p / std::sqrt(p * p + m * m);
+        for (const auto& cand : candidates) {
+            // Only fill for forward detector candidates (basic quality)
+            if (!cand.is_forward_detector) continue;
 
-        // Calculate expected time of flight
-        double t_expected = path_length / (beta_expected * clas12::Constants::SPEED_OF_LIGHT);
+            if (h.momentum_precut) h.momentum_precut->fill(cand.p);
+            if (h.theta_precut) h.theta_precut->fill(cand.theta);
+            if (h.phi_precut) h.phi_precut->fill(cand.phi);
+            if (h.vz_precut) h.vz_precut->fill(cand.vz);
+            if (h.chi2pid_precut) h.chi2pid_precut->fill(cand.chi2pid);
+            if (h.delta_t_precut) h.delta_t_precut->fill(cand.delta_t);
 
-        return measured_time - t_expected;
+            // 2D correlations (pre-cut for diagnostics)
+            if (h.chi2pid_vs_p) h.chi2pid_vs_p->fill(cand.p, cand.chi2pid);
+            if (h.vz_vs_theta) h.vz_vs_theta->fill(cand.theta, cand.vz);
+            if (h.delta_t_vs_theta) h.delta_t_vs_theta->fill(cand.theta, cand.delta_t);
+        }
+    }
+
+    /**
+     * @brief Fill histograms for candidates that passed all cuts
+     */
+    auto fill_post_cut_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
+        auto& h = is_piplus ? h_piplus : h_piminus;
+
+        for (const auto& cand : candidates) {
+            if (!cand.passes_all_cuts) continue;
+
+            // Basic kinematics (post-cut)
+            if (h.momentum) h.momentum->fill(cand.p);
+            if (h.theta) h.theta->fill(cand.theta);
+            if (h.phi) h.phi->fill(cand.phi);
+            if (h.vz) h.vz->fill(cand.vz);
+            if (h.chi2pid) h.chi2pid->fill(cand.chi2pid);
+            if (h.beta) h.beta->fill(cand.beta);
+
+            // 2D histograms (post-cut)
+            if (h.beta_vs_p) h.beta_vs_p->fill(cand.p, cand.beta);
+            if (h.delta_t_vs_p) h.delta_t_vs_p->fill(cand.p, cand.delta_t);
+            if (h.p_vs_theta) h.p_vs_theta->fill(cand.theta, cand.p);
+
+            // Sector-level histograms
+            if (cand.sector >= 1 && cand.sector <= 6) {
+                int idx = cand.sector - 1;
+                if (h.momentum_sector[idx]) h.momentum_sector[idx]->fill(cand.p);
+                if (h.theta_sector[idx]) h.theta_sector[idx]->fill(cand.theta);
+            }
+        }
+    }
+
+    /**
+     * @brief Fill N-tuple for passing candidates
+     */
+    auto fill_ntuple(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
+        auto& ntuple = is_piplus ? m_ntuple_piplus : m_ntuple_piminus;
+
+        for (const auto& cand : candidates) {
+            if (!cand.passes_all_cuts) continue;
+
+            if (ntuple) {
+                ntuple.data().p = cand.p;
+                ntuple.data().theta = cand.theta;
+                ntuple.data().phi = cand.phi;
+                ntuple.data().vz = cand.vz;
+                ntuple.data().chi2pid = cand.chi2pid;
+                ntuple.data().beta = cand.beta;
+                ntuple.data().delta_t = cand.delta_t;
+                ntuple.fill();
+            }
+        }
+    }
+
+    /**
+     * @brief Update cutflow counters based on candidate cut results
+     */
+    auto update_cutflow(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
+        auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
+
+        cutflow.pass("All Events");
+
+        if (candidates.empty()) return;
+        cutflow.pass(is_piplus ? "Has π⁺" : "Has π⁻");
+
+        bool any_fd = false, any_chi2 = false, any_p = false, any_vz = false, any_dt = false;
+
+        for (const auto& cand : candidates) {
+            any_fd |= cand.is_forward_detector;
+            if (cand.is_forward_detector) {
+                any_chi2 |= cand.passes_chi2pid;
+                if (cand.passes_chi2pid) {
+                    any_p |= cand.passes_momentum;
+                    if (cand.passes_momentum) {
+                        any_vz |= cand.passes_vz;
+                        if (cand.passes_vz) {
+                            any_dt |= cand.passes_delta_t;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (any_fd) cutflow.pass("Forward detector");
+        if (any_chi2) cutflow.pass("Chi2 PID");
+        if (any_p) cutflow.pass("Momentum");
+        if (any_vz) cutflow.pass("Vertex Z");
+        if (any_dt) cutflow.pass("Delta-t");
+    }
+
+    /**
+     * @brief Collect particles that passed all cuts from candidates
+     */
+    auto collect_passing_particles(const std::vector<PionCandidate>& candidates) -> std::vector<clas12::Particle> {
+        std::vector<clas12::Particle> selected;
+        for (const auto& cand : candidates) {
+            if (cand.passes_all_cuts) {
+                selected.push_back(cand.pion);
+            }
+        }
+        return selected;
     }
 
     /**
@@ -421,63 +621,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         double cut_high = mean + 3.0 * sigma;
 
         return cut_low < delta_t && delta_t < cut_high;
-    }
-
-    auto fill_histograms(const clas12::Particle& pion, double delta_t, bool is_piplus) -> void {
-        double p = pion.p();
-        double theta = pion.theta();
-        double phi = pion.phi();
-        double vz = pion.vz();
-        double chi2pid = pion.chi2pid();
-        double beta = pion.beta();
-
-        if (is_piplus) {
-            // Fill π⁺ histograms (lock-free atomic)
-            h_piplus.momentum->fill(p);
-            h_piplus.theta->fill(theta);
-            h_piplus.phi->fill(phi);
-            h_piplus.vz->fill(vz);
-            h_piplus.chi2pid->fill(chi2pid);
-            h_piplus.beta->fill(beta);
-            h_piplus.beta_vs_p->fill(p, beta);
-            h_piplus.delta_t_vs_p->fill(p, delta_t);
-            h_piplus.p_vs_theta->fill(theta, p);
-
-            // Fill π⁺ N-tuple using NTupleWriter
-            if (m_ntuple_piplus) {
-                m_ntuple_piplus.data().p = p;
-                m_ntuple_piplus.data().theta = theta;
-                m_ntuple_piplus.data().phi = phi;
-                m_ntuple_piplus.data().vz = vz;
-                m_ntuple_piplus.data().chi2pid = chi2pid;
-                m_ntuple_piplus.data().beta = beta;
-                m_ntuple_piplus.data().delta_t = delta_t;
-                m_ntuple_piplus.fill();
-            }
-        } else {
-            // Fill π⁻ histograms (lock-free atomic)
-            h_piminus.momentum->fill(p);
-            h_piminus.theta->fill(theta);
-            h_piminus.phi->fill(phi);
-            h_piminus.vz->fill(vz);
-            h_piminus.chi2pid->fill(chi2pid);
-            h_piminus.beta->fill(beta);
-            h_piminus.beta_vs_p->fill(p, beta);
-            h_piminus.delta_t_vs_p->fill(p, delta_t);
-            h_piminus.p_vs_theta->fill(theta, p);
-
-            // Fill π⁻ N-tuple using NTupleWriter
-            if (m_ntuple_piminus) {
-                m_ntuple_piminus.data().p = p;
-                m_ntuple_piminus.data().theta = theta;
-                m_ntuple_piminus.data().phi = phi;
-                m_ntuple_piminus.data().vz = vz;
-                m_ntuple_piminus.data().chi2pid = chi2pid;
-                m_ntuple_piminus.data().beta = beta;
-                m_ntuple_piminus.data().delta_t = delta_t;
-                m_ntuple_piminus.fill();
-            }
-        }
     }
 };
 
