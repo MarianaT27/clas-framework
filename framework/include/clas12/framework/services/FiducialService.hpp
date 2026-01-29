@@ -191,7 +191,7 @@ class FiducialService : public Service {
 
         // Get sector from calorimeter if not provided
         if (sector <= 0) {
-            sector = calo.sector;
+            sector = calo.pcal.sector;
         }
 
         // Get parameters (sector-dependent if enabled)
@@ -242,7 +242,7 @@ class FiducialService : public Service {
      * @brief Evaluate PCAL fiducial cut only
      */
     [[nodiscard]] auto evaluate_pcal(const clas12::CalorimeterBank& calo, int sector = -1) const -> bool {
-        if (sector <= 0) sector = calo.sector;
+        if (sector <= 0) sector = calo.pcal.sector;
         const auto& params = get_sector_params(sector);
         return evaluate_pcal_fiducial(calo, params);
     }
