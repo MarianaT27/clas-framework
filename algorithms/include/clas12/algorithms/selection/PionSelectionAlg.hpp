@@ -300,6 +300,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         clas12::framework::AtomicHistogram2D* chi2pid_vs_p = nullptr;
         clas12::framework::AtomicHistogram2D* vz_vs_theta = nullptr;
         clas12::framework::AtomicHistogram2D* delta_t_vs_theta = nullptr;
+        clas12::framework::AtomicHistogram2D* delta_t_vs_p_precut = nullptr;
 
         // Sector-level histograms (post-cut)
         std::array<clas12::framework::AtomicHistogram1D*, 6> momentum_sector = {};
@@ -348,14 +349,14 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             h.phi_precut = svc->book_phi_hist(dir + "/phi_precut", label + " #phi (pre-cut)");
             h.vz_precut = svc->book_hist(dir + "/vz_precut", label + " v_{z} (pre-cut);v_{z} [cm];Events", 200, -40, 40);
             h.chi2pid_precut = svc->book_hist(dir + "/chi2pid_precut", label + " #chi^{2}_{PID} (pre-cut);#chi^{2};Events", 200, -10, 10);
-            h.delta_t_precut = svc->book_hist(dir + "/delta_t_precut", label + " #Deltat (pre-cut);#Deltat [ns];Events", 200, -5, 5);
+            h.delta_t_precut = svc->book_hist(dir + "/delta_t_precut", label + " #Deltat (pre-cut);#Deltat [ns];Events", 200, -2, 2);
 
             // Post-cut 2D histograms
             h.beta_vs_p = svc->book_hist2d(dir + "/beta_vs_p", label + " #beta vs p;p [GeV/c];#beta",
                 100, 0, 10, 100, 0.7, 1.05);
             h.delta_t_vs_p = svc->book_hist2d(dir + "/delta_t_vs_p", label + " #Deltat vs p;p [GeV/c];#Deltat [ns]",
-                100, 0, 10, 200, -5, 5);
-            h.p_vs_theta = svc->book_hist2D(dir + "/p_vs_theta", label + " p vs #theta", 200, 0, 50, 200, 0, 10);
+                100, 0, 10, 200, -2, 2);
+            h.p_vs_theta = svc->book_hist2d(dir + "/p_vs_theta", label + " p vs #theta", 200, 0, 50, 200, 0, 10);
 
             // Pre-cut 2D correlation histograms (for diagnostics)
             h.chi2pid_vs_p = svc->book_hist2d(dir + "/chi2pid_vs_p", label + " #chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}",
@@ -363,7 +364,9 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             h.vz_vs_theta = svc->book_hist2d(dir + "/vz_vs_theta", label + " v_{z} vs #theta;#theta [deg];v_{z} [cm]",
                 90, 0, 45, 100, -40, 40);
             h.delta_t_vs_theta = svc->book_hist2d(dir + "/delta_t_vs_theta", label + " #Deltat vs #theta;#theta [deg];#Deltat [ns]",
-                90, 0, 45, 100, -3, 3);
+                90, 0, 45, 100, -2, 2);
+            h.delta_t_vs_p_precut = svc->book_hist2d(dir + "/delta_t_vs_p_precut", label + " #Deltat vs p;p [GeV/c];#Deltat [ns]",
+                100, 0, 10, 200, -2, 2);
 
             // Sector-level histograms (post-cut)
             for (int sector = 1; sector <= 6; ++sector) {
@@ -476,7 +479,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             if (h.chi2pid_vs_p) h.chi2pid_vs_p->fill(cand.p, cand.chi2pid);
             if (h.vz_vs_theta) h.vz_vs_theta->fill(cand.theta, cand.vz);
             if (h.delta_t_vs_theta) h.delta_t_vs_theta->fill(cand.theta, cand.delta_t);
-        }
+            if (h.delta_t_vs_p_precut) h.delta_t_vs_p_precut->fill(cand.p, cand.delta_t);
+            }
     }
 
     /**
