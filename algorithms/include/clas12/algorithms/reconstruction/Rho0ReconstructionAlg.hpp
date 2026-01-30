@@ -17,6 +17,7 @@
 #include <vector>
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
+#include <clas12/Target.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -133,15 +134,16 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     static constexpr double HBARC = 0.197327;                        // GeV·fm (for coherence length)
 
     explicit Rho0ReconstructionAlg(
-        std::string name = "Rho0ReconstructionAlg"
+        std::string name = "Rho0ReconstructionAlg",
+        clas12::Target target = clas12::Target::LD2
     )
         : SimpleAlgorithm(std::move(name))
+        , m_target(target)
         , m_cutflow("Rho0 Reconstruction") {
         declare_property(m_zh_min);
         declare_property(m_lc_max);
         declare_property(m_t_min);
         declare_property(m_t_max);
-        declare_property(m_delta_vz_max);
         declare_property(m_enable_ntuple);
         declare_property(m_enable_fitting);
     }
@@ -156,6 +158,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         using Log = clas12::framework::Log;
 
         Log::subsection(fmt::format("{} Configuration", name()));
+        Log::config(name(), "Target", clas12::to_string(m_target));
         Log::config(name(), "Pion selection", "Using pre-selected pions from PionSelectionAlg");
         Log::blank();
 
@@ -163,7 +166,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         Log::config(name(), "zh min", m_zh_min.get());
         Log::config(name(), "lc max", fmt::format("{} fm", m_lc_max.get()));
         Log::config(name(), "-t range", fmt::format("[{}, {}] GeV²", m_t_min.get(), m_t_max.get()));
-        Log::config(name(), "Max |Δvz|", fmt::format("{} cm", m_delta_vz_max.get()));
+        auto pip_vz = get_piplus_delta_vz_range();
+        auto pim_vz = get_piminus_delta_vz_range();
+        Log::config(name(), "Δvz π⁺", fmt::format("[{:.2f}, {:.2f}] cm", pip_vz.low, pip_vz.high));
+        Log::config(name(), "Δvz π⁻", fmt::format("[{:.2f}, {:.2f}] cm", pim_vz.low, pim_vz.high));
         Log::blank();
 
         Log::subsection("Output Options");
@@ -416,9 +422,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 cand.delta_vz_pip = e_vz - pip.vz();
                 cand.delta_vz_pim = e_vz - pim.vz();
 
-                // Apply cuts and cache results
-                cand.passes_delta_vz_pip = std::abs(cand.delta_vz_pip) < m_delta_vz_max.get();
-                cand.passes_delta_vz_pim = std::abs(cand.delta_vz_pim) < m_delta_vz_max.get();
+                // Apply cuts using target-specific and charge-specific ranges
+                cand.passes_delta_vz_pip = get_piplus_delta_vz_range().contains(cand.delta_vz_pip);
+                cand.passes_delta_vz_pim = get_piminus_delta_vz_range().contains(cand.delta_vz_pim);
                 cand.passes_zh = cand.zh > m_zh_min.get();
                 cand.passes_lc = cand.lc < m_lc_max.get();
                 cand.passes_t = (cand.minus_t > m_t_min.get()) && (cand.minus_t < m_t_max.get());
@@ -610,14 +616,66 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     }
 
    private:
+    // Target
+    clas12::Target m_target;
+
     // Properties
     clas12::framework::Property<double> m_zh_min{"zh_min", 0.9, "Minimum zh (energy fraction)"};
     clas12::framework::Property<double> m_lc_max{"lc_max", 1.0, "Maximum coherence length [fm]"};
     clas12::framework::Property<double> m_t_min{"t_min", 0.1, "Minimum -t [GeV²]"};
     clas12::framework::Property<double> m_t_max{"t_max", 0.5, "Maximum -t [GeV²]"};
-    clas12::framework::Property<double> m_delta_vz_max{"delta_vz_max", 5.0, "Maximum |vz_e - vz_pion| [cm]"};
     clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
     clas12::framework::Property<bool> m_enable_fitting{"enable_fitting", true, "Enable BW+pol3 fitting in finalize"};
+
+    /**
+     * @brief Delta vz cut range structure
+     */
+    struct DeltaVzCutRange {
+        double low;   // μ - 3σ
+        double high;  // μ + 3σ
+
+        [[nodiscard]] auto contains(double delta_vz) const -> bool {
+            return delta_vz >= low && delta_vz <= high;
+        }
+    };
+
+    /**
+     * @brief Get delta_vz cut range for pi+ based on target
+     * Values from: μ ± 3σ analysis
+     */
+    auto get_piplus_delta_vz_range() const -> DeltaVzCutRange {
+        switch (m_target) {
+            case clas12::Target::LD2:
+                return {-4.0134, 2.3256};
+            case clas12::Target::CxC:
+                return {-4.0065, 2.3378};
+            case clas12::Target::Cu:
+                return {-3.6048, 2.1625};
+            case clas12::Target::Sn:
+                return {-3.9862, 2.3633};
+            default:
+                return {-4.0134, 2.3256};  // Default to LD2
+        }
+    }
+
+    /**
+     * @brief Get delta_vz cut range for pi- based on target
+     * Values from: μ ± 3σ analysis
+     */
+    auto get_piminus_delta_vz_range() const -> DeltaVzCutRange {
+        switch (m_target) {
+            case clas12::Target::LD2:
+                return {-3.8801, 4.2481};
+            case clas12::Target::CxC:
+                return {-3.6559, 3.9862};
+            case clas12::Target::Cu:
+                return {-3.5778, 3.9216};
+            case clas12::Target::Sn:
+                return {-3.5268, 3.8075};
+            default:
+                return {-3.8801, 4.2481};  // Default to LD2
+        }
+    }
 
     // Service handles
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;

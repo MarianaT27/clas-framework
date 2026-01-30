@@ -444,8 +444,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             // Apply cuts and cache results
             cand.passes_chi2pid = pass_chi2pid_cut(cand.chi2pid);
             cand.passes_momentum = pass_momentum_cut(cand.p);
-            cand.passes_vz = pass_vz_cut(cand.vz);
-            cand.passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t);
+            cand.passes_vz = pass_vz_cut(cand.vz, is_piplus);
+            cand.passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t, is_piplus);
             cand.passes_all_cuts = cand.is_forward_detector &&
                                    cand.passes_chi2pid &&
                                    cand.passes_momentum &&
@@ -586,10 +586,117 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     }
 
     /**
-     * @brief Third-order polynomial helper
+     * @brief Second-order polynomial helper: a*x² + b*x + c
      */
-    static auto third_order_poly(double x, double a, double b, double c, double d) -> double {
-        return a + b * x + c * x * x + d * x * x * x;
+    static auto second_order_poly(double x, double a, double b, double c) -> double {
+        return a * x * x + b * x + c;
+    }
+
+    /**
+     * @brief Coefficients for delta_t cut parameterization
+     * Format: {a, b, c} for polynomial a*p² + b*p + c
+     */
+    struct DeltaTCoefficients {
+        std::array<double, 3> mean;   // Mean coefficients {a, b, c}
+        std::array<double, 3> sigma;  // Sigma coefficients {a, b, c}
+    };
+
+    /**
+     * @brief Get delta_t cut coefficients for pi+ based on target
+     */
+    auto get_piplus_delta_t_coefficients() const -> DeltaTCoefficients {
+        switch (m_target) {
+            case clas12::Target::LD2:
+                return {{0.000922, -0.010435, 0.046222},
+                        {0.002655, -0.021940, 0.114758}};
+            case clas12::Target::CxC:
+                return {{-0.000063, -0.004623, 0.039045},
+                        {0.001879, -0.017147, 0.108605}};
+            case clas12::Target::Cu:
+                return {{0.001801, -0.015591, 0.051889},
+                        {0.003742, -0.027802, 0.120968}};
+            case clas12::Target::Sn:
+                return {{-0.000403, -0.001866, 0.031458},
+                        {0.001510, -0.014369, 0.104379}};
+            default:
+                // Default to LD2 coefficients
+                return {{0.000922, -0.010435, 0.046222},
+                        {0.002655, -0.021940, 0.114758}};
+        }
+    }
+
+    /**
+     * @brief Get delta_t cut coefficients for pi- based on target
+     */
+    auto get_piminus_delta_t_coefficients() const -> DeltaTCoefficients {
+        switch (m_target) {
+            case clas12::Target::LD2:
+                return {{-0.001635, 0.009566, -0.025434},
+                        {0.012220, -0.089536, 0.229427}};
+            case clas12::Target::CxC:
+                return {{-0.001694, 0.009962, -0.025835},
+                        {0.012632, -0.092243, 0.232097}};
+            case clas12::Target::Cu:
+                return {{-0.001349, 0.007585, -0.022235},
+                        {0.013710, -0.095575, 0.233176}};
+            case clas12::Target::Sn:
+                return {{-0.001719, 0.010436, -0.029489},
+                        {0.015162, -0.104777, 0.245153}};
+            default:
+                // Default to LD2 coefficients
+                return {{-0.001635, 0.009566, -0.025434},
+                        {0.012220, -0.089536, 0.229427}};
+        }
+    }
+
+    /**
+     * @brief Vertex z cut range structure
+     */
+    struct VzCutRange {
+        double min;
+        double max;
+
+        [[nodiscard]] auto contains(double vz) const -> bool {
+            return vz >= min && vz <= max;
+        }
+    };
+
+    /**
+     * @brief Get vertex z cut range for pi+ based on target
+     */
+    auto get_piplus_vz_range() const -> VzCutRange {
+        switch (m_target) {
+            case clas12::Target::LD2:
+                return {-15.00, 5.00};
+            case clas12::Target::CxC:
+                return {-9.75, 5.00};
+            case clas12::Target::Cu:
+                return {-9.21, -5.80};
+            case clas12::Target::Sn:
+                return {-4.83, -0.34};
+            default:
+                // Default to LD2 range
+                return {-15.00, 5.00};
+        }
+    }
+
+    /**
+     * @brief Get vertex z cut range for pi- based on target
+     */
+    auto get_piminus_vz_range() const -> VzCutRange {
+        switch (m_target) {
+            case clas12::Target::LD2:
+                return {-15.00, 5.00};
+            case clas12::Target::CxC:
+                return {-11.69, 5.00};
+            case clas12::Target::Cu:
+                return {-11.57, -5.57};
+            case clas12::Target::Sn:
+                return {-6.52, -0.61};
+            default:
+                // Default to LD2 range
+                return {-15.00, 5.00};
+        }
     }
 
     // Cut functions - using configurable properties
@@ -601,9 +708,11 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         return p > m_momentum_min.get() && p < m_momentum_max.get();
     }
 
-    auto pass_vz_cut(double vz) -> bool {
-        // Use target-specific vertex cuts
-        auto vz_range = clas12::ElectronCuts::get_vz_range(m_target);
+    /**
+     * @brief Vertex z cut using target-specific and charge-specific ranges
+     */
+    auto pass_vz_cut(double vz, bool is_piplus) -> bool {
+        auto vz_range = is_piplus ? get_piplus_vz_range() : get_piminus_vz_range();
         return vz_range.contains(vz);
     }
 
@@ -612,14 +721,17 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
      *
      * This uses a 3-sigma cut around a momentum-dependent mean with
      * parameterized sigma values from pion calibration studies.
+     * Different coefficients are used for pi+ and pi-, and for each target.
+     *
+     * Parameterization: mean/sigma = a*p² + b*p + c
      */
-    auto pass_delta_t_cut(const double p, const double delta_t) -> bool {
-        // Parameterization from pion timing studies
-        const double popt_mean[4] = {-0.02872196, 0.00598219, 0.00158193, -0.00028493};
-        const double popt_sigma[4] = {0.25132972, -0.09788015, 0.01734634, -0.00103597};
+    auto pass_delta_t_cut(const double p, const double delta_t, bool is_piplus) -> bool {
+        // Get target-specific and charge-specific coefficients
+        auto coeffs = is_piplus ? get_piplus_delta_t_coefficients()
+                                : get_piminus_delta_t_coefficients();
 
-        double mean = third_order_poly(p, popt_mean[0], popt_mean[1], popt_mean[2], popt_mean[3]);
-        double sigma = third_order_poly(p, popt_sigma[0], popt_sigma[1], popt_sigma[2], popt_sigma[3]);
+        double mean = second_order_poly(p, coeffs.mean[0], coeffs.mean[1], coeffs.mean[2]);
+        double sigma = second_order_poly(p, coeffs.sigma[0], coeffs.sigma[1], coeffs.sigma[2]);
 
         double cut_low = mean - 3.0 * sigma;
         double cut_high = mean + 3.0 * sigma;
