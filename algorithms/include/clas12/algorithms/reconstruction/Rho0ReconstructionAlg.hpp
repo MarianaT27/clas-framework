@@ -757,15 +757,15 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         h_zh = svc->book_hist1D("/Rho0/zh", "z_{h} (before cuts);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
         h_lc = svc->book_hist1D("/Rho0/lc", "Coherence Length (before cuts);l_{c} [fm];Events", 100, 0, 5);
         h_t = svc->book_hist1D("/Rho0/t", "-t (before cuts);-t [GeV^{2}];Events", 100, 0, 2);
-        h_delta_vz_pim = svc->book_hist1D("/Rho0/delta_vz_pim", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -50, 50);
-        h_delta_vz_pip = svc->book_hist1D("/Rho0/delta_vz_pip", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -50, 50);
+        h_delta_vz_pim = svc->book_hist1D("/Rho0/delta_vz_pim", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -20, 20);
+        h_delta_vz_pip = svc->book_hist1D("/Rho0/delta_vz_pip", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -20, 20);
 
         // Kinematic variable histograms (after cuts)
         h_zh_selected = svc->book_hist1D("/Rho0/zh_selected", "z_{h} (after cuts);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
         h_lc_selected = svc->book_hist1D("/Rho0/lc_selected", "Coherence Length (after cuts);l_{c} [fm];Events", 100, 0, 5);
         h_t_selected = svc->book_hist1D("/Rho0/t_selected", "-t (after cuts);-t [GeV^{2}];Events", 100, 0, 2);
-        h_delta_vz_pim_selected = svc->book_hist1D("/Rho0/delta_vz_pim_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -50, 50);
-        h_delta_vz_pip_selected = svc->book_hist1D("/Rho0/delta_vz_pip_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -50, 50);
+        h_delta_vz_pim_selected = svc->book_hist1D("/Rho0/delta_vz_pim_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -20, 20);
+        h_delta_vz_pip_selected = svc->book_hist1D("/Rho0/delta_vz_pip_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -20, 20);
 
         // Q²-binned invariant mass histograms
         for (const auto& [q2_min, q2_max] : Q2_BINS) {

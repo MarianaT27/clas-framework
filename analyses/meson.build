@@ -58,3 +58,10 @@ executable(
   files('CuSn_contamination/CuSn_contamination.cpp', 'CuSn_contamination/CusnContaminationAlg.hpp'),
   dependencies: analysis_deps,
 )
+
+# ALERT_track_matching analysis
+executable(
+  'ALERT_track_matching',
+  files('ALERT_track_matching/ALERT_track_matching.cpp'),
+  dependencies: analysis_deps,
+)
