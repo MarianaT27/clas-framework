@@ -207,6 +207,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         auto& run_config = event.get_bank("RUN::config");
         if (run_config.rows() > 0) {
             int run = run_config.get<int>("run", 0);
+            std::lock_guard<std::mutex> lock(m_runs_mutex);
             m_runs.insert(run);
         }
 
@@ -687,6 +688,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
     // Run tracking for metadata
     std::set<int> m_runs;
+    mutable std::mutex m_runs_mutex;
 
     // Mutex for thread safety
     mutable std::mutex m_ntuple_mutex;
