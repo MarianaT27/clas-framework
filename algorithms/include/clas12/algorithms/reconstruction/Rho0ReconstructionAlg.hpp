@@ -690,6 +690,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         double n_rho0 = 0.0;
         double n_rho0_err = 0.0;
         double chi2_ndf = 0.0;
+        double fit_min = 0.0;           // Fit range minimum
+        double fit_max = 0.0;           // Fit range maximum
+        double integ_min = 0.0;         // Integration range minimum
+        double integ_max = 0.0;         // Integration range maximum
         bool valid = false;
         std::shared_ptr<TF1> fit_function;  // Store fit function for saving
     };
@@ -824,98 +828,134 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
     /**
      * @brief Fit invariant mass histograms with Breit-Wigner + pol3
+     * Uses two fit ranges [0.3-1.2] and [0.3-1.4] for comparison.
+     * Signal yield is integrated between [0.6-1.0] GeV.
      */
     auto fit_invariant_mass_histograms() -> void {
         clas12::framework::Log::info(name(), "Fitting invariant mass histograms with BW + pol3...");
+        clas12::framework::Log::info(name(), "  Fit ranges: [0.3-1.2] and [0.3-1.4] GeV");
+        clas12::framework::Log::info(name(), "  Integration range: [0.6-1.0] GeV");
 
-        std::map<std::string, FitResult> fit_results;
-        double total_rho0 = 0.0;
-        double total_rho0_err_sq = 0.0;
+        // Maps for narrow [0.3-1.2] and wide [0.3-1.4] fit results
+        std::map<std::string, FitResult> fit_results_narrow;
+        std::map<std::string, FitResult> fit_results_wide;
+        double total_rho0_narrow = 0.0;
+        double total_rho0_narrow_err_sq = 0.0;
+        double total_rho0_wide = 0.0;
+        double total_rho0_wide_err_sq = 0.0;
 
-        // Fit the main selected mass histogram (convert atomic to ROOT for fitting)
+        // Fit the main selected mass histogram with both ranges
         if (h_pipim_mass_selected && h_pipim_mass_selected->entries() > 100) {
             auto root_hist = h_pipim_mass_selected->to_root("pipim_mass_selected_fit", "Selected Mass");
-            auto result = fit_histogram(root_hist.get(), "All Q² (selected)");
-            if (result.valid) {
-                fit_results["All"] = result;
-            }
+            auto [result_narrow, result_wide] = fit_histogram_compare_ranges(root_hist.get(), "All Q² (selected)");
+            if (result_narrow.valid) fit_results_narrow["All"] = result_narrow;
+            if (result_wide.valid) fit_results_wide["All"] = result_wide;
         }
 
-        // Fit Q²-binned histograms
+        // Fit Q²-binned histograms with both ranges
         for (const auto& [bin_name, hist] : h_pipim_mass_q2_bins) {
             if (hist && hist->entries() > 50) {
                 auto root_hist = hist->to_root(bin_name + "_fit", bin_name);
-                auto result = fit_histogram(root_hist.get(), bin_name);
-                if (result.valid) {
-                    fit_results[bin_name] = result;
-                    total_rho0 += result.n_rho0;
-                    total_rho0_err_sq += result.n_rho0_err * result.n_rho0_err;
+                auto [result_narrow, result_wide] = fit_histogram_compare_ranges(root_hist.get(), bin_name);
+                if (result_narrow.valid) {
+                    fit_results_narrow[bin_name] = result_narrow;
+                    total_rho0_narrow += result_narrow.n_rho0;
+                    total_rho0_narrow_err_sq += result_narrow.n_rho0_err * result_narrow.n_rho0_err;
+                }
+                if (result_wide.valid) {
+                    fit_results_wide[bin_name] = result_wide;
+                    total_rho0_wide += result_wide.n_rho0;
+                    total_rho0_wide_err_sq += result_wide.n_rho0_err * result_wide.n_rho0_err;
                 }
             }
         }
 
-        // Save fit results to ROOT file
-        save_Q2_fit_results_to_file(fit_results, total_rho0, std::sqrt(total_rho0_err_sq));
+        // Save Q² fit results to ROOT file (using narrow range as primary)
+        save_Q2_fit_results_to_file(fit_results_narrow, fit_results_wide,
+                                    total_rho0_narrow, std::sqrt(total_rho0_narrow_err_sq),
+                                    total_rho0_wide, std::sqrt(total_rho0_wide_err_sq));
 
-        // Fit lc-binned histograms
+        // Reset totals for LC bins
+        total_rho0_narrow = 0.0;
+        total_rho0_narrow_err_sq = 0.0;
+        total_rho0_wide = 0.0;
+        total_rho0_wide_err_sq = 0.0;
+
+        // Fit lc-binned histograms with both ranges
         for (const auto& [bin_name, hist] : h_pipim_mass_lc_bins) {
             if (hist && hist->entries() > 50) {
                 auto root_hist = hist->to_root(bin_name + "_fit", bin_name);
-                auto result = fit_histogram(root_hist.get(), bin_name);
-                if (result.valid) {
-                    fit_results[bin_name] = result;
-                    clas12::framework::Log::info(name(), "LC Bin {}: N(rho0) = {:.1f} ± {:.1f}, Mass = {:.4f} ± {:.4f} GeV, Chi2/NDF = {:.2f}",
-                        bin_name, result.n_rho0, result.n_rho0_err,
-                        result.mass, result.mass_err, result.chi2_ndf);
-                    total_rho0 += result.n_rho0;
-                    total_rho0_err_sq += result.n_rho0_err * result.n_rho0_err;
+                auto [result_narrow, result_wide] = fit_histogram_compare_ranges(root_hist.get(), bin_name);
+                if (result_narrow.valid) {
+                    fit_results_narrow[bin_name] = result_narrow;
+                    total_rho0_narrow += result_narrow.n_rho0;
+                    total_rho0_narrow_err_sq += result_narrow.n_rho0_err * result_narrow.n_rho0_err;
                 }
-                else {
-                    clas12::framework::Log::info(name(), "LC Bin {}: Fit failed", bin_name);
+                if (result_wide.valid) {
+                    fit_results_wide[bin_name] = result_wide;
+                    total_rho0_wide += result_wide.n_rho0;
+                    total_rho0_wide_err_sq += result_wide.n_rho0_err * result_wide.n_rho0_err;
                 }
             }
         }
 
-        // Save fit results to ROOT file
-        save_lc_fit_results_to_file(fit_results, total_rho0, std::sqrt(total_rho0_err_sq));
+        // Save LC fit results to ROOT file
+        save_lc_fit_results_to_file(fit_results_narrow, fit_results_wide,
+                                    total_rho0_narrow, std::sqrt(total_rho0_narrow_err_sq),
+                                    total_rho0_wide, std::sqrt(total_rho0_wide_err_sq));
 
-
-        // Print summary table using logger
-        if (!fit_results.empty()) {
-            std::vector<std::string> columns = {"LC Bin", "N(ρ⁰)", "Mass [GeV]", "χ²/NDF"};
+        // Print summary table comparing both fit ranges
+        if (!fit_results_narrow.empty() || !fit_results_wide.empty()) {
+            std::vector<std::string> columns = {"Bin", "N(ρ⁰) [0.3-1.2]", "N(ρ⁰) [0.3-1.4]", "Diff (%)"};
             std::vector<std::vector<std::string>> rows;
 
-            for (const auto& [bin_name, result] : fit_results) {
-                if (bin_name != "All") {
-                    rows.push_back({
-                        bin_name,
-                        fmt::format("{:.0f} ± {:.0f}", result.n_rho0, result.n_rho0_err),
-                        fmt::format("{:.4f} ± {:.4f}", result.mass, result.mass_err),
-                        fmt::format("{:.2f}", result.chi2_ndf)
-                    });
+            // Collect all bin names
+            std::set<std::string> all_bins;
+            for (const auto& [name, _] : fit_results_narrow) all_bins.insert(name);
+            for (const auto& [name, _] : fit_results_wide) all_bins.insert(name);
+
+            for (const auto& bin_name : all_bins) {
+                if (bin_name == "All") continue;
+
+                double n_narrow = 0, n_narrow_err = 0;
+                double n_wide = 0, n_wide_err = 0;
+
+                if (fit_results_narrow.count(bin_name)) {
+                    n_narrow = fit_results_narrow[bin_name].n_rho0;
+                    n_narrow_err = fit_results_narrow[bin_name].n_rho0_err;
                 }
-            }
+                if (fit_results_wide.count(bin_name)) {
+                    n_wide = fit_results_wide[bin_name].n_rho0;
+                    n_wide_err = fit_results_wide[bin_name].n_rho0_err;
+                }
 
-            // Add total row
-            rows.push_back({
-                "Total (LC bins)",
-                fmt::format("{:.0f} ± {:.0f}", total_rho0, std::sqrt(total_rho0_err_sq)),
-                "",
-                ""
-            });
+                double diff_pct = (n_narrow > 0) ? 100.0 * (n_wide - n_narrow) / n_narrow : 0.0;
 
-            // Add integrated fit result if available
-            if (fit_results.count("All")) {
-                const auto& all_result = fit_results["All"];
                 rows.push_back({
-                    "All (integrated)",
-                    fmt::format("{:.0f} ± {:.0f}", all_result.n_rho0, all_result.n_rho0_err),
-                    fmt::format("{:.4f} ± {:.4f}", all_result.mass, all_result.mass_err),
-                    fmt::format("{:.2f}", all_result.chi2_ndf)
+                    bin_name,
+                    fmt::format("{:.0f} ± {:.0f}", n_narrow, n_narrow_err),
+                    fmt::format("{:.0f} ± {:.0f}", n_wide, n_wide_err),
+                    fmt::format("{:+.1f}%", diff_pct)
                 });
             }
 
-            clas12::framework::Log::print_yield_summary_table("ρ⁰ Yield Summary", columns, rows);
+            // Add integrated result if available
+            if (fit_results_narrow.count("All") || fit_results_wide.count("All")) {
+                double n_narrow = fit_results_narrow.count("All") ? fit_results_narrow["All"].n_rho0 : 0;
+                double n_narrow_err = fit_results_narrow.count("All") ? fit_results_narrow["All"].n_rho0_err : 0;
+                double n_wide = fit_results_wide.count("All") ? fit_results_wide["All"].n_rho0 : 0;
+                double n_wide_err = fit_results_wide.count("All") ? fit_results_wide["All"].n_rho0_err : 0;
+                double diff_pct = (n_narrow > 0) ? 100.0 * (n_wide - n_narrow) / n_narrow : 0.0;
+
+                rows.push_back({
+                    "All (integrated)",
+                    fmt::format("{:.0f} ± {:.0f}", n_narrow, n_narrow_err),
+                    fmt::format("{:.0f} ± {:.0f}", n_wide, n_wide_err),
+                    fmt::format("{:+.1f}%", diff_pct)
+                });
+            }
+
+            clas12::framework::Log::print_yield_summary_table("ρ⁰ Yield Comparison (Integration: 0.6-1.0 GeV)", columns, rows);
         }
     }
 
@@ -1069,44 +1109,84 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     }
 
     /**
-     * @brief Save Q² fit results to ROOT file
+     * @brief Save Q² fit results to ROOT file (both fit ranges)
      */
-    auto save_Q2_fit_results_to_file(const std::map<std::string, FitResult>& results, double total_n_rho0, double total_n_rho0_err) -> void {
-        FitResultsConfig config{
+    auto save_Q2_fit_results_to_file(
+        const std::map<std::string, FitResult>& results_narrow,
+        const std::map<std::string, FitResult>& results_wide,
+        double total_n_rho0_narrow, double total_n_rho0_narrow_err,
+        double total_n_rho0_wide, double total_n_rho0_wide_err) -> void {
+
+        FitResultsConfig config_narrow{
             .bin_prefix = "Q2",
-            .tree_name = "rho0_fit_results",
-            .tree_title = "Rho0 Fit Results",
-            .fits_dir = "Fits",
-            .all_func_name = "fit_All"
+            .tree_name = "rho0_fit_results_narrow",
+            .tree_title = "Rho0 Fit Results (Fit Range 0.3-1.2)",
+            .fits_dir = "Fits_narrow",
+            .all_func_name = "fit_All_narrow"
         };
-        save_fit_results_to_file(results, total_n_rho0, total_n_rho0_err, Q2_BINS, config);
+        save_fit_results_to_file(results_narrow, total_n_rho0_narrow, total_n_rho0_narrow_err, Q2_BINS, config_narrow);
+
+        FitResultsConfig config_wide{
+            .bin_prefix = "Q2",
+            .tree_name = "rho0_fit_results_wide",
+            .tree_title = "Rho0 Fit Results (Fit Range 0.3-1.4)",
+            .fits_dir = "Fits_wide",
+            .all_func_name = "fit_All_wide"
+        };
+        save_fit_results_to_file(results_wide, total_n_rho0_wide, total_n_rho0_wide_err, Q2_BINS, config_wide);
     }
 
     /**
-     * @brief Save lc fit results to ROOT file
+     * @brief Save lc fit results to ROOT file (both fit ranges)
      */
-    auto save_lc_fit_results_to_file(const std::map<std::string, FitResult>& results, double total_n_rho0, double total_n_rho0_err) -> void {
-        FitResultsConfig config{
+    auto save_lc_fit_results_to_file(
+        const std::map<std::string, FitResult>& results_narrow,
+        const std::map<std::string, FitResult>& results_wide,
+        double total_n_rho0_narrow, double total_n_rho0_narrow_err,
+        double total_n_rho0_wide, double total_n_rho0_wide_err) -> void {
+
+        FitResultsConfig config_narrow{
             .bin_prefix = "LC",
-            .tree_name = "rho0_lc_fit_results",
-            .tree_title = "Rho0 lc Fit Results",
-            .fits_dir = "Fits_LC",
-            .all_func_name = "fit_All_LC"
+            .tree_name = "rho0_lc_fit_results_narrow",
+            .tree_title = "Rho0 lc Fit Results (Fit Range 0.3-1.2)",
+            .fits_dir = "Fits_LC_narrow",
+            .all_func_name = "fit_All_LC_narrow"
         };
-        save_fit_results_to_file(results, total_n_rho0, total_n_rho0_err, LC_BINS, config);
+        save_fit_results_to_file(results_narrow, total_n_rho0_narrow, total_n_rho0_narrow_err, LC_BINS, config_narrow);
+
+        FitResultsConfig config_wide{
+            .bin_prefix = "LC",
+            .tree_name = "rho0_lc_fit_results_wide",
+            .tree_title = "Rho0 lc Fit Results (Fit Range 0.3-1.4)",
+            .fits_dir = "Fits_LC_wide",
+            .all_func_name = "fit_All_LC_wide"
+        };
+        save_fit_results_to_file(results_wide, total_n_rho0_wide, total_n_rho0_wide_err, LC_BINS, config_wide);
     }   
 
     /**
      * @brief Fit a single histogram with BW + pol3
+     * @param hist Histogram to fit
+     * @param label Label for logging
+     * @param fit_min Fit range minimum [GeV]
+     * @param fit_max Fit range maximum [GeV]
+     * @param integ_min Integration range minimum [GeV] (default 0.6)
+     * @param integ_max Integration range maximum [GeV] (default 1.0)
      * @return FitResult containing mass and signal yield
      */
-    auto fit_histogram(TH1D* hist, const std::string& label) -> FitResult {
+    auto fit_histogram(TH1D* hist, const std::string& label,
+                       double fit_min = 0.3, double fit_max = 1.2,
+                       double integ_min = 0.6, double integ_max = 1.0) -> FitResult {
         FitResult result;
         if (!hist || hist->GetEntries() < 50) return result;
 
-        double fit_min = 0.3;
-        double fit_max = 1.2;
         double bin_width = hist->GetBinWidth(1);
+
+        // Store fit/integration ranges in result
+        result.fit_min = fit_min;
+        result.fit_max = fit_max;
+        result.integ_min = integ_min;
+        result.integ_max = integ_max;
 
         // Create fit function: BW + pol3 (6 parameters)
         auto fit_func = std::make_unique<TF1>(
@@ -1125,7 +1205,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         fit_func->SetParameter(5, 0);                   // p3
 
         // Set parameter limits
-        fit_func->SetParLimits(0, fit_min, fit_max);   // Mass between 0.3-1.2 GeV
+        fit_func->SetParLimits(0, 0.6, 0.9);   // Mass between 0.6-0.9 GeV (around rho0 mass)
         fit_func->SetParLimits(1, 0, hist->GetMaximum() * 10);  // Amplitude positive
 
         // Set parameter names
@@ -1137,10 +1217,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         fit_func->SetParName(5, "p3");
 
         // Perform fit
-        int fit_status = hist->Fit(fit_func.get(), "QRS");  // Q=quiet, R=use range, S=return status
+        int fit_status = hist->Fit(fit_func.get(), "QRS0");  // Q=quiet, R=use range, S=return status, 0=don't draw
 
         if (fit_status != 0) {
-            clas12::framework::Log::warning(name(), "Fit failed for {}", label);
+            clas12::framework::Log::warning(name(), "Fit failed for {} (range [{:.1f}, {:.1f}])", label, fit_min, fit_max);
             return result;
         }
 
@@ -1157,35 +1237,62 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         signal_func.SetParameter(0, result.mass);
         signal_func.SetParameter(1, amplitude);
 
-        // Integrate signal function and divide by bin width to get number of events
-        // Integrate over mass +/- 150 MeV
-        double sigma = 0.15;
-        double signal_integral = signal_func.Integral(result.mass - sigma, result.mass + sigma);
+        // Integrate signal function between 0.6 and 1.0 GeV
+        double signal_integral = signal_func.Integral(integ_min, integ_max);
         result.n_rho0 = signal_integral / bin_width;
 
         // Error propagation (simplified: dominated by amplitude error)
-        // N_rho0 is proportional to amplitude, so relative error is same
         if (amplitude > 0) {
             result.n_rho0_err = std::sqrt(result.n_rho0);
         }
 
         result.valid = true;
 
-        // Print results using logger table
-        clas12::framework::Log::print_fit_results_table(
-            fmt::format("Fit Results: {}", label),
-            {
-                {"Mass", fmt::format("{:.4f} ± {:.4f}", result.mass, result.mass_err), "GeV/c²"},
-                {"N(ρ⁰)", fmt::format("{:.0f} ± {:.0f}", result.n_rho0, result.n_rho0_err), ""},
-                {"χ²/NDF", fmt::format("{:.1f} / {} = {:.2f}", chi2, ndf, result.chi2_ndf), ""}
-            }
-        );
-
-        // Store fit function in both the histogram and the result
+        // Store fit function in the result
         result.fit_function = std::shared_ptr<TF1>(static_cast<TF1*>(fit_func->Clone()));
-        hist->GetListOfFunctions()->Add(fit_func.release());
 
         return result;
+    }
+
+    /**
+     * @brief Fit histogram with two different fit ranges and compare yields
+     * @param hist Histogram to fit
+     * @param label Label for logging
+     * @return Pair of FitResults: first=[0.3,1.2], second=[0.3,1.4]
+     */
+    auto fit_histogram_compare_ranges(TH1D* hist, const std::string& label)
+        -> std::pair<FitResult, FitResult> {
+
+        // Integration range is always 0.6 to 1.0 GeV
+        constexpr double integ_min = 0.6;
+        constexpr double integ_max = 1.0;
+
+        // Fit with range [0.3, 1.2]
+        auto result_narrow = fit_histogram(hist, label + " [0.3-1.2]", 0.3, 1.2, integ_min, integ_max);
+
+        // Fit with range [0.3, 1.4]
+        auto result_wide = fit_histogram(hist, label + " [0.3-1.4]", 0.3, 1.4, integ_min, integ_max);
+
+        // Print comparison
+        if (result_narrow.valid && result_wide.valid) {
+            double yield_diff = result_wide.n_rho0 - result_narrow.n_rho0;
+            double yield_diff_pct = (result_narrow.n_rho0 > 0) ?
+                100.0 * yield_diff / result_narrow.n_rho0 : 0.0;
+
+            clas12::framework::Log::print_fit_results_table(
+                fmt::format("Fit Comparison: {}", label),
+                {
+                    {"Range [0.3-1.2]", fmt::format("N={:.0f}±{:.0f}, M={:.4f}, χ²/ndf={:.2f}",
+                        result_narrow.n_rho0, result_narrow.n_rho0_err, result_narrow.mass, result_narrow.chi2_ndf), ""},
+                    {"Range [0.3-1.4]", fmt::format("N={:.0f}±{:.0f}, M={:.4f}, χ²/ndf={:.2f}",
+                        result_wide.n_rho0, result_wide.n_rho0_err, result_wide.mass, result_wide.chi2_ndf), ""},
+                    {"Yield Diff", fmt::format("{:.0f} ({:+.1f}%)", yield_diff, yield_diff_pct), ""},
+                    {"Integration", fmt::format("[{:.1f}, {:.1f}] GeV", integ_min, integ_max), ""}
+                }
+            );
+        }
+
+        return {result_narrow, result_wide};
     }
 };
 
