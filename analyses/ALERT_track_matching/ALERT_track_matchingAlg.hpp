@@ -162,11 +162,12 @@ public:
             return clas12::framework::StatusCode::FILTERED();
         }
 
-        // Match tracks to the elastic electron using phi angle from first hit
+        // Match tracks to the elastic electron using phi angle
+        // For elastic ep, proton should be back-to-back with electron (180° apart)
         double electron_phi = elastic_electron.phi();  // degrees
 
-        // Find the best matching track (smallest delta_phi)
-        double best_delta_phi = 999.0;
+        // Find the best matching track (closest to 180° apart from electron)
+        double best_delta_from_180 = 999.0;
         const AHDCTrackData* matched_track = nullptr;
 
         for (const auto& track : good_tracks) {
@@ -177,12 +178,17 @@ public:
             double delta_phi = std::abs(electron_phi - track_phi);
             if (delta_phi > 180.0) delta_phi = 360.0 - delta_phi;
 
-            // Fill histogram for all tracks
-            if (h_delta_phi) h_delta_phi->fill(delta_phi);
+            // Fill histogram for all tracks (full range 0-360 before wrapping)
+            double raw_delta_phi = std::abs(electron_phi - track_phi);
+            if (h_delta_phi) h_delta_phi->fill(raw_delta_phi);
 
-            // Keep track of best match
-            if (delta_phi < m_phi_cut.get() && delta_phi < best_delta_phi) {
-                best_delta_phi = delta_phi;
+            // For elastic: proton is ~180° opposite to electron
+            // Check how close delta_phi is to 180°
+            double delta_from_180 = std::abs(delta_phi - 180.0);
+
+            // Keep track of best match (closest to 180°)
+            if (delta_from_180 < m_phi_cut.get() && delta_from_180 < best_delta_from_180) {
+                best_delta_from_180 = delta_from_180;
                 matched_track = &track;
             }
         }
@@ -194,8 +200,8 @@ public:
         // Count: track matched to electron (denominator for efficiency)
         ++m_n_tracks_matched_to_electron;
 
-        // Fill best delta phi histogram
-        if (h_best_delta_phi) h_best_delta_phi->fill(best_delta_phi);
+        // Fill best delta from 180 histogram (how close to back-to-back)
+        if (h_best_delta_phi) h_best_delta_phi->fill(best_delta_from_180);
 
         // Find the ATOF hit associated with the matched track using ALERT::ai:projections
         int matched_atof_hit_id = -1;
@@ -293,7 +299,7 @@ private:
             h_vz = svc->book_atomic_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -30, 30);
             h_vz_Cu = svc->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
             h_vz_Sn = svc->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
-            h_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 180, 0, 180);
+            h_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 360, 0, 360);
             h_n_predictions = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", 20, 0, 20);
             h_ai_match_status = svc->book_atomic_hist1D("/ALERT/TrackMatching/ai_match_status", "AI Match Status;Status (0=none, 1=any, 2=good);Events", 3, 0, 3);
             h_best_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi;#Delta#phi [deg];Events", 90, 0, 90);
