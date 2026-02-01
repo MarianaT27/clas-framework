@@ -3,6 +3,6 @@
 
 executable(
   'ALERT_track_matching',
-  files('ALERT_track_matching.cpp'),
+  files('ALERT_track_matching.cpp', 'ALERT_track_matchingAlg.hpp'),
   dependencies: [framework_dep, clas12_dep, algorithms_dep, cxxopts_dep, root_dep],
 )

@@ -147,18 +147,13 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_cutflow.pass("All Events");
 
-        // Check for good electron from upstream
-        if (!event.passes_decision("HasGoodElectron")) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
-        m_cutflow.pass("Has Electron");
-
-        // Get selected electron
-        auto* electrons = event.get_particles<clas12::Particle>("SelectedElectrons");
+        // Get all electrons
+        auto* electrons = event.get_particles<clas12::Particle>("Electrons");
         if (!electrons || electrons->empty()) {
             return clas12::framework::StatusCode::FILTERED();
         }
         const auto& electron = electrons->front();
+        m_cutflow.pass("Has Electron");
 
         // Calculate kinematics from electron only
         ElasticKinematics kin = calculate_kinematics(electron);

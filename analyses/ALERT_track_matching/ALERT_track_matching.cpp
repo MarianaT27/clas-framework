@@ -8,6 +8,7 @@
 #include <clas12/framework/Core.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
 #include <clas12/algorithms/analysis/ElasticEPAlg.hpp>
+#include <clas12/algorithms/analysis/ElasticEPAlg.hpp>
 #include <clas12/FileUtils.hpp>
 #include <clas12/CLAS12.hpp>
 
@@ -18,8 +19,7 @@
 #include <string>
 #include <vector>
 
-// Include your custom algorithm headers here
-// #include "AlertTrackMatching.hpp"
+#include "ALERT_track_matchingAlg.hpp"
 
 auto main(int argc, char* argv[]) -> int {
     // Parse command line arguments
@@ -71,6 +71,7 @@ auto main(int argc, char* argv[]) -> int {
         .with_standard_services()
         .with_beam_energy(2.2)
         .add_algorithm<clas12::algorithms::ElasticEPAlg>("ElasticEPAlg", clas12::algorithms::NuclearTarget::Proton)
+        .add_algorithm<ALERT_track_matching::ALERT_track_matchingAlg>("ALERT_track_matchingAlg")
         .build();
     
     // Initialize
