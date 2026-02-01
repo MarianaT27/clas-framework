@@ -18,6 +18,7 @@
 #include <clas12/Particle.hpp>
 #include <atomic>
 #include <cmath>
+#include <set>
 #include <vector>
 #include "Math/GenVector/PxPyPzE4D.h"
 #include "Math/Vector3Dfwd.h"
@@ -216,21 +217,35 @@ public:
         // Fill matched ATOF hit ID histogram
         if (h_matched_atof_hit_id) h_matched_atof_hit_id->fill(matched_atof_hit_id);
 
+        // Collect sectors/layers/components of good ATOF hits
+        std::set<int> good_sectors, good_layers, good_components;
+        for (int idx : good_atof_hit_indices) {
+            good_sectors.insert(atof_hits_bank.get<int>("sector", idx));
+            good_layers.insert(atof_hits_bank.get<int>("layer", idx));
+            good_components.insert(atof_hits_bank.get<int>("component", idx));
+        }
+
         // Determine AI match status and count
         int match_status = 0;  // 0 = no match
         if (matched_atof_hit_id >= 0 && matched_atof_hit_id < atof_hits_bank.rows()) {
             ++m_n_tracks_with_ai_atof_match;
             match_status = 1;  // 1 = AI found a match
 
-            // Get sector/layer/component of the matched ATOF hit
-            int hit_sector = atof_hits_bank.get<int>("sector", matched_atof_hit_id);
-            int hit_layer = atof_hits_bank.get<int>("layer", matched_atof_hit_id);
-            int hit_component = atof_hits_bank.get<int>("component", matched_atof_hit_id);
+            // Get sector/layer/component of the AI-matched ATOF hit
+            int ai_sector = atof_hits_bank.get<int>("sector", matched_atof_hit_id);
+            int ai_layer = atof_hits_bank.get<int>("layer", matched_atof_hit_id);
+            int ai_component = atof_hits_bank.get<int>("component", matched_atof_hit_id);
 
-            // Fill denominator histograms (all AI matches)
-            if (h_eff_sector_denom) h_eff_sector_denom->fill(hit_sector);
-            if (h_eff_layer_denom) h_eff_layer_denom->fill(hit_layer);
-            if (h_eff_component_denom) h_eff_component_denom->fill(hit_component);
+            // Check if AI matched to correct sector/layer/component (matches any good hit)
+            if (good_sectors.count(ai_sector) > 0) {
+                ++m_n_correct_sector;
+            }
+            if (good_layers.count(ai_layer) > 0) {
+                ++m_n_correct_layer;
+            }
+            if (good_components.count(ai_component) > 0) {
+                ++m_n_correct_component;
+            }
 
             // Check if AI match is a good (quality-cut) ATOF hit
             bool atof_hit_is_good = std::find(good_atof_hit_indices.begin(), good_atof_hit_indices.end(),
@@ -238,11 +253,6 @@ public:
             if (atof_hit_is_good) {
                 ++m_n_tracks_with_good_atof_match;
                 match_status = 2;  // 2 = good match
-
-                // Fill numerator histograms (good matches)
-                if (h_eff_sector_numer) h_eff_sector_numer->fill(hit_sector);
-                if (h_eff_layer_numer) h_eff_layer_numer->fill(hit_layer);
-                if (h_eff_component_numer) h_eff_component_numer->fill(hit_component);
             }
         }
 
@@ -266,6 +276,10 @@ public:
         int n_ai_match = m_n_tracks_with_ai_atof_match.load();
         int n_good_match = m_n_tracks_with_good_atof_match.load();
 
+        int n_correct_sector = m_n_correct_sector.load();
+        int n_correct_layer = m_n_correct_layer.load();
+        int n_correct_component = m_n_correct_component.load();
+
         Log::info(name(), "=== AI Track-ATOF Matching Efficiency ===");
         Log::info(name(), "Tracks matched to electron (by phi): {}", n_matched);
         Log::info(name(), "Tracks with AI ATOF match:           {} ({:.1f}%)",
@@ -273,44 +287,15 @@ public:
         Log::info(name(), "Tracks with good AI ATOF match:      {} ({:.1f}%)",
                   n_good_match, n_matched > 0 ? 100.0 * n_good_match / n_matched : 0.0);
 
-        // Print efficiency by sector (bin 1 = sector 0, bin 2 = sector 1, etc.)
         Log::info(name(), "");
-        Log::info(name(), "=== Efficiency by Sector ===");
-        if (h_eff_sector_denom && h_eff_sector_numer) {
-            for (int sector = 0; sector < 16; ++sector) {
-                double denom = h_eff_sector_denom->get_bin_content(sector + 1);
-                double numer = h_eff_sector_numer->get_bin_content(sector + 1);
-                if (denom > 0) {
-                    Log::info(name(), "  Sector {:2d}: {:5.0f} / {:5.0f} = {:5.1f}%", sector, numer, denom, 100.0 * numer / denom);
-                }
-            }
-        }
-
-        // Print efficiency by layer
-        Log::info(name(), "");
-        Log::info(name(), "=== Efficiency by Layer ===");
-        if (h_eff_layer_denom && h_eff_layer_numer) {
-            for (int layer = 0; layer < 4; ++layer) {
-                double denom = h_eff_layer_denom->get_bin_content(layer + 1);
-                double numer = h_eff_layer_numer->get_bin_content(layer + 1);
-                if (denom > 0) {
-                    Log::info(name(), "  Layer {:d}: {:5.0f} / {:5.0f} = {:5.1f}%", layer, numer, denom, 100.0 * numer / denom);
-                }
-            }
-        }
-
-        // Print efficiency by component
-        Log::info(name(), "");
-        Log::info(name(), "=== Efficiency by Component ===");
-        if (h_eff_component_denom && h_eff_component_numer) {
-            for (int comp = 0; comp < 10; ++comp) {
-                double denom = h_eff_component_denom->get_bin_content(comp + 1);
-                double numer = h_eff_component_numer->get_bin_content(comp + 1);
-                if (denom > 0) {
-                    Log::info(name(), "  Component {:d}: {:5.0f} / {:5.0f} = {:5.1f}%", comp, numer, denom, 100.0 * numer / denom);
-                }
-            }
-        }
+        Log::info(name(), "=== Sector/Layer/Component Efficiency ===");
+        Log::info(name(), "(AI matches correct value vs total AI matches)");
+        Log::info(name(), "Sector efficiency:    {:5d} / {:5d} = {:5.1f}%",
+                  n_correct_sector, n_ai_match, n_ai_match > 0 ? 100.0 * n_correct_sector / n_ai_match : 0.0);
+        Log::info(name(), "Layer efficiency:     {:5d} / {:5d} = {:5.1f}%",
+                  n_correct_layer, n_ai_match, n_ai_match > 0 ? 100.0 * n_correct_layer / n_ai_match : 0.0);
+        Log::info(name(), "Component efficiency: {:5d} / {:5d} = {:5.1f}%",
+                  n_correct_component, n_ai_match, n_ai_match > 0 ? 100.0 * n_correct_component / n_ai_match : 0.0);
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -389,6 +374,9 @@ private:
     std::atomic<int> m_n_tracks_matched_to_electron{0};   // denominator
     std::atomic<int> m_n_tracks_with_ai_atof_match{0};    // AI found any ATOF match
     std::atomic<int> m_n_tracks_with_good_atof_match{0};  // AI match is a good hit
+    std::atomic<int> m_n_correct_sector{0};               // AI matched correct sector
+    std::atomic<int> m_n_correct_layer{0};                // AI matched correct layer
+    std::atomic<int> m_n_correct_component{0};            // AI matched correct component
 
     struct AHDCTrackData {
         int trackid;
