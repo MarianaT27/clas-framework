@@ -16,6 +16,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/Particle.hpp>
+#include <atomic>
 #include <cmath>
 #include <vector>
 #include "Math/GenVector/PxPyPzE4D.h"
@@ -41,6 +42,7 @@ public:
         // Declare configurable properties
         declare_property(m_example_cut);
         declare_property(m_enable_histograms);
+        declare_property(m_phi_cut);
     }
 
     /**
@@ -99,16 +101,16 @@ public:
         if (!event.passes_decision("HasElasticElectron")) {
             return clas12::framework::StatusCode::FILTERED();
         }
-        // Get elastic electron using typed retrieval
-        std::optional<std::vector<clas12::Particle>> electrons_opt = event.retrieve("ElasticElectrons");
-        if (!electrons_opt || electrons_opt->empty()) {
+        // Get elastic electron using particle retrieval
+        const auto* electrons = event.get_particles<clas12::Particle>("ElasticElectron");
+        if (!electrons || electrons->empty()) {
             return clas12::framework::StatusCode::FILTERED();
         }
-        const auto& elastic_electron = electrons_opt->front();
+        const auto& elastic_electron = electrons->front();
 
 
-        // Read the AHDC::ai:prediction, ALERT::ai:projections and ATOF::hits banks
-        hipo::bank& ahdc_prediction_bank = event.hipo_event().get("AHDC::ai:prediction");
+        // Read the AHDC::track, ALERT::ai:projections and ATOF::hits banks
+        hipo::bank& ahdc_track_bank = event.hipo_event().get("AHDC::track");
         hipo::bank& alert_projections_bank = event.hipo_event().get("ALERT::ai:projections");
         hipo::bank& atof_hits_bank = event.hipo_event().get("ATOF::hits");
 
@@ -130,39 +132,101 @@ public:
             }
         }
 
-        // Check if a good track is found in AHDC predictions
-        std::vector<AHDCPredictionData> good_tracks;
-        for (int i = 0; i < ahdc_prediction_bank.rows(); ++i) {
-            int pred = ahdc_prediction_bank.get<int>("pred", i);
-            if (pred > 0.2) {
-                double x1 = ahdc_prediction_bank.get<double>("x1", i);
-                double x2 = ahdc_prediction_bank.get<double>("x2", i);
-                double x3 = ahdc_prediction_bank.get<double>("x3", i);
-                double x4 = ahdc_prediction_bank.get<double>("x4", i);
-                double x5 = ahdc_prediction_bank.get<double>("x5", i);
-                double y1 = ahdc_prediction_bank.get<double>("y1", i);
-                double y2 = ahdc_prediction_bank.get<double>("y2", i);
-                double y3 = ahdc_prediction_bank.get<double>("y3", i);
-                double y4 = ahdc_prediction_bank.get<double>("y4", i);
-                double y5 = ahdc_prediction_bank.get<double>("y5", i);
-                AHDCPredictionData track{ x1, x2, x3, x4, x5, y1, y2, y3, y4, y5, pred };
-                good_tracks.push_back(track);
-            }
+        // Read AHDC tracks
+        std::vector<AHDCTrackData> good_tracks;
+        for (int i = 0; i < ahdc_track_bank.rows(); ++i) {
+            AHDCTrackData track;
+            track.trackid = ahdc_track_bank.get<int>("trackid", i);
+            track.x = ahdc_track_bank.get<float>("x", i);
+            track.y = ahdc_track_bank.get<float>("y", i);
+            track.z = ahdc_track_bank.get<float>("z", i);
+            track.px = ahdc_track_bank.get<float>("px", i);
+            track.py = ahdc_track_bank.get<float>("py", i);
+            track.pz = ahdc_track_bank.get<float>("pz", i);
+            track.n_hits = ahdc_track_bank.get<int>("n_hits", i);
+            track.sum_adc = ahdc_track_bank.get<int>("sum_adc", i);
+            track.path = ahdc_track_bank.get<float>("path", i);
+            track.dEdx = ahdc_track_bank.get<float>("dEdx", i);
+            track.p_drift = ahdc_track_bank.get<float>("p_drift", i);
+            track.chi2 = ahdc_track_bank.get<float>("chi2", i);
+            track.sum_residuals = ahdc_track_bank.get<float>("sum_residuals", i);
+            good_tracks.push_back(track);
         }
+
+        // Fill diagnostic histograms
+        if (h_n_predictions) h_n_predictions->fill(good_tracks.size());
+        if (h_n_good_atof_hits) h_n_good_atof_hits->fill(good_atof_hit_indices.size());
 
         if (good_tracks.empty() || good_atof_hit_indices.empty()) {
             clas12::framework::Log::info(name(), "No good tracks or ATOF hits found in this event");
             return clas12::framework::StatusCode::FILTERED();
         }
 
-        // Check using the tracks match the one that is associated with the elastic electron (use phi and theta, of the first hits)
+        // Match tracks to the elastic electron using phi angle from first hit
+        double electron_phi = elastic_electron.phi();  // degrees
 
+        // Find the best matching track (smallest delta_phi)
+        double best_delta_phi = 999.0;
+        const AHDCTrackData* matched_track = nullptr;
 
+        for (const auto& track : good_tracks) {
+            // Compute track phi from momentum
+            double track_phi = std::atan2(track.py, track.px) * 180.0 / M_PI;
 
+            // Compute phi difference with wrapping at 360 degrees
+            double delta_phi = std::abs(electron_phi - track_phi);
+            if (delta_phi > 180.0) delta_phi = 360.0 - delta_phi;
 
+            // Fill histogram for all tracks
+            if (h_delta_phi) h_delta_phi->fill(delta_phi);
 
+            // Keep track of best match
+            if (delta_phi < m_phi_cut.get() && delta_phi < best_delta_phi) {
+                best_delta_phi = delta_phi;
+                matched_track = &track;
+            }
+        }
 
+        if (!matched_track) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
 
+        // Count: track matched to electron (denominator for efficiency)
+        ++m_n_tracks_matched_to_electron;
+
+        // Fill best delta phi histogram
+        if (h_best_delta_phi) h_best_delta_phi->fill(best_delta_phi);
+
+        // Find the ATOF hit associated with the matched track using ALERT::ai:projections
+        int matched_atof_hit_id = -1;
+        for (int i = 0; i < alert_projections_bank.rows(); ++i) {
+            int proj_trackid = alert_projections_bank.get<int>("trackid", i);
+            if (proj_trackid == matched_track->trackid) {
+                matched_atof_hit_id = alert_projections_bank.get<int>("matched_atof_hit_id", i);
+                break;
+            }
+        }
+
+        // Fill matched ATOF hit ID histogram
+        if (h_matched_atof_hit_id) h_matched_atof_hit_id->fill(matched_atof_hit_id);
+
+        // Determine AI match status and count
+        int match_status = 0;  // 0 = no match
+        if (matched_atof_hit_id >= 0) {
+            ++m_n_tracks_with_ai_atof_match;
+            match_status = 1;  // 1 = AI found a match
+
+            // Check if AI match is a good (quality-cut) ATOF hit
+            bool atof_hit_is_good = std::find(good_atof_hit_indices.begin(), good_atof_hit_indices.end(),
+                                              matched_atof_hit_id) != good_atof_hit_indices.end();
+            if (atof_hit_is_good) {
+                ++m_n_tracks_with_good_atof_match;
+                match_status = 2;  // 2 = good match
+            }
+        }
+
+        // Fill AI match status histogram
+        if (h_ai_match_status) h_ai_match_status->fill(match_status);
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -174,7 +238,20 @@ public:
      * @return StatusCode SUCCESS or FAILURE
      */
     auto on_finalize() -> clas12::framework::StatusCode override {
-        // Print summary statistics
+        // Print AI ATOF matching efficiency
+        using Log = clas12::framework::Log;
+
+        int n_matched = m_n_tracks_matched_to_electron.load();
+        int n_ai_match = m_n_tracks_with_ai_atof_match.load();
+        int n_good_match = m_n_tracks_with_good_atof_match.load();
+
+        Log::info(name(), "=== AI Track-ATOF Matching Efficiency ===");
+        Log::info(name(), "Tracks matched to electron (by phi): {}", n_matched);
+        Log::info(name(), "Tracks with AI ATOF match:           {} ({:.1f}%)",
+                  n_ai_match, n_matched > 0 ? 100.0 * n_ai_match / n_matched : 0.0);
+        Log::info(name(), "Tracks with good AI ATOF match:      {} ({:.1f}%)",
+                  n_good_match, n_matched > 0 ? 100.0 * n_good_match / n_matched : 0.0);
+
         return clas12::framework::StatusCode::SUCCESS();
     }
 
@@ -185,6 +262,9 @@ private:
     };
     clas12::framework::Property<bool> m_enable_histograms{
         "enable_histograms", true, "Enable histogram filling"
+    };
+    clas12::framework::Property<double> m_phi_cut{
+        "phi_cut", 10.0, "Phi matching tolerance in degrees"
     };
 
     // Service handles
@@ -197,6 +277,12 @@ private:
     clas12::framework::AtomicHistogram1D* h_vz = nullptr;
     clas12::framework::AtomicHistogram1D* h_vz_Cu = nullptr;
     clas12::framework::AtomicHistogram1D* h_vz_Sn = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_phi = nullptr;
+    clas12::framework::AtomicHistogram1D* h_n_predictions = nullptr;
+    clas12::framework::AtomicHistogram1D* h_ai_match_status = nullptr;
+    clas12::framework::AtomicHistogram1D* h_best_delta_phi = nullptr;
+    clas12::framework::AtomicHistogram1D* h_n_good_atof_hits = nullptr;
+    clas12::framework::AtomicHistogram1D* h_matched_atof_hit_id = nullptr;
 
     auto book_histograms() -> void {
         clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
@@ -207,6 +293,12 @@ private:
             h_vz = svc->book_atomic_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -30, 30);
             h_vz_Cu = svc->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
             h_vz_Sn = svc->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
+            h_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 180, 0, 180);
+            h_n_predictions = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", 20, 0, 20);
+            h_ai_match_status = svc->book_atomic_hist1D("/ALERT/TrackMatching/ai_match_status", "AI Match Status;Status (0=none, 1=any, 2=good);Events", 3, 0, 3);
+            h_best_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi;#Delta#phi [deg];Events", 90, 0, 90);
+            h_n_good_atof_hits = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_good_atof_hits", "N good ATOF hits;N hits;Events", 20, 0, 20);
+            h_matched_atof_hit_id = svc->book_atomic_hist1D("/ALERT/TrackMatching/matched_atof_hit_id", "Matched ATOF hit ID;Hit ID;Events", 50, -1, 49);
         });
     }
 
@@ -217,9 +309,22 @@ private:
 
     std::vector<ATOFWedgeH2Data> m_atof_wedge_H2_data;
 
-    struct AHDCPredictionData {
-        double x1, x2, x3, x4, x5, y1, y2, y3, y4, y5;
-        int pred;
+    // Efficiency counters (atomic for thread safety)
+    std::atomic<int> m_n_tracks_matched_to_electron{0};   // denominator
+    std::atomic<int> m_n_tracks_with_ai_atof_match{0};    // AI found any ATOF match
+    std::atomic<int> m_n_tracks_with_good_atof_match{0};  // AI match is a good hit
+
+    struct AHDCTrackData {
+        int trackid;
+        float x, y, z;           // position in mm
+        float px, py, pz;        // momentum in MeV
+        int n_hits;
+        int sum_adc;
+        float path;              // track length in mm
+        float dEdx;              // energy loss in adc/mm
+        float p_drift;           // momentum in drift region in MeV
+        float chi2;
+        float sum_residuals;
     };
 };
 
