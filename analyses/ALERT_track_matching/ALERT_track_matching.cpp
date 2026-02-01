@@ -63,14 +63,16 @@ auto main(int argc, char* argv[]) -> int {
     }
 
     // Build application using the builder pattern
-   auto app = clas12::framework::make_application("ALERT Track Matching Analysis")
+    constexpr double beam_energy = 2.2;  // GeV for ALERT data
+
+    auto app = clas12::framework::make_application("ALERT Track Matching Analysis")
         .with_input_files(input_files)
         .with_output(output_file)
         .with_percentage(percentage)
         .with_threads(num_threads)
         .with_standard_services()
-        .with_beam_energy(2.2)
-        .add_algorithm<clas12::algorithms::ElasticEPAlg>("ElasticEPAlg", clas12::algorithms::NuclearTarget::Proton)
+        .with_beam_energy(beam_energy)
+        .add_algorithm<clas12::algorithms::ElasticEPAlg>("ElasticEPAlg", clas12::algorithms::NuclearTarget::Proton, beam_energy)
         .add_algorithm<ALERT_track_matching::ALERT_track_matchingAlg>("ALERT_track_matchingAlg")
         .build();
     

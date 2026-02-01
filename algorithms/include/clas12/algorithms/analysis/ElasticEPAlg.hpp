@@ -109,8 +109,9 @@ struct ElasticKinematics {
  */
 class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
    public:
-    explicit ElasticEPAlg(std::string name = "ElasticEPAlg", NuclearTarget target = NuclearTarget::Proton)
+    explicit ElasticEPAlg(std::string name = "ElasticEPAlg", NuclearTarget target = NuclearTarget::Proton, double beam_energy = 10.6)
         : SimpleAlgorithm(std::move(name)), m_target(target), m_target_mass(get_target_mass(target)), m_cutflow("Elastic e-" + get_target_name(target) + " Selection (W-only)") {
+        m_beam_energy.set(beam_energy);
         declare_property(m_beam_energy);
         declare_property(m_W_min);
         declare_property(m_W_max);
