@@ -147,6 +147,17 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_cutflow.pass("All Events");
 
+        // Debug: Check what's in REC::Particle bank
+        hipo::bank& REC_Particle = event.hipo_event().get("REC::Particle");
+        if (m_debug_count < 5 && REC_Particle.rows() > 0) {
+            Log::info(name(), "DEBUG: REC::Particle has {} rows", REC_Particle.rows());
+            for (int i = 0; i < REC_Particle.rows() && i < 10; i++) {
+                int pid = REC_Particle.get<int>("pid", i);
+                Log::info(name(), "  Row {}: pid={}", i, pid);
+            }
+            m_debug_count++;
+        }
+
         // Get electrons directly from REC::Particle bank
         const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
         if (electrons.empty()) {
@@ -222,6 +233,9 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
     // N-tuple variables
     double m_nt_e_p = 0, m_nt_e_theta = 0, m_nt_e_phi = 0;
     double m_nt_Q2 = 0, m_nt_W = 0, m_nt_nu = 0;
+
+    // Debug counter
+    int m_debug_count = 0;
 
     auto calculate_kinematics(const clas12::Particle& electron) -> ElasticKinematics {
         ElasticKinematics kin;
