@@ -115,6 +115,8 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         declare_property(m_beam_energy);
         declare_property(m_W_min);
         declare_property(m_W_max);
+        declare_property(m_Vz_min);
+        declare_property(m_Vz_max);
     }
 
     /**
@@ -131,6 +133,7 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         Log::info(name(), "  Beam energy: {} GeV", m_beam_energy.get());
         Log::info(name(), "  Target mass: {} GeV", m_target_mass);
         Log::info(name(), "  W cut: [{}, {}] GeV", m_W_min.get(), m_W_max.get());
+        Log::info(name(), "  Vz cut: [{}, {}] cm", m_Vz_min.get(), m_Vz_max.get());
 
         book_histograms();
         if (m_ntuple_svc) setup_ntuple();
@@ -138,6 +141,7 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         // Setup cutflow
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Has Electron");
+        m_cutflow.add_cut("Vz Cut");
         m_cutflow.add_cut("W Cut");
 
         Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
@@ -167,6 +171,16 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         const auto& electron = electrons.front();
         m_cutflow.pass("Has Electron");
 
+        // Get vertex z and fill pre-cut histogram
+        double vz = electron.vz();
+        if (h_Vz_precut) h_Vz_precut->fill(vz);
+
+        // Apply Vz cut
+        if (vz < m_Vz_min.get() || vz > m_Vz_max.get()) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("Vz Cut");
+
         // Calculate kinematics from electron only
         ElasticKinematics kin = calculate_kinematics(electron);
 
@@ -174,7 +188,7 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         if (h_W_precut) h_W_precut->fill(kin.W);
         if (h_Q2_precut) h_Q2_precut->fill(kin.Q2);
 
-        // Apply W cut only
+        // Apply W cut
         if (kin.W < m_W_min.get() || kin.W > m_W_max.get()) {
             return clas12::framework::StatusCode::FILTERED();
         }
@@ -189,6 +203,7 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
 
         // Fill histograms
         fill_histograms(kin);
+        if (h_Vz) h_Vz->fill(vz);
 
         // Fill N-tuple
         if (m_ntuple_svc) {
@@ -217,6 +232,8 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
     clas12::framework::Property<double> m_beam_energy{"beam_energy", 10.6, "Beam energy [GeV]"};
     clas12::framework::Property<double> m_W_min{"W_min", 0.8, "Minimum W [GeV]"};
     clas12::framework::Property<double> m_W_max{"W_max", 1.05, "Maximum W [GeV]"};
+    clas12::framework::Property<double> m_Vz_min{"Vz_min", -10.0, "Minimum Vz [cm]"};
+    clas12::framework::Property<double> m_Vz_max{"Vz_max", 10.0, "Maximum Vz [cm]"};
 
     // Services (pointers set by configure())
     clas12::framework::ServiceHandle<clas12::framework::LoggingService>* m_log_svc = nullptr;
@@ -230,6 +247,8 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
     clas12::framework::AtomicHistogram1D* h_W_precut = nullptr;
     clas12::framework::AtomicHistogram1D* h_nu = nullptr;
     clas12::framework::AtomicHistogram2D* h_p_e_vs_theta_e = nullptr;
+    clas12::framework::AtomicHistogram1D* h_Vz_precut = nullptr;
+    clas12::framework::AtomicHistogram1D* h_Vz = nullptr;
 
     // N-tuple variables
     double m_nt_e_p = 0, m_nt_e_theta = 0, m_nt_e_phi = 0;
@@ -270,6 +289,8 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         h_W_precut = m_hist_svc->get()->book_atomic_hist1D(prefix + "/W_precut", "W (pre-cut);W [GeV];Events", 200, 0, m_target_mass + 2.0);
         h_nu = m_hist_svc->get()->book_atomic_hist1D(prefix + "/nu", "#nu;#nu [GeV];Events", 100, 0, 11);
         h_p_e_vs_theta_e = m_hist_svc->get()->book_atomic_hist2D(prefix + "/p_e_vs_theta_e", "p_{e} vs #theta_{e};#theta_{e} [deg];p_{e} [GeV]", 90, 0, 45, 100, 0, 11);
+        h_Vz_precut = m_hist_svc->get()->book_atomic_hist1D(prefix + "/Vz_precut", "Vz (pre-cut);Vz [cm];Events", 200, -30, 30);
+        h_Vz = m_hist_svc->get()->book_atomic_hist1D(prefix + "/Vz", "Vz;Vz [cm];Events", 200, -30, 30);
     }
 
     void fill_histograms(const ElasticKinematics& kin) {
