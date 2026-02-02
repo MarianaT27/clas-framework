@@ -13,6 +13,7 @@
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/physics/ParticleUtils.hpp>
+#include <clas12/Detectors.hpp>
 
 namespace clas12::algorithms {
 
@@ -152,23 +153,31 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_cutflow.pass("All Events");
 
-        // Debug: Check what's in REC::Particle bank
-        hipo::bank& REC_Particle = event.hipo_event().get("REC::Particle");
-        if (m_debug_count < 5 && REC_Particle.rows() > 0) {
-            Log::info(name(), "DEBUG: REC::Particle has {} rows", REC_Particle.rows());
-            for (int i = 0; i < REC_Particle.rows() && i < 10; i++) {
-                int pid = REC_Particle.get<int>("pid", i);
-                Log::info(name(), "  Row {}: pid={}", i, pid);
-            }
-            m_debug_count++;
-        }
-
         // Get electrons directly from REC::Particle bank
         const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
         if (electrons.empty()) {
             return clas12::framework::StatusCode::FILTERED();
         }
-        const auto& electron = electrons.front();
+        // Select trigger electron (highest momentum in FD)
+        const auto possible_electron =
+            clas12::physics::ParticleUtils::find_trigger_electron(electrons, {clas12::FD, clas12::BD});
+
+        if (!possible_electron.has_value()) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        const clas12::Particle& electron = possible_electron.value();
+
+        if (electron.vz() == -3.0 || electron.p() <= 0.00001 || electron.theta() <= 0.00001) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+
+        // Calculate kinematics from electron only
+        ElasticKinematics kin = calculate_kinematics(electron);
+
+        if (kin.W <= 0.00001 || kin.Q2 <= 0.000001) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+
         m_cutflow.pass("Has Electron");
 
         // Get vertex z and fill pre-cut histogram
@@ -181,8 +190,6 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         }
         m_cutflow.pass("Vz Cut");
 
-        // Calculate kinematics from electron only
-        ElasticKinematics kin = calculate_kinematics(electron);
 
         // Fill pre-cut histograms
         if (h_W_precut) h_W_precut->fill(kin.W);

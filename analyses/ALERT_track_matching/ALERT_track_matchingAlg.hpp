@@ -174,9 +174,8 @@ public:
             // Compute track phi from momentum
             double track_phi = std::atan2(track.py, track.px) * 180.0 / M_PI;
 
-            // Compute phi difference (0-360 range)
-            double delta_phi = std::abs(electron_phi - track_phi);
-            if (delta_phi > 180.0) delta_phi = 360.0 - delta_phi;
+            double delta_phi = std::fmod(electron_phi - track_phi, 360.0);
+            if (delta_phi < 0.0) delta_phi += 360.0;
 
             // Fill histogram for all tracks
             if (h_delta_phi) h_delta_phi->fill(delta_phi);

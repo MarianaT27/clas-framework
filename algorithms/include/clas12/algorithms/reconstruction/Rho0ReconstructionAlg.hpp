@@ -731,7 +731,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         {4.5, 6.0}
     }};
 
-    static constexpr std::array<std::pair<double, double>, 7> LC_BINS = {{
+    static constexpr std::array<std::pair<double, double>, 8> LC_BINS = {{
         {0.0, 0.2},
         {0.2, 0.4},
         {0.4, 0.6},
@@ -739,6 +739,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         {0.8, 1.0},
         {1.0, 1.5},
         {1.5, 2.0},
+        {2.0, 3.0}
     }};
 
     /**
