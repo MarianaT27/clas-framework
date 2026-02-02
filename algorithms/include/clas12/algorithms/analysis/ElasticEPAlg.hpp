@@ -232,7 +232,7 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
     clas12::framework::Property<double> m_beam_energy{"beam_energy", 10.6, "Beam energy [GeV]"};
     clas12::framework::Property<double> m_W_min{"W_min", 0.8, "Minimum W [GeV]"};
     clas12::framework::Property<double> m_W_max{"W_max", 1.05, "Maximum W [GeV]"};
-    clas12::framework::Property<double> m_Vz_min{"Vz_min", -10.0, "Minimum Vz [cm]"};
+    clas12::framework::Property<double> m_Vz_min{"Vz_min", -30.0, "Minimum Vz [cm]"};
     clas12::framework::Property<double> m_Vz_max{"Vz_max", 10.0, "Maximum Vz [cm]"};
 
     // Services (pointers set by configure())
@@ -289,8 +289,8 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         h_W_precut = m_hist_svc->get()->book_atomic_hist1D(prefix + "/W_precut", "W (pre-cut);W [GeV];Events", 200, 0, m_target_mass + 2.0);
         h_nu = m_hist_svc->get()->book_atomic_hist1D(prefix + "/nu", "#nu;#nu [GeV];Events", 100, 0, 11);
         h_p_e_vs_theta_e = m_hist_svc->get()->book_atomic_hist2D(prefix + "/p_e_vs_theta_e", "p_{e} vs #theta_{e};#theta_{e} [deg];p_{e} [GeV]", 90, 0, 45, 100, 0, 11);
-        h_Vz_precut = m_hist_svc->get()->book_atomic_hist1D(prefix + "/Vz_precut", "Vz (pre-cut);Vz [cm];Events", 200, -30, 30);
-        h_Vz = m_hist_svc->get()->book_atomic_hist1D(prefix + "/Vz", "Vz;Vz [cm];Events", 200, -30, 30);
+        h_Vz_precut = m_hist_svc->get()->book_atomic_hist1D(prefix + "/Vz_precut", "Vz (pre-cut);Vz [cm];Events", 200, -50, 30);
+        h_Vz = m_hist_svc->get()->book_atomic_hist1D(prefix + "/Vz", "Vz;Vz [cm];Events", 200, -50, 30);
     }
 
     void fill_histograms(const ElasticKinematics& kin) {
