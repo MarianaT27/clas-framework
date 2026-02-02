@@ -164,100 +164,100 @@ public:
         }
 
         // Match tracks to the elastic electron using phi angle
-        // For elastic ep, proton should be back-to-back with electron (180° apart)
+        // For elastic ep, proton should be back-to-back with electron (150-200° apart)
         double electron_phi = elastic_electron.phi();  // degrees
 
-        // Find the best matching track (closest to 180° apart from electron)
-        double best_delta_from_180 = 999.0;
-        const AHDCTrackData* matched_track = nullptr;
+        // Select tracks where delta_phi is between 150 and 200 degrees
+        std::vector<const AHDCTrackData*> matched_tracks;
 
         for (const auto& track : good_tracks) {
             // Compute track phi from momentum
             double track_phi = std::atan2(track.py, track.px) * 180.0 / M_PI;
 
-            // Compute phi difference with wrapping at 360 degrees
+            // Compute phi difference (0-360 range)
             double delta_phi = std::abs(electron_phi - track_phi);
             if (delta_phi > 180.0) delta_phi = 360.0 - delta_phi;
 
-            // Fill histogram for all tracks (full range 0-360 before wrapping)
-            double raw_delta_phi = std::abs(electron_phi - track_phi);
-            if (h_delta_phi) h_delta_phi->fill(raw_delta_phi);
+            // Fill histogram for all tracks
+            if (h_delta_phi) h_delta_phi->fill(delta_phi);
 
-            // For elastic: proton is ~180° opposite to electron
-            // Check how close delta_phi is to 180°
-            double delta_from_180 = std::abs(delta_phi - 180.0);
-
-            // Keep track of best match (closest to 180°)
-            if (delta_from_180 < m_phi_cut.get() && delta_from_180 < best_delta_from_180) {
-                best_delta_from_180 = delta_from_180;
-                matched_track = &track;
+            // Select tracks with delta_phi between 150 and 200 degrees
+            if (delta_phi >= 150.0 && delta_phi <= 200.0) {
+                matched_tracks.push_back(&track);
+                if (h_best_delta_phi) h_best_delta_phi->fill(delta_phi);
             }
         }
 
-        if (!matched_track) {
+        if (matched_tracks.empty()) {
             return clas12::framework::StatusCode::FILTERED();
         }
 
-        // Count: track matched to electron (denominator for efficiency)
-        ++m_n_tracks_matched_to_electron;
+        // Process all matched tracks
+        for (const auto* matched_track : matched_tracks) {
+            // Count: track matched to electron (denominator for efficiency)
+            ++m_n_tracks_matched_to_electron;
 
-        // Fill best delta from 180 histogram (how close to back-to-back)
-        if (h_best_delta_phi) h_best_delta_phi->fill(best_delta_from_180);
-
-        // Find the ATOF hit associated with the matched track using ALERT::ai:projections
-        int matched_atof_hit_id = -1;
-        for (int i = 0; i < alert_projections_bank.rows(); ++i) {
-            int proj_trackid = alert_projections_bank.get<int>("trackid", i);
-            if (proj_trackid == matched_track->trackid) {
-                matched_atof_hit_id = alert_projections_bank.get<int>("matched_atof_hit_id", i);
-                break;
-            }
-        }
-
-        // Fill matched ATOF hit ID histogram
-        if (h_matched_atof_hit_id) h_matched_atof_hit_id->fill(matched_atof_hit_id);
-
-        // Collect sectors/layers/components of good ATOF hits
-        std::set<int> good_sectors, good_layers, good_components;
-        for (int idx : good_atof_hit_indices) {
-            good_sectors.insert(atof_hits_bank.get<int>("sector", idx));
-            good_layers.insert(atof_hits_bank.get<int>("layer", idx));
-            good_components.insert(atof_hits_bank.get<int>("component", idx));
-        }
-
-        // Determine AI match status and count
-        int match_status = 0;  // 0 = no match
-        if (matched_atof_hit_id >= 0 && matched_atof_hit_id < atof_hits_bank.rows()) {
-            ++m_n_tracks_with_ai_atof_match;
-            match_status = 1;  // 1 = AI found a match
-
-            // Get sector/layer/component of the AI-matched ATOF hit
-            int ai_sector = atof_hits_bank.get<int>("sector", matched_atof_hit_id);
-            int ai_layer = atof_hits_bank.get<int>("layer", matched_atof_hit_id);
-            int ai_component = atof_hits_bank.get<int>("component", matched_atof_hit_id);
-
-            // Check if AI matched to correct sector/layer/component (matches any good hit)
-            if (good_sectors.count(ai_sector) > 0) {
-                ++m_n_correct_sector;
-            }
-            if (good_layers.count(ai_layer) > 0) {
-                ++m_n_correct_layer;
-            }
-            if (good_components.count(ai_component) > 0) {
-                ++m_n_correct_component;
+            // Find the ATOF hit associated with the matched track using ALERT::ai:projections
+            int matched_atof_hit_id = -1;
+            for (int i = 0; i < alert_projections_bank.rows(); ++i) {
+                int proj_trackid = alert_projections_bank.get<int>("trackid", i);
+                if (proj_trackid == matched_track->trackid) {
+                    matched_atof_hit_id = alert_projections_bank.get<int>("matched_atof_hit_id", i);
+                    break;
+                }
             }
 
-            // Check if AI match is a good (quality-cut) ATOF hit
-            bool atof_hit_is_good = std::find(good_atof_hit_indices.begin(), good_atof_hit_indices.end(),
-                                              matched_atof_hit_id) != good_atof_hit_indices.end();
-            if (atof_hit_is_good) {
-                ++m_n_tracks_with_good_atof_match;
-                match_status = 2;  // 2 = good match
-            }
-        }
+            // Fill matched ATOF hit ID histogram
+            if (h_matched_atof_hit_id) h_matched_atof_hit_id->fill(matched_atof_hit_id);
 
-        // Fill AI match status histogram
-        if (h_ai_match_status) h_ai_match_status->fill(match_status);
+            // Collect sectors/layers/components of good ATOF hits
+            std::set<int> good_sectors, good_layers, good_components;
+            for (int idx : good_atof_hit_indices) {
+                good_sectors.insert(atof_hits_bank.get<int>("sector", idx));
+                good_layers.insert(atof_hits_bank.get<int>("layer", idx));
+                good_components.insert(atof_hits_bank.get<int>("component", idx));
+            }
+
+            // Determine AI match status and count
+            int match_status = 0;  // 0 = no match
+            if (matched_atof_hit_id >= 0 && matched_atof_hit_id < atof_hits_bank.rows()) {
+                ++m_n_tracks_with_ai_atof_match;
+                match_status = 1;  // 1 = AI found a match
+
+                // Get sector/layer/component of the AI-matched ATOF hit
+                int ai_sector = atof_hits_bank.get<int>("sector", matched_atof_hit_id);
+                int ai_layer = atof_hits_bank.get<int>("layer", matched_atof_hit_id);
+                int ai_component = atof_hits_bank.get<int>("component", matched_atof_hit_id);
+
+                // Check if AI matched to correct sector/layer/component (matches any good hit)
+                if (good_sectors.count(ai_sector) > 0) {
+                    ++m_n_correct_sector;
+                }
+                if (good_layers.count(ai_layer) > 0) {
+                    ++m_n_correct_layer;
+                }
+                if (good_components.count(ai_component) > 0) {
+                    ++m_n_correct_component;
+                }
+                // Check if AI component is within ±1 of a good component (correct or adjacent)
+                if (good_components.count(ai_component) > 0 ||
+                    good_components.count(ai_component - 1) > 0 ||
+                    good_components.count(ai_component + 1) > 0) {
+                    ++m_n_component_off_by_one;
+                }
+
+                // Check if AI match is a good (quality-cut) ATOF hit
+                bool atof_hit_is_good = std::find(good_atof_hit_indices.begin(), good_atof_hit_indices.end(),
+                                                  matched_atof_hit_id) != good_atof_hit_indices.end();
+                if (atof_hit_is_good) {
+                    ++m_n_tracks_with_good_atof_match;
+                    match_status = 2;  // 2 = good match
+                }
+            }
+
+            // Fill AI match status histogram
+            if (h_ai_match_status) h_ai_match_status->fill(match_status);
+        }  // end for matched_tracks
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -279,6 +279,7 @@ public:
         int n_correct_sector = m_n_correct_sector.load();
         int n_correct_layer = m_n_correct_layer.load();
         int n_correct_component = m_n_correct_component.load();
+        int n_component_off_by_one = m_n_component_off_by_one.load();
 
         Log::info(name(), "=== AI Track-ATOF Matching Efficiency ===");
         Log::info(name(), "Tracks matched to electron (by phi): {}", n_matched);
@@ -290,12 +291,14 @@ public:
         Log::info(name(), "");
         Log::info(name(), "=== Sector/Layer/Component Efficiency ===");
         Log::info(name(), "(AI matches correct value vs total AI matches)");
-        Log::info(name(), "Sector efficiency:    {:5d} / {:5d} = {:5.1f}%",
+        Log::info(name(), "Sector efficiency:         {:5d} / {:5d} = {:5.1f}%",
                   n_correct_sector, n_ai_match, n_ai_match > 0 ? 100.0 * n_correct_sector / n_ai_match : 0.0);
-        Log::info(name(), "Layer efficiency:     {:5d} / {:5d} = {:5.1f}%",
+        Log::info(name(), "Layer efficiency:          {:5d} / {:5d} = {:5.1f}%",
                   n_correct_layer, n_ai_match, n_ai_match > 0 ? 100.0 * n_correct_layer / n_ai_match : 0.0);
-        Log::info(name(), "Component efficiency: {:5d} / {:5d} = {:5.1f}%",
+        Log::info(name(), "Component efficiency:      {:5d} / {:5d} = {:5.1f}%",
                   n_correct_component, n_ai_match, n_ai_match > 0 ? 100.0 * n_correct_component / n_ai_match : 0.0);
+        Log::info(name(), "Component (within +-1):    {:5d} / {:5d} = {:5.1f}%",
+                  n_component_off_by_one, n_ai_match, n_ai_match > 0 ? 100.0 * n_component_off_by_one / n_ai_match : 0.0);
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -377,6 +380,7 @@ private:
     std::atomic<int> m_n_correct_sector{0};               // AI matched correct sector
     std::atomic<int> m_n_correct_layer{0};                // AI matched correct layer
     std::atomic<int> m_n_correct_component{0};            // AI matched correct component
+    std::atomic<int> m_n_component_off_by_one{0};         // AI matched correct or adjacent component (within ±1)
 
     struct AHDCTrackData {
         int trackid;
