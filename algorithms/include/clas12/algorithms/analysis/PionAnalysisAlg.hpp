@@ -28,8 +28,10 @@
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
+#include <clas12/framework/core/TypedEventStore.hpp>
 
 #include <cmath>
+#include <array>
 #include <string>
 
 namespace clas12::algorithms {
@@ -87,11 +89,21 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
         }
 
         auto& hipo_event = event.hipo_event();
-        auto [REC_Event, REC_Particle, REC_Calorimeter, REC_Traj, REC_Track] =
-            hipo_event.banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Traj", "REC::Track");
+        auto [REC_Event, REC_Particle, REC_Calorimeter, REC_Traj, REC_Track, REC_Scintillator] =
+            hipo_event.banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Traj", "REC::Track", "REC::Scintillator");
 
         if (REC_Event->rows() == 0) {
             return clas12::framework::StatusCode::FILTERED();
+        }
+
+        // Get start time for timing calculations
+        double start_time = REC_Event->get<double>("startTime", 0);
+
+        // Get electron vertex for delta_vz calculation
+        double electron_vz = 0.0;
+        auto electrons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedElectronsCapital);
+        if (electrons_opt && !electrons_opt->empty()) {
+            electron_vz = electrons_opt->at(0).vz();
         }
 
         // Extract pions
@@ -100,12 +112,12 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
 
         // Process π⁺
         for (const auto& pion : m_particle_svc->get()->get_pions_plus(particles)) {
-            process_pion(pion, *REC_Calorimeter, *REC_Traj, *REC_Track, true);
+            process_pion(pion, *REC_Calorimeter, *REC_Traj, *REC_Track, *REC_Scintillator, start_time, electron_vz, true);
         }
 
         // Process π⁻
         for (const auto& pion : m_particle_svc->get()->get_pions_minus(particles)) {
-            process_pion(pion, *REC_Calorimeter, *REC_Traj, *REC_Track, false);
+            process_pion(pion, *REC_Calorimeter, *REC_Traj, *REC_Track, *REC_Scintillator, start_time, electron_vz, false);
         }
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -188,6 +200,43 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
         // Kinematics
         clas12::framework::AtomicHistogram1D* momentum = nullptr;
         clas12::framework::AtomicHistogram1D* theta = nullptr;
+        clas12::framework::AtomicHistogram1D* phi = nullptr;
+        clas12::framework::AtomicHistogram1D* vz = nullptr;
+
+        // ========== ENHANCED DIAGNOSTIC HISTOGRAMS ==========
+
+        // Vertex diagnostics
+        clas12::framework::AtomicHistogram2D* vz_vs_phi = nullptr;
+        clas12::framework::AtomicHistogram2D* vz_vs_sector = nullptr;
+        clas12::framework::AtomicHistogram2D* vz_vs_p = nullptr;
+        clas12::framework::AtomicHistogram2D* vx_vs_vy = nullptr;
+        clas12::framework::AtomicHistogram1D* delta_vz = nullptr;
+        clas12::framework::AtomicHistogram2D* delta_vz_vs_p = nullptr;
+
+        // Timing diagnostics (delta_t vs p)
+        clas12::framework::AtomicHistogram2D* delta_t_vs_p = nullptr;
+        std::array<clas12::framework::AtomicHistogram2D*, 6> delta_t_vs_p_sector = {};
+        clas12::framework::AtomicHistogram1D* tof_mass2 = nullptr;
+        clas12::framework::AtomicHistogram2D* tof_mass2_vs_p = nullptr;
+        clas12::framework::AtomicHistogram1D* tof_path = nullptr;
+        clas12::framework::AtomicHistogram2D* tof_path_vs_p = nullptr;
+        clas12::framework::AtomicHistogram1D* beta = nullptr;
+        clas12::framework::AtomicHistogram2D* beta_vs_p = nullptr;
+        clas12::framework::AtomicHistogram1D* beta_diff = nullptr;
+        clas12::framework::AtomicHistogram2D* beta_diff_vs_p = nullptr;
+        clas12::framework::AtomicHistogram1D* delta_t = nullptr;
+
+        // PID diagnostics
+        clas12::framework::AtomicHistogram1D* chi2pid = nullptr;
+        clas12::framework::AtomicHistogram2D* chi2pid_vs_p = nullptr;
+        clas12::framework::AtomicHistogram2D* chi2pid_vs_theta = nullptr;
+        clas12::framework::AtomicHistogram2D* chi2pid_vs_sector = nullptr;
+
+        // Phase space and acceptance
+        clas12::framework::AtomicHistogram2D* phi_vs_theta = nullptr;
+        clas12::framework::AtomicHistogram2D* p_vs_phi = nullptr;
+        clas12::framework::AtomicHistogram2D* p_vs_theta = nullptr;
+        std::array<clas12::framework::AtomicHistogram2D*, 6> p_vs_theta_sector = {};
     };
 
     PionHistograms h_piplus;
@@ -241,6 +290,64 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
         // Basic kinematics (lock-free atomic)
         h.momentum = svc->book_atomic_momentum_hist(dir + "/momentum", fmt::format("{} Momentum", label));
         h.theta = svc->book_atomic_hist1D(dir + "/theta", fmt::format("{} #theta;#theta [deg];Events", label), 180, 0, 40);
+        h.phi = svc->book_atomic_hist1D(dir + "/phi", fmt::format("{} #phi;#phi [deg];Events", label), 360, -180, 180);
+        h.vz = svc->book_atomic_hist1D(dir + "/vz", fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label), 200, -40, 40);
+
+        // ========== ENHANCED DIAGNOSTIC HISTOGRAMS ==========
+
+        // Vertex diagnostics
+        h.vz_vs_phi = svc->book_atomic_hist2D(dir + "/vz_vs_phi",
+            fmt::format("{} v_{{z}} vs #phi;#phi [deg];v_{{z}} [cm]", label), 180, -180, 180, 100, -40, 40);
+        h.vz_vs_sector = svc->book_atomic_hist2D(dir + "/vz_vs_sector",
+            fmt::format("{} v_{{z}} vs Sector;Sector;v_{{z}} [cm]", label), 6, 0.5, 6.5, 100, -40, 40);
+        h.vz_vs_p = svc->book_atomic_hist2D(dir + "/vz_vs_p",
+            fmt::format("{} v_{{z}} vs p;p [GeV/c];v_{{z}} [cm]", label), 100, 0, 10, 100, -40, 40);
+        h.vx_vs_vy = svc->book_atomic_hist2D(dir + "/vx_vs_vy",
+            fmt::format("{} v_{{x}} vs v_{{y}};v_{{x}} [cm];v_{{y}} [cm]", label), 100, -2, 2, 100, -2, 2);
+        h.delta_vz = svc->book_atomic_hist1D(dir + "/delta_vz",
+            fmt::format("{} #Deltav_{{z}} (#pi - e);#Deltav_{{z}} [cm];Events", label), 200, -20, 20);
+        h.delta_vz_vs_p = svc->book_atomic_hist2D(dir + "/delta_vz_vs_p",
+            fmt::format("{} #Deltav_{{z}} vs p;p [GeV/c];#Deltav_{{z}} [cm]", label), 100, 0, 10, 200, -20, 20);
+
+        // Timing diagnostics (delta_t vs p)
+        h.delta_t_vs_p = svc->book_atomic_hist2D(dir + "/delta_t_vs_p",
+            fmt::format("{} #Deltat vs p;p [GeV/c];#Deltat [ns]", label), 100, 0, 10, 200, -2, 2);
+        h.delta_t = svc->book_atomic_hist1D(dir + "/delta_t",
+            fmt::format("{} #Deltat;#Deltat [ns];Events", label), 200, -2, 2);
+        h.tof_mass2 = svc->book_atomic_hist1D(dir + "/tof_mass2",
+            fmt::format("{} m^{{2}}_{{TOF}};m^{{2}} [GeV^{{2}}];Events", label), 200, -0.2, 0.5);
+        h.tof_mass2_vs_p = svc->book_atomic_hist2D(dir + "/tof_mass2_vs_p",
+            fmt::format("{} m^{{2}}_{{TOF}} vs p;p [GeV/c];m^{{2}} [GeV^{{2}}]", label), 100, 0, 10, 200, -0.2, 0.5);
+        h.tof_path = svc->book_atomic_hist1D(dir + "/tof_path",
+            fmt::format("{} TOF Path Length;Path [cm];Events", label), 100, 0, 800);
+        h.tof_path_vs_p = svc->book_atomic_hist2D(dir + "/tof_path_vs_p",
+            fmt::format("{} TOF Path vs p;p [GeV/c];Path [cm]", label), 100, 0, 10, 100, 0, 800);
+        h.beta = svc->book_atomic_hist1D(dir + "/beta",
+            fmt::format("{} #beta;#beta;Events", label), 100, 0.5, 1.1);
+        h.beta_vs_p = svc->book_atomic_hist2D(dir + "/beta_vs_p",
+            fmt::format("{} #beta vs p;p [GeV/c];#beta", label), 100, 0, 10, 100, 0.5, 1.1);
+        h.beta_diff = svc->book_atomic_hist1D(dir + "/beta_diff",
+            fmt::format("{} #Delta#beta (#beta_{{meas}} - #beta_{{exp}});#Delta#beta;Events", label), 200, -0.1, 0.1);
+        h.beta_diff_vs_p = svc->book_atomic_hist2D(dir + "/beta_diff_vs_p",
+            fmt::format("{} #Delta#beta vs p;p [GeV/c];#Delta#beta", label), 100, 0, 10, 200, -0.1, 0.1);
+
+        // PID diagnostics
+        h.chi2pid = svc->book_atomic_hist1D(dir + "/chi2pid",
+            fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), 200, -10, 10);
+        h.chi2pid_vs_p = svc->book_atomic_hist2D(dir + "/chi2pid_vs_p",
+            fmt::format("{} #chi^{{2}}_{{PID}} vs p;p [GeV/c];#chi^{{2}}_{{PID}}", label), 100, 0, 10, 100, -10, 10);
+        h.chi2pid_vs_theta = svc->book_atomic_hist2D(dir + "/chi2pid_vs_theta",
+            fmt::format("{} #chi^{{2}}_{{PID}} vs #theta;#theta [deg];#chi^{{2}}_{{PID}}", label), 90, 0, 45, 100, -10, 10);
+        h.chi2pid_vs_sector = svc->book_atomic_hist2D(dir + "/chi2pid_vs_sector",
+            fmt::format("{} #chi^{{2}}_{{PID}} vs Sector;Sector;#chi^{{2}}_{{PID}}", label), 6, 0.5, 6.5, 100, -10, 10);
+
+        // Phase space and acceptance
+        h.phi_vs_theta = svc->book_atomic_hist2D(dir + "/phi_vs_theta",
+            fmt::format("{} #phi vs #theta;#theta [deg];#phi [deg]", label), 90, 0, 45, 180, -180, 180);
+        h.p_vs_phi = svc->book_atomic_hist2D(dir + "/p_vs_phi",
+            fmt::format("{} p vs #phi;#phi [deg];p [GeV/c]", label), 180, -180, 180, 100, 0, 10);
+        h.p_vs_theta = svc->book_atomic_hist2D(dir + "/p_vs_theta",
+            fmt::format("{} p vs #theta;#theta [deg];p [GeV/c]", label), 90, 0, 45, 100, 0, 10);
 
         // Book histograms for each sector (1-6)
         for (int sector = 1; sector <= 6; ++sector) {
@@ -295,13 +402,26 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
                 dir + "/p_vs_theta" + sec_suffix,
                 fmt::format("{} p vs #theta (Sector {});#theta [deg];p [GeV/c]", label, sector),
                 90, 0, 45, 100, 0, 10);
+
+            // Per-sector delta_t vs p
+            h.delta_t_vs_p_sector[sector - 1] = svc->book_atomic_hist2D(
+                dir + "/delta_t_vs_p" + sec_suffix,
+                fmt::format("{} #Deltat vs p (Sector {});p [GeV/c];#Deltat [ns]", label, sector),
+                100, 0, 10, 200, -2, 2);
+
+            // Per-sector p vs theta (acceptance maps)
+            h.p_vs_theta_sector[sector - 1] = svc->book_atomic_hist2D(
+                dir + "/p_vs_theta_acceptance" + sec_suffix,
+                fmt::format("{} p vs #theta Acceptance (Sector {});#theta [deg];p [GeV/c]", label, sector),
+                90, 0, 45, 100, 0, 10);
         }
 
         h.sector_histograms.booked = true;
 
     }
 
-    void process_pion(const clas12::Particle& pion, hipo::bank& REC_Calorimeter, hipo::bank& REC_Traj, hipo::bank& REC_Track, bool is_piplus) {
+    void process_pion(const clas12::Particle& pion, hipo::bank& REC_Calorimeter, hipo::bank& REC_Traj, hipo::bank& REC_Track,
+                      hipo::bank& REC_Scintillator, double start_time, double electron_vz, bool is_piplus) {
         auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
         auto& h = is_piplus ? h_piplus : h_piminus;
 
@@ -360,9 +480,37 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
         auto cherenkov = clas12::read_Cherenkov_bank(REC_Calorimeter, pion.index());
         double nphe = cherenkov.nphe;
 
+        // Read scintillator info for timing
+        auto scintillator = clas12::read_Scintillator_bank(REC_Scintillator, pion.index());
+        int sector = scintillator.sector;
+        double tof_time = scintillator.time;
+        double tof_path = scintillator.path;
+
+        // Calculate timing quantities
+        double pion_mass = clas12::Constants::PIMASS;
+        double beta_expected = p / std::sqrt(p * p + pion_mass * pion_mass);
+        double t_expected = tof_path / (beta_expected * clas12::Constants::SPEED_OF_LIGHT);
+        double measured_time = tof_time - start_time;
+        double delta_t = measured_time - t_expected;
+        double beta_measured = pion.beta();
+
+        // Calculate TOF mass^2: m^2 = p^2 * (1/beta^2 - 1)
+        double tof_mass2 = 0.0;
+        if (beta_measured > 0) {
+            tof_mass2 = p * p * (1.0 / (beta_measured * beta_measured) - 1.0);
+        }
+
+        // Calculate beta difference
+        double beta_diff = beta_measured - beta_expected;
+
+        // Calculate delta Vz (pion - electron)
+        double delta_vz = pion.vz() - electron_vz;
+
         // Fill histograms (lock-free atomic)
         h.momentum->fill(p);
         h.theta->fill(pion.theta());
+        if (h.phi) h.phi->fill(pion.phi());
+        if (h.vz) h.vz->fill(pion.vz());
 
         // Calorimeter histograms
         h.sf->fill(SF);
@@ -380,29 +528,77 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
         h.chi2ndf_vs_edge_r2->fill(edge_r2, chi2ndf);
         h.chi2ndf_vs_edge_r3->fill(edge_r3, chi2ndf);
 
+        // ========== ENHANCED DIAGNOSTIC HISTOGRAMS ==========
+
+        // Vertex diagnostics
+        if (h.vz_vs_phi) h.vz_vs_phi->fill(pion.phi(), pion.vz());
+        if (h.vz_vs_p) h.vz_vs_p->fill(p, pion.vz());
+        if (h.vx_vs_vy) h.vx_vs_vy->fill(pion.vx(), pion.vy());
+        if (h.delta_vz) h.delta_vz->fill(delta_vz);
+        if (h.delta_vz_vs_p) h.delta_vz_vs_p->fill(p, delta_vz);
+
+        // Timing diagnostics (delta_t vs p)
+        if (h.delta_t_vs_p) h.delta_t_vs_p->fill(p, delta_t);
+        if (h.delta_t) h.delta_t->fill(delta_t);
+        if (h.tof_mass2) h.tof_mass2->fill(tof_mass2);
+        if (h.tof_mass2_vs_p) h.tof_mass2_vs_p->fill(p, tof_mass2);
+        if (h.tof_path) h.tof_path->fill(tof_path);
+        if (h.tof_path_vs_p) h.tof_path_vs_p->fill(p, tof_path);
+        if (h.beta) h.beta->fill(beta_measured);
+        if (h.beta_vs_p) h.beta_vs_p->fill(p, beta_measured);
+        if (h.beta_diff) h.beta_diff->fill(beta_diff);
+        if (h.beta_diff_vs_p) h.beta_diff_vs_p->fill(p, beta_diff);
+
+        // PID diagnostics
+        if (h.chi2pid) h.chi2pid->fill(pion.chi2pid());
+        if (h.chi2pid_vs_p) h.chi2pid_vs_p->fill(p, pion.chi2pid());
+        if (h.chi2pid_vs_theta) h.chi2pid_vs_theta->fill(pion.theta(), pion.chi2pid());
+
+        // Phase space and acceptance
+        if (h.phi_vs_theta) h.phi_vs_theta->fill(pion.theta(), pion.phi());
+        if (h.p_vs_phi) h.p_vs_phi->fill(pion.phi(), p);
+        if (h.p_vs_theta) h.p_vs_theta->fill(pion.theta(), p);
+
         // Fill sector-specific histograms
+        if (sector >= 1 && sector <= 6) {
+            int idx = sector - 1;
+
+            // Vertex vs sector
+            if (h.vz_vs_sector) h.vz_vs_sector->fill(sector, pion.vz());
+
+            // PID vs sector
+            if (h.chi2pid_vs_sector) h.chi2pid_vs_sector->fill(sector, pion.chi2pid());
+
+            // Per-sector delta_t vs p
+            if (h.delta_t_vs_p_sector[idx]) h.delta_t_vs_p_sector[idx]->fill(p, delta_t);
+
+            // Per-sector p vs theta (acceptance)
+            if (h.p_vs_theta_sector[idx]) h.p_vs_theta_sector[idx]->fill(pion.theta(), p);
+        }
+
+        // Fill existing sector-specific histograms (calorimeter)
         if (h.sector_histograms.booked) {
-            int sector = calo.pcal.sector;
-            if (sector < 1 || sector > 6) return;
+            int calo_sector = calo.pcal.sector;
+            if (calo_sector < 1 || calo_sector > 6) return;
             // Edge vs chi2/ndf
-            h.sector_histograms.edge_vs_chi2ndf_r1[sector]->fill(edge_r1, chi2ndf);
-            h.sector_histograms.edge_vs_chi2ndf_r2[sector]->fill(edge_r2, chi2ndf);
-            h.sector_histograms.edge_vs_chi2ndf_r3[sector]->fill(edge_r3, chi2ndf);
+            h.sector_histograms.edge_vs_chi2ndf_r1[calo_sector]->fill(edge_r1, chi2ndf);
+            h.sector_histograms.edge_vs_chi2ndf_r2[calo_sector]->fill(edge_r2, chi2ndf);
+            h.sector_histograms.edge_vs_chi2ndf_r3[calo_sector]->fill(edge_r3, chi2ndf);
 
             // Calorimeter quantities
             double E_cal = calo.inner.energy + calo.outer.energy;
             double E_pcal = calo.pcal.energy;
             if (E_pcal == 0) return; // Should not happen for pions with calorimeter info
-            h.sector_histograms.lv_vs_SF[sector]->fill(lv, SF);
-            h.sector_histograms.lw_vs_SF[sector]->fill(lw, SF);
-            h.sector_histograms.nphe[sector]->fill(nphe);
-            h.sector_histograms.EPCal_vs_ECal[sector]->fill(E_pcal, E_cal);
-            h.sector_histograms.EPCal[sector]->fill(E_pcal);
-            h.sector_histograms.p_vs_SF[sector]->fill(p, SF);
+            h.sector_histograms.lv_vs_SF[calo_sector]->fill(lv, SF);
+            h.sector_histograms.lw_vs_SF[calo_sector]->fill(lw, SF);
+            h.sector_histograms.nphe[calo_sector]->fill(nphe);
+            h.sector_histograms.EPCal_vs_ECal[calo_sector]->fill(E_pcal, E_cal);
+            h.sector_histograms.EPCal[calo_sector]->fill(E_pcal);
+            h.sector_histograms.p_vs_SF[calo_sector]->fill(p, SF);
 
             // Sector-level p vs theta
-            if (h.sector_histograms.p_vs_theta.count(sector)) {
-                h.sector_histograms.p_vs_theta[sector]->fill(pion.theta(), p);
+            if (h.sector_histograms.p_vs_theta.count(calo_sector)) {
+                h.sector_histograms.p_vs_theta[calo_sector]->fill(pion.theta(), p);
             }
         }
     }

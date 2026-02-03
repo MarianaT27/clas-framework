@@ -17,7 +17,6 @@
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
-#include <clas12/framework/core/TypedEventStore.hpp>
 
 namespace clas12::algorithms {
 
@@ -194,13 +193,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
         double start_time = REC_Event->get<double>("startTime", 0);
 
-        // Get electron vertex for delta_vz calculation
-        double electron_vz = 0.0;
-        auto electrons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedElectronsCapital);
-        if (electrons_opt && !electrons_opt->empty()) {
-            electron_vz = electrons_opt->at(0).vz();
-        }
-
         // Extract pions using ParticleSelectorService
         clas12::framework::ParticleMap particles = m_particle_svc->get()->extract_particles(
             *REC_Particle,
@@ -211,9 +203,9 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         auto piplus_candidates = build_pion_candidates(pions_plus, *REC_Scintillator, start_time, true);
 
         // Fill pre-cut histograms, update cutflow, fill post-cut histograms and N-tuple
-        fill_pre_cut_histograms(piplus_candidates, true, electron_vz);
+        fill_pre_cut_histograms(piplus_candidates, true);
         update_cutflow(piplus_candidates, true);
-        fill_post_cut_histograms(piplus_candidates, true, electron_vz);
+        fill_post_cut_histograms(piplus_candidates, true);
         fill_ntuple(piplus_candidates, true);
 
         // Collect passing particles
@@ -224,9 +216,9 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         auto piminus_candidates = build_pion_candidates(pions_minus, *REC_Scintillator, start_time, false);
 
         // Fill pre-cut histograms, update cutflow, fill post-cut histograms and N-tuple
-        fill_pre_cut_histograms(piminus_candidates, false, electron_vz);
+        fill_pre_cut_histograms(piminus_candidates, false);
         update_cutflow(piminus_candidates, false);
-        fill_post_cut_histograms(piminus_candidates, false, electron_vz);
+        fill_post_cut_histograms(piminus_candidates, false);
         fill_ntuple(piminus_candidates, false);
 
         // Collect passing particles
@@ -339,34 +331,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         // Sector-level histograms (post-cut)
         std::array<clas12::framework::AtomicHistogram1D*, 6> momentum_sector = {};
         std::array<clas12::framework::AtomicHistogram1D*, 6> theta_sector = {};
-
-        // ========== NEW HISTOGRAMS ==========
-
-        // Enhanced vertex diagnostics
-        clas12::framework::AtomicHistogram2D* vz_vs_phi = nullptr;
-        clas12::framework::AtomicHistogram2D* vz_vs_sector = nullptr;
-        clas12::framework::AtomicHistogram2D* vz_vs_p = nullptr;
-        clas12::framework::AtomicHistogram2D* vx_vs_vy = nullptr;
-        clas12::framework::AtomicHistogram1D* delta_vz = nullptr;
-        clas12::framework::AtomicHistogram2D* delta_vz_vs_p = nullptr;
-
-        // Enhanced timing diagnostics
-        std::array<clas12::framework::AtomicHistogram2D*, 6> delta_t_vs_p_sector = {};
-        clas12::framework::AtomicHistogram1D* tof_mass2 = nullptr;
-        clas12::framework::AtomicHistogram2D* tof_mass2_vs_p = nullptr;
-        clas12::framework::AtomicHistogram1D* tof_path = nullptr;
-        clas12::framework::AtomicHistogram2D* tof_path_vs_p = nullptr;
-        clas12::framework::AtomicHistogram1D* beta_diff = nullptr;
-        clas12::framework::AtomicHistogram2D* beta_diff_vs_p = nullptr;
-
-        // Enhanced PID diagnostics
-        clas12::framework::AtomicHistogram2D* chi2pid_vs_theta = nullptr;
-        clas12::framework::AtomicHistogram2D* chi2pid_vs_sector = nullptr;
-
-        // Phase space and acceptance
-        clas12::framework::AtomicHistogram2D* phi_vs_theta = nullptr;
-        clas12::framework::AtomicHistogram2D* p_vs_phi = nullptr;
-        std::array<clas12::framework::AtomicHistogram2D*, 6> p_vs_theta_sector = {};
     };
 
     PionHistograms h_piplus;
@@ -439,77 +403,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 h.theta_sector[sector - 1] = svc->book_theta_hist(
                     dir + "/theta" + sec_suffix,
                     fmt::format("{} #theta (Sector {})", label, sector));
-
-                // Per-sector delta_t vs p
-                h.delta_t_vs_p_sector[sector - 1] = svc->book_hist2d(
-                    dir + "/delta_t_vs_p" + sec_suffix,
-                    fmt::format("{} #Deltat vs p (Sector {});p [GeV/c];#Deltat [ns]", label, sector),
-                    100, 0, 10, 200, -2, 2);
-
-                // Per-sector p vs theta (acceptance maps)
-                h.p_vs_theta_sector[sector - 1] = svc->book_hist2d(
-                    dir + "/p_vs_theta" + sec_suffix,
-                    fmt::format("{} p vs #theta (Sector {});#theta [deg];p [GeV/c]", label, sector),
-                    90, 0, 45, 100, 0, 10);
             }
-
-            // ========== NEW HISTOGRAMS ==========
-
-            // Enhanced vertex diagnostics
-            h.vz_vs_phi = svc->book_hist2d(dir + "/vz_vs_phi",
-                label + " v_{z} vs #phi;#phi [deg];v_{z} [cm]",
-                180, -180, 180, 100, -40, 40);
-            h.vz_vs_sector = svc->book_hist2d(dir + "/vz_vs_sector",
-                label + " v_{z} vs Sector;Sector;v_{z} [cm]",
-                6, 0.5, 6.5, 100, -40, 40);
-            h.vz_vs_p = svc->book_hist2d(dir + "/vz_vs_p",
-                label + " v_{z} vs p;p [GeV/c];v_{z} [cm]",
-                100, 0, 10, 100, -40, 40);
-            h.vx_vs_vy = svc->book_hist2d(dir + "/vx_vs_vy",
-                label + " v_{x} vs v_{y};v_{x} [cm];v_{y} [cm]",
-                100, -2, 2, 100, -2, 2);
-            h.delta_vz = svc->book_hist(dir + "/delta_vz",
-                label + " #Deltav_{z} (#pi - e);#Deltav_{z} [cm];Events",
-                200, -20, 20);
-            h.delta_vz_vs_p = svc->book_hist2d(dir + "/delta_vz_vs_p",
-                label + " #Deltav_{z} vs p;p [GeV/c];#Deltav_{z} [cm]",
-                100, 0, 10, 200, -20, 20);
-
-            // Enhanced timing diagnostics
-            h.tof_mass2 = svc->book_hist(dir + "/tof_mass2",
-                label + " m^{2}_{TOF};m^{2} [GeV^{2}];Events",
-                200, -0.2, 0.5);
-            h.tof_mass2_vs_p = svc->book_hist2d(dir + "/tof_mass2_vs_p",
-                label + " m^{2}_{TOF} vs p;p [GeV/c];m^{2} [GeV^{2}]",
-                100, 0, 10, 200, -0.2, 0.5);
-            h.tof_path = svc->book_hist(dir + "/tof_path",
-                label + " TOF Path Length;Path [cm];Events",
-                100, 0, 800);
-            h.tof_path_vs_p = svc->book_hist2d(dir + "/tof_path_vs_p",
-                label + " TOF Path vs p;p [GeV/c];Path [cm]",
-                100, 0, 10, 100, 0, 800);
-            h.beta_diff = svc->book_hist(dir + "/beta_diff",
-                label + " #Delta#beta (#beta_{meas} - #beta_{exp});#Delta#beta;Events",
-                200, -0.1, 0.1);
-            h.beta_diff_vs_p = svc->book_hist2d(dir + "/beta_diff_vs_p",
-                label + " #Delta#beta vs p;p [GeV/c];#Delta#beta",
-                100, 0, 10, 200, -0.1, 0.1);
-
-            // Enhanced PID diagnostics
-            h.chi2pid_vs_theta = svc->book_hist2d(dir + "/chi2pid_vs_theta",
-                label + " #chi^{2}_{PID} vs #theta;#theta [deg];#chi^{2}_{PID}",
-                90, 0, 45, 100, -10, 10);
-            h.chi2pid_vs_sector = svc->book_hist2d(dir + "/chi2pid_vs_sector",
-                label + " #chi^{2}_{PID} vs Sector;Sector;#chi^{2}_{PID}",
-                6, 0.5, 6.5, 100, -10, 10);
-
-            // Phase space and acceptance
-            h.phi_vs_theta = svc->book_hist2d(dir + "/phi_vs_theta",
-                label + " #phi vs #theta;#theta [deg];#phi [deg]",
-                90, 0, 45, 180, -180, 180);
-            h.p_vs_phi = svc->book_hist2d(dir + "/p_vs_phi",
-                label + " p vs #phi;#phi [deg];p [GeV/c]",
-                180, -180, 180, 100, 0, 10);
         };
 
         // Book histograms for π⁺ and π⁻
@@ -603,7 +497,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     /**
      * @brief Fill histograms for candidates before kinematic cuts (for efficiency studies)
      */
-    auto fill_pre_cut_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus, double electron_vz) -> void {
+    auto fill_pre_cut_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
         auto& h = is_piplus ? h_piplus : h_piminus;
 
         for (const auto& cand : candidates) {
@@ -622,42 +516,13 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             if (h.vz_vs_theta) h.vz_vs_theta->fill(cand.theta, cand.vz);
             if (h.delta_t_vs_theta) h.delta_t_vs_theta->fill(cand.theta, cand.delta_t);
             if (h.delta_t_vs_p_precut) h.delta_t_vs_p_precut->fill(cand.p, cand.delta_t);
-
-            // ========== NEW PRE-CUT HISTOGRAMS ==========
-
-            // Vertex diagnostics (pre-cut)
-            if (h.vz_vs_phi) h.vz_vs_phi->fill(cand.phi, cand.vz);
-            if (h.vx_vs_vy) h.vx_vs_vy->fill(cand.vx, cand.vy);
-
-            // Delta Vz (pion - electron)
-            double delta_vz = cand.vz - electron_vz;
-            if (h.delta_vz) h.delta_vz->fill(delta_vz);
-            if (h.delta_vz_vs_p) h.delta_vz_vs_p->fill(cand.p, delta_vz);
-
-            // Timing diagnostics (pre-cut)
-            if (h.tof_mass2) h.tof_mass2->fill(cand.tof_mass2);
-            if (h.tof_mass2_vs_p) h.tof_mass2_vs_p->fill(cand.p, cand.tof_mass2);
-            if (h.tof_path) h.tof_path->fill(cand.tof_path);
-            if (h.tof_path_vs_p) h.tof_path_vs_p->fill(cand.p, cand.tof_path);
-            if (h.beta_diff) h.beta_diff->fill(cand.beta_diff);
-            if (h.beta_diff_vs_p) h.beta_diff_vs_p->fill(cand.p, cand.beta_diff);
-
-            // PID diagnostics (pre-cut)
-            if (h.chi2pid_vs_theta) h.chi2pid_vs_theta->fill(cand.theta, cand.chi2pid);
-            if (cand.sector >= 1 && cand.sector <= 6) {
-                if (h.chi2pid_vs_sector) h.chi2pid_vs_sector->fill(cand.sector, cand.chi2pid);
-            }
-
-            // Phase space (pre-cut)
-            if (h.phi_vs_theta) h.phi_vs_theta->fill(cand.theta, cand.phi);
-            if (h.p_vs_phi) h.p_vs_phi->fill(cand.phi, cand.p);
         }
     }
 
     /**
      * @brief Fill histograms for candidates that passed all cuts
      */
-    auto fill_post_cut_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus, double electron_vz) -> void {
+    auto fill_post_cut_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
         auto& h = is_piplus ? h_piplus : h_piminus;
 
         for (const auto& cand : candidates) {
@@ -681,46 +546,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 int idx = cand.sector - 1;
                 if (h.momentum_sector[idx]) h.momentum_sector[idx]->fill(cand.p);
                 if (h.theta_sector[idx]) h.theta_sector[idx]->fill(cand.theta);
-
-                // Per-sector delta_t vs p (post-cut)
-                if (h.delta_t_vs_p_sector[idx]) h.delta_t_vs_p_sector[idx]->fill(cand.p, cand.delta_t);
-
-                // Per-sector p vs theta (post-cut)
-                if (h.p_vs_theta_sector[idx]) h.p_vs_theta_sector[idx]->fill(cand.theta, cand.p);
             }
-
-            // ========== NEW POST-CUT HISTOGRAMS ==========
-
-            // Vertex diagnostics (post-cut)
-            if (h.vz_vs_phi) h.vz_vs_phi->fill(cand.phi, cand.vz);
-            if (h.vz_vs_p) h.vz_vs_p->fill(cand.p, cand.vz);
-            if (h.vx_vs_vy) h.vx_vs_vy->fill(cand.vx, cand.vy);
-            if (cand.sector >= 1 && cand.sector <= 6) {
-                if (h.vz_vs_sector) h.vz_vs_sector->fill(cand.sector, cand.vz);
-            }
-
-            // Delta Vz (pion - electron) post-cut
-            double delta_vz = cand.vz - electron_vz;
-            if (h.delta_vz) h.delta_vz->fill(delta_vz);
-            if (h.delta_vz_vs_p) h.delta_vz_vs_p->fill(cand.p, delta_vz);
-
-            // Timing diagnostics (post-cut)
-            if (h.tof_mass2) h.tof_mass2->fill(cand.tof_mass2);
-            if (h.tof_mass2_vs_p) h.tof_mass2_vs_p->fill(cand.p, cand.tof_mass2);
-            if (h.tof_path) h.tof_path->fill(cand.tof_path);
-            if (h.tof_path_vs_p) h.tof_path_vs_p->fill(cand.p, cand.tof_path);
-            if (h.beta_diff) h.beta_diff->fill(cand.beta_diff);
-            if (h.beta_diff_vs_p) h.beta_diff_vs_p->fill(cand.p, cand.beta_diff);
-
-            // PID diagnostics (post-cut)
-            if (h.chi2pid_vs_theta) h.chi2pid_vs_theta->fill(cand.theta, cand.chi2pid);
-            if (cand.sector >= 1 && cand.sector <= 6) {
-                if (h.chi2pid_vs_sector) h.chi2pid_vs_sector->fill(cand.sector, cand.chi2pid);
-            }
-
-            // Phase space (post-cut)
-            if (h.phi_vs_theta) h.phi_vs_theta->fill(cand.theta, cand.phi);
-            if (h.p_vs_phi) h.p_vs_phi->fill(cand.phi, cand.p);
         }
     }
 
