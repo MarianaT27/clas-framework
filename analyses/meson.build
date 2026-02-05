@@ -65,3 +65,10 @@ executable(
   files('ALERT_track_matching/ALERT_track_matching.cpp'),
   dependencies: analysis_deps,
 )
+
+# AI hadron PID analysis
+executable(
+  'ai_pid_hadron',
+  files('ai_pid_hadron/ai_pid_hadron.cpp', 'ai_pid_hadron/AiPidHadronAlg.hpp'),
+  dependencies: analysis_deps,
+)
