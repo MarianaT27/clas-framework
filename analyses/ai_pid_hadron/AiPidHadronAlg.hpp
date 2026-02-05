@@ -442,6 +442,25 @@ public:
         m_cutflow_kplus.print();
         m_cutflow_kminus.print();
 
+        // Print RICH PID summary table
+        size_t total = 0;
+        for (const auto& [pid, count] : m_rich_pid_counts) {
+            total += count;
+        }
+
+        fmt::print("\n{:=^50}\n", " RICH best_PID Summary ");
+        fmt::print("{:<10} {:<15} {:>10} {:>10}\n", "PID", "Name", "Count", "Fraction");
+        fmt::print("{:-^50}\n", "");
+        for (const auto& [pid, count] : m_rich_pid_counts) {
+            auto pid_enum = clas12::to_pid_enum(pid);
+            std::string pname = pid_enum ? clas12::pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
+            double frac = total > 0 ? 100.0 * static_cast<double>(count) / static_cast<double>(total) : 0.0;
+            fmt::print("{:<10} {:<15} {:>10} {:>9.2f}%\n", pid, pname, count, frac);
+        }
+        fmt::print("{:-^50}\n", "");
+        fmt::print("{:<10} {:<15} {:>10}\n", "", "Total", total);
+        fmt::print("{:=^50}\n\n", "");
+
         return clas12::framework::StatusCode::SUCCESS();
     }
 
