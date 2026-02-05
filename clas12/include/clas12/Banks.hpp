@@ -32,6 +32,33 @@ struct CalorimeterBank {
         float lu = std::numeric_limits<float>::quiet_NaN();
         float lv = std::numeric_limits<float>::quiet_NaN();
         float lw = std::numeric_limits<float>::quiet_NaN();
+        float du = std::numeric_limits<float>::quiet_NaN();
+        float dv = std::numeric_limits<float>::quiet_NaN();
+        float dw = std::numeric_limits<float>::quiet_NaN();
+        float m2u = std::numeric_limits<float>::quiet_NaN();
+        float m2v = std::numeric_limits<float>::quiet_NaN();
+        float m2w = std::numeric_limits<float>::quiet_NaN();
+        float m3u = std::numeric_limits<float>::quiet_NaN();
+        float m3v = std::numeric_limits<float>::quiet_NaN();
+        float m3w = std::numeric_limits<float>::quiet_NaN();
+
+        // Extra fields from REC::CaloExtras bank
+        short dbstU = std::numeric_limits<short>::quiet_NaN();
+        short dbstV = std::numeric_limits<short>::quiet_NaN();
+        short dbstW = std::numeric_limits<short>::quiet_NaN();
+        float rawEU = std::numeric_limits<float>::quiet_NaN();
+        float rawEV = std::numeric_limits<float>::quiet_NaN();
+        float rawEW = std::numeric_limits<float>::quiet_NaN();
+        float recEU = std::numeric_limits<float>::quiet_NaN();
+        float recEV = std::numeric_limits<float>::quiet_NaN();
+        float recEW = std::numeric_limits<float>::quiet_NaN();
+        float recDTU = std::numeric_limits<float>::quiet_NaN();
+        float recDTV = std::numeric_limits<float>::quiet_NaN();
+        float recDTW = std::numeric_limits<float>::quiet_NaN();
+        float recFTU = std::numeric_limits<float>::quiet_NaN();
+        float recFTV = std::numeric_limits<float>::quiet_NaN();
+        float recFTW = std::numeric_limits<float>::quiet_NaN();
+        float size = std::numeric_limits<float>::quiet_NaN();
     };
 
     CalorimeterStruct pcal;
@@ -90,6 +117,38 @@ struct ScintillatorBank {
     float hy = std::numeric_limits<float>::quiet_NaN();
     float hz = std::numeric_limits<float>::quiet_NaN();
     int status = std::numeric_limits<int>::quiet_NaN();
+
+    // Extra fields from REC::ScintExtras bank
+    float dedx = std::numeric_limits<float>::quiet_NaN();
+    short size = std::numeric_limits<short>::quiet_NaN();
+    char layermult = std::numeric_limits<char>::quiet_NaN();
+};
+
+struct RICHParticleBank {
+    int id = std::numeric_limits<int>::quiet_NaN();
+    int hindex = std::numeric_limits<int>::quiet_NaN();
+    int pindex = std::numeric_limits<int>::quiet_NaN();
+
+    int emilay = std::numeric_limits<int>::quiet_NaN();
+    int emico = std::numeric_limits<int>::quiet_NaN();
+    int enico = std::numeric_limits<int>::quiet_NaN();
+    int emqua = std::numeric_limits<int>::quiet_NaN();
+    float mchi2 = std::numeric_limits<float>::quiet_NaN();
+    float mass = std::numeric_limits<float>::quiet_NaN();
+
+    int best_PID = std::numeric_limits<int>::quiet_NaN();
+    float RQ = std::numeric_limits<float>::quiet_NaN();
+    float ReQ = std::numeric_limits<float>::quiet_NaN();
+    float el_logl = std::numeric_limits<float>::quiet_NaN();
+    float pi_logl = std::numeric_limits<float>::quiet_NaN();
+    float k_logl = std::numeric_limits<float>::quiet_NaN();
+    float pr_logl = std::numeric_limits<float>::quiet_NaN();
+
+    float best_ch = std::numeric_limits<float>::quiet_NaN();
+    float best_c2 = std::numeric_limits<float>::quiet_NaN();
+    float best_RL = std::numeric_limits<float>::quiet_NaN();
+    float best_ntot = std::numeric_limits<float>::quiet_NaN();
+    float best_mass = std::numeric_limits<float>::quiet_NaN();
 };
 
 }  // namespace clas12
