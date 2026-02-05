@@ -886,30 +886,84 @@ private:
     // Private Methods
     //=========================================================================
 
-    /// Load metadata for all files if not already loaded
+    /// Load metadata for all files if not already loaded (parallel)
     void load_metadata_if_needed() {
         if (m_metadata_loaded) return;
 
-        if (m_verbose) fmt::print("[chain] Loading file metadata...\n");
+        if (m_verbose) fmt::print("[chain] Loading file metadata for {} files...\n", m_files.size());
+
+        struct MetadataResult {
+            size_t index;
+            long total_events;
+            int num_records;
+            bool valid;
+            std::string error;
+        };
+
+        // Count files needing metadata
+        size_t files_to_load = 0;
+        for (const auto& file : m_files) {
+            if (file.is_valid && file.total_events < 0) files_to_load++;
+        }
+
+        // Setup progress tracker
+        std::unique_ptr<ProgressTracker> progress;
+        if (m_show_progress && files_to_load > 0) {
+            ProgressTracker::Config config;
+            config.label = "Loading metadata";
+            config.show_eta = true;
+            config.show_rate = true;
+            progress = std::make_unique<ProgressTracker>(files_to_load, config);
+            progress->start();
+        }
+
+        std::vector<std::future<MetadataResult>> futures;
+        futures.reserve(files_to_load);
+
+        for (size_t i = 0; i < m_files.size(); i++) {
+            if (!m_files[i].is_valid || m_files[i].total_events >= 0) continue;
+
+            futures.push_back(m_thread_pool.submit([i, this, &progress]() -> MetadataResult {
+                MetadataResult result{i, 0, 0, true, ""};
+                try {
+                    hipo::reader r;
+                    for (auto tag : m_tags) r.setTags(tag);
+                    r.open(m_files[i].filename.c_str());
+                    result.total_events = r.getEventCount();
+                    result.num_records = static_cast<int>(r.getRecordPositions().size());
+                } catch (const std::exception& e) {
+                    result.valid = false;
+                    result.error = e.what();
+                }
+                if (progress) progress->increment();
+                return result;
+            }));
+        }
+
+        for (auto& f : futures) {
+            auto result = f.get();
+            auto& file = m_files[result.index];
+            if (result.valid) {
+                file.total_events = result.total_events;
+                file.num_records = result.num_records;
+            } else {
+                file.is_valid = false;
+                file.error_message = result.error;
+                file.total_events = 0;
+            }
+        }
+
+        if (progress) progress->finish();
 
         long total = 0;
-        for (auto& file : m_files) {
-            if (!file.is_valid) continue;
-            if (file.total_events < 0) {
-                try {
-                    hipoeventfile temp(file.filename, m_tags, 0);
-                    file.total_events = temp.entries();
-                    file.num_records = static_cast<int>(temp.nrecords());
-                } catch (const std::exception& e) {
-                    file.is_valid = false;
-                    file.error_message = e.what();
-                    file.total_events = 0;
-                }
-            }
-            total += file.total_events;
+        for (const auto& file : m_files) {
+            if (file.is_valid) total += file.total_events;
         }
+
         m_stats.total_events = total;
         m_metadata_loaded = true;
+
+        if (m_verbose) fmt::print("[chain] Metadata loaded: {} total events\n", total);
     }
 
     // Allow ChainIterator to access private members
