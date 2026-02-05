@@ -11,6 +11,7 @@
  */
 
 #include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/core/Property.hpp>
@@ -328,6 +329,19 @@ public:
             m_ntuple.init(m_ntuple_svc->get(), "rich_hadrons");
         }
 
+        // Initialize cutflows
+        auto init_cutflow = [](clas12::framework::Cutflow& cf) {
+            cf.add_cut("RICH hadrons");
+            cf.add_cut("RICH match");
+            cf.add_cut("RICH PID match");
+            cf.add_cut("RQ > 0.1");
+            cf.add_cut("best_ntot > 2.5");
+        };
+        init_cutflow(m_cutflow_piplus);
+        init_cutflow(m_cutflow_piminus);
+        init_cutflow(m_cutflow_kplus);
+        init_cutflow(m_cutflow_kminus);
+
         return clas12::framework::StatusCode::SUCCESS();
     }
 
@@ -352,10 +366,20 @@ public:
         // Loop over all hadron candidates and look up their RICH info
         for (const auto& [pid_type, particle_vec] : particles) {
             for (const auto& particle : particle_vec) {
+                // Determine cutflow based on REC PID
+                clas12::framework::Cutflow* cf = nullptr;
+                if (pid_type == static_cast<int>(clas12::PIDs::PIPLUS))       cf = &m_cutflow_piplus;
+                else if (pid_type == static_cast<int>(clas12::PIDs::PIMINUS)) cf = &m_cutflow_piminus;
+                else if (pid_type == static_cast<int>(clas12::PIDs::KPLUS))   cf = &m_cutflow_kplus;
+                else if (pid_type == static_cast<int>(clas12::PIDs::KMINUS))  cf = &m_cutflow_kminus;
+
+                if (cf) cf->pass("RICH hadrons");
+
                 auto rich = clas12::read_RICHParticle_bank(*RICH_Particle, particle.index());
 
                 // Skip particles without RICH match
                 if (std::isnan(rich.best_ch)) continue;
+                if (cf) cf->pass("RICH match");
 
                 // Determine histogram set based on RICH best_PID
                 int best_pid = rich.best_PID;
@@ -372,13 +396,17 @@ public:
                 }
 
                 if (!h) continue;
+                if (cf) cf->pass("RICH PID match");
 
                 // Fill pre-cut histograms
                 fill_precut_histograms(particle, rich, *h);
 
                 // Apply quality cuts
                 if (rich.RQ <= 0.1f) continue;
+                if (cf) cf->pass("RQ > 0.1");
+
                 if (rich.best_ntot <= 2.5f) continue;
+                if (cf) cf->pass("best_ntot > 2.5");
 
                 // Fill post-cut histograms
                 fill_postcut_histograms(particle, rich, *h);
@@ -405,6 +433,12 @@ public:
         if (m_ntuple) {
             clas12::framework::Log::info(name(), "N-tuple entries: {}", m_ntuple.service()->get_entries(m_ntuple.tree_name()));
         }
+
+        m_cutflow_piplus.print();
+        m_cutflow_piminus.print();
+        m_cutflow_kplus.print();
+        m_cutflow_kminus.print();
+
         return clas12::framework::StatusCode::SUCCESS();
     }
 
@@ -419,6 +453,12 @@ private:
 
     // N-tuple writer
     clas12::framework::NTupleWriter<HadronTreeData> m_ntuple;
+
+    // Cutflows
+    clas12::framework::Cutflow m_cutflow_piplus{"π⁺ RICH Selection"};
+    clas12::framework::Cutflow m_cutflow_piminus{"π⁻ RICH Selection"};
+    clas12::framework::Cutflow m_cutflow_kplus{"K⁺ RICH Selection"};
+    clas12::framework::Cutflow m_cutflow_kminus{"K⁻ RICH Selection"};
 
     // --- TTree populate helpers ---
 
