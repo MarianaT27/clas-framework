@@ -159,7 +159,6 @@ public:
         if (h_n_good_atof_hits) h_n_good_atof_hits->fill(good_atof_hit_indices.size());
 
         if (good_tracks.empty() || good_atof_hit_indices.empty()) {
-            clas12::framework::Log::info(name(), "No good tracks or ATOF hits found in this event");
             return clas12::framework::StatusCode::FILTERED();
         }
 
