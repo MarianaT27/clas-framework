@@ -332,7 +332,6 @@ public:
         // Initialize cutflows
         auto init_cutflow = [](clas12::framework::Cutflow& cf) {
             cf.add_cut("RICH hadrons");
-            cf.add_cut("RICH match");
             cf.add_cut("RICH PID match");
             cf.add_cut("RQ > 0.1");
             cf.add_cut("best_ntot > 2.5");
@@ -376,10 +375,6 @@ public:
                 if (cf) cf->pass("RICH hadrons");
 
                 auto rich = clas12::read_RICHParticle_bank(*RICH_Particle, particle.index());
-
-                // Skip particles without RICH match
-                if (std::isnan(rich.best_ch)) continue;
-                if (cf) cf->pass("RICH match");
 
                 // Determine histogram set based on RICH best_PID
                 int best_pid = rich.best_PID;
