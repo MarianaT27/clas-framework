@@ -11,7 +11,7 @@
  */
 
 #include <clas12/framework/core/AtomicHistogram.hpp>
-#include <clas12/framework/core/NTupleWriter.hpp>
+#include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
@@ -403,7 +403,7 @@ public:
 
     auto on_finalize() -> clas12::framework::StatusCode override {
         if (m_ntuple) {
-            clas12::framework::Log::info(name(), "N-tuple entries: {}", m_ntuple.entries());
+            clas12::framework::Log::info(name(), "N-tuple entries: {}", m_ntuple.service()->get_entries(m_ntuple.tree_name()));
         }
         return clas12::framework::StatusCode::SUCCESS();
     }
