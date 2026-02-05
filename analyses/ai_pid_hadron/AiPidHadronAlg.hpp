@@ -26,6 +26,8 @@
 #include <clas12/ReadBank.hpp>
 
 #include <cmath>
+#include <map>
+#include <mutex>
 #include <string>
 #include <fmt/core.h>
 
@@ -390,6 +392,12 @@ public:
                     h = &h_kminus;
                 }
 
+                // Count all RICH best_PIDs (before any cuts)
+                {
+                    std::lock_guard<std::mutex> lock(m_pid_count_mutex);
+                    m_rich_pid_counts[best_pid]++;
+                }
+
                 if (!h) continue;
                 if (cf) cf->pass("RICH PID match");
 
@@ -454,6 +462,10 @@ private:
     clas12::framework::Cutflow m_cutflow_piminus{"π⁻ RICH Selection"};
     clas12::framework::Cutflow m_cutflow_kplus{"K⁺ RICH Selection"};
     clas12::framework::Cutflow m_cutflow_kminus{"K⁻ RICH Selection"};
+
+    // RICH PID counters (thread-safe)
+    std::mutex m_pid_count_mutex;
+    std::map<int, size_t> m_rich_pid_counts;
 
     // --- TTree populate helpers ---
 
