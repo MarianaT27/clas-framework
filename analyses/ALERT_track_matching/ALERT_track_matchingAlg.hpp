@@ -237,44 +237,14 @@ public:
 
             if (h_matched_atof_hit_id) h_matched_atof_hit_id->fill(matched_atof_hit_id);
 
-            // Efficiency: denominator = matched track with a true ATOF hit present
-            int match_status = 0;  // 0 = no true ATOF hit or no AI match
+            // Efficiency: only for the best true ATOF hit
             if (best_true_atof_hit_index >= 0) {
-                ++m_n_true_sample;  // denominator: track + true ATOF hit exists
+                ++m_n_true_sample;  // denominator: true track + true ATOF hit
 
-                if (matched_atof_hit_id >= 0 && matched_atof_hit_id < atof_hits_bank.rows()) {
-                    ++m_n_tracks_with_ai_atof_match;
-                    match_status = 1;  // 1 = AI found a match
-
-                    int ai_sector = atof_hits_bank.get<int>("sector", matched_atof_hit_id);
-                    int ai_layer = atof_hits_bank.get<int>("layer", matched_atof_hit_id);
-                    int ai_component = atof_hits_bank.get<int>("component", matched_atof_hit_id);
-
-                    int true_sector = atof_hits_bank.get<int>("sector", best_true_atof_hit_index);
-                    int true_layer = atof_hits_bank.get<int>("layer", best_true_atof_hit_index);
-                    int true_component = atof_hits_bank.get<int>("component", best_true_atof_hit_index);
-
-                    if (ai_sector == true_sector) ++m_n_correct_sector;
-                    if (ai_layer == true_layer) ++m_n_correct_layer;
-                    if (ai_component == true_component) ++m_n_correct_component;
-                    if (std::abs(ai_component - true_component) <= 1) ++m_n_component_off_by_one;
-
-                    // Check if AI match IS the best true ATOF hit
-                    if (matched_atof_hit_id == best_true_atof_hit_index) {
-                        ++m_n_tracks_with_true_atof_match;
-                        match_status = 2;  // 2 = true match
-                    }
-
-                    // Check if AI match is a good (timing-cut) ATOF hit
-                    bool atof_hit_is_good = std::find(good_atof_hit_indices.begin(), good_atof_hit_indices.end(),
-                                                      matched_atof_hit_id) != good_atof_hit_indices.end();
-                    if (atof_hit_is_good) {
-                        ++m_n_tracks_with_good_atof_match;
-                    }
+                if (matched_atof_hit_id == best_true_atof_hit_index) {
+                    ++m_n_tracks_with_true_atof_match;  // numerator: AI found the best true hit
                 }
             }
-
-            if (h_ai_match_status) h_ai_match_status->fill(match_status);
         }  // end for matched_tracks
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -291,38 +261,14 @@ public:
         using Log = clas12::framework::Log;
 
         int n_matched = m_n_tracks_matched_to_electron.load();
-        int n_ai_match = m_n_tracks_with_ai_atof_match.load();
-        int n_good_match = m_n_tracks_with_good_atof_match.load();
-
-        int n_correct_sector = m_n_correct_sector.load();
-        int n_correct_layer = m_n_correct_layer.load();
-        int n_correct_component = m_n_correct_component.load();
-        int n_component_off_by_one = m_n_component_off_by_one.load();
-
         int n_true_sample = m_n_true_sample.load();
         int n_true_match = m_n_tracks_with_true_atof_match.load();
 
         Log::info(name(), "=== AI Track-ATOF Matching Efficiency ===");
-        Log::info(name(), "Tracks matched to electron (by phi):  {}", n_matched);
-        Log::info(name(), "True sample (track + true ATOF hit):  {}", n_true_sample);
-        Log::info(name(), "AI found any ATOF match:              {} ({:.1f}%)",
-                  n_ai_match, n_true_sample > 0 ? 100.0 * n_ai_match / n_true_sample : 0.0);
-        Log::info(name(), "AI match = best true ATOF hit:        {} ({:.1f}%)",
-                  n_true_match, n_true_sample > 0 ? 100.0 * n_true_match / n_true_sample : 0.0);
-        Log::info(name(), "AI match is good (timing-cut) hit:    {} ({:.1f}%)",
-                  n_good_match, n_true_sample > 0 ? 100.0 * n_good_match / n_true_sample : 0.0);
-
-        Log::info(name(), "");
-        Log::info(name(), "=== Sector/Layer/Component Efficiency ===");
-        Log::info(name(), "(AI vs best true hit, denominator = true sample)");
-        Log::info(name(), "Sector efficiency:         {:5d} / {:5d} = {:5.1f}%",
-                  n_correct_sector, n_true_sample, n_true_sample > 0 ? 100.0 * n_correct_sector / n_true_sample : 0.0);
-        Log::info(name(), "Layer efficiency:          {:5d} / {:5d} = {:5.1f}%",
-                  n_correct_layer, n_true_sample, n_true_sample > 0 ? 100.0 * n_correct_layer / n_true_sample : 0.0);
-        Log::info(name(), "Component efficiency:      {:5d} / {:5d} = {:5.1f}%",
-                  n_correct_component, n_true_sample, n_true_sample > 0 ? 100.0 * n_correct_component / n_true_sample : 0.0);
-        Log::info(name(), "Component (within +-1):    {:5d} / {:5d} = {:5.1f}%",
-                  n_component_off_by_one, n_true_sample, n_true_sample > 0 ? 100.0 * n_component_off_by_one / n_true_sample : 0.0);
+        Log::info(name(), "Tracks matched to electron (by dphi): {}", n_matched);
+        Log::info(name(), "True sample (true track + true ATOF): {} (both selected by dphi cut)", n_true_sample);
+        Log::info(name(), "AI match = best true ATOF hit:        {:5d} / {:5d} = {:5.1f}%",
+                  n_true_match, n_true_sample, n_true_sample > 0 ? 100.0 * n_true_match / n_true_sample : 0.0);
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -351,7 +297,6 @@ private:
     clas12::framework::AtomicHistogram1D* h_vz_Sn = nullptr;
     clas12::framework::AtomicHistogram1D* h_delta_phi = nullptr;
     clas12::framework::AtomicHistogram1D* h_n_predictions = nullptr;
-    clas12::framework::AtomicHistogram1D* h_ai_match_status = nullptr;
     clas12::framework::AtomicHistogram1D* h_best_delta_phi = nullptr;
     clas12::framework::AtomicHistogram1D* h_n_good_atof_hits = nullptr;
     clas12::framework::AtomicHistogram1D* h_matched_atof_hit_id = nullptr;
@@ -361,14 +306,6 @@ private:
     clas12::framework::AtomicHistogram1D* h_atof_electron_delta_phi_true = nullptr;  // true ATOF hits (passing delta_phi cut)
     clas12::framework::AtomicHistogram1D* h_atof_electron_delta_phi_best = nullptr;  // best true ATOF hit
     clas12::framework::AtomicHistogram1D* h_n_true_atof_hits = nullptr;
-
-    // Efficiency histograms by sector/layer/component (denominator = all AI matches, numerator = good matches)
-    clas12::framework::AtomicHistogram1D* h_eff_sector_denom = nullptr;
-    clas12::framework::AtomicHistogram1D* h_eff_sector_numer = nullptr;
-    clas12::framework::AtomicHistogram1D* h_eff_layer_denom = nullptr;
-    clas12::framework::AtomicHistogram1D* h_eff_layer_numer = nullptr;
-    clas12::framework::AtomicHistogram1D* h_eff_component_denom = nullptr;
-    clas12::framework::AtomicHistogram1D* h_eff_component_numer = nullptr;
 
     auto book_histograms() -> void {
         clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
@@ -381,7 +318,6 @@ private:
             h_vz_Sn = svc->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
             h_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 360, 0, 360);
             h_n_predictions = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", 20, 0, 20);
-            h_ai_match_status = svc->book_atomic_hist1D("/ALERT/TrackMatching/ai_match_status", "AI Match Status;Status (0=none, 1=any, 2=good);Events", 3, 0, 3);
             h_best_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi (track-electron);#Delta#phi [deg];Events", 100, 150, 200);
             h_n_good_atof_hits = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_good_atof_hits", "N good ATOF hits;N hits;Events", 20, 0, 20);
             h_matched_atof_hit_id = svc->book_atomic_hist1D("/ALERT/TrackMatching/matched_atof_hit_id", "Matched ATOF hit ID;Hit ID;Events", 50, -1, 49);
@@ -392,13 +328,6 @@ private:
             h_atof_electron_delta_phi_best = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_best", "Best #Delta#phi(e, ATOF hit);#Delta#phi [deg];Hits", 100, 150, 200);
             h_n_true_atof_hits = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_true_atof_hits", "N true ATOF hits;N hits;Events", 20, 0, 20);
 
-            // Efficiency histograms by sector/layer/component
-            h_eff_sector_denom = svc->book_atomic_hist1D("/ALERT/Efficiency/sector_denom", "Sector (all AI matches);Sector;Events", 16, 0, 16);
-            h_eff_sector_numer = svc->book_atomic_hist1D("/ALERT/Efficiency/sector_numer", "Sector (good matches);Sector;Events", 16, 0, 16);
-            h_eff_layer_denom = svc->book_atomic_hist1D("/ALERT/Efficiency/layer_denom", "Layer (all AI matches);Layer;Events", 4, 0, 4);
-            h_eff_layer_numer = svc->book_atomic_hist1D("/ALERT/Efficiency/layer_numer", "Layer (good matches);Layer;Events", 4, 0, 4);
-            h_eff_component_denom = svc->book_atomic_hist1D("/ALERT/Efficiency/component_denom", "Component (all AI matches);Component;Events", 10, 0, 10);
-            h_eff_component_numer = svc->book_atomic_hist1D("/ALERT/Efficiency/component_numer", "Component (good matches);Component;Events", 10, 0, 10);
         });
     }
 
@@ -411,13 +340,7 @@ private:
 
     // Efficiency counters (atomic for thread safety)
     std::atomic<int> m_n_tracks_matched_to_electron{0};   // denominator
-    std::atomic<int> m_n_tracks_with_ai_atof_match{0};    // AI found any ATOF match
-    std::atomic<int> m_n_tracks_with_good_atof_match{0};  // AI match is a good hit
-    std::atomic<int> m_n_correct_sector{0};               // AI matched correct sector
-    std::atomic<int> m_n_correct_layer{0};                // AI matched correct layer
-    std::atomic<int> m_n_correct_component{0};            // AI matched correct component
-    std::atomic<int> m_n_component_off_by_one{0};         // AI matched correct or adjacent component (within ±1)
-    std::atomic<int> m_n_true_sample{0};                   // denominator: matched track with true ATOF hit present
+    std::atomic<int> m_n_true_sample{0};                   // denominator: true track + true ATOF hit
     std::atomic<int> m_n_tracks_with_true_atof_match{0};  // numerator: AI match is the best true ATOF hit
 
     struct AHDCTrackData {
