@@ -254,10 +254,6 @@ public:
      * @return Number of files in chain after addition
      */
     int add(std::string_view filename) {
-        if (!std::filesystem::exists(filename)) {
-            fmt::print(stderr, "[chain] Warning: File not found: {}\n", filename);
-            return static_cast<int>(m_files.size());
-        }
         std::lock_guard lock(m_mutex);
         m_files.emplace_back(filename, static_cast<int>(m_files.size()));
         m_metadata_loaded = false;
@@ -273,7 +269,14 @@ public:
      * @return Number of files in chain after addition
      */
     int add(std::span<const std::string> filenames) {
-        for (const auto& f : filenames) add(f);
+        std::lock_guard lock(m_mutex);
+        for (const auto& f : filenames) {
+            m_files.emplace_back(f, static_cast<int>(m_files.size()));
+        }
+        m_metadata_loaded = false;
+        if (m_verbose) {
+            fmt::print("[chain] Added {} files (total: {})\n", filenames.size(), m_files.size());
+        }
         return static_cast<int>(m_files.size());
     }
 
@@ -592,7 +595,13 @@ public:
 
         percentage = std::clamp(percentage, 0.0, 100.0) / 100.0;
 
-        // Ensure metadata is loaded
+        // Skip metadata loading when processing all events
+        if (percentage >= 1.0) {
+            process_all_streaming(std::forward<ProcessFunc>(process_func));
+            return;
+        }
+
+        // Partial processing: metadata needed to compute target event count
         load_metadata_if_needed();
 
         long target_events = static_cast<long>(m_stats.total_events * percentage);
@@ -886,7 +895,7 @@ private:
     // Private Methods
     //=========================================================================
 
-    /// Load metadata for all files if not already loaded (parallel)
+    /// Load metadata for all files if not already loaded (parallel with high I/O concurrency)
     void load_metadata_if_needed() {
         if (m_metadata_loaded) return;
 
@@ -906,9 +915,14 @@ private:
             if (file.is_valid && file.total_events < 0) files_to_load++;
         }
 
+        if (files_to_load == 0) {
+            m_metadata_loaded = true;
+            return;
+        }
+
         // Setup progress tracker
         std::unique_ptr<ProgressTracker> progress;
-        if (m_show_progress && files_to_load > 0) {
+        if (m_show_progress) {
             ProgressTracker::Config config;
             config.label = "Loading metadata";
             config.show_eta = true;
@@ -917,13 +931,26 @@ private:
             progress->start();
         }
 
+        // Use higher I/O parallelism: file metadata loading is I/O-bound,
+        // so more threads than CPU cores helps saturate disk/network bandwidth.
+        bool use_io_pool = files_to_load > static_cast<size_t>(m_num_threads);
+        int io_threads = static_cast<int>(std::min(
+            files_to_load,
+            static_cast<size_t>(std::min(std::max(m_num_threads * 4, 32), 100))
+        ));
+        std::unique_ptr<ThreadPool> io_pool;
+        if (use_io_pool) {
+            io_pool = std::make_unique<ThreadPool>(io_threads, "MetadataIO", /*quiet=*/true);
+        }
+        auto& pool = use_io_pool ? *io_pool : m_thread_pool;
+
         std::vector<std::future<MetadataResult>> futures;
         futures.reserve(files_to_load);
 
         for (size_t i = 0; i < m_files.size(); i++) {
             if (!m_files[i].is_valid || m_files[i].total_events >= 0) continue;
 
-            futures.push_back(m_thread_pool.submit([i, this, &progress]() -> MetadataResult {
+            futures.push_back(pool.submit([i, this, &progress]() -> MetadataResult {
                 MetadataResult result{i, 0, 0, true, ""};
                 try {
                     hipo::reader r;
@@ -950,6 +977,8 @@ private:
                 file.is_valid = false;
                 file.error_message = result.error;
                 file.total_events = 0;
+                fmt::print(stderr, "[chain] Warning: File not valid: {} ({})\n",
+                    file.filename, result.error);
             }
         }
 
@@ -964,6 +993,96 @@ private:
         m_metadata_loaded = true;
 
         if (m_verbose) fmt::print("[chain] Metadata loaded: {} total events\n", total);
+    }
+
+    /// Validate file existence in parallel (deferred from add())
+    void validate_files_parallel() {
+        std::vector<std::future<std::pair<size_t, bool>>> futures;
+        futures.reserve(m_files.size());
+
+        for (size_t i = 0; i < m_files.size(); i++) {
+            if (!m_files[i].is_valid) continue;
+            futures.push_back(m_thread_pool.submit([i, this]() -> std::pair<size_t, bool> {
+                return {i, std::filesystem::exists(m_files[i].filename)};
+            }));
+        }
+
+        for (auto& f : futures) {
+            auto [idx, exists] = f.get();
+            if (!exists) {
+                m_files[idx].is_valid = false;
+                m_files[idx].error_message = "File not found";
+                fmt::print(stderr, "[chain] Warning: File not found: {}\n", m_files[idx].filename);
+            }
+        }
+    }
+
+    /// Process all events without loading metadata upfront (streaming mode)
+    template<typename ProcessFunc>
+    void process_all_streaming(ProcessFunc&& process_func) {
+        validate_files_parallel();
+        m_stats.reset();
+
+        int valid_file_count = 0;
+        for (const auto& file : m_files) {
+            if (file.is_valid) valid_file_count++;
+        }
+
+        if (valid_file_count == 0) {
+            fmt::print(stderr, "[chain] Warning: No valid files to process.\n");
+            return;
+        }
+
+        if (m_verbose) {
+            fmt::print("[chain] Streaming all events from {} files ({} threads)\n",
+                valid_file_count, m_num_threads);
+        }
+
+        // File-level progress (event total unknown without metadata)
+        std::unique_ptr<ProgressTracker> progress;
+        if (m_show_progress) {
+            ProgressTracker::Config config;
+            config.label = "Processing (100%)";
+            config.show_eta = true;
+            config.show_rate = true;
+            progress = std::make_unique<ProgressTracker>(valid_file_count, config);
+            progress->start();
+        }
+
+        for (const auto& file : m_files) {
+            if (!file.is_valid) continue;
+
+            std::atomic<long> next_event{0};
+            std::vector<std::future<void>> futures;
+
+            for (int t = 0; t < m_num_threads; t++) {
+                futures.push_back(m_thread_pool.submit([&, this]() {
+                    try {
+                        hipoeventfile reader(file.filename, m_tags, 0);
+                        event temp_event;
+
+                        while (true) {
+                            long evt_idx = next_event.fetch_add(1);
+                            if (!reader.goto_event(evt_idx) || !reader.read_next_event(temp_event)) break;
+
+                            iter_event evt(&temp_event, &reader);
+                            process_func(evt, file.index, evt_idx);
+                            m_stats.events_processed++;
+                        }
+                    } catch (const std::exception& e) {
+                        fmt::print(stderr, "[chain] Thread error: {}\n", e.what());
+                    }
+                }));
+            }
+
+            for (auto& f : futures) f.get();
+            if (progress) progress->increment();
+        }
+
+        m_stats.total_events = m_stats.events_processed.load();
+        m_stats.end_time = std::chrono::steady_clock::now();
+        if (progress) progress->finish();
+        if (m_verbose) print_statistics();
     }
 
     // Allow ChainIterator to access private members
