@@ -69,16 +69,13 @@ auto main(int argc, char* argv[]) -> int {
         return EXIT_FAILURE;
     }
 
-    // Build application using the builder pattern
-    constexpr double beam_energy = 2.2;  // GeV for ALERT data
-
     auto app = clas12::framework::make_application("AI Pid Hadron Analysis")
         .with_input_files(input_files)
         .with_output(output_file)
         .with_percentage(percentage)
         .with_threads(num_threads)
         .with_standard_services()
-        .with_beam_energy(beam_energy)
+        .with_beam_energy(10.53)
         .add_service<clas12::framework::ElectronCutsService>()
         .add_service<clas12::framework::FiducialService>()
         .add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::string_to_target(target), clas12::string_to_polarity(polarity))
