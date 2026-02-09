@@ -72,7 +72,7 @@ auto main(int argc, char* argv[]) -> int {
         .with_threads(num_threads)
         .with_standard_services()
         .with_beam_energy(beam_energy)
-        .add_algorithm<clas12::algorithms::ElasticEPAlg>("ElasticEPAlg", clas12::algorithms::NuclearTarget::Deuteron, beam_energy)
+        .add_algorithm<clas12::algorithms::ElasticEPAlg>("ElasticEPAlg", clas12::algorithms::NuclearTarget::Proton, beam_energy)
         .add_algorithm<ALERT_track_matching::ALERT_track_matchingAlg>("ALERT_track_matchingAlg")
         .build();
     
