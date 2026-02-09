@@ -641,19 +641,19 @@ private:
         auto* svc = m_hist_svc->get();
 
         auto pre = dir + "/precut";
-        h.precut.p        = svc->book_atomic_hist1D(pre + "/p",        fmt::format("{} Momentum (pre-cut);p [GeV/c];Events", label),    100, 0, 10);
-        h.precut.theta    = svc->book_atomic_hist1D(pre + "/theta",    fmt::format("{} #theta (pre-cut);#theta [deg];Events", label),   180, 0, 40);
-        h.precut.phi      = svc->book_atomic_hist1D(pre + "/phi",      fmt::format("{} #phi (pre-cut);#phi [deg];Events", label),       360, -180, 180);
-        h.precut.vz       = svc->book_atomic_hist1D(pre + "/vz",       fmt::format("{} v_{{z}} (pre-cut);v_{{z}} [cm];Events", label),  200, -40, 40);
-        h.precut.RQ       = svc->book_atomic_hist1D(pre + "/RQ",       fmt::format("{} RICH RQ (pre-cut);RQ;Events", label),            100, 0, 1);
+        h.precut.p        = svc->book_atomic_hist1D(pre + "/p",        fmt::format("{} Momentum (pre-cut);p [GeV/c];Events", label),    200, 0, 10);
+        h.precut.theta    = svc->book_atomic_hist1D(pre + "/theta",    fmt::format("{} #theta (pre-cut);#theta [deg];Events", label),   200, 0, 40);
+        h.precut.phi      = svc->book_atomic_hist1D(pre + "/phi",      fmt::format("{} #phi (pre-cut);#phi [deg];Events", label),       200, 0, 360);
+        h.precut.vz       = svc->book_atomic_hist1D(pre + "/vz",       fmt::format("{} v_{{z}} (pre-cut);v_{{z}} [cm];Events", label),  200, -30, 30);
+        h.precut.RQ       = svc->book_atomic_hist1D(pre + "/RQ",       fmt::format("{} RICH RQ (pre-cut);RQ;Events", label),            200, 0, 1);
         h.precut.best_PID = svc->book_atomic_hist1D(pre + "/best_PID", fmt::format("{} RICH best PID (pre-cut);PID;Events", label),     800, -400, 400);
 
         auto post = dir + "/postcut";
-        h.postcut.p        = svc->book_atomic_hist1D(post + "/p",        fmt::format("{} Momentum (post-cut);p [GeV/c];Events", label),    100, 0, 10);
-        h.postcut.theta    = svc->book_atomic_hist1D(post + "/theta",    fmt::format("{} #theta (post-cut);#theta [deg];Events", label),   180, 0, 40);
-        h.postcut.phi      = svc->book_atomic_hist1D(post + "/phi",      fmt::format("{} #phi (post-cut);#phi [deg];Events", label),       360, -180, 180);
-        h.postcut.vz       = svc->book_atomic_hist1D(post + "/vz",       fmt::format("{} v_{{z}} (post-cut);v_{{z}} [cm];Events", label),  200, -40, 40);
-        h.postcut.RQ       = svc->book_atomic_hist1D(post + "/RQ",       fmt::format("{} RICH RQ (post-cut);RQ;Events", label),            100, 0, 1);
+        h.postcut.p        = svc->book_atomic_hist1D(post + "/p",        fmt::format("{} Momentum (post-cut);p [GeV/c];Events", label),    200, 0, 10);
+        h.postcut.theta    = svc->book_atomic_hist1D(post + "/theta",    fmt::format("{} #theta (post-cut);#theta [deg];Events", label),   200, 0, 40);
+        h.postcut.phi      = svc->book_atomic_hist1D(post + "/phi",      fmt::format("{} #phi (post-cut);#phi [deg];Events", label),       200, 0, 360);
+        h.postcut.vz       = svc->book_atomic_hist1D(post + "/vz",       fmt::format("{} v_{{z}} (post-cut);v_{{z}} [cm];Events", label),  200, -30, 30);
+        h.postcut.RQ       = svc->book_atomic_hist1D(post + "/RQ",       fmt::format("{} RICH RQ (post-cut);RQ;Events", label),            200, 0, 1);
         h.postcut.best_PID = svc->book_atomic_hist1D(post + "/best_PID", fmt::format("{} RICH best PID (post-cut);PID;Events", label),     800, -400, 400);
     }
 
