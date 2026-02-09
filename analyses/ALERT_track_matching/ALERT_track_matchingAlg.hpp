@@ -217,11 +217,11 @@ public:
             }
         }
 
-        if (matched_tracks.empty()) {
+        if (matched_tracks.empty() || matched_tracks.size() > 1) {
             return clas12::framework::StatusCode::FILTERED();
         }
 
-        // Process all matched tracks
+        // Process the single matched track
         for (const auto* matched_track : matched_tracks) {
             ++m_n_tracks_matched_to_electron;
 
