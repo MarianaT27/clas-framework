@@ -256,6 +256,7 @@ public:
                     if (ai_layer == true_layer) ++m_n_correct_layer;
                     if (ai_component == true_component) ++m_n_correct_component;
                     if (std::abs(ai_component - true_component) <= 1) ++m_n_component_off_by_one;
+                    if (ai_sector == true_sector && ai_layer == true_layer) ++m_n_correct_sector_layer;
                     if (ai_sector == true_sector && ai_layer == true_layer && ai_component == true_component) ++m_n_correct_wedge;
                     if (ai_sector == true_sector && ai_layer == true_layer && std::abs(ai_component - true_component) <= 1) ++m_n_wedge_off_by_one;
 
@@ -287,6 +288,7 @@ public:
         int n_correct_layer = m_n_correct_layer.load();
         int n_correct_component = m_n_correct_component.load();
         int n_component_off_by_one = m_n_component_off_by_one.load();
+        int n_correct_sector_layer = m_n_correct_sector_layer.load();
         int n_correct_wedge = m_n_correct_wedge.load();
         int n_wedge_off_by_one = m_n_wedge_off_by_one.load();
 
@@ -306,6 +308,8 @@ public:
                   n_correct_component, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_correct_component / n_ai_has_match : 0.0);
         Log::info(name(), "Component (within +-1):               {:5d} / {:5d} = {:5.1f}%",
                   n_component_off_by_one, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_component_off_by_one / n_ai_has_match : 0.0);
+        Log::info(name(), "Sector+Layer:                         {:5d} / {:5d} = {:5.1f}%",
+                  n_correct_sector_layer, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_correct_sector_layer / n_ai_has_match : 0.0);
         Log::info(name(), "Wedge (sector+layer+component):       {:5d} / {:5d} = {:5.1f}%",
                   n_correct_wedge, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_correct_wedge / n_ai_has_match : 0.0);
         Log::info(name(), "Wedge (component +-1):                {:5d} / {:5d} = {:5.1f}%",
@@ -390,6 +394,7 @@ private:
     std::atomic<int> m_n_correct_layer{0};                // AI matched correct layer
     std::atomic<int> m_n_correct_component{0};            // AI matched correct component
     std::atomic<int> m_n_component_off_by_one{0};         // AI matched component within ±1
+    std::atomic<int> m_n_correct_sector_layer{0};          // AI matched correct sector+layer
     std::atomic<int> m_n_correct_wedge{0};                // AI matched correct sector+layer+component
     std::atomic<int> m_n_wedge_off_by_one{0};             // AI matched sector+layer, component within ±1
 
