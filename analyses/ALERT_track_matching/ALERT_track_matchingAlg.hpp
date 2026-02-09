@@ -242,6 +242,8 @@ public:
                 ++m_n_true_sample;  // denominator: true track + true ATOF hit
 
                 if (matched_atof_hit_id >= 0 && matched_atof_hit_id < atof_hits_bank.rows()) {
+                    ++m_n_ai_has_match;
+
                     int ai_sector = atof_hits_bank.get<int>("sector", matched_atof_hit_id);
                     int ai_layer = atof_hits_bank.get<int>("layer", matched_atof_hit_id);
                     int ai_component = atof_hits_bank.get<int>("component", matched_atof_hit_id);
@@ -276,6 +278,7 @@ public:
 
         int n_matched = m_n_tracks_matched_to_electron.load();
         int n_true_sample = m_n_true_sample.load();
+        int n_ai_has_match = m_n_ai_has_match.load();
         int n_true_match = m_n_tracks_with_true_atof_match.load();
         int n_correct_sector = m_n_correct_sector.load();
         int n_correct_layer = m_n_correct_layer.load();
@@ -283,15 +286,20 @@ public:
 
         Log::info(name(), "=== AI Track-ATOF Matching Efficiency ===");
         Log::info(name(), "Tracks matched to electron (by dphi): {}", n_matched);
-        Log::info(name(), "True sample (true track + true ATOF): {} (both selected by dphi cut)", n_true_sample);
+        Log::info(name(), "True sample (true track + true ATOF): {}", n_true_sample);
+        Log::info(name(), "AI returned a valid ATOF match:       {:5d} / {:5d} = {:5.1f}%",
+                  n_ai_has_match, n_true_sample, n_true_sample > 0 ? 100.0 * n_ai_has_match / n_true_sample : 0.0);
         Log::info(name(), "AI match = best true ATOF hit:        {:5d} / {:5d} = {:5.1f}%",
                   n_true_match, n_true_sample, n_true_sample > 0 ? 100.0 * n_true_match / n_true_sample : 0.0);
+        Log::info(name(), "--- Of events where AI returned a match ---");
         Log::info(name(), "Sector efficiency:                    {:5d} / {:5d} = {:5.1f}%",
-                  n_correct_sector, n_true_sample, n_true_sample > 0 ? 100.0 * n_correct_sector / n_true_sample : 0.0);
+                  n_correct_sector, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_correct_sector / n_ai_has_match : 0.0);
         Log::info(name(), "Layer efficiency:                     {:5d} / {:5d} = {:5.1f}%",
-                  n_correct_layer, n_true_sample, n_true_sample > 0 ? 100.0 * n_correct_layer / n_true_sample : 0.0);
+                  n_correct_layer, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_correct_layer / n_ai_has_match : 0.0);
         Log::info(name(), "Component efficiency:                 {:5d} / {:5d} = {:5.1f}%",
-                  n_correct_component, n_true_sample, n_true_sample > 0 ? 100.0 * n_correct_component / n_true_sample : 0.0);
+                  n_correct_component, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_correct_component / n_ai_has_match : 0.0);
+        Log::info(name(), "Exact hit match:                      {:5d} / {:5d} = {:5.1f}%",
+                  n_true_match, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_true_match / n_ai_has_match : 0.0);
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -364,6 +372,7 @@ private:
     // Efficiency counters (atomic for thread safety)
     std::atomic<int> m_n_tracks_matched_to_electron{0};   // denominator
     std::atomic<int> m_n_true_sample{0};                   // denominator: true track + true ATOF hit
+    std::atomic<int> m_n_ai_has_match{0};                 // AI returned a valid ATOF hit id
     std::atomic<int> m_n_tracks_with_true_atof_match{0};  // numerator: AI match is the best true ATOF hit
     std::atomic<int> m_n_correct_sector{0};               // AI matched correct sector
     std::atomic<int> m_n_correct_layer{0};                // AI matched correct layer
