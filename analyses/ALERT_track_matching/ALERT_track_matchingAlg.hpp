@@ -255,6 +255,7 @@ public:
                     if (ai_sector == true_sector) ++m_n_correct_sector;
                     if (ai_layer == true_layer) ++m_n_correct_layer;
                     if (ai_component == true_component) ++m_n_correct_component;
+                    if (std::abs(ai_component - true_component) <= 1) ++m_n_component_off_by_one;
 
                     if (matched_atof_hit_id == best_true_atof_hit_index) {
                         ++m_n_tracks_with_true_atof_match;  // numerator: AI found the best true hit
@@ -283,6 +284,7 @@ public:
         int n_correct_sector = m_n_correct_sector.load();
         int n_correct_layer = m_n_correct_layer.load();
         int n_correct_component = m_n_correct_component.load();
+        int n_component_off_by_one = m_n_component_off_by_one.load();
 
         Log::info(name(), "=== AI Track-ATOF Matching Efficiency ===");
         Log::info(name(), "Tracks matched to electron (by dphi): {}", n_matched);
@@ -298,6 +300,8 @@ public:
                   n_correct_layer, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_correct_layer / n_ai_has_match : 0.0);
         Log::info(name(), "Component efficiency:                 {:5d} / {:5d} = {:5.1f}%",
                   n_correct_component, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_correct_component / n_ai_has_match : 0.0);
+        Log::info(name(), "Component (within +-1):               {:5d} / {:5d} = {:5.1f}%",
+                  n_component_off_by_one, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_component_off_by_one / n_ai_has_match : 0.0);
         Log::info(name(), "Exact hit match:                      {:5d} / {:5d} = {:5.1f}%",
                   n_true_match, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_true_match / n_ai_has_match : 0.0);
 
@@ -377,6 +381,7 @@ private:
     std::atomic<int> m_n_correct_sector{0};               // AI matched correct sector
     std::atomic<int> m_n_correct_layer{0};                // AI matched correct layer
     std::atomic<int> m_n_correct_component{0};            // AI matched correct component
+    std::atomic<int> m_n_component_off_by_one{0};         // AI matched component within ±1
 
     struct AHDCTrackData {
         int trackid;
