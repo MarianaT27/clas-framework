@@ -707,8 +707,8 @@ private:
         d.missing_mass = 0;
         d.pid          = particle.pdg();
         d.p            = static_cast<float>(particle.p());
-        d.theta        = static_cast<float>(particle.theta());
-        d.phi          = static_cast<float>(particle.phi());
+        d.theta        = static_cast<float>(particle.theta() * M_PI / 180.0); // Convert to radians
+        d.phi          = static_cast<float>(particle.phi() * M_PI / 180.0); // Convert to radians
         d.beta         = static_cast<float>(particle.beta());
         d.charge       = particle.charge();
     }
