@@ -2,12 +2,14 @@
 
 /**
  * @file AiPidHadronAlg.hpp
- * @brief Algorithm for AI PID hadron analysis using RICH detector
+ * @brief Algorithm for AI PID hadron analysis using RICH detector or exclusive reactions
  *
- * Reads the RICH::Particle bank to identify pions and kaons
- * based on the RICH best_PID and log-likelihood information.
+ * Supports two truth PID modes:
+ * - "rich": Uses RICH::Particle best_PID as truth (default)
+ * - "exclusive": Uses ed -> ep(n)pi+pi- exclusive reaction topology
+ *
  * Outputs a ROOT TTree with particle, calorimeter, cherenkov,
- * and scintillator data, using RICH best_PID as the truth PID.
+ * and scintillator data for AI PID training.
  */
 
 #include <clas12/framework/core/AtomicHistogram.hpp>
@@ -17,32 +19,39 @@
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
+#include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/ReadBank.hpp>
+#include <clas12/physics/Kinematics.hpp>
 
 #include <cmath>
 #include <map>
 #include <mutex>
 #include <string>
+#include <vector>
 #include <fmt/core.h>
 
 namespace ai_pid_hadron {
 
 /**
- * @brief N-Tuple data structure for RICH hadron analysis
+ * @brief N-Tuple data structure for hadron analysis
  *
  * Mirrors the TreeData fields from the AI PID reader,
  * with rich_pid replacing mc_pid.
  */
 struct HadronTreeData {
     // Particle identification
-    int rich_pid = 0;    // RICH best_PID (replaces mc_pid)
-    int pid = 0;         // REC::Particle PID
+    int rich_pid = 0;       // RICH best_PID (populated in "rich" mode, 0 in "exclusive" mode)
+    int pid = 0;            // REC::Particle PID
+    int truth_pid = 0;      // Mode-agnostic truth PID (RICH or topology)
+    int truth_source = 0;   // 0 = RICH, 1 = exclusive reaction
+    float missing_mass = 0; // Missing mass of exclusive reaction (0 in RICH mode)
     float p = 0;
     float theta = 0;
     float phi = 0;
@@ -173,6 +182,9 @@ struct HadronTreeData {
         // Particle
         svc->register_branch(tree, "rich_pid", &rich_pid);
         svc->register_branch(tree, "pid", &pid);
+        svc->register_branch(tree, "truth_pid", &truth_pid);
+        svc->register_branch(tree, "truth_source", &truth_source);
+        svc->register_branch(tree, "missing_mass", &missing_mass);
         svc->register_branch(tree, "p", &p);
         svc->register_branch(tree, "theta", &theta);
         svc->register_branch(tree, "phi", &phi);
@@ -301,16 +313,26 @@ struct HadronTreeData {
 };
 
 /**
- * @brief Algorithm for AI PID hadron analysis using RICH detector
+ * @brief Algorithm for AI PID hadron analysis
  *
- * Reads the RICH::Particle bank and matches entries to REC::Particle
- * to identify pions and kaons with RICH Cherenkov information.
+ * Supports two truth PID modes:
+ * - "rich": Uses RICH::Particle best_PID as truth label
+ * - "exclusive": Uses ed -> ep(n)pi+pi- reaction topology as truth label
  */
 class AiPidHadronAlg : public clas12::framework::SimpleAlgorithm<AiPidHadronAlg> {
 public:
-    explicit AiPidHadronAlg(std::string name = "AiPidHadronAlg")
+    explicit AiPidHadronAlg(std::string name = "AiPidHadronAlg",
+                            std::string truth_mode = "rich")
         : SimpleAlgorithm(std::move(name)) {
         declare_property(m_enable_histograms);
+        declare_property(m_truth_mode);
+        declare_property(m_beam_energy);
+        declare_property(m_mm_center);
+        declare_property(m_mm_width);
+
+        if (!truth_mode.empty()) {
+            m_truth_mode.set(std::move(truth_mode));
+        }
     }
 
     auto configure() -> void override {
@@ -320,33 +342,159 @@ public:
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        if (m_enable_histograms && m_hist_svc && m_hist_svc->is_valid()) {
-            book_histograms("/AiPidHadron/PiPlus",  h_piplus,  "#pi^{+}");
-            book_histograms("/AiPidHadron/PiMinus", h_piminus, "#pi^{-}");
-            book_histograms("/AiPidHadron/KPlus",   h_kplus,   "K^{+}");
-            book_histograms("/AiPidHadron/KMinus",  h_kminus,  "K^{-}");
+        clas12::framework::Log::info(name(), "Truth PID mode: {}", m_truth_mode.get());
+
+        if (m_truth_mode.get() == "rich") {
+            if (m_enable_histograms && m_hist_svc && m_hist_svc->is_valid()) {
+                book_histograms("/AiPidHadron/PiPlus",  h_piplus,  "#pi^{+}");
+                book_histograms("/AiPidHadron/PiMinus", h_piminus, "#pi^{-}");
+                book_histograms("/AiPidHadron/KPlus",   h_kplus,   "K^{+}");
+                book_histograms("/AiPidHadron/KMinus",  h_kminus,  "K^{-}");
+            }
+
+            auto init_cutflow = [](clas12::framework::Cutflow& cf) {
+                cf.add_cut("RICH hadrons");
+                cf.add_cut("RICH PID match");
+                cf.add_cut("RQ > 0.1");
+                cf.add_cut("best_ntot > 2.5");
+            };
+            init_cutflow(m_cutflow_piplus);
+            init_cutflow(m_cutflow_piminus);
+            init_cutflow(m_cutflow_kplus);
+            init_cutflow(m_cutflow_kminus);
+        } else if (m_truth_mode.get() == "exclusive") {
+            clas12::framework::Log::info(name(), "Exclusive mode: ed -> ep(n)pi+pi-");
+            clas12::framework::Log::info(name(), "  Beam energy: {} GeV", m_beam_energy.get());
+            clas12::framework::Log::info(name(), "  MM cut: {} +/- {} GeV", m_mm_center.get(), m_mm_width.get());
+
+            if (m_enable_histograms && m_hist_svc && m_hist_svc->is_valid()) {
+                book_exclusive_histograms();
+            }
+
+            m_cutflow_exclusive.add_cut("Total events");
+            m_cutflow_exclusive.add_cut("Has good electron");
+            m_cutflow_exclusive.add_cut("Has >= 1 proton");
+            m_cutflow_exclusive.add_cut("Has >= 1 pi+");
+            m_cutflow_exclusive.add_cut("Has >= 1 pi-");
+            m_cutflow_exclusive.add_cut("Missing mass cut");
+        } else {
+            clas12::framework::Log::error(name(), "Unknown truth_mode '{}'. Use 'rich' or 'exclusive'.", m_truth_mode.get());
+            return clas12::framework::StatusCode::FAILURE();
         }
 
         if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
             m_ntuple.init(m_ntuple_svc->get(), "rich_hadrons");
         }
 
-        // Initialize cutflows
-        auto init_cutflow = [](clas12::framework::Cutflow& cf) {
-            cf.add_cut("RICH hadrons");
-            cf.add_cut("RICH PID match");
-            cf.add_cut("RQ > 0.1");
-            cf.add_cut("best_ntot > 2.5");
-        };
-        init_cutflow(m_cutflow_piplus);
-        init_cutflow(m_cutflow_piminus);
-        init_cutflow(m_cutflow_kplus);
-        init_cutflow(m_cutflow_kminus);
-
         return clas12::framework::StatusCode::SUCCESS();
     }
 
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+        if (m_truth_mode.get() == "exclusive") {
+            return process_exclusive(event);
+        }
+        return process_rich(event);
+    }
+
+    auto on_finalize() -> clas12::framework::StatusCode override {
+        if (m_ntuple) {
+            clas12::framework::Log::info(name(), "N-tuple entries: {}", m_ntuple.service()->get_entries(m_ntuple.tree_name()));
+        }
+
+        if (m_truth_mode.get() == "rich") {
+            m_cutflow_piplus.print();
+            m_cutflow_piminus.print();
+            m_cutflow_kplus.print();
+            m_cutflow_kminus.print();
+
+            // Print RICH PID summary table
+            size_t total = 0;
+            for (const auto& [pid, count] : m_rich_pid_counts) {
+                total += count;
+            }
+
+            fmt::print("\n{:=^50}\n", " RICH best_PID Summary ");
+            fmt::print("{:<10} {:<15} {:>10} {:>10}\n", "PID", "Name", "Count", "Fraction");
+            fmt::print("{:-^50}\n", "");
+            for (const auto& [pid, count] : m_rich_pid_counts) {
+                auto pid_enum = clas12::to_pid_enum(pid);
+                std::string pname = pid_enum ? clas12::pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
+                double frac = total > 0 ? 100.0 * static_cast<double>(count) / static_cast<double>(total) : 0.0;
+                fmt::print("{:<10} {:<15} {:>10} {:>9.2f}%\n", pid, pname, count, frac);
+            }
+            fmt::print("{:-^50}\n", "");
+            fmt::print("{:<10} {:<15} {:>10}\n", "", "Total", total);
+            fmt::print("{:=^50}\n\n", "");
+        } else if (m_truth_mode.get() == "exclusive") {
+            m_cutflow_exclusive.print();
+
+            // Print exclusive PID summary table
+            size_t total = 0;
+            for (const auto& [pid, count] : m_excl_pid_counts) {
+                total += count;
+            }
+
+            fmt::print("\n{:=^50}\n", " Exclusive PID Summary ");
+            fmt::print("{:<10} {:<15} {:>10} {:>10}\n", "PID", "Name", "Count", "Fraction");
+            fmt::print("{:-^50}\n", "");
+            for (const auto& [pid, count] : m_excl_pid_counts) {
+                auto pid_enum = clas12::to_pid_enum(pid);
+                std::string pname = pid_enum ? clas12::pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
+                double frac = total > 0 ? 100.0 * static_cast<double>(count) / static_cast<double>(total) : 0.0;
+                fmt::print("{:<10} {:<15} {:>10} {:>9.2f}%\n", pid, pname, count, frac);
+            }
+            fmt::print("{:-^50}\n", "");
+            fmt::print("{:<10} {:<15} {:>10}\n", "", "Total", total);
+            fmt::print("{:=^50}\n\n", "");
+        }
+
+        return clas12::framework::StatusCode::SUCCESS();
+    }
+
+private:
+    // --- Properties ---
+    clas12::framework::Property<bool> m_enable_histograms{
+        "enable_histograms", true, "Enable histogram filling"
+    };
+    clas12::framework::Property<std::string> m_truth_mode{
+        "truth_mode", "rich", "Truth PID mode: 'rich' or 'exclusive'"
+    };
+    clas12::framework::Property<double> m_beam_energy{
+        "beam_energy", 2.2, "Beam energy [GeV]"
+    };
+    clas12::framework::Property<double> m_mm_center{
+        "mm_center", 0.9396, "Missing mass cut center [GeV] (neutron mass)"
+    };
+    clas12::framework::Property<double> m_mm_width{
+        "mm_width", 0.2, "Missing mass cut half-width [GeV]"
+    };
+
+    // --- Services ---
+    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
+    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
+
+    // N-tuple writer
+    clas12::framework::NTupleWriter<HadronTreeData> m_ntuple;
+
+    // --- RICH mode members ---
+    clas12::framework::Cutflow m_cutflow_piplus{"π⁺ RICH Selection"};
+    clas12::framework::Cutflow m_cutflow_piminus{"π⁻ RICH Selection"};
+    clas12::framework::Cutflow m_cutflow_kplus{"K⁺ RICH Selection"};
+    clas12::framework::Cutflow m_cutflow_kminus{"K⁻ RICH Selection"};
+    std::mutex m_pid_count_mutex;
+    std::map<int, size_t> m_rich_pid_counts;
+
+    // --- Exclusive mode members ---
+    clas12::framework::Cutflow m_cutflow_exclusive{"Exclusive ed→ep(n)π⁺π⁻"};
+    std::mutex m_excl_count_mutex;
+    std::map<int, size_t> m_excl_pid_counts;
+
+    // ========================================================================
+    // RICH mode processing
+    // ========================================================================
+
+    auto process_rich(clas12::framework::Event& event) -> clas12::framework::StatusCode {
         auto& hipo_event = event.hipo_event();
         auto [REC_Particle, RICH_Particle, REC_Calorimeter, REC_CaloExtras,
               REC_Cherenkov, REC_Scintillator, REC_ScintExtras] =
@@ -432,71 +580,163 @@ public:
         return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto on_finalize() -> clas12::framework::StatusCode override {
-        if (m_ntuple) {
-            clas12::framework::Log::info(name(), "N-tuple entries: {}", m_ntuple.service()->get_entries(m_ntuple.tree_name()));
+    // ========================================================================
+    // Exclusive mode processing: ed -> ep(n)pi+pi-
+    // ========================================================================
+
+    auto process_exclusive(clas12::framework::Event& event) -> clas12::framework::StatusCode {
+        m_cutflow_exclusive.pass("Total events");
+
+        // 1. Require good electron from upstream ElectronSelectionAlg
+        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodElectron)) {
+            return clas12::framework::StatusCode::FILTERED();
         }
 
-        m_cutflow_piplus.print();
-        m_cutflow_piminus.print();
-        m_cutflow_kplus.print();
-        m_cutflow_kminus.print();
+        auto electrons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedElectronsCapital);
+        if (!electrons_opt || electrons_opt->empty()) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        const auto& electron = electrons_opt->front();
+        m_cutflow_exclusive.pass("Has good electron");
 
-        // Print RICH PID summary table
-        size_t total = 0;
-        for (const auto& [pid, count] : m_rich_pid_counts) {
-            total += count;
+        // 2. Extract hadrons from REC::Particle
+        auto& hipo_event = event.hipo_event();
+        auto [REC_Particle, REC_Calorimeter, REC_CaloExtras,
+              REC_Cherenkov, REC_Scintillator, REC_ScintExtras] =
+            hipo_event.banks("REC::Particle",
+                             "REC::Calorimeter", "REC::CaloExtras",
+                             "REC::Cherenkov", "REC::Scintillator", "REC::ScintExtras");
+
+        auto particles = m_particle_svc->get()->extract_particles(
+            *REC_Particle,
+            {clas12::PIDs::PROTON, clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
+
+        const auto& protons = m_particle_svc->get()->get_protons(particles);
+        const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
+        const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
+
+        // 3. Topology check
+        if (protons.empty()) return clas12::framework::StatusCode::FILTERED();
+        m_cutflow_exclusive.pass("Has >= 1 proton");
+
+        if (pions_plus.empty()) return clas12::framework::StatusCode::FILTERED();
+        m_cutflow_exclusive.pass("Has >= 1 pi+");
+
+        if (pions_minus.empty()) return clas12::framework::StatusCode::FILTERED();
+        m_cutflow_exclusive.pass("Has >= 1 pi-");
+
+        // 4. Construct beam and deuterium target
+        const double beam_E = m_beam_energy.get();
+        clas12::Particle beam(11, 0, -1, -1, clas12::Constants::ELECTRONMASS,
+                              0, 0, beam_E, beam_E, 0, 0, 0, 0, 1.0, 0);
+
+        clas12::Particle target(static_cast<int>(clas12::PIDs::DEUTERON), 0, -1, 0,
+                                clas12::Constants::DEUTERIUMMASS,
+                                0, 0, 0, clas12::Constants::DEUTERIUMMASS, 0, 0, 0, 0, 0, 0);
+
+        // 5. Loop over all (p, pi+, pi-) combinations
+        if (h_exclusive.n_combinations) {
+            int n_combos = static_cast<int>(protons.size() * pions_plus.size() * pions_minus.size());
+            h_exclusive.n_combinations->fill(n_combos);
         }
 
-        fmt::print("\n{:=^50}\n", " RICH best_PID Summary ");
-        fmt::print("{:<10} {:<15} {:>10} {:>10}\n", "PID", "Name", "Count", "Fraction");
-        fmt::print("{:-^50}\n", "");
-        for (const auto& [pid, count] : m_rich_pid_counts) {
-            auto pid_enum = clas12::to_pid_enum(pid);
-            std::string pname = pid_enum ? clas12::pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
-            double frac = total > 0 ? 100.0 * static_cast<double>(count) / static_cast<double>(total) : 0.0;
-            fmt::print("{:<10} {:<15} {:>10} {:>9.2f}%\n", pid, pname, count, frac);
-        }
-        fmt::print("{:-^50}\n", "");
-        fmt::print("{:<10} {:<15} {:>10}\n", "", "Total", total);
-        fmt::print("{:=^50}\n\n", "");
+        bool any_passed_mm = false;
 
-        return clas12::framework::StatusCode::SUCCESS();
+        for (const auto& proton : protons) {
+            for (const auto& pip : pions_plus) {
+                for (const auto& pim : pions_minus) {
+                    // Detected final state: e, p, pi+, pi-
+                    std::vector<clas12::Particle> detected = {electron, proton, pip, pim};
+
+                    double mm2 = clas12::physics::KinematicCalculator::missing_mass_squared(beam, target, detected);
+                    double mm = (mm2 > 0) ? std::sqrt(mm2) : -std::sqrt(-mm2);
+
+                    // Fill pre-cut histograms
+                    if (h_exclusive.mm_all) h_exclusive.mm_all->fill(mm);
+                    if (h_exclusive.mm_squared) h_exclusive.mm_squared->fill(mm2);
+
+                    // Apply missing mass cut: |MM - neutron_mass| < width
+                    if (std::abs(mm - m_mm_center.get()) > m_mm_width.get()) continue;
+
+                    any_passed_mm = true;
+
+                    // Fill post-cut histograms
+                    if (h_exclusive.mm_selected) h_exclusive.mm_selected->fill(mm);
+                    if (h_exclusive.piplus_p) h_exclusive.piplus_p->fill(pip.p());
+                    if (h_exclusive.piplus_theta) h_exclusive.piplus_theta->fill(pip.theta());
+                    if (h_exclusive.piminus_p) h_exclusive.piminus_p->fill(pim.p());
+                    if (h_exclusive.piminus_theta) h_exclusive.piminus_theta->fill(pim.theta());
+
+                    // Fill NTuple for pi+ (true PID = 211) and pi- (true PID = -211)
+                    if (m_ntuple) {
+                        fill_exclusive_ntuple(pip, static_cast<int>(clas12::PIDs::PIPLUS), mm,
+                                              *REC_Calorimeter, *REC_CaloExtras,
+                                              *REC_Cherenkov, *REC_Scintillator, *REC_ScintExtras);
+                        fill_exclusive_ntuple(pim, static_cast<int>(clas12::PIDs::PIMINUS), mm,
+                                              *REC_Calorimeter, *REC_CaloExtras,
+                                              *REC_Cherenkov, *REC_Scintillator, *REC_ScintExtras);
+                    }
+
+                    // Count exclusive PIDs
+                    {
+                        std::lock_guard<std::mutex> lock(m_excl_count_mutex);
+                        m_excl_pid_counts[static_cast<int>(clas12::PIDs::PIPLUS)]++;
+                        m_excl_pid_counts[static_cast<int>(clas12::PIDs::PIMINUS)]++;
+                    }
+                }
+            }
+        }
+
+        if (any_passed_mm) {
+            m_cutflow_exclusive.pass("Missing mass cut");
+        }
+
+        return any_passed_mm ? clas12::framework::StatusCode::SUCCESS()
+                             : clas12::framework::StatusCode::FILTERED();
     }
 
-private:
-    clas12::framework::Property<bool> m_enable_histograms{
-        "enable_histograms", true, "Enable histogram filling"
-    };
-
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
-
-    // N-tuple writer
-    clas12::framework::NTupleWriter<HadronTreeData> m_ntuple;
-
-    // Cutflows
-    clas12::framework::Cutflow m_cutflow_piplus{"π⁺ RICH Selection"};
-    clas12::framework::Cutflow m_cutflow_piminus{"π⁻ RICH Selection"};
-    clas12::framework::Cutflow m_cutflow_kplus{"K⁺ RICH Selection"};
-    clas12::framework::Cutflow m_cutflow_kminus{"K⁻ RICH Selection"};
-
-    // RICH PID counters (thread-safe)
-    std::mutex m_pid_count_mutex;
-    std::map<int, size_t> m_rich_pid_counts;
-
-    // --- TTree populate helpers ---
+    // ========================================================================
+    // TTree populate helpers
+    // ========================================================================
 
     void populate_particle_data(const clas12::Particle& particle, const clas12::RICHParticleBank& rich) {
         auto& d = m_ntuple.data();
-        d.rich_pid = rich.best_PID;
-        d.pid      = particle.pdg();
-        d.p        = static_cast<float>(particle.p());
-        d.theta    = static_cast<float>(particle.theta());
-        d.phi      = static_cast<float>(particle.phi());
-        d.beta     = static_cast<float>(particle.beta());
-        d.charge   = particle.charge();
+        d.rich_pid     = rich.best_PID;
+        d.truth_pid    = rich.best_PID;
+        d.truth_source = 0;
+        d.missing_mass = 0;
+        d.pid          = particle.pdg();
+        d.p            = static_cast<float>(particle.p());
+        d.theta        = static_cast<float>(particle.theta());
+        d.phi          = static_cast<float>(particle.phi());
+        d.beta         = static_cast<float>(particle.beta());
+        d.charge       = particle.charge();
+    }
+
+    void fill_exclusive_ntuple(const clas12::Particle& pion, int true_pid, float mm,
+                               hipo::bank& REC_Calorimeter, hipo::bank& REC_CaloExtras,
+                               hipo::bank& REC_Cherenkov, hipo::bank& REC_Scintillator,
+                               hipo::bank& REC_ScintExtras) {
+        auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, REC_CaloExtras, pion.index());
+        auto htcc = clas12::read_Cherenkov_bank(REC_Cherenkov, pion.index());
+        auto ftof = clas12::read_Scintillator_bank(REC_Scintillator, REC_ScintExtras, pion.index());
+
+        auto& d = m_ntuple.data();
+        d.rich_pid     = 0;
+        d.truth_pid    = true_pid;
+        d.truth_source = 1;
+        d.missing_mass = mm;
+        d.pid          = pion.pdg();
+        d.p            = static_cast<float>(pion.p());
+        d.theta        = static_cast<float>(pion.theta());
+        d.phi          = static_cast<float>(pion.phi());
+        d.beta         = static_cast<float>(pion.beta());
+        d.charge       = pion.charge();
+
+        populate_calorimeter_data(calo);
+        populate_cherenkov_data(htcc);
+        populate_scintillator_data(ftof);
+        m_ntuple.fill();
     }
 
     void populate_calorimeter_data(const clas12::CalorimeterBank& calo) {
@@ -610,8 +850,11 @@ private:
         d.FTOF_layermult = scint.layermult;
     }
 
-    // --- Histograms ---
+    // ========================================================================
+    // Histograms
+    // ========================================================================
 
+    // --- RICH mode histograms ---
     struct HadronHistograms {
         struct {
             clas12::framework::AtomicHistogram1D* p = nullptr;
@@ -673,6 +916,65 @@ private:
         if (h.postcut.vz)       h.postcut.vz->fill(particle.vz());
         if (h.postcut.RQ)       h.postcut.RQ->fill(rich.RQ);
         if (h.postcut.best_PID) h.postcut.best_PID->fill(rich.best_PID);
+    }
+
+    // --- Exclusive mode histograms ---
+    struct ExclusiveHistograms {
+        clas12::framework::AtomicHistogram1D* mm_all = nullptr;
+        clas12::framework::AtomicHistogram1D* mm_selected = nullptr;
+        clas12::framework::AtomicHistogram1D* mm_squared = nullptr;
+        clas12::framework::AtomicHistogram1D* n_combinations = nullptr;
+        clas12::framework::AtomicHistogram1D* piplus_p = nullptr;
+        clas12::framework::AtomicHistogram1D* piplus_theta = nullptr;
+        clas12::framework::AtomicHistogram1D* piminus_p = nullptr;
+        clas12::framework::AtomicHistogram1D* piminus_theta = nullptr;
+    };
+
+    ExclusiveHistograms h_exclusive;
+
+    void book_exclusive_histograms() {
+        auto* svc = m_hist_svc->get();
+        auto dir = std::string("/AiPidHadron/Exclusive");
+
+        h_exclusive.mm_all = svc->book_atomic_hist1D(
+            dir + "/missing_mass_all",
+            "Missing Mass ed#rightarrowep#pi^{+}#pi^{-}(X) (all combos);MM [GeV/c^{2}];Events",
+            300, 0.0, 2.0);
+
+        h_exclusive.mm_selected = svc->book_atomic_hist1D(
+            dir + "/missing_mass_selected",
+            "Missing Mass ed#rightarrowep#pi^{+}#pi^{-}(X) (selected);MM [GeV/c^{2}];Events",
+            300, 0.0, 2.0);
+
+        h_exclusive.mm_squared = svc->book_atomic_hist1D(
+            dir + "/missing_mass_squared",
+            "Missing Mass^{2} ed#rightarrowep#pi^{+}#pi^{-}(X);MM^{2} [GeV^{2}/c^{4}];Events",
+            300, -1.0, 3.0);
+
+        h_exclusive.n_combinations = svc->book_atomic_hist1D(
+            dir + "/n_combinations",
+            "Number of (p,#pi^{+},#pi^{-}) combinations per event;N_{combos};Events",
+            20, 0, 20);
+
+        h_exclusive.piplus_p = svc->book_atomic_hist1D(
+            dir + "/piplus_momentum",
+            "#pi^{+} Momentum (exclusive);p [GeV/c];Events",
+            200, 0, 3);
+
+        h_exclusive.piplus_theta = svc->book_atomic_hist1D(
+            dir + "/piplus_theta",
+            "#pi^{+} #theta (exclusive);#theta [deg];Events",
+            200, 0, 180);
+
+        h_exclusive.piminus_p = svc->book_atomic_hist1D(
+            dir + "/piminus_momentum",
+            "#pi^{-} Momentum (exclusive);p [GeV/c];Events",
+            200, 0, 3);
+
+        h_exclusive.piminus_theta = svc->book_atomic_hist1D(
+            dir + "/piminus_theta",
+            "#pi^{-} #theta (exclusive);#theta [deg];Events",
+            200, 0, 180);
     }
 };
 

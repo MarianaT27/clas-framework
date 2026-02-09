@@ -34,6 +34,7 @@ auto main(int argc, char* argv[]) -> int {
         ("t,threads", "Number of threads to use", cxxopts::value<int>()->default_value("1"))
         ("target", "Target (e.g., LD2, C, Fe)", cxxopts::value<std::string>()->default_value("LD2"))
         ("polarity", "Polarity (Out, In)", cxxopts::value<std::string>()->default_value("Out"))
+        ("truth-mode", "Truth PID mode: 'rich' or 'exclusive'", cxxopts::value<std::string>()->default_value("rich"))
         ;
 
     options.parse_positional({"input"});
@@ -51,6 +52,7 @@ auto main(int argc, char* argv[]) -> int {
     auto num_threads = result["threads"].as<int>();
     auto target = result["target"].as<std::string>();
     auto polarity = result["polarity"].as<std::string>();
+    auto truth_mode = result["truth-mode"].as<std::string>();
 
     std::string input_str = result["input"].as<std::string>();
     std::vector<std::string> input_files;
@@ -80,7 +82,7 @@ auto main(int argc, char* argv[]) -> int {
         .add_service<clas12::framework::ElectronCutsService>()
         .add_service<clas12::framework::FiducialService>()
         .add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::string_to_target(target), clas12::string_to_polarity(polarity))
-        .add_algorithm<ai_pid_hadron::AiPidHadronAlg>("AiPidHadronAlg")
+        .add_algorithm<ai_pid_hadron::AiPidHadronAlg>("AiPidHadronAlg", truth_mode)
         .build();
     
     // Initialize
