@@ -452,6 +452,14 @@ public:
     }
 
 private:
+    // Per-particle cut variable histograms (forward declaration for use in methods and structs)
+    struct ParticleCutHistograms {
+        clas12::framework::AtomicHistogram1D* chi2pid = nullptr;
+        clas12::framework::AtomicHistogram1D* p = nullptr;
+        clas12::framework::AtomicHistogram1D* vz = nullptr;
+        clas12::framework::AtomicHistogram1D* delta_vz = nullptr;
+    };
+
     // --- Properties ---
     clas12::framework::Property<bool> m_enable_histograms{
         "enable_histograms", true, "Enable histogram filling"
@@ -638,6 +646,12 @@ private:
         if (!has_pion_pair && !has_kaon_pair) return clas12::framework::StatusCode::FILTERED();
         m_cutflow_exclusive.pass("Has meson pair");
 
+        // 3b. Fill hadron cut variable histograms (before quality cuts)
+        const double e_vz = electron.vz();
+        if (m_enable_histograms) {
+            fill_all_cut_histograms(e_vz, protons, pions_plus, pions_minus, kaons_plus, kaons_minus);
+        }
+
         // 4. Construct beam and deuterium target
         const double beam_E = m_beam_energy.get();
         clas12::Particle beam(11, 0, -1, -1, clas12::Constants::ELECTRONMASS,
@@ -656,8 +670,12 @@ private:
         bool any_passed_mm = false;
 
         for (const auto& proton : protons) {
+            if (!passes_hadron_cuts(proton, e_vz)) continue;
             for (const auto& pip : pions_plus) {
+                if (!passes_hadron_cuts(pip, e_vz)) continue;
                 for (const auto& pim : pions_minus) {
+                    if (!passes_hadron_cuts(pim, e_vz)) continue;
+
                     // Detected final state: e, p, pi+, pi-
                     std::vector<clas12::Particle> detected = {electron, proton, pip, pim};
 
@@ -707,8 +725,12 @@ private:
         }
 
         for (const auto& proton : protons) {
+            if (!passes_hadron_cuts(proton, e_vz)) continue;
             for (const auto& kp : kaons_plus) {
+                if (!passes_hadron_cuts(kp, e_vz)) continue;
                 for (const auto& km : kaons_minus) {
+                    if (!passes_hadron_cuts(km, e_vz)) continue;
+
                     std::vector<clas12::Particle> detected = {electron, proton, kp, km};
 
                     double mm2 = clas12::physics::KinematicCalculator::missing_mass_squared(beam, target, detected);
@@ -751,6 +773,38 @@ private:
 
         return any_passed_mm ? clas12::framework::StatusCode::SUCCESS()
                              : clas12::framework::StatusCode::FILTERED();
+    }
+
+    // ========================================================================
+    // Hadron quality cuts
+    // ========================================================================
+
+    void fill_cut_histograms(ParticleCutHistograms& h, const clas12::Particle& p, double electron_vz) {
+        if (h.chi2pid)  h.chi2pid->fill(p.chi2pid());
+        if (h.p)        h.p->fill(p.p());
+        if (h.vz)       h.vz->fill(p.vz());
+        if (h.delta_vz) h.delta_vz->fill(p.vz() - electron_vz);
+    }
+
+    void fill_all_cut_histograms(double electron_vz,
+                                  const std::vector<clas12::Particle>& protons,
+                                  const std::vector<clas12::Particle>& pions_plus,
+                                  const std::vector<clas12::Particle>& pions_minus,
+                                  const std::vector<clas12::Particle>& kaons_plus,
+                                  const std::vector<clas12::Particle>& kaons_minus) {
+        for (const auto& p : protons)      fill_cut_histograms(h_exclusive.proton_cuts,  p, electron_vz);
+        for (const auto& p : pions_plus)   fill_cut_histograms(h_exclusive.piplus_cuts,   p, electron_vz);
+        for (const auto& p : pions_minus)  fill_cut_histograms(h_exclusive.piminus_cuts,  p, electron_vz);
+        for (const auto& p : kaons_plus)   fill_cut_histograms(h_exclusive.kplus_cuts,    p, electron_vz);
+        for (const auto& p : kaons_minus)  fill_cut_histograms(h_exclusive.kminus_cuts,   p, electron_vz);
+    }
+
+    bool passes_hadron_cuts(const clas12::Particle& hadron, double electron_vz) const {
+        if (hadron.p() < 0.3) return false;
+        if (hadron.chi2pid() < -3.0 || hadron.chi2pid() > 3.0) return false;
+        if (hadron.vz() < -15.0 || hadron.vz() > 5.0) return false;
+        if (std::abs(hadron.vz() - electron_vz) > 3.0) return false;
+        return true;
     }
 
     // ========================================================================
@@ -1003,6 +1057,13 @@ private:
         clas12::framework::AtomicHistogram1D* kplus_theta = nullptr;
         clas12::framework::AtomicHistogram1D* kminus_p = nullptr;
         clas12::framework::AtomicHistogram1D* kminus_theta = nullptr;
+
+        // Hadron cut variables (all candidates, before quality cuts)
+        ParticleCutHistograms proton_cuts;
+        ParticleCutHistograms piplus_cuts;
+        ParticleCutHistograms piminus_cuts;
+        ParticleCutHistograms kplus_cuts;
+        ParticleCutHistograms kminus_cuts;
     };
 
     ExclusiveHistograms h_exclusive;
@@ -1093,6 +1154,21 @@ private:
             kdir + "/kminus_theta",
             "K^{-} #theta (exclusive);#theta [deg];Events",
             200, 0, 180);
+
+        // --- Hadron cut variable histograms ---
+        auto book_cut_hists = [&](ParticleCutHistograms& h, const std::string& base, const std::string& label) {
+            h.chi2pid  = svc->book_atomic_hist1D(base + "/chi2pid",  fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), 200, -10, 10);
+            h.p        = svc->book_atomic_hist1D(base + "/p",        fmt::format("{} Momentum;p [GeV/c];Events", label),                    200, 0, 10);
+            h.vz       = svc->book_atomic_hist1D(base + "/vz",       fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label),                  200, -30, 15);
+            h.delta_vz = svc->book_atomic_hist1D(base + "/delta_vz", fmt::format("{} #Deltav_{{z}};#Deltav_{{z}} [cm];Events", label),      200, -10, 10);
+        };
+
+        auto cuts_dir = std::string("/AiPidHadron/HadronCuts");
+        book_cut_hists(h_exclusive.proton_cuts,  cuts_dir + "/proton",  "Proton");
+        book_cut_hists(h_exclusive.piplus_cuts,   cuts_dir + "/piplus",  "#pi^{+}");
+        book_cut_hists(h_exclusive.piminus_cuts,  cuts_dir + "/piminus", "#pi^{-}");
+        book_cut_hists(h_exclusive.kplus_cuts,    cuts_dir + "/kplus",   "K^{+}");
+        book_cut_hists(h_exclusive.kminus_cuts,   cuts_dir + "/kminus",  "K^{-}");
     }
 };
 
