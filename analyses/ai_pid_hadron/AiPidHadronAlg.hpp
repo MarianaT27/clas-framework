@@ -375,8 +375,7 @@ public:
             m_cutflow_exclusive.add_cut("Has good electron");
             m_cutflow_exclusive.add_cut("Passes DIS cuts");
             m_cutflow_exclusive.add_cut("Has >= 1 proton");
-            m_cutflow_exclusive.add_cut("Has >= 1 pi+");
-            m_cutflow_exclusive.add_cut("Has >= 1 pi-");
+            m_cutflow_exclusive.add_cut("Has meson pair");
             m_cutflow_exclusive.add_cut("Missing mass cut");
         } else {
             clas12::framework::Log::error(name(), "Unknown truth_mode '{}'. Use 'rich' or 'exclusive'.", m_truth_mode.get());
@@ -616,21 +615,28 @@ private:
 
         auto particles = m_particle_svc->get()->extract_particles(
             *REC_Particle,
-            {clas12::PIDs::PROTON, clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
+            {clas12::PIDs::PROTON, clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
+             clas12::PIDs::KPLUS, clas12::PIDs::KMINUS});
 
         const auto& protons = m_particle_svc->get()->get_protons(particles);
         const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
         const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
 
-        // 3. Topology check
+        static const std::vector<clas12::Particle> empty;
+        auto kp_it = particles.find(clas12::PIDs::KPLUS);
+        auto km_it = particles.find(clas12::PIDs::KMINUS);
+        const auto& kaons_plus = (kp_it != particles.end()) ? kp_it->second : empty;
+        const auto& kaons_minus = (km_it != particles.end()) ? km_it->second : empty;
+
+        // 3. Topology check: require proton + (pi+pi- or K+K-)
         if (protons.empty()) return clas12::framework::StatusCode::FILTERED();
         m_cutflow_exclusive.pass("Has >= 1 proton");
 
-        if (pions_plus.empty()) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow_exclusive.pass("Has >= 1 pi+");
+        bool has_pion_pair = !pions_plus.empty() && !pions_minus.empty();
+        bool has_kaon_pair = !kaons_plus.empty() && !kaons_minus.empty();
 
-        if (pions_minus.empty()) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow_exclusive.pass("Has >= 1 pi-");
+        if (!has_pion_pair && !has_kaon_pair) return clas12::framework::StatusCode::FILTERED();
+        m_cutflow_exclusive.pass("Has meson pair");
 
         // 4. Construct beam and deuterium target
         const double beam_E = m_beam_energy.get();
@@ -689,6 +695,51 @@ private:
                         std::lock_guard<std::mutex> lock(m_excl_count_mutex);
                         m_excl_pid_counts[static_cast<int>(clas12::PIDs::PIPLUS)]++;
                         m_excl_pid_counts[static_cast<int>(clas12::PIDs::PIMINUS)]++;
+                    }
+                }
+            }
+        }
+
+        // 6. Loop over all (p, K+, K-) combinations
+        if (h_exclusive.kaon_n_combinations) {
+            int n_combos = static_cast<int>(protons.size() * kaons_plus.size() * kaons_minus.size());
+            h_exclusive.kaon_n_combinations->fill(n_combos);
+        }
+
+        for (const auto& proton : protons) {
+            for (const auto& kp : kaons_plus) {
+                for (const auto& km : kaons_minus) {
+                    std::vector<clas12::Particle> detected = {electron, proton, kp, km};
+
+                    double mm2 = clas12::physics::KinematicCalculator::missing_mass_squared(beam, target, detected);
+                    double mm = (mm2 > 0) ? std::sqrt(mm2) : -std::sqrt(-mm2);
+
+                    if (h_exclusive.kaon_mm_all) h_exclusive.kaon_mm_all->fill(mm);
+                    if (h_exclusive.kaon_mm_squared) h_exclusive.kaon_mm_squared->fill(mm2);
+
+                    if (std::abs(mm - m_mm_center.get()) > m_mm_width.get()) continue;
+
+                    any_passed_mm = true;
+
+                    if (h_exclusive.kaon_mm_selected) h_exclusive.kaon_mm_selected->fill(mm);
+                    if (h_exclusive.kplus_p) h_exclusive.kplus_p->fill(kp.p());
+                    if (h_exclusive.kplus_theta) h_exclusive.kplus_theta->fill(kp.theta());
+                    if (h_exclusive.kminus_p) h_exclusive.kminus_p->fill(km.p());
+                    if (h_exclusive.kminus_theta) h_exclusive.kminus_theta->fill(km.theta());
+
+                    if (m_ntuple) {
+                        fill_exclusive_ntuple(kp, static_cast<int>(clas12::PIDs::KPLUS), mm,
+                                              *REC_Calorimeter, *REC_CaloExtras,
+                                              *REC_Cherenkov, *REC_Scintillator, *REC_ScintExtras);
+                        fill_exclusive_ntuple(km, static_cast<int>(clas12::PIDs::KMINUS), mm,
+                                              *REC_Calorimeter, *REC_CaloExtras,
+                                              *REC_Cherenkov, *REC_Scintillator, *REC_ScintExtras);
+                    }
+
+                    {
+                        std::lock_guard<std::mutex> lock(m_excl_count_mutex);
+                        m_excl_pid_counts[static_cast<int>(clas12::PIDs::KPLUS)]++;
+                        m_excl_pid_counts[static_cast<int>(clas12::PIDs::KMINUS)]++;
                     }
                 }
             }
@@ -933,6 +984,7 @@ private:
 
     // --- Exclusive mode histograms ---
     struct ExclusiveHistograms {
+        // ed -> ep pi+ pi- (n)
         clas12::framework::AtomicHistogram1D* mm_all = nullptr;
         clas12::framework::AtomicHistogram1D* mm_selected = nullptr;
         clas12::framework::AtomicHistogram1D* mm_squared = nullptr;
@@ -941,6 +993,16 @@ private:
         clas12::framework::AtomicHistogram1D* piplus_theta = nullptr;
         clas12::framework::AtomicHistogram1D* piminus_p = nullptr;
         clas12::framework::AtomicHistogram1D* piminus_theta = nullptr;
+
+        // ed -> ep K+ K- (n)
+        clas12::framework::AtomicHistogram1D* kaon_mm_all = nullptr;
+        clas12::framework::AtomicHistogram1D* kaon_mm_selected = nullptr;
+        clas12::framework::AtomicHistogram1D* kaon_mm_squared = nullptr;
+        clas12::framework::AtomicHistogram1D* kaon_n_combinations = nullptr;
+        clas12::framework::AtomicHistogram1D* kplus_p = nullptr;
+        clas12::framework::AtomicHistogram1D* kplus_theta = nullptr;
+        clas12::framework::AtomicHistogram1D* kminus_p = nullptr;
+        clas12::framework::AtomicHistogram1D* kminus_theta = nullptr;
     };
 
     ExclusiveHistograms h_exclusive;
@@ -987,6 +1049,49 @@ private:
         h_exclusive.piminus_theta = svc->book_atomic_hist1D(
             dir + "/piminus_theta",
             "#pi^{-} #theta (exclusive);#theta [deg];Events",
+            200, 0, 180);
+
+        // --- ed -> ep K+ K- (n) ---
+        auto kdir = std::string("/AiPidHadron/ExclusiveKaon");
+
+        h_exclusive.kaon_mm_all = svc->book_atomic_hist1D(
+            kdir + "/missing_mass_all",
+            "Missing Mass ed#rightarrowepK^{+}K^{-}(X) (all combos);MM [GeV/c^{2}];Events",
+            300, 0.0, 2.0);
+
+        h_exclusive.kaon_mm_selected = svc->book_atomic_hist1D(
+            kdir + "/missing_mass_selected",
+            "Missing Mass ed#rightarrowepK^{+}K^{-}(X) (selected);MM [GeV/c^{2}];Events",
+            300, 0.0, 2.0);
+
+        h_exclusive.kaon_mm_squared = svc->book_atomic_hist1D(
+            kdir + "/missing_mass_squared",
+            "Missing Mass^{2} ed#rightarrowepK^{+}K^{-}(X);MM^{2} [GeV^{2}/c^{4}];Events",
+            300, -1.0, 3.0);
+
+        h_exclusive.kaon_n_combinations = svc->book_atomic_hist1D(
+            kdir + "/n_combinations",
+            "Number of (p,K^{+},K^{-}) combinations per event;N_{combos};Events",
+            20, 0, 20);
+
+        h_exclusive.kplus_p = svc->book_atomic_hist1D(
+            kdir + "/kplus_momentum",
+            "K^{+} Momentum (exclusive);p [GeV/c];Events",
+            200, 0, 3);
+
+        h_exclusive.kplus_theta = svc->book_atomic_hist1D(
+            kdir + "/kplus_theta",
+            "K^{+} #theta (exclusive);#theta [deg];Events",
+            200, 0, 180);
+
+        h_exclusive.kminus_p = svc->book_atomic_hist1D(
+            kdir + "/kminus_momentum",
+            "K^{-} Momentum (exclusive);p [GeV/c];Events",
+            200, 0, 3);
+
+        h_exclusive.kminus_theta = svc->book_atomic_hist1D(
+            kdir + "/kminus_theta",
+            "K^{-} #theta (exclusive);#theta [deg];Events",
             200, 0, 180);
     }
 };
