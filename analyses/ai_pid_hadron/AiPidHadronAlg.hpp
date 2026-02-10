@@ -863,6 +863,7 @@ private:
             clas12::framework::AtomicHistogram1D* vz = nullptr;
             clas12::framework::AtomicHistogram1D* RQ = nullptr;
             clas12::framework::AtomicHistogram1D* best_PID = nullptr;
+            clas12::framework::AtomicHistogram1D* best_ntot = nullptr;
         } precut;
 
         struct {
@@ -872,6 +873,7 @@ private:
             clas12::framework::AtomicHistogram1D* vz = nullptr;
             clas12::framework::AtomicHistogram1D* RQ = nullptr;
             clas12::framework::AtomicHistogram1D* best_PID = nullptr;
+            clas12::framework::AtomicHistogram1D* best_ntot = nullptr;
         } postcut;
     };
 
@@ -886,18 +888,20 @@ private:
         auto pre = dir + "/precut";
         h.precut.p        = svc->book_atomic_hist1D(pre + "/p",        fmt::format("{} Momentum (pre-cut);p [GeV/c];Events", label),    200, 0, 10);
         h.precut.theta    = svc->book_atomic_hist1D(pre + "/theta",    fmt::format("{} #theta (pre-cut);#theta [deg];Events", label),   200, 0, 40);
-        h.precut.phi      = svc->book_atomic_hist1D(pre + "/phi",      fmt::format("{} #phi (pre-cut);#phi [deg];Events", label),       200, 0, 360);
+        h.precut.phi      = svc->book_atomic_hist1D(pre + "/phi",      fmt::format("{} #phi (pre-cut);#phi [deg];Events", label),       200, -180, 180);
         h.precut.vz       = svc->book_atomic_hist1D(pre + "/vz",       fmt::format("{} v_{{z}} (pre-cut);v_{{z}} [cm];Events", label),  200, -30, 30);
         h.precut.RQ       = svc->book_atomic_hist1D(pre + "/RQ",       fmt::format("{} RICH RQ (pre-cut);RQ;Events", label),            200, 0, 1);
         h.precut.best_PID = svc->book_atomic_hist1D(pre + "/best_PID", fmt::format("{} RICH best PID (pre-cut);PID;Events", label),     800, -400, 400);
+        h.precut.best_ntot = svc->book_atomic_hist1D(pre + "/best_ntot", fmt::format("{} RICH best ntot (pre-cut);ntot;Events", label),     800, -400, 400);
 
         auto post = dir + "/postcut";
         h.postcut.p        = svc->book_atomic_hist1D(post + "/p",        fmt::format("{} Momentum (post-cut);p [GeV/c];Events", label),    200, 0, 10);
         h.postcut.theta    = svc->book_atomic_hist1D(post + "/theta",    fmt::format("{} #theta (post-cut);#theta [deg];Events", label),   200, 0, 40);
-        h.postcut.phi      = svc->book_atomic_hist1D(post + "/phi",      fmt::format("{} #phi (post-cut);#phi [deg];Events", label),       200, 0, 360);
+        h.postcut.phi      = svc->book_atomic_hist1D(post + "/phi",      fmt::format("{} #phi (post-cut);#phi [deg];Events", label),       200, -180, 180);
         h.postcut.vz       = svc->book_atomic_hist1D(post + "/vz",       fmt::format("{} v_{{z}} (post-cut);v_{{z}} [cm];Events", label),  200, -30, 30);
         h.postcut.RQ       = svc->book_atomic_hist1D(post + "/RQ",       fmt::format("{} RICH RQ (post-cut);RQ;Events", label),            200, 0, 1);
         h.postcut.best_PID = svc->book_atomic_hist1D(post + "/best_PID", fmt::format("{} RICH best PID (post-cut);PID;Events", label),     800, -400, 400);
+        h.postcut.best_ntot = svc->book_atomic_hist1D(post + "/best_ntot", fmt::format("{} RICH best ntot (post-cut);ntot;Events", label),     800, -400, 400);
     }
 
     void fill_precut_histograms(const clas12::Particle& particle, const clas12::RICHParticleBank& rich, HadronHistograms& h) {
@@ -907,6 +911,7 @@ private:
         if (h.precut.vz)       h.precut.vz->fill(particle.vz());
         if (h.precut.RQ)       h.precut.RQ->fill(rich.RQ);
         if (h.precut.best_PID) h.precut.best_PID->fill(rich.best_PID);
+        if (h.precut.best_ntot) h.precut.best_ntot->fill(rich.best_ntot);
     }
 
     void fill_postcut_histograms(const clas12::Particle& particle, const clas12::RICHParticleBank& rich, HadronHistograms& h) {
@@ -916,6 +921,7 @@ private:
         if (h.postcut.vz)       h.postcut.vz->fill(particle.vz());
         if (h.postcut.RQ)       h.postcut.RQ->fill(rich.RQ);
         if (h.postcut.best_PID) h.postcut.best_PID->fill(rich.best_PID);
+        if (h.postcut.best_ntot) h.postcut.best_ntot->fill(rich.best_ntot);
     }
 
     // --- Exclusive mode histograms ---
