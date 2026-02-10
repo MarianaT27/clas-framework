@@ -498,6 +498,7 @@ private:
         clas12::framework::AtomicHistogram1D* neutron_opening_angle = nullptr;
         clas12::framework::AtomicHistogram1D* neutron_p = nullptr;
         clas12::framework::AtomicHistogram1D* neutron_beta = nullptr;
+        clas12::framework::AtomicHistogram1D* mm_with_neutron = nullptr; // MM(ed→epn+mesons)
     };
 
     // --- Properties ---
@@ -722,14 +723,9 @@ private:
                     std::vector<clas12::Particle> detected = {electron, proton, pip, pim};
                     auto excl = compute_exclusivity(beam, target, detected);
 
-                    // Fill pre-cut histograms
+                    // Fill pre-cut missing mass histograms (without neutron)
                     if (h_exclusive.mm_all) h_exclusive.mm_all->fill(excl.missing_mass);
                     if (h_exclusive.mm_squared) h_exclusive.mm_squared->fill(excl.missing_mass2);
-                    if (h_exclusive.pion_excl.missing_energy) h_exclusive.pion_excl.missing_energy->fill(excl.missing_energy);
-                    if (h_exclusive.pion_excl.missing_p)      h_exclusive.pion_excl.missing_p->fill(excl.missing_p);
-                    if (h_exclusive.pion_excl.missing_pt)     h_exclusive.pion_excl.missing_pt->fill(excl.missing_pt);
-                    if (h_exclusive.pion_excl.missing_theta)  h_exclusive.pion_excl.missing_theta->fill(excl.missing_theta);
-                    if (h_exclusive.pion_excl.missing_phi)    h_exclusive.pion_excl.missing_phi->fill(excl.missing_phi);
 
                     // Neutron detection
                     if (h_exclusive.pion_excl.n_detected) h_exclusive.pion_excl.n_detected->fill(static_cast<int>(neutrons.size()));
@@ -748,6 +744,15 @@ private:
                             if (h_exclusive.pion_excl.neutron_opening_angle) h_exclusive.pion_excl.neutron_opening_angle->fill(best_angle);
                             if (h_exclusive.pion_excl.neutron_p)    h_exclusive.pion_excl.neutron_p->fill(best_n->p());
                             if (h_exclusive.pion_excl.neutron_beta) h_exclusive.pion_excl.neutron_beta->fill(best_n->beta());
+                            // Exclusivity variables with neutron: ed → e p n π+ π- (X)
+                            std::vector<clas12::Particle> detected_with_n = {electron, proton, pip, pim, *best_n};
+                            auto excl_n = compute_exclusivity(beam, target, detected_with_n);
+                            if (h_exclusive.pion_excl.mm_with_neutron) h_exclusive.pion_excl.mm_with_neutron->fill(excl_n.missing_mass);
+                            if (h_exclusive.pion_excl.missing_energy)  h_exclusive.pion_excl.missing_energy->fill(excl_n.missing_energy);
+                            if (h_exclusive.pion_excl.missing_p)       h_exclusive.pion_excl.missing_p->fill(excl_n.missing_p);
+                            if (h_exclusive.pion_excl.missing_pt)      h_exclusive.pion_excl.missing_pt->fill(excl_n.missing_pt);
+                            if (h_exclusive.pion_excl.missing_theta)   h_exclusive.pion_excl.missing_theta->fill(excl_n.missing_theta);
+                            if (h_exclusive.pion_excl.missing_phi)     h_exclusive.pion_excl.missing_phi->fill(excl_n.missing_phi);
                         }
                     }
 
@@ -799,13 +804,9 @@ private:
                     std::vector<clas12::Particle> detected = {electron, proton, kp, km};
                     auto excl = compute_exclusivity(beam, target, detected);
 
+                    // Fill pre-cut missing mass histograms (without neutron)
                     if (h_exclusive.kaon_mm_all) h_exclusive.kaon_mm_all->fill(excl.missing_mass);
                     if (h_exclusive.kaon_mm_squared) h_exclusive.kaon_mm_squared->fill(excl.missing_mass2);
-                    if (h_exclusive.kaon_excl.missing_energy) h_exclusive.kaon_excl.missing_energy->fill(excl.missing_energy);
-                    if (h_exclusive.kaon_excl.missing_p)      h_exclusive.kaon_excl.missing_p->fill(excl.missing_p);
-                    if (h_exclusive.kaon_excl.missing_pt)     h_exclusive.kaon_excl.missing_pt->fill(excl.missing_pt);
-                    if (h_exclusive.kaon_excl.missing_theta)  h_exclusive.kaon_excl.missing_theta->fill(excl.missing_theta);
-                    if (h_exclusive.kaon_excl.missing_phi)    h_exclusive.kaon_excl.missing_phi->fill(excl.missing_phi);
 
                     // Neutron detection
                     if (h_exclusive.kaon_excl.n_detected) h_exclusive.kaon_excl.n_detected->fill(static_cast<int>(neutrons.size()));
@@ -823,6 +824,15 @@ private:
                             if (h_exclusive.kaon_excl.neutron_opening_angle) h_exclusive.kaon_excl.neutron_opening_angle->fill(best_angle);
                             if (h_exclusive.kaon_excl.neutron_p)    h_exclusive.kaon_excl.neutron_p->fill(best_n->p());
                             if (h_exclusive.kaon_excl.neutron_beta) h_exclusive.kaon_excl.neutron_beta->fill(best_n->beta());
+                            // Exclusivity variables with neutron: ed → e p n K+ K- (X)
+                            std::vector<clas12::Particle> detected_with_n = {electron, proton, kp, km, *best_n};
+                            auto excl_n = compute_exclusivity(beam, target, detected_with_n);
+                            if (h_exclusive.kaon_excl.mm_with_neutron) h_exclusive.kaon_excl.mm_with_neutron->fill(excl_n.missing_mass);
+                            if (h_exclusive.kaon_excl.missing_energy)  h_exclusive.kaon_excl.missing_energy->fill(excl_n.missing_energy);
+                            if (h_exclusive.kaon_excl.missing_p)       h_exclusive.kaon_excl.missing_p->fill(excl_n.missing_p);
+                            if (h_exclusive.kaon_excl.missing_pt)      h_exclusive.kaon_excl.missing_pt->fill(excl_n.missing_pt);
+                            if (h_exclusive.kaon_excl.missing_theta)   h_exclusive.kaon_excl.missing_theta->fill(excl_n.missing_theta);
+                            if (h_exclusive.kaon_excl.missing_phi)     h_exclusive.kaon_excl.missing_phi->fill(excl_n.missing_phi);
                         }
                     }
 
@@ -1305,6 +1315,8 @@ private:
                 fmt::format("{} Detected neutron momentum;p_{{n}} [GeV/c];Events", label), 200, 0, 4);
             eh.neutron_beta = svc->book_atomic_hist1D(ndir + "/neutron_beta",
                 fmt::format("{} Detected neutron #beta;#beta_{{n}};Events", label), 200, 0, 1.2);
+            eh.mm_with_neutron = svc->book_atomic_hist1D(ndir + "/mm_with_neutron",
+                fmt::format("{} MM (with detected n);MM [GeV/c^{{2}}];Events", label), 300, -1.0, 2.0);
         };
 
         book_excl_hists(h_exclusive.pion_excl, dir, "ed#rightarrowep#pi^{+}#pi^{-}(X)");
