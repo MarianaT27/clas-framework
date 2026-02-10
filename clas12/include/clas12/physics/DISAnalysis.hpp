@@ -111,7 +111,7 @@ class DISAnalysis {
      */
     static auto high_q2_region() -> KinematicRegion {
         return KinematicRegion{
-            .q2_min = 4.0,
+            .q2_min = 2.0,
             .q2_max = 11.0,
             .w_min = 2.0,
             .w_max = 5.0,

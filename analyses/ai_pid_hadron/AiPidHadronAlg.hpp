@@ -52,6 +52,12 @@ struct HadronTreeData {
     int truth_pid = 0;      // Mode-agnostic truth PID (RICH or topology)
     int truth_source = 0;   // 0 = RICH, 1 = exclusive reaction
     float missing_mass = 0; // Missing mass of exclusive reaction (0 in RICH mode)
+    float missing_energy = 0;
+    float missing_px = 0, missing_py = 0, missing_pz = 0;
+    float missing_p = 0;
+    float missing_pt = 0;
+    float missing_theta = 0;
+    float missing_phi = 0;
     float p = 0;
     float theta = 0;
     float phi = 0;
@@ -185,6 +191,14 @@ struct HadronTreeData {
         svc->register_branch(tree, "truth_pid", &truth_pid);
         svc->register_branch(tree, "truth_source", &truth_source);
         svc->register_branch(tree, "missing_mass", &missing_mass);
+        svc->register_branch(tree, "missing_energy", &missing_energy);
+        svc->register_branch(tree, "missing_px", &missing_px);
+        svc->register_branch(tree, "missing_py", &missing_py);
+        svc->register_branch(tree, "missing_pz", &missing_pz);
+        svc->register_branch(tree, "missing_p", &missing_p);
+        svc->register_branch(tree, "missing_pt", &missing_pt);
+        svc->register_branch(tree, "missing_theta", &missing_theta);
+        svc->register_branch(tree, "missing_phi", &missing_phi);
         svc->register_branch(tree, "p", &p);
         svc->register_branch(tree, "theta", &theta);
         svc->register_branch(tree, "phi", &phi);
@@ -460,6 +474,32 @@ private:
         clas12::framework::AtomicHistogram1D* delta_vz = nullptr;
     };
 
+    // Exclusivity variables computed from four-momentum conservation
+    struct ExclusivityVars {
+        double missing_energy = 0;
+        double missing_px = 0, missing_py = 0, missing_pz = 0;
+        double missing_p = 0;
+        double missing_pt = 0;
+        double missing_theta = 0;
+        double missing_phi = 0;
+        double missing_mass = 0;
+        double missing_mass2 = 0;
+    };
+
+    // Per-channel exclusivity histograms
+    struct ExclusivityHistograms {
+        clas12::framework::AtomicHistogram1D* missing_energy = nullptr;
+        clas12::framework::AtomicHistogram1D* missing_p = nullptr;
+        clas12::framework::AtomicHistogram1D* missing_pt = nullptr;
+        clas12::framework::AtomicHistogram1D* missing_theta = nullptr;
+        clas12::framework::AtomicHistogram1D* missing_phi = nullptr;
+        // Detected neutron (filled only when neutron found)
+        clas12::framework::AtomicHistogram1D* n_detected = nullptr;
+        clas12::framework::AtomicHistogram1D* neutron_opening_angle = nullptr;
+        clas12::framework::AtomicHistogram1D* neutron_p = nullptr;
+        clas12::framework::AtomicHistogram1D* neutron_beta = nullptr;
+    };
+
     // --- Properties ---
     clas12::framework::Property<bool> m_enable_histograms{
         "enable_histograms", true, "Enable histogram filling"
@@ -624,7 +664,7 @@ private:
         auto particles = m_particle_svc->get()->extract_particles(
             *REC_Particle,
             {clas12::PIDs::PROTON, clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
-             clas12::PIDs::KPLUS, clas12::PIDs::KMINUS});
+             clas12::PIDs::KPLUS, clas12::PIDs::KMINUS, clas12::PIDs::NEUTRON});
 
         const auto& protons = m_particle_svc->get()->get_protons(particles);
         const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
@@ -633,8 +673,10 @@ private:
         static const std::vector<clas12::Particle> empty;
         auto kp_it = particles.find(clas12::PIDs::KPLUS);
         auto km_it = particles.find(clas12::PIDs::KMINUS);
-        const auto& kaons_plus = (kp_it != particles.end()) ? kp_it->second : empty;
+        auto n_it  = particles.find(clas12::PIDs::NEUTRON);
+        const auto& kaons_plus  = (kp_it != particles.end()) ? kp_it->second : empty;
         const auto& kaons_minus = (km_it != particles.end()) ? km_it->second : empty;
+        const auto& neutrons    = (n_it  != particles.end()) ? n_it->second  : empty;
 
         // 3. Topology check: require proton + (pi+pi- or K+K-)
         if (protons.empty()) return clas12::framework::StatusCode::FILTERED();
@@ -678,21 +720,44 @@ private:
 
                     // Detected final state: e, p, pi+, pi-
                     std::vector<clas12::Particle> detected = {electron, proton, pip, pim};
-
-                    double mm2 = clas12::physics::KinematicCalculator::missing_mass_squared(beam, target, detected);
-                    double mm = (mm2 > 0) ? std::sqrt(mm2) : -std::sqrt(-mm2);
+                    auto excl = compute_exclusivity(beam, target, detected);
 
                     // Fill pre-cut histograms
-                    if (h_exclusive.mm_all) h_exclusive.mm_all->fill(mm);
-                    if (h_exclusive.mm_squared) h_exclusive.mm_squared->fill(mm2);
+                    if (h_exclusive.mm_all) h_exclusive.mm_all->fill(excl.missing_mass);
+                    if (h_exclusive.mm_squared) h_exclusive.mm_squared->fill(excl.missing_mass2);
+                    if (h_exclusive.pion_excl.missing_energy) h_exclusive.pion_excl.missing_energy->fill(excl.missing_energy);
+                    if (h_exclusive.pion_excl.missing_p)      h_exclusive.pion_excl.missing_p->fill(excl.missing_p);
+                    if (h_exclusive.pion_excl.missing_pt)     h_exclusive.pion_excl.missing_pt->fill(excl.missing_pt);
+                    if (h_exclusive.pion_excl.missing_theta)  h_exclusive.pion_excl.missing_theta->fill(excl.missing_theta);
+                    if (h_exclusive.pion_excl.missing_phi)    h_exclusive.pion_excl.missing_phi->fill(excl.missing_phi);
+
+                    // Neutron detection
+                    if (h_exclusive.pion_excl.n_detected) h_exclusive.pion_excl.n_detected->fill(static_cast<int>(neutrons.size()));
+                    if (!neutrons.empty()) {
+                        // Find neutron closest to missing momentum direction
+                        double best_angle = 999;
+                        const clas12::Particle* best_n = nullptr;
+                        for (const auto& n : neutrons) {
+                            double dot = excl.missing_px * n.px() + excl.missing_py * n.py() + excl.missing_pz * n.pz();
+                            double cos_a = (excl.missing_p > 0 && n.p() > 0) ? dot / (excl.missing_p * n.p()) : -1;
+                            cos_a = std::max(-1.0, std::min(1.0, cos_a));
+                            double angle = std::acos(cos_a) * 180.0 / M_PI;
+                            if (angle < best_angle) { best_angle = angle; best_n = &n; }
+                        }
+                        if (best_n) {
+                            if (h_exclusive.pion_excl.neutron_opening_angle) h_exclusive.pion_excl.neutron_opening_angle->fill(best_angle);
+                            if (h_exclusive.pion_excl.neutron_p)    h_exclusive.pion_excl.neutron_p->fill(best_n->p());
+                            if (h_exclusive.pion_excl.neutron_beta) h_exclusive.pion_excl.neutron_beta->fill(best_n->beta());
+                        }
+                    }
 
                     // Apply missing mass cut: |MM - neutron_mass| < width
-                    if (std::abs(mm - m_mm_center.get()) > m_mm_width.get()) continue;
+                    if (std::abs(excl.missing_mass - m_mm_center.get()) > m_mm_width.get()) continue;
 
                     any_passed_mm = true;
 
                     // Fill post-cut histograms
-                    if (h_exclusive.mm_selected) h_exclusive.mm_selected->fill(mm);
+                    if (h_exclusive.mm_selected) h_exclusive.mm_selected->fill(excl.missing_mass);
                     if (h_exclusive.piplus_p) h_exclusive.piplus_p->fill(pip.p());
                     if (h_exclusive.piplus_theta) h_exclusive.piplus_theta->fill(pip.theta());
                     if (h_exclusive.piminus_p) h_exclusive.piminus_p->fill(pim.p());
@@ -700,10 +765,10 @@ private:
 
                     // Fill NTuple for pi+ (true PID = 211) and pi- (true PID = -211)
                     if (m_ntuple) {
-                        fill_exclusive_ntuple(pip, static_cast<int>(clas12::PIDs::PIPLUS), mm,
+                        fill_exclusive_ntuple(pip, static_cast<int>(clas12::PIDs::PIPLUS), excl,
                                               *REC_Calorimeter, *REC_CaloExtras,
                                               *REC_Cherenkov, *REC_Scintillator, *REC_ScintExtras);
-                        fill_exclusive_ntuple(pim, static_cast<int>(clas12::PIDs::PIMINUS), mm,
+                        fill_exclusive_ntuple(pim, static_cast<int>(clas12::PIDs::PIMINUS), excl,
                                               *REC_Calorimeter, *REC_CaloExtras,
                                               *REC_Cherenkov, *REC_Scintillator, *REC_ScintExtras);
                     }
@@ -732,28 +797,50 @@ private:
                     if (!passes_hadron_cuts(km, e_vz)) continue;
 
                     std::vector<clas12::Particle> detected = {electron, proton, kp, km};
+                    auto excl = compute_exclusivity(beam, target, detected);
 
-                    double mm2 = clas12::physics::KinematicCalculator::missing_mass_squared(beam, target, detected);
-                    double mm = (mm2 > 0) ? std::sqrt(mm2) : -std::sqrt(-mm2);
+                    if (h_exclusive.kaon_mm_all) h_exclusive.kaon_mm_all->fill(excl.missing_mass);
+                    if (h_exclusive.kaon_mm_squared) h_exclusive.kaon_mm_squared->fill(excl.missing_mass2);
+                    if (h_exclusive.kaon_excl.missing_energy) h_exclusive.kaon_excl.missing_energy->fill(excl.missing_energy);
+                    if (h_exclusive.kaon_excl.missing_p)      h_exclusive.kaon_excl.missing_p->fill(excl.missing_p);
+                    if (h_exclusive.kaon_excl.missing_pt)     h_exclusive.kaon_excl.missing_pt->fill(excl.missing_pt);
+                    if (h_exclusive.kaon_excl.missing_theta)  h_exclusive.kaon_excl.missing_theta->fill(excl.missing_theta);
+                    if (h_exclusive.kaon_excl.missing_phi)    h_exclusive.kaon_excl.missing_phi->fill(excl.missing_phi);
 
-                    if (h_exclusive.kaon_mm_all) h_exclusive.kaon_mm_all->fill(mm);
-                    if (h_exclusive.kaon_mm_squared) h_exclusive.kaon_mm_squared->fill(mm2);
+                    // Neutron detection
+                    if (h_exclusive.kaon_excl.n_detected) h_exclusive.kaon_excl.n_detected->fill(static_cast<int>(neutrons.size()));
+                    if (!neutrons.empty()) {
+                        double best_angle = 999;
+                        const clas12::Particle* best_n = nullptr;
+                        for (const auto& n : neutrons) {
+                            double dot = excl.missing_px * n.px() + excl.missing_py * n.py() + excl.missing_pz * n.pz();
+                            double cos_a = (excl.missing_p > 0 && n.p() > 0) ? dot / (excl.missing_p * n.p()) : -1;
+                            cos_a = std::max(-1.0, std::min(1.0, cos_a));
+                            double angle = std::acos(cos_a) * 180.0 / M_PI;
+                            if (angle < best_angle) { best_angle = angle; best_n = &n; }
+                        }
+                        if (best_n) {
+                            if (h_exclusive.kaon_excl.neutron_opening_angle) h_exclusive.kaon_excl.neutron_opening_angle->fill(best_angle);
+                            if (h_exclusive.kaon_excl.neutron_p)    h_exclusive.kaon_excl.neutron_p->fill(best_n->p());
+                            if (h_exclusive.kaon_excl.neutron_beta) h_exclusive.kaon_excl.neutron_beta->fill(best_n->beta());
+                        }
+                    }
 
-                    if (std::abs(mm - m_mm_center.get()) > m_mm_width.get()) continue;
+                    if (std::abs(excl.missing_mass - m_mm_center.get()) > m_mm_width.get()) continue;
 
                     any_passed_mm = true;
 
-                    if (h_exclusive.kaon_mm_selected) h_exclusive.kaon_mm_selected->fill(mm);
+                    if (h_exclusive.kaon_mm_selected) h_exclusive.kaon_mm_selected->fill(excl.missing_mass);
                     if (h_exclusive.kplus_p) h_exclusive.kplus_p->fill(kp.p());
                     if (h_exclusive.kplus_theta) h_exclusive.kplus_theta->fill(kp.theta());
                     if (h_exclusive.kminus_p) h_exclusive.kminus_p->fill(km.p());
                     if (h_exclusive.kminus_theta) h_exclusive.kminus_theta->fill(km.theta());
 
                     if (m_ntuple) {
-                        fill_exclusive_ntuple(kp, static_cast<int>(clas12::PIDs::KPLUS), mm,
+                        fill_exclusive_ntuple(kp, static_cast<int>(clas12::PIDs::KPLUS), excl,
                                               *REC_Calorimeter, *REC_CaloExtras,
                                               *REC_Cherenkov, *REC_Scintillator, *REC_ScintExtras);
-                        fill_exclusive_ntuple(km, static_cast<int>(clas12::PIDs::KMINUS), mm,
+                        fill_exclusive_ntuple(km, static_cast<int>(clas12::PIDs::KMINUS), excl,
                                               *REC_Calorimeter, *REC_CaloExtras,
                                               *REC_Cherenkov, *REC_Scintillator, *REC_ScintExtras);
                     }
@@ -807,6 +894,34 @@ private:
         return true;
     }
 
+    static auto compute_exclusivity(const clas12::Particle& beam,
+                                     const clas12::Particle& target,
+                                     const std::vector<clas12::Particle>& detected) -> ExclusivityVars {
+        ExclusivityVars vars;
+        double px = beam.px() + target.px();
+        double py = beam.py() + target.py();
+        double pz = beam.pz() + target.pz();
+        double E  = beam.E()  + target.E();
+        for (const auto& p : detected) {
+            px -= p.px();
+            py -= p.py();
+            pz -= p.pz();
+            E  -= p.E();
+        }
+        vars.missing_px = px;
+        vars.missing_py = py;
+        vars.missing_pz = pz;
+        vars.missing_energy = E;
+        vars.missing_p  = std::sqrt(px*px + py*py + pz*pz);
+        vars.missing_pt = std::sqrt(px*px + py*py);
+        vars.missing_theta = (vars.missing_p > 0) ? std::acos(pz / vars.missing_p) * 180.0 / M_PI : 0;
+        vars.missing_phi   = std::atan2(py, px) * 180.0 / M_PI;
+        vars.missing_mass2 = E*E - (px*px + py*py + pz*pz);
+        vars.missing_mass  = (vars.missing_mass2 > 0) ? std::sqrt(vars.missing_mass2)
+                                                       : -std::sqrt(-vars.missing_mass2);
+        return vars;
+    }
+
     // ========================================================================
     // TTree populate helpers
     // ========================================================================
@@ -825,25 +940,34 @@ private:
         d.charge       = particle.charge();
     }
 
-    void fill_exclusive_ntuple(const clas12::Particle& pion, int true_pid, float mm,
+    void fill_exclusive_ntuple(const clas12::Particle& hadron, int true_pid,
+                               const ExclusivityVars& excl,
                                hipo::bank& REC_Calorimeter, hipo::bank& REC_CaloExtras,
                                hipo::bank& REC_Cherenkov, hipo::bank& REC_Scintillator,
                                hipo::bank& REC_ScintExtras) {
-        auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, REC_CaloExtras, pion.index());
-        auto htcc = clas12::read_Cherenkov_bank(REC_Cherenkov, pion.index());
-        auto ftof = clas12::read_Scintillator_bank(REC_Scintillator, REC_ScintExtras, pion.index());
+        auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, REC_CaloExtras, hadron.index());
+        auto htcc = clas12::read_Cherenkov_bank(REC_Cherenkov, hadron.index());
+        auto ftof = clas12::read_Scintillator_bank(REC_Scintillator, REC_ScintExtras, hadron.index());
 
         auto& d = m_ntuple.data();
-        d.rich_pid     = 0;
-        d.truth_pid    = true_pid;
-        d.truth_source = 1;
-        d.missing_mass = mm;
-        d.pid          = pion.pdg();
-        d.p            = static_cast<float>(pion.p());
-        d.theta        = static_cast<float>(pion.theta());
-        d.phi          = static_cast<float>(pion.phi());
-        d.beta         = static_cast<float>(pion.beta());
-        d.charge       = pion.charge();
+        d.rich_pid       = 0;
+        d.truth_pid      = true_pid;
+        d.truth_source   = 1;
+        d.missing_mass   = static_cast<float>(excl.missing_mass);
+        d.missing_energy = static_cast<float>(excl.missing_energy);
+        d.missing_px     = static_cast<float>(excl.missing_px);
+        d.missing_py     = static_cast<float>(excl.missing_py);
+        d.missing_pz     = static_cast<float>(excl.missing_pz);
+        d.missing_p      = static_cast<float>(excl.missing_p);
+        d.missing_pt     = static_cast<float>(excl.missing_pt);
+        d.missing_theta  = static_cast<float>(excl.missing_theta);
+        d.missing_phi    = static_cast<float>(excl.missing_phi);
+        d.pid            = hadron.pdg();
+        d.p              = static_cast<float>(hadron.p());
+        d.theta          = static_cast<float>(hadron.theta());
+        d.phi            = static_cast<float>(hadron.phi());
+        d.beta           = static_cast<float>(hadron.beta());
+        d.charge         = hadron.charge();
 
         populate_calorimeter_data(calo);
         populate_cherenkov_data(htcc);
@@ -1058,6 +1182,10 @@ private:
         clas12::framework::AtomicHistogram1D* kminus_p = nullptr;
         clas12::framework::AtomicHistogram1D* kminus_theta = nullptr;
 
+        // Exclusivity variables per channel
+        ExclusivityHistograms pion_excl;
+        ExclusivityHistograms kaon_excl;
+
         // Hadron cut variables (all candidates, before quality cuts)
         ParticleCutHistograms proton_cuts;
         ParticleCutHistograms piplus_cuts;
@@ -1154,6 +1282,33 @@ private:
             kdir + "/kminus_theta",
             "K^{-} #theta (exclusive);#theta [deg];Events",
             200, 0, 180);
+
+        // --- Exclusivity histograms ---
+        auto book_excl_hists = [&](ExclusivityHistograms& eh, const std::string& base, const std::string& label) {
+            eh.missing_energy = svc->book_atomic_hist1D(base + "/missing_energy",
+                fmt::format("{} Missing Energy;#DeltaE [GeV];Events", label), 300, -2.0, 4.0);
+            eh.missing_p = svc->book_atomic_hist1D(base + "/missing_momentum",
+                fmt::format("{} Missing Momentum;|p_{{miss}}| [GeV/c];Events", label), 300, 0.0, 4.0);
+            eh.missing_pt = svc->book_atomic_hist1D(base + "/missing_pt",
+                fmt::format("{} Missing p_{{T}};p_{{T,miss}} [GeV/c];Events", label), 200, 0.0, 2.0);
+            eh.missing_theta = svc->book_atomic_hist1D(base + "/missing_theta",
+                fmt::format("{} Missing #theta;#theta_{{miss}} [deg];Events", label), 200, 0, 180);
+            eh.missing_phi = svc->book_atomic_hist1D(base + "/missing_phi",
+                fmt::format("{} Missing #phi;#phi_{{miss}} [deg];Events", label), 200, -180, 180);
+            // Neutron detection histograms
+            auto ndir = base + "/Neutron";
+            eh.n_detected = svc->book_atomic_hist1D(ndir + "/n_detected",
+                fmt::format("{} Number of detected neutrons;N_{{n}};Events", label), 10, 0, 10);
+            eh.neutron_opening_angle = svc->book_atomic_hist1D(ndir + "/opening_angle",
+                fmt::format("{} Neutron-Missing opening angle;#Delta#alpha [deg];Events", label), 200, 0, 180);
+            eh.neutron_p = svc->book_atomic_hist1D(ndir + "/neutron_p",
+                fmt::format("{} Detected neutron momentum;p_{{n}} [GeV/c];Events", label), 200, 0, 4);
+            eh.neutron_beta = svc->book_atomic_hist1D(ndir + "/neutron_beta",
+                fmt::format("{} Detected neutron #beta;#beta_{{n}};Events", label), 200, 0, 1.2);
+        };
+
+        book_excl_hists(h_exclusive.pion_excl, dir, "ed#rightarrowep#pi^{+}#pi^{-}(X)");
+        book_excl_hists(h_exclusive.kaon_excl, kdir, "ed#rightarrowepK^{+}K^{-}(X)");
 
         // --- Hadron cut variable histograms ---
         auto book_cut_hists = [&](ParticleCutHistograms& h, const std::string& base, const std::string& label) {
