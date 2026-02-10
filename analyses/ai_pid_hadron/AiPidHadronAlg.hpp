@@ -373,6 +373,7 @@ public:
 
             m_cutflow_exclusive.add_cut("Total events");
             m_cutflow_exclusive.add_cut("Has good electron");
+            m_cutflow_exclusive.add_cut("Passes DIS cuts");
             m_cutflow_exclusive.add_cut("Has >= 1 proton");
             m_cutflow_exclusive.add_cut("Has >= 1 pi+");
             m_cutflow_exclusive.add_cut("Has >= 1 pi-");
@@ -460,7 +461,7 @@ private:
         "truth_mode", "rich", "Truth PID mode: 'rich' or 'exclusive'"
     };
     clas12::framework::Property<double> m_beam_energy{
-        "beam_energy", 2.2, "Beam energy [GeV]"
+        "beam_energy", 10.53, "Beam energy [GeV]"
     };
     clas12::framework::Property<double> m_mm_center{
         "mm_center", 0.9396, "Missing mass cut center [GeV] (neutron mass)"
@@ -598,6 +599,12 @@ private:
         }
         const auto& electron = electrons_opt->front();
         m_cutflow_exclusive.pass("Has good electron");
+
+        // 1b. Require DIS kinematics from upstream DISSelectionAlg
+        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow_exclusive.pass("Passes DIS cuts");
 
         // 2. Extract hadrons from REC::Particle
         auto& hipo_event = event.hipo_event();

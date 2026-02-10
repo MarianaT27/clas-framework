@@ -79,6 +79,7 @@ auto main(int argc, char* argv[]) -> int {
         .add_service<clas12::framework::ElectronCutsService>()
         .add_service<clas12::framework::FiducialService>()
         .add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::string_to_target(target), clas12::string_to_polarity(polarity))
+        .add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection")
         .add_algorithm<ai_pid_hadron::AiPidHadronAlg>("AiPidHadronAlg", truth_mode)
         .build();
     
