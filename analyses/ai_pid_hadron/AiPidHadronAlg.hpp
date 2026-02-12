@@ -30,6 +30,10 @@
 #include <clas12/ReadBank.hpp>
 #include <clas12/physics/Kinematics.hpp>
 
+#include <Math/Vector4D.h>
+#include <Math/Vector3D.h>
+#include <Math/VectorUtil.h>
+
 #include <cmath>
 #include <map>
 #include <mutex>
@@ -364,6 +368,9 @@ public:
                 book_histograms("/AiPidHadron/PiMinus", h_piminus, "#pi^{-}");
                 book_histograms("/AiPidHadron/KPlus",   h_kplus,   "K^{+}");
                 book_histograms("/AiPidHadron/KMinus",  h_kminus,  "K^{-}");
+
+                // RICH vs REC PID comparison
+                book_comparison_histograms();
             }
 
             auto init_cutflow = [](clas12::framework::Cutflow& cf) {
@@ -439,6 +446,35 @@ public:
             fmt::print("{:-^50}\n", "");
             fmt::print("{:<10} {:<15} {:>10}\n", "", "Total", total);
             fmt::print("{:=^50}\n\n", "");
+
+            // Print RICH vs REC PID agreement summary
+            fmt::print("\n{:=^60}\n", " RICH vs REC PID Agreement ");
+            fmt::print("{:<12} {:>10} {:>10} {:>10} {:>10}\n",
+                       "REC PID", "Agree", "Disagree", "Total", "Rate");
+            fmt::print("{:-^60}\n", "");
+
+            const std::array<std::pair<int, std::string>, 4> species = {{
+                {211, "pi+"}, {-211, "pi-"}, {321, "K+"}, {-321, "K-"}
+            }};
+            size_t total_agree = 0, total_disagree = 0;
+            for (const auto& [spid, label] : species) {
+                auto it = m_pid_agreement.find(spid);
+                if (it == m_pid_agreement.end()) continue;
+                size_t ag = it->second.agree;
+                size_t dis = it->second.disagree;
+                size_t tot = ag + dis;
+                double rate = tot > 0 ? 100.0 * static_cast<double>(ag) / static_cast<double>(tot) : 0.0;
+                fmt::print("{:<12} {:>10} {:>10} {:>10} {:>9.2f}%\n", label, ag, dis, tot, rate);
+                total_agree += ag;
+                total_disagree += dis;
+            }
+            fmt::print("{:-^60}\n", "");
+            size_t grand_total = total_agree + total_disagree;
+            double grand_rate = grand_total > 0 ? 100.0 * static_cast<double>(total_agree)
+                                                   / static_cast<double>(grand_total) : 0.0;
+            fmt::print("{:<12} {:>10} {:>10} {:>10} {:>9.2f}%\n",
+                       "Total", total_agree, total_disagree, grand_total, grand_rate);
+            fmt::print("{:=^60}\n\n", "");
         } else if (m_truth_mode.get() == "exclusive") {
             m_cutflow_exclusive.print();
 
@@ -466,6 +502,35 @@ public:
     }
 
 private:
+    // --- RICH vs REC PID comparison structs ---
+    struct KinematicHistograms {
+        clas12::framework::AtomicHistogram1D* p = nullptr;
+        clas12::framework::AtomicHistogram1D* theta = nullptr;
+        clas12::framework::AtomicHistogram1D* phi = nullptr;
+        clas12::framework::AtomicHistogram1D* beta = nullptr;
+    };
+
+    struct PidCompareHistograms {
+        KinematicHistograms agree;
+        KinematicHistograms disagree;
+        clas12::framework::AtomicHistogram1D* rich_pid_dist = nullptr; // RICH PID distribution for this REC species
+    };
+
+    struct PidAgreement {
+        size_t agree = 0;
+        size_t disagree = 0;
+    };
+
+    static auto pid_to_bin_index(int pid) -> double {
+        switch (pid) {
+            case  211: return 0.5;
+            case -211: return 1.5;
+            case  321: return 2.5;
+            case -321: return 3.5;
+            default:   return 4.5;
+        }
+    }
+
     // Per-particle cut variable histograms (forward declaration for use in methods and structs)
     struct ParticleCutHistograms {
         clas12::framework::AtomicHistogram1D* chi2pid = nullptr;
@@ -533,6 +598,14 @@ private:
     clas12::framework::Cutflow m_cutflow_kminus{"K⁻ RICH Selection"};
     std::mutex m_pid_count_mutex;
     std::map<int, size_t> m_rich_pid_counts;
+    std::map<int, PidAgreement> m_pid_agreement;
+
+    // RICH vs REC PID comparison histograms
+    clas12::framework::AtomicHistogram2D* h_rich_vs_rec_pid = nullptr;
+    PidCompareHistograms h_cmp_piplus;
+    PidCompareHistograms h_cmp_piminus;
+    PidCompareHistograms h_cmp_kplus;
+    PidCompareHistograms h_cmp_kminus;
 
     // --- Exclusive mode members ---
     clas12::framework::Cutflow m_cutflow_exclusive{"Exclusive ed→ep(n)π⁺π⁻"};
@@ -589,10 +662,21 @@ private:
                     h = &h_kminus;
                 }
 
-                // Count all RICH best_PIDs (before any cuts)
+                // Count all RICH best_PIDs and track agreement (before any cuts)
+                int rec_pid = static_cast<int>(pid_type);
                 {
                     std::lock_guard<std::mutex> lock(m_pid_count_mutex);
                     m_rich_pid_counts[best_pid]++;
+                    if (best_pid == rec_pid) {
+                        m_pid_agreement[rec_pid].agree++;
+                    } else {
+                        m_pid_agreement[rec_pid].disagree++;
+                    }
+                }
+
+                // Fill RICH vs REC PID comparison histograms
+                if (m_enable_histograms) {
+                    fill_comparison(particle, rec_pid, best_pid);
                 }
 
                 if (!h) continue;
@@ -731,13 +815,11 @@ private:
                     if (h_exclusive.pion_excl.n_detected) h_exclusive.pion_excl.n_detected->fill(static_cast<int>(neutrons.size()));
                     if (!neutrons.empty()) {
                         // Find neutron closest to missing momentum direction
+                        ROOT::Math::XYZVector miss_dir(excl.missing_px, excl.missing_py, excl.missing_pz);
                         double best_angle = 999;
                         const clas12::Particle* best_n = nullptr;
                         for (const auto& n : neutrons) {
-                            double dot = excl.missing_px * n.px() + excl.missing_py * n.py() + excl.missing_pz * n.pz();
-                            double cos_a = (excl.missing_p > 0 && n.p() > 0) ? dot / (excl.missing_p * n.p()) : -1;
-                            cos_a = std::max(-1.0, std::min(1.0, cos_a));
-                            double angle = std::acos(cos_a) * 180.0 / M_PI;
+                            double angle = ROOT::Math::VectorUtil::Angle(miss_dir, n.PxPyPzVector()) * 180.0 / M_PI;
                             if (angle < best_angle) { best_angle = angle; best_n = &n; }
                         }
                         if (best_n) {
@@ -811,13 +893,11 @@ private:
                     // Neutron detection
                     if (h_exclusive.kaon_excl.n_detected) h_exclusive.kaon_excl.n_detected->fill(static_cast<int>(neutrons.size()));
                     if (!neutrons.empty()) {
+                        ROOT::Math::XYZVector miss_dir(excl.missing_px, excl.missing_py, excl.missing_pz);
                         double best_angle = 999;
                         const clas12::Particle* best_n = nullptr;
                         for (const auto& n : neutrons) {
-                            double dot = excl.missing_px * n.px() + excl.missing_py * n.py() + excl.missing_pz * n.pz();
-                            double cos_a = (excl.missing_p > 0 && n.p() > 0) ? dot / (excl.missing_p * n.p()) : -1;
-                            cos_a = std::max(-1.0, std::min(1.0, cos_a));
-                            double angle = std::acos(cos_a) * 180.0 / M_PI;
+                            double angle = ROOT::Math::VectorUtil::Angle(miss_dir, n.PxPyPzVector()) * 180.0 / M_PI;
                             if (angle < best_angle) { best_angle = angle; best_n = &n; }
                         }
                         if (best_n) {
@@ -907,28 +987,23 @@ private:
     static auto compute_exclusivity(const clas12::Particle& beam,
                                      const clas12::Particle& target,
                                      const std::vector<clas12::Particle>& detected) -> ExclusivityVars {
-        ExclusivityVars vars;
-        double px = beam.px() + target.px();
-        double py = beam.py() + target.py();
-        double pz = beam.pz() + target.pz();
-        double E  = beam.E()  + target.E();
+        auto p_miss = beam.PxPyPzEVector() + target.PxPyPzEVector();
         for (const auto& p : detected) {
-            px -= p.px();
-            py -= p.py();
-            pz -= p.pz();
-            E  -= p.E();
+            p_miss -= p.PxPyPzEVector();
         }
-        vars.missing_px = px;
-        vars.missing_py = py;
-        vars.missing_pz = pz;
-        vars.missing_energy = E;
-        vars.missing_p  = std::sqrt(px*px + py*py + pz*pz);
-        vars.missing_pt = std::sqrt(px*px + py*py);
-        vars.missing_theta = (vars.missing_p > 0) ? std::acos(pz / vars.missing_p) * 180.0 / M_PI : 0;
-        vars.missing_phi   = std::atan2(py, px) * 180.0 / M_PI;
-        vars.missing_mass2 = E*E - (px*px + py*py + pz*pz);
-        vars.missing_mass  = (vars.missing_mass2 > 0) ? std::sqrt(vars.missing_mass2)
-                                                       : -std::sqrt(-vars.missing_mass2);
+
+        ExclusivityVars vars;
+        vars.missing_px     = p_miss.Px();
+        vars.missing_py     = p_miss.Py();
+        vars.missing_pz     = p_miss.Pz();
+        vars.missing_energy = p_miss.E();
+        vars.missing_p      = p_miss.P();
+        vars.missing_pt     = p_miss.Pt();
+        vars.missing_theta  = p_miss.Theta() * 180.0 / M_PI;
+        vars.missing_phi    = p_miss.Phi()   * 180.0 / M_PI;
+        vars.missing_mass2  = p_miss.M2();
+        vars.missing_mass   = (vars.missing_mass2 > 0) ? std::sqrt(vars.missing_mass2)
+                                                        : -std::sqrt(-vars.missing_mass2);
         return vars;
     }
 
@@ -1127,6 +1202,53 @@ private:
     HadronHistograms h_piminus;
     HadronHistograms h_kplus;
     HadronHistograms h_kminus;
+
+    void book_comparison_histograms() {
+        auto* svc = m_hist_svc->get();
+        auto dir = std::string("/AiPidHadron/RICHComparison");
+
+        h_rich_vs_rec_pid = svc->book_hist2D(
+            dir + "/rec_vs_rich_pid",
+            "REC PID vs RICH best_PID;REC PID;RICH best_PID",
+            5, 0, 5, 5, 0, 5);
+
+        auto book_cmp = [&](PidCompareHistograms& h, const std::string& base, const std::string& label) {
+            h.rich_pid_dist = svc->book_atomic_hist1D(base + "/rich_pid_dist",
+                fmt::format("RICH best_PID for REC {};RICH PID;Events", label), 800, -400, 400);
+
+            auto book_kin = [&](KinematicHistograms& kh, const std::string& sub, const std::string& tag) {
+                kh.p     = svc->book_atomic_hist1D(sub + "/p",     fmt::format("{} {} Momentum;p [GeV/c];Events", label, tag),       200, 0, 10);
+                kh.theta = svc->book_atomic_hist1D(sub + "/theta", fmt::format("{} {} #theta;#theta [deg];Events", label, tag),      200, 0, 40);
+                kh.phi   = svc->book_atomic_hist1D(sub + "/phi",   fmt::format("{} {} #phi;#phi [deg];Events", label, tag),          200, -180, 180);
+                kh.beta  = svc->book_atomic_hist1D(sub + "/beta",  fmt::format("{} {} #beta;#beta;Events", label, tag),              200, 0, 1.2);
+            };
+            book_kin(h.agree,    base + "/agree",    "(RICH=REC)");
+            book_kin(h.disagree, base + "/disagree", "(RICH#neqREC)");
+        };
+
+        book_cmp(h_cmp_piplus,  dir + "/PiPlus",  "#pi^{+}");
+        book_cmp(h_cmp_piminus, dir + "/PiMinus", "#pi^{-}");
+        book_cmp(h_cmp_kplus,   dir + "/KPlus",   "K^{+}");
+        book_cmp(h_cmp_kminus,  dir + "/KMinus",  "K^{-}");
+    }
+
+    void fill_comparison(const clas12::Particle& particle, int rec_pid, int rich_pid) {
+        PidCompareHistograms* h = nullptr;
+        if      (rec_pid == static_cast<int>(clas12::PIDs::PIPLUS))  h = &h_cmp_piplus;
+        else if (rec_pid == static_cast<int>(clas12::PIDs::PIMINUS)) h = &h_cmp_piminus;
+        else if (rec_pid == static_cast<int>(clas12::PIDs::KPLUS))   h = &h_cmp_kplus;
+        else if (rec_pid == static_cast<int>(clas12::PIDs::KMINUS))  h = &h_cmp_kminus;
+        if (!h) return;
+
+        if (h->rich_pid_dist) h->rich_pid_dist->fill(rich_pid);
+        if (h_rich_vs_rec_pid) h_rich_vs_rec_pid->fill(pid_to_bin_index(rec_pid), pid_to_bin_index(rich_pid));
+
+        auto& kh = (rec_pid == rich_pid) ? h->agree : h->disagree;
+        if (kh.p)     kh.p->fill(particle.p());
+        if (kh.theta) kh.theta->fill(particle.theta());
+        if (kh.phi)   kh.phi->fill(particle.phi());
+        if (kh.beta)  kh.beta->fill(particle.beta());
+    }
 
     void book_histograms(const std::string& dir, HadronHistograms& h, const std::string& label) {
         auto* svc = m_hist_svc->get();
