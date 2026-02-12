@@ -609,6 +609,12 @@ private:
     PidCompareHistograms h_cmp_kplus;
     PidCompareHistograms h_cmp_kminus;
 
+    // Per-RICH-species REC PID distribution (Sector 1)
+    clas12::framework::AtomicHistogram1D* h_rec_pid_for_rich_piplus = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rec_pid_for_rich_piminus = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rec_pid_for_rich_kplus = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rec_pid_for_rich_kminus = nullptr;
+
     // --- Exclusive mode members ---
     clas12::framework::Cutflow m_cutflow_exclusive{"Exclusive ed→ep(n)π⁺π⁻"};
     std::mutex m_excl_count_mutex;
@@ -1241,6 +1247,17 @@ private:
         book_cmp(h_cmp_piminus, dir + "/PiMinus", "#pi^{-} S1");
         book_cmp(h_cmp_kplus,   dir + "/KPlus",   "K^{+} S1");
         book_cmp(h_cmp_kminus,  dir + "/KMinus",  "K^{-} S1");
+
+        // Per-RICH-species REC PID distribution
+        auto rdir = dir + "/ByRICH";
+        h_rec_pid_for_rich_piplus  = svc->book_atomic_hist1D(rdir + "/rec_pid_for_rich_piplus",
+            "REC PID for RICH #pi^{+} S1;REC PID;Events", 800, -400, 400);
+        h_rec_pid_for_rich_piminus = svc->book_atomic_hist1D(rdir + "/rec_pid_for_rich_piminus",
+            "REC PID for RICH #pi^{-} S1;REC PID;Events", 800, -400, 400);
+        h_rec_pid_for_rich_kplus   = svc->book_atomic_hist1D(rdir + "/rec_pid_for_rich_kplus",
+            "REC PID for RICH K^{+} S1;REC PID;Events", 800, -400, 400);
+        h_rec_pid_for_rich_kminus  = svc->book_atomic_hist1D(rdir + "/rec_pid_for_rich_kminus",
+            "REC PID for RICH K^{-} S1;REC PID;Events", 800, -400, 400);
     }
 
     void fill_comparison(const clas12::Particle& particle, int rec_pid, int rich_pid) {
@@ -1253,6 +1270,12 @@ private:
 
         if (h->rich_pid_dist) h->rich_pid_dist->fill(rich_pid);
         if (h_rich_vs_rec_pid) h_rich_vs_rec_pid->fill(pid_to_bin_index(rec_pid), pid_to_bin_index(rich_pid));
+
+        // Fill REC PID distribution keyed by RICH species
+        if      (rich_pid == static_cast<int>(clas12::PIDs::PIPLUS)  && h_rec_pid_for_rich_piplus)  h_rec_pid_for_rich_piplus->fill(rec_pid);
+        else if (rich_pid == static_cast<int>(clas12::PIDs::PIMINUS) && h_rec_pid_for_rich_piminus) h_rec_pid_for_rich_piminus->fill(rec_pid);
+        else if (rich_pid == static_cast<int>(clas12::PIDs::KPLUS)   && h_rec_pid_for_rich_kplus)   h_rec_pid_for_rich_kplus->fill(rec_pid);
+        else if (rich_pid == static_cast<int>(clas12::PIDs::KMINUS)  && h_rec_pid_for_rich_kminus)  h_rec_pid_for_rich_kminus->fill(rec_pid);
 
         auto& kh = (rec_pid == rich_pid) ? h->agree : h->disagree;
         if (kh.p)     kh.p->fill(particle.p());
