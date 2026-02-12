@@ -447,7 +447,7 @@ public:
                     rows, fmt::format("Total: {}", total));
             }
 
-            // Print RICH vs REC PID agreement summary
+            // Print RICH vs REC PID agreement summary (Sector 1)
             {
                 const std::array<std::pair<int, std::string>, 4> species = {{
                     {211, "pi+"}, {-211, "pi-"}, {321, "K+"}, {-321, "K-"}
@@ -470,7 +470,7 @@ public:
                 double grand_rate = grand_total > 0 ? 100.0 * static_cast<double>(total_agree)
                                                        / static_cast<double>(grand_total) : 0.0;
                 clas12::framework::Log::print_yield_summary_table(
-                    "RICH vs REC PID Agreement",
+                    "RICH vs REC PID Agreement (Sector 1)",
                     {"REC PID", "Agree", "Disagree", "Total", "Rate"},
                     rows, fmt::format("Overall: {}/{} ({:.2f}%)", total_agree, grand_total, grand_rate));
             }
@@ -598,7 +598,7 @@ private:
     std::map<int, size_t> m_rich_pid_counts;
     std::map<int, PidAgreement> m_pid_agreement;
 
-    // RICH vs REC PID comparison histograms
+    // RICH vs REC PID comparison histograms (Sector 1 only)
     clas12::framework::AtomicHistogram2D* h_rich_vs_rec_pid = nullptr;
     PidCompareHistograms h_cmp_piplus;
     PidCompareHistograms h_cmp_piminus;
@@ -660,21 +660,30 @@ private:
                     h = &h_kminus;
                 }
 
-                // Count all RICH best_PIDs and track agreement (before any cuts)
+                // Count all RICH best_PIDs (before any cuts)
                 int rec_pid = static_cast<int>(pid_type);
                 {
                     std::lock_guard<std::mutex> lock(m_pid_count_mutex);
                     m_rich_pid_counts[best_pid]++;
-                    if (best_pid == rec_pid) {
-                        m_pid_agreement[rec_pid].agree++;
-                    } else {
-                        m_pid_agreement[rec_pid].disagree++;
-                    }
                 }
 
-                // Fill RICH vs REC PID comparison histograms
-                if (m_enable_histograms) {
-                    fill_comparison(particle, rec_pid, best_pid);
+                // Determine particle sector from scintillator
+                auto ftof = clas12::read_Scintillator_bank(*REC_Scintillator, *REC_ScintExtras, particle.index());
+                int sector = ftof.sector;
+
+                // Sector 1: track agreement and fill comparison histograms
+                if (sector == 1) {
+                    {
+                        std::lock_guard<std::mutex> lock(m_pid_count_mutex);
+                        if (best_pid == rec_pid) {
+                            m_pid_agreement[rec_pid].agree++;
+                        } else {
+                            m_pid_agreement[rec_pid].disagree++;
+                        }
+                    }
+                    if (m_enable_histograms) {
+                        fill_comparison(particle, rec_pid, best_pid);
+                    }
                 }
 
                 if (!h) continue;
@@ -1224,10 +1233,10 @@ private:
             book_kin(h.disagree, base + "/disagree", "(RICH#neqREC)");
         };
 
-        book_cmp(h_cmp_piplus,  dir + "/PiPlus",  "#pi^{+}");
-        book_cmp(h_cmp_piminus, dir + "/PiMinus", "#pi^{-}");
-        book_cmp(h_cmp_kplus,   dir + "/KPlus",   "K^{+}");
-        book_cmp(h_cmp_kminus,  dir + "/KMinus",  "K^{-}");
+        book_cmp(h_cmp_piplus,  dir + "/PiPlus",  "#pi^{+} S1");
+        book_cmp(h_cmp_piminus, dir + "/PiMinus", "#pi^{-} S1");
+        book_cmp(h_cmp_kplus,   dir + "/KPlus",   "K^{+} S1");
+        book_cmp(h_cmp_kminus,  dir + "/KMinus",  "K^{-} S1");
     }
 
     void fill_comparison(const clas12::Particle& particle, int rec_pid, int rich_pid) {
