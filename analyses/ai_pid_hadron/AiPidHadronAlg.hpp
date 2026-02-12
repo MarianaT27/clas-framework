@@ -344,6 +344,7 @@ public:
                             std::string truth_mode = "rich")
         : SimpleAlgorithm(std::move(name)) {
         declare_property(m_enable_histograms);
+        declare_property(m_enable_ntuple);
         declare_property(m_truth_mode);
         declare_property(m_beam_energy);
         declare_property(m_mm_center);
@@ -404,7 +405,7 @@ public:
             return clas12::framework::StatusCode::FAILURE();
         }
 
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
+        if (m_enable_ntuple && m_ntuple_svc && m_ntuple_svc->is_valid()) {
             m_ntuple.init(m_ntuple_svc->get(), "rich_hadrons");
         }
 
@@ -579,6 +580,9 @@ private:
     };
     clas12::framework::Property<double> m_mm_width{
         "mm_width", 0.2, "Missing mass cut half-width [GeV]"
+    };
+    clas12::framework::Property<bool> m_enable_ntuple{
+        "enable_ntuple", false, "Enable N-tuple output"
     };
 
     // --- Services ---

@@ -326,7 +326,7 @@ private:
 
     // Properties
     clas12::framework::Property<bool> m_enable_ntuple{
-        "enable_ntuple", true, "Enable N-tuple output"};
+        "enable_ntuple", false, "Enable N-tuple output"};
     clas12::framework::Property<bool> m_enable_fiducial_histograms{
         "enable_fiducial_histograms", false, "Enable fiducial diagnostic histograms"};
 
