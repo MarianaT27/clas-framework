@@ -34,6 +34,7 @@
 #include <Math/Vector3D.h>
 #include <Math/VectorUtil.h>
 
+#include <array>
 #include <cmath>
 #include <map>
 #include <mutex>
@@ -429,73 +430,70 @@ public:
             m_cutflow_kminus.print();
 
             // Print RICH PID summary table
-            size_t total = 0;
-            for (const auto& [pid, count] : m_rich_pid_counts) {
-                total += count;
-            }
+            {
+                size_t total = 0;
+                for (const auto& [pid, count] : m_rich_pid_counts) total += count;
 
-            fmt::print("\n{:=^50}\n", " RICH best_PID Summary ");
-            fmt::print("{:<10} {:<15} {:>10} {:>10}\n", "PID", "Name", "Count", "Fraction");
-            fmt::print("{:-^50}\n", "");
-            for (const auto& [pid, count] : m_rich_pid_counts) {
-                auto pid_enum = clas12::to_pid_enum(pid);
-                std::string pname = pid_enum ? clas12::pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
-                double frac = total > 0 ? 100.0 * static_cast<double>(count) / static_cast<double>(total) : 0.0;
-                fmt::print("{:<10} {:<15} {:>10} {:>9.2f}%\n", pid, pname, count, frac);
+                std::vector<std::vector<std::string>> rows;
+                for (const auto& [pid, count] : m_rich_pid_counts) {
+                    auto pid_enum = clas12::to_pid_enum(pid);
+                    std::string pname = pid_enum ? clas12::pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
+                    double frac = total > 0 ? 100.0 * static_cast<double>(count) / static_cast<double>(total) : 0.0;
+                    rows.push_back({fmt::format("{}", pid), pname, fmt::format("{}", count), fmt::format("{:.2f}%", frac)});
+                }
+                clas12::framework::Log::print_yield_summary_table(
+                    "RICH best_PID Summary",
+                    {"PID", "Name", "Count", "Fraction"},
+                    rows, fmt::format("Total: {}", total));
             }
-            fmt::print("{:-^50}\n", "");
-            fmt::print("{:<10} {:<15} {:>10}\n", "", "Total", total);
-            fmt::print("{:=^50}\n\n", "");
 
             // Print RICH vs REC PID agreement summary
-            fmt::print("\n{:=^60}\n", " RICH vs REC PID Agreement ");
-            fmt::print("{:<12} {:>10} {:>10} {:>10} {:>10}\n",
-                       "REC PID", "Agree", "Disagree", "Total", "Rate");
-            fmt::print("{:-^60}\n", "");
-
-            const std::array<std::pair<int, std::string>, 4> species = {{
-                {211, "pi+"}, {-211, "pi-"}, {321, "K+"}, {-321, "K-"}
-            }};
-            size_t total_agree = 0, total_disagree = 0;
-            for (const auto& [spid, label] : species) {
-                auto it = m_pid_agreement.find(spid);
-                if (it == m_pid_agreement.end()) continue;
-                size_t ag = it->second.agree;
-                size_t dis = it->second.disagree;
-                size_t tot = ag + dis;
-                double rate = tot > 0 ? 100.0 * static_cast<double>(ag) / static_cast<double>(tot) : 0.0;
-                fmt::print("{:<12} {:>10} {:>10} {:>10} {:>9.2f}%\n", label, ag, dis, tot, rate);
-                total_agree += ag;
-                total_disagree += dis;
+            {
+                const std::array<std::pair<int, std::string>, 4> species = {{
+                    {211, "pi+"}, {-211, "pi-"}, {321, "K+"}, {-321, "K-"}
+                }};
+                std::vector<std::vector<std::string>> rows;
+                size_t total_agree = 0, total_disagree = 0;
+                for (const auto& [spid, label] : species) {
+                    auto it = m_pid_agreement.find(spid);
+                    if (it == m_pid_agreement.end()) continue;
+                    size_t ag = it->second.agree;
+                    size_t dis = it->second.disagree;
+                    size_t tot = ag + dis;
+                    double rate = tot > 0 ? 100.0 * static_cast<double>(ag) / static_cast<double>(tot) : 0.0;
+                    rows.push_back({label, fmt::format("{}", ag), fmt::format("{}", dis),
+                                    fmt::format("{}", tot), fmt::format("{:.2f}%", rate)});
+                    total_agree += ag;
+                    total_disagree += dis;
+                }
+                size_t grand_total = total_agree + total_disagree;
+                double grand_rate = grand_total > 0 ? 100.0 * static_cast<double>(total_agree)
+                                                       / static_cast<double>(grand_total) : 0.0;
+                clas12::framework::Log::print_yield_summary_table(
+                    "RICH vs REC PID Agreement",
+                    {"REC PID", "Agree", "Disagree", "Total", "Rate"},
+                    rows, fmt::format("Overall: {}/{} ({:.2f}%)", total_agree, grand_total, grand_rate));
             }
-            fmt::print("{:-^60}\n", "");
-            size_t grand_total = total_agree + total_disagree;
-            double grand_rate = grand_total > 0 ? 100.0 * static_cast<double>(total_agree)
-                                                   / static_cast<double>(grand_total) : 0.0;
-            fmt::print("{:<12} {:>10} {:>10} {:>10} {:>9.2f}%\n",
-                       "Total", total_agree, total_disagree, grand_total, grand_rate);
-            fmt::print("{:=^60}\n\n", "");
         } else if (m_truth_mode.get() == "exclusive") {
             m_cutflow_exclusive.print();
 
             // Print exclusive PID summary table
-            size_t total = 0;
-            for (const auto& [pid, count] : m_excl_pid_counts) {
-                total += count;
-            }
+            {
+                size_t total = 0;
+                for (const auto& [pid, count] : m_excl_pid_counts) total += count;
 
-            fmt::print("\n{:=^50}\n", " Exclusive PID Summary ");
-            fmt::print("{:<10} {:<15} {:>10} {:>10}\n", "PID", "Name", "Count", "Fraction");
-            fmt::print("{:-^50}\n", "");
-            for (const auto& [pid, count] : m_excl_pid_counts) {
-                auto pid_enum = clas12::to_pid_enum(pid);
-                std::string pname = pid_enum ? clas12::pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
-                double frac = total > 0 ? 100.0 * static_cast<double>(count) / static_cast<double>(total) : 0.0;
-                fmt::print("{:<10} {:<15} {:>10} {:>9.2f}%\n", pid, pname, count, frac);
+                std::vector<std::vector<std::string>> rows;
+                for (const auto& [pid, count] : m_excl_pid_counts) {
+                    auto pid_enum = clas12::to_pid_enum(pid);
+                    std::string pname = pid_enum ? clas12::pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
+                    double frac = total > 0 ? 100.0 * static_cast<double>(count) / static_cast<double>(total) : 0.0;
+                    rows.push_back({fmt::format("{}", pid), pname, fmt::format("{}", count), fmt::format("{:.2f}%", frac)});
+                }
+                clas12::framework::Log::print_yield_summary_table(
+                    "Exclusive PID Summary",
+                    {"PID", "Name", "Count", "Fraction"},
+                    rows, fmt::format("Total: {}", total));
             }
-            fmt::print("{:-^50}\n", "");
-            fmt::print("{:<10} {:<15} {:>10}\n", "", "Total", total);
-            fmt::print("{:=^50}\n\n", "");
         }
 
         return clas12::framework::StatusCode::SUCCESS();
