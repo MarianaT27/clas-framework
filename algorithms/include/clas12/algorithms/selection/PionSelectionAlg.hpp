@@ -91,8 +91,11 @@ struct PionCandidate {
     // Beta difference
     double beta_diff = 0.0;   // beta_measured - beta_expected
 
-    // Cached cut decisions
+    // Detector region
     bool is_forward_detector = false;
+    bool is_central_detector = false;
+
+    // Cached cut decisions
     bool passes_pcal_fiducial = false;
     bool passes_dc_fiducial = false;
     bool passes_chi2pid = false;
@@ -358,6 +361,18 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         clas12::framework::AtomicHistogram2D* delta_t_vs_theta = nullptr;
         clas12::framework::AtomicHistogram2D* delta_t_vs_p_precut = nullptr;
 
+        // Central detector histograms (pre-cut)
+        clas12::framework::AtomicHistogram1D* momentum_central = nullptr;
+        clas12::framework::AtomicHistogram1D* theta_central = nullptr;
+        clas12::framework::AtomicHistogram1D* phi_central = nullptr;
+        clas12::framework::AtomicHistogram1D* vz_central = nullptr;
+        clas12::framework::AtomicHistogram1D* chi2pid_central = nullptr;
+        clas12::framework::AtomicHistogram1D* beta_central = nullptr;
+        clas12::framework::AtomicHistogram1D* delta_t_central = nullptr;
+        clas12::framework::AtomicHistogram2D* beta_vs_p_central = nullptr;
+        clas12::framework::AtomicHistogram2D* delta_t_vs_p_central = nullptr;
+        clas12::framework::AtomicHistogram2D* p_vs_theta_central = nullptr;
+
         // Sector-level histograms (post-cut)
         std::array<clas12::framework::AtomicHistogram1D*, 6> momentum_sector = {};
         std::array<clas12::framework::AtomicHistogram1D*, 6> theta_sector = {};
@@ -395,48 +410,65 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
         // Helper lambda to book histograms for a pion charge
         auto book_pion_histograms = [svc](PionHistograms& h, const std::string& dir, const std::string& label) {
-            // Post-cut 1D histograms
-            h.momentum = svc->book_momentum_hist(dir + "/momentum", label + " Momentum");
-            h.theta = svc->book_theta_hist(dir + "/theta", label + " #theta");
-            h.phi = svc->book_phi_hist(dir + "/phi", label + " #phi");
-            h.vz = svc->book_hist(dir + "/vz", label + " v_{z};v_{z} [cm];Events", 200, -40, 40);
-            h.chi2pid = svc->book_hist(dir + "/chi2pid", label + " #chi^{2}_{PID};#chi^{2};Events", 200, -10, 10);
-            h.beta = svc->book_hist(dir + "/beta", label + " #beta;#beta;Events", 100, 0.7, 1.05);
+            std::string fwd = dir + "/Forward";
 
-            // Pre-cut 1D histograms (for efficiency studies)
-            h.momentum_precut = svc->book_momentum_hist(dir + "/momentum_precut", label + " Momentum (pre-cut)");
-            h.theta_precut = svc->book_theta_hist(dir + "/theta_precut", label + " #theta (pre-cut)");
-            h.phi_precut = svc->book_phi_hist(dir + "/phi_precut", label + " #phi (pre-cut)");
-            h.vz_precut = svc->book_hist(dir + "/vz_precut", label + " v_{z} (pre-cut);v_{z} [cm];Events", 200, -40, 40);
-            h.chi2pid_precut = svc->book_hist(dir + "/chi2pid_precut", label + " #chi^{2}_{PID} (pre-cut);#chi^{2};Events", 200, -10, 10);
-            h.delta_t_precut = svc->book_hist(dir + "/delta_t_precut", label + " #Deltat (pre-cut);#Deltat [ns];Events", 200, -2, 2);
+            // Forward post-cut 1D histograms
+            h.momentum = svc->book_momentum_hist(fwd + "/momentum", label + " Forward Momentum");
+            h.theta = svc->book_theta_hist(fwd + "/theta", label + " Forward #theta");
+            h.phi = svc->book_phi_hist(fwd + "/phi", label + " Forward #phi");
+            h.vz = svc->book_hist(fwd + "/vz", label + " Forward v_{z};v_{z} [cm];Events", 200, -40, 40);
+            h.chi2pid = svc->book_hist(fwd + "/chi2pid", label + " Forward #chi^{2}_{PID};#chi^{2};Events", 200, -10, 10);
+            h.beta = svc->book_hist(fwd + "/beta", label + " Forward #beta;#beta;Events", 100, 0.7, 1.05);
 
-            // Post-cut 2D histograms
-            h.beta_vs_p = svc->book_hist2d(dir + "/beta_vs_p", label + " #beta vs p;p [GeV/c];#beta",
+            // Forward pre-cut 1D histograms (for efficiency studies)
+            h.momentum_precut = svc->book_momentum_hist(fwd + "/momentum_precut", label + " Forward Momentum (pre-cut)");
+            h.theta_precut = svc->book_theta_hist(fwd + "/theta_precut", label + " Forward #theta (pre-cut)");
+            h.phi_precut = svc->book_phi_hist(fwd + "/phi_precut", label + " Forward #phi (pre-cut)");
+            h.vz_precut = svc->book_hist(fwd + "/vz_precut", label + " Forward v_{z} (pre-cut);v_{z} [cm];Events", 200, -40, 40);
+            h.chi2pid_precut = svc->book_hist(fwd + "/chi2pid_precut", label + " Forward #chi^{2}_{PID} (pre-cut);#chi^{2};Events", 200, -10, 10);
+            h.delta_t_precut = svc->book_hist(fwd + "/delta_t_precut", label + " Forward #Deltat (pre-cut);#Deltat [ns];Events", 200, -2, 2);
+
+            // Forward post-cut 2D histograms
+            h.beta_vs_p = svc->book_hist2d(fwd + "/beta_vs_p", label + " Forward #beta vs p;p [GeV/c];#beta",
                 100, 0, 10, 100, 0.7, 1.05);
-            h.delta_t_vs_p = svc->book_hist2d(dir + "/delta_t_vs_p", label + " #Deltat vs p;p [GeV/c];#Deltat [ns]",
+            h.delta_t_vs_p = svc->book_hist2d(fwd + "/delta_t_vs_p", label + " Forward #Deltat vs p;p [GeV/c];#Deltat [ns]",
                 100, 0, 10, 200, -2, 2);
-            h.p_vs_theta = svc->book_hist2d(dir + "/p_vs_theta", label + " p vs #theta", 200, 0, 50, 200, 0, 10);
+            h.p_vs_theta = svc->book_hist2d(fwd + "/p_vs_theta", label + " Forward p vs #theta", 200, 0, 50, 200, 0, 10);
 
-            // Pre-cut 2D correlation histograms (for diagnostics)
-            h.chi2pid_vs_p = svc->book_hist2d(dir + "/chi2pid_vs_p", label + " #chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}",
+            // Forward pre-cut 2D correlation histograms (for diagnostics)
+            h.chi2pid_vs_p = svc->book_hist2d(fwd + "/chi2pid_vs_p", label + " Forward #chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}",
                 100, 0, 10, 100, -10, 10);
-            h.vz_vs_theta = svc->book_hist2d(dir + "/vz_vs_theta", label + " v_{z} vs #theta;#theta [deg];v_{z} [cm]",
+            h.vz_vs_theta = svc->book_hist2d(fwd + "/vz_vs_theta", label + " Forward v_{z} vs #theta;#theta [deg];v_{z} [cm]",
                 90, 0, 45, 100, -40, 40);
-            h.delta_t_vs_theta = svc->book_hist2d(dir + "/delta_t_vs_theta", label + " #Deltat vs #theta;#theta [deg];#Deltat [ns]",
+            h.delta_t_vs_theta = svc->book_hist2d(fwd + "/delta_t_vs_theta", label + " Forward #Deltat vs #theta;#theta [deg];#Deltat [ns]",
                 90, 0, 45, 100, -2, 2);
-            h.delta_t_vs_p_precut = svc->book_hist2d(dir + "/delta_t_vs_p_precut", label + " #Deltat vs p;p [GeV/c];#Deltat [ns]",
+            h.delta_t_vs_p_precut = svc->book_hist2d(fwd + "/delta_t_vs_p_precut", label + " Forward #Deltat vs p (pre-cut);p [GeV/c];#Deltat [ns]",
                 100, 0, 10, 200, -2, 2);
 
-            // Sector-level histograms (post-cut)
+            // Central detector histograms (pre-cut)
+            h.momentum_central = svc->book_momentum_hist(dir + "/Central/momentum", label + " Central Momentum");
+            h.theta_central = svc->book_theta_hist(dir + "/Central/theta", label + " Central #theta");
+            h.phi_central = svc->book_phi_hist(dir + "/Central/phi", label + " Central #phi");
+            h.vz_central = svc->book_hist(dir + "/Central/vz", label + " Central v_{z};v_{z} [cm];Events", 200, -40, 40);
+            h.chi2pid_central = svc->book_hist(dir + "/Central/chi2pid", label + " Central #chi^{2}_{PID};#chi^{2};Events", 200, -10, 10);
+            h.beta_central = svc->book_hist(dir + "/Central/beta", label + " Central #beta;#beta;Events", 100, 0.0, 1.2);
+            h.delta_t_central = svc->book_hist(dir + "/Central/delta_t", label + " Central #Deltat;#Deltat [ns];Events", 200, -2, 2);
+            h.beta_vs_p_central = svc->book_hist2d(dir + "/Central/beta_vs_p", label + " Central #beta vs p;p [GeV/c];#beta",
+                100, 0, 10, 100, 0.0, 1.2);
+            h.delta_t_vs_p_central = svc->book_hist2d(dir + "/Central/delta_t_vs_p", label + " Central #Deltat vs p;p [GeV/c];#Deltat [ns]",
+                100, 0, 10, 200, -2, 2);
+            h.p_vs_theta_central = svc->book_hist2d(dir + "/Central/p_vs_theta", label + " Central p vs #theta;#theta [deg];p [GeV/c]",
+                200, 0, 140, 200, 0, 5);
+
+            // Forward sector-level histograms (post-cut)
             for (int sector = 1; sector <= 6; ++sector) {
                 std::string sec_suffix = fmt::format("_S{}", sector);
                 h.momentum_sector[sector - 1] = svc->book_momentum_hist(
-                    dir + "/momentum" + sec_suffix,
-                    fmt::format("{} Momentum (Sector {})", label, sector));
+                    fwd + "/momentum" + sec_suffix,
+                    fmt::format("{} Forward Momentum (Sector {})", label, sector));
                 h.theta_sector[sector - 1] = svc->book_theta_hist(
-                    dir + "/theta" + sec_suffix,
-                    fmt::format("{} #theta (Sector {})", label, sector));
+                    fwd + "/theta" + sec_suffix,
+                    fmt::format("{} Forward #theta (Sector {})", label, sector));
             }
         };
 
@@ -490,14 +522,14 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
             // Check forward detector status and count detector regions
             cand.is_forward_detector = (pion.status() >= 2000 && pion.status() < 4000);
-            bool is_central = (pion.status() >= 4000 && pion.status() < 6000);
+            cand.is_central_detector = (pion.status() >= 4000 && pion.status() < 6000);
             if (is_piplus) {
                 if (cand.is_forward_detector) m_piplus_forward++;
-                else if (is_central) m_piplus_central++;
+                else if (cand.is_central_detector) m_piplus_central++;
                 else m_piplus_other++;
             } else {
                 if (cand.is_forward_detector) m_piminus_forward++;
-                else if (is_central) m_piminus_central++;
+                else if (cand.is_central_detector) m_piminus_central++;
                 else m_piminus_other++;
             }
 
@@ -554,21 +586,35 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         auto& h = is_piplus ? h_piplus : h_piminus;
 
         for (const auto& cand : candidates) {
-            // Only fill for forward detector candidates (basic quality)
-            if (!cand.is_forward_detector) continue;
+            // Forward detector pre-cut histograms
+            if (cand.is_forward_detector) {
+                if (h.momentum_precut) h.momentum_precut->fill(cand.p);
+                if (h.theta_precut) h.theta_precut->fill(cand.theta);
+                if (h.phi_precut) h.phi_precut->fill(cand.phi);
+                if (h.vz_precut) h.vz_precut->fill(cand.vz);
+                if (h.chi2pid_precut) h.chi2pid_precut->fill(cand.chi2pid);
+                if (h.delta_t_precut) h.delta_t_precut->fill(cand.delta_t);
 
-            if (h.momentum_precut) h.momentum_precut->fill(cand.p);
-            if (h.theta_precut) h.theta_precut->fill(cand.theta);
-            if (h.phi_precut) h.phi_precut->fill(cand.phi);
-            if (h.vz_precut) h.vz_precut->fill(cand.vz);
-            if (h.chi2pid_precut) h.chi2pid_precut->fill(cand.chi2pid);
-            if (h.delta_t_precut) h.delta_t_precut->fill(cand.delta_t);
+                // 2D correlations (pre-cut for diagnostics)
+                if (h.chi2pid_vs_p) h.chi2pid_vs_p->fill(cand.p, cand.chi2pid);
+                if (h.vz_vs_theta) h.vz_vs_theta->fill(cand.theta, cand.vz);
+                if (h.delta_t_vs_theta) h.delta_t_vs_theta->fill(cand.theta, cand.delta_t);
+                if (h.delta_t_vs_p_precut) h.delta_t_vs_p_precut->fill(cand.p, cand.delta_t);
+            }
 
-            // 2D correlations (pre-cut for diagnostics)
-            if (h.chi2pid_vs_p) h.chi2pid_vs_p->fill(cand.p, cand.chi2pid);
-            if (h.vz_vs_theta) h.vz_vs_theta->fill(cand.theta, cand.vz);
-            if (h.delta_t_vs_theta) h.delta_t_vs_theta->fill(cand.theta, cand.delta_t);
-            if (h.delta_t_vs_p_precut) h.delta_t_vs_p_precut->fill(cand.p, cand.delta_t);
+            // Central detector pre-cut histograms
+            if (cand.is_central_detector) {
+                if (h.momentum_central) h.momentum_central->fill(cand.p);
+                if (h.theta_central) h.theta_central->fill(cand.theta);
+                if (h.phi_central) h.phi_central->fill(cand.phi);
+                if (h.vz_central) h.vz_central->fill(cand.vz);
+                if (h.chi2pid_central) h.chi2pid_central->fill(cand.chi2pid);
+                if (h.beta_central) h.beta_central->fill(cand.beta);
+                if (h.delta_t_central) h.delta_t_central->fill(cand.delta_t);
+                if (h.beta_vs_p_central) h.beta_vs_p_central->fill(cand.p, cand.beta);
+                if (h.delta_t_vs_p_central) h.delta_t_vs_p_central->fill(cand.p, cand.delta_t);
+                if (h.p_vs_theta_central) h.p_vs_theta_central->fill(cand.theta, cand.p);
+            }
         }
     }
 
