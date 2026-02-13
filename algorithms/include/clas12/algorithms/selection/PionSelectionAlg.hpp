@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <clas12/Constants.hpp>
 #include <clas12/ElectronCuts.hpp>
@@ -92,6 +93,8 @@ struct PionCandidate {
 
     // Cached cut decisions
     bool is_forward_detector = false;
+    bool passes_pcal_fiducial = false;
+    bool passes_dc_fiducial = false;
     bool passes_chi2pid = false;
     bool passes_momentum = false;
     bool passes_vz = false;
@@ -186,8 +189,9 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
         // Get banks using structured bindings
         auto& hipo_event = event.hipo_event();
-        auto [REC_Event, REC_Particle, REC_Scintillator] =
-            hipo_event.banks("REC::Event", "REC::Particle", "REC::Scintillator");
+        auto [REC_Event, REC_Particle, REC_Scintillator, REC_Calorimeter, REC_Traj] =
+            hipo_event.banks("REC::Event", "REC::Particle", "REC::Scintillator",
+                             "REC::Calorimeter", "REC::Traj");
 
         if (REC_Event->rows() == 0) return clas12::framework::StatusCode::SUCCESS();
 
@@ -200,7 +204,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
         // Build π⁺ candidates with all kinematics computed once
         const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
-        auto piplus_candidates = build_pion_candidates(pions_plus, *REC_Scintillator, start_time, true);
+        auto piplus_candidates = build_pion_candidates(pions_plus, *REC_Scintillator, *REC_Calorimeter, *REC_Traj, start_time, true);
 
         // Fill pre-cut histograms, update cutflow, fill post-cut histograms and N-tuple
         fill_pre_cut_histograms(piplus_candidates, true);
@@ -213,7 +217,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
         // Build π⁻ candidates with all kinematics computed once
         const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
-        auto piminus_candidates = build_pion_candidates(pions_minus, *REC_Scintillator, start_time, false);
+        auto piminus_candidates = build_pion_candidates(pions_minus, *REC_Scintillator, *REC_Calorimeter, *REC_Traj, start_time, false);
 
         // Fill pre-cut histograms, update cutflow, fill post-cut histograms and N-tuple
         fill_pre_cut_histograms(piminus_candidates, false);
@@ -253,25 +257,43 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             Log::info(name(), "N-tuple entries: π⁺={}, π⁻={}", piplus_entries, piminus_entries);
         }
 
-        fmt::print("\n");
         m_cutflow_piplus.print();
-        fmt::print("\n");
         m_cutflow_piminus.print();
 
-        fmt::print("\nPion Analysis Statistics:\n");
-        fmt::print("  π⁺ passing all cuts: {}\n", m_cutflow_piplus.get_count("Delta-t"));
-        fmt::print("  π⁻ passing all cuts: {}\n", m_cutflow_piminus.get_count("Delta-t"));
+        // Pion analysis statistics table
+        Log::print_yield_summary_table(
+            "Pion Analysis Statistics",
+            {"Particle", "Passing All Cuts"},
+            {
+                {"π⁺", fmt::format("{}", m_cutflow_piplus.get_count("Delta-t"))},
+                {"π⁻", fmt::format("{}", m_cutflow_piminus.get_count("Delta-t"))}
+            }
+        );
+
+        // Detector region statistics (pre-cut)
+        Log::print_yield_summary_table(
+            "Detector Region (pre-cut)",
+            {"Region", "π⁺", "π⁻"},
+            {
+                {"Forward", fmt::format("{}", m_piplus_forward.load()), fmt::format("{}", m_piminus_forward.load())},
+                {"Central", fmt::format("{}", m_piplus_central.load()), fmt::format("{}", m_piminus_central.load())},
+                {"Other",   fmt::format("{}", m_piplus_other.load()),   fmt::format("{}", m_piminus_other.load())}
+            }
+        );
 
         // Per-sector statistics
-        fmt::print("\nPer-Sector Counts (from momentum histograms):\n");
-        fmt::print("  Sector |   π⁺   |   π⁻   \n");
-        fmt::print("  -------|--------|--------\n");
+        std::vector<std::vector<std::string>> sector_rows;
         for (int sector = 1; sector <= 6; ++sector) {
             int idx = sector - 1;
-            std::size_t piplus_count = h_piplus.momentum_sector[idx] ? h_piplus.momentum_sector[idx]->entries() : 0;
-            std::size_t piminus_count = h_piminus.momentum_sector[idx] ? h_piminus.momentum_sector[idx]->entries() : 0;
-            fmt::print("     {}   | {:6} | {:6}\n", sector, piplus_count, piminus_count);
+            std::size_t pip = h_piplus.momentum_sector[idx] ? h_piplus.momentum_sector[idx]->entries() : 0;
+            std::size_t pim = h_piminus.momentum_sector[idx] ? h_piminus.momentum_sector[idx]->entries() : 0;
+            sector_rows.push_back({fmt::format("{}", sector), fmt::format("{}", pip), fmt::format("{}", pim)});
         }
+        Log::print_yield_summary_table(
+            "Per-Sector Counts (post-cut)",
+            {"Sector", "π⁺", "π⁻"},
+            sector_rows
+        );
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -281,6 +303,14 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     bool m_separate_charges;
     clas12::framework::Cutflow m_cutflow_piplus;
     clas12::framework::Cutflow m_cutflow_piminus;
+
+    // Pre-cut detector region counters
+    std::atomic<size_t> m_piplus_forward{0};
+    std::atomic<size_t> m_piplus_central{0};
+    std::atomic<size_t> m_piplus_other{0};
+    std::atomic<size_t> m_piminus_forward{0};
+    std::atomic<size_t> m_piminus_central{0};
+    std::atomic<size_t> m_piminus_other{0};
 
     // Configurable properties
     clas12::framework::Property<double> m_chi2pid_min{"chi2pid_min", -10.0, "Minimum chi2PID"};
@@ -341,6 +371,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         m_cutflow_piplus.add_cut("All Events");
         m_cutflow_piplus.add_cut("Has π⁺");
         m_cutflow_piplus.add_cut("Forward detector");
+        m_cutflow_piplus.add_cut("PCAL Fiducial");
+        m_cutflow_piplus.add_cut("DC Fiducial");
         m_cutflow_piplus.add_cut("Chi2 PID");
         m_cutflow_piplus.add_cut("Momentum");
         m_cutflow_piplus.add_cut("Vertex Z");
@@ -350,6 +382,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         m_cutflow_piminus.add_cut("All Events");
         m_cutflow_piminus.add_cut("Has π⁻");
         m_cutflow_piminus.add_cut("Forward detector");
+        m_cutflow_piminus.add_cut("PCAL Fiducial");
+        m_cutflow_piminus.add_cut("DC Fiducial");
         m_cutflow_piminus.add_cut("Chi2 PID");
         m_cutflow_piminus.add_cut("Momentum");
         m_cutflow_piminus.add_cut("Vertex Z");
@@ -428,6 +462,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     auto build_pion_candidates(
         const std::vector<clas12::Particle>& pions,
         hipo::bank& REC_Scintillator,
+        hipo::bank& REC_Calorimeter,
+        hipo::bank& REC_Traj,
         double start_time,
         bool is_piplus
     ) -> std::vector<PionCandidate> {
@@ -452,12 +488,21 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             cand.chi2pid = pion.chi2pid();
             cand.beta = pion.beta();
 
-            // Check forward detector status
+            // Check forward detector status and count detector regions
             cand.is_forward_detector = (pion.status() >= 2000 && pion.status() < 4000);
+            bool is_central = (pion.status() >= 4000 && pion.status() < 6000);
+            if (is_piplus) {
+                if (cand.is_forward_detector) m_piplus_forward++;
+                else if (is_central) m_piplus_central++;
+                else m_piplus_other++;
+            } else {
+                if (cand.is_forward_detector) m_piminus_forward++;
+                else if (is_central) m_piminus_central++;
+                else m_piminus_other++;
+            }
 
             // Get scintillator info
-            clas12::ScintillatorBank scintillator = clas12::read_Scintillator_bank(
-                REC_Scintillator, pion.index());
+            clas12::ScintillatorBank scintillator = clas12::read_Scintillator_bank(REC_Scintillator, pion.index());
             cand.sector = scintillator.sector;
             cand.tof_time = scintillator.time;
             cand.tof_path = scintillator.path;
@@ -477,12 +522,20 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             // Calculate beta difference
             cand.beta_diff = cand.beta - cand.beta_expected;
 
+            // Read calorimeter and trajectory banks for fiducial cuts
+            auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, pion.index());
+            auto traj = clas12::read_Traj_bank(REC_Traj, pion.index());
+
             // Apply cuts and cache results
+            cand.passes_pcal_fiducial = pass_pcal_fiducial_cut(calo);
+            cand.passes_dc_fiducial = pass_dc_fiducial_cut(traj, is_piplus);
             cand.passes_chi2pid = pass_chi2pid_cut(cand.chi2pid);
             cand.passes_momentum = pass_momentum_cut(cand.p);
             cand.passes_vz = pass_vz_cut(cand.vz, is_piplus);
             cand.passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t, is_piplus);
             cand.passes_all_cuts = cand.is_forward_detector &&
+                                   cand.passes_pcal_fiducial &&
+                                   cand.passes_dc_fiducial &&
                                    cand.passes_chi2pid &&
                                    cand.passes_momentum &&
                                    cand.passes_vz &&
@@ -588,18 +641,25 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         if (candidates.empty()) return;
         cutflow.pass(is_piplus ? "Has π⁺" : "Has π⁻");
 
-        bool any_fd = false, any_chi2 = false, any_p = false, any_vz = false, any_dt = false;
+        bool any_fd = false, any_pcal = false, any_dc = false;
+        bool any_chi2 = false, any_p = false, any_vz = false, any_dt = false;
 
         for (const auto& cand : candidates) {
             any_fd |= cand.is_forward_detector;
             if (cand.is_forward_detector) {
-                any_chi2 |= cand.passes_chi2pid;
-                if (cand.passes_chi2pid) {
-                    any_p |= cand.passes_momentum;
-                    if (cand.passes_momentum) {
-                        any_vz |= cand.passes_vz;
-                        if (cand.passes_vz) {
-                            any_dt |= cand.passes_delta_t;
+                any_pcal |= cand.passes_pcal_fiducial;
+                if (cand.passes_pcal_fiducial) {
+                    any_dc |= cand.passes_dc_fiducial;
+                    if (cand.passes_dc_fiducial) {
+                        any_chi2 |= cand.passes_chi2pid;
+                        if (cand.passes_chi2pid) {
+                            any_p |= cand.passes_momentum;
+                            if (cand.passes_momentum) {
+                                any_vz |= cand.passes_vz;
+                                if (cand.passes_vz) {
+                                    any_dt |= cand.passes_delta_t;
+                                }
+                            }
                         }
                     }
                 }
@@ -607,6 +667,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         }
 
         if (any_fd) cutflow.pass("Forward detector");
+        if (any_pcal) cutflow.pass("PCAL Fiducial");
+        if (any_dc) cutflow.pass("DC Fiducial");
         if (any_chi2) cutflow.pass("Chi2 PID");
         if (any_p) cutflow.pass("Momentum");
         if (any_vz) cutflow.pass("Vertex Z");
@@ -738,6 +800,20 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 // Default to LD2 range
                 return {-15.00, 5.00};
         }
+    }
+
+    // Fiducial cut functions
+    static auto pass_pcal_fiducial_cut(const clas12::CalorimeterBank& calo) -> bool {
+        return calo.pcal.lv > 14.0 && calo.pcal.lw > 14.0;
+    }
+
+    static auto pass_dc_fiducial_cut(const clas12::DCTrajBank& traj, bool is_piplus) -> bool {
+        double r1_min = is_piplus ? 3.875 : 2.125;
+        double r2_min = is_piplus ? 4.375 : 3.625;
+        double r3_min = is_piplus ? 2.625 : 9.625;
+        return traj.region1.edge > r1_min &&
+               traj.region2.edge > r2_min &&
+               traj.region3.edge > r3_min;
     }
 
     // Cut functions - using configurable properties
