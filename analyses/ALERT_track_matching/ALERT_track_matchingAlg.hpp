@@ -222,19 +222,23 @@ public:
                 if (dphi < 0.0) dphi += 360.0;
                 if (dphi > 180.0) dphi = 360.0 - dphi;
 
+                if (h_track_atof_dphi) h_track_atof_dphi->fill(dphi);
+
                 if (dphi < best_phi_distance && dphi <= m_phi_cut) {
                     best_phi_distance = dphi;
                     best_true_atof_hit_index = true_atof_hit_indices[i];
                 }
             }
 
-            if (best_true_atof_hit_index >= 0 && h_atof_electron_delta_phi_best) {
+            if (best_true_atof_hit_index >= 0) {
                 float hx = atof_hits_bank.get<float>("x", best_true_atof_hit_index);
                 float hy = atof_hits_bank.get<float>("y", best_true_atof_hit_index);
                 double best_atof_phi = std::atan2(hy, hx) * 180.0 / M_PI;
                 double best_delta_phi = std::fmod(electron_phi - best_atof_phi, 360.0);
                 if (best_delta_phi < 0.0) best_delta_phi += 360.0;
-                h_atof_electron_delta_phi_best->fill(best_delta_phi);
+                if (h_atof_electron_delta_phi_best) h_atof_electron_delta_phi_best->fill(best_delta_phi);
+                if (h_best_track_atof_dphi) h_best_track_atof_dphi->fill(best_phi_distance);
+                if (h_track_phi_vs_atof_phi) h_track_phi_vs_atof_phi->fill(best_atof_phi, track_phi);
             }
         }
 
@@ -268,6 +272,11 @@ public:
                     int true_sector = atof_hits_bank.get<int>("sector", best_true_atof_hit_index);
                     int true_layer = atof_hits_bank.get<int>("layer", best_true_atof_hit_index);
                     int true_component = atof_hits_bank.get<int>("component", best_true_atof_hit_index);
+
+                    if (h_delta_component) h_delta_component->fill(ai_component - true_component);
+                    if (h_delta_sector) h_delta_sector->fill(ai_sector - true_sector);
+                    if (h_ai_vs_true_component) h_ai_vs_true_component->fill(true_component, ai_component);
+                    if (h_ai_vs_true_sector) h_ai_vs_true_sector->fill(true_sector, ai_sector);
 
                     if (ai_sector == true_sector) ++m_n_correct_sector;
                     if (ai_layer == true_layer) ++m_n_correct_layer;
@@ -349,7 +358,7 @@ private:
         "enable_histograms", true, "Enable histogram filling"
     };
     clas12::framework::Property<double> m_phi_cut{
-        "phi_cut", 10.0, "Phi matching tolerance in degrees"
+        "phi_cut", 30.0, "Phi matching tolerance in degrees"
     };
 
     // Service handles
@@ -374,6 +383,15 @@ private:
     clas12::framework::AtomicHistogram1D* h_atof_electron_delta_phi_best = nullptr;  // best true ATOF hit
     clas12::framework::AtomicHistogram1D* h_n_true_atof_hits = nullptr;
 
+    // Debug histograms
+    clas12::framework::AtomicHistogram1D* h_track_atof_dphi = nullptr;          // track-ATOF phi distance for all true hits
+    clas12::framework::AtomicHistogram1D* h_best_track_atof_dphi = nullptr;     // best track-ATOF phi distance (selected truth)
+    clas12::framework::AtomicHistogram1D* h_delta_component = nullptr;          // AI component - true component
+    clas12::framework::AtomicHistogram1D* h_delta_sector = nullptr;             // AI sector - true sector
+    clas12::framework::AtomicHistogram2D* h_ai_vs_true_component = nullptr;     // AI component vs true component
+    clas12::framework::AtomicHistogram2D* h_ai_vs_true_sector = nullptr;        // AI sector vs true sector
+    clas12::framework::AtomicHistogram2D* h_track_phi_vs_atof_phi = nullptr;    // track phi vs best true ATOF hit phi
+
     auto book_histograms() -> void {
         clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
             // Use lock-free atomic histograms for parallel accumulation
@@ -394,6 +412,15 @@ private:
             h_atof_electron_delta_phi_true = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_true", "#Delta#phi(e, ATOF hit) true;#Delta#phi [deg];Hits", 100, 150, 200);
             h_atof_electron_delta_phi_best = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_best", "Best #Delta#phi(e, ATOF hit);#Delta#phi [deg];Hits", 100, 150, 200);
             h_n_true_atof_hits = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_true_atof_hits", "N true ATOF hits;N hits;Events", 20, 0, 20);
+
+            // Debug histograms
+            h_track_atof_dphi = svc->book_atomic_hist1D("/ALERT/Debug/track_atof_dphi", "Track-ATOF #Delta#phi (all true hits);|#Delta#phi| [deg];Hits", 100, 0, 180);
+            h_best_track_atof_dphi = svc->book_atomic_hist1D("/ALERT/Debug/best_track_atof_dphi", "Best track-ATOF #Delta#phi (selected truth);|#Delta#phi| [deg];Events", 100, 0, 60);
+            h_delta_component = svc->book_atomic_hist1D("/ALERT/Debug/delta_component", "AI - true component;#Delta component;Events", 41, -20, 20);
+            h_delta_sector = svc->book_atomic_hist1D("/ALERT/Debug/delta_sector", "AI - true sector;#Delta sector;Events", 31, -15, 15);
+            h_ai_vs_true_component = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_component", "AI vs true component;True component;AI component", 20, 0, 20, 20, 0, 20);
+            h_ai_vs_true_sector = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_sector", "AI vs true sector;True sector;AI sector", 15, 0, 15, 15, 0, 15);
+            h_track_phi_vs_atof_phi = svc->book_atomic_hist2D("/ALERT/Debug/track_phi_vs_atof_phi", "Track #phi vs best true ATOF #phi;True ATOF #phi [deg];Track #phi [deg]", 72, -180, 180, 72, -180, 180);
 
         });
     }
