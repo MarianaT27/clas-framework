@@ -126,6 +126,7 @@ public:
                                    [sector, layer, component](const ATOFWedgeH2Data& data) {
                                        return data.sector == sector && data.layer == layer && data.component == component;
                                    });
+            if (component >= 10) continue;
             if (it != m_atof_wedge_H2_data.end()) {
                 // Time should be within mean +/- 3*sigma
                 if (std::abs(time - it->mean) <= 3 * it->sigma) good_atof_hit_indices.push_back(i);
@@ -332,6 +333,9 @@ public:
                   n_wedge_off_by_one, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_wedge_off_by_one / n_ai_has_match : 0.0);
         Log::info(name(), "Exact hit match:                      {:5d} / {:5d} = {:5.1f}%",
                   n_true_match, n_ai_has_match, n_ai_has_match > 0 ? 100.0 * n_true_match / n_ai_has_match : 0.0);
+        Log::info(name(), "--- Overall efficiency ---");
+        Log::info(name(), "AI found best ATOF hit (over all):    {:5d} / {:5d} = {:5.1f}%",
+                  n_true_match, n_matched, n_matched > 0 ? 100.0 * n_true_match / n_matched : 0.0);
 
         return clas12::framework::StatusCode::SUCCESS();
     }
