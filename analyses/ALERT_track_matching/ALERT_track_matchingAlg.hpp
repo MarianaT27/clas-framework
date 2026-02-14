@@ -134,9 +134,7 @@ public:
 
         // Compute delta_phi between electron and each good ATOF hit, select "true" hits
         std::vector<int> true_atof_hit_indices;
-        int best_true_atof_hit_index = -1;
-        double best_delta_phi_deviation = 999.0;
-        double best_delta_phi_value = -1.0;
+        std::vector<double> true_atof_hit_phis;
 
         for (int idx : good_atof_hit_indices) {
             float hit_x = atof_hits_bank.get<float>("x", idx);
@@ -150,19 +148,9 @@ public:
 
             if (delta_phi >= 150.0 && delta_phi <= 200.0) {
                 true_atof_hit_indices.push_back(idx);
+                true_atof_hit_phis.push_back(atof_phi);
                 if (h_atof_electron_delta_phi_true) h_atof_electron_delta_phi_true->fill(delta_phi);
-
-                double deviation = std::abs(delta_phi - 180.0);
-                if (deviation < best_delta_phi_deviation) {
-                    best_delta_phi_deviation = deviation;
-                    best_true_atof_hit_index = idx;
-                    best_delta_phi_value = delta_phi;
-                }
             }
-        }
-
-        if (best_true_atof_hit_index >= 0 && h_atof_electron_delta_phi_best) {
-            h_atof_electron_delta_phi_best->fill(best_delta_phi_value);
         }
 
         // Read AHDC tracks
@@ -219,6 +207,34 @@ public:
 
         if (matched_tracks.empty() || matched_tracks.size() > 1) {
             return clas12::framework::StatusCode::FILTERED();
+        }
+
+        // Select best true ATOF hit: closest in phi to the matched track prediction
+        int best_true_atof_hit_index = -1;
+        double best_phi_distance = 999.0;
+
+        if (!true_atof_hit_indices.empty()) {
+            double track_phi = std::atan2(matched_tracks.front()->py, matched_tracks.front()->px) * 180.0 / M_PI;
+
+            for (size_t i = 0; i < true_atof_hit_indices.size(); ++i) {
+                double dphi = std::fmod(track_phi - true_atof_hit_phis[i], 360.0);
+                if (dphi < 0.0) dphi += 360.0;
+                if (dphi > 180.0) dphi = 360.0 - dphi;
+
+                if (dphi < best_phi_distance && dphi <= m_phi_cut) {
+                    best_phi_distance = dphi;
+                    best_true_atof_hit_index = true_atof_hit_indices[i];
+                }
+            }
+
+            if (best_true_atof_hit_index >= 0 && h_atof_electron_delta_phi_best) {
+                float hx = atof_hits_bank.get<float>("x", best_true_atof_hit_index);
+                float hy = atof_hits_bank.get<float>("y", best_true_atof_hit_index);
+                double best_atof_phi = std::atan2(hy, hx) * 180.0 / M_PI;
+                double best_delta_phi = std::fmod(electron_phi - best_atof_phi, 360.0);
+                if (best_delta_phi < 0.0) best_delta_phi += 360.0;
+                h_atof_electron_delta_phi_best->fill(best_delta_phi);
+            }
         }
 
         // Process the single matched track
