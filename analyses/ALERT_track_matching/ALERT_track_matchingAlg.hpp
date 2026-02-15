@@ -363,7 +363,7 @@ private:
         "phi_cut", 30.0, "Phi matching tolerance in degrees"
     };
     clas12::framework::Property<int> m_ai_hit_id_offset{
-        "ai_hit_id_offset", 0, "Offset to subtract from AI matched_atof_hit_id (0 if 0-based, 1 if 1-based)"
+        "ai_hit_id_offset", 1, "Offset to subtract from AI matched_atof_hit_id (0 if 0-based, 1 if 1-based)"
     };
 
     // Service handles
