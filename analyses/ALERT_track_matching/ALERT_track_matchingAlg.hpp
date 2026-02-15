@@ -43,6 +43,7 @@ public:
         declare_property(m_example_cut);
         declare_property(m_enable_histograms);
         declare_property(m_phi_cut);
+        declare_property(m_ai_hit_id_offset);
     }
 
     /**
@@ -251,7 +252,7 @@ public:
             for (int i = 0; i < alert_projections_bank.rows(); ++i) {
                 int proj_trackid = alert_projections_bank.get<int>("trackid", i);
                 if (proj_trackid == matched_track->trackid) {
-                    matched_atof_hit_id = alert_projections_bank.get<int>("matched_atof_hit_id", i);
+                    matched_atof_hit_id = alert_projections_bank.get<int>("matched_atof_hit_id", i) - m_ai_hit_id_offset;
                     break;
                 }
             }
@@ -276,6 +277,7 @@ public:
                     if (h_delta_component) h_delta_component->fill(ai_component - true_component);
                     if (h_delta_sector) h_delta_sector->fill(ai_sector - true_sector);
                     if (h_ai_vs_true_component) h_ai_vs_true_component->fill(true_component, ai_component);
+                    if (h_ai_vs_true_layer) h_ai_vs_true_layer->fill(true_layer, ai_layer);
                     if (h_ai_vs_true_sector) h_ai_vs_true_sector->fill(true_sector, ai_sector);
 
                     if (ai_sector == true_sector) ++m_n_correct_sector;
@@ -360,6 +362,9 @@ private:
     clas12::framework::Property<double> m_phi_cut{
         "phi_cut", 30.0, "Phi matching tolerance in degrees"
     };
+    clas12::framework::Property<int> m_ai_hit_id_offset{
+        "ai_hit_id_offset", 0, "Offset to subtract from AI matched_atof_hit_id (0 if 0-based, 1 if 1-based)"
+    };
 
     // Service handles
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
@@ -389,6 +394,7 @@ private:
     clas12::framework::AtomicHistogram1D* h_delta_component = nullptr;          // AI component - true component
     clas12::framework::AtomicHistogram1D* h_delta_sector = nullptr;             // AI sector - true sector
     clas12::framework::AtomicHistogram2D* h_ai_vs_true_component = nullptr;     // AI component vs true component
+    clas12::framework::AtomicHistogram2D* h_ai_vs_true_layer = nullptr;         // AI layer vs true layer
     clas12::framework::AtomicHistogram2D* h_ai_vs_true_sector = nullptr;        // AI sector vs true sector
     clas12::framework::AtomicHistogram2D* h_track_phi_vs_atof_phi = nullptr;    // track phi vs best true ATOF hit phi
 
@@ -419,6 +425,7 @@ private:
             h_delta_component = svc->book_atomic_hist1D("/ALERT/Debug/delta_component", "AI - true component;#Delta component;Events", 41, -20, 20);
             h_delta_sector = svc->book_atomic_hist1D("/ALERT/Debug/delta_sector", "AI - true sector;#Delta sector;Events", 31, -15, 15);
             h_ai_vs_true_component = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_component", "AI vs true component;True component;AI component", 20, 0, 20, 20, 0, 20);
+            h_ai_vs_true_layer = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_layer", "AI vs true layer;True layer;AI layer", 10, 0, 10, 10, 0, 10);
             h_ai_vs_true_sector = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_sector", "AI vs true sector;True sector;AI sector", 15, 0, 15, 15, 0, 15);
             h_track_phi_vs_atof_phi = svc->book_atomic_hist2D("/ALERT/Debug/track_phi_vs_atof_phi", "Track #phi vs best true ATOF #phi;True ATOF #phi [deg];Track #phi [deg]", 72, -180, 180, 72, -180, 180);
 
