@@ -237,8 +237,8 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
 
     // Configuration properties
     clas12::framework::Property<double> m_beam_energy{"beam_energy", 2.2, "Beam energy [GeV]"};
-    clas12::framework::Property<double> m_W_min{"W_min", 0.8, "Minimum W [GeV]"};
-    clas12::framework::Property<double> m_W_max{"W_max", 1.05, "Maximum W [GeV]"};
+    clas12::framework::Property<double> m_W_min{"W_min", 1.6, "Minimum W [GeV]"};
+    clas12::framework::Property<double> m_W_max{"W_max", 2.0, "Maximum W [GeV]"};
     clas12::framework::Property<double> m_Vz_min{"Vz_min", -30.0, "Minimum Vz [cm]"};
     clas12::framework::Property<double> m_Vz_max{"Vz_max", 10.0, "Maximum Vz [cm]"};
 
