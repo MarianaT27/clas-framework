@@ -69,6 +69,11 @@ inline Double_t BWPlusPol3(Double_t* x, Double_t* par) {
 // ============================================================================
 
 /**
+ * @brief Detector region classification for a pion pair
+ */
+enum class DetectorRegion { ForwardForward, Mixed, CentralCentral, Unknown };
+
+/**
  * @brief Holds all computed data for a single rho0 candidate
  *
  * This struct consolidates particle references, kinematic variables, and
@@ -103,6 +108,9 @@ struct Rho0Candidate {
     bool passes_lc = false;
     bool passes_t = false;
     bool passes_all_cuts = false;
+
+    // Detector region classification
+    DetectorRegion detector_region = DetectorRegion::Unknown;
 };
 
 /**
@@ -285,6 +293,17 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         Log::stat(name(), "Unique runs processed", m_runs.size());
         Log::blank();
 
+        // Detector region breakdown
+        Log::print_yield_summary_table(
+            "ρ⁰ Detector Region (post-cut)",
+            {"Region", "Count"},
+            {
+                {"Forward-Forward", fmt::format("{}", m_rho0_ff.load())},
+                {"Mixed (FD+CD)",   fmt::format("{}", m_rho0_mixed.load())},
+                {"Central-Central", fmt::format("{}", m_rho0_cc.load())}
+            }
+        );
+
         // Perform BW + pol3 fitting if enabled
         if (m_enable_fitting.get()) {
             fit_invariant_mass_histograms();
@@ -398,6 +417,16 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 cand.pip = pip;
                 cand.pim = pim;
 
+                // Classify detector region
+                bool pip_fwd = (pip.status() >= 2000 && pip.status() < 4000);
+                bool pim_fwd = (pim.status() >= 2000 && pim.status() < 4000);
+                bool pip_cd  = (pip.status() >= 4000 && pip.status() < 6000);
+                bool pim_cd  = (pim.status() >= 4000 && pim.status() < 6000);
+
+                if (pip_fwd && pim_fwd) cand.detector_region = DetectorRegion::ForwardForward;
+                else if (pip_cd && pim_cd) cand.detector_region = DetectorRegion::CentralCentral;
+                else cand.detector_region = DetectorRegion::Mixed;
+
                 // Compute rho0 4-momentum
                 auto p_rho0 = pip.PxPyPzEVector() + pim.PxPyPzEVector();
                 cand.mass = p_rho0.M();
@@ -450,6 +479,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             if (h_t) h_t->fill(cand.minus_t);
             if (h_delta_vz_pim) h_delta_vz_pim->fill(cand.delta_vz_pim);
             if (h_delta_vz_pip) h_delta_vz_pip->fill(cand.delta_vz_pip);
+
+            // Region-specific pre-cut mass
+            auto& rh = get_region_histograms(cand.detector_region);
+            if (rh.mass_all) rh.mass_all->fill(cand.mass);
         }
     }
 
@@ -472,6 +505,23 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             if (h_t_selected) h_t_selected->fill(cand.minus_t);
             if (h_delta_vz_pim_selected) h_delta_vz_pim_selected->fill(cand.delta_vz_pim);
             if (h_delta_vz_pip_selected) h_delta_vz_pip_selected->fill(cand.delta_vz_pip);
+
+            // Region-specific post-cut histograms
+            auto& rh = get_region_histograms(cand.detector_region);
+            if (rh.mass_selected) rh.mass_selected->fill(cand.mass);
+            if (rh.momentum) rh.momentum->fill(cand.momentum);
+            if (rh.theta) rh.theta->fill(cand.theta);
+            if (rh.phi) rh.phi->fill(cand.phi);
+            if (rh.opening_angle) rh.opening_angle->fill(cand.opening_angle);
+            if (rh.mass_vs_momentum) rh.mass_vs_momentum->fill(cand.momentum, cand.mass);
+
+            // Increment region counter
+            switch (cand.detector_region) {
+                case DetectorRegion::ForwardForward: m_rho0_ff++; break;
+                case DetectorRegion::Mixed: m_rho0_mixed++; break;
+                case DetectorRegion::CentralCentral: m_rho0_cc++; break;
+                default: break;
+            }
 
             fill_q2_binned_histogram(Q2, cand.mass);
         }
@@ -693,6 +743,35 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     // Mutex for thread safety
     mutable std::mutex m_ntuple_mutex;
 
+    // Region-specific histogram set (mass + kinematics)
+    struct RegionHistograms {
+        clas12::framework::AtomicHistogram1D* mass_all = nullptr;
+        clas12::framework::AtomicHistogram1D* mass_selected = nullptr;
+        clas12::framework::AtomicHistogram1D* momentum = nullptr;
+        clas12::framework::AtomicHistogram1D* theta = nullptr;
+        clas12::framework::AtomicHistogram1D* phi = nullptr;
+        clas12::framework::AtomicHistogram1D* opening_angle = nullptr;
+        clas12::framework::AtomicHistogram2D* mass_vs_momentum = nullptr;
+    };
+
+    RegionHistograms m_hist_ff;     // Forward-Forward
+    RegionHistograms m_hist_mixed;  // Mixed (FD+CD)
+    RegionHistograms m_hist_cc;     // Central-Central
+
+    // Region counters (post-cut)
+    std::atomic<size_t> m_rho0_ff{0};
+    std::atomic<size_t> m_rho0_mixed{0};
+    std::atomic<size_t> m_rho0_cc{0};
+
+    auto get_region_histograms(DetectorRegion region) -> RegionHistograms& {
+        switch (region) {
+            case DetectorRegion::ForwardForward: return m_hist_ff;
+            case DetectorRegion::Mixed: return m_hist_mixed;
+            case DetectorRegion::CentralCentral: return m_hist_cc;
+            default: return m_hist_ff;
+        }
+    }
+
     // Histograms - Rho0 candidates (atomic for thread-safety)
     clas12::framework::AtomicHistogram1D* h_pipim_mass_all = nullptr;
     clas12::framework::AtomicHistogram1D* h_pipim_mass_selected = nullptr;
@@ -847,6 +926,28 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
                 h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
             }
+
+            // Region-specific histograms (Forward-Forward, Mixed, Central-Central)
+            auto book_region = [svc](RegionHistograms& h, const std::string& dir, const std::string& label) {
+                h.mass_all = svc->book_hist1D(dir + "/pipim_mass_all",
+                    fmt::format("{} #pi^{{+}}#pi^{{-}} Invariant Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), 200, 0, 2.0);
+                h.mass_selected = svc->book_hist1D(dir + "/pipim_mass_selected",
+                    fmt::format("{} Selected #rho^{{0}} Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), 200, 0.4, 1.2);
+                h.momentum = svc->book_hist1D(dir + "/rho0_momentum",
+                    fmt::format("{} #rho^{{0}} Momentum;p [GeV/c];Events", label), 100, 0, 10);
+                h.theta = svc->book_hist1D(dir + "/rho0_theta",
+                    fmt::format("{} #rho^{{0}} Theta;#theta [deg];Events", label), 180, 0, 180);
+                h.phi = svc->book_hist1D(dir + "/rho0_phi",
+                    fmt::format("{} #rho^{{0}} Phi;#phi [deg];Events", label), 360, -180, 180);
+                h.opening_angle = svc->book_hist1D(dir + "/opening_angle",
+                    fmt::format("{} #pi^{{+}}#pi^{{-}} Opening Angle;#theta_{{#pi^{{+}}#pi^{{-}}}} [deg];Events", label), 180, 0, 180);
+                h.mass_vs_momentum = svc->book_hist2D(dir + "/pipim_mass_vs_momentum",
+                    fmt::format("{} #pi^{{+}}#pi^{{-}} Mass vs Momentum;p [GeV/c];M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}]", label),
+                    100, 0, 10, 100, 0.4, 1.2);
+            };
+            book_region(m_hist_ff, "/Rho0/Forward", "FD-FD");
+            book_region(m_hist_mixed, "/Rho0/Mixed", "Mixed");
+            book_region(m_hist_cc, "/Rho0/Central", "CD-CD");
         });
     }
 

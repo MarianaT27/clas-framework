@@ -138,6 +138,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         declare_property(m_momentum_min);
         declare_property(m_momentum_max);
         declare_property(m_enable_ntuple);
+        declare_property(m_enable_fiducial_cuts);
+        declare_property(m_enable_central_pions);
     }
 
     /**
@@ -164,6 +166,9 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         Log::info(name(), "Chi2PID range: [{}, {}], Momentum range: [{}, {}] GeV",
                   m_chi2pid_min.get(), m_chi2pid_max.get(),
                   m_momentum_min.get(), m_momentum_max.get());
+        Log::info(name(), "Fiducial cuts: {}, Central pions: {}",
+                  m_enable_fiducial_cuts.get() ? "enabled" : "disabled",
+                  m_enable_central_pions.get() ? "enabled" : "disabled");
 
         // Setup cutflows
         setup_cutflows();
@@ -321,6 +326,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     clas12::framework::Property<double> m_momentum_min{"momentum_min", 0.3, "Minimum pion momentum [GeV]"};
     clas12::framework::Property<double> m_momentum_max{"momentum_max", 10.0, "Maximum pion momentum [GeV]"};
     clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
+    clas12::framework::Property<bool> m_enable_fiducial_cuts{"enable_fiducial_cuts", false, "Enable PCAL and DC fiducial cuts"};
+    clas12::framework::Property<bool> m_enable_central_pions{"enable_central_pions", false, "Enable central detector pion selection"};
 
     // Service handles (auto-injected via require_service/optional_service)
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
@@ -382,27 +389,21 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     PionHistograms h_piminus;
 
     auto setup_cutflows() -> void {
-        // π⁺ cutflow
-        m_cutflow_piplus.add_cut("All Events");
-        m_cutflow_piplus.add_cut("Has π⁺");
-        m_cutflow_piplus.add_cut("Forward detector");
-        m_cutflow_piplus.add_cut("PCAL Fiducial");
-        m_cutflow_piplus.add_cut("DC Fiducial");
-        m_cutflow_piplus.add_cut("Chi2 PID");
-        m_cutflow_piplus.add_cut("Momentum");
-        m_cutflow_piplus.add_cut("Vertex Z");
-        m_cutflow_piplus.add_cut("Delta-t");
-
-        // π⁻ cutflow
-        m_cutflow_piminus.add_cut("All Events");
-        m_cutflow_piminus.add_cut("Has π⁻");
-        m_cutflow_piminus.add_cut("Forward detector");
-        m_cutflow_piminus.add_cut("PCAL Fiducial");
-        m_cutflow_piminus.add_cut("DC Fiducial");
-        m_cutflow_piminus.add_cut("Chi2 PID");
-        m_cutflow_piminus.add_cut("Momentum");
-        m_cutflow_piminus.add_cut("Vertex Z");
-        m_cutflow_piminus.add_cut("Delta-t");
+        auto setup = [this](clas12::framework::Cutflow& cf, const std::string& pion_label) {
+            cf.add_cut("All Events");
+            cf.add_cut(pion_label);
+            cf.add_cut("Detector region");
+            if (m_enable_fiducial_cuts.get()) {
+                cf.add_cut("PCAL Fiducial");
+                cf.add_cut("DC Fiducial");
+            }
+            cf.add_cut("Chi2 PID");
+            cf.add_cut("Momentum");
+            cf.add_cut("Vertex Z");
+            cf.add_cut("Delta-t");
+        };
+        setup(m_cutflow_piplus, "Has π⁺");
+        setup(m_cutflow_piminus, "Has π⁻");
     }
 
     auto book_histograms() -> void {
@@ -533,18 +534,22 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 else m_piminus_other++;
             }
 
-            // Get scintillator info
-            clas12::ScintillatorBank scintillator = clas12::read_Scintillator_bank(REC_Scintillator, pion.index());
-            cand.sector = scintillator.sector;
-            cand.tof_time = scintillator.time;
-            cand.tof_path = scintillator.path;
+            // Get scintillator info (FTOF for forward pions only)
+            if (cand.is_forward_detector) {
+                clas12::ScintillatorBank scintillator = clas12::read_Scintillator_bank(REC_Scintillator, pion.index());
+                cand.sector = scintillator.sector;
+                cand.tof_time = scintillator.time;
+                cand.tof_path = scintillator.path;
+            }
 
             // Calculate timing quantities
             double m = clas12::Constants::PIMASS;
             cand.beta_expected = cand.p / std::sqrt(cand.p * cand.p + m * m);
-            double t_expected = cand.tof_path / (cand.beta_expected * clas12::Constants::SPEED_OF_LIGHT);
-            double measured_time = cand.tof_time - start_time;
-            cand.delta_t = measured_time - t_expected;
+            if (cand.tof_path > 0) {
+                double t_expected = cand.tof_path / (cand.beta_expected * clas12::Constants::SPEED_OF_LIGHT);
+                double measured_time = cand.tof_time - start_time;
+                cand.delta_t = measured_time - t_expected;
+            }
 
             // Calculate TOF mass^2: m^2 = p^2 * (1/beta^2 - 1)
             if (cand.beta > 0) {
@@ -565,13 +570,28 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             cand.passes_momentum = pass_momentum_cut(cand.p);
             cand.passes_vz = pass_vz_cut(cand.vz, is_piplus);
             cand.passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t, is_piplus);
-            cand.passes_all_cuts = cand.is_forward_detector &&
-                                   cand.passes_pcal_fiducial &&
-                                   cand.passes_dc_fiducial &&
+            // Determine detector region and fiducial/timing pass
+            bool passes_detector_region = false;
+            bool passes_fiducial = false;
+            bool passes_timing = false;
+
+            if (cand.is_forward_detector) {
+                passes_detector_region = true;
+                passes_fiducial = !m_enable_fiducial_cuts.get() ||
+                                  (cand.passes_pcal_fiducial && cand.passes_dc_fiducial);
+                passes_timing = cand.passes_delta_t;
+            } else if (cand.is_central_detector && m_enable_central_pions.get()) {
+                passes_detector_region = true;
+                passes_fiducial = true;   // No fiducial for central
+                passes_timing = true;     // Skip delta_t for central (no CTOF reader)
+            }
+
+            cand.passes_all_cuts = passes_detector_region &&
+                                   passes_fiducial &&
                                    cand.passes_chi2pid &&
                                    cand.passes_momentum &&
                                    cand.passes_vz &&
-                                   cand.passes_delta_t;
+                                   passes_timing;
 
             candidates.push_back(std::move(cand));
         }
@@ -687,34 +707,43 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         if (candidates.empty()) return;
         cutflow.pass(is_piplus ? "Has π⁺" : "Has π⁻");
 
-        bool any_fd = false, any_pcal = false, any_dc = false;
+        bool any_region = false, any_pcal = false, any_dc = false;
         bool any_chi2 = false, any_p = false, any_vz = false, any_dt = false;
 
         for (const auto& cand : candidates) {
-            any_fd |= cand.is_forward_detector;
-            if (cand.is_forward_detector) {
+            bool in_region = cand.is_forward_detector ||
+                             (cand.is_central_detector && m_enable_central_pions.get());
+            any_region |= in_region;
+            if (!in_region) continue;
+
+            // Fiducial cut chain (forward-only, when enabled)
+            if (cand.is_forward_detector && m_enable_fiducial_cuts.get()) {
                 any_pcal |= cand.passes_pcal_fiducial;
-                if (cand.passes_pcal_fiducial) {
-                    any_dc |= cand.passes_dc_fiducial;
-                    if (cand.passes_dc_fiducial) {
-                        any_chi2 |= cand.passes_chi2pid;
-                        if (cand.passes_chi2pid) {
-                            any_p |= cand.passes_momentum;
-                            if (cand.passes_momentum) {
-                                any_vz |= cand.passes_vz;
-                                if (cand.passes_vz) {
-                                    any_dt |= cand.passes_delta_t;
-                                }
-                            }
-                        }
-                    }
-                }
+                if (!cand.passes_pcal_fiducial) continue;
+                any_dc |= cand.passes_dc_fiducial;
+                if (!cand.passes_dc_fiducial) continue;
+            }
+
+            any_chi2 |= cand.passes_chi2pid;
+            if (!cand.passes_chi2pid) continue;
+            any_p |= cand.passes_momentum;
+            if (!cand.passes_momentum) continue;
+            any_vz |= cand.passes_vz;
+            if (!cand.passes_vz) continue;
+
+            // Delta-t (forward only)
+            if (cand.is_forward_detector) {
+                any_dt |= cand.passes_delta_t;
+            } else {
+                any_dt = true;  // Central pions skip delta_t
             }
         }
 
-        if (any_fd) cutflow.pass("Forward detector");
-        if (any_pcal) cutflow.pass("PCAL Fiducial");
-        if (any_dc) cutflow.pass("DC Fiducial");
+        if (any_region) cutflow.pass("Detector region");
+        if (m_enable_fiducial_cuts.get()) {
+            if (any_pcal) cutflow.pass("PCAL Fiducial");
+            if (any_dc) cutflow.pass("DC Fiducial");
+        }
         if (any_chi2) cutflow.pass("Chi2 PID");
         if (any_p) cutflow.pass("Momentum");
         if (any_vz) cutflow.pass("Vertex Z");
