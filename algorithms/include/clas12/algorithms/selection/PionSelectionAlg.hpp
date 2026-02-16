@@ -326,7 +326,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     clas12::framework::Property<double> m_momentum_min{"momentum_min", 0.3, "Minimum pion momentum [GeV]"};
     clas12::framework::Property<double> m_momentum_max{"momentum_max", 10.0, "Maximum pion momentum [GeV]"};
     clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
-    clas12::framework::Property<bool> m_enable_fiducial_cuts{"enable_fiducial_cuts", false, "Enable PCAL and DC fiducial cuts"};
+    clas12::framework::Property<bool> m_enable_fiducial_cuts{"enable_fiducial_cuts", true, "Enable PCAL and DC fiducial cuts"};
     clas12::framework::Property<bool> m_enable_central_pions{"enable_central_pions", false, "Enable central detector pion selection"};
 
     // Service handles (auto-injected via require_service/optional_service)
@@ -879,7 +879,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
     // Fiducial cut functions
     static auto pass_pcal_fiducial_cut(const clas12::CalorimeterBank& calo) -> bool {
-        return calo.pcal.lv > 14.0 && calo.pcal.lw > 14.0;
+        return calo.pcal.lv > 9.0 && calo.pcal.lw > 9.0;
     }
 
     static auto pass_dc_fiducial_cut(const clas12::DCTrajBank& traj, bool is_piplus) -> bool {

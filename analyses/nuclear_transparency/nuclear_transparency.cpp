@@ -125,11 +125,6 @@ auto main(int argc, char* argv[]) -> int {
         .add_algorithm<clas12::algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction")
         .build();
 
-    if (auto sc = app.initialize(); sc.is_failure()) {
-        clas12::framework::Log::error("Main", "Initialization failed: {}", sc.message());
-        return EXIT_FAILURE;
-    }
-
     // Print configuration using enhanced logger
     clas12::framework::Log::section("Nuclear Transparency Analysis");
     clas12::framework::Log::subsection("Configuration");
@@ -140,13 +135,14 @@ auto main(int argc, char* argv[]) -> int {
     clas12::framework::Log::config("Config", "Output", config->output_file);
     clas12::framework::Log::blank();
 
-    // Run with timing
-    {
-        auto timer = clas12::framework::Log::scoped("Main", "Event processing");
-        if (auto sc = app.run(); sc.is_failure()) {
-            clas12::framework::Log::error("Main", "Processing failed: {}", sc.message());
-            return EXIT_FAILURE;
-        }
+    if (auto sc = app.initialize(); sc.is_failure()) {
+        clas12::framework::Log::error("Main", "Initialization failed: {}", sc.message());
+        return EXIT_FAILURE;
+    }
+
+    if (auto sc = app.run(); sc.is_failure()) {
+        clas12::framework::Log::error("Main", "Processing failed: {}", sc.message());
+        return EXIT_FAILURE;
     }
 
     auto result = app.finalize();
