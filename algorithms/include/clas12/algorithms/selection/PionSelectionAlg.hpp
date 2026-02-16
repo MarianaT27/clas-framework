@@ -91,6 +91,10 @@ struct PionCandidate {
     // Beta difference
     double beta_diff = 0.0;   // beta_measured - beta_expected
 
+    // PCAL fiducial variables
+    double pcal_lv = 0.0;
+    double pcal_lw = 0.0;
+
     // Detector region
     bool is_forward_detector = false;
     bool is_central_detector = false;
@@ -362,6 +366,11 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         clas12::framework::AtomicHistogram2D* delta_t_vs_p = nullptr;
         clas12::framework::AtomicHistogram2D* p_vs_theta = nullptr;
 
+        // PCAL fiducial diagnostics (pre-cut)
+        clas12::framework::AtomicHistogram1D* pcal_lv_precut = nullptr;
+        clas12::framework::AtomicHistogram1D* pcal_lw_precut = nullptr;
+        clas12::framework::AtomicHistogram2D* pcal_lw_vs_lv = nullptr;
+
         // Additional 2D correlations (pre-cut for diagnostics)
         clas12::framework::AtomicHistogram2D* chi2pid_vs_p = nullptr;
         clas12::framework::AtomicHistogram2D* vz_vs_theta = nullptr;
@@ -428,6 +437,12 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             h.vz_precut = svc->book_hist(fwd + "/vz_precut", label + " Forward v_{z} (pre-cut);v_{z} [cm];Events", 200, -40, 40);
             h.chi2pid_precut = svc->book_hist(fwd + "/chi2pid_precut", label + " Forward #chi^{2}_{PID} (pre-cut);#chi^{2};Events", 200, -10, 10);
             h.delta_t_precut = svc->book_hist(fwd + "/delta_t_precut", label + " Forward #Deltat (pre-cut);#Deltat [ns];Events", 200, -2, 2);
+
+            // PCAL fiducial diagnostics (pre-cut, before fiducial cuts)
+            h.pcal_lv_precut = svc->book_hist(fwd + "/pcal_lv_precut", label + " Forward PCAL lv (pre-cut);lv [cm];Events", 200, 0, 450);
+            h.pcal_lw_precut = svc->book_hist(fwd + "/pcal_lw_precut", label + " Forward PCAL lw (pre-cut);lw [cm];Events", 200, 0, 450);
+            h.pcal_lw_vs_lv = svc->book_hist2d(fwd + "/pcal_lw_vs_lv", label + " Forward PCAL lw vs lv (pre-cut);lv [cm];lw [cm]",
+                200, 0, 450, 200, 0, 450);
 
             // Forward post-cut 2D histograms
             h.beta_vs_p = svc->book_hist2d(fwd + "/beta_vs_p", label + " Forward #beta vs p;p [GeV/c];#beta",
@@ -563,6 +578,10 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, pion.index());
             auto traj = clas12::read_Traj_bank(REC_Traj, pion.index());
 
+            // Store PCAL fiducial variables
+            cand.pcal_lv = calo.pcal.lv;
+            cand.pcal_lw = calo.pcal.lw;
+
             // Apply cuts and cache results
             cand.passes_pcal_fiducial = pass_pcal_fiducial_cut(calo);
             cand.passes_dc_fiducial = pass_dc_fiducial_cut(traj, is_piplus);
@@ -614,6 +633,11 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 if (h.vz_precut) h.vz_precut->fill(cand.vz);
                 if (h.chi2pid_precut) h.chi2pid_precut->fill(cand.chi2pid);
                 if (h.delta_t_precut) h.delta_t_precut->fill(cand.delta_t);
+
+                // PCAL fiducial diagnostics (before fiducial cuts)
+                if (h.pcal_lv_precut) h.pcal_lv_precut->fill(cand.pcal_lv);
+                if (h.pcal_lw_precut) h.pcal_lw_precut->fill(cand.pcal_lw);
+                if (h.pcal_lw_vs_lv) h.pcal_lw_vs_lv->fill(cand.pcal_lv, cand.pcal_lw);
 
                 // 2D correlations (pre-cut for diagnostics)
                 if (h.chi2pid_vs_p) h.chi2pid_vs_p->fill(cand.p, cand.chi2pid);
