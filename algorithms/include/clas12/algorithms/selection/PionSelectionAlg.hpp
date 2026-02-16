@@ -293,6 +293,23 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             }
         );
 
+        // PCAL lv/lw NaN statistics (forward pions with undefined PCAL data)
+        auto pip_fwd = m_piplus_forward.load();
+        auto pim_fwd = m_piminus_forward.load();
+        auto pip_nan = m_piplus_pcal_nan.load();
+        auto pim_nan = m_piminus_pcal_nan.load();
+        Log::print_yield_summary_table(
+            "PCAL lv/lw NaN (forward pions)",
+            {"", "π⁺", "π⁻"},
+            {
+                {"Forward total", fmt::format("{}", pip_fwd), fmt::format("{}", pim_fwd)},
+                {"PCAL NaN",      fmt::format("{}", pip_nan), fmt::format("{}", pim_nan)},
+                {"NaN fraction",
+                 pip_fwd > 0 ? fmt::format("{:.1f}%", 100.0 * pip_nan / pip_fwd) : "N/A",
+                 pim_fwd > 0 ? fmt::format("{:.1f}%", 100.0 * pim_nan / pim_fwd) : "N/A"}
+            }
+        );
+
         // Per-sector statistics
         std::vector<std::vector<std::string>> sector_rows;
         for (int sector = 1; sector <= 6; ++sector) {
@@ -315,6 +332,10 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     bool m_separate_charges;
     clas12::framework::Cutflow m_cutflow_piplus;
     clas12::framework::Cutflow m_cutflow_piminus;
+
+    // PCAL NaN counters (forward pions with undefined lv/lw)
+    std::atomic<size_t> m_piplus_pcal_nan{0};
+    std::atomic<size_t> m_piminus_pcal_nan{0};
 
     // Pre-cut detector region counters
     std::atomic<size_t> m_piplus_forward{0};
@@ -578,9 +599,13 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, pion.index());
             auto traj = clas12::read_Traj_bank(REC_Traj, pion.index());
 
-            // Store PCAL fiducial variables
+            // Store PCAL fiducial variables and count NaN
             cand.pcal_lv = calo.pcal.lv;
             cand.pcal_lw = calo.pcal.lw;
+            if (cand.is_forward_detector && (std::isnan(cand.pcal_lv) || std::isnan(cand.pcal_lw))) {
+                if (is_piplus) m_piplus_pcal_nan++;
+                else m_piminus_pcal_nan++;
+            }
 
             // Apply cuts and cache results
             cand.passes_pcal_fiducial = pass_pcal_fiducial_cut(calo);
