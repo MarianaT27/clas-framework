@@ -100,7 +100,6 @@ struct PionCandidate {
     bool is_central_detector = false;
 
     // Cached cut decisions
-    bool passes_pcal_fiducial = false;
     bool passes_dc_fiducial = false;
     bool passes_chi2pid = false;
     bool passes_momentum = false;
@@ -424,7 +423,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             cf.add_cut(pion_label);
             cf.add_cut("Detector region");
             if (m_enable_fiducial_cuts.get()) {
-                cf.add_cut("PCAL Fiducial");
                 cf.add_cut("DC Fiducial");
             }
             cf.add_cut("Chi2 PID");
@@ -608,7 +606,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             }
 
             // Apply cuts and cache results
-            cand.passes_pcal_fiducial = pass_pcal_fiducial_cut(calo);
             cand.passes_dc_fiducial = pass_dc_fiducial_cut(traj, is_piplus);
             cand.passes_chi2pid = pass_chi2pid_cut(cand.chi2pid);
             cand.passes_momentum = pass_momentum_cut(cand.p);
@@ -621,8 +618,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
             if (cand.is_forward_detector) {
                 passes_detector_region = true;
-                passes_fiducial = !m_enable_fiducial_cuts.get() ||
-                                  (cand.passes_pcal_fiducial && cand.passes_dc_fiducial);
+                passes_fiducial = !m_enable_fiducial_cuts.get() || cand.passes_dc_fiducial;
                 passes_timing = cand.passes_delta_t;
             } else if (cand.is_central_detector && m_enable_central_pions.get()) {
                 passes_detector_region = true;
@@ -756,7 +752,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         if (candidates.empty()) return;
         cutflow.pass(is_piplus ? "Has π⁺" : "Has π⁻");
 
-        bool any_region = false, any_pcal = false, any_dc = false;
+        bool any_region = false, any_dc = false;
         bool any_chi2 = false, any_p = false, any_vz = false, any_dt = false;
 
         for (const auto& cand : candidates) {
@@ -765,10 +761,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             any_region |= in_region;
             if (!in_region) continue;
 
-            // Fiducial cut chain (forward-only, when enabled)
+            // DC fiducial cut chain (forward-only, when enabled)
             if (cand.is_forward_detector && m_enable_fiducial_cuts.get()) {
-                any_pcal |= cand.passes_pcal_fiducial;
-                if (!cand.passes_pcal_fiducial) continue;
                 any_dc |= cand.passes_dc_fiducial;
                 if (!cand.passes_dc_fiducial) continue;
             }
@@ -790,7 +784,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
         if (any_region) cutflow.pass("Detector region");
         if (m_enable_fiducial_cuts.get()) {
-            if (any_pcal) cutflow.pass("PCAL Fiducial");
             if (any_dc) cutflow.pass("DC Fiducial");
         }
         if (any_chi2) cutflow.pass("Chi2 PID");
@@ -927,10 +920,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     }
 
     // Fiducial cut functions
-    static auto pass_pcal_fiducial_cut(const clas12::CalorimeterBank& calo) -> bool {
-        return calo.pcal.lv > 9.0 && calo.pcal.lw > 9.0;
-    }
-
     static auto pass_dc_fiducial_cut(const clas12::DCTrajBank& traj, bool is_piplus) -> bool {
         double r1_min = is_piplus ? 3.875 : 2.125;
         double r2_min = is_piplus ? 4.375 : 3.625;
