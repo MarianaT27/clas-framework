@@ -524,6 +524,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             }
 
             fill_q2_binned_histogram(Q2, cand.mass);
+            fill_region_q2_binned_histogram(rh, Q2, cand.mass);
         }
     }
 
@@ -752,6 +753,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         clas12::framework::AtomicHistogram1D* phi = nullptr;
         clas12::framework::AtomicHistogram1D* opening_angle = nullptr;
         clas12::framework::AtomicHistogram2D* mass_vs_momentum = nullptr;
+        std::map<std::string, clas12::framework::AtomicHistogram1D*> mass_q2_bins;
     };
 
     RegionHistograms m_hist_ff;     // Forward-Forward
@@ -871,6 +873,17 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         }
     }
 
+    auto fill_region_q2_binned_histogram(RegionHistograms& rh, double Q2, double mass) -> void {
+        for (size_t i = 0; i < Q2_BINS.size(); ++i) {
+            if (Q2 >= Q2_BINS[i].first && Q2 < Q2_BINS[i].second) {
+                std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
+                auto it = rh.mass_q2_bins.find(bin_name);
+                if (it != rh.mass_q2_bins.end() && it->second) it->second->fill(mass);
+                break;
+            }
+        }
+    }
+
     auto fill_lc_binned_histogram(double lc, double mass) -> void {
         for (size_t i = 0; i < LC_BINS.size(); ++i) {
             if (lc >= LC_BINS[i].first && lc < LC_BINS[i].second) {
@@ -944,6 +957,14 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 h.mass_vs_momentum = svc->book_hist2D(dir + "/pipim_mass_vs_momentum",
                     fmt::format("{} #pi^{{+}}#pi^{{-}} Mass vs Momentum;p [GeV/c];M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}]", label),
                     100, 0, 10, 100, 0.4, 1.2);
+
+                // Q²-binned invariant mass histograms per region
+                for (const auto& [q2_min, q2_max] : Q2_BINS) {
+                    std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
+                    std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
+                    std::string title = fmt::format("{} #pi^{{+}}#pi^{{-}} Mass ({:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label, q2_min, q2_max);
+                    h.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+                }
             };
             book_region(m_hist_ff, "/Rho0/Forward", "FD-FD");
             book_region(m_hist_mixed, "/Rho0/Mixed", "Mixed");
@@ -1066,6 +1087,11 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                                     total_rho0_narrow, std::sqrt(total_rho0_narrow_err_sq),
                                     total_rho0_wide, std::sqrt(total_rho0_wide_err_sq));
 
+        // Fit region-specific Q²-binned histograms
+        fit_region_q2_histograms(m_hist_ff, "Forward-Forward", "Rho0/Forward");
+        fit_region_q2_histograms(m_hist_mixed, "Mixed", "Rho0/Mixed");
+        fit_region_q2_histograms(m_hist_cc, "Central-Central", "Rho0/Central");
+
         // Print summary table comparing both fit ranges
         if (!fit_results_narrow.empty() || !fit_results_wide.empty()) {
             std::vector<std::string> columns = {"Bin", "N(ρ⁰) [0.3-1.2]", "N(ρ⁰) [0.3-1.4]", "Diff (%)"};
@@ -1130,6 +1156,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         std::string tree_title;      // Tree description
         std::string fits_dir;        // "Fits" or "Fits_LC"
         std::string all_func_name;   // "fit_All" or "fit_All_LC"
+        std::string root_dir = "Rho0";  // Root directory in ROOT file
     };
 
     /**
@@ -1161,12 +1188,12 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             return;
         }
 
-        // Navigate to Rho0 directory
+        // Navigate to root directory
         file->cd();
-        if (!file->GetDirectory("Rho0")) {
-            file->mkdir("Rho0");
+        if (!file->GetDirectory(config.root_dir.c_str())) {
+            file->mkdir(config.root_dir.c_str());
         }
-        file->cd("Rho0");
+        file->cd(config.root_dir.c_str());
 
         // Create a TTree to store fit results
         auto* tree = new TTree(config.tree_name.c_str(), config.tree_title.c_str());
@@ -1236,10 +1263,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
         // Write tree to the file
         tree->Write("", TObject::kOverwrite);
-        clas12::framework::Log::info(name(), "Fit results saved to TTree 'Rho0/{}' with {} entries", config.tree_name, tree->GetEntries());
+        clas12::framework::Log::info(name(), "Fit results saved to TTree '{}/{}' with {} entries", config.root_dir, config.tree_name, tree->GetEntries());
 
         // Save fit functions separately for easy access in Python
-        std::string fits_path = fmt::format("Rho0/{}", config.fits_dir);
+        std::string fits_path = fmt::format("{}/{}", config.root_dir, config.fits_dir);
         file->cd();
         if (!file->GetDirectory(fits_path.c_str())) {
             file->mkdir(fits_path.c_str());
@@ -1324,7 +1351,67 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             .all_func_name = "fit_All_LC_wide"
         };
         save_fit_results_to_file(results_wide, total_n_rho0_wide, total_n_rho0_wide_err, LC_BINS, config_wide);
-    }   
+    }
+
+    /**
+     * @brief Fit region-specific Q²-binned histograms and save results
+     */
+    auto fit_region_q2_histograms(RegionHistograms& rh, const std::string& region_label, const std::string& root_dir) -> void {
+        // Fit selected mass histogram for this region
+        std::map<std::string, FitResult> results_narrow, results_wide;
+        double total_narrow = 0.0, total_narrow_err_sq = 0.0;
+        double total_wide = 0.0, total_wide_err_sq = 0.0;
+
+        if (rh.mass_selected && rh.mass_selected->entries() > 100) {
+            auto root_hist = rh.mass_selected->to_root("mass_selected_fit", region_label);
+            auto [rn, rw] = fit_histogram_compare_ranges(root_hist.get(), region_label + " All Q²");
+            if (rn.valid) results_narrow["All"] = rn;
+            if (rw.valid) results_wide["All"] = rw;
+        }
+
+        // Fit Q²-binned histograms
+        for (const auto& [bin_name, hist] : rh.mass_q2_bins) {
+            if (hist && hist->entries() > 50) {
+                auto root_hist = hist->to_root(bin_name + "_fit", bin_name);
+                auto [rn, rw] = fit_histogram_compare_ranges(root_hist.get(), region_label + " " + bin_name);
+                if (rn.valid) {
+                    results_narrow[bin_name] = rn;
+                    total_narrow += rn.n_rho0;
+                    total_narrow_err_sq += rn.n_rho0_err * rn.n_rho0_err;
+                }
+                if (rw.valid) {
+                    results_wide[bin_name] = rw;
+                    total_wide += rw.n_rho0;
+                    total_wide_err_sq += rw.n_rho0_err * rw.n_rho0_err;
+                }
+            }
+        }
+
+        if (results_narrow.empty() && results_wide.empty()) return;
+
+        // Save results under the region directory
+        FitResultsConfig config_narrow{
+            .bin_prefix = "Q2",
+            .tree_name = "rho0_fit_results_narrow",
+            .tree_title = fmt::format("{} Rho0 Fit Results (Fit Range 0.3-1.2)", region_label),
+            .fits_dir = "Fits_narrow",
+            .all_func_name = "fit_All_narrow",
+            .root_dir = root_dir
+        };
+        save_fit_results_to_file(results_narrow, total_narrow, std::sqrt(total_narrow_err_sq), Q2_BINS, config_narrow);
+
+        FitResultsConfig config_wide{
+            .bin_prefix = "Q2",
+            .tree_name = "rho0_fit_results_wide",
+            .tree_title = fmt::format("{} Rho0 Fit Results (Fit Range 0.3-1.4)", region_label),
+            .fits_dir = "Fits_wide",
+            .all_func_name = "fit_All_wide",
+            .root_dir = root_dir
+        };
+        save_fit_results_to_file(results_wide, total_wide, std::sqrt(total_wide_err_sq), Q2_BINS, config_wide);
+
+        clas12::framework::Log::info(name(), "{} region: fitted {} Q² bins", region_label, rh.mass_q2_bins.size());
+    }
 
     /**
      * @brief Fit a single histogram with BW + pol3
