@@ -41,12 +41,16 @@ inline auto build_index_map(const hipo::bank_view& bank, const char* index_colum
     const int n_rows = bank.rows();
     if (n_rows <= 0) return result;
 
-    // Process in batches for better cache performance
+    // Resolve column once, then use type-safe get_numeric to read the correct
+    // number of bytes regardless of the column's storage type (int16, int32, etc.).
+    auto col_idx = bank.get_schema().column_index(index_column);
+    if (!col_idx) return result;
+
     constexpr int BATCH_SIZE = 16;
     for (int i = 0; i < n_rows; i += BATCH_SIZE) {
         const int end = std::min(i + BATCH_SIZE, n_rows);
         for (int row = i; row < end; ++row) {
-            const int idx = static_cast<int>(bank.get<float>(index_column, row));
+            const int idx = static_cast<int>(bank.get_numeric(*col_idx, row));
             auto& vec = result[idx];
             if (vec.empty()) vec.reserve(8);
             vec.push_back(row);
