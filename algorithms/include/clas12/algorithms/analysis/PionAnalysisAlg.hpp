@@ -107,7 +107,7 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
         }
 
         // Get start time for timing calculations
-        double start_time = REC_Event.get<double>("startTime", 0);
+        double start_time = static_cast<double>(REC_Event.get<float>("startTime", 0));
 
         // Get electron vertex for delta_vz calculation
         double electron_vz = 0.0;

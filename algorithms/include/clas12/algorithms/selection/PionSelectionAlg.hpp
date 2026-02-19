@@ -213,7 +213,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
         if (REC_Event.rows() == 0) return clas12::framework::StatusCode::SUCCESS();
 
-        double start_time = REC_Event.get<double>("startTime", 0);
+        double start_time = static_cast<double>(REC_Event.get<float>("startTime", 0));
 
         // Extract pions using ParticleSelectorService
         clas12::framework::ParticleMap particles = m_particle_svc->get()->extract_particles(
