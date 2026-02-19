@@ -286,7 +286,7 @@ auto ProgressTracker::clear_line() noexcept -> void {
 
 auto ProgressTracker::get_progress_color() const noexcept -> std::string_view {
     if (!m_config.use_colors) return "";
-    return get_progress() >= 1.0 ? AnsiCodes::GREEN : AnsiCodes::MAGENTA;
+    return AnsiCodes::GREEN;
 }
 
 auto ProgressTracker::render_bar(double progress) const noexcept -> void {
