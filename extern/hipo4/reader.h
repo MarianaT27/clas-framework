@@ -190,6 +190,18 @@ public:
      */
     static result<file_metadata> scan_metadata(std::string_view path, reader_options opts = {});
 
+    /**
+     * @brief Minimal event-count scan — fastest possible metadata extraction.
+     *
+     * Opens the file, reads the 56-byte file header to obtain the record count,
+     * then iterates record headers (32 bytes each) to sum event counts.
+     * No reader object, no tag filtering, no dictionary parsing.
+     *
+     * @param path Filesystem path to the HIPO file.
+     * @return A result containing file_metadata on success, or an error.
+     */
+    static result<file_metadata> count_events(std::string_view path);
+
     /** @brief Return a const reference to the file information struct. */
     const file_info&  info() const noexcept { return m_info; }
 

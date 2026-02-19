@@ -79,6 +79,71 @@ int file_event_index::record_bytes(int record_index) const noexcept {
 // reader
 // ============================================================================
 
+result<file_metadata> reader::count_events(std::string_view path) {
+    auto src = file_source::open(path);
+    if (!src) return unexpected(src.error());
+    auto& fs = *src;
+
+    if (fs.size() < FILE_HEADER_SIZE)
+        return unexpected(error_code::file_too_small);
+
+    // Read file header
+    char hdr[FILE_HEADER_SIZE];
+    auto rd = fs.read_at(0, hdr, FILE_HEADER_SIZE);
+    if (!rd) return unexpected(rd.error());
+
+    auto unique_word = read_value<uint32_t>(hdr + FH_UNIQUE_WORD_OFFSET);
+    if (unique_word != HIPO_FILE_UNIQUE_WORD)
+        return unexpected(error_code::invalid_magic_number);
+
+    auto magic = read_value<int32_t>(hdr + FH_MAGIC_NUMBER_OFFSET);
+    bool swapped = (magic == static_cast<int32_t>(0x0001dac0));
+
+    auto header_words   = maybe_swap32(read_value<int32_t>(hdr + FH_HEADER_LENGTH_OFFSET), swapped);
+    auto index_len      = maybe_swap32(read_value<int32_t>(hdr + FH_INDEX_ARRAY_LEN_OFFSET), swapped);
+    auto uh_len         = maybe_swap32(read_value<int32_t>(hdr + FH_USER_HEADER_LEN_OFFSET), swapped);
+    auto record_count   = maybe_swap32(read_value<int32_t>(hdr + FH_RECORD_COUNT_OFFSET), swapped);
+
+    int64_t pos = static_cast<int64_t>(header_words) * 4
+                + index_len + uh_len + pad4(uh_len);
+
+    int64_t total_events = 0;
+    int num_records = 0;
+
+    while (pos + 32 <= fs.size()) {
+        char buf[32];
+        auto r = fs.read_at(pos, buf, 32);
+        if (!r || *r < 32) break;
+
+        auto rec_len = read_value<int32_t>(buf + 0);
+        auto evt_cnt = read_value<int32_t>(buf + 12);
+        auto bit_w   = read_value<int32_t>(buf + 20);
+        auto m       = read_value<int32_t>(buf + 28);
+
+        bool sw = (m == static_cast<int32_t>(0x0001dac0));
+        rec_len = maybe_swap32(rec_len, sw);
+        evt_cnt = maybe_swap32(evt_cnt, sw);
+        bit_w   = maybe_swap32(bit_w, sw);
+
+        auto htype = static_cast<header_type>((bit_w >> 8) & 0xF);
+        if (htype == header_type::hipo_trailer) break;
+        if (m != static_cast<int32_t>(HEADER_MAGIC) && !sw) break;
+
+        if (evt_cnt > 0) {
+            total_events += evt_cnt;
+            num_records++;
+        }
+
+        pos += static_cast<int64_t>(rec_len) * 4;
+    }
+
+    // Prefer header record_count if available and scan found fewer
+    if (record_count > num_records && record_count > 0)
+        num_records = record_count;
+
+    return file_metadata{total_events, num_records};
+}
+
 result<file_metadata> reader::scan_metadata(std::string_view path, reader_options opts) {
     reader r;
     r.m_opts = std::move(opts);
