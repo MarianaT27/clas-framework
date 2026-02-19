@@ -60,7 +60,15 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAn
           m_config(config),
           m_target(m_config.target),
           m_polarity(m_config.polarity),
-          m_cutflow("Electron Selection") {}
+          m_cutflow("Electron Selection") {
+        declare_bank("REC::Event");
+        declare_bank("REC::Particle");
+        declare_bank("REC::Calorimeter");
+        declare_bank("REC::Cherenkov");
+        declare_bank("REC::Scintillator");
+        declare_bank("REC::Traj");
+        declare_bank("REC::Track");
+    }
 
 
     /// Access configuration (const)

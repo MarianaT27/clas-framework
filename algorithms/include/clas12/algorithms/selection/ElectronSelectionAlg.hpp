@@ -142,6 +142,9 @@ public:
         , m_cutflow("Electron Selection") {
         declare_property(m_enable_ntuple);
         declare_property(m_enable_fiducial_histograms);
+        declare_bank("REC::Calorimeter");
+        declare_bank("REC::Traj");
+        declare_bank("REC::Track");
     }
 
     // ========================================================================

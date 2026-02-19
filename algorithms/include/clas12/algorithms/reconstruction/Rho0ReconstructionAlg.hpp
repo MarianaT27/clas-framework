@@ -154,6 +154,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         declare_property(m_t_max);
         declare_property(m_enable_ntuple);
         declare_property(m_enable_fitting);
+        declare_bank("RUN::config");
     }
 
     auto configure() -> void override {

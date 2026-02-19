@@ -119,6 +119,7 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
         declare_property(m_min_decay_length);
         declare_property(m_min_vertex_detach);
         declare_property(m_max_vertex_detach);
+        declare_bank("DECAYS::Particle");
     }
 
     /**

@@ -54,6 +54,13 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
         // Declare properties
         declare_property(m_min_momentum);
         declare_property(m_min_calo_energy);
+        // Declare required banks
+        declare_bank("REC::Event");
+        declare_bank("REC::Particle");
+        declare_bank("REC::Calorimeter");
+        declare_bank("REC::Traj");
+        declare_bank("REC::Track");
+        declare_bank("REC::Scintillator");
     }
 
     /**

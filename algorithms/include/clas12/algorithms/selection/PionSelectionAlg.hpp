@@ -143,6 +143,12 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         declare_property(m_enable_ntuple);
         declare_property(m_enable_fiducial_cuts);
         declare_property(m_enable_central_pions);
+        // Declare required banks
+        declare_bank("REC::Event");
+        declare_bank("REC::Particle");
+        declare_bank("REC::Scintillator");
+        declare_bank("REC::Calorimeter");
+        declare_bank("REC::Traj");
     }
 
     /**

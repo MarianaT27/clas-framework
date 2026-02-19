@@ -21,6 +21,11 @@ Pi0ReconstructionAlg::Pi0ReconstructionAlg(std::string name, double min_photon_e
     declare_property(m_min_photon_energy);
     declare_property(m_pi0_mass_window);
     declare_property(m_enable_ntuple);
+    // Declare required banks
+    declare_bank("RUN::config");
+    declare_bank("REC::Particle");
+    declare_bank("REC::Calorimeter");
+    declare_bank("REC::Scintillator");
 }
 
 auto Pi0ReconstructionAlg::configure() -> void {

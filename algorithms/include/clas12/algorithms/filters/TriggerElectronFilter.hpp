@@ -29,7 +29,9 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerE
         std::string name = "TriggerElectronFilter",
         clas12::Target target = clas12::Target::LD2,
         clas12::Polarity polarity = clas12::Polarity::Outbending)
-        : SimpleAlgorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow("Trigger Electron Filter") {}
+        : SimpleAlgorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow("Trigger Electron Filter") {
+        declare_bank("REC::Particle");
+    }
 
     auto configure() -> void override {
         m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");

@@ -40,6 +40,7 @@ public:
         // Declare configurable properties
         declare_property(m_example_cut);
         declare_property(m_enable_histograms);
+        declare_bank("MC::Particle");
     }
 
     /**

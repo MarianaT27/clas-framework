@@ -353,6 +353,14 @@ public:
         if (!truth_mode.empty()) {
             m_truth_mode.set(std::move(truth_mode));
         }
+        // Declare required banks
+        declare_bank("REC::Particle");
+        declare_bank("RICH::Particle");
+        declare_bank("REC::Calorimeter");
+        declare_bank("REC::CaloExtras");
+        declare_bank("REC::Cherenkov");
+        declare_bank("REC::Scintillator");
+        declare_bank("REC::ScintExtras");
     }
 
     auto configure() -> void override {

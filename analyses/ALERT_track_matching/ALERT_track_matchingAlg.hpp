@@ -44,6 +44,10 @@ public:
         declare_property(m_enable_histograms);
         declare_property(m_phi_cut);
         declare_property(m_ai_hit_id_offset);
+        // Declare required banks
+        declare_bank("AHDC::track");
+        declare_bank("ALERT::ai:projections");
+        declare_bank("ATOF::hits");
     }
 
     /**

@@ -35,7 +35,9 @@ class Pi0Producer : public clas12::framework::SimpleAlgorithm<Pi0Producer> {
         std::string name = "Pi0Producer",
         double mass_window_center = 0.135,  // GeV/c²
         double mass_window_width = 0.050)   // GeV/c²
-        : SimpleAlgorithm(std::move(name)), m_mass_center(mass_window_center), m_mass_width(mass_window_width) {}
+        : SimpleAlgorithm(std::move(name)), m_mass_center(mass_window_center), m_mass_width(mass_window_width) {
+        declare_bank("REC::Particle");
+    }
 
     auto configure() -> void override {
         m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");

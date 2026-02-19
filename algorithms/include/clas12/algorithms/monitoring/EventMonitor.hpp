@@ -28,7 +28,9 @@ namespace clas12::algorithms {
 class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
    public:
     explicit EventMonitor(std::string name = "EventMonitor")
-        : SimpleAlgorithm(std::move(name)), m_monitored_pids(initialize_default_pids()) {}
+        : SimpleAlgorithm(std::move(name)), m_monitored_pids(initialize_default_pids()) {
+        declare_bank("REC::Particle");
+    }
 
     // Configuration methods
     void set_progress_interval(size_t interval) { m_progress_interval = interval; }
