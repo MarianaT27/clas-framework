@@ -50,20 +50,33 @@ result<void> chain::open() {
 void chain::load_metadata() {
     if (m_metadata_loaded) return;
 
+    std::unique_ptr<ProgressTracker> progress;
+    if (m_opts.show_progress && m_files.size() > 1) {
+        ProgressTracker::Config config;
+        config.label = "Scanning files";
+        config.show_eta = true;
+        config.show_rate = true;
+        progress = std::make_unique<ProgressTracker>(m_files.size(), config);
+        progress->start();
+    }
+
     std::vector<std::future<void>> futures;
     for (auto& f : m_files) {
-        futures.push_back(m_thread_pool->submit([file = &f, this]() {
+        futures.push_back(m_thread_pool->submit([file = &f, &progress, this]() {
             auto meta = reader::scan_metadata(file->path, m_opts.reader_opts);
             if (!meta) {
                 file->valid = false;
                 file->error = fmt::format("{}", meta.error());
-                return;
+            } else {
+                file->total_events = meta->total_events;
+                file->num_records  = meta->num_records;
             }
-            file->total_events = meta->total_events;
-            file->num_records  = meta->num_records;
+            if (progress) progress->increment();
         }));
     }
     for (auto& fut : futures) fut.get();
+
+    if (progress) progress->finish();
 
     int64_t total = 0;
     for (auto const& f : m_files)
