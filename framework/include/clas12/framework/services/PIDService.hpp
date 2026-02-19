@@ -570,16 +570,16 @@ class PIDService : public Service {
             return result;
         }
 
-        auto& cher_bank = event.get_bank("REC::Cherenkov");
+        const auto& cher_bank = event.get_bank("REC::Cherenkov");
 
         // Find matching HTCC hit
         double nphe = 0.0;
-        for (int i = 0; i < cher_bank.getRows(); ++i) {
-            int pindex = cher_bank.getInt("pindex", i);
-            int detector = cher_bank.getInt("detector", i);
+        for (int i = 0; i < cher_bank.rows(); ++i) {
+            int pindex = static_cast<int>(cher_bank.get<int16_t>("pindex", i));
+            int detector = static_cast<int>(cher_bank.get<int8_t>("detector", i));
 
             if (pindex == particle.index() && detector == 15) {  // HTCC
-                nphe = cher_bank.getFloat("nphe", i);
+                nphe = static_cast<double>(cher_bank.get<float>("nphe", i));
                 break;
             }
         }
@@ -645,17 +645,17 @@ class PIDService : public Service {
             return result;
         }
 
-        auto& calo_bank = event.get_bank("REC::Calorimeter");
+        const auto& calo_bank = event.get_bank("REC::Calorimeter");
 
         // Sum energy in PCAL, ECin, ECout
         double energy_pcal = 0.0, energy_ecin = 0.0, energy_ecout = 0.0;
 
-        for (int i = 0; i < calo_bank.getRows(); ++i) {
-            int pindex = calo_bank.getInt("pindex", i);
+        for (int i = 0; i < calo_bank.rows(); ++i) {
+            int pindex = static_cast<int>(calo_bank.get<int16_t>("pindex", i));
             if (pindex != particle.index()) continue;
 
-            int layer = calo_bank.getInt("layer", i);
-            double energy = calo_bank.getFloat("energy", i);
+            int layer = static_cast<int>(calo_bank.get<int8_t>("layer", i));
+            double energy = static_cast<double>(calo_bank.get<float>("energy", i));
 
             if (layer == 1) energy_pcal = energy;       // PCAL
             else if (layer == 4) energy_ecin = energy;  // ECin

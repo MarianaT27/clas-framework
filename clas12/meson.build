@@ -12,7 +12,7 @@ clas12_lib = library(
   'clas12',
   clas12_sources,
   include_directories: clas12_inc,
-  dependencies: [framework_dep, hipo_dep, root_dep],
+  dependencies: [framework_dep, hipo4_dep, root_dep],
   install: true,
 )
 
@@ -20,7 +20,7 @@ clas12_lib = library(
 clas12_dep = declare_dependency(
   include_directories: clas12_inc,
   link_with: clas12_lib,
-  dependencies: [framework_dep, hipo_dep],
+  dependencies: [framework_dep, hipo4_dep],
 )
 
 # Install headers

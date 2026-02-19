@@ -1,817 +1,501 @@
-//******************************************************************************
-//*       ██╗  ██╗██╗██████╗  ██████╗     ██╗  ██╗    ██████╗                  *
-//*       ██║  ██║██║██╔══██╗██╔═══██╗    ██║  ██║   ██╔═████╗                 *
-//*       ███████║██║██████╔╝██║   ██║    ███████║   ██║██╔██║                 *
-//*       ██╔══██║██║██╔═══╝ ██║   ██║    ╚════██║   ████╔╝██║                 *
-//*       ██║  ██║██║██║     ╚██████╔╝         ██║██╗╚██████╔╝                 *
-//*       ╚═╝  ╚═╝╚═╝╚═╝      ╚═════╝          ╚═╝╚═╝ ╚═════╝                  *
-//************************ Jefferson National Lab (2017) ***********************
-/*
- *   Copyright (c) 2017.  Jefferson Lab (JLab). All rights reserved. Permission
- *   to use, copy, modify, and distribute  this software and its documentation
- *   for educational, research, and not-for-profit purposes, without fee and
- *   without a signed licensing agreement.
- *
- *   IN NO EVENT SHALL JLAB BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL
- *   INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING
- *   OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF JLAB HAS
- *   BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *   JLAB SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
- *   THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- *   PURPOSE. THE HIPO DATA FORMAT SOFTWARE AND ACCOMPANYING DOCUMENTATION, IF
- *   ANY, PROVIDED HEREUNDER IS PROVIDED "AS IS". JLAB HAS NO OBLIGATION TO
- *   PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
- *
- *   This software was developed under the United States Government license.
- *   For more information contact author at gavalian@jlab.org
- *   Department of Experimental Nuclear Physics, Jefferson Lab.
- */
- /*
-  * File:   reader.cpp
-  * Author: gavalian
-  *
-  * Additions by: dglazier
-  * Created on April 11, 2017, 2:07 PM
-  */
-
 #include "reader.h"
-#include "hipoexceptions.h"
-#include "record.h"
-
-#include <cstdlib>
-/**
- * HIPO namespace is used for the classes that read/write
- * files and records.
- */
-namespace hipo {
- /**
-  * The constructor for reader, printWarning routine
-  * will printout a warning message if the library
-  * was not compiled with compression libraries LZ4 or GZIP
-  */
-  reader::reader(){
-    printWarning();
-    //hipoutils.printLogo();
-  }
-
-  /**
-   * Default destructor. Does nothing
-   */
-  reader::~reader(){
-    if(inputStream.is_open()==true){
-      inputStream.close();
-    }
-  }
-
-  void  reader::about(){
-    hipoutils.printLogo();
-  }
-  /**
-   * Open file, if file stream is open, it is closed first.
-   * At open time verification of file structure is performed.
-   * If the signature does not match EVIO/HIPO template, the
-   * file will be closed and warning message is printed.
-   * @param filename - name of the file to open
-   */
-  ErrorCode reader::open(const char *filename){
-
-    if(inputStream.is_open()==true){
-      inputStream.close();
-
-    }
-
-    inputStream.open(filename, std::ios::binary);
-    inputStream.seekg(0,std::ios_base::end);
-    inputStreamSize = inputStream.tellg();
-    inputStream.seekg(0,std::ios_base::beg);
-    if(inputStream.is_open()==false){
-      printf("[ERROR] something went wrong with openning file : %s\n",
-            filename);
-      return ErrorCode::FILE_OPEN_ERROR;
-    }
-    readHeader();
-    readIndex();
-    return ErrorCode::NO_ERROR;
-}
-
-/**
- * Reads the file header. The endiannes is determined for bytes
- * swap. The header structure will be filled with file parameters.
- */
- void reader::readHeader(){
-
-    std::vector<char>               headerBuffer;
-    headerBuffer.resize(80);
-    inputStream.read(&headerBuffer[0],80);
-
-    header.uniqueid     = *(reinterpret_cast<int *>(&headerBuffer[0]));
-    header.filenumber   = *(reinterpret_cast<int *>(&headerBuffer[4]));
-    header.headerLength = *(reinterpret_cast<int *>(&headerBuffer[8]));
-    header.recordCount  = *(reinterpret_cast<int *>(&headerBuffer[12]));
-
-    header.indexArrayLength = *(reinterpret_cast<int *>(&headerBuffer[16]));
-    int word_8 = *(reinterpret_cast<int *>(&headerBuffer[20]));
-
-    header.userHeaderLength = *(reinterpret_cast<int *>(&headerBuffer[24]));
-    header.magicNumber = *(reinterpret_cast<int *>(&headerBuffer[28]));
-    header.userRegister = *(reinterpret_cast<long *>(&headerBuffer[32]));
-    header.trailerPosition = *(reinterpret_cast<long *>(&headerBuffer[40]));
-    // If magic word is reversed, then the file was written in BIG_ENDIAN
-    // format, the bytes have to be swapped
-    if(header.magicNumber==0x0001dac0){
-       printf(" THIS FILE IS BIG ENDIAN: SWAPPING BYTES\n");
-       header.uniqueid  = __builtin_bswap32(header.uniqueid);
-       header.filenumber = __builtin_bswap32(header.filenumber);
-       header.headerLength = __builtin_bswap32(header.headerLength);
-       header.recordCount  = __builtin_bswap32(header.recordCount);
-       header.userHeaderLength = __builtin_bswap32(header.userHeaderLength);
-       header.indexArrayLength = __builtin_bswap32(header.indexArrayLength);
-       word_8 = __builtin_bswap32(word_8);
-       header.userRegister = __builtin_bswap64(header.userRegister);
-       header.trailerPosition = __builtin_bswap64(header.trailerPosition);
-    }
-
-    header.version = word_8&0x000000FF;
-    header.bitInfo = (word_8>>8)&0x00FFFFFF;
-    header.firstRecordPosition = 4*header.headerLength + header.userHeaderLength;
-    if(_verbose){
-      printf("----------------------------------------\n");
-      printf("**** reader:: header version   : %d \n",header.version);
-      printf("**** reader:: header length    : %d \n",header.headerLength*4);
-      printf("**** reader:: first record pos : %lu\n",header.firstRecordPosition);
-      printf("**** reader:: trailer position : %lu\n",header.trailerPosition);
-      printf("**** reader:: file size        : %lu\n",inputStreamSize);
-      printf("----------------------------------------\n");
-    }
-    //int *signature = reinterpret_cast<int *>(&headerBuffer[0]);
-    //printf("signature = %X\n",(unsigned int) *signature);
-    //std::cout << "signature = " << std::ios::hex << (*signature) << '\n';
-}
-
-/**
- * Reads run index from the file. The index is in the last record of the
- * file, and the pointer to that record is contained in the File Header.
- * If the file was not properly closed event index will not be loaded
- * then file has to be opened in sequential more, to read record by record.
- * in sequential mode the random access is not avilable.
- */
-void  reader::readIndex(){
-
-    // Check for missing trailer (like Java scanFileTrailer)
-    if(header.trailerPosition == 0) {
-        printf("\n\n");
-        printf("reader:: ****** warning : file does not appear to have an index.\n");
-        printf("reader:: ****** warning : please use HipoDoctor class to rebuild index.\n");
-        printf("\n\n");
-        readerErrorCode = ErrorCode::ERROR_NOINDEX;
-        recordPositions.clear();
-        numberOfEvents = 0;
-        return;
-    }
-
-    // Check for corrupt/truncated file
-    if((header.trailerPosition + 54) > inputStreamSize) {
-        printf("\n\n");
-        printf("reader:: ****** warning : this file seems to be corrupt or not closed properly.\n");
-        printf("reader:: ****** warning : please use HipoDoctor class to salvage useful parts.\n");
-        printf("\n\n");
-        readerErrorCode = ErrorCode::ERROR_CORRUPT_FILE;
-        recordPositions.clear();
-        numberOfEvents = 0;
-        return;
-    }
-
-    inputRecord.readRecord(inputStream,header.trailerPosition,0);
-    if(_verbose)printf("*** reader:: trailer record event count : %d\n",inputRecord.getEventCount());
-
-    //a catch for broken files
-    //can use hiporeader.getNRecords() to see if succesfull (=-1 if not)
-    if(inputRecord.getEventCount()==0) {
-        readerErrorCode = ErrorCode::ERROR_NOINDEX;
-        numberOfEvents = 0;
-        return;
-    }
-
-    hipo::event event;
-    inputRecord.readHipoEvent(event,0);
-    if(_verbose)event.show();
-    hipo::structure base;
-    event.getStructure(base,32111,1);
-    if(_verbose)base.show();
-    readerEventIndex.clear();
-    recordPositions.clear();
-    numberOfEvents = 0;
-    int rows = base.getSize()/32;
-
-    //printf(" number of rows = %d\n",rows);
-    for(int i = 0; i < rows; i++){
-       long position = base.getLongAt( i*8);
-       int  length   = base.getIntAt ( rows*8  + i*4);
-       int  entries  = base.getIntAt ( rows*12 + i*4);
-       long uid1     = base.getLongAt( rows*16 + i*8);
-       long uid2     = base.getLongAt( rows*24 + i*8);
-
-       // Create RecordPosition object (like Java)
-       RecordPosition recPos(position, length, entries);
-       recPos.setUserWordOne(uid1);
-       recPos.setUserWordTwo(uid2);
-
-       if(tagsToRead.size()==0){
-          readerEventIndex.addSize(entries);
-          readerEventIndex.addPosition(position);
-          recordPositions.push_back(recPos);
-          numberOfEvents += entries;
-       } else {
-          bool accept = false;
-          for(long jr : tagsToRead){
-            if(jr==uid1) accept = true;
-          }
-          if(accept==true){
-            readerEventIndex.addSize(entries);
-            readerEventIndex.addPosition(position);
-            recordPositions.push_back(recPos);
-            numberOfEvents += entries;
-          }
-        }
-    }
-    readerEventIndex.rewind();
-    //printf("**** reader:: header version   : %d \n",readerEventIndex.getMaxEvents());
-    if(_verbose){
-        printf("**** reader:: number of records : %12zu\n", recordPositions.size());
-        printf("**** reader:: number of events  : %12d\n", numberOfEvents);
-    }
-}
-/**
- * Checks if there are more events in the file to advance to.
- * @return true if there are events left to read, false - otherwise
- */
-bool  reader::hasNext(){ return readerEventIndex.canAdvance();}
-
-/**
- * Reads next event from the file, the event pointer is automatically
- * advanced to the next event.
- * @param reference to the event object to be filled from the record.
- * @return true if the event was successfully read, and false otherwise
- */
-bool  reader::next(hipo::event &dataevent){
-    if(readerEventIndex.canAdvance()==false) return false;
-    int recordNumber = readerEventIndex.getRecordNumber();
-    readerEventIndex.advance();
-    int recordToBeRead = readerEventIndex.getRecordNumber();
-    if(recordToBeRead!=recordNumber){
-      long position = readerEventIndex.getPosition(recordToBeRead);
-      inputRecord.readRecord(inputStream,position,0);
-      /*printf(" record changed from %d to %d at event %d total event # %d\n",
-        recordNumber, recordToBeRead,readerEventIndex.getEventNumber(),
-        readerEventIndex.getMaxEvents());*/
-    }
-    int eventNumberInRecord = readerEventIndex.getRecordEventNumber();
-    inputRecord.readHipoEvent(dataevent,eventNumberInRecord);
-    return true;
-}
-/**
- * Reads current event from the record without advancing the current event
- * position. Multiple reads can be performed on the same event.
- * @param reference to the event object to be read
- */
-void  reader::read(hipo::event &dataevent){
-  int eventNumberInRecord = readerEventIndex.getRecordEventNumber();
-  inputRecord.readHipoEvent(dataevent,eventNumberInRecord);
-}
-/**
- * Reads the structure from the current event without copying the event
- * buffer.
- * @param structure - reference to the stucture object
- * @param group - the group is for the structure.
- * @param item  - item id for the structure.
- */
-void  reader::getStructure(hipo::structure &structure,int group, int item){
-  hipo::data data;
-  int eventNumberInRecord = readerEventIndex.getRecordEventNumber();
-  inputRecord.getData(data,eventNumberInRecord);
-  event::getStructure(data.getDataPtr(),structure,group,item);
-}
-/**
- * Reads the structure from the current event without copying the event
- * buffer and without copying the structure buffer. This should be used
- * very carefully, since it sets the pointer of the structure directly
- * to the buffer owned by the record. If new record is loaded this
- * structure will be pointing to the wrong part of the buffer.
- * @param structure - reference to the stucture object
- * @param group - the group is for the structure.
- * @param item  - item id for the structure.
- */
-void  reader::getStructureNoCopy(hipo::structure &structure,int group, int item){
-  hipo::data data;
-  int eventNumberInRecord = readerEventIndex.getRecordEventNumber();
-  inputRecord.getData(data,eventNumberInRecord);
-  event::getStructureNoCopy(data.getDataPtr(),structure,group,item);
-}
-
-bool  reader::next(std::vector<hipo::bank> &list){
-  bool status = next();
-  if(status==false) return false;
-  read(event);
-  //printf("---------- reader::next() event with next()\n");
-  //event.show();
-  for(int k = 0; k < list.size(); k++){
-    event.read(list[k]);
-  }
-  return true;
-}
-
-std::vector<hipo::bank> reader::getBanks(std::vector<std::string> names){
-  std::vector<hipo::bank> list;
-  readDictionary(factory);
-  for(int k = 0; k < names.size(); k++){
-    hipo::bank b(factory.getSchema(names[k].c_str()),48);
-     list.push_back(b);
-  }
-  return list;
-}
-
-  void reader::readUserConfig(std::map<std::string,std::string> &mapConfig){
-  
-  if(inputStream.is_open()==false){
-    printf("\n\nhipo::reader (ERROR) file is not open.... exiting...\n\n");
-    exit(1);
-  }
-  long position = header.headerLength*4;
-  hipo::record  dictRecord;
-  dictRecord.readRecord(inputStream,position,0);
-  int nevents = dictRecord.getEventCount();
-  /* printf(" reading record at position %8lu, number of entries = %5d\n", 
-      position,dictRecord.getEventCount()); */
-  hipo::structure sKey;
-  hipo::structure sConfig;
-  hipo::event  event;
-  for(int i = 0; i < nevents; i++){
-    dictRecord.readHipoEvent(event,i);
-    event.getStructure(sKey,32555,1);
-    event.getStructure(sConfig,32555,2);
-    if(sKey.getSize()>0){
-      mapConfig[std::string(sKey.getStringAt(0).c_str())] = std::string(sConfig.getStringAt(0).c_str());
-    }
-    //printf("schema : %s\n",schemaStructure.getStringAt(0).c_str());
-    //dict.parse(schemaStructure.getStringAt(0).c_str());
-  }
-}
-  
-/**
- * Reads the dictionary for the file. C++ API is reading packed dictionary
- * format from node (120,2), parses each schema and creates schema dictionary.
- * @param dict - reference to dictionary object.
- */
-void  reader::readDictionary(hipo::dictionary &dict){
-  if(inputStream.is_open()==false){
-    printf("\n\nhipo::reader (ERROR) file is not open.... exiting...\n\n");
-    exit(1);
-  }
-  long position = header.headerLength*4;
-  hipo::record  dictRecord;
-  dictRecord.readRecord(inputStream,position,0);
-  int nevents = dictRecord.getEventCount();
-  /* printf(" reading record at position %8lu, number of entries = %5d\n",
-      position,dictRecord.getEventCount()); */
-  hipo::structure schemaStructure;
-  hipo::event  event;
-  for(int i = 0; i < nevents; i++){
-    dictRecord.readHipoEvent(event,i);
-    event.getStructure(schemaStructure,120,2);
-    //printf("schema : %s\n",schemaStructure.getStringAt(0).c_str());
-    dict.parse(schemaStructure.getStringAt(0).c_str());
-  }
-}
-/**
- * Advances the event pointer to the next event. This does not read an
- * event, but if the event goes beyond boundary of the record the next
- * record is loaded into the memody.
- * @return returns true - if the are events available in the file, false - otherwise
- */
-bool  reader::next(){
-    if(readerEventIndex.canAdvance()==false) return false;
-    int recordNumber = readerEventIndex.getRecordNumber();
-    readerEventIndex.advance();
-    int recordToBeRead = readerEventIndex.getRecordNumber();
-    if(recordToBeRead!=recordNumber){
-      long position = readerEventIndex.getPosition(recordToBeRead);
-      inputRecord.readRecord(inputStream,position,0);
-      /*printf(" record changed from %d to %d at event %d total event # %d\n",
-        recordNumber, recordToBeRead,readerEventIndex.getEventNumber(),
-        readerEventIndex.getMaxEvents());*/
-    }
-    return true;
-}
-/**
- * Moves the pointer of the event to the event number provided. If the event
- * number is within the same record no reading is done, otherwise the appropriate
- * record is loaded and event indicies are updated.
- * @param eventNumber - number of event to jump to
- * @return true if event is available, false - otherwise
- */
-bool reader::gotoEvent(int eventNumber){
-  int recordNumber = readerEventIndex.getRecordNumber();
-
-  //goto event in index if exists, if not return
-  if(readerEventIndex.gotoEvent(eventNumber)==false){
-    printf("[WARNING] hipo::reader::gotoEvent event %d greater than max events = %d, will stay at current event\n",
-	   eventNumber, readerEventIndex.getMaxEvents());
-    return false;
-  }
-
-  int recordToBeRead = readerEventIndex.getRecordNumber();
-  
-  if(recordToBeRead!=recordNumber){
-    //readerEventIndex.show(); - commented out by gg, this was for debugging
-    long position = readerEventIndex.getPosition(recordToBeRead);
-    inputRecord.readRecord(inputStream,position,0);
-    /*printf(" record changed from %d to %d at event %d total event # %d\n",
-      recordNumber, recordToBeRead,readerEventIndex.getEventNumber(),
-      readerEventIndex.getMaxEvents());*/
-  }
-  return true;
-}
-/**
- * Moves the current event pointer to the new record # irec. The readerIndex
- * is updated so current event is the first event in loaded record.
- * @param irec - record number to jump to
- * @return true - if the record exists, false - otherwise
- */
-bool reader::gotoRecord(int irec){
-  bool status = readerEventIndex.gotoRecord(irec);
-  if(status==false) return false;
-  long position = readerEventIndex.getPosition(irec);
-  inputRecord.readRecord(inputStream,position,0);
-  return true;
-}
-
-//dglazier
-// Added by Derek - for some reason
-// Use gotoRecord instead, since it checks first if record exists.
-bool  reader::loadRecord(int irec){
-    long position = readerEventIndex.getPosition(irec);
-    inputRecord.readRecord(inputStream,position,0);
-    return readerEventIndex.loadRecord(irec);
-}
-
-  bool  reader::loadRecord(hipo::record &record, int irec){
-    long position = readerEventIndex.getPosition(irec);
-    record.readRecord(inputStream,position,0);
-    return true;
-}
-
-std::vector<int>   reader::getInt(  const char *bank, const char *column, int max ){
-   std::vector<int> rowvec;
-   std::vector<hipo::bank> b = getBanks({bank});
-   int item = b[0].getSchema().getEntryOrder(column);
-   int counter = 0;
-   while(next(b)==true){
-        for(int row = 0 ; row < b[0].getRows();row++){
-            rowvec.push_back(b[0].getInt(item,row));
-            counter++;
-        }
-        if(max>0&&counter>max) break;
-   }
-   return rowvec;
-}
-
-std::vector<float> reader::getFloat(const char *bank, const char *column, int max ){
-  std::vector<float> rowvec;
-   std::vector<hipo::bank> b = getBanks({bank});
-   int item = b[0].getSchema().getEntryOrder(column);
-   int counter = 0;
-   while(next(b)==true){
-        for(int row = 0 ; row < b[0].getRows();row++){
-            rowvec.push_back(b[0].getFloat(item,row));
-            counter++;
-        }
-        if(max>0&&counter>max) break;
-   }
-   return rowvec;
-}
-
-//dglazier
-bool  reader::nextInRecord(){
-  if(readerEventIndex.canAdvanceInRecord()==false) return false;
-  readerEventIndex.advance();
-  return true;
-}
-/**
- * Prints out warning if the LZ4 library was not linked to the compiled
- * library. In that case only uncompressed files can be read and written.
- */
-void reader::printWarning(){
-    #ifndef __LZ4__
-      std::cout << "******************************************************" << std::endl;
-      std::cout << "* WARNING:                                           *" << std::endl;
-      std::cout << "*   This library war compiled without LZ4 support.   *" << std::endl;
-      std::cout << "*   Reading and writing compressed buffers will not  *" << std::endl;
-      std::cout << "*   work. However un-compressed file I/O will work.  *" << std::endl;
-      std::cout << "******************************************************" << std::endl;
-    #endif
-  }
-}
-
-//*****************************************************************************
-//* Implementation of reader index class to keep track of events and records
-//*****************************************************************************
-//--
-namespace hipo {
-/**
- * Adds record size (number of events) to the list of records.
- */
-void readerIndex::addSize(int size){
-  if(recordEvents.size()==0){
-    recordEvents.push_back(0);
-    recordEvents.push_back(size);
-  } else {
-    int cz = recordEvents[recordEvents.size()-1] + size;
-    recordEvents.push_back(cz);
-  }
-}
-/**
- * Checks to determine if there are events left in the index buffer
- * @return true - if there are available events, false - otherwise
- */
-bool readerIndex::canAdvance(){
-  return (currentEvent<getMaxEvents()-1);
-}
-/**
- * Advances the event pointer to next. If the next event is in a different
- * record the record number is updated and events number in the record is
- * updated.
- * @return true - if the the next event is available, false - otherwise
- */
-bool readerIndex::advance(){
-  if(recordEvents.size()==0) return false;
-  if(currentEvent+1<recordEvents[currentRecord+1]){
-    currentEvent++;
-    currentRecordEvent++;
-    return true;
-  }
-  if(recordEvents.size() < currentRecord + 2 + 1){
-    printf("advance(): Warning, reached the limit of events.\n");
-    return false;
-  }
-  currentEvent++;
-  currentRecord++;
-  currentRecordEvent = 0;
-  return true;
-}
-/**
- * Moves the event pointer to give event number. The record number and
- * relative event number in the record are recalculated.
- * @param event number to jump to
- * @return true - if event number is valid event, false - otherwise
- */
-bool readerIndex::gotoEvent(int eventNumber){
-  //check if event exists
-  if(eventNumber>=getMaxEvents()) return false;
-  // The proper record number is found by binary search through records array
-  //------ 
-  // G.Gavalian (July 25/2022)
-  // Changed the eventNumber -> eventNumber+1 in binary search. Now it changes the
-  // record number properly and starts with record event number from 0
-  // I think this was a bug.
-  
-    std::vector<int>::iterator l_bound =
-      std::lower_bound(recordEvents.begin(), recordEvents.end(), eventNumber+1);
-    std::vector<int>::iterator u_bound =
-      std::lower_bound(recordEvents.begin(), recordEvents.end(), eventNumber+1);
-
-  
-    long  position = (l_bound - recordEvents.begin()) - 1;
-    //printf("event # %d , lbound = %ld\n",eventNumber,position);
-    currentRecord       = position;
-    currentRecordEvent  = eventNumber - recordEvents[currentRecord];
-    currentEvent        = eventNumber;
-    return true;
-}
-
-
-  void readerIndex::show(){
-    for(int i = 0; i < recordEvents.size(); i++){
-      printf("record = %8d, %8d\n",i,recordEvents[i]);
-    }
-  }
-/**
- * Returns maximum number of events available to read.
- * @return maximum number of events.
- */
-int readerIndex::getMaxEvents(){
-  if(recordEvents.size()==0) return 0;
-  return recordEvents[recordEvents.size()-1];
-}
-/**
- * Sets the event pointer to the first even of provided record.
- * Originally implemenet by Derek as loadRecord(), I changed the
- * name to keep naming consistent, but left the old one not to break
- * clas12root code.
- * @param irec - the record number to jump to
- * @return true - if the provided record is valid, false - otherwise
- */
-bool readerIndex::gotoRecord(int irec){
-  if(irec==0){
-    currentEvent=-1; currentRecord=0; currentRecordEvent = -1;
-    return true;
-  }
-  if(irec+1>(int)recordEvents.size())
-    return false;
-  currentEvent = recordEvents[irec]-1; currentRecord=irec;
-  currentRecordEvent = -1;
-  return true;
-}
-//dglazier
-/**
-* Implemented by Derek for clas12tool purposes (I think - therefore I am)
-*/
-bool readerIndex::loadRecord(int irec){
-    if(irec==0){
-      currentEvent=-1;
-      currentRecord=0;
-      currentRecordEvent = -1;
-      return true;
-    }
-    if(irec+1>(int)recordEvents.size())
-      return false;
-
-    currentEvent = recordEvents[irec]-1;
-    currentRecord=irec;
-    currentRecordEvent = -1;
-    return true;
-}
-//dglazier
-/**
- * Checks to verify if the next event is in the same record as current one.
- * Not sure why Derek needed it ;-), but may be it's useful
- * @return true - if the next event is in the same record, false - otherwise
- */
-bool readerIndex::canAdvanceInRecord(){
-  return (currentEvent<recordEvents[currentRecord+1]-1);
-}
-
-}
-
-// =============================================================================
-// New reader methods matching Java HipoReader API
-// =============================================================================
 
 namespace hipo {
 
-/**
- * Print all user configuration key-value pairs (like Java showConfig)
- */
-void reader::showConfig() const {
-    printf("\nFILE user configuration:\n");
-    for (const auto& entry : userConfig) {
-        printf("%s :\n", entry.first.c_str());
-        printf("%s\n\n", entry.second.c_str());
-    }
+// ============================================================================
+// file_event_index
+// ============================================================================
+
+void file_event_index::add_record(int event_count, int64_t position, int record_bytes) {
+    if (m_cumulative_events.empty())
+        m_cumulative_events.push_back(0);
+
+    int cumulative = m_cumulative_events.back() + event_count;
+    m_cumulative_events.push_back(cumulative);
+    m_positions.push_back(position);
+    m_record_bytes.push_back(record_bytes);
 }
 
-/**
- * Get event at specific index using random access (like Java getEvent)
- * @param dataevent event to fill
- * @param index event index
- * @return true if successful
- */
-bool reader::getEvent(hipo::event& dataevent, int index) {
-    // Store previous record
-    int previousRecord = readerEventIndex.getRecordNumber();
+void file_event_index::clear() {
+    m_cumulative_events.clear();
+    m_positions.clear();
+    m_record_bytes.clear();
+    m_current_event = -1;
+    m_current_record = 0;
+    m_current_record_event = -1;
+}
 
-    // Go to the requested event
-    if (!readerEventIndex.gotoEvent(index)) {
+void file_event_index::rewind() {
+    m_current_event = -1;
+    m_current_record = 0;
+    m_current_record_event = -1;
+}
+
+bool file_event_index::can_advance() const noexcept {
+    return m_current_event < max_events() - 1;
+}
+
+bool file_event_index::advance() noexcept {
+    if (m_cumulative_events.empty()) return false;
+    if (m_current_event + 1 < m_cumulative_events[m_current_record + 1]) {
+        m_current_event++;
+        m_current_record_event++;
+        return true;
+    }
+    if (static_cast<int>(m_cumulative_events.size()) < m_current_record + 3)
         return false;
-    }
-
-    int currentRecord = readerEventIndex.getRecordNumber();
-
-    // Load new record if needed
-    if (currentRecord != previousRecord) {
-        long position = readerEventIndex.getPosition(currentRecord);
-        inputRecord.readRecord(inputStream, position, 0);
-    }
-
-    // Read the event
-    int recordEventNumber = readerEventIndex.getRecordEventNumber();
-    inputRecord.readHipoEvent(dataevent, recordEventNumber);
+    m_current_event++;
+    m_current_record++;
+    m_current_record_event = 0;
     return true;
 }
 
-/**
- * Get next event that contains all specified banks (like Java nextEvent with schemas)
- * @param dataevent event to fill
- * @param bankNames list of required bank names
- * @return true if found, false if no more matching events
- */
-bool reader::nextEvent(hipo::event& dataevent, const std::vector<std::string>& bankNames) {
-    // If no banks specified, just get next event
-    if (bankNames.empty()) {
-        return next(dataevent);
-    }
+bool file_event_index::goto_event(int event_number) noexcept {
+    if (event_number >= max_events()) return false;
 
-    // Get schemas for the requested banks
-    std::vector<std::pair<int, int>> bankIds;  // group, item pairs
-    for (const auto& name : bankNames) {
-        if (factory.hasSchema(name.c_str())) {
-            hipo::schema& sch = factory.getSchema(name.c_str());
-            bankIds.push_back({sch.getGroup(), sch.getItem()});
+    auto it = std::lower_bound(m_cumulative_events.begin(), m_cumulative_events.end(), event_number + 1);
+    int record_idx = static_cast<int>(it - m_cumulative_events.begin()) - 1;
+
+    m_current_record = record_idx;
+    m_current_record_event = event_number - m_cumulative_events[record_idx];
+    m_current_event = event_number;
+    return true;
+}
+
+int file_event_index::max_events() const noexcept {
+    if (m_cumulative_events.empty()) return 0;
+    return m_cumulative_events.back();
+}
+
+int64_t file_event_index::record_position(int record_index) const noexcept {
+    return m_positions[record_index];
+}
+
+int file_event_index::record_bytes(int record_index) const noexcept {
+    return m_record_bytes[record_index];
+}
+
+// ============================================================================
+// reader
+// ============================================================================
+
+result<file_metadata> reader::scan_metadata(std::string_view path, reader_options opts) {
+    reader r;
+    r.m_opts = std::move(opts);
+    r.m_info.path = std::string(path);
+
+    auto src = file_source::open(path);
+    if (!src) return unexpected(src.error());
+    r.m_file_source = std::move(*src);
+    r.m_info.file_size = r.m_file_source.size();
+
+    if (r.m_info.file_size < FILE_HEADER_SIZE)
+        return unexpected(error_code::file_too_small);
+
+    auto hdr_res = r.read_file_header();
+    if (!hdr_res) return unexpected(hdr_res.error());
+
+    if (!r.m_opts.tags.empty())
+        r.m_tag_set.insert(r.m_opts.tags.begin(), r.m_opts.tags.end());
+
+    return r.scan_counts();
+}
+
+result<reader> reader::open(std::string_view path, reader_options opts) {
+    reader r;
+    r.m_opts = std::move(opts);
+    r.m_info.path = std::string(path);
+
+    auto src = file_source::open(path);
+    if (!src) return unexpected(src.error());
+    r.m_file_source = std::move(*src);
+    r.m_info.file_size = r.m_file_source.size();
+
+    if (r.m_info.file_size < FILE_HEADER_SIZE)
+        return unexpected(error_code::file_too_small);
+
+    auto hdr_res = r.read_file_header();
+    if (!hdr_res) return unexpected(hdr_res.error());
+
+    if (!r.m_opts.tags.empty())
+        r.m_tag_set.insert(r.m_opts.tags.begin(), r.m_opts.tags.end());
+
+    auto idx_res = r.scan_index();
+    if (!idx_res) return unexpected(idx_res.error());
+
+    auto dict_res = r.read_dictionary();
+    if (!dict_res) return unexpected(dict_res.error());
+
+    r.m_info.total_events = r.m_index.max_events();
+    r.m_info.record_count = r.m_index.num_records();
+
+    return r;
+}
+
+result<void> reader::read_file_header() {
+    char buf[FILE_HEADER_SIZE];
+
+    auto rd = m_file_source.read_at(0, buf, FILE_HEADER_SIZE);
+    if (!rd) return unexpected(rd.error());
+
+    auto unique_word = read_value<uint32_t>(buf + FH_UNIQUE_WORD_OFFSET);
+    if (unique_word != HIPO_FILE_UNIQUE_WORD)
+        return unexpected(error_code::invalid_magic_number);
+
+    auto magic = read_value<int32_t>(buf + FH_MAGIC_NUMBER_OFFSET);
+    m_byte_swapped = (magic == static_cast<int32_t>(0x0001dac0));
+
+    m_header_length_words = read_value<int32_t>(buf + FH_HEADER_LENGTH_OFFSET);
+    m_index_array_length  = read_value<int32_t>(buf + FH_INDEX_ARRAY_LEN_OFFSET);
+    m_bit_info            = read_value<int32_t>(buf + FH_BIT_INFO_OFFSET);
+    m_user_header_length  = read_value<int32_t>(buf + FH_USER_HEADER_LEN_OFFSET);
+    m_info.trailer_position = read_value<int64_t>(buf + FH_TRAILER_POS_OFFSET);
+    auto record_count     = read_value<int32_t>(buf + FH_RECORD_COUNT_OFFSET);
+
+    m_header_length_words   = maybe_swap32(m_header_length_words, m_byte_swapped);
+    m_index_array_length    = maybe_swap32(m_index_array_length, m_byte_swapped);
+    m_bit_info              = maybe_swap32(m_bit_info, m_byte_swapped);
+    m_user_header_length    = maybe_swap32(m_user_header_length, m_byte_swapped);
+    m_info.trailer_position = maybe_swap64(m_info.trailer_position, m_byte_swapped);
+    record_count            = maybe_swap32(record_count, m_byte_swapped);
+
+    m_info.version = m_bit_info & BITINFO_VERSION_MASK;
+    m_info.record_count = record_count;
+    m_info.has_trailer_index = (m_bit_info >> BITINFO_TRAILER_WITH_INDEX_BIT) & 1;
+
+    // First record position: header bytes + index + user header + user header padding
+    int uh_padding = pad4(m_user_header_length);
+    m_first_record_pos = static_cast<int64_t>(m_header_length_words) * 4
+                       + m_index_array_length
+                       + m_user_header_length
+                       + uh_padding;
+
+    return ok();
+}
+
+result<void> reader::scan_index() {
+    // Try trailer-first scanning: read the index from the trailer record.
+    // Note: v1 C++ writer sets trailer_position but does NOT set the
+    // has_trailer_index bit, so we attempt this whenever trailer_position > 0.
+    if (m_info.trailer_position > 0 &&
+        m_info.trailer_position < m_info.file_size) {
+
+        // Reuse m_record to avoid temporary record allocation
+        int trailer_bytes = static_cast<int>(m_info.file_size - m_info.trailer_position);
+        auto res = m_record.read_from(m_file_source, m_info.trailer_position,
+                                       m_info.file_size, trailer_bytes);
+
+        if (res && m_record.event_count() > 0) {
+            auto ev_data = m_record.event_data(0);
+            if (ev_data) {
+                // Parse the index structure (group=32111, item=1)
+                auto [pos, length] = [&]() -> std::pair<int,int> {
+                    auto ev = *ev_data;
+                    int position = 16;
+                    int event_size = (ev.size() >= 8) ?
+                        read_value<int32_t>(ev.data() + 4) : static_cast<int>(ev.size());
+                    if (event_size > static_cast<int>(ev.size())) event_size = static_cast<int>(ev.size());
+                    while (position + 8 <= event_size) {
+                        auto gid = read_value<uint16_t>(ev.data() + position);
+                        auto iid = read_value<uint8_t>(ev.data() + position + 2);
+                        auto len = read_value<int32_t>(ev.data() + position + 4);
+                        if (gid == 32111 && iid == 1)
+                            return {position + 8, len};
+                        position += len + 8;
+                    }
+                    return {-1, 0};
+                }();
+
+                if (pos > 0 && length > 0) {
+                    auto ev = *ev_data;
+                    const char* index_data = ev.data() + pos;
+                    int rows = length / 32;
+
+                    m_index.clear();
+                    for (int i = 0; i < rows; ++i) {
+                        int64_t rec_position = read_value<int64_t>(index_data + i * 8);
+                        int rec_length = read_value<int32_t>(index_data + rows * 8 + i * 4);
+                        int entries = read_value<int32_t>(index_data + rows * 12 + i * 4);
+                        int64_t uid1 = read_value<int64_t>(index_data + rows * 16 + i * 8);
+
+                        rec_position = maybe_swap64(rec_position, m_byte_swapped);
+                        rec_length   = maybe_swap32(rec_length, m_byte_swapped);
+                        entries      = maybe_swap32(entries, m_byte_swapped);
+                        uid1         = maybe_swap64(uid1, m_byte_swapped);
+
+                        if (m_tag_set.empty() || m_tag_set.contains(uid1))
+                            m_index.add_record(entries, rec_position, rec_length);
+                    }
+                    m_index.rewind();
+
+                    // Parse column stats bank (group=32112, item=1) if present
+                    parse_trailer_stats(*ev_data);
+
+                    return ok();
+                }
+            }
         }
     }
 
-    // If we couldn't find any schemas, return false
-    if (bankIds.empty()) {
-        return false;
+    return force_scan();
+}
+
+result<void> reader::force_scan() {
+    m_index.clear();
+    int64_t pos = m_first_record_pos;
+
+    while (pos + RECORD_HEADER_SIZE <= m_info.file_size) {
+        char hdr_buf[RECORD_HEADER_SIZE];
+        auto rd = m_file_source.read_at(pos, hdr_buf, RECORD_HEADER_SIZE);
+        if (!rd || *rd < RECORD_HEADER_SIZE) break;
+
+        auto record_length = read_value<int32_t>(hdr_buf + 0);
+        auto event_count   = read_value<int32_t>(hdr_buf + 12);
+        auto magic         = read_value<int32_t>(hdr_buf + 28);
+        auto bit_info_w    = read_value<int32_t>(hdr_buf + 20);
+
+        bool swapped = (magic == static_cast<int32_t>(0x0001dac0));
+        record_length = maybe_swap32(record_length, swapped);
+        event_count   = maybe_swap32(event_count, swapped);
+        bit_info_w    = maybe_swap32(bit_info_w, swapped);
+
+        auto htype = static_cast<header_type>((bit_info_w >> 8) & 0xF);
+        if (htype == header_type::hipo_trailer)
+            break;
+
+        if (magic != static_cast<int32_t>(HEADER_MAGIC) && !swapped)
+            break;
+
+        if (event_count > 0)
+            m_index.add_record(event_count, pos, record_length * 4);
+
+        pos += static_cast<int64_t>(record_length) * 4;
     }
 
-    // Keep reading until we find an event with all requested banks
-    while (hasNext()) {
-        if (!next(dataevent)) {
-            return false;
-        }
+    m_index.rewind();
+    return ok();
+}
 
-        // Check if event has all requested banks
-        bool hasAll = true;
-        for (size_t i = 0; i < bankIds.size(); i++) {
-            int group = bankIds[i].first;
-            int item = bankIds[i].second;
-            hipo::structure temp;
-            dataevent.getStructure(temp, group, item);
-            if (temp.getSize() == 0) {
-                hasAll = false;
-                break;
+result<file_metadata> reader::scan_counts() {
+    int64_t pos = m_first_record_pos;
+    int64_t total_events = 0;
+    int num_records = 0;
+    const bool need_tags = !m_tag_set.empty();
+    const int read_size = need_tags ? 48 : 32;
+
+    while (pos + read_size <= m_info.file_size) {
+        char hdr[48];
+        auto rd = m_file_source.read_at(pos, hdr, read_size);
+        if (!rd || *rd < read_size) break;
+
+        auto record_length = read_value<int32_t>(hdr + 0);
+        auto event_count   = read_value<int32_t>(hdr + 12);
+        auto bit_info_w    = read_value<int32_t>(hdr + 20);
+        auto magic         = read_value<int32_t>(hdr + 28);
+
+        bool swapped = (magic == static_cast<int32_t>(0x0001dac0));
+        record_length = maybe_swap32(record_length, swapped);
+        event_count   = maybe_swap32(event_count, swapped);
+        bit_info_w    = maybe_swap32(bit_info_w, swapped);
+
+        auto htype = static_cast<header_type>((bit_info_w >> 8) & 0xF);
+        if (htype == header_type::hipo_trailer)
+            break;
+
+        if (magic != static_cast<int32_t>(HEADER_MAGIC) && !swapped)
+            break;
+
+        if (event_count > 0) {
+            bool accept = true;
+            if (need_tags) {
+                auto uid1 = maybe_swap64(read_value<int64_t>(hdr + 40), swapped);
+                accept = m_tag_set.contains(uid1);
+            }
+            if (accept) {
+                total_events += event_count;
+                num_records++;
             }
         }
 
-        if (hasAll) {
-            return true;
+        pos += static_cast<int64_t>(record_length) * 4;
+    }
+
+    return file_metadata{total_events, num_records};
+}
+
+result<void> reader::read_dictionary() {
+    int64_t dict_pos = static_cast<int64_t>(m_header_length_words) * 4;
+
+    result<void> res;
+    if (m_index.num_records() > 0) {
+        int dict_bytes = static_cast<int>(m_index.record_position(0) - dict_pos);
+        if (dict_bytes > 0)
+            res = m_record.read_from(m_file_source, dict_pos, m_info.file_size, dict_bytes);
+        else
+            res = m_record.read_from(m_file_source, dict_pos, m_info.file_size);
+    } else {
+        res = m_record.read_from(m_file_source, dict_pos, m_info.file_size);
+    }
+    if (!res) return res;
+
+    // Try user header first (Java-style dictionary embedding)
+    auto uh = m_record.user_header();
+    if (!uh.empty()) {
+        std::string_view uh_text(uh.data(), uh.size());
+        if (uh_text.find('{') != std::string_view::npos) {
+            auto parse_res = m_dict.parse_all(uh_text);
+            if (parse_res && m_dict.size() > 0)
+                return ok();
         }
     }
 
-    dataevent.reset();
-    return false;
-}
+    // C++ style: iterate events, extract structure (120,2) from each
+    int nevents = m_record.event_count();
+    for (int i = 0; i < nevents; ++i) {
+        auto ev = m_record.event_data(i);
+        if (!ev) continue;
 
-/**
- * Create a bank instance from schema name (like Java getBank)
- * @param name bank/schema name
- * @return bank instance
- */
-hipo::bank reader::getBank(const std::string& name) {
-    if (factory.hasSchema(name.c_str())) {
-        return hipo::bank(factory.getSchema(name.c_str()));
+        auto str = m_record.find_structure(i, DICT_GROUP, DICT_ITEM);
+        if (!str) continue;
+
+        auto span = *str;
+        if (span.size() <= 8) continue;
+
+        int data_length = read_value<int32_t>(span.data() + 4) & 0x00FFFFFF;
+        int header_size_bytes = (read_value<int32_t>(span.data() + 4) >> 24) & 0xFF;
+        std::string_view schema_str(span.data() + 8 + header_size_bytes,
+                                    data_length - header_size_bytes);
+
+        auto null_pos = schema_str.find('\0');
+        if (null_pos != std::string_view::npos)
+            schema_str = schema_str.substr(0, null_pos);
+
+        if (!schema_str.empty())
+            (void)m_dict.parse(schema_str);
     }
-    // Return empty bank with default schema if not found
-    printf("[WARNING] reader::getBank: schema '%s' not found\n", name.c_str());
-    return hipo::bank();
+
+    return ok();
 }
 
-/**
- * Print record positions and event counts (like Java showRecords)
- */
-void reader::showRecords() const {
-    printf("--------> size = %zu\n", recordPositions.size());
-    int counter = 0;
-    int entries = 0;
-    for (const auto& pos : recordPositions) {
-        printf("%4d : %s\n", counter, pos.toString().c_str());
-        counter++;
-        entries += pos.getCount();
+bool reader::has_next() const noexcept {
+    return m_index.can_advance();
+}
+
+bool reader::next() {
+    if (!m_index.can_advance()) return false;
+
+    int prev_record = m_index.current_record();
+    m_index.advance();
+    int new_record = m_index.current_record();
+
+    if (new_record != prev_record || m_loaded_record != new_record) {
+        int64_t pos = m_index.record_position(new_record);
+        int rbytes = m_index.record_bytes(new_record);
+        result<void> res;
+        if (rbytes > 0)
+            res = m_record.read_from(m_file_source, pos, m_info.file_size, rbytes);
+        else
+            res = m_record.read_from(m_file_source, pos, m_info.file_size);
+        if (!res) return false;
+        m_loaded_record = new_record;
     }
-    printf(" Entries = %d\n", entries);
+    return true;
 }
 
-/**
- * Print file info summary grouped by tags (like Java showInfo)
- */
-void reader::showInfo() const {
-    std::map<long, int> tagCounter;
-    std::map<long, int> tagEntries;
-    std::map<long, int> tagDataLength;
+void reader::rewind() {
+    m_index.rewind();
+    m_loaded_record = -1;
+}
 
-    for (const auto& pos : recordPositions) {
-        long tag = pos.getUserWordOne();
-        int count = pos.getCount();
-        int length = pos.getLength();
+result<void> reader::goto_event(int event_number) {
+    int prev_record = m_index.current_record();
+    if (!m_index.goto_event(event_number))
+        return unexpected(error_code::event_index_out_of_range);
 
-        if (tagCounter.find(tag) == tagCounter.end()) {
-            tagCounter[tag] = 0;
-            tagEntries[tag] = 0;
-            tagDataLength[tag] = 0;
+    int new_record = m_index.current_record();
+    if (new_record != prev_record || m_loaded_record != new_record) {
+        int64_t pos = m_index.record_position(new_record);
+        int rbytes = m_index.record_bytes(new_record);
+        result<void> res;
+        if (rbytes > 0)
+            res = m_record.read_from(m_file_source, pos, m_info.file_size, rbytes);
+        else
+            res = m_record.read_from(m_file_source, pos, m_info.file_size);
+        if (!res) return res;
+        m_loaded_record = new_record;
+    }
+    return ok();
+}
+
+result<void> reader::skip(int n) {
+    if (n <= 0) return ok();
+    int target = m_index.current_event() + n;
+    return goto_event(target);
+}
+
+void reader::read_bank(bank_view_set& banks) {
+    int event_in_record = m_index.current_record_event();
+    (void)banks.update_from_record(m_record, event_in_record);
+}
+
+result<void> reader::load_record(record& rec, int record_index) {
+    if (record_index < 0 || record_index >= m_index.num_records())
+        return unexpected(error_code::record_invalid_index);
+
+    int64_t pos = m_index.record_position(record_index);
+    int rbytes = m_index.record_bytes(record_index);
+    if (rbytes > 0)
+        return rec.read_from(m_file_source, pos, m_info.file_size, rbytes);
+    else
+        return rec.read_from(m_file_source, pos, m_info.file_size);
+}
+
+void reader::parse_trailer_stats(std::span<const char> trailer_event) {
+    // Scan trailer event for stats structure (group=32112, item=1)
+    const char* buf = trailer_event.data();
+    int total = static_cast<int>(trailer_event.size());
+    int pos = EVENT_HEADER_SIZE;
+
+    while (pos + BANK_STRUCTURE_SIZE <= total) {
+        auto gid = read_value<uint16_t>(buf + pos);
+        auto iid = read_value<uint8_t>(buf + pos + 2);
+        auto size_word = read_value<int32_t>(buf + pos + 4);
+        int data_length = size_word & 0x00FFFFFF;
+        int header_size = (size_word >> 24) & 0xFF;
+
+        if (gid == STATS_GROUP && iid == STATS_ITEM) {
+            int actual_data = data_length - header_size;
+            const char* data = buf + pos + BANK_STRUCTURE_SIZE + header_size;
+
+            // Schema: record/I(off=0), group/I(off=4), item/I(off=8),
+            //         col/I(off=12), min/D(off=16), max/D(off=24)
+            // row_length = 32
+            int row_len = 32;
+            int nrows = actual_data / row_len;
+            if (nrows <= 0) return;
+
+            // Parse column-major data
+            m_column_stats.clear();
+            for (int r = 0; r < nrows; ++r) {
+                int rec_idx = read_value<int32_t>(data + nrows * 0  + r * 4);
+                int grp     = read_value<int32_t>(data + nrows * 4  + r * 4);
+                int itm     = read_value<int32_t>(data + nrows * 8  + r * 4);
+                int cidx    = read_value<int32_t>(data + nrows * 12 + r * 4);
+                double mn   = read_value<double> (data + nrows * 16 + r * 8);
+                double mx   = read_value<double> (data + nrows * 24 + r * 8);
+
+                // Grow vector if needed
+                while (static_cast<int>(m_column_stats.size()) <= rec_idx)
+                    m_column_stats.emplace_back();
+
+                m_column_stats[rec_idx].columns[record_column_stats::pack_key(grp, itm, cidx)] =
+                    {mn, mx};
+            }
+            return;
         }
-        tagCounter[tag]++;
-        tagEntries[tag] += count;
-        tagDataLength[tag] += length;
-    }
 
-    printf("file info: (# records = %zu):\n", recordPositions.size());
-    for (auto it = tagCounter.begin(); it != tagCounter.end(); ++it) {
-        long tag = it->first;
-        int count = it->second;
-        printf("****>>>> index tag : %8ld, count = %9d, entries = %9d, data length = %9d\n",
-               tag, count, tagEntries.at(tag), tagDataLength.at(tag));
+        pos += data_length + BANK_STRUCTURE_SIZE;
     }
 }
 
-}
+} // namespace hipo

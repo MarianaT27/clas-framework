@@ -164,8 +164,7 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
         m_cutflow.pass("All Events");
 
         // Get DECAYS::Particle bank
-        auto& hipo_event = event.hipo_event();
-        auto& decays_bank = hipo_event["DECAYS::Particle"];
+        const auto& decays_bank = event.get_bank("DECAYS::Particle");
 
         const int nrows = decays_bank.rows();
         if (nrows == 0) {

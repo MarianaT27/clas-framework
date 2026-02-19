@@ -45,7 +45,7 @@ class Pi0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Pi0Recons
 
     // Public helper methods for testing
     auto select_photons(const std::vector<clas12::Particle>& photons) const -> std::vector<clas12::Particle>;
-    auto select_photons_with_AI(hipo::bank& RUN_config, hipo::bank& REC_Particle, hipo::bank& REC_Calorimeter) const -> std::vector<clas12::Particle>;
+    auto select_photons_with_AI(const hipo::bank_view& RUN_config, const hipo::bank_view& REC_Particle, const hipo::bank_view& REC_Calorimeter) const -> std::vector<clas12::Particle>;
 
     static auto calculate_invariant_mass(const clas12::Particle& g1, const clas12::Particle& g2) -> double;
 

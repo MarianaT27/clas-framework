@@ -1,1155 +1,528 @@
-//******************************************************************************
-//*       ██╗  ██╗██╗██████╗  ██████╗     ██╗  ██╗    ██████╗                  *
-//*       ██║  ██║██║██╔══██╗██╔═══██╗    ██║  ██║   ██╔═████╗                 *
-//*       ███████║██║██████╔╝██║   ██║    ███████║   ██║██╔██║                 *
-//*       ██╔══██║██║██╔═══╝ ██║   ██║    ╚════██║   ████╔╝██║                 *
-//*       ██║  ██║██║██║     ╚██████╔╝         ██║██╗╚██████╔╝                 *
-//*       ╚═╝  ╚═╝╚═╝╚═╝      ╚═════╝          ╚═╝╚═╝ ╚═════╝                  *
-//************************ Jefferson National Lab (2017) ***********************
-/**
- * @file chain.h
- * @brief Chain multiple HIPO files for sequential or parallel processing
- *
- * Provides a modern C++ interface for processing multiple HIPO files with:
- * - Range-based iteration across all files
- * - Parallel processing with configurable thread pools
- * - Lazy metadata loading for minimal memory overhead
- * - Progress tracking and statistics
- *
- * @code
- * // Simple sequential iteration
- * hipo::chain ch;
- * ch.add("file1.hipo");
- * ch.add("file2.hipo");
- * for (auto& [event, file_idx, event_idx] : ch) {
- *     auto& particles = event["REC::Particle"];
- * }
- *
- * // Parallel processing
- * ch.process([](auto& event, int file_idx, long event_idx) {
- *     // Process event...
- * });
- * @endcode
- */
-
 #pragma once
 
 #include <atomic>
-#include <filesystem>
+#include <chrono>
+#include <concepts>
 #include <functional>
 #include <memory>
 #include <mutex>
-#include <optional>
-#include <ranges>
-#include <regex>
-#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "fmt/base.h"
-#include "hipoeventiterator.h"
-#include "progresstracker.hpp"
+#include <fmt/format.h>
+
+#include "bank_view.h"
+#include "dictionary.h"
+#include "reader.h"
+#include "record.h"
+#include "result.h"
 #include "threadpool.hpp"
+#include "progresstracker.hpp"
 
 namespace hipo {
 
-//=============================================================================
-// FileInfo - Metadata for a single file in the chain
-//=============================================================================
-
 /**
- * @brief Metadata container for a file in the chain
+ * @brief Metadata for a single file within a chain.
+ *
+ * Populated during chain::scan() or chain::open() and used internally
+ * to build the parallel work list.
  */
-struct FileInfo {
-    std::string filename;
-    int index{0};
-    long total_events{-1};   // -1 = not yet loaded
-    int num_records{-1};     // -1 = not yet loaded
-    std::uintmax_t file_size{0};
-    bool is_valid{true};
-    std::string error_message;
-
-    FileInfo() = default;
-    FileInfo(std::string_view name, int idx)
-        : filename(name), index(idx) {}
-
-    /// Check if metadata has been loaded
-    [[nodiscard]] bool metadata_loaded() const noexcept {
-        return total_events >= 0;
-    }
-
-    /// Get human-readable file size string
-    [[nodiscard]] std::string size_string() const {
-        if (file_size > 1024ULL * 1024 * 1024)
-            return fmt::format("{:.1f} GB", file_size / (1024.0 * 1024 * 1024));
-        if (file_size > 1024 * 1024)
-            return fmt::format("{:.1f} MB", file_size / (1024.0 * 1024));
-        if (file_size > 1024)
-            return fmt::format("{:.1f} KB", file_size / 1024.0);
-        return fmt::format("{} B", file_size);
-    }
+struct chain_file_info {
+    std::string    path;                            /**< @brief Filesystem path of the file. */
+    int            index        = 0;                /**< @brief Zero-based index in the chain's file list. */
+    int64_t        total_events = -1;               /**< @brief Total events in the file (-1 if not yet scanned). */
+    int            num_records  = -1;               /**< @brief Number of data records (-1 if not yet scanned). */
+    std::uintmax_t file_size    = 0;                /**< @brief File size in bytes. */
+    bool           valid        = true;             /**< @brief Whether the file could be opened and scanned successfully. */
+    std::string    error;                           /**< @brief Error message if the file is invalid. */
 };
 
-// Legacy alias
-using fileinfo = FileInfo;
-
-//=============================================================================
-// ChainStatistics - Processing statistics
-//=============================================================================
-
 /**
- * @brief Thread-safe statistics for chain processing
+ * @brief Accumulated processing statistics for a chain run.
+ *
+ * Uses atomics so that worker threads can safely increment counters
+ * during parallel processing.
  */
-struct ChainStatistics {
-    std::atomic<long> total_events{0};
-    std::atomic<long> events_processed{0};
-    std::atomic<long> events_skipped{0};
-    std::chrono::steady_clock::time_point start_time;
-    std::chrono::steady_clock::time_point end_time;
+struct chain_stats {
+    std::atomic<int64_t> total_events{0};           /**< @brief Total events targeted for processing. */
+    std::atomic<int64_t> events_processed{0};       /**< @brief Number of events processed so far. */
+    std::chrono::steady_clock::time_point start_time;   /**< @brief Wall-clock start time. */
+    std::chrono::steady_clock::time_point end_time;     /**< @brief Wall-clock end time. */
 
+    /** @brief Reset all counters and record a new start time. */
     void reset() noexcept {
         total_events = 0;
         events_processed = 0;
-        events_skipped = 0;
         start_time = std::chrono::steady_clock::now();
     }
 
-    [[nodiscard]] double elapsed_seconds() const noexcept {
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            end_time - start_time);
-        return elapsed.count() / 1000.0;
+    /**
+     * @brief Return the elapsed wall-clock time in seconds.
+     * @return Elapsed seconds between start_time and end_time.
+     */
+    double elapsed_seconds() const noexcept {
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        return ms.count() / 1000.0;
     }
 
-    [[nodiscard]] double throughput() const noexcept {
-        double elapsed = elapsed_seconds();
-        return elapsed > 0 ? static_cast<double>(events_processed) / elapsed : 0.0;
+    /**
+     * @brief Return the processing throughput in events per second.
+     * @return Events per second, or 0 if elapsed time is zero.
+     */
+    double throughput() const noexcept {
+        double s = elapsed_seconds();
+        return s > 0 ? static_cast<double>(events_processed.load()) / s : 0.0;
     }
 };
 
-// Legacy alias
-using chainstatistics = ChainStatistics;
-
-//=============================================================================
-// ChainIterator - Iterator for sequential access across all files
-//=============================================================================
-
-class chain;  // Forward declaration
-
 /**
- * @brief Iterator for traversing events across all files in a chain
+ * @brief Options controlling chain behaviour.
  *
- * Provides sequential access to events with file and event index tracking.
+ * @see chain
  */
-class ChainIterator {
-public:
-    struct EventData {
-        EventProxy* event;
-        int file_index;
-        long event_index;
-    };
-
-    using iterator_category = std::input_iterator_tag;
-    using value_type = EventData;
-    using difference_type = std::ptrdiff_t;
-    using pointer = EventData*;
-    using reference = EventData&;
-
-    ChainIterator() : m_chain(nullptr), m_exhausted(true) {}
-
-    ChainIterator(chain* ch, bool at_end);
-
-    ChainIterator& operator++();
-    void operator++(int) { ++(*this); }
-
-    [[nodiscard]] EventData operator*() {
-        return {m_current_proxy.get(), m_current_file_idx, m_current_event_idx};
-    }
-
-    [[nodiscard]] bool operator==(const ChainIterator& other) const noexcept {
-        if (m_exhausted && other.m_exhausted) return true;
-        if (m_exhausted != other.m_exhausted) return false;
-        return m_current_file_idx == other.m_current_file_idx &&
-               m_current_event_idx == other.m_current_event_idx;
-    }
-
-    [[nodiscard]] bool operator!=(const ChainIterator& other) const noexcept {
-        return !(*this == other);
-    }
-
-private:
-    chain* m_chain;
-    std::unique_ptr<hipoeventfile> m_current_reader;
-    std::unique_ptr<EventProxy> m_current_proxy;
-    event m_current_event;
-    int m_current_file_idx{0};
-    long m_current_event_idx{0};
-    bool m_exhausted{false};
-
-    bool advance_to_next_event();
-    bool open_next_file();
+struct chain_options {
+    int                threads        = 0;      /**< @brief Number of worker threads (0 = hardware_concurrency). */
+    bool               show_progress  = true;   /**< @brief Display a progress bar during processing. */
+    bool               verbose        = false;  /**< @brief Print detailed statistics after processing. */
+    reader_options     reader_opts    = {};      /**< @brief Options forwarded to each per-thread reader. */
 };
 
-//=============================================================================
-// chain - Main class for chaining multiple HIPO files
-//=============================================================================
+/**
+ * @brief Concept for an event processing callback.
+ *
+ * Must be invocable as `void(bank_view_set&, int file_idx, int64_t event_idx)`.
+ *
+ * @tparam F Callable type.
+ */
+template <typename F>
+concept EventProcessor = std::invocable<F, bank_view_set&, int, int64_t>;
 
 /**
- * @brief Chain multiple HIPO files for unified processing
+ * @brief Concept for an event filtering predicate.
  *
- * The chain class provides:
- * - File management (add, remove, pattern matching)
- * - Sequential iteration via range-based for loops
- * - Parallel processing with configurable thread pools
- * - Lazy metadata loading for minimal memory overhead
- * - Progress tracking and statistics
+ * Must be invocable as `bool(const bank_view_set&, int file_idx, int64_t event_idx)`.
+ * Returning false causes the event to be skipped (the processor callback is not invoked).
  *
+ * @tparam G Callable type.
+ */
+template <typename G>
+concept EventFilter = std::invocable<G, const bank_view_set&, int, int64_t>
+    && std::same_as<std::invoke_result_t<G, const bank_view_set&, int, int64_t>, bool>;
+
+/**
+ * @brief Multi-file parallel event processor.
+ *
+ * A chain manages a list of HIPO files and distributes records across
+ * a thread pool for parallel processing. Each worker thread gets its own
+ * reader, record, and bank_view_set instances so no synchronisation is
+ * needed within the user callback.
+ *
+ * Typical usage:
  * @code
- * hipo::chain ch(4);  // 4 threads
- * ch.add_pattern("data/\*.hipo");
- *
- * // Sequential iteration
- * for (auto& [event, file_idx, event_idx] : ch) {
- *     auto& particles = event["REC::Particle"];
- * }
- *
- * // Parallel processing
- * ch.process([](auto& event, int file_idx, long event_idx) {
- *     // Thread-safe processing...
- * });
+ * hipo::chain c({.threads = 4});
+ * c.add("file1.hipo").add("file2.hipo");
+ * c.open();
+ * c.process([](hipo::bank_view_set& banks, int file, int64_t event) {
+ *     // process event ...
+ * }, {"event::particle"});
+ * c.print_statistics();
  * @endcode
+ *
+ * @note The chain itself is NOT thread-safe; its public API should be called
+ *       from a single thread. The internal worker threads are managed
+ *       exclusively by the process/process_to methods.
+ *
+ * @see reader, bank_view_set, EventProcessor, EventFilter
  */
 class chain {
 public:
-    using iterator = ChainIterator;
-    using const_iterator = ChainIterator;
-
-    //=========================================================================
-    // Construction
-    //=========================================================================
-
     /**
-     * @brief Construct a chain with specified thread count
-     * @param threads Number of threads (0 = auto-detect hardware concurrency)
-     * @param progress Show progress bar during processing
-     * @param verbose Enable verbose output
+     * @brief Construct a chain with the given options.
+     * @param opts Chain options (thread count, progress display, etc.).
      */
-    explicit chain(int threads = 0, bool progress = true, bool verbose = false)
-        : m_num_threads(threads == 0 ? static_cast<int>(std::thread::hardware_concurrency()) : threads),
-          m_show_progress(progress),
-          m_verbose(verbose),
-          m_thread_pool(m_num_threads, "ChainWorker") {
-        if (m_verbose) {
-            fmt::print("[chain] Initialized with {} threads\n", m_num_threads);
-        }
-    }
+    explicit chain(chain_options opts = {});
+    ~chain() = default;
 
-    //=========================================================================
-    // File Management
-    //=========================================================================
+    chain(const chain&) = delete;
+    chain& operator=(const chain&) = delete;
 
     /**
-     * @brief Add a single file to the chain
-     * @param filename Path to the HIPO file
-     * @return Number of files in chain after addition
+     * @brief Add a HIPO file path to the chain.
+     * @param path Filesystem path to a HIPO file.
+     * @return Reference to this chain (for method chaining).
      */
-    int add(std::string_view filename) {
-        std::lock_guard lock(m_mutex);
-        m_files.emplace_back(filename, static_cast<int>(m_files.size()));
-        m_metadata_loaded = false;
-        if (m_verbose) {
-            fmt::print("[chain] Added file {}: {}\n", m_files.size(), filename);
-        }
-        return static_cast<int>(m_files.size());
-    }
+    chain& add(std::string_view path);
 
     /**
-     * @brief Add multiple files to the chain
-     * @param filenames Vector of file paths
-     * @return Number of files in chain after addition
+     * @brief Open all files: scan metadata and merge dictionaries.
+     * @return result<void> indicating success or an error from the first invalid file.
      */
-    int add(std::span<const std::string> filenames) {
-        std::lock_guard lock(m_mutex);
-        for (const auto& f : filenames) {
-            m_files.emplace_back(f, static_cast<int>(m_files.size()));
-        }
-        m_metadata_loaded = false;
-        if (m_verbose) {
-            fmt::print("[chain] Added {} files (total: {})\n", filenames.size(), m_files.size());
-        }
-        return static_cast<int>(m_files.size());
-    }
-
-    /// Overload for vector
-    int add(const std::vector<std::string>& filenames) {
-        return add(std::span<const std::string>(filenames));
-    }
+    result<void> open();
 
     /**
-     * @brief Add files matching a glob pattern
-     * @param pattern Glob pattern (e.g., "data/\*.hipo", "run_???.hipo")
-     * @return Number of files matched and added
+     * @brief Scan all files for metadata (event counts, record counts) without opening for reading.
      */
-    int add_pattern(std::string_view pattern) {
-        int added = 0;
-        std::filesystem::path pattern_path(pattern);
-        std::filesystem::path dir = pattern_path.parent_path();
-        if (dir.empty()) dir = ".";
-
-        std::string filename_pattern = pattern_path.filename().string();
-        std::string regex_pattern = std::regex_replace(filename_pattern,
-            std::regex(R"(\*)"), ".*");
-        regex_pattern = std::regex_replace(regex_pattern,
-            std::regex(R"(\?)"), ".");
-
-        try {
-            std::regex file_regex(regex_pattern);
-            std::vector<std::string> matched_files;
-
-            for (const auto& entry : std::filesystem::directory_iterator(dir)) {
-                if (entry.is_regular_file()) {
-                    std::string fname = entry.path().filename().string();
-                    if (std::regex_match(fname, file_regex)) {
-                        matched_files.push_back(entry.path().string());
-                    }
-                }
-            }
-
-            // Sort for deterministic ordering
-            std::sort(matched_files.begin(), matched_files.end());
-            for (const auto& f : matched_files) {
-                add(f);
-                added++;
-            }
-        } catch (const std::exception& e) {
-            fmt::print(stderr, "[chain] Error scanning directory: {}\n", e.what());
-        }
-
-        if (m_verbose) {
-            fmt::print("[chain] Pattern '{}' matched {} files\n", pattern, added);
-        }
-        return added;
-    }
+    void scan();
 
     /**
-     * @brief Remove all files from the chain
-     */
-    void clear() {
-        std::lock_guard lock(m_mutex);
-        m_files.clear();
-        m_stats.reset();
-        m_metadata_loaded = false;
-        if (m_verbose) fmt::print("[chain] Cleared all files\n");
-    }
-
-    //=========================================================================
-    // File Information
-    //=========================================================================
-
-    /// Number of files in the chain
-    [[nodiscard]] std::size_t size() const noexcept { return m_files.size(); }
-
-    /// Check if chain is empty
-    [[nodiscard]] bool empty() const noexcept { return m_files.empty(); }
-
-    /// Legacy alias for size()
-    [[nodiscard]] int get_nb_files() const noexcept {
-        return static_cast<int>(m_files.size());
-    }
-
-    /// Get file info by index
-    [[nodiscard]] const FileInfo& operator[](std::size_t index) const {
-        if (index >= m_files.size()) {
-            throw std::out_of_range("chain: File index out of range");
-        }
-        return m_files[index];
-    }
-
-    /// Legacy alias for operator[]
-    [[nodiscard]] const FileInfo& file_info(int index) const {
-        return (*this)[static_cast<std::size_t>(index)];
-    }
-
-    /// Get all file infos
-    [[nodiscard]] std::span<const FileInfo> files() const noexcept {
-        return m_files;
-    }
-
-    //=========================================================================
-    // Configuration
-    //=========================================================================
-
-    /// Set event tags for filtering
-    void set_tags(const std::vector<long>& tags) { m_tags = tags; }
-
-    /// Set number of processing threads
-    void set_threads(int n) {
-        m_num_threads = (n == 0) ? static_cast<int>(std::thread::hardware_concurrency()) : n;
-    }
-
-    /// Enable/disable progress display
-    void set_progress(bool show) { m_show_progress = show; }
-
-    /// Enable/disable verbose output
-    void set_verbose(bool verbose) { m_verbose = verbose; }
-
-    //=========================================================================
-    // Validation and Scanning
-    //=========================================================================
-
-    /**
-     * @brief Validate and optionally load metadata for all files
-     * @param validate_all If true, open each file to validate; if false, only check existence
-     * @throws std::runtime_error if no valid files in chain
-     */
-    void open(bool validate_all = true) {
-        if (m_files.empty()) {
-            throw std::runtime_error("chain: No files added to chain");
-        }
-
-        if (m_verbose) {
-            fmt::print("[chain] Validating {} files...\n", m_files.size());
-        }
-
-        int valid_count = 0;
-        long total_events = 0;
-        int total_records = 0;
-
-        for (auto& file : m_files) {
-            if (!std::filesystem::exists(file.filename)) {
-                file.is_valid = false;
-                file.error_message = "File not found";
-                continue;
-            }
-
-            file.file_size = std::filesystem::file_size(file.filename);
-
-            if (validate_all) {
-                try {
-                    hipoeventfile temp(file.filename, m_tags, 0);
-                    ErrorCode err = temp.getErrorCode();
-
-                    if (err != ErrorCode::NO_ERROR) {
-                        file.is_valid = false;
-                        file.error_message = ErrorCode::toString(err);
-                        continue;
-                    }
-
-                    file.total_events = temp.getEventCount();
-                    file.num_records = static_cast<int>(temp.nrecords());
-                    total_events += file.total_events;
-                    total_records += file.num_records;
-                    valid_count++;
-
-                    if (m_verbose) {
-                        fmt::print("  [{}] {} - OK ({} events)\n",
-                            file.index, file.filename, file.total_events);
-                    }
-                } catch (const std::exception& e) {
-                    file.is_valid = false;
-                    file.error_message = e.what();
-                }
-            } else {
-                valid_count++;
-            }
-        }
-
-        m_stats.total_events = total_events;
-        m_metadata_loaded = validate_all;
-
-        if (m_verbose) {
-            fmt::print("[chain] Valid files: {}/{}, Total events: {}\n",
-                valid_count, m_files.size(), total_events);
-        }
-
-        if (valid_count == 0) {
-            throw std::runtime_error("chain: No valid files in chain");
-        }
-    }
-
-    /**
-     * @brief Scan and display detailed information about all files
-     */
-    void scan() {
-        if (m_files.empty()) {
-            fmt::print("[chain] No files in chain\n");
-            return;
-        }
-
-        std::unique_ptr<ProgressTracker> progress;
-        if (m_show_progress) {
-            ProgressTracker::Config config;
-            config.label = "Scanning files";
-            config.show_eta = false;
-            progress = std::make_unique<ProgressTracker>(m_files.size(), config);
-            progress->start();
-        }
-
-        long total_events = 0;
-        int total_records = 0;
-        std::uintmax_t total_size = 0;
-        int valid_files = 0;
-
-        for (auto& file : m_files) {
-            try {
-                if (!std::filesystem::exists(file.filename)) {
-                    fmt::print("  [{}] {} - FILE NOT FOUND\n", file.index, file.filename);
-                    continue;
-                }
-
-                file.file_size = std::filesystem::file_size(file.filename);
-                total_size += file.file_size;
-
-                hipoeventfile temp(file.filename, m_tags, 0);
-                file.num_records = static_cast<int>(temp.nrecords());
-                file.total_events = temp.entries();
-                total_records += file.num_records;
-                total_events += file.total_events;
-                valid_files++;
-
-                fmt::print("  [{}] {}\n      Records: {}, Events: {}, Size: {}\n",
-                    file.index, file.filename, file.num_records,
-                    file.total_events, file.size_string());
-
-            } catch (const std::exception& e) {
-                fmt::print("  [{}] {} - ERROR: {}\n", file.index, file.filename, e.what());
-            }
-
-            if (progress) progress->increment();
-        }
-
-        if (progress) progress->finish();
-
-        fmt::print("\nScan Summary\n");
-        fmt::print("  Total files:   {}\n", m_files.size());
-        fmt::print("  Valid files:   {}\n", valid_files);
-        fmt::print("  Total records: {}\n", total_records);
-        fmt::print("  Total events:  {}\n", total_events);
-
-        FileInfo dummy;
-        dummy.file_size = total_size;
-        fmt::print("  Total size:    {}\n", dummy.size_string());
-
-        if (valid_files > 0) {
-            fmt::print("  Avg events/file: {}\n", total_events / valid_files);
-        }
-    }
-
-    /// Print list of files in chain
-    void list() const {
-        fmt::print("Chain file list ({} files)\n", m_files.size());
-        for (const auto& file : m_files) {
-            fmt::print("  [{}] {}", file.index, file.filename);
-            if (file.metadata_loaded()) {
-                fmt::print(" ({} events, {} records)", file.total_events, file.num_records);
-            }
-            if (!file.is_valid) {
-                fmt::print(" [INVALID: {}]", file.error_message);
-            }
-            fmt::print("\n");
-        }
-    }
-
-    //=========================================================================
-    // Range-based Iteration
-    //=========================================================================
-
-    /**
-     * @brief Get iterator to first event
+     * @brief Process events in parallel using a callback.
      *
-     * Enables range-based for loops:
-     * @code
-     * for (auto& [event, file_idx, event_idx] : chain) {
-     *     // Process event...
-     * }
-     * @endcode
+     * Records are distributed across worker threads. Each event is
+     * deserialized into a thread-local bank_view_set and passed to the
+     * callback.
+     *
+     * @tparam F Callable satisfying EventProcessor.
+     * @param func           Callback invoked for each event.
+     * @param required_banks Bank names to bind in each thread's bank_view_set.
+     * @param pct            Percentage of total events to process (0.0 - 100.0).
      */
-    [[nodiscard]] iterator begin() { return ChainIterator(this, false); }
-
-    /// Get end iterator
-    [[nodiscard]] iterator end() { return ChainIterator(this, true); }
-
-    //=========================================================================
-    // Parallel Processing
-    //=========================================================================
+    template <EventProcessor F>
+    void process(F&& func, std::vector<std::string> required_banks, double pct = 100.0);
 
     /**
-     * @brief Process events in parallel across all files
+     * @brief Process events in parallel with an event filter.
      *
-     * @param process_func Callable with signature: void(EventProxy&, int file_idx, long event_idx)
-     * @param percentage Percentage of events to process (0-100)
+     * Events for which the filter returns false are skipped (the processor
+     * callback is not invoked for those events).
      *
-     * @code
-     * chain.process([](auto& event, int file_idx, long event_idx) {
-     *     auto& particles = event["REC::Particle"];
-     *     // Thread-safe processing...
-     * });
-     * @endcode
+     * @tparam F Callable satisfying EventProcessor.
+     * @tparam G Callable satisfying EventFilter.
+     * @param func           Callback invoked for each accepted event.
+     * @param filter         Predicate returning true for events to process.
+     * @param required_banks Bank names to bind in each thread's bank_view_set.
+     * @param pct            Percentage of total events to process (0.0 - 100.0).
      */
-    template<typename ProcessFunc>
-    void process(ProcessFunc&& process_func, double percentage = 100.0) {
-        if (m_files.empty()) {
-            fmt::print(stderr, "[chain] Warning: No files to process.\n");
-            return;
-        }
-
-        percentage = std::clamp(percentage, 0.0, 100.0) / 100.0;
-
-        // Skip metadata loading when processing all events
-        if (percentage >= 1.0) {
-            process_all_streaming(std::forward<ProcessFunc>(process_func));
-            return;
-        }
-
-        // Partial processing: metadata needed to compute target event count
-        load_metadata_if_needed();
-
-        long target_events = static_cast<long>(m_stats.total_events * percentage);
-
-        // Build work list
-        struct WorkItem {
-            int file_idx;
-            long events_to_process;
-        };
-        std::vector<WorkItem> work_list;
-        long events_accumulated = 0;
-
-        for (const auto& file : m_files) {
-            if (!file.is_valid || events_accumulated >= target_events) continue;
-            long events_needed = target_events - events_accumulated;
-            long events_from_file = std::min(events_needed, file.total_events);
-            if (events_from_file > 0) {
-                work_list.push_back({file.index, events_from_file});
-                events_accumulated += events_from_file;
-            }
-        }
-
-        m_stats.reset();
-        m_stats.total_events = events_accumulated;
-
-        if (m_verbose) {
-            fmt::print("[chain] Processing {} events from {} files ({} threads)\n",
-                events_accumulated, work_list.size(), m_num_threads);
-        }
-
-        std::unique_ptr<ProgressTracker> progress;
-        if (m_show_progress && m_stats.total_events > 0) {
-            ProgressTracker::Config config;
-            config.label = fmt::format("Processing ({:.1f}%)", percentage * 100.0);
-            config.show_eta = true;
-            config.show_rate = true;
-            progress = std::make_unique<ProgressTracker>(m_stats.total_events, config);
-            progress->start();
-        }
-
-        // Process one file at a time with all threads
-        for (const auto& work : work_list) {
-            const auto& file = m_files[work.file_idx];
-            std::atomic<long> next_event{0};
-            std::vector<std::future<void>> futures;
-
-            for (int t = 0; t < m_num_threads; t++) {
-                futures.push_back(m_thread_pool.submit([&, this]() {
-                    try {
-                        hipoeventfile reader(file.filename, m_tags, 0);
-                        event temp_event;
-
-                        while (true) {
-                            long evt_idx = next_event.fetch_add(1);
-                            if (evt_idx >= work.events_to_process) break;
-
-                            if (reader.goto_event(evt_idx) && reader.read_next_event(temp_event)) {
-                                iter_event evt(&temp_event, &reader);
-                                process_func(evt, file.index, evt_idx);
-                                m_stats.events_processed++;
-                                if (progress) progress->increment();
-                            }
-                        }
-                    } catch (const std::exception& e) {
-                        fmt::print(stderr, "[chain] Thread error: {}\n", e.what());
-                    }
-                }));
-            }
-
-            for (auto& f : futures) f.get();
-        }
-
-        m_stats.end_time = std::chrono::steady_clock::now();
-        if (progress) progress->finish();
-        if (m_verbose) print_statistics();
-    }
+    template <EventProcessor F, EventFilter G>
+    void process(F&& func, G&& filter, std::vector<std::string> required_banks, double pct = 100.0);
 
     /**
-     * @brief Process events with bank filtering
+     * @brief Process events with map-reduce: each event produces a value, results are combined.
      *
-     * Only processes events containing all specified banks.
+     * Each worker thread accumulates a thread-local result via the reducer.
+     * After all events are processed, thread-local results are merged into
+     * a single global result.
      *
-     * @param process_func Callable with signature: void(EventProxy&, int file_idx, long event_idx)
-     * @param required_banks List of bank names that must be present
-     * @param percentage Percentage of matching events to process
+     * @tparam R       Result type (must be movable and copyable).
+     * @tparam F       Callable producing R from (bank_view_set&, int, int64_t).
+     * @tparam Reducer Callable combining two R values into one.
+     * @param func           Map function invoked per event.
+     * @param reducer        Binary function combining partial results.
+     * @param init           Initial value for each thread-local accumulator.
+     * @param required_banks Bank names to bind in each thread's bank_view_set.
+     * @param pct            Percentage of total events to process (0.0 - 100.0).
+     * @return The final reduced result.
      */
-    template<typename ProcessFunc>
-    void process_filtered(ProcessFunc&& process_func,
-                          const std::vector<std::string>& required_banks,
-                          double percentage = 100.0) {
-        if (m_files.empty()) {
-            fmt::print(stderr, "[chain] Warning: No files to process.\n");
-            return;
-        }
-
-        percentage = std::clamp(percentage, 0.0, 100.0) / 100.0;
-        load_metadata_if_needed();
-
-        long target_events = static_cast<long>(m_stats.total_events * percentage);
-        m_stats.reset();
-        m_stats.total_events = target_events;
-
-        if (m_verbose) {
-            fmt::print("[chain] Filtered processing: requiring banks [");
-            for (size_t i = 0; i < required_banks.size(); i++) {
-                fmt::print("{}{}", required_banks[i],
-                    i < required_banks.size() - 1 ? ", " : "");
-            }
-            fmt::print("]\n");
-        }
-
-        std::unique_ptr<ProgressTracker> progress;
-        if (m_show_progress && target_events > 0) {
-            ProgressTracker::Config config;
-            config.label = "Filtered processing";
-            config.show_eta = true;
-            progress = std::make_unique<ProgressTracker>(target_events, config);
-            progress->start();
-        }
-
-        std::atomic<long> events_found{0};
-
-        for (const auto& file : m_files) {
-            if (!file.is_valid || events_found >= target_events) continue;
-
-            std::vector<std::future<void>> futures;
-            for (int t = 0; t < m_num_threads && events_found < target_events; t++) {
-                futures.push_back(m_thread_pool.submit([&, this]() {
-                    try {
-                        hipoeventfile reader(file.filename, m_tags, 0);
-                        event temp_event;
-
-                        while (events_found < target_events) {
-                            if (!reader.nextEvent(temp_event, required_banks)) break;
-
-                            long evt_count = events_found.fetch_add(1);
-                            if (evt_count >= target_events) break;
-
-                            iter_event evt(&temp_event, &reader);
-                            process_func(evt, file.index, evt_count);
-                            m_stats.events_processed++;
-                            if (progress) progress->increment();
-                        }
-                    } catch (const std::exception& e) {
-                        fmt::print(stderr, "[chain] Thread error: {}\n", e.what());
-                    }
-                }));
-            }
-            for (auto& f : futures) f.get();
-        }
-
-        m_stats.end_time = std::chrono::steady_clock::now();
-        if (progress) progress->finish();
-        if (m_verbose) {
-            fmt::print("[chain] Found {} matching events\n", events_found.load());
-            print_statistics();
-        }
-    }
+    template <typename R, typename F, typename Reducer>
+        requires std::invocable<F, bank_view_set&, int, int64_t>
+              && std::convertible_to<std::invoke_result_t<F, bank_view_set&, int, int64_t>, R>
+              && std::invocable<Reducer, R, R>
+              && std::movable<R> && std::copyable<R>
+    R process_to(F&& func, Reducer&& reducer, R init,
+                 std::vector<std::string> required_banks, double pct = 100.0);
 
     /**
-     * @brief Apply a function to each file (for file-level operations)
+     * @brief Process events with map-reduce and an event filter.
      *
-     * @param func Callable with signature: void(hipoeventfile&, const FileInfo&)
+     * Combines filtering and reduction: only events accepted by the filter
+     * contribute to the reduced result.
+     *
+     * @tparam R       Result type (must be movable and copyable).
+     * @tparam F       Callable producing R from (bank_view_set&, int, int64_t).
+     * @tparam G       Callable satisfying EventFilter.
+     * @tparam Reducer Callable combining two R values into one.
+     * @param func           Map function invoked per accepted event.
+     * @param filter         Predicate returning true for events to include.
+     * @param reducer        Binary function combining partial results.
+     * @param init           Initial value for each thread-local accumulator.
+     * @param required_banks Bank names to bind in each thread's bank_view_set.
+     * @param pct            Percentage of total events to process (0.0 - 100.0).
+     * @return The final reduced result.
      */
-    template<typename FileFunc>
-    void for_each_file(FileFunc&& func) {
-        for (const auto& file : m_files) {
-            if (!file.is_valid) continue;
-            try {
-                hipoeventfile reader(file.filename, m_tags, 0);
-                func(reader, file);
-            } catch (const std::exception& e) {
-                fmt::print(stderr, "[chain] Error processing {}: {}\n",
-                    file.filename, e.what());
-            }
-        }
-    }
+    template <typename R, typename F, EventFilter G, typename Reducer>
+        requires std::invocable<F, bank_view_set&, int, int64_t>
+              && std::convertible_to<std::invoke_result_t<F, bank_view_set&, int, int64_t>, R>
+              && std::invocable<Reducer, R, R>
+              && std::movable<R> && std::copyable<R>
+    R process_to(F&& func, G&& filter, Reducer&& reducer, R init,
+                 std::vector<std::string> required_banks, double pct = 100.0);
 
-    //=========================================================================
-    // Statistics and Information
-    //=========================================================================
+    /**
+     * @brief Return a const reference to the accumulated processing statistics.
+     * @return The chain_stats struct.
+     */
+    const chain_stats& statistics() const noexcept { return m_stats; }
 
-    /// Get processing statistics
-    [[nodiscard]] const ChainStatistics& statistics() const noexcept { return m_stats; }
+    /**
+     * @brief Return the total number of events across all valid files.
+     *
+     * Triggers a metadata scan if not already performed.
+     *
+     * @return Total event count.
+     */
+    int64_t total_events();
 
-    /// Get total event count (loads metadata if needed)
-    [[nodiscard]] long total_events() {
-        load_metadata_if_needed();
-        return m_stats.total_events;
-    }
+    /** @brief Return a const reference to the merged schema dictionary. */
+    const dictionary& dict() const noexcept { return m_dict; }
 
-    /// Legacy alias
-    [[nodiscard]] long total_events_count() const { return m_stats.total_events.load(); }
+    /** @brief Return the number of files in the chain. */
+    int num_files() const noexcept { return static_cast<int>(m_files.size()); }
 
-    /// Print processing statistics
-    void print_statistics() const {
-        fmt::print("\nChain Statistics\n");
-        fmt::print("  Files:            {}\n", m_files.size());
-        fmt::print("  Total events:     {}\n", m_stats.total_events.load());
-        fmt::print("  Events processed: {}\n", m_stats.events_processed.load());
-        fmt::print("  Processing time:  {:.2f} seconds\n", m_stats.elapsed_seconds());
-        if (m_stats.elapsed_seconds() > 0) {
-            fmt::print("  Throughput:       {:.1f} events/sec\n", m_stats.throughput());
-        }
-    }
-
-    /// Show detailed info for all files
-    void show_all_info() {
-        fmt::print("\nChain File Info ({} files)\n", m_files.size());
-        fmt::print("================\n");
-        for (const auto& file : m_files) {
-            fmt::print("\nFile [{}]: {}\n", file.index, file.filename);
-            try {
-                hipoeventfile temp(file.filename, m_tags, 0);
-                temp.showInfo();
-            } catch (const std::exception& e) {
-                fmt::print("  Error: {}\n", e.what());
-            }
-        }
-    }
-
-    //=========================================================================
-    // Configuration Access
-    //=========================================================================
-
-    /// Check if any file has a configuration key
-    [[nodiscard]] bool any_has_config(std::string_view name) {
-        for (const auto& file : m_files) {
-            if (!file.is_valid) continue;
-            try {
-                hipoeventfile temp(file.filename, m_tags, 0);
-                if (temp.hasConfig(std::string(name))) return true;
-            } catch (...) {}
-        }
-        return false;
-    }
-
-    /// Get configuration from first file that has it
-    [[nodiscard]] std::optional<std::string> get_config(std::string_view name) {
-        for (const auto& file : m_files) {
-            if (!file.is_valid) continue;
-            try {
-                hipoeventfile temp(file.filename, m_tags, 0);
-                if (temp.hasConfig(std::string(name))) {
-                    return temp.getConfig(std::string(name));
-                }
-            } catch (...) {}
-        }
-        return std::nullopt;
-    }
-
-    //=========================================================================
-    // Advanced Access
-    //=========================================================================
-
-    /// Get the thread pool for advanced use
-    [[nodiscard]] ThreadPool& threadpool() noexcept { return m_thread_pool; }
-
-    /// Get combined record positions from all files
-    [[nodiscard]] std::vector<std::pair<int, std::vector<RecordPosition>>> get_all_record_positions() {
-        std::vector<std::pair<int, std::vector<RecordPosition>>> result;
-        for (const auto& file : m_files) {
-            if (!file.is_valid) continue;
-            try {
-                hipoeventfile temp(file.filename, m_tags, 0);
-                result.emplace_back(file.index, temp.getRecordPositions());
-            } catch (const std::exception& e) {
-                fmt::print(stderr, "[chain] Error reading {}: {}\n",
-                    file.filename, e.what());
-            }
-        }
-        return result;
-    }
+    /** @brief Print processing statistics (elapsed time, throughput, event counts) to stdout. */
+    void print_statistics() const;
 
 private:
-    //=========================================================================
-    // Private Members
-    //=========================================================================
+    void load_metadata();
 
-    std::vector<FileInfo> m_files;
-    std::vector<long> m_tags;
-    int m_num_threads;
-    bool m_show_progress;
-    bool m_verbose;
-    bool m_metadata_loaded{false};
-    ThreadPool m_thread_pool;
-    ChainStatistics m_stats;
-    mutable std::mutex m_mutex;
-
-    //=========================================================================
-    // Private Methods
-    //=========================================================================
-
-    /// Load metadata for all files if not already loaded (parallel with high I/O concurrency)
-    void load_metadata_if_needed() {
-        if (m_metadata_loaded) return;
-
-        if (m_verbose) fmt::print("[chain] Loading file metadata for {} files...\n", m_files.size());
-
-        struct MetadataResult {
-            size_t index;
-            long total_events;
-            int num_records;
-            bool valid;
-            std::string error;
-        };
-
-        // Count files needing metadata
-        size_t files_to_load = 0;
-        for (const auto& file : m_files) {
-            if (file.is_valid && file.total_events < 0) files_to_load++;
-        }
-
-        if (files_to_load == 0) {
-            m_metadata_loaded = true;
-            return;
-        }
-
-        // Setup progress tracker
-        std::unique_ptr<ProgressTracker> progress;
-        if (m_show_progress) {
-            ProgressTracker::Config config;
-            config.label = "Loading metadata";
-            config.show_eta = true;
-            config.show_rate = true;
-            progress = std::make_unique<ProgressTracker>(files_to_load, config);
-            progress->start();
-        }
-
-        // Use higher I/O parallelism: file metadata loading is I/O-bound,
-        // so more threads than CPU cores helps saturate disk/network bandwidth.
-        bool use_io_pool = files_to_load > static_cast<size_t>(m_num_threads);
-        int io_threads = static_cast<int>(std::min(
-            files_to_load,
-            static_cast<size_t>(std::min(std::max(m_num_threads * 4, 32), 100))
-        ));
-        std::unique_ptr<ThreadPool> io_pool;
-        if (use_io_pool) {
-            io_pool = std::make_unique<ThreadPool>(io_threads, "MetadataIO", /*quiet=*/true);
-        }
-        auto& pool = use_io_pool ? *io_pool : m_thread_pool;
-
-        std::vector<std::future<MetadataResult>> futures;
-        futures.reserve(files_to_load);
-
-        for (size_t i = 0; i < m_files.size(); i++) {
-            if (!m_files[i].is_valid || m_files[i].total_events >= 0) continue;
-
-            futures.push_back(pool.submit([i, this, &progress]() -> MetadataResult {
-                MetadataResult result{i, 0, 0, true, ""};
-                try {
-                    hipo::reader r;
-                    for (auto tag : m_tags) r.setTags(tag);
-                    r.open(m_files[i].filename.c_str());
-                    result.total_events = r.getEventCount();
-                    result.num_records = static_cast<int>(r.getRecordPositions().size());
-                } catch (const std::exception& e) {
-                    result.valid = false;
-                    result.error = e.what();
-                }
-                if (progress) progress->increment();
-                return result;
-            }));
-        }
-
-        for (auto& f : futures) {
-            auto result = f.get();
-            auto& file = m_files[result.index];
-            if (result.valid) {
-                file.total_events = result.total_events;
-                file.num_records = result.num_records;
-            } else {
-                file.is_valid = false;
-                file.error_message = result.error;
-                file.total_events = 0;
-                fmt::print(stderr, "[chain] Warning: File not valid: {} ({})\n",
-                    file.filename, result.error);
-            }
-        }
-
-        if (progress) progress->finish();
-
-        long total = 0;
-        for (const auto& file : m_files) {
-            if (file.is_valid) total += file.total_events;
-        }
-
-        m_stats.total_events = total;
-        m_metadata_loaded = true;
-
-        if (m_verbose) fmt::print("[chain] Metadata loaded: {} total events\n", total);
-    }
-
-    /// Validate file existence in parallel (deferred from add())
-    void validate_files_parallel() {
-        std::vector<std::future<std::pair<size_t, bool>>> futures;
-        futures.reserve(m_files.size());
-
-        for (size_t i = 0; i < m_files.size(); i++) {
-            if (!m_files[i].is_valid) continue;
-            futures.push_back(m_thread_pool.submit([i, this]() -> std::pair<size_t, bool> {
-                return {i, std::filesystem::exists(m_files[i].filename)};
-            }));
-        }
-
-        for (auto& f : futures) {
-            auto [idx, exists] = f.get();
-            if (!exists) {
-                m_files[idx].is_valid = false;
-                m_files[idx].error_message = "File not found";
-                fmt::print(stderr, "[chain] Warning: File not found: {}\n", m_files[idx].filename);
-            }
-        }
-    }
-
-    /// Process all events without loading metadata upfront (streaming mode)
-    template<typename ProcessFunc>
-    void process_all_streaming(ProcessFunc&& process_func) {
-        validate_files_parallel();
-        m_stats.reset();
-
-        int valid_file_count = 0;
-        for (const auto& file : m_files) {
-            if (file.is_valid) valid_file_count++;
-        }
-
-        if (valid_file_count == 0) {
-            fmt::print(stderr, "[chain] Warning: No valid files to process.\n");
-            return;
-        }
-
-        if (m_verbose) {
-            fmt::print("[chain] Streaming all events from {} files ({} threads)\n",
-                valid_file_count, m_num_threads);
-        }
-
-        // File-level progress (event total unknown without metadata)
-        std::unique_ptr<ProgressTracker> progress;
-        if (m_show_progress) {
-            ProgressTracker::Config config;
-            config.label = "Processing (100%)";
-            config.show_eta = true;
-            config.show_rate = true;
-            progress = std::make_unique<ProgressTracker>(valid_file_count, config);
-            progress->start();
-        }
-
-        for (const auto& file : m_files) {
-            if (!file.is_valid) continue;
-
-            std::atomic<long> next_event{0};
-            std::vector<std::future<void>> futures;
-
-            for (int t = 0; t < m_num_threads; t++) {
-                futures.push_back(m_thread_pool.submit([&, this]() {
-                    try {
-                        hipoeventfile reader(file.filename, m_tags, 0);
-                        event temp_event;
-
-                        while (true) {
-                            long evt_idx = next_event.fetch_add(1);
-                            if (!reader.goto_event(evt_idx) || !reader.read_next_event(temp_event)) break;
-
-                            iter_event evt(&temp_event, &reader);
-                            process_func(evt, file.index, evt_idx);
-                            m_stats.events_processed++;
-                        }
-                    } catch (const std::exception& e) {
-                        fmt::print(stderr, "[chain] Thread error: {}\n", e.what());
-                    }
-                }));
-            }
-
-            for (auto& f : futures) f.get();
-            if (progress) progress->increment();
-        }
-
-        m_stats.total_events = m_stats.events_processed.load();
-        m_stats.end_time = std::chrono::steady_clock::now();
-        if (progress) progress->finish();
-        if (m_verbose) print_statistics();
-    }
-
-    // Allow ChainIterator to access private members
-    friend class ChainIterator;
+    std::vector<chain_file_info>  m_files;
+    chain_options                 m_opts;
+    chain_stats                   m_stats;
+    dictionary                    m_dict;
+    bool                          m_metadata_loaded = false;
+    int                           m_num_threads;
+    std::unique_ptr<ThreadPool>   m_thread_pool;
 };
 
-//=============================================================================
-// ChainIterator Implementation
-//=============================================================================
+// ============================================================================
+// Template implementation
+// ============================================================================
 
-inline ChainIterator::ChainIterator(chain* ch, bool at_end)
-    : m_chain(ch), m_exhausted(at_end) {
-    if (!at_end && ch && !ch->m_files.empty()) {
-        if (open_next_file()) {
-            advance_to_next_event();
-        } else {
-            m_exhausted = true;
-        }
-    }
+template <EventProcessor F>
+void chain::process(F&& func, std::vector<std::string> required_banks, double pct) {
+    process(std::forward<F>(func),
+            [](const bank_view_set&, int, int64_t) -> bool { return true; },
+            std::move(required_banks), pct);
 }
 
-inline ChainIterator& ChainIterator::operator++() {
-    if (!m_exhausted) {
-        m_current_event_idx++;
-        if (!advance_to_next_event()) {
-            m_exhausted = true;
+template <EventProcessor F, EventFilter G>
+void chain::process(F&& func, G&& filter, std::vector<std::string> required_banks, double pct) {
+    if (m_files.empty()) return;
+
+    pct = std::clamp(pct, 0.0, 100.0) / 100.0;
+    load_metadata();
+
+    int64_t target = static_cast<int64_t>(m_stats.total_events.load() * pct);
+    m_stats.reset();
+    m_stats.total_events = target;
+
+    // Build work list
+    struct work_item {
+        int file_idx;
+        int num_records;
+        int64_t max_events;
+    };
+    std::vector<work_item> work_list;
+    int64_t accumulated = 0;
+    for (auto const& f : m_files) {
+        if (!f.valid || accumulated >= target) continue;
+        int64_t needed = std::min(target - accumulated, f.total_events);
+        if (needed > 0) {
+            work_list.push_back({f.index, f.num_records, needed});
+            accumulated += needed;
         }
     }
-    return *this;
+
+    std::unique_ptr<ProgressTracker> progress;
+    if (m_opts.show_progress && accumulated > 0) {
+        ProgressTracker::Config config;
+        config.label = fmt::format("Processing ({:.1f}%)", pct * 100.0);
+        config.show_eta = true;
+        config.show_rate = true;
+        progress = std::make_unique<ProgressTracker>(accumulated, config);
+        progress->start();
+    }
+
+    for (auto const& work : work_list) {
+        auto const& file = m_files[work.file_idx];
+        std::atomic<int> next_record{0};
+        std::atomic<int64_t> events_in_file{0};
+        std::vector<std::future<void>> futures;
+
+        for (int t = 0; t < m_num_threads; ++t) {
+            futures.push_back(m_thread_pool->submit([&, file_path = std::string(file.path), this]() {
+                auto rdr = reader::open(file_path, m_opts.reader_opts);
+                if (!rdr) return;
+
+                bank_view_set banks;
+                for (auto const& name : required_banks)
+                    banks.require(name);
+                auto bind_res = banks.bind(rdr->dict());
+                if (!bind_res) return;
+
+                record rec;
+
+                while (true) {
+                    int rec_idx = next_record.fetch_add(1);
+                    if (rec_idx >= work.num_records) break;
+                    if (events_in_file.load() >= work.max_events) break;
+
+                    auto load_res = rdr->load_record(rec, rec_idx);
+                    if (!load_res) continue;
+
+                    int events_in_record = rec.event_count();
+                    for (int e = 0; e < events_in_record; ++e) {
+                        int64_t count = events_in_file.fetch_add(1);
+                        if (count >= work.max_events) {
+                            events_in_file.fetch_sub(1);
+                            break;
+                        }
+
+                        (void)banks.update_from_record(rec, e);
+
+                        // Apply filter: skip event if filter returns false
+                        if (!filter(banks, file.index, count)) {
+                            if (progress) progress->increment();
+                            m_stats.events_processed++;
+                            continue;
+                        }
+
+                        func(banks, file.index, count);
+                        m_stats.events_processed++;
+                        if (progress) progress->increment();
+                    }
+                }
+            }));
+        }
+
+        for (auto& f : futures) f.get();
+    }
+
+    m_stats.end_time = std::chrono::steady_clock::now();
+    if (progress) progress->finish();
+    if (m_opts.verbose) print_statistics();
 }
 
-inline bool ChainIterator::advance_to_next_event() {
-    while (m_current_reader) {
-        if (m_current_reader->read_next_event(m_current_event)) {
-            // Create EventProxy directly (friend access allows this)
-            m_current_proxy.reset(new EventProxy(&m_current_event, m_current_reader.get()));
-            return true;
-        }
-        // Current file exhausted, try next
-        m_current_file_idx++;
-        m_current_event_idx = 0;
-        if (!open_next_file()) {
-            return false;
+// --- process_to: non-filter overload delegates to filter overload ---
+
+template <typename R, typename F, typename Reducer>
+    requires std::invocable<F, bank_view_set&, int, int64_t>
+          && std::convertible_to<std::invoke_result_t<F, bank_view_set&, int, int64_t>, R>
+          && std::invocable<Reducer, R, R>
+          && std::movable<R> && std::copyable<R>
+R chain::process_to(F&& func, Reducer&& reducer, R init,
+                    std::vector<std::string> required_banks, double pct) {
+    return process_to<R>(
+        std::forward<F>(func),
+        [](const bank_view_set&, int, int64_t) -> bool { return true; },
+        std::forward<Reducer>(reducer),
+        std::move(init),
+        std::move(required_banks),
+        pct);
+}
+
+template <typename R, typename F, EventFilter G, typename Reducer>
+    requires std::invocable<F, bank_view_set&, int, int64_t>
+          && std::convertible_to<std::invoke_result_t<F, bank_view_set&, int, int64_t>, R>
+          && std::invocable<Reducer, R, R>
+          && std::movable<R> && std::copyable<R>
+R chain::process_to(F&& func, G&& filter, Reducer&& reducer, R init,
+                    std::vector<std::string> required_banks, double pct) {
+    if (m_files.empty()) return init;
+
+    pct = std::clamp(pct, 0.0, 100.0) / 100.0;
+    load_metadata();
+
+    int64_t target = static_cast<int64_t>(m_stats.total_events.load() * pct);
+    m_stats.reset();
+    m_stats.total_events = target;
+
+    struct work_item {
+        int file_idx;
+        int num_records;
+        int64_t max_events;
+    };
+    std::vector<work_item> work_list;
+    int64_t accumulated = 0;
+    for (auto const& f : m_files) {
+        if (!f.valid || accumulated >= target) continue;
+        int64_t needed = std::min(target - accumulated, f.total_events);
+        if (needed > 0) {
+            work_list.push_back({f.index, f.num_records, needed});
+            accumulated += needed;
         }
     }
-    return false;
-}
 
-inline bool ChainIterator::open_next_file() {
-    while (m_current_file_idx < static_cast<int>(m_chain->m_files.size())) {
-        const auto& file = m_chain->m_files[m_current_file_idx];
-        if (!file.is_valid) {
-            m_current_file_idx++;
-            continue;
+    std::unique_ptr<ProgressTracker> progress;
+    if (m_opts.show_progress && accumulated > 0) {
+        ProgressTracker::Config config;
+        config.label = fmt::format("Reducing ({:.1f}%)", pct * 100.0);
+        config.show_eta = true;
+        config.show_rate = true;
+        progress = std::make_unique<ProgressTracker>(accumulated, config);
+        progress->start();
+    }
+
+    R global_result = init;
+    std::mutex result_mutex;
+
+    for (auto const& work : work_list) {
+        auto const& file = m_files[work.file_idx];
+        std::atomic<int> next_record{0};
+        std::atomic<int64_t> events_in_file{0};
+        std::vector<std::future<R>> futures;
+
+        for (int t = 0; t < m_num_threads; ++t) {
+            futures.push_back(m_thread_pool->submit([&, file_path = std::string(file.path),
+                                                      local_init = init, this]() mutable -> R {
+                R local = std::move(local_init);
+
+                auto rdr = reader::open(file_path, m_opts.reader_opts);
+                if (!rdr) return local;
+
+                bank_view_set banks;
+                for (auto const& name : required_banks)
+                    banks.require(name);
+                auto bind_res = banks.bind(rdr->dict());
+                if (!bind_res) return local;
+
+                record rec;
+
+                while (true) {
+                    int rec_idx = next_record.fetch_add(1);
+                    if (rec_idx >= work.num_records) break;
+                    if (events_in_file.load() >= work.max_events) break;
+
+                    auto load_res = rdr->load_record(rec, rec_idx);
+                    if (!load_res) continue;
+
+                    int events_in_record = rec.event_count();
+                    for (int e = 0; e < events_in_record; ++e) {
+                        int64_t count = events_in_file.fetch_add(1);
+                        if (count >= work.max_events) {
+                            events_in_file.fetch_sub(1);
+                            break;
+                        }
+
+                        (void)banks.update_from_record(rec, e);
+
+                        if (!filter(banks, file.index, count)) {
+                            if (progress) progress->increment();
+                            m_stats.events_processed++;
+                            continue;
+                        }
+
+                        local = reducer(std::move(local),
+                                        static_cast<R>(func(banks, file.index, count)));
+                        m_stats.events_processed++;
+                        if (progress) progress->increment();
+                    }
+                }
+                return local;
+            }));
         }
-        try {
-            m_current_reader = std::make_unique<hipoeventfile>(
-                file.filename, m_chain->m_tags, 0);
-            return true;
-        } catch (const std::exception& e) {
-            fmt::print(stderr, "[chain] Error opening {}: {}\n",
-                file.filename, e.what());
-            m_current_file_idx++;
+
+        for (auto& f : futures) {
+            R thread_result = f.get();
+            std::lock_guard lock(result_mutex);
+            global_result = reducer(std::move(global_result), std::move(thread_result));
         }
     }
-    m_current_reader.reset();
-    return false;
+
+    m_stats.end_time = std::chrono::steady_clock::now();
+    if (progress) progress->finish();
+    if (m_opts.verbose) print_statistics();
+
+    return global_result;
 }
 
-}  // namespace hipo
+} // namespace hipo

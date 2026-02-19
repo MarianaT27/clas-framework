@@ -16,7 +16,7 @@
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 
-#include <hipo4/bank.h>
+#include <bank_view.h>
 
 namespace clas12::framework {
 
@@ -111,9 +111,9 @@ class MCTruthService : public Service {
      * @param rec_match_bank Optional MC::RecMatch bank for matching info
      * @param gen_match_bank Optional MC::GenMatch bank for reverse matching
      */
-    auto load_event(hipo::bank& mc_particle_bank,
-                    hipo::bank* rec_match_bank = nullptr,
-                    hipo::bank* gen_match_bank = nullptr) -> void {
+    auto load_event(const hipo::bank_view& mc_particle_bank,
+                    const hipo::bank_view* rec_match_bank = nullptr,
+                    const hipo::bank_view* gen_match_bank = nullptr) -> void {
         clear_event();
         load_mc_particles(mc_particle_bank);
 
@@ -496,19 +496,19 @@ class MCTruthService : public Service {
     /**
      * @brief Load MC particles from MC::Particle bank
      */
-    auto load_mc_particles(hipo::bank& bank) -> void {
-        const int n_rows = bank.getRows();
+    auto load_mc_particles(const hipo::bank_view& bank) -> void {
+        const int n_rows = bank.rows();
         m_mc_particles.reserve(n_rows);
 
         for (int row = 0; row < n_rows; ++row) {
-            int pdg = bank.getInt("pid", row);
-            double px = bank.getFloat("px", row);
-            double py = bank.getFloat("py", row);
-            double pz = bank.getFloat("pz", row);
-            double vx = bank.getFloat("vx", row);
-            double vy = bank.getFloat("vy", row);
-            double vz = bank.getFloat("vz", row);
-            double vt = bank.getFloat("vt", row);
+            int pdg = bank.get<int32_t>("pid", row);
+            double px = bank.get<float>("px", row);
+            double py = bank.get<float>("py", row);
+            double pz = bank.get<float>("pz", row);
+            double vx = bank.get<float>("vx", row);
+            double vy = bank.get<float>("vy", row);
+            double vz = bank.get<float>("vz", row);
+            double vt = bank.get<float>("vt", row);
 
             // Calculate mass and energy from PDG mass
             double mass = get_pdg_mass(pdg);
@@ -517,8 +517,8 @@ class MCTruthService : public Service {
 
             // Parent index (typically stored in "parent" column, may vary by bank version)
             int parent_index = -1;
-            if (bank.getSchema().hasEntry("parent")) {
-                parent_index = bank.getInt("parent", row);
+            if (bank.get_schema().column_index("parent").has_value()) {
+                parent_index = bank.get<int32_t>("parent", row);
             }
 
             m_mc_particles.emplace_back(pdg, row, parent_index,
@@ -535,14 +535,14 @@ class MCTruthService : public Service {
     /**
      * @brief Load reconstructed-to-MC matching from MC::RecMatch bank
      */
-    auto load_rec_match(hipo::bank& bank) -> void {
-        const int n_rows = bank.getRows();
+    auto load_rec_match(const hipo::bank_view& bank) -> void {
+        const int n_rows = bank.rows();
         const float min_quality = static_cast<float>(m_min_match_quality.get());
 
         for (int row = 0; row < n_rows; ++row) {
-            int rec_index = bank.getInt("pindex", row);
-            int mc_index = bank.getInt("mcindex", row);
-            float quality = bank.getFloat("quality", row);
+            int rec_index = static_cast<int>(bank.get<int16_t>("pindex", row));
+            int mc_index = static_cast<int>(bank.get<int16_t>("mcindex", row));
+            float quality = bank.get<float>("quality", row);
 
             if (quality >= min_quality && mc_index >= 0) {
                 // Check if this rec particle already has a better match
@@ -566,14 +566,14 @@ class MCTruthService : public Service {
     /**
      * @brief Load MC-to-reconstructed matching from MC::GenMatch bank
      */
-    auto load_gen_match(hipo::bank& bank) -> void {
-        const int n_rows = bank.getRows();
+    auto load_gen_match(const hipo::bank_view& bank) -> void {
+        const int n_rows = bank.rows();
         const float min_quality = static_cast<float>(m_min_match_quality.get());
 
         for (int row = 0; row < n_rows; ++row) {
-            int mc_index = bank.getInt("mcindex", row);
-            int rec_index = bank.getInt("pindex", row);
-            float quality = bank.getFloat("quality", row);
+            int mc_index = static_cast<int>(bank.get<int16_t>("mcindex", row));
+            int rec_index = static_cast<int>(bank.get<int16_t>("pindex", row));
+            float quality = bank.get<float>("quality", row);
 
             if (quality >= min_quality && rec_index >= 0) {
                 m_mc_to_rec_index[mc_index] = rec_index;

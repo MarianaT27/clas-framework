@@ -60,7 +60,7 @@ class ThreadPool {
      * @throws std::system_error if thread creation fails
      * @throws std::invalid_argument if num_threads > hardware limit
      */
-    explicit ThreadPool(std::size_t num_threads = 0, std::string_view thread_name_prefix = "ThreadPool", bool quiet = false);
+    explicit ThreadPool(std::size_t num_threads = 0, std::string_view thread_name_prefix = "ThreadPool");
 
     /**
      * @brief Destructor ensures graceful shutdown with reasonable timeout.
@@ -128,7 +128,6 @@ class ThreadPool {
     std::vector<std::thread> m_workers;
     std::atomic<bool> m_stop_requested{false};
     std::string m_thread_name_prefix;
-    bool m_quiet{false};
     mutable Statistics m_stats;
 };
 
@@ -204,8 +203,8 @@ ThreadPool::Statistics& ThreadPool::Statistics::operator=(Statistics&& other) no
     return *this;
 }
 
-ThreadPool::ThreadPool(std::size_t num_threads, std::string_view thread_name_prefix, bool quiet)
-    : m_thread_name_prefix{thread_name_prefix}, m_quiet{quiet} {
+ThreadPool::ThreadPool(std::size_t num_threads, std::string_view thread_name_prefix)
+    : m_thread_name_prefix{thread_name_prefix} {
 
     if (num_threads == 0) throw std::invalid_argument("ThreadPool: num_threads must be greater than 0");
     if (num_threads > MAX_REASONABLE_THREADS) throw std::invalid_argument("ThreadPool: Requested thread count exceeds reasonable limit");
@@ -268,9 +267,7 @@ auto ThreadPool::shutdown(std::chrono::milliseconds timeout) noexcept -> void {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
 
     bool expected = false;
-    if (!m_stop_requested.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-        if (!m_quiet) fmt::print("Pool was already stopped\n");
-    }
+    if (!m_stop_requested.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) fmt::print("Pool was already stopped\n");
 
     // Notify all workers to stop
     m_task_available.notify_all();
@@ -302,18 +299,16 @@ auto ThreadPool::shutdown(std::chrono::milliseconds timeout) noexcept -> void {
 
     ShutdownResult shutdown_result = all_joined ? ShutdownResult::Graceful : ShutdownResult::Forced;
 
-    if (!m_quiet) {
-        switch (shutdown_result) {
-            case ThreadPool::ShutdownResult::Graceful:
-                fmt::print("Pool shutdown gracefully\n");
-                break;
-            case ThreadPool::ShutdownResult::Forced:
-                fmt::print("Pool shutdown was forced (timeout)\n");
-                break;
-            case ThreadPool::ShutdownResult::AlreadyStopped:
-                fmt::print("Pool was already stopped\n");
-                break;
-        }
+    switch (shutdown_result) {
+        case ThreadPool::ShutdownResult::Graceful:
+            fmt::print("Pool shutdown gracefully\n");
+            break;
+        case ThreadPool::ShutdownResult::Forced:
+            fmt::print("Pool shutdown was forced (timeout)\n");
+            break;
+        case ThreadPool::ShutdownResult::AlreadyStopped:
+            fmt::print("Pool was already stopped\n");
+            break;
     }
 }
 

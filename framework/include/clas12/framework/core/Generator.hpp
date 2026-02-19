@@ -36,18 +36,15 @@
  * Coroutines enable elegant filtering with sequential-looking code:
  *
  * @code
- * Generator<Event&> filter_electrons(EventStream& stream) {
- *     while (auto event = stream.next()) {
- *         if (!event->get().particles(clas12::PIDs::ELECTRON).empty()) {
- *             co_yield event->get();
- *         }
+ * Generator<int> range(int start, int end) {
+ *     for (int i = start; i < end; ++i) {
+ *         co_yield i;
  *     }
  * }
  *
  * // Usage
- * EventStream stream(hipo_file);
- * for (Event& event : filter_electrons(stream)) {
- *     // Only events with electrons reach here
+ * for (int value : range(0, 10)) {
+ *     std::cout << value << "\n";
  * }
  * @endcode
  *

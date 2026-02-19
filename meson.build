@@ -73,6 +73,10 @@ cxxopts_dep = dependency('cxxopts')
 #                              EXTERNAL LIBRARIES                               #
 #══════════════════════════════════════════════════════════════════════════════#
 
+zlib_dep    = dependency('zlib')
+thread_dep  = dependency('threads')
+project_libs = []
+
 # HIPO4 library
 subdir('extern/hipo4')
 

@@ -250,8 +250,9 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
 
         // Write event to output HIPO file
         if (m_hipo_svc && m_hipo_svc->is_valid() && m_hipo_svc->get()->is_output_enabled()) {
-            auto& raw_event = event.hipo_event().raw_event();
-            m_hipo_svc->get()->write_event(raw_event);
+            // TODO: event writing needs migration to new hipo4 API
+            // The old API used: event.hipo_event().raw_event()
+            // m_hipo_svc->get()->write_event(raw_event);
         }
 
         // Store selected particles for downstream algorithms

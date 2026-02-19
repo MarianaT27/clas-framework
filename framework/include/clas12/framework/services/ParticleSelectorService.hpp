@@ -1,7 +1,6 @@
 #pragma once
 
-#include <hipoeventiterator.h>
-#include <reader.h>
+#include <bank_view.h>
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/framework/core/IService.hpp>
@@ -89,7 +88,7 @@ class ParticleSelectorService : public Service {
      * @param types Vector of particle types to extract (empty = use defaults)
      * @return ParticleMap containing particles grouped by their PID
      */
-    auto extract_particles(hipo::bank& REC_Particle, const std::vector<clas12::PIDs>& types = {}) const -> ParticleMap {
+    auto extract_particles(const hipo::bank_view& REC_Particle, const std::vector<clas12::PIDs>& types = {}) const -> ParticleMap {
         ParticleMap particle_map;
 
         const auto& target_types = types.empty() ? m_default_types : types;
@@ -99,7 +98,7 @@ class ParticleSelectorService : public Service {
         }
 
         for (int i = 0; i < REC_Particle.rows(); i++) {
-            const int pid = REC_Particle.get<int>("pid", i);
+            const int pid = REC_Particle.get<int32_t>("pid", i);
 
             clas12::PIDs particle_type;
             bool found = false;
@@ -113,17 +112,17 @@ class ParticleSelectorService : public Service {
 
             if (!found) continue;
 
-            const int status = REC_Particle.get<int>("status", i);
-            const int charge = REC_Particle.get<int>("charge", i);
-            const double px = REC_Particle.get<double>("px", i);
-            const double py = REC_Particle.get<double>("py", i);
-            const double pz = REC_Particle.get<double>("pz", i);
-            const double vx = REC_Particle.get<double>("vx", i);
-            const double vy = REC_Particle.get<double>("vy", i);
-            const double vz = REC_Particle.get<double>("vz", i);
-            const double vt = REC_Particle.get<double>("vt", i);
-            const double beta = REC_Particle.get<double>("beta", i);
-            const double chi2pid = REC_Particle.get<double>("chi2pid", i);
+            const int status = static_cast<int>(REC_Particle.get<int16_t>("status", i));
+            const int charge = static_cast<int>(REC_Particle.get<int8_t>("charge", i));
+            const double px = static_cast<double>(REC_Particle.get<float>("px", i));
+            const double py = static_cast<double>(REC_Particle.get<float>("py", i));
+            const double pz = static_cast<double>(REC_Particle.get<float>("pz", i));
+            const double vx = static_cast<double>(REC_Particle.get<float>("vx", i));
+            const double vy = static_cast<double>(REC_Particle.get<float>("vy", i));
+            const double vz = static_cast<double>(REC_Particle.get<float>("vz", i));
+            const double vt = static_cast<double>(REC_Particle.get<float>("vt", i));
+            const double beta = static_cast<double>(REC_Particle.get<float>("beta", i));
+            const double chi2pid = static_cast<double>(REC_Particle.get<float>("chi2pid", i));
 
             const double mass = clas12::physics::ParticleUtils::get_mass(pid);
             const double E = clas12::physics::ParticleUtils::compute_energy(px, py, pz, pid);
@@ -186,22 +185,22 @@ class ParticleSelectorService : public Service {
         return (it != particles.end()) ? it->second : empty;
     }
 
-    auto get_particles_by_charge(hipo::bank& REC_Particle) const -> std::map<int, std::vector<clas12::Particle>> {
+    auto get_particles_by_charge(const hipo::bank_view& REC_Particle) const -> std::map<int, std::vector<clas12::Particle>> {
         std::map<int, std::vector<clas12::Particle>> charge_map;
 
         for (int i = 0; i < REC_Particle.rows(); i++) {
-            const int charge = REC_Particle.get<int>("charge", i);
-            const int pid = REC_Particle.get<int>("pid", i);
-            const int status = REC_Particle.get<int>("status", i);
-            const double px = REC_Particle.get<double>("px", i);
-            const double py = REC_Particle.get<double>("py", i);
-            const double pz = REC_Particle.get<double>("pz", i);
-            const double vx = REC_Particle.get<double>("vx", i);
-            const double vy = REC_Particle.get<double>("vy", i);
-            const double vz = REC_Particle.get<double>("vz", i);
-            const double vt = REC_Particle.get<double>("vt", i);
-            const double beta = REC_Particle.get<double>("beta", i);
-            const double chi2pid = REC_Particle.get<double>("chi2pid", i);
+            const int charge = static_cast<int>(REC_Particle.get<int8_t>("charge", i));
+            const int pid = REC_Particle.get<int32_t>("pid", i);
+            const int status = static_cast<int>(REC_Particle.get<int16_t>("status", i));
+            const double px = static_cast<double>(REC_Particle.get<float>("px", i));
+            const double py = static_cast<double>(REC_Particle.get<float>("py", i));
+            const double pz = static_cast<double>(REC_Particle.get<float>("pz", i));
+            const double vx = static_cast<double>(REC_Particle.get<float>("vx", i));
+            const double vy = static_cast<double>(REC_Particle.get<float>("vy", i));
+            const double vz = static_cast<double>(REC_Particle.get<float>("vz", i));
+            const double vt = static_cast<double>(REC_Particle.get<float>("vt", i));
+            const double beta = static_cast<double>(REC_Particle.get<float>("beta", i));
+            const double chi2pid = static_cast<double>(REC_Particle.get<float>("chi2pid", i));
 
             const double mass = clas12::physics::ParticleUtils::get_mass(pid);
             const double E = clas12::physics::ParticleUtils::compute_energy(px, py, pz, pid);

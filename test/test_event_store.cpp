@@ -8,7 +8,7 @@
 /**
  * Event Store Test Fixture
  * 
- * Since the actual Event class requires a hipo::iter_event reference,
+ * Since the actual Event class requires a hipo::bank_view_set reference,
  * we test the event store logic in isolation using the same std::any-based
  * storage mechanism that Event uses internally.
  */

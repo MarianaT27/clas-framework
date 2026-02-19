@@ -1,245 +1,276 @@
-//******************************************************************************
-//*       ██╗  ██╗██╗██████╗  ██████╗     ██╗  ██╗    ██████╗                  *
-//*       ██║  ██║██║██╔══██╗██╔═══██╗    ██║  ██║   ██╔═████╗                 *
-//*       ███████║██║██████╔╝██║   ██║    ███████║   ██║██╔██║                 *
-//*       ██╔══██║██║██╔═══╝ ██║   ██║    ╚════██║   ████╔╝██║                 *
-//*       ██║  ██║██║██║     ╚██████╔╝         ██║██╗╚██████╔╝                 *
-//*       ╚═╝  ╚═╝╚═╝╚═╝      ╚═════╝          ╚═╝╚═╝ ╚═════╝                  *
-//************************ Jefferson National Lab (2017) ***********************
-/*
- *   Copyright (c) 2017.  Jefferson Lab (JLab). All rights reserved. Permission
- *   to use, copy, modify, and distribute  this software and its documentation
- *   for educational, research, and not-for-profit purposes, without fee and
- *   without a signed licensing agreement.
- *
- *   IN NO EVENT SHALL JLAB BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL
- *   INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING
- *   OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF JLAB HAS
- *   BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *   JLAB SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
- *   THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- *   PURPOSE. THE HIPO DATA FORMAT SOFTWARE AND ACCOMPANYING DOCUMENTATION, IF
- *   ANY, PROVIDED HEREUNDER IS PROVIDED "AS IS". JLAB HAS NO OBLIGATION TO
- *   PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
- *
- *   This software was developed under the United States Government license.
- *   For more information contact author at gavalian@jlab.org
- *   Department of Experimental Nuclear Physics, Jefferson Lab.
- */
-
 #include "writer.h"
-#include <cstdlib>
+
+#include <cstring>
+#include <optional>
 
 namespace hipo {
 
-/**
-* Open a File for writing, it includes the dictionary
-* in the file.
-*/
- void writer::open(const char *filename){
-    outputStream.open(filename);
+writer::~writer() {
+    if (m_is_open)
+        (void)close();
+}
 
-    std::vector<std::string> schemaList = writerDictionary.getSchemaList();
+void writer::set_dictionary(const dictionary& dict) {
+    // Copy all schemas from the provided dictionary
+    for (auto const& s : dict)
+        m_dict.add(s);
+}
 
-    recordbuilder  builder;
-    event          schemaEvent;
+result<void> writer::open(std::string_view path, writer_options opts) {
+    if (m_is_open)
+        return unexpected(error_code::writer_already_open);
 
-    for(int i = 0; i < schemaList.size(); i++){
-        std::string schemaString = writerDictionary.getSchema(schemaList[i].c_str()).getSchemaString();
-        std::string schemaStringJson = writerDictionary.getSchema(schemaList[i].c_str()).getSchemaStringJson();
-        //---> Can open after debug level is introduced in the class
-        //printf("STR  : %s\n",schemaString.c_str());
-        //printf("JSON : %s\n",schemaStringJson.c_str());
-        schemaEvent.reset();
-        structure schemaNode(120,2,schemaString);
-        structure schemaNodeJson(120,1,schemaStringJson);
-        schemaEvent.addStructure(schemaNodeJson);
-        schemaEvent.addStructure(schemaNode);
-	      //schemaEvent.show();
-        builder.addEvent(schemaEvent);
+    m_opts = opts;
+
+    // Build dictionary record: each schema becomes an event with structure(120, 2, type=6)
+    record_builder_options rb_opts;
+    rb_opts.max_events = m_dict.size() + 16;
+    rb_opts.max_record_bytes = 1024 * 1024;
+    rb_opts.compression = opts.compression;
+    record_builder dict_builder(rb_opts);
+
+    event_builder ev;
+    for (auto const& sch : m_dict) {
+        auto schema_str = sch.to_schema_string();
+        ev.reset();
+        ev.add_string(DICT_GROUP, DICT_ITEM, schema_str);
+        (void)dict_builder.add_event(ev.data());
     }
 
-    //-------------------------------------------------------------------------
-    // This section is added on April-28-2022, it will store user provided
-    // configurations along with the schema in the record that goes into
-    // HIPO header. G^2
-    //-------------------------------------------------------------------------
-    std::map<std::string,std::string>::iterator it;
-    event configEvent;
-    
-    for( it = userConfig.begin(); it != userConfig.end(); it++){
-      printf("::: adding user configuration (key): %s\n",it->first.c_str());
+    auto build_res = dict_builder.build();
+    if (!build_res)
+        return unexpected(build_res.error());
 
-      std::string wKey = std::string(it->first.c_str());
-      std::string wConfig = std::string(it->second.c_str());
-      
-      structure configKey(32555,1,wKey);
-      structure configString(32555,2,wConfig);
-      
-      configEvent.reset();
-      configEvent.addStructure(configKey);
-      configEvent.addStructure(configString);
-      builder.addEvent(configEvent);
+    int dict_record_size = dict_builder.record_size();
+
+    // Open file
+    auto sink = file_sink::open(path);
+    if (!sink) return unexpected(sink.error());
+    m_sink = std::move(*sink);
+
+    // Write 56-byte file header
+    char header[FILE_HEADER_SIZE];
+    std::memset(header, 0, FILE_HEADER_SIZE);
+
+    write_value<uint32_t>(header + FH_UNIQUE_WORD_OFFSET,     HIPO_FILE_UNIQUE_WORD);
+    write_value<int32_t> (header + FH_FILE_NUMBER_OFFSET,     1);
+    write_value<int32_t> (header + FH_HEADER_LENGTH_OFFSET,   FILE_HEADER_WORDS);
+    write_value<int32_t> (header + FH_RECORD_COUNT_OFFSET,    0);  // patched at close
+    write_value<int32_t> (header + FH_INDEX_ARRAY_LEN_OFFSET, 0);
+    write_value<int32_t> (header + FH_BIT_INFO_OFFSET,        6);  // version 6, matching v1 behavior
+    write_value<int32_t> (header + FH_USER_HEADER_LEN_OFFSET, dict_record_size);
+    write_value<int32_t> (header + FH_MAGIC_NUMBER_OFFSET,    static_cast<int32_t>(HEADER_MAGIC));
+    write_value<int64_t> (header + FH_USER_REGISTER_OFFSET,   0);
+    write_value<int64_t> (header + FH_TRAILER_POS_OFFSET,     0);  // patched at close
+    write_value<int32_t> (header + FH_USER_INT1_OFFSET,       0);
+    write_value<int32_t> (header + FH_USER_INT2_OFFSET,       0);
+
+    auto wr = m_sink.write(header, FILE_HEADER_SIZE);
+    if (!wr) return unexpected(wr.error());
+
+    // Write dictionary record
+    auto dict_data = dict_builder.record_data();
+    wr = m_sink.write(dict_data.data(), static_cast<int>(dict_data.size()));
+    if (!wr) return unexpected(wr.error());
+
+    // Initialize data record builder
+    record_builder_options data_opts;
+    data_opts.max_events = opts.max_events;
+    data_opts.max_record_bytes = opts.max_record_bytes;
+    data_opts.compression = opts.compression;
+    m_builder = record_builder(data_opts);
+
+    // Initialize stats tracker if enabled
+    if (m_opts.collect_statistics) {
+        m_stats_tracker.set_dictionary(m_dict);
+        m_record_stats.clear();
     }
-    
-    //printf(" RECORD SIZE BEFORE BUILD = %d\n",builder.getRecordSize());
-    builder.build();
-    //printf(" RECORD SIZE AFTER  BUILD = %d, NENTRIES = %d\n",
-    //  builder.getRecordSize(),builder.getEntries());
 
-    int dictionarySize = builder.getRecordSize();
-
-    hipoFileHeader_t header;
-
-    //header.uniqueid         = 0x43455248;
-    header.uniqueid         = 0x4F504948;// 4849504F;
-    header.filenumber       = 1;
-    header.headerLength     = 14;
-    header.recordCount      = 0;
-    header.indexArrayLength = 0;
-    header.bitInfoVersion   = (0x000000FF&6);
-    header.userHeaderLength = dictionarySize;// will change with the dictionary
-    header.magicNumber      = 0xc0da0100;
-    header.userRegister     = 0;
-    header.trailerPosition  = 0;
-    header.userIntegerOne   = 0;
-    header.userIntegerTwo   = 0;
-
-    outputStream.write( reinterpret_cast<char *> (&header),sizeof(header));
-    long  position = outputStream.tellp();
-
-    printf("writing     header:: position = %ld\n",position);
-    outputStream.write( reinterpret_cast<char *> (&builder.getRecordBuffer()[0]),dictionarySize);
-    position = outputStream.tellp();
-    printf("writing dictionary:: position = %ld\n",position);
- }
-
-void writer::addDictionary(hipo::dictionary &dict){
-    std::vector<std::string> schemaList = dict.getSchemaList();
-    for(int i = 0; i < schemaList.size(); i++){
-        writerDictionary.addSchema(dict.getSchema(schemaList[i].c_str()));
-      }
+    m_is_open = true;
+    return ok();
 }
 
- void writer::addEvent(hipo::event &hevent){
-  if(hevent.getTag()==0){
-    bool status = recordBuilder.addEvent(hevent);
-    if(status==false){
-      writeRecord(recordBuilder);
-      recordBuilder.addEvent(hevent);
-    } 
-  } else {
-    int tag = hevent.getTag();
-    extendedBuilder[tag].setUserWordOne(tag);
-    bool status = extendedBuilder[tag].addEvent(hevent);
-    if(status==false){
-      writeRecord(extendedBuilder[tag]);
-      extendedBuilder[tag].addEvent(hevent);
-    } 
-  }
- }
-
-void writer::addEvent(std::vector<char> &vec, int size ){
-  int transferSize = size;
-  if(size<0){ transferSize = vec.size(); }
-  bool status = recordBuilder.addEvent(vec,0,transferSize);
-  if(status==false){
-    writeRecord(recordBuilder);
-    recordBuilder.addEvent(vec,0,transferSize);
-  }
+result<void> writer::add_event(const event_builder& ev) {
+    return add_event(ev.data());
 }
 
- void writer::writeRecord(recordbuilder &builder){
-   builder.build();
-   recordInfo_t  recordInfo;
-   recordInfo.recordPosition = outputStream.tellp();
-   recordInfo.recordEntries  = builder.getEntries();
-   recordInfo.recordLength   = builder.getRecordSize();
-   recordInfo.userWordOne    = builder.getUserWordOne();
-   recordInfo.userWordTwo    = builder.getUserWordTwo();
-   if(recordInfo.recordEntries>0){
-      outputStream.write( reinterpret_cast<char *> (&builder.getRecordBuffer()[0]),recordInfo.recordLength);
-      writerRecordInfo.push_back(recordInfo);
-      if(verbose>0) printf("%6ld : writing::record : size = %8d, entries = %8d, position = %12ld word = %12ld %12ld\n",
-                  writerRecordInfo.size(), recordInfo.recordLength,recordInfo.recordEntries,
-                  recordInfo.recordPosition,recordInfo.userWordOne,recordInfo.userWordTwo);
-   }  else {
-     if(verbose>0) printf(" write::record : empty record will not be written.....\n");
-   }
-   builder.reset();
- }
+result<void> writer::add_event(std::span<const char> event_data) {
+    if (!m_is_open)
+        return unexpected(error_code::writer_not_open);
 
-void writer::showSummary(){
-  for(int loop = 0; loop < writerRecordInfo.size(); loop++){
-    recordInfo_t  recordInfo = writerRecordInfo[loop];
-    printf(" %6d : record INFO : size = %8d, entries = %8d, position = %12ld word = %12ld %12ld\n", loop,
-             recordInfo.recordLength,recordInfo.recordEntries,recordInfo.recordPosition,
-           recordInfo.userWordOne,recordInfo.userWordTwo);
-  }
+    if (!m_builder.add_event(event_data)) {
+        // Record full -- flush it, then add to new record
+        auto res = write_record();
+        if (!res) return res;
+        if (!m_builder.add_event(event_data))
+            return unexpected(error_code::write_failed);
+    }
+
+    // Track per-column statistics if enabled
+    if (m_opts.collect_statistics)
+        m_stats_tracker.process_event(event_data);
+
+    return ok();
 }
 
-
-void writer::writeIndexTable(){
-  hipo::schema indexSchema("file::index",32111,1);
-  indexSchema.parse("position/L,length/I,entries/I,userWordOne/L,userWordTwo/L");
-  int  nEntries = writerRecordInfo.size();
-  long indexPosition = outputStream.tellp();
-  printf("\n\n-----> writing file index : entries = %d, position = %ld\n",
-         nEntries,indexPosition);
-  hipo::bank indexBank(indexSchema,nEntries);
-  for(int i = 0; i < nEntries; i++){
-    recordInfo_t  recordInfo = writerRecordInfo[i];
-    indexBank.putLong("position",i,recordInfo.recordPosition);
-    indexBank.putInt("length",i,recordInfo.recordLength);
-    indexBank.putInt("entries",i,recordInfo.recordEntries);
-    indexBank.putLong("userWordOne",i,recordInfo.userWordOne);
-    indexBank.putLong("userWordTwo",i,recordInfo.userWordTwo);
-  }
-
-  int eventSize = 32*nEntries + 1024;
-
-  hipo::event indexEvent(eventSize);
-  indexEvent.addStructure(indexBank);
-  recordBuilder.reset();
-  recordBuilder.addEvent(indexEvent);
-  writeRecord(recordBuilder);
-  outputStream.seekp(40);
-  outputStream.write(reinterpret_cast<char *> (&indexPosition), 8);
+result<void> writer::flush() {
+    if (!m_is_open)
+        return unexpected(error_code::writer_not_open);
+    return write_record();
 }
 
-void writer::close(){
-  writeRecord(recordBuilder);
+result<void> writer::write_record() {
+    if (m_builder.entry_count() == 0) return ok();
 
-  std::map<int,hipo::recordbuilder>::iterator it;
-  for(it = extendedBuilder.begin(); it != extendedBuilder.end(); it++){
-    writeRecord(it->second);
-  } 
+    auto res = m_builder.build();
+    if (!res) return res;
 
-  writeIndexTable();
-  outputStream.close();
-  writerRecordInfo.clear();
+    record_info info;
+    info.position      = m_sink.position();
+    info.length        = m_builder.record_size();
+    info.entries        = m_builder.entry_count();
+    info.user_word_one = 0;
+    info.user_word_two = 0;
+
+    auto data = m_builder.record_data();
+    auto wr = m_sink.write(data.data(), static_cast<int>(data.size()));
+    if (!wr) return unexpected(wr.error());
+
+    m_record_infos.push_back(info);
+
+    // Save per-record column stats
+    if (m_opts.collect_statistics)
+        m_record_stats.push_back(m_stats_tracker.finish_record());
+
+    if (m_on_record_written) {
+        m_on_record_written(static_cast<int>(m_record_infos.size()) - 1,
+                            info.position, info.length, info.entries);
+    }
+
+    m_builder.reset();
+    return ok();
 }
 
-/***
-* Function to change the record builder user word one
-*/
-void writer::setUserIntegerOne(long userIntOne){
-  recordBuilder.setUserWordOne(userIntOne);
+result<void> writer::write_index_table() {
+    // Build index bank with schema "position/L,length/I,entries/I,userWordOne/L,userWordTwo/L"
+    // group=32111, item=1
+    auto index_schema = schema::parse("file::index", 32111, 1,
+                                       "position/L,length/I,entries/I,userWordOne/L,userWordTwo/L");
+    if (!index_schema) return unexpected(index_schema.error());
+
+    int n = static_cast<int>(m_record_infos.size());
+    bank index_bank(*index_schema, n);
+
+    auto [h_pos, h_len, h_ent, h_uw1, h_uw2] =
+        index_schema->get_handles("position", "length", "entries", "userWordOne", "userWordTwo")
+        .expect("resolve index handles");
+
+    for (int i = 0; i < n; ++i) {
+        auto const& ri = m_record_infos[i];
+        index_bank.put<int64_t>(h_pos, i, ri.position);
+        index_bank.put<int32_t>(h_len, i, ri.length);
+        index_bank.put<int32_t>(h_ent, i, ri.entries);
+        index_bank.put<int64_t>(h_uw1, i, ri.user_word_one);
+        index_bank.put<int64_t>(h_uw2, i, ri.user_word_two);
+    }
+
+    // Estimate event size (index + optional stats)
+    int estimated_size = 32 * n + 4096;
+
+    // Build stats bank if statistics were collected
+    std::optional<schema> stats_schema_opt;
+    std::optional<bank> stats_bank_opt;
+    if (m_opts.collect_statistics && !m_record_stats.empty()) {
+        auto ss = schema::parse("file::column_stats", STATS_GROUP, STATS_ITEM,
+                                "record/I,group/I,item/I,col/I,min/D,max/D");
+        if (ss) {
+            stats_schema_opt = std::move(*ss);
+            // Count total rows (one row per column per record)
+            int total_stat_rows = 0;
+            for (auto const& rs : m_record_stats)
+                total_stat_rows += static_cast<int>(rs.columns.size());
+
+            if (total_stat_rows > 0) {
+                bank sb(*stats_schema_opt, total_stat_rows);
+                auto [h_rec, h_grp, h_itm, h_col, h_min, h_max] =
+                    stats_schema_opt->get_handles("record", "group", "item", "col", "min", "max")
+                    .expect("resolve stats handles");
+
+                int row = 0;
+                for (int ri = 0; ri < static_cast<int>(m_record_stats.size()); ++ri) {
+                    for (auto const& [key, entry] : m_record_stats[ri].columns) {
+                        int grp = static_cast<int>((key >> 24) & 0xFFFF);
+                        int itm = static_cast<int>((key >> 16) & 0xFF);
+                        int cidx = static_cast<int>(key & 0xFFFF);
+                        sb.put<int32_t>(h_rec, row, ri);
+                        sb.put<int32_t>(h_grp, row, grp);
+                        sb.put<int32_t>(h_itm, row, itm);
+                        sb.put<int32_t>(h_col, row, cidx);
+                        sb.put<double>(h_min, row, entry.min_val);
+                        sb.put<double>(h_max, row, entry.max_val);
+                        row++;
+                    }
+                }
+                stats_bank_opt = std::move(sb);
+                estimated_size += total_stat_rows * 40 + 1024;
+            }
+        }
+    }
+
+    // Build event with the index bank (and optional stats bank)
+    event_builder ev(estimated_size);
+    ev.add(index_bank);
+    if (stats_bank_opt)
+        ev.add(*stats_bank_opt);
+
+    // Build a record containing the trailer event
+    record_builder_options rb_opts;
+    rb_opts.max_events = 1;
+    rb_opts.max_record_bytes = estimated_size;
+    rb_opts.compression = m_opts.compression;
+    record_builder rb(rb_opts);
+    rb.add_event(ev.data());
+
+    auto build_res = rb.build();
+    if (!build_res) return unexpected(build_res.error());
+
+    int64_t trailer_pos = m_sink.position();
+
+    auto data = rb.record_data();
+    auto wr = m_sink.write(data.data(), static_cast<int>(data.size()));
+    if (!wr) return unexpected(wr.error());
+
+    // Patch file header: write trailer position at offset 40
+    char pos_buf[8];
+    write_value<int64_t>(pos_buf, trailer_pos);
+    return m_sink.write_at(FH_TRAILER_POS_OFFSET, pos_buf, 8);
 }
 
-/***
-*Function to change the record builder user word two
-*/
-void writer::setUserIntegerTwo(long userIntTwo){
-  recordBuilder.setUserWordTwo(userIntTwo);
+result<void> writer::close() {
+    if (!m_is_open)
+        return unexpected(error_code::writer_not_open);
+
+    // Flush remaining events
+    auto res = write_record();
+    if (!res) return res;
+
+    // Write index table (trailer)
+    res = write_index_table();
+    if (!res) return res;
+
+    m_sink.close();
+    m_is_open = false;
+    m_record_infos.clear();
+    m_record_stats.clear();
+    return ok();
 }
 
-/***
-*Function to write buffer.
-*/
-void writer::flush(){
-  writeRecord(recordBuilder);
+void writer::set_user_word_one(int64_t w) noexcept {
+    m_builder.set_user_word_one(w);
 }
 
+void writer::set_user_word_two(int64_t w) noexcept {
+    m_builder.set_user_word_two(w);
 }
+
+} // namespace hipo

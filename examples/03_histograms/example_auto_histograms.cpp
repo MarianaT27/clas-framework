@@ -103,8 +103,7 @@ public:
     auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_events_processed++;
 
-        auto& hipo_event = event.hipo_event();
-        hipo::bank& REC_Particle = hipo_event.get("REC::Particle");
+        const auto& REC_Particle = event.get_bank("REC::Particle");
 
         int n_particles = REC_Particle.rows();
 

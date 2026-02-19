@@ -198,24 +198,25 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             return clas12::framework::StatusCode::FILTERED();
         }
 
-        // Get banks using structured bindings
-        auto& hipo_event = event.hipo_event();
-        auto [REC_Event, REC_Particle, REC_Scintillator, REC_Calorimeter, REC_Traj] =
-            hipo_event.banks("REC::Event", "REC::Particle", "REC::Scintillator",
-                             "REC::Calorimeter", "REC::Traj");
+        // Get banks individually
+        const auto& REC_Event = event.get_bank("REC::Event");
+        const auto& REC_Particle = event.get_bank("REC::Particle");
+        const auto& REC_Scintillator = event.get_bank("REC::Scintillator");
+        const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
+        const auto& REC_Traj = event.get_bank("REC::Traj");
 
-        if (REC_Event->rows() == 0) return clas12::framework::StatusCode::SUCCESS();
+        if (REC_Event.rows() == 0) return clas12::framework::StatusCode::SUCCESS();
 
-        double start_time = REC_Event->get<double>("startTime", 0);
+        double start_time = REC_Event.get<double>("startTime", 0);
 
         // Extract pions using ParticleSelectorService
         clas12::framework::ParticleMap particles = m_particle_svc->get()->extract_particles(
-            *REC_Particle,
+            REC_Particle,
             {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
 
         // Build π⁺ candidates with all kinematics computed once
         const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
-        auto piplus_candidates = build_pion_candidates(pions_plus, *REC_Scintillator, *REC_Calorimeter, *REC_Traj, start_time, true);
+        auto piplus_candidates = build_pion_candidates(pions_plus, REC_Scintillator, REC_Calorimeter, REC_Traj, start_time, true);
 
         // Fill pre-cut histograms, update cutflow, fill post-cut histograms and N-tuple
         fill_pre_cut_histograms(piplus_candidates, true);
@@ -228,7 +229,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
         // Build π⁻ candidates with all kinematics computed once
         const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
-        auto piminus_candidates = build_pion_candidates(pions_minus, *REC_Scintillator, *REC_Calorimeter, *REC_Traj, start_time, false);
+        auto piminus_candidates = build_pion_candidates(pions_minus, REC_Scintillator, REC_Calorimeter, REC_Traj, start_time, false);
 
         // Fill pre-cut histograms, update cutflow, fill post-cut histograms and N-tuple
         fill_pre_cut_histograms(piminus_candidates, false);
@@ -528,9 +529,9 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
      */
     auto build_pion_candidates(
         const std::vector<clas12::Particle>& pions,
-        hipo::bank& REC_Scintillator,
-        hipo::bank& REC_Calorimeter,
-        hipo::bank& REC_Traj,
+        const hipo::bank_view& REC_Scintillator,
+        const hipo::bank_view& REC_Calorimeter,
+        const hipo::bank_view& REC_Traj,
         double start_time,
         bool is_piplus
     ) -> std::vector<PionCandidate> {

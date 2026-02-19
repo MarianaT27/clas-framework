@@ -217,9 +217,9 @@ public:
         }
 
         // Get HIPO banks
-        auto& hipo_event = event.hipo_event();
-        auto [REC_Calorimeter, REC_Traj, REC_Track] =
-            hipo_event.banks("REC::Calorimeter", "REC::Traj", "REC::Track");
+        const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
+        const auto& REC_Traj = event.get_bank("REC::Traj");
+        const auto& REC_Track = event.get_bank("REC::Track");
 
         // Select trigger electron (highest momentum in FD)
         const auto possible_electron =
@@ -232,11 +232,11 @@ public:
         const clas12::Particle& electron = possible_electron.value();
 
         // Read detector bank data
-        const auto calorimeter = clas12::read_Calorimeter_bank(*REC_Calorimeter, electron.index());
-        const auto traj = clas12::read_Traj_bank(*REC_Traj, electron.index());
-        const auto trk_r1 = clas12::read_Track_bank(*REC_Track, traj.region1.index);
-        const auto trk_r2 = clas12::read_Track_bank(*REC_Track, traj.region2.index);
-        const auto trk_r3 = clas12::read_Track_bank(*REC_Track, traj.region3.index);
+        const auto calorimeter = clas12::read_Calorimeter_bank(REC_Calorimeter, electron.index());
+        const auto traj = clas12::read_Traj_bank(REC_Traj, electron.index());
+        const auto trk_r1 = clas12::read_Track_bank(REC_Track, traj.region1.index);
+        const auto trk_r2 = clas12::read_Track_bank(REC_Track, traj.region2.index);
+        const auto trk_r3 = clas12::read_Track_bank(REC_Track, traj.region3.index);
 
         // Calculate derived quantities
         const double E_total = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;

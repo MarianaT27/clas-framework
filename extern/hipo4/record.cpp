@@ -1,671 +1,316 @@
-//******************************************************************************
-//*       ██╗  ██╗██╗██████╗  ██████╗     ██╗  ██╗    ██████╗                  *
-//*       ██║  ██║██║██╔══██╗██╔═══██╗    ██║  ██║   ██╔═████╗                 *
-//*       ███████║██║██████╔╝██║   ██║    ███████║   ██║██╔██║                 *
-//*       ██╔══██║██║██╔═══╝ ██║   ██║    ╚════██║   ████╔╝██║                 *
-//*       ██║  ██║██║██║     ╚██████╔╝         ██║██╗╚██████╔╝                 *
-//*       ╚═╝  ╚═╝╚═╝╚═╝      ╚═════╝          ╚═╝╚═╝ ╚═════╝                  *
-//************************ Jefferson National Lab (2017) ***********************
-/*
- *   Copyright (c) 2017.  Jefferson Lab (JLab). All rights reserved. Permission
- *   to use, copy, modify, and distribute  this software and its documentation
- *   for educational, research, and not-for-profit purposes, without fee and
- *   without a signed licensing agreement.
- *
- *   IN NO EVENT SHALL JLAB BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL
- *   INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING
- *   OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF JLAB HAS
- *   BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *   JLAB SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
- *   THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- *   PURPOSE. THE HIPO DATA FORMAT SOFTWARE AND ACCOMPANYING DOCUMENTATION, IF
- *   ANY, PROVIDED HEREUNDER IS PROVIDED "AS IS". JLAB HAS NO OBLIGATION TO
- *   PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
- *
- *   This software was developed under the United States Government license.
- *   For more information contact author at gavalian@jlab.org
- *   Department of Experimental Nuclear Physics, Jefferson Lab.
- */
-
- /*
-  * File:   record.cpp
-  * Author: gavalian
-  *
-  * Created on April 11, 2017, 4:47 PM
-  */
-
 #include "record.h"
-//#include "hipoexceptions.h"
 
-#ifdef __LZ4__
+#include <cstring>
+
 #include <lz4.h>
+#include <zlib.h>
+
+// In-place LZ4 decompression requires LZ4 >= 1.8.2
+#ifdef LZ4_DECOMPRESS_INPLACE_MARGIN
+#define HIPO_LZ4_INPLACE 1
+#else
+#define HIPO_LZ4_INPLACE 0
 #endif
 
 namespace hipo {
 
+namespace {
 
-    record::record()= default;
+// Find a bank structure within event data (scanning the event's structure list)
+// Event layout: 16-byte header, then structures: [group:2][item:1][type:1][length:4][data...]
+std::pair<int, int> find_structure_in_event(const char* event_buf, int event_size,
+                                            int group, int item) noexcept {
+    if (event_size < 16) return {-1, 0};
 
+    int position = 16; // skip 16-byte event header
+    int total = read_value<int32_t>(event_buf + 4); // event size from header
+    if (total > event_size) total = event_size;
 
-    record::~record()= default;
+    while (position + 8 <= total) {
+        auto gid    = read_value<uint16_t>(event_buf + position);
+        auto iid    = read_value<uint8_t>(event_buf + position + 2);
+        auto length = read_value<int32_t>(event_buf + position + 4);
+        if (length < 0) break;
 
-    /**
-     * Read
-     */
-    void record::readRecord(std::ifstream &stream, long position, int dataOffset){
+        if (static_cast<int>(gid) == group && static_cast<int>(iid) == item)
+            return {position, length};
 
-        recordHeaderBuffer.resize(80);
-        stream.seekg(position,std::ios::beg);
-
-        stream.read( (char *) &recordHeaderBuffer[0],80);
-        recordHeader.recordLength     = *(reinterpret_cast<int *>(&recordHeaderBuffer[ 0]));
-        recordHeader.headerLength     = *(reinterpret_cast<int *>(&recordHeaderBuffer[ 8]));
-        recordHeader.numberOfEvents   = *(reinterpret_cast<int *>(&recordHeaderBuffer[12]));
-        recordHeader.bitInfo          = *(reinterpret_cast<int *>(&recordHeaderBuffer[20]));
-        recordHeader.signatureString  = *(reinterpret_cast<int *>(&recordHeaderBuffer[28]));
-        recordHeader.recordDataLength = *(reinterpret_cast<int *>(&recordHeaderBuffer[32]));
-        recordHeader.userHeaderLength = *(reinterpret_cast<int *>(&recordHeaderBuffer[24]));
-        int compressedWord            = *(reinterpret_cast<int *>(&recordHeaderBuffer[36]));
-
-        if(recordHeader.signatureString==0xc0da0100) recordHeader.dataEndianness = 0;
-        if(recordHeader.signatureString==0x0001dac0) recordHeader.dataEndianness = 1;
-
-        if(recordHeader.signatureString==0x0001dac0){
-          recordHeader.recordLength     = __builtin_bswap32(recordHeader.recordLength);
-          recordHeader.headerLength     = __builtin_bswap32(recordHeader.headerLength);
-          recordHeader.numberOfEvents   = __builtin_bswap32(recordHeader.numberOfEvents);
-          recordHeader.recordDataLength = __builtin_bswap32(recordHeader.recordDataLength);
-          recordHeader.userHeaderLength = __builtin_bswap32(recordHeader.userHeaderLength);
-          recordHeader.bitInfo          = __builtin_bswap32(recordHeader.bitInfo);
-          compressedWord                = __builtin_bswap32(compressedWord);
-        }
-
-        int compressedDataLengthPadding = (recordHeader.bitInfo>>24)&0x00000003;
-        int headerLengthBytes     = recordHeader.headerLength*4;
-        int dataBufferLengthBytes = recordHeader.recordLength * 4 - headerLengthBytes;
-
-        recordHeader.userHeaderLengthPadding    = (recordHeader.bitInfo>>20)&0x00000003;
-        recordHeader.recordDataLengthCompressed = compressedWord&0x0FFFFFFF;
-        recordHeader.compressionType            = (compressedWord>>28)&0x0000000F;
-        recordHeader.indexDataLength            = 4*recordHeader.numberOfEvents;
-
-        /*printf(" allocating buffer for record, size = %d, padding = %d length = %d type = %d nevents = %d data length = %d\n",
-          dataBufferLengthBytes,
-          compressedDataLengthPadding, recordHeader.recordDataLengthCompressed*4,
-          recordHeader.compressionType, recordHeader.numberOfEvents, recordHeader.recordDataLength);
-          */
-        //char *compressedBuffer    = (char*) malloc(dataBufferLengthBytes);
-
-        if(dataBufferLengthBytes>recordCompressedBuffer.size()){
-          int newSize = dataBufferLengthBytes + 5*1024;
-          //printf("---> resizing internal compressed buffer size to from %ld to %d\n",
-          //   recordCompressedBuffer.size(), newSize);
-          recordCompressedBuffer.resize(newSize);
-        }
-        //dataBufferLengthBytes    -= compressedDataLengthPadding;
-        long  dataposition = position + headerLengthBytes;
-        //printf("position = %ld data position = %ld\n",position, dataposition);
-        stream.seekg(dataposition,std::ios::beg);
-        //stream.read( compressedBuffer, dataBufferLengthBytes);
-        stream.read( (&recordCompressedBuffer[0]), dataBufferLengthBytes);
-        //showBuffer(compressedBuffer, 10, 200);
-        //printf("position = %ld data position = %ld \n",position, dataposition);
-        int decompressedLength = recordHeader.indexDataLength +
-                                 recordHeader.userHeaderLength +
-                                 recordHeader.userHeaderLengthPadding +
-                                 recordHeader.recordDataLength;
-
-        if(recordBuffer.size()<decompressedLength){
-          //printf(" resizing internal buffer from %lu to %d\n", recordBuffer.size(), recordHeader.recordDataLength);
-          recordBuffer.resize(decompressedLength+1024);
-        }
-        //readBenchmark.pause();
-        //for(int i = 0; i < recordBuffer.size(); i++) recordBuffer[i] = 0;
-        //printf("****************** BEFORE padding = %d\n", compressedDataLengthPadding);
-        //showBuffer(&recordBuffer[0], 10, 200);
-        //unzipBenchmark.resume();
-        if(recordHeader.compressionType==0){
-          // printf("compression type = 0 data length = %d\n",decompressedLength);
-          memcpy((&recordBuffer[0]),(&recordCompressedBuffer[0]),decompressedLength);
-        } else {
-          int unc_result = getUncompressed((&recordCompressedBuffer[0]) , (&recordBuffer[0]),
-				      dataBufferLengthBytes-compressedDataLengthPadding,
-					         decompressedLength);
-        }
-        //unzipBenchmark.pause();
-        //printf("******************\n");
-        //showBuffer(&recordBuffer[0], 10, 200);
-        //char *uncompressedBuffer  = getUncompressed(compressedBuffer,dataBufferLengthBytes,recordHeader.recordDataLength);
-        //printf(" decompression size = %d  error = %d\n", unc_result,
-	       //unc_result - decompressedLength);
-        //free(compressedBuffer);
-        /**
-         * converting index array from lengths of each buffer in the
-         * record to relative positions in the record stream.
-         */
-
-        int eventPosition = 0;
-        for(int i = 0; i < recordHeader.numberOfEvents; i++){
-            auto *ptr = reinterpret_cast<int*>(&recordBuffer[i*4]);
-            int size = *ptr;
-            if(recordHeader.dataEndianness==1) size = __builtin_bswap32(size);
-            eventPosition += size;
-            *ptr = eventPosition;
-        }
-	      //printf("final position = %d\n",eventPosition);
+        position += (length + 8);
     }
-
-    bool  record::readRecord(std::ifstream &stream, long position, int dataOffset, long inputSize){
-
-      readBenchmark.resume();
-      if((position+80)>=inputSize) return false;
-
-      recordHeaderBuffer.resize(80);
-      stream.seekg(position,std::ios::beg);
-
-      stream.read( (char *) &recordHeaderBuffer[0],80);
-      recordHeader.recordLength     = *(reinterpret_cast<int *>(&recordHeaderBuffer[0]));
-      recordHeader.headerLength     = *(reinterpret_cast<int *>(&recordHeaderBuffer[8]));
-      recordHeader.numberOfEvents   = *(reinterpret_cast<int *>(&recordHeaderBuffer[12]));
-      recordHeader.bitInfo          = *(reinterpret_cast<int *>(&recordHeaderBuffer[20]));
-      recordHeader.signatureString  = *(reinterpret_cast<int *>(&recordHeaderBuffer[28]));
-      recordHeader.recordDataLength = *(reinterpret_cast<int *>(&recordHeaderBuffer[32]));
-      recordHeader.userHeaderLength = *(reinterpret_cast<int *>(&recordHeaderBuffer[24]));
-      int compressedWord            = *(reinterpret_cast<int *>(&recordHeaderBuffer[36]));
-
-      if(recordHeader.signatureString==0xc0da0100) recordHeader.dataEndianness = 0;
-      if(recordHeader.signatureString==0x0001dac0) recordHeader.dataEndianness = 1;
-
-      if(recordHeader.signatureString==0x0001dac0){
-        recordHeader.recordLength = __builtin_bswap32(recordHeader.recordLength);
-        recordHeader.headerLength = __builtin_bswap32(recordHeader.headerLength);
-        recordHeader.numberOfEvents = __builtin_bswap32(recordHeader.numberOfEvents);
-        recordHeader.recordDataLength = __builtin_bswap32(recordHeader.recordDataLength);
-        recordHeader.userHeaderLength = __builtin_bswap32(recordHeader.userHeaderLength);
-        recordHeader.bitInfo          = __builtin_bswap32(recordHeader.bitInfo);
-        compressedWord                = __builtin_bswap32(compressedWord);
-      }
-
-      int compressedDataLengthPadding = (recordHeader.bitInfo>>24)&0x00000003;
-      int headerLengthBytes           = recordHeader.headerLength*4;
-      int dataBufferLengthBytes       = recordHeader.recordLength * 4 - headerLengthBytes;
-
-      recordHeader.userHeaderLengthPadding    = (recordHeader.bitInfo>>20)&0x00000003;
-      recordHeader.recordDataLengthCompressed = compressedWord&0x0FFFFFFF;
-      recordHeader.compressionType            = (compressedWord>>28)&0x0000000F;
-      recordHeader.indexDataLength            = 4*recordHeader.numberOfEvents;
-
-      /*printf(" allocating buffer for record, size = %d, padding = %d length = %d type = %d nevents = %d data length = %d\n",
-        dataBufferLengthBytes,
-        compressedDataLengthPadding, recordHeader.recordDataLengthCompressed*4,
-        recordHeader.compressionType, recordHeader.numberOfEvents, recordHeader.recordDataLength);
-        */
-      //char *compressedBuffer    = (char*) malloc(dataBufferLengthBytes);
-
-      if(dataBufferLengthBytes>recordCompressedBuffer.size()){
-        //-- resize the buffer extending it by 500kB. hopefully
-        //-- will be enough not to resize too many times.
-        int newSize = dataBufferLengthBytes + 500*1024;
-        // printout commented out --- by G.G.
-        /* printf("---> resizing internal compressed buffer size to from %ld to %d\n",
-           recordCompressedBuffer.size(), newSize); */
-        recordCompressedBuffer.resize(newSize);
-      }
-
-      long  dataposition = position + headerLengthBytes;
-      stream.seekg(dataposition,std::ios::beg);
-
-      if(position+dataBufferLengthBytes+recordHeader.headerLength>inputSize){
-        printf("**** warning : record at position %ld is incomplete.",position);
-         return false;
-      }
-
-      stream.read( (&recordCompressedBuffer[0]), dataBufferLengthBytes);
-
-      int decompressedLength = recordHeader.indexDataLength +
-                               recordHeader.userHeaderLength +
-                               recordHeader.userHeaderLengthPadding +
-                               recordHeader.recordDataLength;
-
-      if(recordBuffer.size()<decompressedLength){
-        // Buffer resizes by 20% --- modified by me
-        int resize_fraction = (int) (decompressedLength*0.2);
-        //printf(" resizing internal buffer from %lu to %d\n", recordBuffer.size(), recordHeader.recordDataLength);
-        recordBuffer.resize(decompressedLength + resize_fraction);
-      }
-      //for(int i = 0; i < recordBuffer.size(); i++) recordBuffer[i] = 0;
-      //printf("****************** BEFORE padding = %d\n", compressedDataLengthPadding);
-      //showBuffer(&recordBuffer[0], 10, 200);
-      readBenchmark.pause();
-      unzipBenchmark.resume();
-      if(recordHeader.compressionType==0){
-        // printf("compression type = 0 data length = %d\n",decompressedLength);
-        memcpy((&recordBuffer[0]),(&recordCompressedBuffer[0]),decompressedLength);
-      } else {
-        int unc_result = getUncompressed((&recordCompressedBuffer[0]) , (&recordBuffer[0]),
-            dataBufferLengthBytes-compressedDataLengthPadding,
-                 decompressedLength);
-      }
-      unzipBenchmark.pause();
-      //printf("******************\n");
-      //showBuffer(&recordBuffer[0], 10, 200);
-      //char *uncompressedBuffer  = getUncompressed(compressedBuffer,dataBufferLengthBytes,recordHeader.recordDataLength);
-      //printf(" decompression size = %d  error = %d\n", unc_result,
-       //unc_result - decompressedLength);
-      //free(compressedBuffer);
-      /**
-       * converting index array from lengths of each buffer in the
-       * record to relative positions in the record stream.
-       */
-      indexBenchmark.resume();
-      int eventPosition = 0;
-      for(int i = 0; i < recordHeader.numberOfEvents; i++){
-          auto *ptr = reinterpret_cast<int*>(&recordBuffer[i*4]);
-          int size = *ptr;
-          if(recordHeader.dataEndianness==1) size = __builtin_bswap32(size);
-          eventPosition += size;
-          *ptr = eventPosition;
-      }
-      indexBenchmark.pause();
-      return true;
-    }
-
-    int   record::getRecordSizeCompressed(){
-      return recordHeader.recordLength;
-    }
-
-    /**
-     * Reads a record from memory-mapped data (zero-copy from mmap)
-     * This is much faster than reading from ifstream
-     */
-    void record::readRecordMmap(const char* mmapped_data, long position, int dataOffset){
-        const char* header_ptr = mmapped_data + position;
-
-        recordHeader.recordLength     = *(reinterpret_cast<const int*>(header_ptr + 0));
-        recordHeader.headerLength     = *(reinterpret_cast<const int*>(header_ptr + 8));
-        recordHeader.numberOfEvents   = *(reinterpret_cast<const int*>(header_ptr + 12));
-        recordHeader.bitInfo          = *(reinterpret_cast<const int*>(header_ptr + 20));
-        recordHeader.signatureString  = *(reinterpret_cast<const int*>(header_ptr + 28));
-        recordHeader.recordDataLength = *(reinterpret_cast<const int*>(header_ptr + 32));
-        recordHeader.userHeaderLength = *(reinterpret_cast<const int*>(header_ptr + 24));
-        int compressedWord            = *(reinterpret_cast<const int*>(header_ptr + 36));
-
-        if(recordHeader.signatureString==0xc0da0100) recordHeader.dataEndianness = 0;
-        if(recordHeader.signatureString==0x0001dac0) recordHeader.dataEndianness = 1;
-
-        if(recordHeader.signatureString==0x0001dac0){
-          recordHeader.recordLength     = __builtin_bswap32(recordHeader.recordLength);
-          recordHeader.headerLength     = __builtin_bswap32(recordHeader.headerLength);
-          recordHeader.numberOfEvents   = __builtin_bswap32(recordHeader.numberOfEvents);
-          recordHeader.recordDataLength = __builtin_bswap32(recordHeader.recordDataLength);
-          recordHeader.userHeaderLength = __builtin_bswap32(recordHeader.userHeaderLength);
-          recordHeader.bitInfo          = __builtin_bswap32(recordHeader.bitInfo);
-          compressedWord                = __builtin_bswap32(compressedWord);
-        }
-
-        int compressedDataLengthPadding = (recordHeader.bitInfo>>24)&0x00000003;
-        int headerLengthBytes     = recordHeader.headerLength*4;
-        int dataBufferLengthBytes = recordHeader.recordLength * 4 - headerLengthBytes;
-
-        recordHeader.userHeaderLengthPadding    = (recordHeader.bitInfo>>20)&0x00000003;
-        recordHeader.recordDataLengthCompressed = compressedWord&0x0FFFFFFF;
-        recordHeader.compressionType            = (compressedWord>>28)&0x0000000F;
-        recordHeader.indexDataLength            = 4*recordHeader.numberOfEvents;
-
-        const char* compressed_data_ptr = mmapped_data + position + headerLengthBytes;
-
-        int decompressedLength = recordHeader.indexDataLength +
-                                 recordHeader.userHeaderLength +
-                                 recordHeader.userHeaderLengthPadding +
-                                 recordHeader.recordDataLength;
-
-        if(recordBuffer.size()<decompressedLength){
-          recordBuffer.resize(decompressedLength+1024);
-        }
-
-        if(recordHeader.compressionType==0){
-          // Uncompressed: direct memcpy from mmap
-          memcpy((&recordBuffer[0]), compressed_data_ptr, decompressedLength);
-        } else {
-          // Compressed: decompress from mmap (still saves one copy vs stream read)
-          int unc_result = getUncompressed(compressed_data_ptr, (&recordBuffer[0]),
-                                          dataBufferLengthBytes-compressedDataLengthPadding,
-                                          decompressedLength);
-        }
-
-        // Convert index array
-        int eventPosition = 0;
-        for(int i = 0; i < recordHeader.numberOfEvents; i++){
-            auto *ptr = reinterpret_cast<int*>(&recordBuffer[i*4]);
-            int size = *ptr;
-            if(recordHeader.dataEndianness==1) size = __builtin_bswap32(size);
-            eventPosition += size;
-            *ptr = eventPosition;
-        }
-    }
-
-    void  record::readRecord__(std::ifstream &stream, long position, long recordLength){
-
-      stream.seekg(position,std::ios::beg);
-
-      if(recordLength>recordCompressedBuffer.size()){
-        int newSize = recordLength + 5*1024;
-        //printf("---> resizing internal compressed buffer size to from %ld to %d\n",
-           //recordCompressedBuffer.size(), newSize);
-           //printf("---> after printout\n");
-        recordCompressedBuffer.resize(newSize);
-      }
-      //printf(" trying seeksg\n");
-      stream.seekg( position,std::ios::beg);
-      //printf(" trying read\n");
-      stream.read( (&recordCompressedBuffer[0]), recordLength);
-      //printf(" readin was successfull....\n");
-      //stream.read( (char *) &recordHeaderBuffer[0],80);
-      recordHeader.recordLength    = *(reinterpret_cast<int *>(&recordCompressedBuffer[0]));
-      recordHeader.headerLength    = *(reinterpret_cast<int *>(&recordCompressedBuffer[8]));
-      recordHeader.numberOfEvents  = *(reinterpret_cast<int *>(&recordCompressedBuffer[12]));
-      recordHeader.bitInfo         = *(reinterpret_cast<int *>(&recordCompressedBuffer[20]));
-      recordHeader.signatureString  = *(reinterpret_cast<int *>(&recordCompressedBuffer[28]));
-      recordHeader.recordDataLength = *(reinterpret_cast<int *>(&recordCompressedBuffer[32]));
-      recordHeader.userHeaderLength = *(reinterpret_cast<int *>(&recordCompressedBuffer[24]));
-      int compressedWord            = *(reinterpret_cast<int *>(&recordCompressedBuffer[36]));
-
-      if(recordHeader.signatureString==0xc0da0100) recordHeader.dataEndianness = 0;
-      if(recordHeader.signatureString==0x0001dac0) recordHeader.dataEndianness = 1;
-
-      if(recordHeader.signatureString==0x0001dac0){
-        recordHeader.recordLength = __builtin_bswap32(recordHeader.recordLength);
-        recordHeader.headerLength = __builtin_bswap32(recordHeader.headerLength);
-        recordHeader.numberOfEvents = __builtin_bswap32(recordHeader.numberOfEvents);
-        recordHeader.recordDataLength = __builtin_bswap32(recordHeader.recordDataLength);
-        recordHeader.userHeaderLength = __builtin_bswap32(recordHeader.userHeaderLength);
-        recordHeader.bitInfo          = __builtin_bswap32(recordHeader.bitInfo);
-        compressedWord                = __builtin_bswap32(compressedWord);
-      }
-
-      int compressedDataLengthPadding = (recordHeader.bitInfo>>24)&0x00000003;
-      int headerLengthBytes     = recordHeader.headerLength*4;
-      int dataBufferLengthBytes = recordHeader.recordLength * 4 - headerLengthBytes;
-
-      recordHeader.userHeaderLengthPadding = (recordHeader.bitInfo>>20)&0x00000003;
-      recordHeader.recordDataLengthCompressed = compressedWord&0x0FFFFFFF;
-      recordHeader.compressionType            = (compressedWord>>28)&0x0000000F;
-      recordHeader.indexDataLength            = 4*recordHeader.numberOfEvents;
-
-      /*printf(" allocating buffer for record, size = %d, padding = %d length = %d type = %d nevents = %d data length = %d\n",
-        dataBufferLengthBytes,
-        compressedDataLengthPadding, recordHeader.recordDataLengthCompressed*4,
-        recordHeader.compressionType, recordHeader.numberOfEvents, recordHeader.recordDataLength);
-        */
-      //char *compressedBuffer    = (char*) malloc(dataBufferLengthBytes);
-
-
-      //dataBufferLengthBytes    -= compressedDataLengthPadding;
-      //printf(" record header intialized....\n");
-      long  dataposition = position + headerLengthBytes;
-      //printf("position = %ld data position = %ld\n",position, dataposition);
-      //stream.seekg(dataposition,std::ios::beg);
-      //stream.read( compressedBuffer, dataBufferLengthBytes);
-      //stream.read( (&recordCompressedBuffer[0]), dataBufferLengthBytes);
-      //showBuffer(compressedBuffer, 10, 200);
-      //printf("position = %ld data position = %ld \n",position, dataposition);
-      int decompressedLength = recordHeader.indexDataLength +
-                               recordHeader.userHeaderLength +
-                               recordHeader.userHeaderLengthPadding +
-                               recordHeader.recordDataLength;
-      //printf(" decompressed length = %d\n",decompressedLength);
-      if(recordBuffer.size()<decompressedLength){
-        //printf(" resizing internal buffer from %lu to %d\n", recordBuffer.size(), recordHeader.recordDataLength);
-        recordBuffer.resize(decompressedLength+1024);
-      }
-      //for(int i = 0; i < recordBuffer.size(); i++) recordBuffer[i] = 0;
-      //printf("****************** BEFORE padding = %d\n", compressedDataLengthPadding);
-      //showBuffer(&recordBuffer[0], 10, 200);
-      if(recordHeader.compressionType==0){
-        //printf("compression type = 0 data length = %d\n",decompressedLength);
-        memcpy((&recordBuffer[0]),(&recordCompressedBuffer[0]),decompressedLength);
-      } else {
-        //printf(" running deompression %d %d %d\n",dataBufferLengthBytes-compressedDataLengthPadding,decompressedLength,dataposition);
-        int unc_result = getUncompressed((&recordCompressedBuffer[56]) , (&recordBuffer[0]),
-            dataBufferLengthBytes-compressedDataLengthPadding,
-                 decompressedLength);
-        //printf("end running deompression %d\n",unc_result);
-      }
-      //printf("******************\n");
-      //showBuffer(&recordBuffer[0], 10, 200);
-      //char *uncompressedBuffer  = getUncompressed(compressedBuffer,dataBufferLengthBytes,recordHeader.recordDataLength);
-      //printf(" decompression size = %d  error = %d\n", unc_result,
-       //unc_result - decompressedLength);
-      //free(compressedBuffer);
-      /**
-       * converting index array from lengths of each buffer in the
-       * record to relative positions in the record stream.
-       */
-       //printf(" deompression ..... ok \n");
-      int eventPosition = dataposition;
-      for(int i = 0; i < recordHeader.numberOfEvents; i++){
-          auto *ptr = reinterpret_cast<int*>(&recordBuffer[i*4]);
-          int size = *ptr;
-          if(recordHeader.dataEndianness==1) size = __builtin_bswap32(size);
-          eventPosition += size;
-          *ptr = eventPosition;
-      }
-      //printf("final position = %d\n",eventPosition);
-    }
-    /**
-     * returns number of events in the record.
-     */
-    int   record::getEventCount(){
-      return recordHeader.numberOfEvents;
-    }
-    /**
-     * reads content of the event with given index into a vector
-     * vector will be resized to fit the data. The resulting
-     * size of the vector can be used to veryfy the successfull read.
-    */
-    void  record::readEvent( std::vector<char> &vec, int index){
-
-    }
-
-    /**
-     * returns a data object that points to the event inside of the
-     * record. For given index the data object will be filled with the
-     * pointer to the position in the buffer where the event starts and
-     * with the size indicating length of the event.
-    */
-    void  record::getData(hipo::data &data, int index){
-        int first_position = 0;
-        if(index > 0){
-          first_position  = *(reinterpret_cast<uint32_t *>(&recordBuffer[(index -1)*4]));
-        }
-        int last_position = *(reinterpret_cast<uint32_t *>(&recordBuffer[index*4]));
-        int offset        = recordHeader.indexDataLength
-                          + recordHeader.userHeaderLength
-                          + recordHeader.userHeaderLengthPadding;
-        data.setDataPtr(&recordBuffer[first_position+offset]);
-        data.setDataSize(last_position-first_position);
-        data.setDataOffset(first_position + offset);
-    }
-void   record::read(hipo::bank &b, int event){
-   hipo::data event_data;
-   getData(event_data,event);
-   hipo::event::getStructure(event_data.getDataPtr(),b,b.getSchema().getGroup(),b.getSchema().getItem());
+    return {-1, 0};
 }
 
-void   record::getColumn(hipo::data &data,const char* column, hipo::bank &bank, int event){
-  int order = bank.getSchema().getEntryOrder(column);
-  getColumn(data,order,bank,event);
+} // anonymous namespace
+
+result<void> record::parse_header(const char* buf) {
+    m_header.record_length      = read_value<int32_t>(buf + 0);
+    m_header.record_number      = read_value<int32_t>(buf + 4);
+    m_header.header_length      = read_value<int32_t>(buf + 8);
+    m_header.event_count        = read_value<int32_t>(buf + 12);
+    m_header.index_data_length  = read_value<int32_t>(buf + 16);
+    m_header.bit_info           = read_value<int32_t>(buf + 20);
+    m_header.user_header_length = read_value<int32_t>(buf + 24);
+    m_header.magic_number       = read_value<int32_t>(buf + 28);
+    m_header.data_length        = read_value<int32_t>(buf + 32);
+    m_header.compression_word   = read_value<int32_t>(buf + 36);
+
+    // Endianness detection
+    m_header.byte_swapped = (m_header.magic_number == static_cast<int32_t>(0x0001dac0));
+    bool s = m_header.byte_swapped;
+    m_header.record_length      = maybe_swap32(m_header.record_length, s);
+    m_header.record_number      = maybe_swap32(m_header.record_number, s);
+    m_header.header_length      = maybe_swap32(m_header.header_length, s);
+    m_header.event_count        = maybe_swap32(m_header.event_count, s);
+    m_header.index_data_length  = maybe_swap32(m_header.index_data_length, s);
+    m_header.bit_info           = maybe_swap32(m_header.bit_info, s);
+    m_header.user_header_length = maybe_swap32(m_header.user_header_length, s);
+    m_header.data_length        = maybe_swap32(m_header.data_length, s);
+    m_header.compression_word   = maybe_swap32(m_header.compression_word, s);
+    if (s) m_header.magic_number = static_cast<int32_t>(HEADER_MAGIC);
+
+    if (m_header.magic_number != static_cast<int32_t>(HEADER_MAGIC))
+        return unexpected(error_code::invalid_magic_number);
+
+    // Derive compression info
+    m_header.comp_type = static_cast<compression_type>(
+        (m_header.compression_word >> COMP_TYPE_SHIFT) & 0xF);
+    m_header.compressed_length = (m_header.compression_word & COMP_LENGTH_MASK) * 4;
+
+    // Derive padding from bit-info
+    m_header.user_header_padding = (m_header.bit_info >> BITINFO_PAD1_SHIFT) & BITINFO_PAD_MASK;
+    m_header.data_padding        = (m_header.bit_info >> BITINFO_PAD2_SHIFT) & BITINFO_PAD_MASK;
+    m_header.comp_data_padding   = (m_header.bit_info >> BITINFO_PAD3_SHIFT) & BITINFO_PAD_MASK;
+
+    // Compute events offset within decompressed data
+    m_events_offset = m_header.index_data_length
+                    + m_header.user_header_length
+                    + m_header.user_header_padding;
+
+    return ok();
 }
 
-void   record::getColumn(hipo::data &data,int column, hipo::bank &bank, int event){
-    hipo::data event_data;
-    getData(event_data,event);
-    std::pair<int,int> pos = hipo::event::getStructurePosition(event_data.getDataPtr(),
-         bank.getSchema().getGroup(), bank.getSchema().getItem());
+result<void> record::decompress_data(const char* compressed, int compressed_len, int decompressed_len) {
+    grow_buffer(m_decompressed_buf, decompressed_len);
 
-    //printf(" returned position = %8d, %8d\n",pos.first,pos.second);
-
-    if(pos.second<=0) {
-      data.setDataPtr(NULL);
-      data.setDataSize(0);
-      data.setDataType(0);
-      return;
+    if (m_header.comp_type == compression_type::none) {
+        std::memcpy(m_decompressed_buf.data(), compressed, decompressed_len);
+        return ok();
     }
-    //printf("----- hok ---- we are here now ----\n");
-    int size = *reinterpret_cast<const uint32_t *>(&event_data.getDataPtr()[pos.first+4]);
-    //printf("----- hok ---- one more step ----\n");
-    int bankRows = size/bank.getSchema().getRowLength();
-    //printf(" returned sizes = %8d, %8d\n",size,bankRows);
-    data.setDataSize(bankRows);
-    data.setDataType(bank.getSchema().getEntryType(column));
 
-    //printf(" returned type = %d\n",data.getDataType());
-    int offset   = bank.getSchema().getOffset(column,0,bankRows);
-    //printf("============ offset = %8d\n",offset);
-    data.setDataPtr(&(event_data.getDataPtr()[pos.first+offset+8]));
+    if (m_header.comp_type == compression_type::lz4 ||
+        m_header.comp_type == compression_type::lz4_best) {
+        int result = LZ4_decompress_safe(compressed, m_decompressed_buf.data(),
+                                         compressed_len, decompressed_len);
+        if (result < 0)
+            return unexpected(error_code::record_decompress_failed);
+        return ok();
+    }
+
+    if (m_header.comp_type == compression_type::gzip) {
+        unsigned long dest_len = static_cast<unsigned long>(decompressed_len);
+        int zresult = ::uncompress(
+            reinterpret_cast<Bytef*>(m_decompressed_buf.data()),
+            &dest_len,
+            reinterpret_cast<const Bytef*>(compressed),
+            static_cast<unsigned long>(compressed_len));
+        if (zresult != Z_OK)
+            return unexpected(error_code::record_decompress_failed);
+        return ok();
+    }
+
+    return unexpected(error_code::record_unsupported_compression);
 }
 
-void record::getEventsMap(std::vector<std::pair<int,int>> &emap){
-   emap.clear();
-   int offset        = recordHeader.indexDataLength
-                          + recordHeader.userHeaderLength
-                          + recordHeader.userHeaderLengthPadding;
-                          /*
-   printf(" offset for the record = %8d, %8d, %8d, %8d\n",offset,
-          recordHeader.indexDataLength
-        , recordHeader.userHeaderLength
-        , recordHeader.userHeaderLengthPadding
-        );*/
+void record::convert_index() {
+    // Convert event lengths in index array to cumulative offsets
+    // (from RecordInputStream.java)
+    int event_pos = 0;
+    char* base = m_decompressed_buf.data();
+    bool s = m_header.byte_swapped;
+    for (int i = 0; i < m_header.event_count; ++i) {
+        int32_t size = maybe_swap32(read_value<int32_t>(base + i * 4), s);
+        event_pos += size;
+        write_value(base + i * 4, event_pos);
+    }
+}
 
-   int nevents = recordHeader.numberOfEvents;
-   for(int index = 0; index < nevents; index++){
-      int first_position = 0;
-        if(index > 0){
-          first_position  = *(reinterpret_cast<uint32_t *>(&recordBuffer[(index -1)*4]));
+result<void> record::read_and_decompress(file_source& source, int64_t data_position,
+                                          int compressed_input_len, int decompressed_len) {
+#if HIPO_LZ4_INPLACE
+    // In-place LZ4: read compressed data into tail of decompressed buffer
+    if ((m_header.comp_type == compression_type::lz4 ||
+         m_header.comp_type == compression_type::lz4_best) &&
+        compressed_input_len < decompressed_len) {
+
+        int margin = LZ4_DECOMPRESS_INPLACE_MARGIN(compressed_input_len);
+        int total_buf = decompressed_len + margin;
+
+        grow_buffer(m_decompressed_buf, total_buf);
+
+        char* compressed_start = m_decompressed_buf.data() + total_buf - compressed_input_len;
+
+        auto read_data = source.read_at(data_position, compressed_start, compressed_input_len);
+        if (!read_data) return unexpected(read_data.error());
+
+        int result = LZ4_decompress_safe(compressed_start, m_decompressed_buf.data(),
+                                          compressed_input_len, decompressed_len);
+        if (result < 0)
+            return unexpected(error_code::record_decompress_failed);
+
+        convert_index();
+        return ok();
+    }
+#endif
+
+    // Uncompressed: read directly into decompressed buffer
+    if (m_header.comp_type == compression_type::none) {
+        grow_buffer(m_decompressed_buf, decompressed_len);
+
+        auto read_data = source.read_at(data_position, m_decompressed_buf.data(), decompressed_len);
+        if (!read_data) return unexpected(read_data.error());
+
+        convert_index();
+        return ok();
+    }
+
+    // Fallback (gzip, or LZ4 with compressed >= decompressed): two-buffer path
+    grow_buffer(m_compressed_buf, compressed_input_len);
+
+    auto read_data = source.read_at(data_position, m_compressed_buf.data(), compressed_input_len);
+    if (!read_data) return unexpected(read_data.error());
+
+    auto decomp_res = decompress_data(m_compressed_buf.data(), compressed_input_len, decompressed_len);
+    if (!decomp_res) return unexpected(decomp_res.error());
+
+    convert_index();
+    return ok();
+}
+
+result<void> record::read_from(file_source& source, int64_t position, int64_t file_size) {
+    if (position + RECORD_HEADER_SIZE > file_size)
+        return unexpected(error_code::record_bounds_exceeded);
+
+    char header_buf[RECORD_HEADER_SIZE];
+    auto read_res = source.read_at(position, header_buf, RECORD_HEADER_SIZE);
+    if (!read_res) return unexpected(read_res.error());
+
+    auto parse_res = parse_header(header_buf);
+    if (!parse_res) return unexpected(parse_res.error());
+
+    int header_bytes = m_header.header_length * 4;
+
+    if (position + m_header.record_length * 4LL > file_size)
+        return unexpected(error_code::record_bounds_exceeded);
+
+    int data_buffer_bytes = m_header.record_length * 4 - header_bytes;
+    int decompressed_len = m_header.index_data_length
+                         + m_header.user_header_length
+                         + m_header.user_header_padding
+                         + m_header.data_length;
+    int compressed_input_len = data_buffer_bytes - m_header.comp_data_padding;
+
+    return read_and_decompress(source, position + header_bytes,
+                                compressed_input_len, decompressed_len);
+}
+
+result<void> record::read_from(file_source& source, int64_t position, int64_t file_size, int record_bytes) {
+    if (position + record_bytes > file_size)
+        return unexpected(error_code::record_bounds_exceeded);
+
+    // Delegate to 2-pread path (in-place decompression makes 1-pread unnecessary)
+    return read_from(source, position, file_size);
+}
+
+result<std::span<const char>> record::event_data(int index) const noexcept {
+    if (index < 0 || index >= m_header.event_count)
+        return unexpected(error_code::event_index_out_of_range);
+
+    int start_offset = 0;
+    if (index > 0)
+        start_offset = read_value<int32_t>(m_decompressed_buf.data() + (index - 1) * 4);
+
+    int end_offset = read_value<int32_t>(m_decompressed_buf.data() + index * 4);
+    int event_start = m_events_offset + start_offset;
+    int event_size = end_offset - start_offset;
+
+    return std::span<const char>(m_decompressed_buf.data() + event_start, event_size);
+}
+
+result<std::span<const char>> record::find_structure(int event_index, int group, int item) const noexcept {
+    auto ev = event_data(event_index);
+    if (!ev) return unexpected(ev.error());
+
+    auto [pos, length] = find_structure_in_event(ev->data(), static_cast<int>(ev->size()), group, item);
+    if (pos < 0)
+        return unexpected(error_code::event_structure_not_found);
+
+    // Return the full structure: 8-byte header + data
+    return std::span<const char>(ev->data() + pos, length + 8);
+}
+
+void record::find_structures_in_event(int event_index,
+                                      std::span<const std::pair<int,int>> group_items,
+                                      std::span<structure_position> results) const noexcept {
+    auto ev = event_data(event_index);
+    if (!ev) {
+        for (auto& r : results) r = {-1, 0};
+        return;
+    }
+    find_structures_in_event(*ev, group_items, results);
+}
+
+void record::find_structures_in_event(std::span<const char> event,
+                                      std::span<const std::pair<int,int>> group_items,
+                                      std::span<structure_position> results) noexcept {
+    for (auto& r : results) r = {-1, 0};
+
+    int event_size = static_cast<int>(event.size());
+    if (event_size < 16) return;
+
+    const char* buf = event.data();
+    int total = read_value<int32_t>(buf + 4);
+    if (total > event_size) total = event_size;
+
+    int found = 0;
+    int n = static_cast<int>(group_items.size());
+    int position = 16; // skip 16-byte event header
+    while (position + 8 <= total && found < n) {
+        auto gid    = static_cast<int>(read_value<uint16_t>(buf + position));
+        auto iid    = static_cast<int>(read_value<uint8_t>(buf + position + 2));
+        auto length = read_value<int32_t>(buf + position + 4);
+        if (length < 0) break;
+
+        for (int i = 0; i < n; ++i) {
+            if (!results[i].found() &&
+                gid == group_items[i].first && iid == group_items[i].second) {
+                results[i] = {position, length};
+                ++found;
+                break;
+            }
         }
-        int last_position = *(reinterpret_cast<uint32_t *>(&recordBuffer[index*4]));
-        emap.push_back(std::make_pair(first_position+offset,last_position+offset));
-   }
-}
-    void  record::readHipoEvent(hipo::event &event, int index){
-          hipo::data event_data;
-          getData(event_data,index);
-          event.init(event_data.getDataPtr(), event_data.getDataSize());
+        position += (length + 8);
     }
-    /**
-     * prints the content of given buffer in HEX format. Used for debugging.
-     */
-    void  record::showBuffer(const char *data, int wrapping, int maxsize)
-    {
-      for(int i = 0; i < maxsize; i++){
-        printf("%X ", 0x000000FF&((unsigned int) data[i]));
-        if( (i+1)%wrapping==0) printf("\n");
-      }
-      printf("\n");
-    }
-    /**
-     * decompresses the buffer given with pointed *data, into a destination array
-     * provided. The arguments indicate the compressed data length (dataLength),
-     * and maximum decompressed length.
-     * returns the number of bytes that were decompressed by LZ4
-     */
-    int  record::getUncompressed(const char *data,  char *dest, int dataLength, int dataLengthUncompressed){
-      #ifdef __LZ4__
-        int result = LZ4_decompress_safe(data,dest,dataLength,dataLengthUncompressed);
-        return result;
-      #endif
-      #ifndef __LZ4__
-        printf("\n   >>>>> LZ4 compression is not supported.");
-        printf("\n   >>>>> check if libz4 is installed on your system.");
-        printf("\n   >>>>> recompile the library with liblz4 installed.\n");
-        return NULL;
-      #endif
-
-    }
-    /**
-     * deompresses the content of given buffer ( *data), into a newly allocated
-     * memory. User is responsible for free-ing the allocated memory.
-     */
-    char *record::getUncompressed(const char *data, int dataLength,
-                                  int dataLengthUncompressed){
-
-      #ifdef __LZ4__
-        char *output = (char *) malloc(dataLengthUncompressed);
-        int   result = LZ4_decompress_safe(data,output,dataLength,dataLengthUncompressed);
-        //int   result = LZ4_decompress_fast(data,output,dataLengthUncompressed);
-        return output;
-        //printf(" FIRST (%d) = %x %x %x %x\n",result);//,destUnCompressed[0],destUnCompressed[1],
-        //destUnCompressed[2],destUnCompressed[3]);
-        //LZ4_decompress_fast(buffer,destUnCompressed,decompressedLength);
-        //LZ4_uncompress(buffer,destUnCompressed,decompressedLength);
-        #endif
-
-        #ifndef __LZ4__
-          printf("\n   >>>>> LZ4 compression is not supported.");
-          printf("\n   >>>>> check if libz4 is installed on your system.");
-          printf("\n   >>>>> recompile the library with liblz4 installed.\n");
-          return nullptr;
-        #endif
-
-    }
-
-
-
-dataframe::dataframe(int max_events, int max_size){
-   maxEvents = max_events; maxSize = max_size;
-   dataBuffer.resize(56+maxSize);
-   reset();
 }
 
-void dataframe::reset(){
-   *(reinterpret_cast<int *>(&dataBuffer[0]))  = 56; // record length 1
-   *(reinterpret_cast<int *>(&dataBuffer[4]))  = 1; // record number 2
-   *(reinterpret_cast<int *>(&dataBuffer[8]))  = 14; // header length words 3
-   *(reinterpret_cast<int *>(&dataBuffer[12])) = 0; // event count 4
-   *(reinterpret_cast<int *>(&dataBuffer[16])) = 0; // index array length 5
-   *(reinterpret_cast<int *>(&dataBuffer[20])) = 5; // verion + bitinfo 6 
-   *(reinterpret_cast<int *>(&dataBuffer[24])) = 0; // user header length
-   *(reinterpret_cast<int *>(&dataBuffer[28])) = 0xc0da0100;
-   *(reinterpret_cast<int *>(&dataBuffer[32])) = 0; // uncompressed data length
-   *(reinterpret_cast<int *>(&dataBuffer[36])) = 0; // compressed data length
+std::span<const char> record::user_header() const noexcept {
+    if (m_header.user_header_length <= 0)
+        return {};
+    int uh_start = m_header.index_data_length;
+    return std::span<const char>(m_decompressed_buf.data() + uh_start,
+                                 m_header.user_header_length);
 }
 
-bool         dataframe::addEvent(hipo::event &event){ 
-  int fsize = size();
-  if( (event.getSize() + fsize + 56 ) > maxSize) return false;
-  int evCount = count();
-  if(evCount>=maxEvents) return false;
-  memcpy(&dataBuffer[fsize],&(event.getEventBuffer()[0]), event.getSize());
-  int datasize = *(reinterpret_cast<int *>(&dataBuffer[32]));
-  *(reinterpret_cast<int *>(&dataBuffer[12])) = evCount + 1;
-  *(reinterpret_cast<int *>(&dataBuffer[32])) = datasize + event.getSize();
-  *(reinterpret_cast<int *>(&dataBuffer[36])) = datasize + event.getSize();
-  *(reinterpret_cast<int *>(&dataBuffer[0]))  = fsize + event.getSize();
-  return true;
+void record::reserve_buffers(int compressed_bytes, int decompressed_bytes) {
+    if (static_cast<int>(m_compressed_buf.size()) < compressed_bytes)
+        m_compressed_buf.resize(compressed_bytes);
+#if HIPO_LZ4_INPLACE
+    int margin = LZ4_DECOMPRESS_INPLACE_MARGIN(compressed_bytes);
+    int total = decompressed_bytes + margin;
+#else
+    int total = decompressed_bytes;
+#endif
+    if (static_cast<int>(m_decompressed_buf.size()) < total)
+        m_decompressed_buf.resize(total);
 }
 
-int          dataframe::getEventAt(int pos, hipo::event &event){ 
-    int eventsize = *(reinterpret_cast<int *>(&dataBuffer[pos+4]));
-    event.init(&dataBuffer[pos],eventsize);
-    return pos+eventsize;
-}
-
-void          dataframe::init(const char *ptr){
-    int size = *(reinterpret_cast<const int *>(ptr));
-    if(size>dataBuffer.size()) dataBuffer.resize(size+56);
-    memcpy(&dataBuffer[0],ptr,size);
-}
-
-int          dataframe::count(){ return *(reinterpret_cast<int *>(&dataBuffer[12]));}
-int          dataframe::size(){ return  (*(reinterpret_cast<int *>(&dataBuffer[0])));}
-
-void         dataframe::summary(){
-  printf("## data frame summary:\n");
-  printf("frame size       : %d\n",*(reinterpret_cast<int *>(&dataBuffer[0])));
-  printf("magic word       : %X\n",*(reinterpret_cast<int *>(&dataBuffer[28])));
-  printf("number of events : %d\n",*(reinterpret_cast<int *>(&dataBuffer[12])));
-  printf("data length      : %d\n",*(reinterpret_cast<int *>(&dataBuffer[32]))); 
-}
-
-}
+} // namespace hipo

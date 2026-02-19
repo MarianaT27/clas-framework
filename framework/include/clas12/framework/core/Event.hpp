@@ -1,6 +1,6 @@
 #pragma once
 
-#include <hipoeventiterator.h>
+#include <bank_view.h>
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/physics/ParticleUtils.hpp>
@@ -8,20 +8,12 @@
 
 #include <any>
 #include <functional>
-#include <iostream>
 #include <map>
-#include <memory>
 #include <optional>
 #include <ranges>
-#include <set>
 #include <string>
 #include <tuple>
 #include <vector>
-
-// Optional fmt support for better formatting
-#if __has_include(<fmt/format.h>)
-#include <fmt/format.h>
-#endif
 
 namespace clas12::framework {
 
@@ -43,19 +35,11 @@ using ParticleMap = std::map<clas12::PIDs, std::vector<clas12::Particle>>;
 class Event {
    public:
     /**
-     * @brief Construct an Event from a HIPO event iterator
-     * @param hipo_event Reference to the HIPO event iterator
+     * @brief Construct an Event from a HIPO bank view set
+     * @param banks Reference to the bank view set for this event
      */
-    explicit Event(hipo::iter_event& hipo_event)
-        : m_hipo_event(hipo_event) {}
-
-    /**
-     * @brief Get the underlying HIPO event
-     * @return hipo::iter_event& Reference to HIPO event
-     */
-    auto hipo_event() -> hipo::iter_event& {
-        return m_hipo_event;
-    }
+    explicit Event(hipo::bank_view_set& banks)
+        : m_banks(banks) {}
 
     /**
      * @brief Get all particles (lazy loading)
@@ -146,26 +130,22 @@ class Event {
     }
 
     /**
-     * @brief Get a HIPO bank by name
+     * @brief Get a HIPO bank view by name
      * @param bank_name Name of the bank (e.g., "REC::Particle")
-     * @return hipo::bank& Reference to the bank
+     * @return const hipo::bank_view& Reference to the bank view
      */
-    auto get_bank(const std::string& bank_name) -> hipo::bank& {
-        return m_hipo_event.get(bank_name.c_str());
+    auto get_bank(const std::string& bank_name) -> const hipo::bank_view& {
+        return m_banks[bank_name];
     }
 
     /**
      * @brief Get multiple banks at once using structured bindings
      *
-     * Returns a tuple of references to the requested banks. This enables
-     * clean structured binding syntax for accessing multiple banks simultaneously.
-     *
-     * If a requested bank does not exist in the event, an empty bank reference
-     * is returned and a warning is logged (if logging is available).
+     * Returns a tuple of const references to the requested bank views.
      *
      * @tparam Names Variadic string types for bank names
      * @param names Bank names (e.g., "REC::Particle", "REC::Calorimeter")
-     * @return std::tuple of bank references
+     * @return std::tuple of const bank_view references
      *
      * Example usage:
      * @code
@@ -174,17 +154,15 @@ class Event {
      * );
      *
      * // Process particles
-     * for (int i = 0; i < particles.rows(); ++i) {
-     *     auto px = particles.get<float>("px", i);
+     * for (int i = 0; i < particles.get().rows(); ++i) {
+     *     auto px = particles.get().get<float>("px", i);
      *     // ...
      * }
      * @endcode
-     *
-     * @see Requirements 6.1, 6.2
      */
     template <typename... Names>
     auto banks(Names&&... names) {
-        return std::make_tuple(std::ref(get_bank_safe(std::forward<Names>(names)))...);
+        return std::make_tuple(std::cref(m_banks[std::forward<Names>(names)])...);
     }
 
     /**
@@ -193,8 +171,7 @@ class Event {
      * @return true if bank exists and has rows
      */
     auto has_bank(const std::string& bank_name) -> bool {
-        auto& bank = m_hipo_event.get(bank_name.c_str());
-        return bank.rows() > 0;
+        return m_banks[bank_name].rows() > 0;
     }
 
     /**
@@ -420,7 +397,7 @@ class Event {
     }
 
    private:
-    hipo::iter_event& m_hipo_event;
+    hipo::bank_view_set& m_banks;
     ParticleMap m_particles;
     bool m_particles_loaded = false;
     std::optional<double> m_start_time;
@@ -430,51 +407,10 @@ class Event {
     TypedEventStore m_typed_store;
 
     /**
-     * @brief Get a bank safely, logging a warning if it doesn't exist
-     *
-     * This helper method retrieves a bank by name and logs a warning
-     * if the bank is empty (doesn't exist in the current event).
-     *
-     * @param bank_name Name of the bank
-     * @return hipo::bank& Reference to the bank (may be empty)
-     *
-     * @see Requirements 6.4
-     */
-    auto get_bank_safe(const std::string& bank_name) -> hipo::bank& {
-        auto& bank = m_hipo_event.get(bank_name.c_str());
-        if (bank.rows() == 0) {
-            // Log warning for missing bank - use stderr if logging service unavailable
-            // The bank exists in schema but has no data in this event
-            // This is a common occurrence and not necessarily an error
-            log_missing_bank_warning(bank_name);
-        }
-        return bank;
-    }
-
-    /**
-     * @brief Log a warning about a missing bank
-     * @param bank_name Name of the missing bank
-     */
-    auto log_missing_bank_warning(const std::string& bank_name) -> void {
-        // Track which banks we've already warned about to avoid spam
-        static thread_local std::set<std::string> warned_banks;
-        if (warned_banks.find(bank_name) == warned_banks.end()) {
-            warned_banks.insert(bank_name);
-            // Only warn once per bank name per thread
-            // Use fmt if available, otherwise fall back to cerr
-#ifdef FMT_VERSION
-            fmt::print(stderr, "[Event] Warning: Bank '{}' is empty or missing\n", bank_name);
-#else
-            std::cerr << "[Event] Warning: Bank '" << bank_name << "' is empty or missing\n";
-#endif
-        }
-    }
-
-    /**
      * @brief Load particles from REC::Particle bank
      */
     auto load_particles() -> void {
-        hipo::bank& REC_Particle = m_hipo_event.get("REC::Particle");
+        const auto& REC_Particle = m_banks["REC::Particle"];
 
         // Initialize particle vectors for common types
         std::vector<clas12::PIDs> target_types = {
@@ -490,7 +426,7 @@ class Event {
 
         // Extract particles from bank
         for (int i = 0; i < REC_Particle.rows(); i++) {
-            const int pid = REC_Particle.get<int>("pid", i);
+            const int pid = REC_Particle.get<int32_t>("pid", i);
 
             // Find matching particle type
             clas12::PIDs particle_type;
@@ -505,8 +441,8 @@ class Event {
 
             if (!found) continue;
 
-            const int status = REC_Particle.get<int>("status", i);
-            const int charge = REC_Particle.get<int>("charge", i);
+            const int status = static_cast<int>(REC_Particle.get<int16_t>("status", i));
+            const int charge = static_cast<int>(REC_Particle.get<int8_t>("charge", i));
             // REC::Particle stores momentum and vertex as floats
             const double px = static_cast<double>(REC_Particle.get<float>("px", i));
             const double py = static_cast<double>(REC_Particle.get<float>("py", i));
@@ -530,9 +466,9 @@ class Event {
     }
 
     auto load_event_info() -> void {
-        hipo::bank& REC_Event = m_hipo_event.get("REC::Event");
+        const auto& REC_Event = m_banks["REC::Event"];
         if (REC_Event.rows() > 0) {
-            m_start_time = REC_Event.get<double>("startTime", 0);
+            m_start_time = static_cast<double>(REC_Event.get<float>("startTime", 0));
         }
     }
 };

@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 #include <clas12/framework/core/Concepts.hpp>
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
@@ -106,6 +107,16 @@ class IAlgorithm {
         auto s = state();
         return s == AlgorithmState::Initialized || s == AlgorithmState::Running;
     }
+
+    /**
+     * @brief Get the list of HIPO bank names required by this algorithm
+     *
+     * Used by the Application to collect the union of all required banks
+     * before starting event processing with hipo::chain::process().
+     *
+     * @return std::vector<std::string> Bank names (e.g., "REC::Particle")
+     */
+    [[nodiscard]] virtual auto required_banks() const -> std::vector<std::string> { return {}; }
 };
 
 /**

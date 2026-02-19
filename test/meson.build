@@ -94,7 +94,7 @@ test('Generator Tests', test_generator)
 test_event_processing_integration = executable(
   'test_event_processing_integration',
   'test_event_processing_integration.cpp',
-  dependencies: test_deps + [hipo_dep],
+  dependencies: test_deps + [hipo4_dep],
 )
 
 test('Event Processing Integration Tests', test_event_processing_integration)

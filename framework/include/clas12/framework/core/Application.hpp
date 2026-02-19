@@ -2,6 +2,7 @@
 
 #include <fmt/format.h>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 #include <clas12/framework/core/Event.hpp>
@@ -10,7 +11,6 @@
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <chain.h>
-#include "hipoeventiterator.h"
 
 namespace clas12::framework {
 
@@ -132,22 +132,37 @@ class Application {
             return StatusCode::FAILURE();
         }
 
+        // Collect the union of all required banks from algorithms
+        std::set<std::string> bank_set;
+        for (const auto& alg : m_algorithms) {
+            for (const auto& bank : alg->required_banks()) {
+                bank_set.insert(bank);
+            }
+        }
+        std::vector<std::string> all_required_banks(bank_set.begin(), bank_set.end());
+
         Log::info("Application", "");
         Log::info("Application", "Starting event processing...");
         Log::info("Application", "  Input files: {}", m_input_files.size());
         Log::info("Application", "  Algorithms: {}", m_algorithms.size());
+        Log::info("Application", "  Required banks: {}", all_required_banks.size());
         Log::info("Application", "  Threads: {}", m_num_threads);
 
         // Create HIPO chain for parallel processing
-        hipo::chain chain(m_num_threads, true, false);
+        hipo::chain chain({.threads = m_num_threads, .show_progress = true});
         for (const auto& file : m_input_files) {
             chain.add(file);
         }
+        auto open_result = chain.open();
+        if (!open_result) {
+            Log::error("Application", "Failed to open HIPO chain");
+            return StatusCode::FAILURE();
+        }
 
         // Process events
-        chain.process([this](hipo::iter_event& hipo_event, int file_idx, long evt_idx) {
+        chain.process([this](hipo::bank_view_set& banks, int file_idx, int64_t evt_idx) {
             // Create Event wrapper
-            Event event(hipo_event);
+            Event event(banks);
             event.set_event_number(evt_idx);
             event.set_file_index(file_idx);
 
@@ -174,8 +189,7 @@ class Application {
                     break;
                 }
             }
-        },
-                      m_percentage);
+        }, all_required_banks, m_percentage);
 
         if (m_exception_count > 0) {
             fmt::print("WARNING: {} exception(s) caught during event processing\n", m_exception_count);

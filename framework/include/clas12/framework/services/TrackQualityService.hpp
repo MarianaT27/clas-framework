@@ -461,15 +461,15 @@ class TrackQualityService : public Service {
                       TrackQualityInfo& info) -> void {
         // Try to read REC::Track bank
         if (event.has_bank("REC::Track")) {
-            auto& track_bank = event.get_bank("REC::Track");
+            const auto& track_bank = event.get_bank("REC::Track");
 
-            for (int i = 0; i < track_bank.getRows(); ++i) {
-                int pindex = track_bank.getInt("pindex", i);
+            for (int i = 0; i < track_bank.rows(); ++i) {
+                int pindex = static_cast<int>(track_bank.get<int16_t>("pindex", i));
                 if (pindex != track.index()) continue;
 
-                info.chi2 = track_bank.getFloat("chi2", i);
-                info.ndf = track_bank.getInt("NDF", i);
-                info.sector = track_bank.getInt("sector", i);
+                info.chi2 = track_bank.get<float>("chi2", i);
+                info.ndf = static_cast<int>(track_bank.get<int16_t>("NDF", i));
+                info.sector = static_cast<int>(track_bank.get<int8_t>("sector", i));
 
                 if (info.ndf > 0) {
                     info.chi2_ndf = info.chi2 / info.ndf;
@@ -480,18 +480,18 @@ class TrackQualityService : public Service {
 
         // Try to read REC::Traj for DC edge distances
         if (event.has_bank("REC::Traj")) {
-            auto& traj_bank = event.get_bank("REC::Traj");
+            const auto& traj_bank = event.get_bank("REC::Traj");
 
-            for (int i = 0; i < traj_bank.getRows(); ++i) {
-                int pindex = traj_bank.getInt("pindex", i);
+            for (int i = 0; i < traj_bank.rows(); ++i) {
+                int pindex = static_cast<int>(traj_bank.get<int16_t>("pindex", i));
                 if (pindex != track.index()) continue;
 
-                int detector = traj_bank.getInt("detector", i);
-                int layer = traj_bank.getInt("layer", i);
+                int detector = static_cast<int>(traj_bank.get<int8_t>("detector", i));
+                int layer = static_cast<int>(traj_bank.get<int8_t>("layer", i));
 
                 // DC detector ID is 6
                 if (detector == 6) {
-                    double edge = traj_bank.getFloat("edge", i);
+                    double edge = static_cast<double>(traj_bank.get<float>("edge", i));
 
                     // Map layer to region
                     if (layer == 6) info.dc_edge[0] = edge;       // R1
@@ -509,12 +509,12 @@ class TrackQualityService : public Service {
                              TrackQualityInfo& info) -> void {
         // Check FTOF
         if (event.has_bank("REC::Scintillator")) {
-            auto& scint_bank = event.get_bank("REC::Scintillator");
-            for (int i = 0; i < scint_bank.getRows(); ++i) {
-                int pindex = scint_bank.getInt("pindex", i);
+            const auto& scint_bank = event.get_bank("REC::Scintillator");
+            for (int i = 0; i < scint_bank.rows(); ++i) {
+                int pindex = static_cast<int>(scint_bank.get<int16_t>("pindex", i));
                 if (pindex != track.index()) continue;
 
-                int detector = scint_bank.getInt("detector", i);
+                int detector = static_cast<int>(scint_bank.get<int8_t>("detector", i));
                 if (detector == 12) {  // FTOF
                     info.has_ftof = true;
                 } else if (detector == 4) {  // CTOF
@@ -525,12 +525,12 @@ class TrackQualityService : public Service {
 
         // Check HTCC
         if (event.has_bank("REC::Cherenkov")) {
-            auto& cher_bank = event.get_bank("REC::Cherenkov");
-            for (int i = 0; i < cher_bank.getRows(); ++i) {
-                int pindex = cher_bank.getInt("pindex", i);
+            const auto& cher_bank = event.get_bank("REC::Cherenkov");
+            for (int i = 0; i < cher_bank.rows(); ++i) {
+                int pindex = static_cast<int>(cher_bank.get<int16_t>("pindex", i));
                 if (pindex != track.index()) continue;
 
-                int detector = cher_bank.getInt("detector", i);
+                int detector = static_cast<int>(cher_bank.get<int8_t>("detector", i));
                 if (detector == 15) {  // HTCC
                     info.has_htcc = true;
                     break;
@@ -540,12 +540,12 @@ class TrackQualityService : public Service {
 
         // Check ECAL
         if (event.has_bank("REC::Calorimeter")) {
-            auto& calo_bank = event.get_bank("REC::Calorimeter");
-            for (int i = 0; i < calo_bank.getRows(); ++i) {
-                int pindex = calo_bank.getInt("pindex", i);
+            const auto& calo_bank = event.get_bank("REC::Calorimeter");
+            for (int i = 0; i < calo_bank.rows(); ++i) {
+                int pindex = static_cast<int>(calo_bank.get<int16_t>("pindex", i));
                 if (pindex != track.index()) continue;
 
-                int detector = calo_bank.getInt("detector", i);
+                int detector = static_cast<int>(calo_bank.get<int8_t>("detector", i));
                 if (detector == 7) {  // ECAL
                     info.has_ecal = true;
                     break;

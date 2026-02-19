@@ -7,9 +7,10 @@
 #include <vector>
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
-#include "reader.h"
+#include <reader.h>
 #include <writer.h>
 #include <dictionary.h>
+#include <event_builder.h>
 
 namespace clas12::framework {
 
@@ -54,7 +55,10 @@ public:
         // Close output file
         if (m_writer) {
             std::lock_guard<std::mutex> lock(m_write_mutex);
-            m_writer->close();
+            auto res = m_writer->close();
+            if (!res) {
+                Log::error(name(), "Error closing output file: {}", m_output_file);
+            }
             m_writer.reset();
 
             Log::info(name(), "Wrote {} events to {}", m_events_written, m_output_file);
@@ -124,12 +128,15 @@ public:
      * @return Unique pointer to reader, or nullptr on failure
      */
     auto open_reader(const std::string& filename) -> std::unique_ptr<hipo::reader> {
-        auto reader = std::make_unique<hipo::reader>();
-        reader->open(filename.c_str());
+        auto result = hipo::reader::open(filename);
+        if (!result) {
+            Log::error(name(), "Failed to open reader for: {}", filename);
+            return nullptr;
+        }
 
         Log::debug(name(), "Opened reader for: {}", filename);
 
-        return reader;
+        return std::make_unique<hipo::reader>(std::move(*result));
     }
 
     /**
@@ -137,13 +144,17 @@ public:
      * @param event The HIPO event to write
      * @return true if successful
      */
-    auto write_event(hipo::event& event) -> bool {
+    auto write_event(const hipo::event_builder& event) -> bool {
         if (!m_writer || !m_enable_output) {
             return false;
         }
 
         std::lock_guard<std::mutex> lock(m_write_mutex);
-        m_writer->addEvent(event);
+        auto res = m_writer->add_event(event);
+        if (!res) {
+            Log::error(name(), "Failed to write event");
+            return false;
+        }
         m_events_written++;
         return true;
     }
@@ -158,8 +169,8 @@ public:
 
         if (!m_dictionary) {
             auto reader = open_reader(m_input_files[0]);
-            m_dictionary = std::make_unique<hipo::dictionary>();
-            reader->readDictionary(*m_dictionary);
+            if (!reader) return nullptr;
+            m_dictionary = std::make_unique<hipo::dictionary>(reader->dict());
         }
 
         return m_dictionary.get();
@@ -207,14 +218,15 @@ private:
             if (!m_input_files.empty()) {
                 auto dict = get_dictionary();
                 if (dict) {
-                    auto schema_list = dict->getSchemaList();
-                    for (const auto& schema_name : schema_list) {
-                        m_writer->getDictionary().addSchema(dict->getSchema(schema_name.c_str()));
-                    }
+                    m_writer->set_dictionary(*dict);
                 }
             }
 
-            m_writer->open(m_output_file.c_str());
+            auto res = m_writer->open(m_output_file);
+            if (!res) {
+                Log::error(name(), "Failed to open output file: {}", m_output_file);
+                return false;
+            }
 
             Log::info(name(), "Opened output file: {}", m_output_file);
             return true;

@@ -111,8 +111,7 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
      * @brief Process and record particle statistics for the event
      */
     void process_particle_statistics(clas12::framework::Event& event) {
-        auto& hipo_event = event.hipo_event();
-        auto& REC_Particle = hipo_event["REC::Particle"];
+        const auto& REC_Particle = event.get_bank("REC::Particle");
 
         const int n_particles = REC_Particle.rows();
         m_total_particles += n_particles;

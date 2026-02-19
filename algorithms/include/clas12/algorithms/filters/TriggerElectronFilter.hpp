@@ -63,8 +63,7 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerE
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_cutflow.pass("All Events");
 
-        auto& hipo_event = event.hipo_event();
-        auto& REC_Particle = hipo_event["REC::Particle"];
+        const auto& REC_Particle = event.get_bank("REC::Particle");
 
         // Extract electrons using ParticleSelectorService
         clas12::framework::ParticleMap particles = m_particle_svc->get()->extract_particles(

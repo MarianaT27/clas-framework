@@ -9,7 +9,7 @@
  * C++ objects for convenient analysis.
  */
 
-#include <bank.h>
+#include <bank_view.h>
 #include <clas12/Banks.hpp>
 #include <clas12/Detectors.hpp>
 
@@ -34,11 +34,11 @@ namespace clas12 {
  * @param index_column Name of the index column (typically "pindex")
  * @return Map from index value to vector of row numbers
  */
-inline auto build_index_map(const hipo::bank& bank, const char* index_column)
+inline auto build_index_map(const hipo::bank_view& bank, const char* index_column)
     -> std::map<int, std::vector<int>> {
     std::map<int, std::vector<int>> result;
 
-    const int n_rows = bank.getRows();
+    const int n_rows = bank.rows();
     if (n_rows <= 0) return result;
 
     // Process in batches for better cache performance
@@ -69,16 +69,16 @@ inline auto build_index_map(const hipo::bank& bank, const char* index_column)
  * @param pindex Particle index to look up
  * @return CherenkovBank structure with HTCC data (empty if not found)
  */
-inline auto read_Cherenkov_bank(const hipo::bank& bank, int pindex) -> CherenkovBank {
+inline auto read_Cherenkov_bank(const hipo::bank_view& bank, int pindex) -> CherenkovBank {
     CherenkovBank result;
     auto index_map = build_index_map(bank, "pindex");
 
     if (!index_map.contains(pindex)) return result;
 
     for (int row : index_map.at(pindex)) {
-        if (bank.get<int>("detector", row) != HTCC) continue;
+        if (bank.get<int8_t>("detector", row) != HTCC) continue;
 
-        result.sector = bank.get<int>("sector", row);
+        result.sector = bank.get<int8_t>("sector", row);
         result.nphe = bank.get<float>("nphe", row);
         result.time = bank.get<float>("time", row);
         result.path = bank.get<float>("path", row);
@@ -88,7 +88,7 @@ inline auto read_Cherenkov_bank(const hipo::bank& bank, int pindex) -> Cherenkov
         result.z = bank.get<float>("z", row);
         result.dtheta = bank.get<float>("dtheta", row);
         result.dphi = bank.get<float>("dphi", row);
-        result.status = bank.get<int>("status", row);
+        result.status = bank.get<int16_t>("status", row);
         break;  // Take first HTCC hit
     }
 
@@ -111,7 +111,7 @@ inline auto read_Cherenkov_bank(const hipo::bank& bank, int pindex) -> Cherenkov
  * @param pindex Particle index to look up
  * @return CalorimeterBank with pcal, inner, and outer sub-structures
  */
-inline auto read_Calorimeter_bank(const hipo::bank& bank, int pindex) -> CalorimeterBank {
+inline auto read_Calorimeter_bank(const hipo::bank_view& bank, int pindex) -> CalorimeterBank {
     CalorimeterBank result;
     auto index_map = build_index_map(bank, "pindex");
 
@@ -119,8 +119,8 @@ inline auto read_Calorimeter_bank(const hipo::bank& bank, int pindex) -> Calorim
 
     // Helper to populate a calorimeter sub-structure
     auto fill_calo = [&bank](CalorimeterBank::CalorimeterStruct& calo, int row) {
-        calo.sector = bank.get<int>("sector", row);
-        calo.layer = bank.get<int>("layer", row);
+        calo.sector = bank.get<int8_t>("sector", row);
+        calo.layer = bank.get<int8_t>("layer", row);
         calo.energy = bank.get<float>("energy", row);
         calo.time = bank.get<float>("time", row);
         calo.path = bank.get<float>("path", row);
@@ -134,9 +134,9 @@ inline auto read_Calorimeter_bank(const hipo::bank& bank, int pindex) -> Calorim
     };
 
     for (int row : index_map.at(pindex)) {
-        if (bank.get<int>("detector", row) != ECAL) continue;
+        if (bank.get<int8_t>("detector", row) != ECAL) continue;
 
-        switch (bank.get<int>("layer", row)) {
+        switch (bank.get<int8_t>("layer", row)) {
             case PCAL:
                 fill_calo(result.pcal, row);
                 break;
@@ -163,7 +163,7 @@ inline auto read_Calorimeter_bank(const hipo::bank& bank, int pindex) -> Calorim
  * @param pindex Particle index to look up
  * @return CalorimeterBank with all fields including extended data
  */
-inline auto read_Calorimeter_bank(const hipo::bank& bank, const hipo::bank& extra_bank, int pindex) -> CalorimeterBank {
+inline auto read_Calorimeter_bank(const hipo::bank_view& bank, const hipo::bank_view& extra_bank, int pindex) -> CalorimeterBank {
     CalorimeterBank result;
     auto index_map = build_index_map(bank, "pindex");
 
@@ -171,8 +171,8 @@ inline auto read_Calorimeter_bank(const hipo::bank& bank, const hipo::bank& extr
 
     auto fill_calo = [&bank, &extra_bank](CalorimeterBank::CalorimeterStruct& calo, int row) {
         // Basic fields from REC::Calorimeter
-        calo.sector = bank.get<int>("sector", row);
-        calo.layer  = bank.get<int>("layer", row);
+        calo.sector = bank.get<int8_t>("sector", row);
+        calo.layer  = bank.get<int8_t>("layer", row);
         calo.energy = bank.get<float>("energy", row);
         calo.time   = bank.get<float>("time", row);
         calo.path   = bank.get<float>("path", row);
@@ -196,7 +196,7 @@ inline auto read_Calorimeter_bank(const hipo::bank& bank, const hipo::bank& extr
         calo.m3w = bank.get<float>("m3w", row);
 
         // Extra fields from REC::CaloExtras (1:1 row mapping)
-        if (row < extra_bank.getRows()) {
+        if (row < extra_bank.rows()) {
             calo.dbstU  = extra_bank.get<int16_t>("dbstU", row);
             calo.dbstV  = extra_bank.get<int16_t>("dbstV", row);
             calo.dbstW  = extra_bank.get<int16_t>("dbstW", row);
@@ -217,9 +217,9 @@ inline auto read_Calorimeter_bank(const hipo::bank& bank, const hipo::bank& extr
     };
 
     for (int row : index_map.at(pindex)) {
-        if (bank.get<int>("detector", row) != ECAL) continue;
+        if (bank.get<int8_t>("detector", row) != ECAL) continue;
 
-        switch (bank.get<int>("layer", row)) {
+        switch (bank.get<int8_t>("layer", row)) {
             case PCAL:
                 fill_calo(result.pcal, row);
                 break;
@@ -248,24 +248,24 @@ inline auto read_Calorimeter_bank(const hipo::bank& bank, const hipo::bank& extr
  * @param pindex Particle index to look up
  * @return TrackBank structure with DC track info
  */
-inline auto read_Track_bank(const hipo::bank& bank, int pindex) -> TrackBank {
+inline auto read_Track_bank(const hipo::bank_view& bank, int pindex) -> TrackBank {
     TrackBank result;
     auto index_map = build_index_map(bank, "pindex");
 
     if (!index_map.contains(pindex)) return result;
 
     for (int row : index_map.at(pindex)) {
-        if (bank.get<int>("detector", row) != DC) continue;
+        if (bank.get<int8_t>("detector", row) != DC) continue;
 
-        result.index = bank.get<int>("index", row);
-        result.pindex = bank.get<int>("pindex", row);
-        result.detector = bank.get<int>("detector", row);
-        result.sector = bank.get<int>("sector", row);
-        result.status = bank.get<int>("status", row);
-        result.q = bank.get<int>("q", row);
+        result.index = bank.get<int16_t>("index", row);
+        result.pindex = bank.get<int16_t>("pindex", row);
+        result.detector = bank.get<int8_t>("detector", row);
+        result.sector = bank.get<int8_t>("sector", row);
+        result.status = bank.get<int16_t>("status", row);
+        result.q = bank.get<int8_t>("q", row);
         result.chi2 = bank.get<float>("chi2", row);
-        result.ndf = bank.get<int>("NDF", row);
-        result.hbindex = bank.get<int>("hbindex", row);
+        result.ndf = bank.get<int16_t>("NDF", row);
+        result.hbindex = bank.get<int16_t>("hbindex", row);
         break;  // Take first DC track
     }
 
@@ -287,7 +287,7 @@ inline auto read_Track_bank(const hipo::bank& bank, int pindex) -> TrackBank {
  * @param pindex Particle index to look up
  * @return DCTrajBank with region1, region2, region3 sub-structures
  */
-inline auto read_Traj_bank(const hipo::bank& bank, int pindex) -> DCTrajBank {
+inline auto read_Traj_bank(const hipo::bank_view& bank, int pindex) -> DCTrajBank {
     DCTrajBank result;
     auto index_map = build_index_map(bank, "pindex");
 
@@ -295,24 +295,24 @@ inline auto read_Traj_bank(const hipo::bank& bank, int pindex) -> DCTrajBank {
 
     // Helper to populate a trajectory region
     auto fill_traj = [&bank](TrajBank& traj, int row) {
-        traj.pindex = bank.get<int>("pindex", row);
-        traj.index = bank.get<int>("index", row);
-        traj.detector = bank.get<int>("detector", row);
-        traj.layer = bank.get<int>("layer", row);
-        traj.x = bank.get<double>("x", row);
-        traj.y = bank.get<double>("y", row);
-        traj.z = bank.get<double>("z", row);
-        traj.cx = bank.get<double>("cx", row);
-        traj.cy = bank.get<double>("cy", row);
-        traj.cz = bank.get<double>("cz", row);
-        traj.path = bank.get<double>("path", row);
-        traj.edge = bank.get<double>("edge", row);
+        traj.pindex = bank.get<int16_t>("pindex", row);
+        traj.index = bank.get<int16_t>("index", row);
+        traj.detector = bank.get<int8_t>("detector", row);
+        traj.layer = bank.get<int8_t>("layer", row);
+        traj.x = bank.get<float>("x", row);
+        traj.y = bank.get<float>("y", row);
+        traj.z = bank.get<float>("z", row);
+        traj.cx = bank.get<float>("cx", row);
+        traj.cy = bank.get<float>("cy", row);
+        traj.cz = bank.get<float>("cz", row);
+        traj.path = bank.get<float>("path", row);
+        traj.edge = bank.get<float>("edge", row);
     };
 
     for (int row : index_map.at(pindex)) {
-        if (bank.get<int>("detector", row) != DC) continue;
+        if (bank.get<int8_t>("detector", row) != DC) continue;
 
-        switch (bank.get<int>("layer", row)) {
+        switch (bank.get<int8_t>("layer", row)) {
             case DC1:
                 fill_traj(result.region1, row);
                 break;
@@ -343,7 +343,7 @@ inline auto read_Traj_bank(const hipo::bank& bank, int pindex) -> DCTrajBank {
  * @param pindex Particle index to look up
  * @return ScintillatorBank structure with FTOF data
  */
-inline auto read_Scintillator_bank(const hipo::bank& bank, int pindex) -> ScintillatorBank {
+inline auto read_Scintillator_bank(const hipo::bank_view& bank, int pindex) -> ScintillatorBank {
     ScintillatorBank result;
     auto index_map = build_index_map(bank, "pindex");
 
@@ -354,9 +354,9 @@ inline auto read_Scintillator_bank(const hipo::bank& bank, int pindex) -> Scinti
     int best_layer = -1;
 
     for (int row : index_map.at(pindex)) {
-        if (bank.get<int>("detector", row) != FTOF) continue;
+        if (bank.get<int8_t>("detector", row) != FTOF) continue;
 
-        int layer = bank.get<int>("layer", row);
+        int layer = bank.get<int8_t>("layer", row);
 
         // Priority: FTOF1B (2) > FTOF1A (1) > FTOF2 (3)
         bool is_better = (layer == FTOF1B && best_layer != FTOF1B) ||
@@ -372,12 +372,12 @@ inline auto read_Scintillator_bank(const hipo::bank& bank, int pindex) -> Scinti
     if (best_row < 0) return result;
 
     // Fill result from best row
-    result.index = bank.get<int>("index", best_row);
-    result.pindex = bank.get<int>("pindex", best_row);
-    result.detector = bank.get<int>("detector", best_row);
-    result.sector = bank.get<int>("sector", best_row);
-    result.layer = bank.get<int>("layer", best_row);
-    result.component = bank.get<int>("component", best_row);
+    result.index = bank.get<int16_t>("index", best_row);
+    result.pindex = bank.get<int16_t>("pindex", best_row);
+    result.detector = bank.get<int8_t>("detector", best_row);
+    result.sector = bank.get<int8_t>("sector", best_row);
+    result.layer = bank.get<int8_t>("layer", best_row);
+    result.component = bank.get<int16_t>("component", best_row);
     result.energy = bank.get<float>("energy", best_row);
     result.time = bank.get<float>("time", best_row);
     result.path = bank.get<float>("path", best_row);
@@ -388,7 +388,7 @@ inline auto read_Scintillator_bank(const hipo::bank& bank, int pindex) -> Scinti
     result.hx = bank.get<float>("hx", best_row);
     result.hy = bank.get<float>("hy", best_row);
     result.hz = bank.get<float>("hz", best_row);
-    result.status = bank.get<int>("status", best_row);
+    result.status = bank.get<int16_t>("status", best_row);
 
     return result;
 }
@@ -404,7 +404,7 @@ inline auto read_Scintillator_bank(const hipo::bank& bank, int pindex) -> Scinti
  * @param pindex Particle index to look up
  * @return ScintillatorBank structure with all fields including extended data
  */
-inline auto read_Scintillator_bank(const hipo::bank& bank, const hipo::bank& extra_bank, int pindex) -> ScintillatorBank {
+inline auto read_Scintillator_bank(const hipo::bank_view& bank, const hipo::bank_view& extra_bank, int pindex) -> ScintillatorBank {
     ScintillatorBank result;
     auto index_map = build_index_map(bank, "pindex");
 
@@ -415,9 +415,9 @@ inline auto read_Scintillator_bank(const hipo::bank& bank, const hipo::bank& ext
     int best_layer = -1;
 
     for (int row : index_map.at(pindex)) {
-        if (bank.get<int>("detector", row) != FTOF) continue;
+        if (bank.get<int8_t>("detector", row) != FTOF) continue;
 
-        int layer = bank.get<int>("layer", row);
+        int layer = bank.get<int8_t>("layer", row);
 
         bool is_better = (layer == FTOF1B && best_layer != FTOF1B) ||
                          (layer == FTOF1A && best_layer != FTOF1B && best_layer != FTOF1A) ||
@@ -432,12 +432,12 @@ inline auto read_Scintillator_bank(const hipo::bank& bank, const hipo::bank& ext
     if (best_row < 0) return result;
 
     // Fill result from best row - basic fields
-    result.index     = bank.get<int>("index", best_row);
-    result.pindex    = bank.get<int>("pindex", best_row);
-    result.detector  = bank.get<int>("detector", best_row);
-    result.sector    = bank.get<int>("sector", best_row);
-    result.layer     = bank.get<int>("layer", best_row);
-    result.component = bank.get<int>("component", best_row);
+    result.index     = bank.get<int16_t>("index", best_row);
+    result.pindex    = bank.get<int16_t>("pindex", best_row);
+    result.detector  = bank.get<int8_t>("detector", best_row);
+    result.sector    = bank.get<int8_t>("sector", best_row);
+    result.layer     = bank.get<int8_t>("layer", best_row);
+    result.component = bank.get<int16_t>("component", best_row);
     result.energy    = bank.get<float>("energy", best_row);
     result.time      = bank.get<float>("time", best_row);
     result.path      = bank.get<float>("path", best_row);
@@ -448,10 +448,10 @@ inline auto read_Scintillator_bank(const hipo::bank& bank, const hipo::bank& ext
     result.hx        = bank.get<float>("hx", best_row);
     result.hy        = bank.get<float>("hy", best_row);
     result.hz        = bank.get<float>("hz", best_row);
-    result.status    = bank.get<int>("status", best_row);
+    result.status    = bank.get<int16_t>("status", best_row);
 
     // Extra fields from REC::ScintExtras (1:1 row mapping)
-    if (best_row < extra_bank.getRows()) {
+    if (best_row < extra_bank.rows()) {
         result.dedx      = extra_bank.get<float>("dedx", best_row);
         result.size      = extra_bank.get<int16_t>("size", best_row);
         result.layermult = extra_bank.get<int8_t>("layermult", best_row);
@@ -475,9 +475,9 @@ inline auto read_Scintillator_bank(const hipo::bank& bank, const hipo::bank& ext
  * @param pindex Particle index (row in REC::Particle)
  * @return RICHParticleBank structure (empty/NaN if not found)
  */
-inline auto read_RICHParticle_bank(const hipo::bank& bank, int pindex) -> RICHParticleBank {
+inline auto read_RICHParticle_bank(const hipo::bank_view& bank, int pindex) -> RICHParticleBank {
     RICHParticleBank result;
-    const int n_rows = bank.getRows();
+    const int n_rows = bank.rows();
 
     for (int row = 0; row < n_rows; ++row) {
         if (static_cast<int>(bank.get<int8_t>("pindex", row)) != pindex) continue;
@@ -524,14 +524,14 @@ inline auto read_RICHParticle_bank(const hipo::bank& bank, int pindex) -> RICHPa
  * @param min_quality Minimum matching quality threshold (default: 0.92)
  * @return MC particle index, or -1 if no match found
  */
-inline auto get_mc_particle_index(const hipo::bank& bank, int rec_pindex,
+inline auto get_mc_particle_index(const hipo::bank_view& bank, int rec_pindex,
                                   float min_quality = 0.92f) -> int {
-    const int n_rows = bank.getRows();
+    const int n_rows = bank.rows();
 
     for (int row = 0; row < n_rows; ++row) {
-        if (bank.get<int>("pindex", row) != rec_pindex) continue;
+        if (bank.get<int16_t>("pindex", row) != rec_pindex) continue;
 
-        int mc_index = bank.get<int>("mcindex", row);
+        int mc_index = bank.get<int16_t>("mcindex", row);
         float quality = bank.get<float>("quality", row);
 
         if (quality >= min_quality && mc_index >= 0) {
@@ -551,14 +551,14 @@ inline auto get_mc_particle_index(const hipo::bank& bank, int rec_pindex,
  * @param min_quality Minimum matching quality threshold (default: 0.92)
  * @return Reconstructed particle index, or -1 if no match found
  */
-inline auto get_rec_particle_index(const hipo::bank& bank, int mc_index,
+inline auto get_rec_particle_index(const hipo::bank_view& bank, int mc_index,
                                    float min_quality = 0.92f) -> int {
-    const int n_rows = bank.getRows();
+    const int n_rows = bank.rows();
 
     for (int row = 0; row < n_rows; ++row) {
-        if (bank.get<int>("mcindex", row) != mc_index) continue;
+        if (bank.get<int16_t>("mcindex", row) != mc_index) continue;
 
-        int pindex = bank.get<int>("pindex", row);
+        int pindex = bank.get<int16_t>("pindex", row);
         float quality = bank.get<float>("quality", row);
 
         if (quality >= min_quality && pindex >= 0) {
@@ -575,7 +575,7 @@ inline auto get_rec_particle_index(const hipo::bank& bank, int mc_index,
 // =============================================================================
 
 /// @deprecated Use build_index_map instead
-inline auto load_bank_by_index(const hipo::bank& bank, const std::string& idx)
+inline auto load_bank_by_index(const hipo::bank_view& bank, const std::string& idx)
     -> std::map<int, std::vector<int>> {
     return build_index_map(bank, idx.c_str());
 }

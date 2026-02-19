@@ -383,6 +383,27 @@ protected:
         return m_optional_service_handles.contains(name);
     }
 
+    /**
+     * @brief Declare a required HIPO bank for this algorithm
+     *
+     * Call this in the constructor or configure() to declare banks that
+     * this algorithm needs. The Application collects the union of all
+     * declared banks and passes them to hipo::chain::process().
+     *
+     * @param bank_name HIPO bank name (e.g., "REC::Particle")
+     */
+    void declare_bank(std::string_view bank_name) {
+        m_required_banks.emplace_back(bank_name);
+    }
+
+    /**
+     * @brief Get the list of required HIPO banks
+     * @return std::vector<std::string> Bank names declared via declare_bank()
+     */
+    [[nodiscard]] auto required_banks() const -> std::vector<std::string> override {
+        return m_required_banks;
+    }
+
     // ========================================================================
     // Common Service Accessors - Direct access without manual declaration
     // ========================================================================
@@ -466,6 +487,7 @@ protected:
 private:
     std::map<std::string, std::unique_ptr<IServiceHandleBase>> m_required_service_handles;
     std::map<std::string, std::unique_ptr<IServiceHandleBase>> m_optional_service_handles;
+    std::vector<std::string> m_required_banks;
 };
 
 

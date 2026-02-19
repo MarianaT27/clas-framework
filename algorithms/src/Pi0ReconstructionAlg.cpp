@@ -40,7 +40,7 @@ auto Pi0ReconstructionAlg::select_photons(const std::vector<clas12::Particle>& p
     return selected;
 }
 
-auto Pi0ReconstructionAlg::select_photons_with_AI(hipo::bank& RUN_config, hipo::bank& REC_Particle, hipo::bank& REC_Calorimeter) const -> std::vector<clas12::Particle> {
+auto Pi0ReconstructionAlg::select_photons_with_AI(const hipo::bank_view& RUN_config, const hipo::bank_view& REC_Particle, const hipo::bank_view& REC_Calorimeter) const -> std::vector<clas12::Particle> {
     return m_photon_cuts_svc->get()->select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
 }
 
@@ -150,11 +150,10 @@ auto Pi0ReconstructionAlg::process(clas12::framework::Event& event) -> clas12::f
         if (h_photon_phi_raw) h_photon_phi_raw->fill(photon.phi());
     }
 
-    auto& hipo_event = event.hipo_event();
-    hipo::bank& RUN_config = hipo_event.get("RUN::config");
-    hipo::bank& REC_Particle = hipo_event.get("REC::Particle");
-    hipo::bank& REC_Calorimeter = hipo_event.get("REC::Calorimeter");
-    hipo::bank& REC_Scintillator = hipo_event.get("REC::Scintillator");
+    const auto& RUN_config = event.get_bank("RUN::config");
+    const auto& REC_Particle = event.get_bank("REC::Particle");
+    const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
+    const auto& REC_Scintillator = event.get_bank("REC::Scintillator");
 
     auto selected_photons = select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
 

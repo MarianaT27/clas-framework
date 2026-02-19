@@ -88,16 +88,19 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
             return clas12::framework::StatusCode::FILTERED();
         }
 
-        auto& hipo_event = event.hipo_event();
-        auto [REC_Event, REC_Particle, REC_Calorimeter, REC_Traj, REC_Track, REC_Scintillator] =
-            hipo_event.banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Traj", "REC::Track", "REC::Scintillator");
+        const auto& REC_Event = event.get_bank("REC::Event");
+        const auto& REC_Particle = event.get_bank("REC::Particle");
+        const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
+        const auto& REC_Traj = event.get_bank("REC::Traj");
+        const auto& REC_Track = event.get_bank("REC::Track");
+        const auto& REC_Scintillator = event.get_bank("REC::Scintillator");
 
-        if (REC_Event->rows() == 0) {
+        if (REC_Event.rows() == 0) {
             return clas12::framework::StatusCode::FILTERED();
         }
 
         // Get start time for timing calculations
-        double start_time = REC_Event->get<double>("startTime", 0);
+        double start_time = REC_Event.get<double>("startTime", 0);
 
         // Get electron vertex for delta_vz calculation
         double electron_vz = 0.0;
@@ -108,16 +111,16 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
 
         // Extract pions
         auto particles = m_particle_svc->get()->extract_particles(
-            *REC_Particle, {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
+            REC_Particle, {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
 
         // Process π⁺
         for (const auto& pion : m_particle_svc->get()->get_pions_plus(particles)) {
-            process_pion(pion, *REC_Calorimeter, *REC_Traj, *REC_Track, *REC_Scintillator, start_time, electron_vz, true);
+            process_pion(pion, REC_Calorimeter, REC_Traj, REC_Track, REC_Scintillator, start_time, electron_vz, true);
         }
 
         // Process π⁻
         for (const auto& pion : m_particle_svc->get()->get_pions_minus(particles)) {
-            process_pion(pion, *REC_Calorimeter, *REC_Traj, *REC_Track, *REC_Scintillator, start_time, electron_vz, false);
+            process_pion(pion, REC_Calorimeter, REC_Traj, REC_Track, REC_Scintillator, start_time, electron_vz, false);
         }
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -420,8 +423,8 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
 
     }
 
-    void process_pion(const clas12::Particle& pion, hipo::bank& REC_Calorimeter, hipo::bank& REC_Traj, hipo::bank& REC_Track,
-                      hipo::bank& REC_Scintillator, double start_time, double electron_vz, bool is_piplus) {
+    void process_pion(const clas12::Particle& pion, const hipo::bank_view& REC_Calorimeter, const hipo::bank_view& REC_Traj, const hipo::bank_view& REC_Track,
+                      const hipo::bank_view& REC_Scintillator, double start_time, double electron_vz, bool is_piplus) {
         auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
         auto& h = is_piplus ? h_piplus : h_piminus;
 

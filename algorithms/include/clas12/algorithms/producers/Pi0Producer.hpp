@@ -62,8 +62,7 @@ class Pi0Producer : public clas12::framework::SimpleAlgorithm<Pi0Producer> {
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_events_processed++;
 
-        auto& hipo_event = event.hipo_event();
-        auto& REC_Particle = hipo_event["REC::Particle"];
+        const auto& REC_Particle = event.get_bank("REC::Particle");
 
         // Extract photons using ParticleSelectorService
         clas12::framework::ParticleMap particles = m_particle_svc->get()->extract_particles(

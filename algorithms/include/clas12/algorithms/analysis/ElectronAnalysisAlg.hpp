@@ -122,26 +122,29 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAn
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_cutflow.pass("All Events");
 
-        // Get all needed banks using structured bindings (new hipo interface)
-        auto& hipo_event = event.hipo_event();
-        auto [REC_Event, REC_Particle, REC_Calorimeter, REC_Cherenkov, REC_Scintillator, REC_Traj, REC_Track] =
-            hipo_event.banks("REC::Event", "REC::Particle", "REC::Calorimeter",
-                             "REC::Cherenkov", "REC::Scintillator", "REC::Traj", "REC::Track");
+        // Get all needed banks using individual get_bank calls
+        const auto& REC_Event = event.get_bank("REC::Event");
+        const auto& REC_Particle = event.get_bank("REC::Particle");
+        const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
+        const auto& REC_Cherenkov = event.get_bank("REC::Cherenkov");
+        const auto& REC_Scintillator = event.get_bank("REC::Scintillator");
+        const auto& REC_Traj = event.get_bank("REC::Traj");
+        const auto& REC_Track = event.get_bank("REC::Track");
 
         // Early exit if no event data
-        if (REC_Event->rows() == 0) return clas12::framework::StatusCode::SUCCESS();
+        if (REC_Event.rows() == 0) return clas12::framework::StatusCode::SUCCESS();
 
-        const double event_start_time = REC_Event->get<float>("startTime", 0);
+        const double event_start_time = REC_Event.get<float>("startTime", 0);
 
         // Extract particles
-        clas12::framework::ParticleMap particles = m_particle_svc->get()->extract_particles(*REC_Particle, {clas12::PIDs::ELECTRON});
+        clas12::framework::ParticleMap particles = m_particle_svc->get()->extract_particles(REC_Particle, {clas12::PIDs::ELECTRON});
 
-        std::map<int, std::vector<clas12::Particle>> charged_tracks = m_particle_svc->get()->get_particles_by_charge(*REC_Particle);
+        std::map<int, std::vector<clas12::Particle>> charged_tracks = m_particle_svc->get()->get_particles_by_charge(REC_Particle);
         std::vector<clas12::Particle> neg_tracks = charged_tracks[-1];
 
         // Process tracks and fill histograms
-        process_tracks(neg_tracks, h_neg_tracks, *REC_Calorimeter, *REC_Cherenkov,
-                       *REC_Scintillator, *REC_Traj, *REC_Track, event_start_time);
+        process_tracks(neg_tracks, h_neg_tracks, REC_Calorimeter, REC_Cherenkov,
+                       REC_Scintillator, REC_Traj, REC_Track, event_start_time);
 
         const auto& electrons = m_particle_svc->get()->get_electrons(particles);
         if (electrons.empty()) return clas12::framework::StatusCode::SUCCESS();
@@ -152,10 +155,10 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAn
         m_cutflow.pass("Trigger Electron");
 
         // Build electron candidate with all detector information
-        auto candidate = build_candidate(trigger_e.value(), *REC_Calorimeter, *REC_Traj, *REC_Track);
+        auto candidate = build_candidate(trigger_e.value(), REC_Calorimeter, REC_Traj, REC_Track);
 
-        process_tracks({candidate.particle}, h_electron_tracks, *REC_Calorimeter, *REC_Cherenkov,
-                       *REC_Scintillator, *REC_Traj, *REC_Track, event_start_time);
+        process_tracks({candidate.particle}, h_electron_tracks, REC_Calorimeter, REC_Cherenkov,
+                       REC_Scintillator, REC_Traj, REC_Track, event_start_time);
 
         // Apply cuts using the candidate
         const auto& electron = candidate.particle;
@@ -262,9 +265,9 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAn
 
     /// Build electron candidate with all detector information
     [[nodiscard]] auto build_candidate(const clas12::Particle& electron,
-                                        hipo::bank& REC_Calorimeter,
-                                        hipo::bank& REC_Traj,
-                                        hipo::bank& REC_Track) const -> ElectronCandidate {
+                                        const hipo::bank_view& REC_Calorimeter,
+                                        const hipo::bank_view& REC_Traj,
+                                        const hipo::bank_view& REC_Track) const -> ElectronCandidate {
         ElectronCandidate candidate;
         candidate.particle = electron;
         candidate.calorimeter = clas12::read_Calorimeter_bank(REC_Calorimeter, electron.index());
@@ -725,9 +728,9 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAn
      * information and fills the corresponding per-sector histograms.
      */
     auto process_tracks(const std::vector<clas12::Particle>& tracks, TrackHistograms& histograms,
-                        hipo::bank& REC_Calorimeter, hipo::bank& REC_Cherenkov,
-                        hipo::bank& REC_Scintillator, hipo::bank& REC_Traj,
-                        hipo::bank& REC_Track, [[maybe_unused]] double event_start_time) -> void {
+                        const hipo::bank_view& REC_Calorimeter, const hipo::bank_view& REC_Cherenkov,
+                        const hipo::bank_view& REC_Scintillator, const hipo::bank_view& REC_Traj,
+                        const hipo::bank_view& REC_Track, [[maybe_unused]] double event_start_time) -> void {
         for (const auto& track : tracks) {
             clas12::CalorimeterBank calo = clas12::read_Calorimeter_bank(REC_Calorimeter, track.index());
             clas12::CherenkovBank cherenkov = clas12::read_Cherenkov_bank(REC_Cherenkov, track.index());
