@@ -804,12 +804,13 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     // lc-binned invariant mass histograms
     std::map<std::string, clas12::framework::AtomicHistogram1D*> h_pipim_mass_lc_bins;
 
-    // Q² bin edges: 1.0-2.0, 2.0-2.5, 2.5-3.0, 3.0-4.5, 4.5-6 GeV²
-    static constexpr std::array<std::pair<double, double>, 5> Q2_BINS = {{
+    // Q² bin edges: 1.0-2.0, 2.0-2.5, 2.5-3.0, 3.0-3.5, 3.5-4.5, 4.5-6 GeV²
+    static constexpr std::array<std::pair<double, double>, 6> Q2_BINS = {{
         {1.0, 2.0},
         {2.0, 2.5},
         {2.5, 3.0},
-        {3.0, 4.5},
+        {3.0, 3.5},
+        {3.5, 4.5},
         {4.5, 6.0}
     }};
 
