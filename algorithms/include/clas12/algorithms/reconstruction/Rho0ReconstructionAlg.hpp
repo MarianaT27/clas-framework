@@ -143,7 +143,8 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
     explicit Rho0ReconstructionAlg(
         std::string name = "Rho0ReconstructionAlg",
-        clas12::Target target = clas12::Target::LD2
+        clas12::Target target = clas12::Target::LD2,
+        std::vector<double> sigma_scan = {}
     )
         : SimpleAlgorithm(std::move(name))
         , m_target(target)
@@ -154,6 +155,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         declare_property(m_t_max);
         declare_property(m_enable_ntuple);
         declare_property(m_enable_fitting);
+        declare_property(m_sigma_scan_values);
+        if (!sigma_scan.empty()) {
+            m_sigma_scan_values.set(std::move(sigma_scan));
+        }
         declare_bank("RUN::config");
     }
 
@@ -184,6 +189,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         Log::subsection("Output Options");
         Log::config(name(), "NTuple output", m_enable_ntuple.get() ? "enabled" : "disabled");
         Log::config(name(), "BW+pol3 fitting", m_enable_fitting.get() ? "enabled" : "disabled");
+        if (!m_sigma_scan_values.get().empty()) {
+            Log::config(name(), "Sigma scan", fmt::format("[{}]", fmt::join(m_sigma_scan_values.get(), ", ")));
+        }
         Log::blank();
 
         book_histograms();
@@ -277,6 +285,41 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         // Fill ntuple
         fill_ntuple(candidates, electron, Q2);
 
+        // Process sigma scan variations
+        for (double scan_sigma : m_sigma_scan_values.get()) {
+            std::string label = format_sigma_label(scan_sigma);
+            auto sh_it = m_sigma_scan_histograms.find(label);
+            if (sh_it == m_sigma_scan_histograms.end()) continue;
+            auto& sh = sh_it->second;
+
+            auto* scan_piplus = event.get_particles<clas12::Particle>(
+                format_sigma_key("SelectedPiPlus", scan_sigma));
+            auto* scan_piminus = event.get_particles<clas12::Particle>(
+                format_sigma_key("SelectedPiMinus", scan_sigma));
+
+            if (!scan_piplus || !scan_piminus || scan_piplus->empty() || scan_piminus->empty()) continue;
+
+            auto scan_candidates = build_rho0_candidates(
+                *scan_piplus, *scan_piminus, electron, virtual_photon, nu, Q2);
+
+            for (const auto& cand : scan_candidates) {
+                if (sh.mass_all) sh.mass_all->fill(cand.mass);
+
+                if (cand.passes_all_cuts) {
+                    if (sh.mass_selected) sh.mass_selected->fill(cand.mass);
+
+                    for (size_t i = 0; i < Q2_BINS.size(); ++i) {
+                        if (Q2 >= Q2_BINS[i].first && Q2 < Q2_BINS[i].second) {
+                            std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
+                            auto it = sh.mass_q2_bins.find(bin_name);
+                            if (it != sh.mass_q2_bins.end() && it->second) it->second->fill(cand.mass);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         return clas12::framework::StatusCode::SUCCESS();
     }
     
@@ -308,6 +351,11 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         // Perform BW + pol3 fitting if enabled
         if (m_enable_fitting.get()) {
             fit_invariant_mass_histograms();
+        }
+
+        // Sigma scan analysis
+        if (!m_sigma_scan_values.get().empty() && m_enable_fitting.get()) {
+            fit_sigma_scan_histograms();
         }
 
         // Save run metadata to ROOT file
@@ -679,6 +727,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     clas12::framework::Property<double> m_t_max{"t_max", 0.5, "Maximum -t [GeV²]"};
     clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
     clas12::framework::Property<bool> m_enable_fitting{"enable_fitting", true, "Enable BW+pol3 fitting in finalize"};
+    clas12::framework::Property<std::vector<double>> m_sigma_scan_values{"sigma_scan_values", {}, "Sigma values for delta_t scan (empty=disabled)"};
 
     /**
      * @brief Delta vz cut range structure
@@ -765,6 +814,14 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     std::atomic<size_t> m_rho0_ff{0};
     std::atomic<size_t> m_rho0_mixed{0};
     std::atomic<size_t> m_rho0_cc{0};
+
+    // Sigma scan histogram set
+    struct SigmaScanHistograms {
+        clas12::framework::AtomicHistogram1D* mass_all = nullptr;
+        clas12::framework::AtomicHistogram1D* mass_selected = nullptr;
+        std::map<std::string, clas12::framework::AtomicHistogram1D*> mass_q2_bins;
+    };
+    std::map<std::string, SigmaScanHistograms> m_sigma_scan_histograms;
 
     auto get_region_histograms(DetectorRegion region) -> RegionHistograms& {
         switch (region) {
@@ -897,6 +954,18 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         }
     }
 
+    // ========================================================================
+    // Sigma scan helpers
+    // ========================================================================
+
+    static auto format_sigma_label(double sigma) -> std::string {
+        return fmt::format("sigma_{:.1f}", sigma);
+    }
+
+    static auto format_sigma_key(const std::string& base, double sigma) -> std::string {
+        return fmt::format("{}_{}", base, format_sigma_label(sigma));
+    }
+
     auto book_histograms() -> void {
         clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
 
@@ -971,6 +1040,32 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             book_region(m_hist_ff, "/Rho0/Forward", "FD-FD");
             book_region(m_hist_mixed, "/Rho0/Mixed", "Mixed");
             book_region(m_hist_cc, "/Rho0/Central", "CD-CD");
+
+            // Book sigma scan histograms
+            for (double sigma : m_sigma_scan_values.get()) {
+                std::string label = format_sigma_label(sigma);
+                std::string dir = fmt::format("/Rho0/SigmaScan/{}", label);
+
+                SigmaScanHistograms sh;
+                sh.mass_all = svc->book_hist1D(
+                    dir + "/pipim_mass_all",
+                    fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f}#sigma);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", sigma),
+                    200, 0, 2.0);
+                sh.mass_selected = svc->book_hist1D(
+                    dir + "/pipim_mass_selected",
+                    fmt::format("Selected #rho^{{0}} Mass ({:.1f}#sigma);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", sigma),
+                    200, 0.4, 1.2);
+
+                for (const auto& [q2_min, q2_max] : Q2_BINS) {
+                    std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
+                    std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
+                    std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f}#sigma, {:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
+                        sigma, q2_min, q2_max);
+                    sh.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+                }
+
+                m_sigma_scan_histograms[label] = sh;
+            }
         });
     }
 
@@ -1009,6 +1104,155 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
             clas12::framework::Log::info(name(), "N-tuple branches registered for rho0_events");
         });
+    }
+
+    /**
+     * @brief Fit sigma scan histograms and print comparison table
+     */
+    auto fit_sigma_scan_histograms() -> void {
+        using Log = clas12::framework::Log;
+
+        Log::subsection("Delta-t Sigma Scan Results");
+
+        struct SigmaScanResult {
+            double sigma = 0.0;
+            double n_rho0 = 0.0;
+            double n_rho0_err = 0.0;
+            double mass = 0.0;
+            double mass_err = 0.0;
+            double chi2_ndf = 0.0;
+            double total_entries = 0.0;
+            bool valid = false;
+        };
+
+        std::vector<SigmaScanResult> scan_results;
+
+        for (double sigma : m_sigma_scan_values.get()) {
+            std::string label = format_sigma_label(sigma);
+            auto sh_it = m_sigma_scan_histograms.find(label);
+            if (sh_it == m_sigma_scan_histograms.end()) continue;
+            auto& sh = sh_it->second;
+
+            SigmaScanResult sr;
+            sr.sigma = sigma;
+            sr.total_entries = sh.mass_selected ? static_cast<double>(sh.mass_selected->entries()) : 0;
+
+            if (sh.mass_selected && sh.mass_selected->entries() > 100) {
+                auto root_hist = sh.mass_selected->to_root(
+                    fmt::format("sigma_scan_{}_fit", label),
+                    fmt::format("Mass ({:.1f}#sigma)", sigma));
+
+                auto result = fit_histogram(root_hist.get(),
+                    fmt::format("Sigma scan ({:.1f}#sigma)", sigma),
+                    0.3, 1.2, 0.6, 1.0);
+
+                if (result.valid) {
+                    sr.n_rho0 = result.n_rho0;
+                    sr.n_rho0_err = result.n_rho0_err;
+                    sr.mass = result.mass;
+                    sr.mass_err = result.mass_err;
+                    sr.chi2_ndf = result.chi2_ndf;
+                    sr.valid = true;
+                }
+            }
+
+            scan_results.push_back(sr);
+        }
+
+        // Print comparison table
+        if (!scan_results.empty()) {
+            std::vector<std::string> columns = {"Sigma", "Entries", "N(rho0)", "Mass [MeV]", "chi2/ndf"};
+            std::vector<std::vector<std::string>> rows;
+
+            double ref_n_rho0 = 0;
+            for (const auto& sr : scan_results) {
+                if (std::abs(sr.sigma - 3.0) < 0.01 && sr.valid) {
+                    ref_n_rho0 = sr.n_rho0;
+                    break;
+                }
+            }
+
+            for (const auto& sr : scan_results) {
+                rows.push_back({
+                    fmt::format("{:.1f}", sr.sigma),
+                    fmt::format("{:.0f}", sr.total_entries),
+                    sr.valid ? fmt::format("{:.0f} +/- {:.0f}", sr.n_rho0, sr.n_rho0_err) : "N/A",
+                    sr.valid ? fmt::format("{:.1f} +/- {:.1f}", sr.mass * 1000, sr.mass_err * 1000) : "N/A",
+                    sr.valid ? fmt::format("{:.2f}", sr.chi2_ndf) : "N/A"
+                });
+            }
+
+            Log::print_yield_summary_table(
+                "Delta-t Sigma Scan: rho0 Yield Comparison",
+                columns, rows);
+
+            // Print relative change table
+            if (ref_n_rho0 > 0) {
+                std::vector<std::string> rel_columns = {"Sigma", "N(rho0)", "Relative to 3.0 sigma"};
+                std::vector<std::vector<std::string>> rel_rows;
+
+                for (const auto& sr : scan_results) {
+                    if (!sr.valid) continue;
+                    double rel = 100.0 * (sr.n_rho0 - ref_n_rho0) / ref_n_rho0;
+                    rel_rows.push_back({
+                        fmt::format("{:.1f}", sr.sigma),
+                        fmt::format("{:.0f} +/- {:.0f}", sr.n_rho0, sr.n_rho0_err),
+                        fmt::format("{:+.1f}%", rel)
+                    });
+                }
+
+                Log::print_yield_summary_table(
+                    "Delta-t Sigma Scan: Relative Yield Change",
+                    rel_columns, rel_rows);
+            }
+        }
+
+        // Save fit results to ROOT file
+        save_sigma_scan_fit_results(scan_results);
+    }
+
+    /**
+     * @brief Save sigma scan fit results to ROOT file as a TTree
+     */
+    template<typename ResultVec>
+    auto save_sigma_scan_fit_results(const ResultVec& scan_results) -> void {
+        if (!m_output_svc || !m_output_svc->is_valid()) return;
+        auto* out_svc = m_output_svc->get();
+        if (!out_svc->is_file_open()) return;
+
+        std::lock_guard<std::mutex> lock(out_svc->mutex());
+        TFile* file = out_svc->get_file();
+        if (!file) return;
+
+        file->cd();
+        if (!file->GetDirectory("Rho0/SigmaScan")) {
+            file->mkdir("Rho0/SigmaScan");
+        }
+        file->cd("Rho0/SigmaScan");
+
+        auto* tree = new TTree("sigma_scan_results", "Delta-t Sigma Scan Results");
+        double sigma_val, n_rho0, n_rho0_err, mass_val, mass_err, chi2_ndf, entries;
+        tree->Branch("sigma", &sigma_val, "sigma/D");
+        tree->Branch("entries", &entries, "entries/D");
+        tree->Branch("n_rho0", &n_rho0, "n_rho0/D");
+        tree->Branch("n_rho0_err", &n_rho0_err, "n_rho0_err/D");
+        tree->Branch("mass", &mass_val, "mass/D");
+        tree->Branch("mass_err", &mass_err, "mass_err/D");
+        tree->Branch("chi2_ndf", &chi2_ndf, "chi2_ndf/D");
+
+        for (const auto& sr : scan_results) {
+            sigma_val = sr.sigma;
+            entries = sr.total_entries;
+            n_rho0 = sr.valid ? sr.n_rho0 : 0;
+            n_rho0_err = sr.valid ? sr.n_rho0_err : 0;
+            mass_val = sr.valid ? sr.mass : 0;
+            mass_err = sr.valid ? sr.mass_err : 0;
+            chi2_ndf = sr.valid ? sr.chi2_ndf : 0;
+            tree->Fill();
+        }
+
+        tree->Write("", TObject::kOverwrite);
+        clas12::framework::Log::info(name(), "Sigma scan results saved to TTree with {} entries", tree->GetEntries());
     }
 
     /**

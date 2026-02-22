@@ -129,7 +129,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
    public:
     explicit PionSelectionAlg(std::string name = "PionSelection",
                               clas12::Target target = clas12::Target::LD2,
-                              bool separate_charges = true)
+                              bool separate_charges = true,
+                              std::vector<double> sigma_scan = {})
         : SimpleAlgorithm(std::move(name))
         , m_target(target)
         , m_separate_charges(separate_charges)
@@ -143,6 +144,12 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         declare_property(m_enable_ntuple);
         declare_property(m_enable_fiducial_cuts);
         declare_property(m_enable_central_pions);
+        declare_property(m_delta_t_sigma);
+        declare_property(m_sigma_scan_values);
+        // Override scan values if provided via constructor
+        if (!sigma_scan.empty()) {
+            m_sigma_scan_values.set(std::move(sigma_scan));
+        }
         // Declare required banks
         declare_bank("REC::Event");
         declare_bank("REC::Particle");
@@ -178,6 +185,11 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         Log::info(name(), "Fiducial cuts: {}, Central pions: {}",
                   m_enable_fiducial_cuts.get() ? "enabled" : "disabled",
                   m_enable_central_pions.get() ? "enabled" : "disabled");
+        Log::info(name(), "Delta-t sigma: {}", m_delta_t_sigma.get());
+        if (!m_sigma_scan_values.get().empty()) {
+            Log::info(name(), "Sigma scan enabled with values: [{}]",
+                      fmt::join(m_sigma_scan_values.get(), ", "));
+        }
 
         // Setup cutflows
         setup_cutflows();
@@ -253,6 +265,17 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         // Set decision based on whether we have good pions
         event.set_decision_typed(clas12::framework::Decisions::HasGoodPiMinus, !selected_piminus.empty());
         event.set_decision_typed(clas12::framework::Decisions::HasGoodPiPlus, !selected_piplus.empty());
+
+        // Sigma scan: for each scan sigma, re-evaluate delta_t cut and store under string keys
+        if (!m_sigma_scan_values.get().empty()) {
+            for (double scan_sigma : m_sigma_scan_values.get()) {
+                auto scan_piplus = collect_passing_with_sigma(piplus_candidates, true, scan_sigma);
+                event.store_particles(format_sigma_key("SelectedPiPlus", scan_sigma), std::move(scan_piplus));
+
+                auto scan_piminus = collect_passing_with_sigma(piminus_candidates, false, scan_sigma);
+                event.store_particles(format_sigma_key("SelectedPiMinus", scan_sigma), std::move(scan_piminus));
+            }
+        }
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -359,6 +382,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
     clas12::framework::Property<bool> m_enable_fiducial_cuts{"enable_fiducial_cuts", true, "Enable PCAL and DC fiducial cuts"};
     clas12::framework::Property<bool> m_enable_central_pions{"enable_central_pions", false, "Enable central detector pion selection"};
+    clas12::framework::Property<double> m_delta_t_sigma{"delta_t_sigma", 3.0, "Number of sigma for delta_t cut"};
+    clas12::framework::Property<std::vector<double>> m_sigma_scan_values{"sigma_scan_values", {}, "Sigma values for delta_t scan (empty=disabled)"};
 
     // Service handles (auto-injected via require_service/optional_service)
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
@@ -954,26 +979,70 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     }
 
     /**
-     * @brief Time-of-flight cut using momentum-dependent parameterization
-     *
-     * This uses a 3-sigma cut around a momentum-dependent mean with
-     * parameterized sigma values from pion calibration studies.
-     * Different coefficients are used for pi+ and pi-, and for each target.
-     *
-     * Parameterization: mean/sigma = a*p² + b*p + c
+     * @brief Time-of-flight cut with configurable number of sigma
      */
-    auto pass_delta_t_cut(const double p, const double delta_t, bool is_piplus) -> bool {
-        // Get target-specific and charge-specific coefficients
+    auto pass_delta_t_cut(const double p, const double delta_t, bool is_piplus, double n_sigma) -> bool {
         auto coeffs = is_piplus ? get_piplus_delta_t_coefficients()
                                 : get_piminus_delta_t_coefficients();
 
         double mean = second_order_poly(p, coeffs.mean[0], coeffs.mean[1], coeffs.mean[2]);
         double sigma = second_order_poly(p, coeffs.sigma[0], coeffs.sigma[1], coeffs.sigma[2]);
 
-        double cut_low = mean - 3.0 * sigma;
-        double cut_high = mean + 3.0 * sigma;
+        double cut_low = mean - n_sigma * sigma;
+        double cut_high = mean + n_sigma * sigma;
 
         return cut_low < delta_t && delta_t < cut_high;
+    }
+
+    /**
+     * @brief Time-of-flight cut using default sigma from property
+     */
+    auto pass_delta_t_cut(const double p, const double delta_t, bool is_piplus) -> bool {
+        return pass_delta_t_cut(p, delta_t, is_piplus, m_delta_t_sigma.get());
+    }
+
+    // ========================================================================
+    // Sigma scan helpers
+    // ========================================================================
+
+    static auto format_sigma_label(double sigma) -> std::string {
+        return fmt::format("sigma_{:.1f}", sigma);
+    }
+
+    static auto format_sigma_key(const std::string& base, double sigma) -> std::string {
+        return fmt::format("{}_{}", base, format_sigma_label(sigma));
+    }
+
+    /**
+     * @brief Collect particles passing all cuts with a specific delta_t sigma
+     *
+     * Reuses already-built candidates, only re-evaluating the delta_t decision.
+     */
+    auto collect_passing_with_sigma(const std::vector<PionCandidate>& candidates,
+                                    bool is_piplus, double n_sigma) -> std::vector<clas12::Particle> {
+        std::vector<clas12::Particle> selected;
+        for (const auto& cand : candidates) {
+            bool scan_passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t, is_piplus, n_sigma);
+
+            bool passes_detector_region = cand.is_forward_detector ||
+                                          (cand.is_central_detector && m_enable_central_pions.get());
+            bool passes_fiducial = !cand.is_forward_detector ||
+                                   !m_enable_fiducial_cuts.get() ||
+                                   cand.passes_dc_fiducial;
+            bool passes_timing = cand.is_forward_detector ? scan_passes_delta_t : true;
+
+            bool passes_all = passes_detector_region &&
+                              passes_fiducial &&
+                              cand.passes_chi2pid &&
+                              cand.passes_momentum &&
+                              cand.passes_vz &&
+                              passes_timing;
+
+            if (passes_all) {
+                selected.push_back(cand.pion);
+            }
+        }
+        return selected;
     }
 };
 

@@ -36,6 +36,7 @@ struct NuclearTransparencyConfig {
     int num_threads = 1;
     std::string output_file;
     std::vector<std::string> input_files;
+    std::vector<double> sigma_scan_values;
 
     [[nodiscard]] auto is_valid() const -> bool {
         return !input_files.empty() && !output_file.empty() && percentage > 0;
@@ -55,6 +56,7 @@ struct NuclearTransparencyConfig {
         ("num_threads", "Thread count", cxxopts::value<int>()->default_value("1"))
         ("output", "Output ROOT file", cxxopts::value<std::string>()->default_value("nuclear_transparency_analysis_{target}_{polarity}.root"))
         ("input", "Input (file, directory, or comma-separated)", cxxopts::value<std::string>()->default_value(""))
+        ("sigma-scan", "Sigma values for delta_t scan (e.g., '2.0,2.5,3.0,3.5,4.0')", cxxopts::value<std::string>()->default_value(""))
         ("h,help", "Show help");
 
     auto args = options.parse(argc, argv);
@@ -73,6 +75,14 @@ struct NuclearTransparencyConfig {
     config.output_file = args["output"].as<std::string>();
     config.output_file = clas12::StringUtils::replace_all(config.output_file, "{target}", clas12::to_string(config.target));
     config.output_file = clas12::StringUtils::replace_all(config.output_file, "{polarity}", clas12::to_string(config.polarity));
+
+    std::string sigma_scan_str = args["sigma-scan"].as<std::string>();
+    if (!sigma_scan_str.empty()) {
+        auto parts = clas12::StringUtils::split(sigma_scan_str, ',');
+        for (const auto& part : parts) {
+            config.sigma_scan_values.push_back(std::stod(part));
+        }
+    }
 
     std::string input_str = args["input"].as<std::string>();
     if (!input_str.empty()) {
@@ -121,8 +131,8 @@ auto main(int argc, char* argv[]) -> int {
         .add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
         .add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", config->target, config->polarity)
         .add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::physics::DISAnalysis::KinematicRegion{.q2_min = 1.0, .w_min = 2.0})
-        .add_algorithm<clas12::algorithms::PionSelectionAlg>("PionSelection", config->target, true)
-        .add_algorithm<clas12::algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction")
+        .add_algorithm<clas12::algorithms::PionSelectionAlg>("PionSelection", config->target, true, config->sigma_scan_values)
+        .add_algorithm<clas12::algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", config->target, config->sigma_scan_values)
         .build();
 
     // Print configuration using enhanced logger
@@ -133,6 +143,10 @@ auto main(int argc, char* argv[]) -> int {
     clas12::framework::Log::config("Config", "Input files", config->input_files.size());
     clas12::framework::Log::config("Config", "Threads", config->num_threads);
     clas12::framework::Log::config("Config", "Output", config->output_file);
+    if (!config->sigma_scan_values.empty()) {
+        clas12::framework::Log::config("Config", "Sigma scan",
+            fmt::format("[{}]", fmt::join(config->sigma_scan_values, ", ")));
+    }
     clas12::framework::Log::blank();
 
     if (auto sc = app.initialize(); sc.is_failure()) {
