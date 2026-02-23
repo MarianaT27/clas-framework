@@ -444,6 +444,10 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         // Sector-level histograms (post-cut)
         std::array<clas12::framework::AtomicHistogram1D*, 6> momentum_sector = {};
         std::array<clas12::framework::AtomicHistogram1D*, 6> theta_sector = {};
+        std::array<clas12::framework::AtomicHistogram2D*, 6> delta_t_vs_p_sector = {};
+
+        // Per-sector delta_t vs p (pre-cut, forward only)
+        std::array<clas12::framework::AtomicHistogram2D*, 6> delta_t_vs_p_precut_sector = {};
     };
 
     PionHistograms h_piplus;
@@ -499,7 +503,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             h.beta_vs_p = svc->book_hist2d(fwd + "/beta_vs_p", label + " Forward #beta vs p;p [GeV/c];#beta",
                 100, 0, 10, 100, 0.7, 1.05);
             h.delta_t_vs_p = svc->book_hist2d(fwd + "/delta_t_vs_p", label + " Forward #Deltat vs p;p [GeV/c];#Deltat [ns]",
-                100, 0, 10, 200, -2, 2);
+                100, 0, 10, 1000, -2, 2);
             h.p_vs_theta = svc->book_hist2d(fwd + "/p_vs_theta", label + " Forward p vs #theta", 200, 0, 50, 200, 0, 10);
 
             // Forward pre-cut 2D correlation histograms (for diagnostics)
@@ -510,7 +514,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             h.delta_t_vs_theta = svc->book_hist2d(fwd + "/delta_t_vs_theta", label + " Forward #Deltat vs #theta;#theta [deg];#Deltat [ns]",
                 90, 0, 45, 100, -2, 2);
             h.delta_t_vs_p_precut = svc->book_hist2d(fwd + "/delta_t_vs_p_precut", label + " Forward #Deltat vs p (pre-cut);p [GeV/c];#Deltat [ns]",
-                100, 0, 10, 200, -2, 2);
+                100, 0, 10, 1000, -2, 2);
 
             // Central detector histograms (pre-cut)
             h.momentum_central = svc->book_momentum_hist(dir + "/Central/momentum", label + " Central Momentum");
@@ -523,7 +527,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             h.beta_vs_p_central = svc->book_hist2d(dir + "/Central/beta_vs_p", label + " Central #beta vs p;p [GeV/c];#beta",
                 100, 0, 10, 100, 0.0, 1.2);
             h.delta_t_vs_p_central = svc->book_hist2d(dir + "/Central/delta_t_vs_p", label + " Central #Deltat vs p;p [GeV/c];#Deltat [ns]",
-                100, 0, 10, 200, -2, 2);
+                100, 0, 10, 1000, -2, 2);
             h.p_vs_theta_central = svc->book_hist2d(dir + "/Central/p_vs_theta", label + " Central p vs #theta;#theta [deg];p [GeV/c]",
                 200, 0, 140, 200, 0, 5);
 
@@ -536,6 +540,14 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 h.theta_sector[sector - 1] = svc->book_theta_hist(
                     fwd + "/theta" + sec_suffix,
                     fmt::format("{} Forward #theta (Sector {})", label, sector));
+                h.delta_t_vs_p_sector[sector - 1] = svc->book_hist2d(
+                    fwd + "/delta_t_vs_p" + sec_suffix,
+                    fmt::format("{} Forward #Deltat vs p (Sector {});p [GeV/c];#Deltat [ns]", label, sector),
+                    100, 0, 10, 200, -2, 2);
+                h.delta_t_vs_p_precut_sector[sector - 1] = svc->book_hist2d(
+                    fwd + "/delta_t_vs_p_precut" + sec_suffix,
+                    fmt::format("{} Forward #Deltat vs p pre-cut (Sector {});p [GeV/c];#Deltat [ns]", label, sector),
+                    100, 0, 10, 200, -2, 2);
             }
         };
 
@@ -697,6 +709,12 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 if (h.vz_vs_theta) h.vz_vs_theta->fill(cand.theta, cand.vz);
                 if (h.delta_t_vs_theta) h.delta_t_vs_theta->fill(cand.theta, cand.delta_t);
                 if (h.delta_t_vs_p_precut) h.delta_t_vs_p_precut->fill(cand.p, cand.delta_t);
+
+                // Per-sector delta_t vs p (pre-cut)
+                if (cand.sector >= 1 && cand.sector <= 6) {
+                    int idx = cand.sector - 1;
+                    if (h.delta_t_vs_p_precut_sector[idx]) h.delta_t_vs_p_precut_sector[idx]->fill(cand.p, cand.delta_t);
+                }
             }
 
             // Central detector pre-cut histograms
@@ -742,6 +760,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 int idx = cand.sector - 1;
                 if (h.momentum_sector[idx]) h.momentum_sector[idx]->fill(cand.p);
                 if (h.theta_sector[idx]) h.theta_sector[idx]->fill(cand.theta);
+                if (h.delta_t_vs_p_sector[idx]) h.delta_t_vs_p_sector[idx]->fill(cand.p, cand.delta_t);
             }
         }
     }
