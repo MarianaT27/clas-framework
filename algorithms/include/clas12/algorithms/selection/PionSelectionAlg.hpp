@@ -629,6 +629,9 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 cand.delta_t = measured_time - t_expected;
             }
 
+            // Skip forward pions with no valid timing (delta_t exactly 0 means no scintillator match)
+            if (cand.is_forward_detector && cand.delta_t == 0.0) continue;
+
             // Calculate TOF mass^2: m^2 = p^2 * (1/beta^2 - 1)
             if (cand.beta > 0) {
                 cand.tof_mass2 = cand.p * cand.p * (1.0 / (cand.beta * cand.beta) - 1.0);
