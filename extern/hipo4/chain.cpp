@@ -62,8 +62,8 @@ void chain::load_metadata() {
 
     std::vector<std::future<void>> futures;
     for (auto& f : m_files) {
-        futures.push_back(m_thread_pool->submit([file = &f, &progress]() {
-            auto meta = reader::count_events(file->path);
+        futures.push_back(m_thread_pool->submit([file = &f, &progress, reader_opts = m_opts.reader_opts]() {
+            auto meta = reader::scan_metadata(file->path, reader_opts);
             if (!meta) {
                 file->valid = false;
                 file->error = fmt::format("{}", meta.error());
