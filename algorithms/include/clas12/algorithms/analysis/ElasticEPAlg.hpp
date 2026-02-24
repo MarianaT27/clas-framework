@@ -122,16 +122,11 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         declare_property(m_enable_w_cut);
     }
 
-    /**
-     * @brief Configure required services
-     */
-    auto configure() -> void override {
-        m_log_svc = &require_service<clas12::framework::LoggingService>("LoggingService");
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-        m_ntuple_svc = &optional_service<clas12::framework::NTupleService>("NTupleService");
-    }
-
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_log = svc<clas12::framework::LoggingService>();
+        m_hist = svc<clas12::framework::HistogramService>();
+        m_ntuple = svc<clas12::framework::NTupleService>();
+
         Log::info(name(), "Initializing elastic e-{} algorithm (W-only selection)", get_target_name(m_target));
         Log::info(name(), "  Beam energy: {} GeV", m_beam_energy.get());
         Log::info(name(), "  Target mass: {} GeV", m_target_mass);
@@ -139,7 +134,7 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         Log::info(name(), "  Vz cut: [{}, {}] cm", m_Vz_min.get(), m_Vz_max.get());
 
         book_histograms();
-        if (m_ntuple_svc) setup_ntuple();
+        if (m_ntuple) setup_ntuple();
 
         // Setup cutflow
         m_cutflow.add_cut("All Events");
@@ -215,7 +210,7 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         if (h_Vz) h_Vz->fill(vz);
 
         // Fill N-tuple
-        if (m_ntuple_svc) {
+        if (m_ntuple) {
             fill_ntuple(electron, kin);
         }
 
@@ -224,8 +219,8 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
 
     auto on_finalize() -> clas12::framework::StatusCode override {
         Log::info(name(), "Finalizing elastic e-{} algorithm", get_target_name(m_target));
-        if (m_ntuple_svc) {
-            auto entries = m_ntuple_svc->get()->get_entries("elastic_electron");
+        if (m_ntuple) {
+            auto entries = m_ntuple->get_entries("elastic_electron");
             Log::info(name(), "N-tuple has {} entries", entries);
         }
         m_cutflow.print();
@@ -246,10 +241,10 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
     clas12::framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
     clas12::framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
 
-    // Services (pointers set by configure())
-    clas12::framework::ServiceHandle<clas12::framework::LoggingService>* m_log_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
+    // Services (pointers set in on_initialize via svc<T>())
+    clas12::framework::LoggingService* m_log = nullptr;
+    clas12::framework::HistogramService* m_hist = nullptr;
+    clas12::framework::NTupleService* m_ntuple = nullptr;
 
     // Histograms (atomic for thread safety)
     clas12::framework::AtomicHistogram1D* h_Q2 = nullptr;
@@ -294,14 +289,14 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
 
     void book_histograms() {
         std::string prefix = "/Elastic_" + get_target_name(m_target);
-        h_Q2 = m_hist_svc->get()->book_atomic_hist1D(prefix + "/Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 10);
-        h_Q2_precut = m_hist_svc->get()->book_atomic_hist1D(prefix + "/Q2_precut", "Q^{2} (pre-cut);Q^{2} [GeV^{2}];Events", 100, 0, 10);
-        h_W = m_hist_svc->get()->book_atomic_hist1D(prefix + "/W", "W;W [GeV];Events", 100, m_target_mass - 0.3, m_target_mass + 0.5);
-        h_W_precut = m_hist_svc->get()->book_atomic_hist1D(prefix + "/W_precut", "W (pre-cut);W [GeV];Events", 200, 0, m_target_mass + 2.0);
-        h_nu = m_hist_svc->get()->book_atomic_hist1D(prefix + "/nu", "#nu;#nu [GeV];Events", 100, 0, 11);
-        h_p_e_vs_theta_e = m_hist_svc->get()->book_atomic_hist2D(prefix + "/p_e_vs_theta_e", "p_{e} vs #theta_{e};#theta_{e} [deg];p_{e} [GeV]", 90, 0, 45, 100, 0, 11);
-        h_Vz_precut = m_hist_svc->get()->book_atomic_hist1D(prefix + "/Vz_precut", "Vz (pre-cut);Vz [cm];Events", 200, -50, 30);
-        h_Vz = m_hist_svc->get()->book_atomic_hist1D(prefix + "/Vz", "Vz;Vz [cm];Events", 200, -50, 30);
+        h_Q2 = m_hist->book_atomic_hist1D(prefix + "/Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 10);
+        h_Q2_precut = m_hist->book_atomic_hist1D(prefix + "/Q2_precut", "Q^{2} (pre-cut);Q^{2} [GeV^{2}];Events", 100, 0, 10);
+        h_W = m_hist->book_atomic_hist1D(prefix + "/W", "W;W [GeV];Events", 100, m_target_mass - 0.3, m_target_mass + 0.5);
+        h_W_precut = m_hist->book_atomic_hist1D(prefix + "/W_precut", "W (pre-cut);W [GeV];Events", 200, 0, m_target_mass + 2.0);
+        h_nu = m_hist->book_atomic_hist1D(prefix + "/nu", "#nu;#nu [GeV];Events", 100, 0, 11);
+        h_p_e_vs_theta_e = m_hist->book_atomic_hist2D(prefix + "/p_e_vs_theta_e", "p_{e} vs #theta_{e};#theta_{e} [deg];p_{e} [GeV]", 90, 0, 45, 100, 0, 11);
+        h_Vz_precut = m_hist->book_atomic_hist1D(prefix + "/Vz_precut", "Vz (pre-cut);Vz [cm];Events", 200, -50, 30);
+        h_Vz = m_hist->book_atomic_hist1D(prefix + "/Vz", "Vz;Vz [cm];Events", 200, -50, 30);
     }
 
     void fill_histograms(const ElasticKinematics& kin) {
@@ -312,12 +307,12 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
     }
 
     void setup_ntuple() {
-        m_ntuple_svc->get()->register_branch("elastic_electron", "e_p", &m_nt_e_p);
-        m_ntuple_svc->get()->register_branch("elastic_electron", "e_theta", &m_nt_e_theta);
-        m_ntuple_svc->get()->register_branch("elastic_electron", "e_phi", &m_nt_e_phi);
-        m_ntuple_svc->get()->register_branch("elastic_electron", "Q2", &m_nt_Q2);
-        m_ntuple_svc->get()->register_branch("elastic_electron", "W", &m_nt_W);
-        m_ntuple_svc->get()->register_branch("elastic_electron", "nu", &m_nt_nu);
+        m_ntuple->register_branch("elastic_electron", "e_p", &m_nt_e_p);
+        m_ntuple->register_branch("elastic_electron", "e_theta", &m_nt_e_theta);
+        m_ntuple->register_branch("elastic_electron", "e_phi", &m_nt_e_phi);
+        m_ntuple->register_branch("elastic_electron", "Q2", &m_nt_Q2);
+        m_ntuple->register_branch("elastic_electron", "W", &m_nt_W);
+        m_ntuple->register_branch("elastic_electron", "nu", &m_nt_nu);
         Log::info(name(), "N-tuple branches registered for elastic electron");
     }
 
@@ -328,7 +323,7 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         m_nt_Q2 = kin.Q2;
         m_nt_W = kin.W;
         m_nt_nu = kin.nu;
-        m_ntuple_svc->get()->fill("elastic_electron");
+        m_ntuple->fill("elastic_electron");
     }
 };
 

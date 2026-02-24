@@ -126,16 +126,11 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
         declare_bank("DECAYS::Particle");
     }
 
-    /**
-     * @brief Configure required services
-     */
-    auto configure() -> void override {
-        m_log_svc = &require_service<clas12::framework::LoggingService>("LoggingService");
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-        m_ntuple_svc = &optional_service<clas12::framework::NTupleService>("NTupleService");
-    }
-
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_log = svc<clas12::framework::LoggingService>();
+        m_hist = svc<clas12::framework::HistogramService>();
+        m_ntuple = svc<clas12::framework::NTupleService>();
+
         Log::info(name(), "Initializing DECAYS Lambda analysis algorithm");
         Log::info(name(), "  Mass window: {} GeV", m_mass_window.get());
         Log::info(name(), "  Min momentum: {} GeV", m_min_momentum.get());
@@ -143,13 +138,13 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
         Log::info(name(), "  Min vertex detach: {} cm", m_min_vertex_detach.get());
         Log::info(name(), "  Max vertex detach: {} cm", m_max_vertex_detach.get());
 
-        if (!m_hist_svc || !m_hist_svc->is_valid()) {
+        if (!m_hist) {
             Log::error(name(), "Could not get HistogramService");
             return clas12::framework::StatusCode::FAILURE();
         }
 
         book_histograms();
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) setup_ntuple();
+        if (m_ntuple) setup_ntuple();
 
         // Setup cutflow
         m_cutflow.add_cut("All Events");
@@ -310,7 +305,7 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
         }
 
         // Fill N-tuple
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
+        if (m_ntuple && m_ntuple != nullptr) {
             fill_ntuple(selected_lambdas, all_daughters);
         }
 
@@ -319,8 +314,8 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
 
     auto on_finalize() -> clas12::framework::StatusCode override {
         Log::info(name(), "Finalizing DECAYS Lambda analysis algorithm");
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
-            auto entries = m_ntuple_svc->get()->get_entries("decays_lambda");
+        if (m_ntuple && m_ntuple != nullptr) {
+            auto entries = m_ntuple->get_entries("decays_lambda");
             Log::info(name(), "N-tuple has {} entries", entries);
         }
         m_cutflow.print();
@@ -340,10 +335,10 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
     clas12::framework::Property<bool> m_enable_vertex_detach_cut{"enable_vertex_detach_cut", true, "Enable vertex detachment cut"};
     clas12::framework::Cutflow m_cutflow;
 
-    // Services (pointers set by configure())
-    clas12::framework::ServiceHandle<clas12::framework::LoggingService>* m_log_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
+    // Services (pointers set in on_initialize via svc<T>())
+    clas12::framework::LoggingService* m_log = nullptr;
+    clas12::framework::HistogramService* m_hist = nullptr;
+    clas12::framework::NTupleService* m_ntuple = nullptr;
 
     mutable std::mutex m_ntuple_mutex;
 
@@ -382,43 +377,43 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
     std::vector<double> m_nt_vertex_detach;
 
     void book_histograms() {
-        h_n_lambdas = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/n_lambdas",
+        h_n_lambdas = m_hist->book_atomic_hist1D("/DecaysLambda/n_lambdas",
                                               "Number of #Lambda per event;N_{#Lambda};Events", 10, 0, 10);
-        h_mass_nocuts = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/mass_nocuts",
+        h_mass_nocuts = m_hist->book_atomic_hist1D("/DecaysLambda/mass_nocuts",
                                                 "#Lambda mass (no cuts);M [GeV];Events", 200, 1.0, 1.3);
-        h_mass_selected = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/mass_selected",
+        h_mass_selected = m_hist->book_atomic_hist1D("/DecaysLambda/mass_selected",
                                                   "#Lambda mass (selected);M [GeV];Events", 200, 1.0, 1.3);
-        h_umass = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/umass",
+        h_umass = m_hist->book_atomic_hist1D("/DecaysLambda/umass",
                                           "#Lambda unmeasured mass;M [GeV];Events", 200, 1.0, 1.3);
-        h_momentum = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/momentum",
+        h_momentum = m_hist->book_atomic_hist1D("/DecaysLambda/momentum",
                                              "#Lambda momentum;p [GeV];Events", 100, 0, 10);
-        h_theta = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/theta",
+        h_theta = m_hist->book_atomic_hist1D("/DecaysLambda/theta",
                                           "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
-        h_phi = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/phi",
+        h_phi = m_hist->book_atomic_hist1D("/DecaysLambda/phi",
                                         "#Lambda #phi;#phi [deg];Events", 180, -180, 180);
-        h_decay_length = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/decay_length",
+        h_decay_length = m_hist->book_atomic_hist1D("/DecaysLambda/decay_length",
                                                  "#Lambda decay length;L [cm];Events", 100, 0, 50);
-        h_decay_vz = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/decay_vz",
+        h_decay_vz = m_hist->book_atomic_hist1D("/DecaysLambda/decay_vz",
                                              "#Lambda decay vertex z;v_{z} [cm];Events", 200, -30, 30);
-        h_origin_vz = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/origin_vz",
+        h_origin_vz = m_hist->book_atomic_hist1D("/DecaysLambda/origin_vz",
                                               "#Lambda origin vertex z;ov_{z} [cm];Events", 200, -30, 30);
-        h_r = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/r",
+        h_r = m_hist->book_atomic_hist1D("/DecaysLambda/r",
                                       "#Lambda decay radius;r [cm];Events", 100, 0, 20);
-        h_ndau = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/ndau",
+        h_ndau = m_hist->book_atomic_hist1D("/DecaysLambda/ndau",
                                          "Number of daughters;N_{dau};Events", 5, 0, 5);
-        h_proton_p = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/proton_p",
+        h_proton_p = m_hist->book_atomic_hist1D("/DecaysLambda/proton_p",
                                              "Proton momentum;p [GeV];Events", 100, 0, 5);
-        h_pion_p = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/pion_p",
+        h_pion_p = m_hist->book_atomic_hist1D("/DecaysLambda/pion_p",
                                            "#pi^{-} momentum;p [GeV];Events", 100, 0, 3);
-        h_mass_vs_p = m_hist_svc->get()->book_atomic_hist2D("/DecaysLambda/mass_vs_p",
+        h_mass_vs_p = m_hist->book_atomic_hist2D("/DecaysLambda/mass_vs_p",
                                               "#Lambda mass vs momentum;p [GeV];M [GeV]", 100, 0, 10, 100, 1.0, 1.3);
-        h_decay_vz_vs_origin_vz = m_hist_svc->get()->book_atomic_hist2D("/DecaysLambda/decay_vz_vs_origin_vz",
+        h_decay_vz_vs_origin_vz = m_hist->book_atomic_hist2D("/DecaysLambda/decay_vz_vs_origin_vz",
                                                           "Decay vs origin vertex z;ov_{z} [cm];v_{z} [cm]", 100, -30, 30, 100, -30, 30);
-        h_vertex_detach = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/vertex_detach",
+        h_vertex_detach = m_hist->book_atomic_hist1D("/DecaysLambda/vertex_detach",
                                                   "Vertex detachment (v_{z} - ov_{z});#Deltaz [cm];Events", 200, -20, 40);
-        h_vertex_detach_precut = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/vertex_detach_precut",
+        h_vertex_detach_precut = m_hist->book_atomic_hist1D("/DecaysLambda/vertex_detach_precut",
                                                          "Vertex detachment (pre-cut);#Deltaz [cm];Events", 200, -20, 40);
-        h_vertex_detach_xy = m_hist_svc->get()->book_atomic_hist1D("/DecaysLambda/vertex_detach_xy",
+        h_vertex_detach_xy = m_hist->book_atomic_hist1D("/DecaysLambda/vertex_detach_xy",
                                                      "Transverse vertex detachment;#Deltar_{xy} [cm];Events", 100, 0, 20);
     }
 
@@ -451,17 +446,17 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
     }
 
     void setup_ntuple() {
-        m_ntuple_svc->get()->register_branch("decays_lambda", "mass", &m_nt_mass);
-        m_ntuple_svc->get()->register_branch("decays_lambda", "umass", &m_nt_umass);
-        m_ntuple_svc->get()->register_branch("decays_lambda", "p", &m_nt_p);
-        m_ntuple_svc->get()->register_branch("decays_lambda", "theta", &m_nt_theta);
-        m_ntuple_svc->get()->register_branch("decays_lambda", "phi", &m_nt_phi);
-        m_ntuple_svc->get()->register_branch("decays_lambda", "decay_length", &m_nt_decay_length);
-        m_ntuple_svc->get()->register_branch("decays_lambda", "vz", &m_nt_vz);
-        m_ntuple_svc->get()->register_branch("decays_lambda", "ovz", &m_nt_ovz);
-        m_ntuple_svc->get()->register_branch("decays_lambda", "proton_p", &m_nt_proton_p);
-        m_ntuple_svc->get()->register_branch("decays_lambda", "pion_p", &m_nt_pion_p);
-        m_ntuple_svc->get()->register_branch("decays_lambda", "vertex_detach", &m_nt_vertex_detach);
+        m_ntuple->register_branch("decays_lambda", "mass", &m_nt_mass);
+        m_ntuple->register_branch("decays_lambda", "umass", &m_nt_umass);
+        m_ntuple->register_branch("decays_lambda", "p", &m_nt_p);
+        m_ntuple->register_branch("decays_lambda", "theta", &m_nt_theta);
+        m_ntuple->register_branch("decays_lambda", "phi", &m_nt_phi);
+        m_ntuple->register_branch("decays_lambda", "decay_length", &m_nt_decay_length);
+        m_ntuple->register_branch("decays_lambda", "vz", &m_nt_vz);
+        m_ntuple->register_branch("decays_lambda", "ovz", &m_nt_ovz);
+        m_ntuple->register_branch("decays_lambda", "proton_p", &m_nt_proton_p);
+        m_ntuple->register_branch("decays_lambda", "pion_p", &m_nt_pion_p);
+        m_ntuple->register_branch("decays_lambda", "vertex_detach", &m_nt_vertex_detach);
         Log::info(name(), "N-tuple branches registered for DECAYS Lambda analysis");
     }
 
@@ -506,7 +501,7 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
             m_nt_pion_p.push_back(pion_p);
         }
 
-        m_ntuple_svc->get()->fill("decays_lambda");
+        m_ntuple->fill("decays_lambda");
     }
 };
 

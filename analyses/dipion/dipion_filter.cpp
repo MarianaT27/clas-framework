@@ -8,6 +8,10 @@
  * - At least one pi- with p > 0.3 GeV and |chi2pid| < 10
  *
  * Creates one output file per input file with prefix "dipion_filter_"
+ *
+ * NOTE: This analysis processes each input file individually (1-to-1 output),
+ * which does not fit the standard AnalysisRunner pattern. It retains its own
+ * CLI parsing and per-file processing loop.
  */
 
 #include <cstdlib>

@@ -8,7 +8,8 @@
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/framework/core/AtomicHistogram.hpp>
-#include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/core/AutoCutflow.hpp>
+#include <clas12/framework/core/CandidateUtils.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
@@ -40,6 +41,15 @@ struct PionNTupleData {
     double tof_mass2 = 0.0;
     double tof_path = 0.0;
     int sector = 0;
+
+    /// Populate from any source with matching field names
+    template <typename T>
+    auto from(const T& c) -> void {
+        p = c.p; theta = c.theta; phi = c.phi;
+        vz = c.vz; vx = c.vx; vy = c.vy;
+        chi2pid = c.chi2pid; beta = c.beta; delta_t = c.delta_t;
+        tof_mass2 = c.tof_mass2; tof_path = c.tof_path; sector = c.sector;
+    }
 
     NTUPLE_FIELDS(p, theta, phi, vz, vx, vy, chi2pid, beta, delta_t, tof_mass2, tof_path, sector)
 };
@@ -164,22 +174,15 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     }
 
     /**
-     * @brief Configure required and optional services
-     */
-    auto configure() -> void override {
-        // Required services
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-        m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
-
-        // Optional services - analysis continues even if not available
-        m_log_svc = &optional_service<clas12::framework::LoggingService>("LoggingService");
-        m_ntuple_svc = &optional_service<clas12::framework::NTupleService>("NTupleService");
-    }
-
-    /**
      * @brief Custom initialization after services are injected
      */
     auto on_initialize() -> clas12::framework::StatusCode override {
+        // Cache service pointers
+        m_hist = svc<clas12::framework::HistogramService>();
+        m_particle = svc<clas12::framework::ParticleSelectorService>();
+        m_log = svc<clas12::framework::LoggingService>();
+        m_ntuple = svc<clas12::framework::NTupleService>();
+
         Log::info(name(), "Initializing pion selection algorithm");
         Log::info(name(), "Target: {}, Separate charges: {}",
                   m_target == clas12::Target::LD2 ? "LD2" : "Other",
@@ -199,13 +202,13 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         }
 
         // Setup cutflows
-        setup_cutflows();
+        define_cutflows();
 
         // Book histograms using new histogram templates
         book_histograms();
 
         // Setup N-tuple branches if service is available
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
+        if (m_ntuple) {
             setup_ntuples();
         } else {
             Log::warning(name(), "NTupleService not available - N-tuple output disabled");
@@ -235,7 +238,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         double start_time = static_cast<double>(REC_Event.get<float>("startTime", 0));
 
         // Extract pions using ParticleSelectorService
-        clas12::framework::ParticleMap particles = m_particle_svc->get()->extract_particles(
+        clas12::framework::ParticleMap particles = m_particle->extract_particles(
             REC_Particle,
             {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
 
@@ -243,9 +246,11 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
         auto piplus_candidates = build_pion_candidates(pions_plus, REC_Scintillator, REC_Calorimeter, REC_Traj, start_time, true);
 
-        // Fill pre-cut histograms, update cutflow, fill post-cut histograms and N-tuple
+        // Evaluate cutflow per-candidate (sets passes_all_cuts), then fill histograms
+        for (auto& cand : piplus_candidates) {
+            cand.passes_all_cuts = m_cutflow_piplus.evaluate(cand);
+        }
         fill_pre_cut_histograms(piplus_candidates, true);
-        update_cutflow(piplus_candidates, true);
         fill_post_cut_histograms(piplus_candidates, true);
         fill_ntuple(piplus_candidates, true);
 
@@ -256,9 +261,11 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
         auto piminus_candidates = build_pion_candidates(pions_minus, REC_Scintillator, REC_Calorimeter, REC_Traj, start_time, false);
 
-        // Fill pre-cut histograms, update cutflow, fill post-cut histograms and N-tuple
+        // Evaluate cutflow per-candidate (sets passes_all_cuts), then fill histograms
+        for (auto& cand : piminus_candidates) {
+            cand.passes_all_cuts = m_cutflow_piminus.evaluate(cand);
+        }
         fill_pre_cut_histograms(piminus_candidates, false);
-        update_cutflow(piminus_candidates, false);
         fill_post_cut_histograms(piminus_candidates, false);
         fill_ntuple(piminus_candidates, false);
 
@@ -293,15 +300,15 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     auto on_finalize() -> clas12::framework::StatusCode override {
         Log::info(name(), "Finalizing pion selection algorithm");
 
-        auto piplus_count = m_cutflow_piplus.get_count("Delta-t");
-        auto piminus_count = m_cutflow_piminus.get_count("Delta-t");
+        auto piplus_count = m_cutflow_piplus.count("Delta-t");
+        auto piminus_count = m_cutflow_piminus.count("Delta-t");
 
         Log::info(name(), "π⁺ passing all cuts: {}", piplus_count);
         Log::info(name(), "π⁻ passing all cuts: {}", piminus_count);
 
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
-            auto piplus_entries = m_ntuple_svc->get()->get_entries("pion_plus");
-            auto piminus_entries = m_ntuple_svc->get()->get_entries("pion_minus");
+        if (m_ntuple) {
+            auto piplus_entries = m_ntuple->get_entries("pion_plus");
+            auto piminus_entries = m_ntuple->get_entries("pion_minus");
             Log::info(name(), "N-tuple entries: π⁺={}, π⁻={}", piplus_entries, piminus_entries);
         }
 
@@ -313,8 +320,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             "Pion Analysis Statistics",
             {"Particle", "Passing All Cuts"},
             {
-                {"π⁺", fmt::format("{}", m_cutflow_piplus.get_count("Delta-t"))},
-                {"π⁻", fmt::format("{}", m_cutflow_piminus.get_count("Delta-t"))}
+                {"π⁺", fmt::format("{}", m_cutflow_piplus.count("Delta-t"))},
+                {"π⁻", fmt::format("{}", m_cutflow_piminus.count("Delta-t"))}
             }
         );
 
@@ -366,8 +373,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
    private:
     clas12::Target m_target;
     bool m_separate_charges;
-    clas12::framework::Cutflow m_cutflow_piplus;
-    clas12::framework::Cutflow m_cutflow_piminus;
+    clas12::framework::ContextCutflow<PionCandidate> m_cutflow_piplus;
+    clas12::framework::ContextCutflow<PionCandidate> m_cutflow_piminus;
 
     // PCAL NaN counters (forward pions with undefined lv/lw)
     std::atomic<size_t> m_piplus_pcal_nan{0};
@@ -397,11 +404,11 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     clas12::framework::Property<double> m_delta_t_sigma{"delta_t_sigma", 3.0, "Number of sigma for delta_t cut"};
     clas12::framework::Property<std::vector<double>> m_sigma_scan_values{"sigma_scan_values", {}, "Sigma values for delta_t scan (empty=disabled)"};
 
-    // Service handles (auto-injected via require_service/optional_service)
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::LoggingService>* m_log_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
+    // Service pointers (cached in on_initialize via svc<T>())
+    clas12::framework::HistogramService* m_hist = nullptr;
+    clas12::framework::ParticleSelectorService* m_particle = nullptr;
+    clas12::framework::LoggingService* m_log = nullptr;
+    clas12::framework::NTupleService* m_ntuple = nullptr;
 
     // N-tuple writers (replace individual variables + manual registration)
     clas12::framework::NTupleWriter<PionNTupleData> m_ntuple_piplus;
@@ -465,23 +472,40 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     PionHistograms h_piplus;
     PionHistograms h_piminus;
 
-    auto setup_cutflows() -> void {
-        auto setup = [](clas12::framework::Cutflow& cf, const std::string& pion_label) {
-            cf.add_cut("All Events");
-            cf.add_cut(pion_label);
-            cf.add_cut("Detector region");
-            cf.add_cut("DC Fiducial");
-            cf.add_cut("Chi2 PID");
-            cf.add_cut("Momentum");
-            cf.add_cut("Vertex Z");
-            cf.add_cut("Delta-t");
+    auto define_cutflows() -> void {
+        auto define = [this](clas12::framework::ContextCutflow<PionCandidate>& cf) {
+            cf.define_always("All Pions")
+              .define("Detector Region", [this](const PionCandidate& c) {
+                  if (!m_enable_detector_region_cut.get()) return true;
+                  return c.is_forward_detector ||
+                         (c.is_central_detector && m_enable_central_pions.get());
+              })
+              .define("DC Fiducial", [this](const PionCandidate& c) {
+                  if (!m_enable_fiducial_cuts.get()) return true;
+                  if (!c.is_forward_detector) return true;  // Central: no fiducial
+                  return c.passes_dc_fiducial;
+              })
+              .define("Chi2 PID", [this](const PionCandidate& c) {
+                  return !m_enable_chi2pid_cut.get() || c.passes_chi2pid;
+              })
+              .define("Momentum", [this](const PionCandidate& c) {
+                  return !m_enable_momentum_cut.get() || c.passes_momentum;
+              })
+              .define("Vertex Z", [this](const PionCandidate& c) {
+                  return !m_enable_vz_cut.get() || c.passes_vz;
+              })
+              .define("Delta-t", [this](const PionCandidate& c) {
+                  if (!m_enable_delta_t_cut.get()) return true;
+                  if (!c.is_forward_detector) return true;  // Central: no delta_t
+                  return c.passes_delta_t;
+              });
         };
-        setup(m_cutflow_piplus, "Has π⁺");
-        setup(m_cutflow_piminus, "Has π⁻");
+        define(m_cutflow_piplus);
+        define(m_cutflow_piminus);
     }
 
     auto book_histograms() -> void {
-        auto* svc = m_hist_svc->get();
+        auto* svc = m_hist;
 
         // Helper lambda to book histograms for a pion charge
         auto book_pion_histograms = [svc](PionHistograms& h, const std::string& dir, const std::string& label) {
@@ -568,8 +592,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
     auto setup_ntuples() -> void {
         // Setup N-tuple using NTupleWriter
-        m_ntuple_piplus.init(m_ntuple_svc->get(), "pion_plus");
-        m_ntuple_piminus.init(m_ntuple_svc->get(), "pion_minus");
+        m_ntuple_piplus.init(m_ntuple, "pion_plus");
+        m_ntuple_piminus.init(m_ntuple, "pion_minus");
 
         Log::info(name(), "N-tuple branches registered for π⁺ and π⁻");
     }
@@ -610,8 +634,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             cand.beta = pion.beta();
 
             // Check forward detector status and count detector regions
-            cand.is_forward_detector = (pion.status() >= 2000 && pion.status() < 4000);
-            cand.is_central_detector = (pion.status() >= 4000 && pion.status() < 6000);
+            cand.is_forward_detector = clas12::framework::CandidateUtils::is_forward_detector(pion.status());
+            cand.is_central_detector = clas12::framework::CandidateUtils::is_central_detector(pion.status());
             if (is_piplus) {
                 if (cand.is_forward_detector) m_piplus_forward++;
                 else if (cand.is_central_detector) m_piplus_central++;
@@ -631,24 +655,16 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             }
 
             // Calculate timing quantities
-            double m = clas12::Constants::PIMASS;
-            cand.beta_expected = cand.p / std::sqrt(cand.p * cand.p + m * m);
-            if (cand.tof_path > 0) {
-                double t_expected = cand.tof_path / (cand.beta_expected * clas12::Constants::SPEED_OF_LIGHT);
-                double measured_time = cand.tof_time - start_time;
-                cand.delta_t = measured_time - t_expected;
-            }
+            auto timing = clas12::framework::CandidateUtils::compute_timing(
+                cand.p, clas12::Constants::PIMASS, cand.beta,
+                cand.tof_time, cand.tof_path, start_time);
+            cand.beta_expected = timing.beta_expected;
+            cand.delta_t = timing.delta_t;
+            cand.tof_mass2 = timing.tof_mass2;
+            cand.beta_diff = timing.beta_diff;
 
             // Skip forward pions with no valid timing (delta_t exactly 0 means no scintillator match)
             if (cand.is_forward_detector && cand.delta_t == 0.0) continue;
-
-            // Calculate TOF mass^2: m^2 = p^2 * (1/beta^2 - 1)
-            if (cand.beta > 0) {
-                cand.tof_mass2 = cand.p * cand.p * (1.0 / (cand.beta * cand.beta) - 1.0);
-            }
-
-            // Calculate beta difference
-            cand.beta_diff = cand.beta - cand.beta_expected;
 
             // Read calorimeter and trajectory banks for fiducial cuts
             auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, pion.index());
@@ -662,38 +678,13 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 else m_piminus_pcal_nan++;
             }
 
-            // Apply cuts and cache results
+            // Cache individual cut results (used by histograms and sigma scan)
             cand.passes_dc_fiducial = pass_dc_fiducial_cut(traj, is_piplus);
             cand.passes_chi2pid = pass_chi2pid_cut(cand.chi2pid);
             cand.passes_momentum = pass_momentum_cut(cand.p);
             cand.passes_vz = pass_vz_cut(cand.vz, is_piplus);
             cand.passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t, is_piplus);
-            // Determine detector region and fiducial/timing pass
-            bool passes_detector_region = false;
-            bool passes_fiducial = false;
-            bool passes_timing = false;
-
-            if (cand.is_forward_detector) {
-                passes_detector_region = true;
-                passes_fiducial = !m_enable_fiducial_cuts.get() || cand.passes_dc_fiducial;
-                passes_timing = !m_enable_delta_t_cut.get() || cand.passes_delta_t;
-            } else if (cand.is_central_detector && m_enable_central_pions.get()) {
-                passes_detector_region = true;
-                passes_fiducial = true;   // No fiducial for central
-                passes_timing = true;     // Skip delta_t for central (no CTOF reader)
-            }
-
-            bool eff_detector_region = !m_enable_detector_region_cut.get() || passes_detector_region;
-            bool eff_chi2pid = !m_enable_chi2pid_cut.get() || cand.passes_chi2pid;
-            bool eff_momentum = !m_enable_momentum_cut.get() || cand.passes_momentum;
-            bool eff_vz = !m_enable_vz_cut.get() || cand.passes_vz;
-
-            cand.passes_all_cuts = eff_detector_region &&
-                                   passes_fiducial &&
-                                   eff_chi2pid &&
-                                   eff_momentum &&
-                                   eff_vz &&
-                                   passes_timing;
+            // Note: passes_all_cuts is set later via ContextCutflow::evaluate()
 
             candidates.push_back(std::move(cand));
         }
@@ -788,102 +779,16 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
      */
     auto fill_ntuple(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
         auto& ntuple = is_piplus ? m_ntuple_piplus : m_ntuple_piminus;
+        if (!ntuple) return;
 
         for (const auto& cand : candidates) {
             if (!cand.passes_all_cuts) continue;
-
-            if (ntuple) {
-                ntuple.data().p = cand.p;
-                ntuple.data().theta = cand.theta;
-                ntuple.data().phi = cand.phi;
-                ntuple.data().vz = cand.vz;
-                ntuple.data().vx = cand.vx;
-                ntuple.data().vy = cand.vy;
-                ntuple.data().chi2pid = cand.chi2pid;
-                ntuple.data().beta = cand.beta;
-                ntuple.data().delta_t = cand.delta_t;
-                ntuple.data().tof_mass2 = cand.tof_mass2;
-                ntuple.data().tof_path = cand.tof_path;
-                ntuple.data().sector = cand.sector;
-                ntuple.fill();
-            }
+            ntuple.data().from(cand);
+            ntuple.fill();
         }
     }
 
-    /**
-     * @brief Update cutflow counters based on candidate cut results
-     */
-    auto update_cutflow(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
-        auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
-
-        cutflow.pass("All Events");
-
-        if (candidates.empty()) return;
-        cutflow.pass(is_piplus ? "Has π⁺" : "Has π⁻");
-
-        bool any_region = false, any_dc = false;
-        bool any_chi2 = false, any_p = false, any_vz = false, any_dt = false;
-
-        for (const auto& cand : candidates) {
-            bool in_region = cand.is_forward_detector ||
-                             (cand.is_central_detector && m_enable_central_pions.get());
-            if (m_enable_detector_region_cut.get()) {
-                any_region |= in_region;
-                if (!in_region) continue;
-            } else {
-                any_region = true;
-            }
-
-            // DC fiducial cut chain (forward-only, when enabled)
-            if (m_enable_fiducial_cuts.get()) {
-                if (cand.is_forward_detector) {
-                    any_dc |= cand.passes_dc_fiducial;
-                    if (!cand.passes_dc_fiducial) continue;
-                }
-            } else {
-                any_dc = true;
-            }
-
-            if (m_enable_chi2pid_cut.get()) {
-                any_chi2 |= cand.passes_chi2pid;
-                if (!cand.passes_chi2pid) continue;
-            } else {
-                any_chi2 = true;
-            }
-
-            if (m_enable_momentum_cut.get()) {
-                any_p |= cand.passes_momentum;
-                if (!cand.passes_momentum) continue;
-            } else {
-                any_p = true;
-            }
-
-            if (m_enable_vz_cut.get()) {
-                any_vz |= cand.passes_vz;
-                if (!cand.passes_vz) continue;
-            } else {
-                any_vz = true;
-            }
-
-            // Delta-t (forward only)
-            if (m_enable_delta_t_cut.get()) {
-                if (cand.is_forward_detector) {
-                    any_dt |= cand.passes_delta_t;
-                } else {
-                    any_dt = true;  // Central pions skip delta_t
-                }
-            } else {
-                any_dt = true;
-            }
-        }
-
-        if (any_region) cutflow.pass("Detector region");
-        if (any_dc) cutflow.pass("DC Fiducial");
-        if (any_chi2) cutflow.pass("Chi2 PID");
-        if (any_p) cutflow.pass("Momentum");
-        if (any_vz) cutflow.pass("Vertex Z");
-        if (any_dt) cutflow.pass("Delta-t");
-    }
+    // Note: update_cutflow() removed -- ContextCutflow::evaluate() handles per-candidate tracking
 
     /**
      * @brief Collect particles that passed all cuts from candidates

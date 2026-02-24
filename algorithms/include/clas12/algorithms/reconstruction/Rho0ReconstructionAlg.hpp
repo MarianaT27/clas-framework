@@ -18,14 +18,18 @@
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/Target.hpp>
+#include <clas12/framework/core/CandidateUtils.hpp>
+#include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
+#include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/ServiceHelpers.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
+#include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
@@ -148,7 +152,8 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     )
         : SimpleAlgorithm(std::move(name))
         , m_target(target)
-        , m_cutflow("Rho0 Reconstruction") {
+        , m_cutflow("Rho0 Reconstruction")
+        , m_candidate_cutflow("Rho0 Candidate Cuts") {
         declare_property(m_zh_min);
         declare_property(m_lc_max);
         declare_property(m_t_min);
@@ -210,13 +215,26 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         m_cutflow.add_cut("Has >= 1 Pi+");
         m_cutflow.add_cut("Has >= 1 Pi-");
         m_cutflow.add_cut("Rho0 Found");
-        m_cutflow.add_cut("delta_vz_pim Cut");
-        m_cutflow.add_cut("delta_vz_pip Cut");
-        m_cutflow.add_cut("zh > 0.9");
-        m_cutflow.add_cut("lc < 1 fm");
-        m_cutflow.add_cut("0.1 < -t < 0.5");
 
-        Log::stat(name(), "Cutflow stages", m_cutflow.num_cuts());
+        // Candidate-level cuts (declarative predicates)
+        m_candidate_cutflow
+            .define("delta_vz_pim Cut", [this](const Rho0Candidate& c) {
+                return !m_enable_delta_vz_pim_cut.get() || c.passes_delta_vz_pim;
+            })
+            .define("delta_vz_pip Cut", [this](const Rho0Candidate& c) {
+                return !m_enable_delta_vz_pip_cut.get() || c.passes_delta_vz_pip;
+            })
+            .define("zh > 0.9", [this](const Rho0Candidate& c) {
+                return !m_enable_zh_cut.get() || c.passes_zh;
+            })
+            .define("lc < 1 fm", [this](const Rho0Candidate& c) {
+                return !m_enable_lc_cut.get() || c.passes_lc;
+            })
+            .define("0.1 < -t < 0.5", [this](const Rho0Candidate& c) {
+                return !m_enable_t_cut.get() || c.passes_t;
+            });
+
+        Log::stat(name(), "Cutflow stages", m_cutflow.num_cuts() + m_candidate_cutflow.num_cuts());
         Log::success(name(), "Initialization complete");
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -233,21 +251,17 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             m_runs.insert(run);
         }
 
-        // Check for good electron decision from upstream algorithm
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return clas12::framework::StatusCode::FILTERED();
+        // Check for good DIS electron from upstream algorithm
+        auto electron_ref = clas12::framework::EventHelpers::get_dis_electron(event);
+        if (!electron_ref) return clas12::framework::StatusCode::FILTERED();
+        const auto& electron = electron_ref->get();
         m_cutflow.pass("Has Good DIS Electron");
 
         // Get DIS kinematics from upstream
-        auto Q2_opt = event.retrieve_typed(clas12::framework::Keys::DIS_Q2);
-        auto nu_opt = event.retrieve_typed(clas12::framework::Keys::DIS_nu);
-        if (!Q2_opt || !nu_opt) return clas12::framework::StatusCode::FILTERED();
-        double Q2 = *Q2_opt;
-        double nu = *nu_opt;
-
-        // Get electron
-        auto electrons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedElectronsCapital);
-        if (!electrons_opt || electrons_opt->empty()) return clas12::framework::StatusCode::FILTERED();
-        const auto& electron = electrons_opt->front();
+        auto dis = clas12::framework::EventHelpers::get_dis_kinematics(event);
+        if (!dis) return clas12::framework::StatusCode::FILTERED();
+        double Q2 = dis->Q2;
+        double nu = dis->nu;
 
         // Get pre-selected pions from PionSelectionAlg
         auto pions_plus = event.retrieve_typed(clas12::framework::Keys::SelectedPiPlus).value_or(std::vector<clas12::Particle>{});
@@ -275,8 +289,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         // Fill lc-binned histograms (with specific cut combination)
         fill_lc_binned_histograms(candidates, Q2);
 
-        // Update cutflow counters
-        update_cutflow(candidates);
+        // Update candidate-level cutflow counters
+        for (const auto& cand : candidates) {
+            (void)m_candidate_cutflow.evaluate(cand);
+        }
 
         // Check if any candidates passed all cuts
         if (count_passing_candidates(candidates) == 0) return clas12::framework::StatusCode::FILTERED();
@@ -334,8 +350,8 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
         Log::subsection(fmt::format("{} Summary", name()));
 
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
-            auto entries = m_ntuple_svc->get()->get_entries("rho0_events");
+        if (m_ntuple_writer.is_initialized()) {
+            auto entries = m_ntuple_writer.service()->get_entries("rho0_events");
             Log::stat(name(), "N-tuple entries", entries);
         }
 
@@ -368,6 +384,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
         Log::blank();
         m_cutflow.print();
+        m_candidate_cutflow.print();
 
         Log::success(name(), "Finalization complete");
 
@@ -472,10 +489,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 cand.pim = pim;
 
                 // Classify detector region
-                bool pip_fwd = (pip.status() >= 2000 && pip.status() < 4000);
-                bool pim_fwd = (pim.status() >= 2000 && pim.status() < 4000);
-                bool pip_cd  = (pip.status() >= 4000 && pip.status() < 6000);
-                bool pim_cd  = (pim.status() >= 4000 && pim.status() < 6000);
+                bool pip_fwd = clas12::framework::CandidateUtils::is_forward_detector(pip.status());
+                bool pim_fwd = clas12::framework::CandidateUtils::is_forward_detector(pim.status());
+                bool pip_cd  = clas12::framework::CandidateUtils::is_central_detector(pip.status());
+                bool pim_cd  = clas12::framework::CandidateUtils::is_central_detector(pim.status());
 
                 if (pip_fwd && pim_fwd) cand.detector_region = DetectorRegion::ForwardForward;
                 else if (pip_cd && pim_cd) cand.detector_region = DetectorRegion::CentralCentral;
@@ -602,109 +619,44 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     }
 
     /**
-     * @brief Update cutflow counters based on candidate cut results
-     */
-    auto update_cutflow(const std::vector<Rho0Candidate>& candidates) -> void {
-        bool any_passed_delta_vz_pim = false;
-        bool any_passed_delta_vz_pip = false;
-        bool any_passed_zh = false;
-        bool any_passed_lc = false;
-        bool any_passed_t = false;
-
-        for (const auto& cand : candidates) {
-            any_passed_delta_vz_pim |= (!m_enable_delta_vz_pim_cut.get() || cand.passes_delta_vz_pim);
-            any_passed_delta_vz_pip |= (!m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip);
-            any_passed_zh |= (!m_enable_zh_cut.get() || cand.passes_zh);
-            any_passed_lc |= (!m_enable_lc_cut.get() || cand.passes_lc);
-            any_passed_t |= (!m_enable_t_cut.get() || cand.passes_t);
-        }
-
-        if (any_passed_delta_vz_pim) m_cutflow.pass("delta_vz_pim Cut");
-        if (any_passed_delta_vz_pip) m_cutflow.pass("delta_vz_pip Cut");
-        if (any_passed_zh) m_cutflow.pass("zh > 0.9");
-        if (any_passed_lc) m_cutflow.pass("lc < 1 fm");
-        if (any_passed_t) m_cutflow.pass("0.1 < -t < 0.5");
-    }
-
-    /**
      * @brief Fill ntuple with candidate data
      */
     auto fill_ntuple(const std::vector<Rho0Candidate>& candidates, const clas12::Particle& electron, double Q2) -> void {
-        if (!m_ntuple_svc || !m_ntuple_svc->is_valid() || !m_enable_ntuple.get()) return;
+        if (!m_ntuple_writer.is_initialized() || !m_enable_ntuple.get()) return;
 
-        // Collect data from passing candidates
-        std::vector<double> local_pip_p, local_pip_theta, local_pip_phi;
-        std::vector<double> local_pim_p, local_pim_theta, local_pim_phi;
-        std::vector<double> local_rho0_masses, local_rho0_ps, local_rho0_thetas, local_rho0_phis;
-        std::vector<double> local_zh, local_lc, local_t, local_delta_vz_pim, local_delta_vz_pip;
+        std::lock_guard<std::mutex> lock(m_ntuple_mutex);
+        auto& nt = m_ntuple_writer.data();
+        nt.clear_vectors();
+
+        nt.e_p = electron.p();
+        nt.e_theta = electron.theta();
+        nt.e_phi = electron.phi();
+        nt.e_vz = electron.vz();
+        nt.Q2 = Q2;
 
         for (const auto& cand : candidates) {
             if (!cand.passes_all_cuts) continue;
 
-            local_pip_p.push_back(cand.pip.p());
-            local_pip_theta.push_back(cand.pip.theta());
-            local_pip_phi.push_back(cand.pip.phi());
-            local_pim_p.push_back(cand.pim.p());
-            local_pim_theta.push_back(cand.pim.theta());
-            local_pim_phi.push_back(cand.pim.phi());
-            local_rho0_masses.push_back(cand.mass);
-            local_rho0_ps.push_back(cand.momentum);
-            local_rho0_thetas.push_back(cand.theta);
-            local_rho0_phis.push_back(cand.phi);
-            local_zh.push_back(cand.zh);
-            local_lc.push_back(cand.lc);
-            local_t.push_back(cand.minus_t);
-            local_delta_vz_pim.push_back(cand.delta_vz_pim);
-            local_delta_vz_pip.push_back(cand.delta_vz_pip);
+            nt.pip_p.push_back(cand.pip.p());
+            nt.pip_theta.push_back(cand.pip.theta());
+            nt.pip_phi.push_back(cand.pip.phi());
+            nt.pim_p.push_back(cand.pim.p());
+            nt.pim_theta.push_back(cand.pim.theta());
+            nt.pim_phi.push_back(cand.pim.phi());
+            nt.rho0_masses.push_back(cand.mass);
+            nt.rho0_ps.push_back(cand.momentum);
+            nt.rho0_thetas.push_back(cand.theta);
+            nt.rho0_phis.push_back(cand.phi);
+            nt.rho0_zh.push_back(cand.zh);
+            nt.rho0_lc.push_back(cand.lc);
+            nt.rho0_t.push_back(cand.minus_t);
+            nt.delta_vz_pim.push_back(cand.delta_vz_pim);
+            nt.delta_vz_pip.push_back(cand.delta_vz_pip);
         }
 
-        if (local_rho0_masses.empty()) return;
-
-        std::lock_guard<std::mutex> lock(m_ntuple_mutex);
-
-        m_e_p = electron.p();
-        m_e_theta = electron.theta();
-        m_e_phi = electron.phi();
-        m_e_vz = electron.vz();
-        m_Q2 = Q2;
-
-        m_pip_p = std::move(local_pip_p);
-        m_pip_theta = std::move(local_pip_theta);
-        m_pip_phi = std::move(local_pip_phi);
-        m_pim_p = std::move(local_pim_p);
-        m_pim_theta = std::move(local_pim_theta);
-        m_pim_phi = std::move(local_pim_phi);
-
-        m_rho0_masses = std::move(local_rho0_masses);
-        m_rho0_ps = std::move(local_rho0_ps);
-        m_rho0_thetas = std::move(local_rho0_thetas);
-        m_rho0_phis = std::move(local_rho0_phis);
-        m_rho0_zh = std::move(local_zh);
-        m_rho0_lc = std::move(local_lc);
-        m_rho0_t = std::move(local_t);
-        m_delta_vz_pim = std::move(local_delta_vz_pim);
-        m_delta_vz_pip = std::move(local_delta_vz_pip);
-
-        m_ntuple_svc->get()->fill("rho0_events");
-
-        // Clear vectors for next event
-        m_pip_p.clear();
-        m_pip_theta.clear();
-        m_pip_phi.clear();
-        m_pim_p.clear();
-        m_pim_theta.clear();
-        m_pim_phi.clear();
-        m_rho0_masses.clear();
-        m_rho0_ps.clear();
-        m_rho0_thetas.clear();
-        m_rho0_phis.clear();
-        m_rho0_zh.clear();
-        m_rho0_lc.clear();
-        m_rho0_t.clear();
-        m_delta_vz_pim.clear();
-        m_delta_vz_pip.clear();
+        if (nt.rho0_masses.empty()) return;
+        m_ntuple_writer.fill();
     }
-
     /**
      * @brief Store passing candidates in event for downstream algorithms
      */
@@ -800,8 +752,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
     clas12::framework::ServiceHandle<clas12::framework::OutputFileService>* m_output_svc = nullptr;
 
-    // Cutflow
+    // Cutflow (event-level + candidate-level)
     clas12::framework::Cutflow m_cutflow;
+    clas12::framework::ContextCutflow<Rho0Candidate> m_candidate_cutflow;
 
     // Run tracking for metadata
     std::set<int> m_runs;
@@ -915,27 +868,47 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         std::shared_ptr<TF1> fit_function;  // Store fit function for saving
     };
 
-    // NTuple branch variables
-    double m_e_p = 0.0;
-    double m_e_theta = 0.0;
-    double m_e_phi = 0.0;
-    double m_e_vz = 0.0;
-    double m_Q2 = 0.0;
-    std::vector<double> m_pip_p;
-    std::vector<double> m_pip_theta;
-    std::vector<double> m_pip_phi;
-    std::vector<double> m_pim_p;
-    std::vector<double> m_pim_theta;
-    std::vector<double> m_pim_phi;
-    std::vector<double> m_rho0_masses;
-    std::vector<double> m_rho0_ps;
-    std::vector<double> m_rho0_thetas;
-    std::vector<double> m_rho0_phis;
-    std::vector<double> m_rho0_zh;
-    std::vector<double> m_rho0_lc;
-    std::vector<double> m_rho0_t;
-    std::vector<double> m_delta_vz_pim;
-    std::vector<double> m_delta_vz_pip;
+    // NTuple data struct and writer
+    struct Rho0NTupleData {
+        double e_p = 0, e_theta = 0, e_phi = 0, e_vz = 0, Q2 = 0;
+        std::vector<double> pip_p, pip_theta, pip_phi;
+        std::vector<double> pim_p, pim_theta, pim_phi;
+        std::vector<double> rho0_masses, rho0_ps, rho0_thetas, rho0_phis;
+        std::vector<double> rho0_zh, rho0_lc, rho0_t, delta_vz_pim, delta_vz_pip;
+
+        template <typename Svc>
+        auto register_branches(Svc* svc, const std::string& tree) -> void {
+            svc->register_branch(tree, "e_p", &e_p);
+            svc->register_branch(tree, "e_theta", &e_theta);
+            svc->register_branch(tree, "e_phi", &e_phi);
+            svc->register_branch(tree, "e_vz", &e_vz);
+            svc->register_branch(tree, "Q2", &Q2);
+            svc->register_branch(tree, "pip_p", &pip_p);
+            svc->register_branch(tree, "pip_theta", &pip_theta);
+            svc->register_branch(tree, "pip_phi", &pip_phi);
+            svc->register_branch(tree, "pim_p", &pim_p);
+            svc->register_branch(tree, "pim_theta", &pim_theta);
+            svc->register_branch(tree, "pim_phi", &pim_phi);
+            svc->register_branch(tree, "rho0_masses", &rho0_masses);
+            svc->register_branch(tree, "rho0_ps", &rho0_ps);
+            svc->register_branch(tree, "rho0_thetas", &rho0_thetas);
+            svc->register_branch(tree, "rho0_phis", &rho0_phis);
+            svc->register_branch(tree, "rho0_zh", &rho0_zh);
+            svc->register_branch(tree, "rho0_lc", &rho0_lc);
+            svc->register_branch(tree, "rho0_t", &rho0_t);
+            svc->register_branch(tree, "delta_vz_pim", &delta_vz_pim);
+            svc->register_branch(tree, "delta_vz_pip", &delta_vz_pip);
+        }
+
+        auto clear_vectors() -> void {
+            pip_p.clear(); pip_theta.clear(); pip_phi.clear();
+            pim_p.clear(); pim_theta.clear(); pim_phi.clear();
+            rho0_masses.clear(); rho0_ps.clear(); rho0_thetas.clear(); rho0_phis.clear();
+            rho0_zh.clear(); rho0_lc.clear(); rho0_t.clear();
+            delta_vz_pim.clear(); delta_vz_pip.clear();
+        }
+    };
+    clas12::framework::NTupleWriter<Rho0NTupleData> m_ntuple_writer;
 
     auto fill_q2_binned_histogram(double Q2, double mass) -> void {
         for (size_t i = 0; i < Q2_BINS.size(); ++i) {
@@ -1084,44 +1057,12 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             }
         });
     }
-
     auto setup_ntuple() -> void {
         clas12::framework::safe(m_ntuple_svc).with([this](auto* svc) {
-
-        // Electron kinematics
-        svc->register_branch("rho0_events", "e_p", &m_e_p);
-        svc->register_branch("rho0_events", "e_theta", &m_e_theta);
-        svc->register_branch("rho0_events", "e_phi", &m_e_phi);
-        svc->register_branch("rho0_events", "e_vz", &m_e_vz);
-        svc->register_branch("rho0_events", "Q2", &m_Q2);
-
-        // Pi+ kinematics
-        svc->register_branch("rho0_events", "pip_p", &m_pip_p);
-        svc->register_branch("rho0_events", "pip_theta", &m_pip_theta);
-        svc->register_branch("rho0_events", "pip_phi", &m_pip_phi);
-
-        // Pi- kinematics
-        svc->register_branch("rho0_events", "pim_p", &m_pim_p);
-        svc->register_branch("rho0_events", "pim_theta", &m_pim_theta);
-        svc->register_branch("rho0_events", "pim_phi", &m_pim_phi);
-
-        // Rho0 candidate properties
-        svc->register_branch("rho0_events", "rho0_masses", &m_rho0_masses);
-        svc->register_branch("rho0_events", "rho0_ps", &m_rho0_ps);
-        svc->register_branch("rho0_events", "rho0_thetas", &m_rho0_thetas);
-        svc->register_branch("rho0_events", "rho0_phis", &m_rho0_phis);
-
-            // Kinematic variables
-            svc->register_branch("rho0_events", "rho0_zh", &m_rho0_zh);
-            svc->register_branch("rho0_events", "rho0_lc", &m_rho0_lc);
-            svc->register_branch("rho0_events", "rho0_t", &m_rho0_t);
-            svc->register_branch("rho0_events", "delta_vz_pim", &m_delta_vz_pim);
-            svc->register_branch("rho0_events", "delta_vz_pip", &m_delta_vz_pip);
-
+            m_ntuple_writer.init(svc, "rho0_events");
             clas12::framework::Log::info(name(), "N-tuple branches registered for rho0_events");
         });
     }
-
     /**
      * @brief Fit sigma scan histograms and print comparison table
      */

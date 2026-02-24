@@ -484,6 +484,36 @@ protected:
         return m_svc_mgr->get_service<T>(service_name);
     }
 
+    /**
+     * @brief Get a required service by type (throws if not available)
+     *
+     * Similar to svc<T>() but throws an exception if the service is not found.
+     * Use this in on_initialize() for services that are mandatory.
+     *
+     * @tparam T Service type (must satisfy ServiceConcept and have service_name())
+     * @return T& Reference to the service
+     * @throws std::runtime_error if service is not available
+     *
+     * Usage:
+     * @code
+     * auto on_initialize() -> StatusCode override {
+     *     auto& hist = require<HistogramService>();
+     *     hist.book_hist1D("/p", "p", 100, 0, 10);
+     *     return StatusCode::SUCCESS();
+     * }
+     * @endcode
+     */
+    template <ServiceConcept T>
+    auto require() -> T& {
+        auto* s = svc<T>();
+        if (!s) {
+            throw std::runtime_error(
+                fmt::format("Algorithm '{}': Required service '{}' not available",
+                            m_name, std::string(T::service_name())));
+        }
+        return *s;
+    }
+
 private:
     std::map<std::string, std::unique_ptr<IServiceHandleBase>> m_required_service_handles;
     std::map<std::string, std::unique_ptr<IServiceHandleBase>> m_optional_service_handles;

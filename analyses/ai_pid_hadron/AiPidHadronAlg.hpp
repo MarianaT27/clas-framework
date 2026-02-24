@@ -19,6 +19,7 @@
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -363,17 +364,15 @@ public:
         declare_bank("REC::ScintExtras");
     }
 
-    auto configure() -> void override {
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-        m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
-        m_ntuple_svc = &optional_service<clas12::framework::NTupleService>("NTupleService");
-    }
-
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_hist = svc<clas12::framework::HistogramService>();
+        m_particle = svc<clas12::framework::ParticleSelectorService>();
+        m_ntuple_svc = svc<clas12::framework::NTupleService>();
+
         clas12::framework::Log::info(name(), "Truth PID mode: {}", m_truth_mode.get());
 
         if (m_truth_mode.get() == "rich") {
-            if (m_enable_histograms && m_hist_svc && m_hist_svc->is_valid()) {
+            if (m_enable_histograms && m_hist) {
                 book_histograms("/AiPidHadron/PiPlus",  h_piplus,  "#pi^{+}");
                 book_histograms("/AiPidHadron/PiMinus", h_piminus, "#pi^{-}");
                 book_histograms("/AiPidHadron/KPlus",   h_kplus,   "K^{+}");
@@ -398,7 +397,7 @@ public:
             clas12::framework::Log::info(name(), "  Beam energy: {} GeV", m_beam_energy.get());
             clas12::framework::Log::info(name(), "  MM cut: {} +/- {} GeV", m_mm_center.get(), m_mm_width.get());
 
-            if (m_enable_histograms && m_hist_svc && m_hist_svc->is_valid()) {
+            if (m_enable_histograms && m_hist) {
                 book_exclusive_histograms();
             }
 
@@ -413,8 +412,8 @@ public:
             return clas12::framework::StatusCode::FAILURE();
         }
 
-        if (m_enable_ntuple && m_ntuple_svc && m_ntuple_svc->is_valid()) {
-            m_ntuple.init(m_ntuple_svc->get(), "rich_hadrons");
+        if (m_enable_ntuple && m_ntuple_svc) {
+            m_ntuple.init(m_ntuple_svc, "rich_hadrons");
         }
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -594,9 +593,9 @@ private:
     };
 
     // --- Services ---
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
+    clas12::framework::HistogramService* m_hist = nullptr;
+    clas12::framework::ParticleSelectorService* m_particle = nullptr;
+    clas12::framework::NTupleService* m_ntuple_svc = nullptr;
 
     // N-tuple writer
     clas12::framework::NTupleWriter<HadronTreeData> m_ntuple;
@@ -646,7 +645,7 @@ private:
         }
 
         // Extract all charged hadrons from REC::Particle
-        auto particles = m_particle_svc->get()->extract_particles(
+        auto particles = m_particle->extract_particles(
             REC_Particle,
             {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
              clas12::PIDs::KPLUS, clas12::PIDs::KMINUS});
@@ -746,22 +745,11 @@ private:
     auto process_exclusive(clas12::framework::Event& event) -> clas12::framework::StatusCode {
         m_cutflow_exclusive.pass("Total events");
 
-        // 1. Require good electron from upstream ElectronSelectionAlg
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodElectron)) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
-
-        auto electrons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedElectronsCapital);
-        if (!electrons_opt || electrons_opt->empty()) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
-        const auto& electron = electrons_opt->front();
+        // 1. Require good DIS electron from upstream
+        auto electron_ref = clas12::framework::EventHelpers::get_dis_electron(event);
+        if (!electron_ref) return clas12::framework::StatusCode::FILTERED();
+        const auto& electron = electron_ref->get();
         m_cutflow_exclusive.pass("Has good electron");
-
-        // 1b. Require DIS kinematics from upstream DISSelectionAlg
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
         m_cutflow_exclusive.pass("Passes DIS cuts");
 
         // 2. Extract hadrons from REC::Particle
@@ -772,12 +760,12 @@ private:
         const auto& REC_Scintillator = event.get_bank("REC::Scintillator");
         const auto& REC_ScintExtras = event.get_bank("REC::ScintExtras");
 
-        auto particles = m_particle_svc->get()->extract_particles(
+        auto particles = m_particle->extract_particles(
             REC_Particle,
             {clas12::PIDs::PROTON, clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
              clas12::PIDs::KPLUS, clas12::PIDs::KMINUS, clas12::PIDs::NEUTRON});
 
-        const auto& protons = m_particle_svc->get()->get_protons(particles);
+        const auto& protons = m_particle->get_protons(particles);
         const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
         const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
 
@@ -1230,7 +1218,7 @@ private:
     HadronHistograms h_kminus;
 
     void book_comparison_histograms() {
-        auto* svc = m_hist_svc->get();
+        auto* svc = m_hist;
         auto dir = std::string("/AiPidHadron/RICHComparison");
 
         h_rich_vs_rec_pid = svc->book_hist2D(
@@ -1294,7 +1282,7 @@ private:
     }
 
     void book_histograms(const std::string& dir, HadronHistograms& h, const std::string& label) {
-        auto* svc = m_hist_svc->get();
+        auto* svc = m_hist;
 
         auto pre = dir + "/precut";
         h.precut.p        = svc->book_atomic_hist1D(pre + "/p",        fmt::format("{} Momentum (pre-cut);p [GeV/c];Events", label),    200, 0, 10);
@@ -1372,7 +1360,7 @@ private:
     ExclusiveHistograms h_exclusive;
 
     void book_exclusive_histograms() {
-        auto* svc = m_hist_svc->get();
+        auto* svc = m_hist;
         auto dir = std::string("/AiPidHadron/Exclusive");
 
         h_exclusive.mm_all = svc->book_atomic_hist1D(

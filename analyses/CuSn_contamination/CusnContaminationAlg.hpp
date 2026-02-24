@@ -15,6 +15,7 @@
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/core/ServiceHelpers.hpp>
 #include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/Particle.hpp>
 #include <cmath>
@@ -44,23 +45,15 @@ public:
     }
 
     /**
-     * @brief Configure service dependencies
-     *
-     * Called during initialization to declare required services.
-     */
-    auto configure() -> void override {
-        // Declare required services
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-    }
-
-    /**
      * @brief Custom initialization
      *
      * Called after services are injected. Book histograms and setup resources here.
      * @return StatusCode SUCCESS to continue, FAILURE to abort
      */
     auto on_initialize() -> clas12::framework::StatusCode override {
-        if (m_enable_histograms && m_hist_svc && m_hist_svc->is_valid()) {
+        m_hist = svc<clas12::framework::HistogramService>();
+
+        if (m_enable_histograms && m_hist) {
             // Book your histograms here
             // m_hist_svc->get()->book_hist1D("hist_name", "Title", 100, 0.0, 10.0);
             book_histograms();
@@ -103,14 +96,9 @@ public:
         }
 
         // Get the reconstructed electron from the ElectronSelectionAlg
-        // Check for good electron decision from upstream algorithm
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodElectron)) return clas12::framework::StatusCode::FILTERED();
-
-        // Get selected electrons using typed retrieval
-        auto electrons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedElectronsCapital);
-        if (!electrons_opt || electrons_opt->empty()) return clas12::framework::StatusCode::FILTERED();
-        
-        auto recon_electron = electrons_opt->front();
+        auto electron_ref = clas12::framework::EventHelpers::get_selected_electron(event);
+        if (!electron_ref) return clas12::framework::StatusCode::FILTERED();
+        auto recon_electron = electron_ref->get();
 
         if (-7.8 < electron3VecV.Z() && electron3VecV.Z() < -7.2) h_vz_Cu->fill(recon_electron.vz());
         if (-3 < electron3VecV.Z() && electron3VecV.Z() < -2.4) h_vz_Sn->fill(recon_electron.vz());
@@ -140,7 +128,7 @@ private:
     };
 
     // Service handles
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    clas12::framework::HistogramService* m_hist = nullptr;
 
         // Lock-free atomic histograms (managed by HistogramService)
     clas12::framework::AtomicHistogram1D* h_p = nullptr;
@@ -151,15 +139,12 @@ private:
     clas12::framework::AtomicHistogram1D* h_vz_Sn = nullptr;
 
     auto book_histograms() -> void {
-        clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
-            // Use lock-free atomic histograms for parallel accumulation
-            h_p = svc->book_atomic_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
-            h_phi = svc->book_atomic_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
-            h_theta = svc->book_atomic_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
-            h_vz = svc->book_atomic_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -30, 30);
-            h_vz_Cu = svc->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
-            h_vz_Sn = svc->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
-        });
+        h_p = m_hist->book_atomic_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
+        h_phi = m_hist->book_atomic_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
+        h_theta = m_hist->book_atomic_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
+        h_vz = m_hist->book_atomic_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -30, 30);
+        h_vz_Cu = m_hist->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
+        h_vz_Sn = m_hist->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
     }
 };
 

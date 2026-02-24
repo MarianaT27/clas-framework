@@ -38,11 +38,9 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerE
         declare_bank("REC::Particle");
     }
 
-    auto configure() -> void override {
-        m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
-    }
-
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_particle = svc<clas12::framework::ParticleSelectorService>();
+
         fmt::print("  {} - Initializing\n", name());
 
         // Setup cutflow
@@ -73,10 +71,10 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerE
         const auto& REC_Particle = event.get_bank("REC::Particle");
 
         // Extract electrons using ParticleSelectorService
-        clas12::framework::ParticleMap particles = m_particle_svc->get()->extract_particles(
+        clas12::framework::ParticleMap particles = m_particle->extract_particles(
             REC_Particle, {clas12::PIDs::ELECTRON});
 
-        const auto& electrons = m_particle_svc->get()->get_electrons(particles);
+        const auto& electrons = m_particle->get_electrons(particles);
         if (electrons.empty()) {
             event.set_decision(name(), false);
             return clas12::framework::StatusCode::FILTERED();
@@ -125,7 +123,7 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerE
     clas12::Target m_target;
     clas12::Polarity m_polarity;
     clas12::framework::Cutflow m_cutflow;
-    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
+    clas12::framework::ParticleSelectorService* m_particle = nullptr;
 
     // Cut toggle properties
     clas12::framework::Property<bool> m_enable_trigger_status_cut{"enable_trigger_status_cut", true, "Enable trigger status cut"};

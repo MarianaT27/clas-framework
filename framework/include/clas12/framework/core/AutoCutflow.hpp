@@ -213,6 +213,8 @@ public:
      */
     explicit ContextCutflow(std::string name) : m_cutflow(std::move(name)) {}
 
+    using FillFn = std::function<void(const Context&)>;
+
     /**
      * @brief Define a cut with its context-aware predicate
      *
@@ -223,6 +225,7 @@ public:
     auto define(std::string cut_name, Predicate pred) -> ContextCutflow& {
         m_cutflow.add_cut(cut_name);
         m_cuts.emplace_back(std::move(cut_name), std::move(pred));
+        m_fill_fns.emplace_back(nullptr);
         return *this;
     }
 
@@ -234,6 +237,40 @@ public:
      */
     auto define_always(std::string cut_name) -> ContextCutflow& {
         return define(std::move(cut_name), [](const Context&) { return true; });
+    }
+
+    /**
+     * @brief Define a cut with an associated histogram fill callback
+     *
+     * Like define(), but also registers a fill function that is called
+     * when this cut passes (during evaluate_and_fill()). This enables
+     * ATLAS-style N-1 histograms and per-cut-stage distributions.
+     *
+     * @param cut_name Name of the cut
+     * @param pred Predicate that returns true if cut passes
+     * @param fill_fn Callback to fill histograms when this cut passes
+     * @return ContextCutflow& Reference to this for method chaining
+     *
+     * Example:
+     * @code
+     * cutflow.define_with_fill("All Events",
+     *     [](const auto&) { return true; },
+     *     [&](const PionCandidate& c) {
+     *         h_precut.momentum->fill(c.p);
+     *         h_precut.theta->fill(c.theta);
+     *     });
+     * cutflow.define_with_fill("Momentum",
+     *     [](const auto& c) { return c.passes_momentum; },
+     *     [&](const PionCandidate& c) {
+     *         h_postmom.momentum->fill(c.p);
+     *     });
+     * @endcode
+     */
+    auto define_with_fill(std::string cut_name, Predicate pred, FillFn fill_fn) -> ContextCutflow& {
+        m_cutflow.add_cut(cut_name);
+        m_cuts.emplace_back(std::move(cut_name), std::move(pred));
+        m_fill_fns.emplace_back(std::move(fill_fn));
+        return *this;
     }
 
     /**
@@ -251,6 +288,30 @@ public:
                 return false;
             }
             m_cutflow.pass(name);
+        }
+        return true;
+    }
+
+    /**
+     * @brief Evaluate all cuts AND fill histograms at each passing stage
+     *
+     * Like evaluate(), but also calls the fill callback (if any) for
+     * each cut that passes. This enables filling histograms at different
+     * cut stages in a single pass through the cut chain.
+     *
+     * @param ctx Context to pass to predicates and fill functions
+     * @return true if all cuts pass, false on first failure
+     */
+    [[nodiscard]] auto evaluate_and_fill(const Context& ctx) -> bool {
+        for (std::size_t i = 0; i < m_cuts.size(); ++i) {
+            auto& [name, predicate] = m_cuts[i];
+            if (!predicate(ctx)) {
+                return false;
+            }
+            m_cutflow.pass(name);
+            if (i < m_fill_fns.size() && m_fill_fns[i]) {
+                m_fill_fns[i](ctx);
+            }
         }
         return true;
     }
@@ -290,6 +351,7 @@ public:
 private:
     Cutflow m_cutflow;
     std::vector<std::pair<std::string, Predicate>> m_cuts;
+    std::vector<FillFn> m_fill_fns;
 };
 
 }  // namespace clas12::framework

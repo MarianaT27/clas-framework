@@ -11,11 +11,13 @@
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
+#include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/physics/ParticleUtils.hpp>
 
@@ -184,10 +186,9 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
             }
         }
 
-        // Check for good electron from upstream
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
+        // Check for good DIS electron from upstream
+        auto electron_ref = clas12::framework::EventHelpers::get_dis_electron(event);
+        if (!electron_ref) return clas12::framework::StatusCode::FILTERED();
         m_cutflow.pass("Has Good DIS Electron");
 
         // Get protons and pions from event
@@ -208,9 +209,8 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
         if (h_n_protons) h_n_protons->fill(protons.size());
         if (h_n_pions) h_n_pions->fill(pions.size());
 
-        // Get electron for coplanarity calculation (from DIS selection)
-        auto electrons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedDISElectron);
-        const clas12::Particle* electron = (electrons_opt && !electrons_opt->empty()) ? &electrons_opt->front() : nullptr;
+        // Get electron for coplanarity calculation (already retrieved above)
+        const clas12::Particle* electron = &electron_ref->get();
 
         // Find Lambda candidates
         std::vector<LambdaCandidate> candidates;
@@ -398,38 +398,29 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
         }
 
         // Fill N-tuple
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
+        if (m_ntuple.is_initialized()) {
             std::lock_guard<std::mutex> lock(m_ntuple_mutex);
+            auto& nt = m_ntuple.data();
+            nt.clear_vectors();
 
-            // Get electron info
             if (electron) {
-                m_e_p = electron->p();
-                m_e_theta = electron->theta();
-                m_e_phi = electron->phi();
+                nt.e_p = electron->p();
+                nt.e_theta = electron->theta();
+                nt.e_phi = electron->phi();
             }
-
-            // Store all Lambda candidates
-            m_lambda_masses.clear();
-            m_lambda_ps.clear();
-            m_lambda_thetas.clear();
-            m_proton_ps.clear();
-            m_pion_ps.clear();
-            m_coplanarities.clear();
-            m_missing_masses.clear();
-            m_delta_vzs.clear();
 
             for (const auto& cand : final_candidates) {
-                m_lambda_masses.push_back(cand.mass);
-                m_lambda_ps.push_back(cand.momentum);
-                m_lambda_thetas.push_back(cand.theta);
-                m_proton_ps.push_back(cand.proton.p());
-                m_pion_ps.push_back(cand.pion.p());
-                m_coplanarities.push_back(cand.coplanarity);
-                m_missing_masses.push_back(cand.missing_mass);
-                m_delta_vzs.push_back(cand.delta_vz);
+                nt.lambda_mass.push_back(cand.mass);
+                nt.lambda_p.push_back(cand.momentum);
+                nt.lambda_theta.push_back(cand.theta);
+                nt.proton_p.push_back(cand.proton.p());
+                nt.pion_p.push_back(cand.pion.p());
+                nt.coplanarity.push_back(cand.coplanarity);
+                nt.missing_mass.push_back(cand.missing_mass);
+                nt.delta_vz.push_back(cand.delta_vz);
             }
 
-            m_ntuple_svc->get()->fill("lambda_analysis");
+            m_ntuple.fill();
         }
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -438,9 +429,8 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
     auto on_finalize() -> clas12::framework::StatusCode override {
         Log::subsection(fmt::format("{} Summary", name()));
 
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
-            auto entries = m_ntuple_svc->get()->get_entries("lambda_analysis");
-            Log::stat(name(), "N-tuple entries", entries);
+        if (m_ntuple.is_initialized()) {
+            Log::stat(name(), "N-tuple entries", m_ntuple.service()->get_entries(m_ntuple.tree_name()));
         }
 
         Log::blank();
@@ -513,16 +503,34 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
     clas12::framework::AtomicHistogram1D* h_displaced_vz_precut = nullptr;
     clas12::framework::AtomicHistogram1D* h_decay_length = nullptr;
 
-    // N-tuple variables
-    double m_e_p = 0, m_e_theta = 0, m_e_phi = 0;
-    std::vector<double> m_lambda_masses;
-    std::vector<double> m_lambda_ps;
-    std::vector<double> m_lambda_thetas;
-    std::vector<double> m_proton_ps;
-    std::vector<double> m_pion_ps;
-    std::vector<double> m_coplanarities;
-    std::vector<double> m_missing_masses;
-    std::vector<double> m_delta_vzs;
+    // N-tuple data struct
+    struct LambdaNTupleData {
+        double e_p = 0, e_theta = 0, e_phi = 0;
+        std::vector<double> lambda_mass, lambda_p, lambda_theta;
+        std::vector<double> proton_p, pion_p, coplanarity, missing_mass, delta_vz;
+
+        template <typename Svc>
+        auto register_branches(Svc* svc, const std::string& tree) -> void {
+            svc->register_branch(tree, "e_p", &e_p);
+            svc->register_branch(tree, "e_theta", &e_theta);
+            svc->register_branch(tree, "e_phi", &e_phi);
+            svc->register_branch(tree, "lambda_mass", &lambda_mass);
+            svc->register_branch(tree, "lambda_p", &lambda_p);
+            svc->register_branch(tree, "lambda_theta", &lambda_theta);
+            svc->register_branch(tree, "proton_p", &proton_p);
+            svc->register_branch(tree, "pion_p", &pion_p);
+            svc->register_branch(tree, "coplanarity", &coplanarity);
+            svc->register_branch(tree, "missing_mass", &missing_mass);
+            svc->register_branch(tree, "delta_vz", &delta_vz);
+        }
+
+        auto clear_vectors() -> void {
+            lambda_mass.clear(); lambda_p.clear(); lambda_theta.clear();
+            proton_p.clear(); pion_p.clear(); coplanarity.clear();
+            missing_mass.clear(); delta_vz.clear();
+        }
+    };
+    clas12::framework::NTupleWriter<LambdaNTupleData> m_ntuple;
 
     void book_histograms() {
         h_n_protons = m_hist_svc->get()->book_atomic_hist1D("/Lambda/n_protons", "Number of protons;N_{p};Events", 10, 0, 10);
@@ -546,18 +554,10 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
     }
 
     void setup_ntuple() {
-        m_ntuple_svc->get()->register_branch("lambda_analysis", "e_p", &m_e_p);
-        m_ntuple_svc->get()->register_branch("lambda_analysis", "e_theta", &m_e_theta);
-        m_ntuple_svc->get()->register_branch("lambda_analysis", "e_phi", &m_e_phi);
-        m_ntuple_svc->get()->register_branch("lambda_analysis", "lambda_mass", &m_lambda_masses);
-        m_ntuple_svc->get()->register_branch("lambda_analysis", "lambda_p", &m_lambda_ps);
-        m_ntuple_svc->get()->register_branch("lambda_analysis", "lambda_theta", &m_lambda_thetas);
-        m_ntuple_svc->get()->register_branch("lambda_analysis", "proton_p", &m_proton_ps);
-        m_ntuple_svc->get()->register_branch("lambda_analysis", "pion_p", &m_pion_ps);
-        m_ntuple_svc->get()->register_branch("lambda_analysis", "coplanarity", &m_coplanarities);
-        m_ntuple_svc->get()->register_branch("lambda_analysis", "missing_mass", &m_missing_masses);
-        m_ntuple_svc->get()->register_branch("lambda_analysis", "delta_vz", &m_delta_vzs);
-        Log::info(name(), "N-tuple branches registered for Lambda analysis");
+        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
+            m_ntuple.init(m_ntuple_svc->get(), "lambda_analysis");
+            Log::info(name(), "N-tuple branches registered for Lambda analysis");
+        }
     }
 };
 

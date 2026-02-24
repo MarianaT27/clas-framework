@@ -1198,6 +1198,89 @@ struct HadronHistograms {
 
 
 /**
+ * @brief Thread-safe pion diagnostic histograms
+ *
+ * Extends HadronHistograms with pion-specific timing, vertex, PID,
+ * and phase-space diagnostics. Reduces ~50 manual histogram bookings
+ * to a single create() call.
+ */
+struct PionDiagnostics {
+    static auto create(HistogramService* svc, const std::string& base_path,
+                       const std::string& label = "#pi")
+        -> std::unique_ptr<AtomicHistogramGroup> {
+        auto group = std::make_unique<AtomicHistogramGroup>(svc, base_path);
+
+        // ============================================================
+        // Basic Kinematics (same as HadronHistograms)
+        // ============================================================
+        group->add_hist1D("p", fmt::format("{} Momentum;p [GeV/c];Events", label), 100, 0.0, 10.0);
+        group->add_hist1D("theta", fmt::format("{} #theta;#theta [deg];Events", label), 180, 0.0, 40.0);
+        group->add_hist1D("phi", fmt::format("{} #phi;#phi [deg];Events", label), 360, -180.0, 180.0);
+        group->add_hist1D("vz", fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label), 200, -40.0, 40.0);
+        group->add_hist1D("chi2pid", fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), 200, -10.0, 10.0);
+        group->add_hist1D("beta", fmt::format("{} #beta;#beta;Events", label), 100, 0.5, 1.1);
+
+        // ============================================================
+        // Vertex diagnostics
+        // ============================================================
+        group->add_hist2D("vz_vs_phi", fmt::format("{} v_{{z}} vs #phi;#phi [deg];v_{{z}} [cm]", label),
+                          180, -180, 180, 100, -40, 40);
+        group->add_hist2D("vz_vs_sector", fmt::format("{} v_{{z}} vs Sector;Sector;v_{{z}} [cm]", label),
+                          6, 0.5, 6.5, 100, -40, 40);
+        group->add_hist2D("vz_vs_p", fmt::format("{} v_{{z}} vs p;p [GeV/c];v_{{z}} [cm]", label),
+                          100, 0, 10, 100, -40, 40);
+        group->add_hist2D("vx_vs_vy", fmt::format("{} v_{{x}} vs v_{{y}};v_{{x}} [cm];v_{{y}} [cm]", label),
+                          100, -2, 2, 100, -2, 2);
+        group->add_hist1D("delta_vz", fmt::format("{} #Deltav_{{z}} (#pi - e);#Deltav_{{z}} [cm];Events", label),
+                          200, -20, 20);
+        group->add_hist2D("delta_vz_vs_p", fmt::format("{} #Deltav_{{z}} vs p;p [GeV/c];#Deltav_{{z}} [cm]", label),
+                          100, 0, 10, 200, -20, 20);
+
+        // ============================================================
+        // Timing diagnostics
+        // ============================================================
+        group->add_hist1D("delta_t", fmt::format("{} #Deltat;#Deltat [ns];Events", label), 200, -2, 2);
+        group->add_hist2D("delta_t_vs_p", fmt::format("{} #Deltat vs p;p [GeV/c];#Deltat [ns]", label),
+                          100, 0, 10, 200, -2, 2);
+        group->add_hist1D("tof_mass2", fmt::format("{} m^{{2}}_{{TOF}};m^{{2}} [GeV^{{2}}];Events", label),
+                          200, -0.2, 0.5);
+        group->add_hist2D("tof_mass2_vs_p", fmt::format("{} m^{{2}}_{{TOF}} vs p;p [GeV/c];m^{{2}} [GeV^{{2}}]", label),
+                          100, 0, 10, 200, -0.2, 0.5);
+        group->add_hist1D("tof_path", fmt::format("{} TOF Path Length;Path [cm];Events", label), 100, 0, 800);
+        group->add_hist2D("tof_path_vs_p", fmt::format("{} TOF Path vs p;p [GeV/c];Path [cm]", label),
+                          100, 0, 10, 100, 0, 800);
+        group->add_hist2D("beta_vs_p", fmt::format("{} #beta vs p;p [GeV/c];#beta", label),
+                          100, 0, 10, 100, 0.5, 1.1);
+        group->add_hist1D("beta_diff", fmt::format("{} #Delta#beta;#Delta#beta;Events", label), 200, -0.1, 0.1);
+        group->add_hist2D("beta_diff_vs_p", fmt::format("{} #Delta#beta vs p;p [GeV/c];#Delta#beta", label),
+                          100, 0, 10, 200, -0.1, 0.1);
+
+        // ============================================================
+        // PID diagnostics
+        // ============================================================
+        group->add_hist2D("chi2pid_vs_p", fmt::format("{} #chi^{{2}}_{{PID}} vs p;p [GeV/c];#chi^{{2}}_{{PID}}", label),
+                          100, 0, 10, 100, -10, 10);
+        group->add_hist2D("chi2pid_vs_theta", fmt::format("{} #chi^{{2}}_{{PID}} vs #theta;#theta [deg];#chi^{{2}}_{{PID}}", label),
+                          90, 0, 45, 100, -10, 10);
+        group->add_hist2D("chi2pid_vs_sector", fmt::format("{} #chi^{{2}}_{{PID}} vs Sector;Sector;#chi^{{2}}_{{PID}}", label),
+                          6, 0.5, 6.5, 100, -10, 10);
+
+        // ============================================================
+        // Phase space and acceptance
+        // ============================================================
+        group->add_hist2D("phi_vs_theta", fmt::format("{} #phi vs #theta;#theta [deg];#phi [deg]", label),
+                          90, 0, 45, 180, -180, 180);
+        group->add_hist2D("p_vs_phi", fmt::format("{} p vs #phi;#phi [deg];p [GeV/c]", label),
+                          180, -180, 180, 100, 0, 10);
+        group->add_hist2D("p_vs_theta", fmt::format("{} p vs #theta;#theta [deg];p [GeV/c]", label),
+                          90, 0, 45, 100, 0, 10);
+
+        return group;
+    }
+};
+
+
+/**
  * @brief Thread-safe DIS kinematics histograms
  */
 struct DISKinematics {

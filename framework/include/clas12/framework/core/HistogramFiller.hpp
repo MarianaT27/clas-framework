@@ -23,6 +23,8 @@
 #include <clas12/Banks.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/framework/core/Histogram.hpp>
+#include <clas12/framework/core/CandidateUtils.hpp>
+#include <clas12/framework/core/HistogramTemplates.hpp>
 
 namespace clas12::framework {
 
@@ -305,6 +307,78 @@ public:
 
 private:
     std::map<std::string, std::unique_ptr<HistogramGroup>>& m_groups;
+};
+
+/**
+ * @brief Static utility class for filling AtomicHistogramGroup-based templates
+ *
+ * Provides one-call filling of all histograms in PionDiagnostics and other
+ * AtomicHistogramTemplates, reducing ~30 manual fill lines to a single call.
+ */
+class AtomicHistogramFiller {
+public:
+    /**
+     * @brief Fill all pion diagnostic histograms from PionDiagnostics template
+     *
+     * @param group AtomicHistogramGroup created by PionDiagnostics::create()
+     * @param pion The pion particle
+     * @param timing Timing result from CandidateUtils::compute_timing()
+     * @param electron_vz Electron vertex z for delta_vz calculation
+     * @param tof_path TOF path length [cm]
+     * @param sector Scintillator sector (1-6), or -1 if unknown
+     */
+    static auto fill_pion_diagnostics(AtomicHistogramGroup* group,
+                                       const clas12::Particle& pion,
+                                       const CandidateUtils::TimingResult& timing,
+                                       double electron_vz,
+                                       double tof_path,
+                                       int sector = -1) -> void {
+        if (!group) return;
+
+        const double p = pion.p();
+        const double delta_vz = pion.vz() - electron_vz;
+
+        // Basic kinematics
+        group->fill("p", p);
+        group->fill("theta", pion.theta());
+        group->fill("phi", pion.phi());
+        group->fill("vz", pion.vz());
+        group->fill("chi2pid", pion.chi2pid());
+        group->fill("beta", pion.beta());
+
+        // Vertex diagnostics
+        group->fill2d("vz_vs_phi", pion.phi(), pion.vz());
+        group->fill2d("vz_vs_p", p, pion.vz());
+        group->fill2d("vx_vs_vy", pion.vx(), pion.vy());
+        group->fill("delta_vz", delta_vz);
+        group->fill2d("delta_vz_vs_p", p, delta_vz);
+
+        // Timing diagnostics
+        group->fill("delta_t", timing.delta_t);
+        group->fill2d("delta_t_vs_p", p, timing.delta_t);
+        group->fill("tof_mass2", timing.tof_mass2);
+        group->fill2d("tof_mass2_vs_p", p, timing.tof_mass2);
+        group->fill("tof_path", tof_path);
+        group->fill2d("tof_path_vs_p", p, tof_path);
+        group->fill2d("beta_vs_p", p, pion.beta());
+        group->fill("beta_diff", timing.beta_diff);
+        group->fill2d("beta_diff_vs_p", p, timing.beta_diff);
+
+        // PID diagnostics
+        group->fill2d("chi2pid_vs_p", p, pion.chi2pid());
+        group->fill2d("chi2pid_vs_theta", pion.theta(), pion.chi2pid());
+
+        // Phase space
+        group->fill2d("phi_vs_theta", pion.theta(), pion.phi());
+        group->fill2d("p_vs_phi", pion.phi(), p);
+        group->fill2d("p_vs_theta", pion.theta(), p);
+
+        // Sector-dependent fills
+        if (sector >= 1 && sector <= 6) {
+            group->fill2d("vz_vs_sector", static_cast<double>(sector), pion.vz());
+            group->fill2d("chi2pid_vs_sector", static_cast<double>(sector), pion.chi2pid());
+        }
+    }
 };
 
 }  // namespace clas12::framework

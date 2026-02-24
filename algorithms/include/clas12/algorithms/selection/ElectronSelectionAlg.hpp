@@ -156,23 +156,6 @@ public:
     }
 
     // ========================================================================
-    // Service Configuration
-    // ========================================================================
-
-    /**
-     * @brief Configure required services
-     *
-     * Called by the framework before on_initialize().
-     */
-    auto configure() -> void override {
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-        m_ntuple_svc = &require_service<clas12::framework::NTupleService>("NTupleService");
-        m_sf_svc = &require_service<clas12::framework::SamplingFractionService>("SamplingFractionService");
-        m_electron_cuts_svc = &require_service<clas12::framework::ElectronCutsService>("ElectronCutsService");
-        m_fiducial_svc = &require_service<clas12::framework::FiducialService>("FiducialService");
-    }
-
-    // ========================================================================
     // Initialization
     // ========================================================================
 
@@ -180,6 +163,13 @@ public:
      * @brief Initialize algorithm after services are injected
      */
     auto on_initialize() -> clas12::framework::StatusCode override {
+        // Cache service pointers
+        m_hist = svc<clas12::framework::HistogramService>();
+        m_ntuple_svc = svc<clas12::framework::NTupleService>();
+        m_sf = svc<clas12::framework::SamplingFractionService>();
+        m_electron_cuts = svc<clas12::framework::ElectronCutsService>();
+        m_fiducial = svc<clas12::framework::FiducialService>();
+
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::config(name(), "Target", clas12::to_string(m_target));
         Log::config(name(), "Polarity", clas12::to_string(m_polarity));
@@ -193,18 +183,15 @@ public:
         book_histograms();
 
         // Setup N-Tuple
-        if (m_enable_ntuple.get()) {
-            clas12::framework::safe(m_ntuple_svc).with([this](auto* svc) {
-                m_ntuple.init(svc, "electron_kinematics");
-            });
+        if (m_enable_ntuple.get() && m_ntuple_svc) {
+            m_ntuple.init(m_ntuple_svc, "electron_kinematics");
         }
 
         // Define cutflow with predicates
         define_cutflow();
 
         // Log configuration summary
-        auto* cuts_svc = m_electron_cuts_svc->get();
-        auto vz_range = cuts_svc->get_vz_range(clas12::RunGroup::RG_D, m_target);
+        auto vz_range = m_electron_cuts->get_vz_range(clas12::RunGroup::RG_D, m_target);
         Log::config(name(), "Vz range", fmt::format("[{:.2f}, {:.2f}] cm", vz_range.min, vz_range.max));
         Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
 
@@ -255,8 +242,7 @@ public:
         const int sector = calorimeter.pcal.sector;
 
         // Pre-compute fiducial result using FiducialService
-        auto* fiducial_svc = m_fiducial_svc->get();
-        auto fiducial_result = fiducial_svc->evaluate(electron, calorimeter, traj, sector);
+        auto fiducial_result = m_fiducial->evaluate(electron, calorimeter, traj, sector);
 
         // Fill histograms before cuts
         clas12::framework::HistogramFiller::fill_electron(
@@ -306,18 +292,16 @@ public:
         Log::subsection(fmt::format("{} Summary", name()));
 
         // N-tuple statistics
-        if (m_enable_ntuple.get()) {
-            clas12::framework::safe(m_ntuple_svc).with([this](auto* svc) {
-                auto entries = svc->get_entries("electron_kinematics");
-                Log::stat(name(), "N-tuple entries", entries);
-            });
+        if (m_enable_ntuple.get() && m_ntuple_svc) {
+            auto entries = m_ntuple_svc->get_entries("electron_kinematics");
+            Log::stat(name(), "N-tuple entries", entries);
         }
 
         // Fiducial service statistics
-        clas12::framework::safe(m_fiducial_svc).with([this](auto* svc) {
-            Log::stat(name(), "Fiducial evaluations", svc->total_evaluations());
-            Log::stat(name(), "Fiducial efficiency", fmt::format("{:.2f}%", svc->efficiency() * 100));
-        });
+        if (m_fiducial) {
+            Log::stat(name(), "Fiducial evaluations", m_fiducial->total_evaluations());
+            Log::stat(name(), "Fiducial efficiency", fmt::format("{:.2f}%", m_fiducial->efficiency() * 100));
+        }
 
         // Print cutflow
         Log::blank();
@@ -352,14 +336,14 @@ private:
     clas12::framework::Property<bool> m_enable_dc_r3_cut{"enable_dc_r3_cut", true, "Enable DC R3 edge cut"};
 
     // ========================================================================
-    // Services
+    // Services (cached in on_initialize via svc<T>())
     // ========================================================================
 
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::SamplingFractionService>* m_sf_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::ElectronCutsService>* m_electron_cuts_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::FiducialService>* m_fiducial_svc = nullptr;
+    clas12::framework::HistogramService* m_hist = nullptr;
+    clas12::framework::NTupleService* m_ntuple_svc = nullptr;
+    clas12::framework::SamplingFractionService* m_sf = nullptr;
+    clas12::framework::ElectronCutsService* m_electron_cuts = nullptr;
+    clas12::framework::FiducialService* m_fiducial = nullptr;
 
     // ========================================================================
     // Cutflow
@@ -397,81 +381,75 @@ private:
      * @brief Configure the ElectronCutsService with target/polarity
      */
     void configure_electron_cuts_service() {
-        clas12::framework::safe(m_electron_cuts_svc).with([this](auto* svc) {
-            svc->set_target(m_target);
-            svc->set_polarity(m_polarity);
-            clas12::framework::safe(m_sf_svc).with([svc](auto* sf) {
-                svc->set_sf_service(sf);
-            });
-        });
+        m_electron_cuts->set_target(m_target);
+        m_electron_cuts->set_polarity(m_polarity);
+        if (m_sf) {
+            m_electron_cuts->set_sf_service(m_sf);
+        }
     }
 
     /**
      * @brief Book all histograms
      */
     void book_histograms() {
-        clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
-            // Kinematics histograms (before/after cuts)
-            kinematics_groups = clas12::framework::HistogramTemplates::ElectronHistograms::create_with_stages(
-                svc, "/Electron/Kinematics", {"before_cuts", "after_cuts"});
+        // Kinematics histograms (before/after cuts)
+        kinematics_groups = clas12::framework::HistogramTemplates::ElectronHistograms::create_with_stages(
+            m_hist, "/Electron/Kinematics", {"before_cuts", "after_cuts"});
 
-            // Fiducial diagnostic histograms
-            if (m_enable_fiducial_histograms.get()) {
-                h_pcal_lv_lw_before = svc->book_hist2D(
-                    "/Electron/Fiducial/before_cuts/pcal_lv_lw",
-                    "PCAL lv vs lw (before cuts);lv [cm];lw [cm]",
-                    100, 0, 450, 100, 0, 450);
-                h_pcal_lv_lw_after = svc->book_hist2D(
-                    "/Electron/Fiducial/after_cuts/pcal_lv_lw",
-                    "PCAL lv vs lw (after cuts);lv [cm];lw [cm]",
-                    100, 0, 450, 100, 0, 450);
+        // Fiducial diagnostic histograms
+        if (m_enable_fiducial_histograms.get()) {
+            h_pcal_lv_lw_before = m_hist->book_hist2D(
+                "/Electron/Fiducial/before_cuts/pcal_lv_lw",
+                "PCAL lv vs lw (before cuts);lv [cm];lw [cm]",
+                100, 0, 450, 100, 0, 450);
+            h_pcal_lv_lw_after = m_hist->book_hist2D(
+                "/Electron/Fiducial/after_cuts/pcal_lv_lw",
+                "PCAL lv vs lw (after cuts);lv [cm];lw [cm]",
+                100, 0, 450, 100, 0, 450);
 
-                h_dc_r1_edge_before = svc->book_hist1D(
-                    "/Electron/Fiducial/before_cuts/dc_r1_edge",
-                    "DC R1 Edge (before cuts);Edge [cm];Events", 100, 0, 50);
-                h_dc_r1_edge_after = svc->book_hist1D(
-                    "/Electron/Fiducial/after_cuts/dc_r1_edge",
-                    "DC R1 Edge (after cuts);Edge [cm];Events", 100, 0, 50);
+            h_dc_r1_edge_before = m_hist->book_hist1D(
+                "/Electron/Fiducial/before_cuts/dc_r1_edge",
+                "DC R1 Edge (before cuts);Edge [cm];Events", 100, 0, 50);
+            h_dc_r1_edge_after = m_hist->book_hist1D(
+                "/Electron/Fiducial/after_cuts/dc_r1_edge",
+                "DC R1 Edge (after cuts);Edge [cm];Events", 100, 0, 50);
 
-                h_dc_r2_edge_before = svc->book_hist1D(
-                    "/Electron/Fiducial/before_cuts/dc_r2_edge",
-                    "DC R2 Edge (before cuts);Edge [cm];Events", 100, 0, 50);
-                h_dc_r2_edge_after = svc->book_hist1D(
-                    "/Electron/Fiducial/after_cuts/dc_r2_edge",
-                    "DC R2 Edge (after cuts);Edge [cm];Events", 100, 0, 50);
+            h_dc_r2_edge_before = m_hist->book_hist1D(
+                "/Electron/Fiducial/before_cuts/dc_r2_edge",
+                "DC R2 Edge (before cuts);Edge [cm];Events", 100, 0, 50);
+            h_dc_r2_edge_after = m_hist->book_hist1D(
+                "/Electron/Fiducial/after_cuts/dc_r2_edge",
+                "DC R2 Edge (after cuts);Edge [cm];Events", 100, 0, 50);
 
-                h_dc_r3_edge_before = svc->book_hist1D(
-                    "/Electron/Fiducial/before_cuts/dc_r3_edge",
-                    "DC R3 Edge (before cuts);Edge [cm];Events", 100, 0, 50);
-                h_dc_r3_edge_after = svc->book_hist1D(
-                    "/Electron/Fiducial/after_cuts/dc_r3_edge",
-                    "DC R3 Edge (after cuts);Edge [cm];Events", 100, 0, 50);
-            }
-        });
+            h_dc_r3_edge_before = m_hist->book_hist1D(
+                "/Electron/Fiducial/before_cuts/dc_r3_edge",
+                "DC R3 Edge (before cuts);Edge [cm];Events", 100, 0, 50);
+            h_dc_r3_edge_after = m_hist->book_hist1D(
+                "/Electron/Fiducial/after_cuts/dc_r3_edge",
+                "DC R3 Edge (after cuts);Edge [cm];Events", 100, 0, 50);
+        }
     }
 
     /**
      * @brief Define cutflow with all electron selection cuts
      */
     void define_cutflow() {
-        auto* cuts_svc = m_electron_cuts_svc->get();
-
         m_cutflow
             .define_always("All Events")
             .define("Has Electron", [](const ElectronCutContext&) {
                 return true;  // Already filtered before context creation
             })
-            .define("Chi2 PID", [cuts_svc, this](const ElectronCutContext& ctx) {
-                return !m_enable_chi2pid_cut.get() || cuts_svc->pass_chi2pid_cut(ctx.electron.chi2pid());
+            .define("Chi2 PID", [this](const ElectronCutContext& ctx) {
+                return !m_enable_chi2pid_cut.get() || m_electron_cuts->pass_chi2pid_cut(ctx.electron.chi2pid());
             })
-            .define("Momentum > 0.8 GeV", [cuts_svc, this](const ElectronCutContext& ctx) {
-                return !m_enable_momentum_cut.get() || cuts_svc->pass_momentum_cut(ctx.electron.p());
+            .define("Momentum > 0.8 GeV", [this](const ElectronCutContext& ctx) {
+                return !m_enable_momentum_cut.get() || m_electron_cuts->pass_momentum_cut(ctx.electron.p());
             })
-            .define("Vertex Z", [cuts_svc, this](const ElectronCutContext& ctx) {
-                return !m_enable_vz_cut.get() || cuts_svc->pass_vz_cut(ctx.electron.vz());
+            .define("Vertex Z", [this](const ElectronCutContext& ctx) {
+                return !m_enable_vz_cut.get() || m_electron_cuts->pass_vz_cut(ctx.electron.vz());
             })
-            .define("Sampling Fraction", [cuts_svc, this](const ElectronCutContext& ctx) {
-                return !m_enable_sf_cut.get() || cuts_svc->pass_sampling_fraction_cut(ctx.SF, ctx.electron.p(), ctx.sector);
+            .define("Sampling Fraction", [this](const ElectronCutContext& ctx) {
+                return !m_enable_sf_cut.get() || m_electron_cuts->pass_sampling_fraction_cut(ctx.SF, ctx.electron.p(), ctx.sector);
             })
             .define("PCAL Fiducial", [this](const ElectronCutContext& ctx) {
                 return !m_enable_pcal_fiducial_cut.get() || ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::PCAL);
