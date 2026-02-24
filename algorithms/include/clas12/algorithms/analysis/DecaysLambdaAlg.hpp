@@ -119,6 +119,10 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
         declare_property(m_min_decay_length);
         declare_property(m_min_vertex_detach);
         declare_property(m_max_vertex_detach);
+        declare_property(m_enable_mass_window_cut);
+        declare_property(m_enable_momentum_cut);
+        declare_property(m_enable_decay_length_cut);
+        declare_property(m_enable_vertex_detach_cut);
         declare_bank("DECAYS::Particle");
     }
 
@@ -252,20 +256,19 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
             if (h_vertex_detach_precut) h_vertex_detach_precut->fill(lambda.vertex_detach_z());
 
             // Mass window cut
-            if (std::abs(lambda.mass - LAMBDA_MASS_PDG) > m_mass_window.get()) continue;
+            if (m_enable_mass_window_cut.get() && std::abs(lambda.mass - LAMBDA_MASS_PDG) > m_mass_window.get()) continue;
             passed_mass = true;
 
             // Momentum cut
-            if (lambda.momentum() < m_min_momentum.get()) continue;
+            if (m_enable_momentum_cut.get() && lambda.momentum() < m_min_momentum.get()) continue;
             passed_momentum = true;
 
-            // Decay length cut (if enabled)
-            if (m_min_decay_length.get() > 0 && lambda.decay_length() < m_min_decay_length.get()) continue;
+            // Decay length cut
+            if (m_enable_decay_length_cut.get() && m_min_decay_length.get() > 0 && lambda.decay_length() < m_min_decay_length.get()) continue;
             passed_decay_length = true;
 
-            // Vertex detachment cut (if enabled)
-            // Requires decay vertex to be displaced from origin vertex
-            if (m_min_vertex_detach.get() > -999) {
+            // Vertex detachment cut
+            if (m_enable_vertex_detach_cut.get() && m_min_vertex_detach.get() > -999) {
                 double detach = lambda.vertex_detach_z();
                 if (detach < m_min_vertex_detach.get()) continue;
                 if (m_max_vertex_detach.get() > 0 && detach > m_max_vertex_detach.get()) continue;
@@ -281,11 +284,11 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
         if (!passed_momentum) return clas12::framework::StatusCode::FILTERED();
         m_cutflow.pass("Momentum Cut");
 
-        if (m_min_decay_length.get() > 0 && !passed_decay_length) return clas12::framework::StatusCode::FILTERED();
-        if (m_min_decay_length.get() > 0) m_cutflow.pass("Decay Length Cut");
+        if (!passed_decay_length) return clas12::framework::StatusCode::FILTERED();
+        m_cutflow.pass("Decay Length Cut");
 
-        if (m_min_vertex_detach.get() > -999 && !passed_vertex_detach) return clas12::framework::StatusCode::FILTERED();
-        if (m_min_vertex_detach.get() > -999) m_cutflow.pass("Vertex Detach Cut");
+        if (!passed_vertex_detach) return clas12::framework::StatusCode::FILTERED();
+        m_cutflow.pass("Vertex Detach Cut");
 
         if (selected_lambdas.empty()) return clas12::framework::StatusCode::FILTERED();
 
@@ -331,6 +334,10 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
     clas12::framework::Property<double> m_min_decay_length{"min_decay_length", 0.0, "Minimum decay length [cm], 0=disabled"};
     clas12::framework::Property<double> m_min_vertex_detach{"min_vertex_detach", -1000.0, "Minimum z displacement [cm], -1000=disabled"};
     clas12::framework::Property<double> m_max_vertex_detach{"max_vertex_detach", 0.0, "Maximum z displacement [cm], 0=no limit"};
+    clas12::framework::Property<bool> m_enable_mass_window_cut{"enable_mass_window_cut", true, "Enable mass window cut"};
+    clas12::framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
+    clas12::framework::Property<bool> m_enable_decay_length_cut{"enable_decay_length_cut", true, "Enable decay length cut"};
+    clas12::framework::Property<bool> m_enable_vertex_detach_cut{"enable_vertex_detach_cut", true, "Enable vertex detachment cut"};
     clas12::framework::Cutflow m_cutflow;
 
     // Services (pointers set by configure())

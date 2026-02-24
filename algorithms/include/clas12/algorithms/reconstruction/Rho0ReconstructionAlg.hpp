@@ -153,6 +153,11 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         declare_property(m_lc_max);
         declare_property(m_t_min);
         declare_property(m_t_max);
+        declare_property(m_enable_delta_vz_pim_cut);
+        declare_property(m_enable_delta_vz_pip_cut);
+        declare_property(m_enable_zh_cut);
+        declare_property(m_enable_lc_cut);
+        declare_property(m_enable_t_cut);
         declare_property(m_enable_ntuple);
         declare_property(m_enable_fitting);
         declare_property(m_sigma_scan_values);
@@ -177,13 +182,13 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         Log::blank();
 
         Log::subsection("Kinematic Cuts");
-        Log::config(name(), "zh min", m_zh_min.get());
-        Log::config(name(), "lc max", fmt::format("{} fm", m_lc_max.get()));
-        Log::config(name(), "-t range", fmt::format("[{}, {}] GeV²", m_t_min.get(), m_t_max.get()));
+        Log::config(name(), "zh min", fmt::format("{} ({})", m_zh_min.get(), m_enable_zh_cut.get() ? "enabled" : "disabled"));
+        Log::config(name(), "lc max", fmt::format("{} fm ({})", m_lc_max.get(), m_enable_lc_cut.get() ? "enabled" : "disabled"));
+        Log::config(name(), "-t range", fmt::format("[{}, {}] GeV² ({})", m_t_min.get(), m_t_max.get(), m_enable_t_cut.get() ? "enabled" : "disabled"));
         auto pip_vz = get_piplus_delta_vz_range();
         auto pim_vz = get_piminus_delta_vz_range();
-        Log::config(name(), "Δvz π⁺", fmt::format("[{:.2f}, {:.2f}] cm", pip_vz.low, pip_vz.high));
-        Log::config(name(), "Δvz π⁻", fmt::format("[{:.2f}, {:.2f}] cm", pim_vz.low, pim_vz.high));
+        Log::config(name(), "Δvz π⁺", fmt::format("[{:.2f}, {:.2f}] cm ({})", pip_vz.low, pip_vz.high, m_enable_delta_vz_pip_cut.get() ? "enabled" : "disabled"));
+        Log::config(name(), "Δvz π⁻", fmt::format("[{:.2f}, {:.2f}] cm ({})", pim_vz.low, pim_vz.high, m_enable_delta_vz_pim_cut.get() ? "enabled" : "disabled"));
         Log::blank();
 
         Log::subsection("Output Options");
@@ -507,8 +512,12 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 cand.passes_zh = cand.zh > m_zh_min.get();
                 cand.passes_lc = cand.lc < m_lc_max.get();
                 cand.passes_t = (cand.minus_t > m_t_min.get()) && (cand.minus_t < m_t_max.get());
-                cand.passes_all_cuts = cand.passes_delta_vz_pip && cand.passes_delta_vz_pim &&
-                                       cand.passes_zh && cand.passes_lc && cand.passes_t;
+                cand.passes_all_cuts =
+                    (!m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip) &&
+                    (!m_enable_delta_vz_pim_cut.get() || cand.passes_delta_vz_pim) &&
+                    (!m_enable_zh_cut.get() || cand.passes_zh) &&
+                    (!m_enable_lc_cut.get() || cand.passes_lc) &&
+                    (!m_enable_t_cut.get() || cand.passes_t);
 
                 candidates.push_back(std::move(cand));
             }
@@ -583,8 +592,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     auto fill_lc_binned_histograms(const std::vector<Rho0Candidate>& candidates, double Q2) -> void {
         bool passes_Q2 = (Q2 > 1.0);
         for (const auto& cand : candidates) {
-            if (cand.passes_delta_vz_pim && cand.passes_delta_vz_pip &&
-                cand.passes_zh && passes_Q2 && cand.passes_t) {
+            if ((!m_enable_delta_vz_pim_cut.get() || cand.passes_delta_vz_pim) &&
+                (!m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip) &&
+                (!m_enable_zh_cut.get() || cand.passes_zh) && passes_Q2 &&
+                (!m_enable_t_cut.get() || cand.passes_t)) {
                 fill_lc_binned_histogram(cand.lc, cand.mass);
             }
         }
@@ -601,11 +612,11 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         bool any_passed_t = false;
 
         for (const auto& cand : candidates) {
-            any_passed_delta_vz_pim |= cand.passes_delta_vz_pim;
-            any_passed_delta_vz_pip |= cand.passes_delta_vz_pip;
-            any_passed_zh |= cand.passes_zh;
-            any_passed_lc |= cand.passes_lc;
-            any_passed_t |= cand.passes_t;
+            any_passed_delta_vz_pim |= (!m_enable_delta_vz_pim_cut.get() || cand.passes_delta_vz_pim);
+            any_passed_delta_vz_pip |= (!m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip);
+            any_passed_zh |= (!m_enable_zh_cut.get() || cand.passes_zh);
+            any_passed_lc |= (!m_enable_lc_cut.get() || cand.passes_lc);
+            any_passed_t |= (!m_enable_t_cut.get() || cand.passes_t);
         }
 
         if (any_passed_delta_vz_pim) m_cutflow.pass("delta_vz_pim Cut");
@@ -725,6 +736,11 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     clas12::framework::Property<double> m_lc_max{"lc_max", 1.0, "Maximum coherence length [fm]"};
     clas12::framework::Property<double> m_t_min{"t_min", 0.1, "Minimum -t [GeV²]"};
     clas12::framework::Property<double> m_t_max{"t_max", 0.5, "Maximum -t [GeV²]"};
+    clas12::framework::Property<bool> m_enable_delta_vz_pim_cut{"enable_delta_vz_pim_cut", true, "Enable delta_vz pi- cut"};
+    clas12::framework::Property<bool> m_enable_delta_vz_pip_cut{"enable_delta_vz_pip_cut", true, "Enable delta_vz pi+ cut"};
+    clas12::framework::Property<bool> m_enable_zh_cut{"enable_zh_cut", true, "Enable zh cut"};
+    clas12::framework::Property<bool> m_enable_lc_cut{"enable_lc_cut", true, "Enable coherence length cut"};
+    clas12::framework::Property<bool> m_enable_t_cut{"enable_t_cut", true, "Enable -t cut"};
     clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
     clas12::framework::Property<bool> m_enable_fitting{"enable_fitting", true, "Enable BW+pol3 fitting in finalize"};
     clas12::framework::Property<std::vector<double>> m_sigma_scan_values{"sigma_scan_values", {}, "Sigma values for delta_t scan (empty=disabled)"};

@@ -76,6 +76,14 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
         declare_property(m_beam_energy);
         declare_property(m_min_displaced_vz);
         declare_property(m_max_displaced_vz);
+        declare_property(m_enable_proton_fd_cut);
+        declare_property(m_enable_pion_fd_cut);
+        declare_property(m_enable_proton_momentum_cut);
+        declare_property(m_enable_pion_momentum_cut);
+        declare_property(m_enable_vertex_dz_cut);
+        declare_property(m_enable_mass_window_cut);
+        declare_property(m_enable_displaced_vertex_cut);
+        declare_property(m_enable_coplanarity_cut);
     }
 
     /**
@@ -219,10 +227,10 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
 
         for (const auto& proton : protons) {
             // Require proton in forward detector
-            if (!is_forward_detector(proton)) continue;
+            if (m_enable_proton_fd_cut.get() && !is_forward_detector(proton)) continue;
             passed_proton_fd = true;
 
-            if (proton.p() < m_min_proton_p.get()) continue;
+            if (m_enable_proton_momentum_cut.get() && proton.p() < m_min_proton_p.get()) continue;
             passed_proton_p = true;
 
             // Chi2pid cut for proton (good PID quality)
@@ -230,10 +238,10 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
 
             for (const auto& pion : pions) {
                 // Require pion in forward detector
-                if (!is_forward_detector(pion)) continue;
+                if (m_enable_pion_fd_cut.get() && !is_forward_detector(pion)) continue;
                 passed_pion_fd = true;
 
-                if (pion.p() < m_min_pion_p.get()) continue;
+                if (m_enable_pion_momentum_cut.get() && pion.p() < m_min_pion_p.get()) continue;
                 passed_pion_p = true;
 
                 // Chi2pid cut for pion (good PID quality)
@@ -242,7 +250,7 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
                 // Vertex z difference cut
                 double delta_vz = std::abs(proton.vz() - pion.vz());
                 if (h_delta_vz_precut) h_delta_vz_precut->fill(delta_vz);
-                if (delta_vz > m_max_delta_vz.get()) continue;
+                if (m_enable_vertex_dz_cut.get() && delta_vz > m_max_delta_vz.get()) continue;
                 passed_vertex_dz = true;
 
                 // Calculate invariant mass
@@ -252,7 +260,7 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
                 if (h_ppim_mass_all) h_ppim_mass_all->fill(mass);
 
                 // Check mass window
-                if (std::abs(mass - LAMBDA_MASS) > m_mass_window.get()) continue;
+                if (m_enable_mass_window_cut.get() && std::abs(mass - LAMBDA_MASS) > m_mass_window.get()) continue;
                 passed_mass = true;
 
                 // Build candidate with full kinematics
@@ -313,7 +321,7 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
 
                 // Apply displaced vertex cut (Lambda decays downstream)
                 // Require decay vertex to be downstream of primary vertex
-                if (electron && m_min_displaced_vz.get() > -999) {
+                if (m_enable_displaced_vertex_cut.get() && electron && m_min_displaced_vz.get() > -999) {
                     if (candidate.displaced_vz < m_min_displaced_vz.get()) continue;
                     if (m_max_displaced_vz.get() > 0 && candidate.displaced_vz > m_max_displaced_vz.get()) continue;
                 }
@@ -321,7 +329,7 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
                 candidates_after_displaced.push_back(candidate);
 
                 // Apply coplanarity cut
-                if (m_max_coplanarity.get() > 0 && candidate.coplanarity > m_max_coplanarity.get()) continue;
+                if (m_enable_coplanarity_cut.get() && m_max_coplanarity.get() > 0 && candidate.coplanarity > m_max_coplanarity.get()) continue;
                 passed_coplanarity = true;
                 candidates_after_copla.push_back(candidate);
             }
@@ -345,17 +353,17 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
         if (!passed_mass) return clas12::framework::StatusCode::FILTERED();
         m_cutflow.pass("Lambda Mass Window");
 
-        if (m_min_displaced_vz.get() > -999 && !passed_displaced_vz) return clas12::framework::StatusCode::FILTERED();
-        if (m_min_displaced_vz.get() > -999) m_cutflow.pass("Displaced Vertex");
+        if (m_enable_displaced_vertex_cut.get() && m_min_displaced_vz.get() > -999 && !passed_displaced_vz) return clas12::framework::StatusCode::FILTERED();
+        if (!m_enable_displaced_vertex_cut.get() || m_min_displaced_vz.get() > -999) m_cutflow.pass("Displaced Vertex");
 
-        if (m_max_coplanarity.get() > 0 && !passed_coplanarity) return clas12::framework::StatusCode::FILTERED();
-        if (m_max_coplanarity.get() > 0) m_cutflow.pass("Coplanarity");
+        if (m_enable_coplanarity_cut.get() && m_max_coplanarity.get() > 0 && !passed_coplanarity) return clas12::framework::StatusCode::FILTERED();
+        if (!m_enable_coplanarity_cut.get() || m_max_coplanarity.get() > 0) m_cutflow.pass("Coplanarity");
 
         // Use candidates after all cuts
         // Priority: coplanarity > displaced > mass window
         std::vector<LambdaCandidate>* final_candidates_ptr = &candidates;
-        if (m_min_displaced_vz.get() > -999) final_candidates_ptr = &candidates_after_displaced;
-        if (m_max_coplanarity.get() > 0) final_candidates_ptr = &candidates_after_copla;
+        if (m_enable_displaced_vertex_cut.get() && m_min_displaced_vz.get() > -999) final_candidates_ptr = &candidates_after_displaced;
+        if (m_enable_coplanarity_cut.get() && m_max_coplanarity.get() > 0) final_candidates_ptr = &candidates_after_copla;
         auto& final_candidates = *final_candidates_ptr;
         if (final_candidates.empty()) return clas12::framework::StatusCode::FILTERED();
 
@@ -465,6 +473,17 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
     clas12::framework::Property<double> m_beam_energy{"beam_energy", 10.6, "Beam energy [GeV]"};
     clas12::framework::Property<double> m_min_displaced_vz{"min_displaced_vz", -1000.0, "Minimum displaced vertex z [cm], -1000=disabled"};
     clas12::framework::Property<double> m_max_displaced_vz{"max_displaced_vz", 0.0, "Maximum displaced vertex z [cm], 0=no limit"};
+
+    // Cut toggle properties
+    clas12::framework::Property<bool> m_enable_proton_fd_cut{"enable_proton_fd_cut", true, "Enable proton forward detector cut"};
+    clas12::framework::Property<bool> m_enable_pion_fd_cut{"enable_pion_fd_cut", true, "Enable pion forward detector cut"};
+    clas12::framework::Property<bool> m_enable_proton_momentum_cut{"enable_proton_momentum_cut", true, "Enable proton momentum cut"};
+    clas12::framework::Property<bool> m_enable_pion_momentum_cut{"enable_pion_momentum_cut", true, "Enable pion momentum cut"};
+    clas12::framework::Property<bool> m_enable_vertex_dz_cut{"enable_vertex_dz_cut", true, "Enable vertex dz cut"};
+    clas12::framework::Property<bool> m_enable_mass_window_cut{"enable_mass_window_cut", true, "Enable Lambda mass window cut"};
+    clas12::framework::Property<bool> m_enable_displaced_vertex_cut{"enable_displaced_vertex_cut", true, "Enable displaced vertex cut"};
+    clas12::framework::Property<bool> m_enable_coplanarity_cut{"enable_coplanarity_cut", true, "Enable coplanarity cut"};
+
     clas12::framework::Cutflow m_cutflow;
 
     // Services (pointers set by configure())

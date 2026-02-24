@@ -46,3 +46,4 @@ builddir/
 bin/
 plots/
 .cache/
+.claude/

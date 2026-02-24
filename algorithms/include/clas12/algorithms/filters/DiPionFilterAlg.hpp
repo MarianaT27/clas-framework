@@ -40,6 +40,12 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
         declare_property(m_pion_p_min);
         declare_property(m_pion_chi2pid_max);
         declare_property(m_enable_histograms);
+        declare_property(m_enable_q2_cut);
+        declare_property(m_enable_w_cut);
+        declare_property(m_enable_piplus_momentum_cut);
+        declare_property(m_enable_piplus_chi2pid_cut);
+        declare_property(m_enable_piminus_momentum_cut);
+        declare_property(m_enable_piminus_chi2pid_cut);
     }
 
     // ========================================================================
@@ -158,12 +164,12 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
         clas12::physics::DISAnalysis::DISKinematics kin =
             clas12::physics::DISAnalysis::calculate_kinematics(electron);
 
-        if (kin.q2 < m_q2_min.get()) {
+        if (m_enable_q2_cut.get() && kin.q2 < m_q2_min.get()) {
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Q2 Cut");
 
-        if (kin.w < m_w_min.get()) {
+        if (m_enable_w_cut.get() && kin.w < m_w_min.get()) {
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("W Cut");
@@ -180,18 +186,20 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
         // Find pi+ candidates passing momentum and chi2pid cuts
         std::vector<const clas12::Particle*> good_piplus;
         for (const auto& pi : pions_plus) {
-            if (pi.p() < m_pion_p_min.get()) continue;
-            if (std::abs(pi.chi2pid()) >= m_pion_chi2pid_max.get()) continue;
+            if (m_enable_piplus_momentum_cut.get() && pi.p() < m_pion_p_min.get()) continue;
+            if (m_enable_piplus_chi2pid_cut.get() && std::abs(pi.chi2pid()) >= m_pion_chi2pid_max.get()) continue;
             good_piplus.push_back(&pi);
         }
 
         if (good_piplus.empty()) {
             // Check which cut failed for cutflow
-            bool any_pass_momentum = false;
-            for (const auto& pi : pions_plus) {
-                if (pi.p() >= m_pion_p_min.get()) {
-                    any_pass_momentum = true;
-                    break;
+            bool any_pass_momentum = !m_enable_piplus_momentum_cut.get();
+            if (!any_pass_momentum) {
+                for (const auto& pi : pions_plus) {
+                    if (pi.p() >= m_pion_p_min.get()) {
+                        any_pass_momentum = true;
+                        break;
+                    }
                 }
             }
             if (!any_pass_momentum) {
@@ -215,18 +223,20 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
         // Find pi- candidates passing momentum and chi2pid cuts
         std::vector<const clas12::Particle*> good_piminus;
         for (const auto& pi : pions_minus) {
-            if (pi.p() < m_pion_p_min.get()) continue;
-            if (std::abs(pi.chi2pid()) >= m_pion_chi2pid_max.get()) continue;
+            if (m_enable_piminus_momentum_cut.get() && pi.p() < m_pion_p_min.get()) continue;
+            if (m_enable_piminus_chi2pid_cut.get() && std::abs(pi.chi2pid()) >= m_pion_chi2pid_max.get()) continue;
             good_piminus.push_back(&pi);
         }
 
         if (good_piminus.empty()) {
             // Check which cut failed for cutflow
-            bool any_pass_momentum = false;
-            for (const auto& pi : pions_minus) {
-                if (pi.p() >= m_pion_p_min.get()) {
-                    any_pass_momentum = true;
-                    break;
+            bool any_pass_momentum = !m_enable_piminus_momentum_cut.get();
+            if (!any_pass_momentum) {
+                for (const auto& pi : pions_minus) {
+                    if (pi.p() >= m_pion_p_min.get()) {
+                        any_pass_momentum = true;
+                        break;
+                    }
                 }
             }
             if (!any_pass_momentum) {
@@ -288,6 +298,12 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
     clas12::framework::Property<double> m_pion_p_min{"pion_p_min", 0.3, "Minimum pion momentum [GeV]"};
     clas12::framework::Property<double> m_pion_chi2pid_max{"pion_chi2pid_max", 10.0, "Maximum |chi2pid| for pions"};
     clas12::framework::Property<bool> m_enable_histograms{"enable_histograms", true, "Enable histogram output"};
+    clas12::framework::Property<bool> m_enable_q2_cut{"enable_q2_cut", true, "Enable Q2 cut"};
+    clas12::framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
+    clas12::framework::Property<bool> m_enable_piplus_momentum_cut{"enable_piplus_momentum_cut", true, "Enable pi+ momentum cut"};
+    clas12::framework::Property<bool> m_enable_piplus_chi2pid_cut{"enable_piplus_chi2pid_cut", true, "Enable pi+ chi2PID cut"};
+    clas12::framework::Property<bool> m_enable_piminus_momentum_cut{"enable_piminus_momentum_cut", true, "Enable pi- momentum cut"};
+    clas12::framework::Property<bool> m_enable_piminus_chi2pid_cut{"enable_piminus_chi2pid_cut", true, "Enable pi- chi2PID cut"};
 
     // Service handles (auto-injected via require_service)
     clas12::framework::ServiceHandle<clas12::framework::HipoFileService>* m_hipo_svc = nullptr;

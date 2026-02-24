@@ -59,6 +59,9 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
         declare_property(m_y_min);
         declare_property(m_y_max);
         declare_property(m_enable_ntuple);
+        declare_property(m_enable_q2_cut);
+        declare_property(m_enable_w_cut);
+        declare_property(m_enable_y_cut);
     }
 
     auto set_dis_region(const clas12::physics::DISAnalysis::KinematicRegion& region) -> void {
@@ -126,11 +129,11 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
             clas12::physics::DISAnalysis::calculate_kinematics(electrons_opt->front());
 
         // Apply DIS region cuts using CutBuilder
-        bool passed = clas12::framework::CutBuilder(m_cutflow)
-            .require_in_range("Q2 Cut", kin.q2, m_q2_min.get(), m_q2_max.get())
-            .require_in_range("W Cut", kin.w, m_w_min.get(), m_w_max.get())
-            .require_in_range("y Cut", kin.y, m_y_min.get(), m_y_max.get())
-            .evaluate();
+        auto builder = clas12::framework::CutBuilder(m_cutflow);
+        builder.require("Q2 Cut", !m_enable_q2_cut.get() || (kin.q2 >= m_q2_min.get() && kin.q2 <= m_q2_max.get()));
+        builder.require("W Cut", !m_enable_w_cut.get() || (kin.w >= m_w_min.get() && kin.w <= m_w_max.get()));
+        builder.require("y Cut", !m_enable_y_cut.get() || (kin.y >= m_y_min.get() && kin.y <= m_y_max.get()));
+        bool passed = builder.evaluate();
 
         if (!passed) {
             return clas12::framework::StatusCode::FILTERED();
@@ -198,6 +201,9 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
     clas12::framework::Property<double> m_y_min{"y_min", 0.0, "Minimum y"};
     clas12::framework::Property<double> m_y_max{"y_max", 0.85, "Maximum y"};
     clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
+    clas12::framework::Property<bool> m_enable_q2_cut{"enable_q2_cut", true, "Enable Q2 cut"};
+    clas12::framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
+    clas12::framework::Property<bool> m_enable_y_cut{"enable_y_cut", true, "Enable y cut"};
 
     // Service handles (auto-injected via require_service)
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;

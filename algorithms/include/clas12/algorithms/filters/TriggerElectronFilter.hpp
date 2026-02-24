@@ -4,6 +4,7 @@
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
@@ -30,6 +31,10 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerE
         clas12::Target target = clas12::Target::LD2,
         clas12::Polarity polarity = clas12::Polarity::Outbending)
         : SimpleAlgorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow("Trigger Electron Filter") {
+        declare_property(m_enable_trigger_status_cut);
+        declare_property(m_enable_chi2pid_cut);
+        declare_property(m_enable_momentum_cut);
+        declare_property(m_enable_vz_cut);
         declare_bank("REC::Particle");
     }
 
@@ -80,28 +85,29 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerE
 
         // Find trigger electron
         auto trigger_e = clas12::physics::ParticleUtils::find_trigger_electron(electrons, {2000, 4000});
-        if (!trigger_e.has_value()) {
+        if (m_enable_trigger_status_cut.get() && !trigger_e.has_value()) {
             event.set_decision(name(), false);
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Trigger Status");
 
-        auto electron = trigger_e.value();
+        // Use trigger electron if found, otherwise use first electron
+        auto electron = trigger_e.has_value() ? trigger_e.value() : electrons.front();
 
         // Apply basic cuts
-        if (!clas12::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
+        if (m_enable_chi2pid_cut.get() && !clas12::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
             event.set_decision(name(), false);
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Chi2 PID");
 
-        if (!clas12::ElectronCuts::pass_electron_momentum_cut(electron.p())) {
+        if (m_enable_momentum_cut.get() && !clas12::ElectronCuts::pass_electron_momentum_cut(electron.p())) {
             event.set_decision(name(), false);
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Momentum");
 
-        if (!clas12::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) {
+        if (m_enable_vz_cut.get() && !clas12::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) {
             event.set_decision(name(), false);
             return clas12::framework::StatusCode::FILTERED();
         }
@@ -120,6 +126,12 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerE
     clas12::Polarity m_polarity;
     clas12::framework::Cutflow m_cutflow;
     clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
+
+    // Cut toggle properties
+    clas12::framework::Property<bool> m_enable_trigger_status_cut{"enable_trigger_status_cut", true, "Enable trigger status cut"};
+    clas12::framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable chi2 PID cut"};
+    clas12::framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
+    clas12::framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
 };
 
 }  // namespace clas12::algorithms

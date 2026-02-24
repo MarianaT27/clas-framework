@@ -142,6 +142,14 @@ public:
         , m_cutflow("Electron Selection") {
         declare_property(m_enable_ntuple);
         declare_property(m_enable_fiducial_histograms);
+        declare_property(m_enable_chi2pid_cut);
+        declare_property(m_enable_momentum_cut);
+        declare_property(m_enable_vz_cut);
+        declare_property(m_enable_sf_cut);
+        declare_property(m_enable_pcal_fiducial_cut);
+        declare_property(m_enable_dc_r1_cut);
+        declare_property(m_enable_dc_r2_cut);
+        declare_property(m_enable_dc_r3_cut);
         declare_bank("REC::Calorimeter");
         declare_bank("REC::Traj");
         declare_bank("REC::Track");
@@ -329,9 +337,19 @@ private:
 
     // Properties
     clas12::framework::Property<bool> m_enable_ntuple{
-        "enable_ntuple", false, "Enable N-tuple output"};
+        "enable_ntuple", true, "Enable N-tuple output"};
     clas12::framework::Property<bool> m_enable_fiducial_histograms{
         "enable_fiducial_histograms", false, "Enable fiducial diagnostic histograms"};
+
+    // Cut toggle properties
+    clas12::framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable chi2 PID cut"};
+    clas12::framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
+    clas12::framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
+    clas12::framework::Property<bool> m_enable_sf_cut{"enable_sf_cut", true, "Enable sampling fraction cut"};
+    clas12::framework::Property<bool> m_enable_pcal_fiducial_cut{"enable_pcal_fiducial_cut", true, "Enable PCAL fiducial cut"};
+    clas12::framework::Property<bool> m_enable_dc_r1_cut{"enable_dc_r1_cut", true, "Enable DC R1 edge cut"};
+    clas12::framework::Property<bool> m_enable_dc_r2_cut{"enable_dc_r2_cut", true, "Enable DC R2 edge cut"};
+    clas12::framework::Property<bool> m_enable_dc_r3_cut{"enable_dc_r3_cut", true, "Enable DC R3 edge cut"};
 
     // ========================================================================
     // Services
@@ -443,30 +461,29 @@ private:
             .define("Has Electron", [](const ElectronCutContext&) {
                 return true;  // Already filtered before context creation
             })
-            .define("Chi2 PID", [cuts_svc](const ElectronCutContext& ctx) {
-                return cuts_svc->pass_chi2pid_cut(ctx.electron.chi2pid());
+            .define("Chi2 PID", [cuts_svc, this](const ElectronCutContext& ctx) {
+                return !m_enable_chi2pid_cut.get() || cuts_svc->pass_chi2pid_cut(ctx.electron.chi2pid());
             })
-            .define("Momentum > 0.8 GeV", [cuts_svc](const ElectronCutContext& ctx) {
-                return cuts_svc->pass_momentum_cut(ctx.electron.p());
+            .define("Momentum > 0.8 GeV", [cuts_svc, this](const ElectronCutContext& ctx) {
+                return !m_enable_momentum_cut.get() || cuts_svc->pass_momentum_cut(ctx.electron.p());
             })
-            .define("Vertex Z", [cuts_svc](const ElectronCutContext& ctx) {
-                return cuts_svc->pass_vz_cut(ctx.electron.vz());
+            .define("Vertex Z", [cuts_svc, this](const ElectronCutContext& ctx) {
+                return !m_enable_vz_cut.get() || cuts_svc->pass_vz_cut(ctx.electron.vz());
             })
-            .define("Sampling Fraction", [cuts_svc](const ElectronCutContext& ctx) {
-                return cuts_svc->pass_sampling_fraction_cut(ctx.SF, ctx.electron.p(), ctx.sector);
+            .define("Sampling Fraction", [cuts_svc, this](const ElectronCutContext& ctx) {
+                return !m_enable_sf_cut.get() || cuts_svc->pass_sampling_fraction_cut(ctx.SF, ctx.electron.p(), ctx.sector);
             })
-            .define("PCAL Fiducial", [](const ElectronCutContext& ctx) {
-                // Use pre-computed FiducialService result
-                return ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::PCAL);
+            .define("PCAL Fiducial", [this](const ElectronCutContext& ctx) {
+                return !m_enable_pcal_fiducial_cut.get() || ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::PCAL);
             })
-            .define("DC R1 Edge", [](const ElectronCutContext& ctx) {
-                return ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::DC_R1);
+            .define("DC R1 Edge", [this](const ElectronCutContext& ctx) {
+                return !m_enable_dc_r1_cut.get() || ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::DC_R1);
             })
-            .define("DC R2 Edge", [](const ElectronCutContext& ctx) {
-                return ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::DC_R2);
+            .define("DC R2 Edge", [this](const ElectronCutContext& ctx) {
+                return !m_enable_dc_r2_cut.get() || ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::DC_R2);
             })
-            .define("DC R3 Edge", [](const ElectronCutContext& ctx) {
-                return ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::DC_R3);
+            .define("DC R3 Edge", [this](const ElectronCutContext& ctx) {
+                return !m_enable_dc_r3_cut.get() || ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::DC_R3);
             });
     }
 

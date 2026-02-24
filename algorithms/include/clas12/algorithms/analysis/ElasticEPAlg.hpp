@@ -118,6 +118,8 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         declare_property(m_W_max);
         declare_property(m_Vz_min);
         declare_property(m_Vz_max);
+        declare_property(m_enable_vz_cut);
+        declare_property(m_enable_w_cut);
     }
 
     /**
@@ -185,7 +187,7 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         if (h_Vz_precut) h_Vz_precut->fill(vz);
 
         // Apply Vz cut
-        if (vz < m_Vz_min.get() || vz > m_Vz_max.get()) {
+        if (m_enable_vz_cut.get() && (vz < m_Vz_min.get() || vz > m_Vz_max.get())) {
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Vz Cut");
@@ -196,7 +198,7 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         if (h_Q2_precut) h_Q2_precut->fill(kin.Q2);
 
         // Apply W cut
-        if (kin.W < m_W_min.get() || kin.W > m_W_max.get()) {
+        if (m_enable_w_cut.get() && (kin.W < m_W_min.get() || kin.W > m_W_max.get())) {
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("W Cut");
@@ -241,6 +243,8 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
     clas12::framework::Property<double> m_W_max{"W_max", 2.0, "Maximum W [GeV]"};
     clas12::framework::Property<double> m_Vz_min{"Vz_min", -30.0, "Minimum Vz [cm]"};
     clas12::framework::Property<double> m_Vz_max{"Vz_max", 10.0, "Maximum Vz [cm]"};
+    clas12::framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
+    clas12::framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
 
     // Services (pointers set by configure())
     clas12::framework::ServiceHandle<clas12::framework::LoggingService>* m_log_svc = nullptr;

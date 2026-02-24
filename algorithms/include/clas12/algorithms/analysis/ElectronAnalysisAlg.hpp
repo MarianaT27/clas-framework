@@ -6,6 +6,7 @@
 #include <clas12/Target.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/ConditionsService.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
@@ -61,6 +62,13 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAn
           m_target(m_config.target),
           m_polarity(m_config.polarity),
           m_cutflow("Electron Selection") {
+        declare_property(m_enable_chi2pid_cut);
+        declare_property(m_enable_momentum_cut);
+        declare_property(m_enable_vz_cut);
+        declare_property(m_enable_sf_cut);
+        declare_property(m_enable_pcal_fiducial_cut);
+        declare_property(m_enable_dc_chi2ndf_cut);
+
         declare_bank("REC::Event");
         declare_bank("REC::Particle");
         declare_bank("REC::Calorimeter");
@@ -175,42 +183,42 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAn
         const auto& track = candidate.track;
 
         // Chi2 PID cut
-        if (!m_electron_cuts_svc->get()->pass_chi2pid_cut(electron.chi2pid())) {
+        if (m_enable_chi2pid_cut.get() && !m_electron_cuts_svc->get()->pass_chi2pid_cut(electron.chi2pid())) {
             return clas12::framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Chi2 PID");
         fill_after_cut("Chi2PID", electron, calorimeter, traj, track);
 
         // Momentum cut
-        if (!m_electron_cuts_svc->get()->pass_momentum_cut(electron.p())) {
+        if (m_enable_momentum_cut.get() && !m_electron_cuts_svc->get()->pass_momentum_cut(electron.p())) {
             return clas12::framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Momentum > 0.8 GeV");
         fill_after_cut("Momentum", electron, calorimeter, traj, track);
 
         // Vertex Z cut
-        if (!m_electron_cuts_svc->get()->pass_vz_cut(electron.vz())) {
+        if (m_enable_vz_cut.get() && !m_electron_cuts_svc->get()->pass_vz_cut(electron.vz())) {
             return clas12::framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Vertex Z");
         fill_after_cut("VertexZ", electron, calorimeter, traj, track);
 
         // Sampling fraction cut
-        if (!m_sf_svc->get()->passes_cut(candidate.sampling_fraction, electron.p(), candidate.sector, m_polarity)) {
+        if (m_enable_sf_cut.get() && !m_sf_svc->get()->passes_cut(candidate.sampling_fraction, electron.p(), candidate.sector, m_polarity)) {
             return clas12::framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("Sampling Fraction");
         fill_after_cut("SamplingFraction", electron, calorimeter, traj, track);
 
         // PCAL fiducial cut
-        if (!m_electron_cuts_svc->get()->pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
+        if (m_enable_pcal_fiducial_cut.get() && !m_electron_cuts_svc->get()->pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
             return clas12::framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("PCAL Fiducial");
         fill_after_cut("PCALFiducial", electron, calorimeter, traj, track);
 
         // DC edge cut
-        if (!m_electron_cuts_svc->get()->pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
+        if (m_enable_dc_chi2ndf_cut.get() && !m_electron_cuts_svc->get()->pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
             return clas12::framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("DC Chi2/NDF");
@@ -297,42 +305,42 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAn
         const auto& traj = candidate.trajectory;
 
         // Chi2 PID cut
-        if (!m_electron_cuts_svc->get()->pass_chi2pid_cut(e.chi2pid())) return false;
+        if (m_enable_chi2pid_cut.get() && !m_electron_cuts_svc->get()->pass_chi2pid_cut(e.chi2pid())) return false;
         m_cutflow.pass("Chi2 PID");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("Chi2PID", e, calo, traj, candidate.track);
         }
 
         // Momentum cut
-        if (!m_electron_cuts_svc->get()->pass_momentum_cut(e.p())) return false;
+        if (m_enable_momentum_cut.get() && !m_electron_cuts_svc->get()->pass_momentum_cut(e.p())) return false;
         m_cutflow.pass("Momentum > 0.8 GeV");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("Momentum", e, calo, traj, candidate.track);
         }
 
         // Vertex Z cut
-        if (!m_electron_cuts_svc->get()->pass_vz_cut(e.vz())) return false;
+        if (m_enable_vz_cut.get() && !m_electron_cuts_svc->get()->pass_vz_cut(e.vz())) return false;
         m_cutflow.pass("Vertex Z");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("VertexZ", e, calo, traj, candidate.track);
         }
 
         // Sampling fraction cut
-        if (!m_sf_svc->get()->passes_cut(candidate.sampling_fraction, e.p(), candidate.sector, m_polarity)) return false;
+        if (m_enable_sf_cut.get() && !m_sf_svc->get()->passes_cut(candidate.sampling_fraction, e.p(), candidate.sector, m_polarity)) return false;
         m_cutflow.pass("Sampling Fraction");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("SamplingFraction", e, calo, traj, candidate.track);
         }
 
         // PCAL fiducial cut
-        if (!m_electron_cuts_svc->get()->pass_pcal_fiducial_cut(calo.pcal.lv, calo.pcal.lw)) return false;
+        if (m_enable_pcal_fiducial_cut.get() && !m_electron_cuts_svc->get()->pass_pcal_fiducial_cut(calo.pcal.lv, calo.pcal.lw)) return false;
         m_cutflow.pass("PCAL Fiducial");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("PCALFiducial", e, calo, traj, candidate.track);
         }
 
         // DC edge cut
-        if (!m_electron_cuts_svc->get()->pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) return false;
+        if (m_enable_dc_chi2ndf_cut.get() && !m_electron_cuts_svc->get()->pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) return false;
         m_cutflow.pass("DC Chi2/NDF");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("DCChi2", e, calo, traj, candidate.track);
@@ -346,6 +354,14 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAn
     clas12::Target m_target;
     clas12::Polarity m_polarity;
     clas12::framework::Cutflow m_cutflow;
+
+    // Cut toggle properties
+    clas12::framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable Chi2 PID cut"};
+    clas12::framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
+    clas12::framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
+    clas12::framework::Property<bool> m_enable_sf_cut{"enable_sf_cut", true, "Enable sampling fraction cut"};
+    clas12::framework::Property<bool> m_enable_pcal_fiducial_cut{"enable_pcal_fiducial_cut", true, "Enable PCAL fiducial cut"};
+    clas12::framework::Property<bool> m_enable_dc_chi2ndf_cut{"enable_dc_chi2ndf_cut", true, "Enable DC Chi2/NDF cut"};
 
     // Services
     clas12::framework::ServiceHandle<clas12::framework::LoggingService>* m_log_svc = nullptr;

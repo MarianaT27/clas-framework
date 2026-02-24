@@ -54,6 +54,10 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
         // Declare properties
         declare_property(m_min_momentum);
         declare_property(m_min_calo_energy);
+        declare_property(m_enable_forward_detector_cut);
+        declare_property(m_enable_momentum_cut);
+        declare_property(m_enable_calorimeter_cut);
+        declare_property(m_enable_dc_track_cut);
         // Declare required banks
         declare_bank("REC::Event");
         declare_bank("REC::Particle");
@@ -158,6 +162,12 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
     // Properties
     clas12::framework::Property<double> m_min_momentum{"min_momentum", 0.3, "Minimum pion momentum [GeV]"};
     clas12::framework::Property<double> m_min_calo_energy{"min_calo_energy", 0.01, "Minimum calorimeter energy [GeV]"};
+
+    // Cut toggle properties
+    clas12::framework::Property<bool> m_enable_forward_detector_cut{"enable_forward_detector_cut", true, "Enable forward detector cut"};
+    clas12::framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
+    clas12::framework::Property<bool> m_enable_calorimeter_cut{"enable_calorimeter_cut", true, "Enable calorimeter cut"};
+    clas12::framework::Property<bool> m_enable_dc_track_cut{"enable_dc_track_cut", true, "Enable DC track cut"};
 
     // Service handles (auto-injected via require_service)
     clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
@@ -461,12 +471,12 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
         }
 
         // Apply forward detector cut
-        if (!in_forward_detector) return;
+        if (m_enable_forward_detector_cut.get() && !in_forward_detector) return;
         cutflow.pass("In the forward detector");
 
         // Basic momentum cut (using property)
         double p = pion.p();
-        if (p < m_min_momentum.get()) return;
+        if (m_enable_momentum_cut.get() && p < m_min_momentum.get()) return;
         cutflow.pass("Momentum > 0.3 GeV");
 
         // Read calorimeter info
@@ -474,11 +484,11 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
         double E_tot = calo.pcal.energy + calo.inner.energy + calo.outer.energy;
 
         bool has_calo = (E_tot > m_min_calo_energy.get());
-        if (!has_calo) return;
+        if (m_enable_calorimeter_cut.get() && !has_calo) return;
         cutflow.pass("Has Calorimeter");
 
         bool has_dc = (track.ndf > 0);
-        if (!has_dc) return;
+        if (m_enable_dc_track_cut.get() && !has_dc) return;
         cutflow.pass("Has DC Track");
 
         // Calculate quantities
