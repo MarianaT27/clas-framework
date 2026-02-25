@@ -166,9 +166,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         declare_property(m_enable_ntuple);
         declare_property(m_enable_fitting);
         declare_property(m_sigma_scan_values);
-        if (!sigma_scan.empty()) {
-            m_sigma_scan_values.set(std::move(sigma_scan));
-        }
+        if (!sigma_scan.empty()) m_sigma_scan_values.set(std::move(sigma_scan));
         declare_bank("RUN::config");
     }
 
