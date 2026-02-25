@@ -286,6 +286,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         // Fill pre-cut histograms
         fill_pre_cut_histograms(candidates);
 
+        // Fill N-1 cut plots
+        fill_nminus1_histograms(candidates);
+
         // Fill lc-binned histograms (with specific cut combination)
         fill_lc_binned_histograms(candidates, Q2);
 
@@ -295,7 +298,8 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         }
 
         // Check if any candidates passed all cuts
-        if (count_passing_candidates(candidates) == 0) return clas12::framework::StatusCode::FILTERED();
+        size_t n_passing = count_passing_candidates(candidates);
+        if (n_passing == 0) return clas12::framework::StatusCode::FILTERED();
 
         // Fill post-cut histograms
         fill_post_cut_histograms(candidates, Q2);
@@ -304,7 +308,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         store_candidates_in_event(candidates, event);
 
         // Fill ntuple
-        fill_ntuple(candidates, electron, Q2);
+        fill_ntuple(candidates, electron, *dis, n_passing);
 
         // Process sigma scan variations
         for (double scan_sigma : m_sigma_scan_values.get()) {
@@ -619,9 +623,55 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     }
 
     /**
+     * @brief Check if candidate passes all enabled cuts except the one at index `skip`
+     * Indices: 0=delta_vz_pim, 1=delta_vz_pip, 2=zh, 3=lc, 4=t
+     */
+    auto passes_all_except(const Rho0Candidate& c, int skip) const -> bool {
+        return (skip == 0 || !m_enable_delta_vz_pim_cut.get() || c.passes_delta_vz_pim) &&
+               (skip == 1 || !m_enable_delta_vz_pip_cut.get() || c.passes_delta_vz_pip) &&
+               (skip == 2 || !m_enable_zh_cut.get()           || c.passes_zh) &&
+               (skip == 3 || !m_enable_lc_cut.get()           || c.passes_lc) &&
+               (skip == 4 || !m_enable_t_cut.get()            || c.passes_t);
+    }
+
+    /**
+     * @brief Fill N-1 histograms: for each cut variable, fill with all other cuts applied
+     */
+    auto fill_nminus1_histograms(const std::vector<Rho0Candidate>& candidates) -> void {
+        for (const auto& cand : candidates) {
+            // N-1 for delta_vz_pim (skip=0): all cuts except delta_vz_pim
+            if (passes_all_except(cand, 0)) {
+                if (h_delta_vz_pim_nminus1) h_delta_vz_pim_nminus1->fill(cand.delta_vz_pim);
+                if (h_pipim_mass_nminus1_delta_vz_pim) h_pipim_mass_nminus1_delta_vz_pim->fill(cand.mass);
+            }
+            // N-1 for delta_vz_pip (skip=1): all cuts except delta_vz_pip
+            if (passes_all_except(cand, 1)) {
+                if (h_delta_vz_pip_nminus1) h_delta_vz_pip_nminus1->fill(cand.delta_vz_pip);
+                if (h_pipim_mass_nminus1_delta_vz_pip) h_pipim_mass_nminus1_delta_vz_pip->fill(cand.mass);
+            }
+            // N-1 for zh (skip=2): all cuts except zh
+            if (passes_all_except(cand, 2)) {
+                if (h_zh_nminus1) h_zh_nminus1->fill(cand.zh);
+                if (h_pipim_mass_nminus1_zh) h_pipim_mass_nminus1_zh->fill(cand.mass);
+            }
+            // N-1 for lc (skip=3): all cuts except lc
+            if (passes_all_except(cand, 3)) {
+                if (h_lc_nminus1) h_lc_nminus1->fill(cand.lc);
+                if (h_pipim_mass_nminus1_lc) h_pipim_mass_nminus1_lc->fill(cand.mass);
+            }
+            // N-1 for -t (skip=4): all cuts except -t
+            if (passes_all_except(cand, 4)) {
+                if (h_t_nminus1) h_t_nminus1->fill(cand.minus_t);
+                if (h_pipim_mass_nminus1_t) h_pipim_mass_nminus1_t->fill(cand.mass);
+            }
+        }
+    }
+
+    /**
      * @brief Fill ntuple with candidate data
      */
-    auto fill_ntuple(const std::vector<Rho0Candidate>& candidates, const clas12::Particle& electron, double Q2) -> void {
+    auto fill_ntuple(const std::vector<Rho0Candidate>& candidates, const clas12::Particle& electron,
+                     const clas12::framework::EventHelpers::DISVars& dis, size_t n_passing) -> void {
         if (!m_ntuple_writer.is_initialized() || !m_enable_ntuple.get()) return;
 
         std::lock_guard<std::mutex> lock(m_ntuple_mutex);
@@ -632,7 +682,12 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         nt.e_theta = electron.theta();
         nt.e_phi = electron.phi();
         nt.e_vz = electron.vz();
-        nt.Q2 = Q2;
+        nt.Q2 = dis.Q2;
+        nt.nu = dis.nu;
+        nt.W = dis.W;
+        nt.xB = dis.xB;
+        nt.y = dis.y;
+        nt.n_candidates = static_cast<int>(n_passing);
 
         for (const auto& cand : candidates) {
             if (!cand.passes_all_cuts) continue;
@@ -652,6 +707,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             nt.rho0_t.push_back(cand.minus_t);
             nt.delta_vz_pim.push_back(cand.delta_vz_pim);
             nt.delta_vz_pip.push_back(cand.delta_vz_pip);
+            nt.opening_angle.push_back(cand.opening_angle);
+            nt.detector_region.push_back(static_cast<int>(cand.detector_region));
+            nt.pip_vz.push_back(cand.pip.vz());
+            nt.pim_vz.push_back(cand.pim.vz());
         }
 
         if (nt.rho0_masses.empty()) return;
@@ -824,6 +883,19 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     clas12::framework::AtomicHistogram1D* h_delta_vz_pim_selected = nullptr;
     clas12::framework::AtomicHistogram1D* h_delta_vz_pip_selected = nullptr;
 
+    // N-1 histograms: cut variable distributions with all other cuts applied
+    clas12::framework::AtomicHistogram1D* h_zh_nminus1 = nullptr;
+    clas12::framework::AtomicHistogram1D* h_lc_nminus1 = nullptr;
+    clas12::framework::AtomicHistogram1D* h_t_nminus1 = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_vz_pip_nminus1 = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_vz_pim_nminus1 = nullptr;
+    // N-1 histograms: invariant mass with all other cuts applied
+    clas12::framework::AtomicHistogram1D* h_pipim_mass_nminus1_zh = nullptr;
+    clas12::framework::AtomicHistogram1D* h_pipim_mass_nminus1_lc = nullptr;
+    clas12::framework::AtomicHistogram1D* h_pipim_mass_nminus1_t = nullptr;
+    clas12::framework::AtomicHistogram1D* h_pipim_mass_nminus1_delta_vz_pip = nullptr;
+    clas12::framework::AtomicHistogram1D* h_pipim_mass_nminus1_delta_vz_pim = nullptr;
+
     // Q²-binned invariant mass histograms
     std::map<std::string, clas12::framework::AtomicHistogram1D*> h_pipim_mass_q2_bins;
 
@@ -870,11 +942,17 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
     // NTuple data struct and writer
     struct Rho0NTupleData {
+        // Per-event scalars
         double e_p = 0, e_theta = 0, e_phi = 0, e_vz = 0, Q2 = 0;
+        double nu = 0, W = 0, xB = 0, y = 0;
+        int n_candidates = 0;
+        // Per-candidate vectors
         std::vector<double> pip_p, pip_theta, pip_phi;
         std::vector<double> pim_p, pim_theta, pim_phi;
         std::vector<double> rho0_masses, rho0_ps, rho0_thetas, rho0_phis;
         std::vector<double> rho0_zh, rho0_lc, rho0_t, delta_vz_pim, delta_vz_pip;
+        std::vector<double> opening_angle, pip_vz, pim_vz;
+        std::vector<int> detector_region;
 
         template <typename Svc>
         auto register_branches(Svc* svc, const std::string& tree) -> void {
@@ -883,6 +961,11 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             svc->register_branch(tree, "e_phi", &e_phi);
             svc->register_branch(tree, "e_vz", &e_vz);
             svc->register_branch(tree, "Q2", &Q2);
+            svc->register_branch(tree, "nu", &nu);
+            svc->register_branch(tree, "W", &W);
+            svc->register_branch(tree, "xB", &xB);
+            svc->register_branch(tree, "y", &y);
+            svc->register_branch(tree, "n_candidates", &n_candidates);
             svc->register_branch(tree, "pip_p", &pip_p);
             svc->register_branch(tree, "pip_theta", &pip_theta);
             svc->register_branch(tree, "pip_phi", &pip_phi);
@@ -898,6 +981,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             svc->register_branch(tree, "rho0_t", &rho0_t);
             svc->register_branch(tree, "delta_vz_pim", &delta_vz_pim);
             svc->register_branch(tree, "delta_vz_pip", &delta_vz_pip);
+            svc->register_branch(tree, "opening_angle", &opening_angle);
+            svc->register_branch(tree, "detector_region", &detector_region);
+            svc->register_branch(tree, "pip_vz", &pip_vz);
+            svc->register_branch(tree, "pim_vz", &pim_vz);
         }
 
         auto clear_vectors() -> void {
@@ -906,6 +993,8 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             rho0_masses.clear(); rho0_ps.clear(); rho0_thetas.clear(); rho0_phis.clear();
             rho0_zh.clear(); rho0_lc.clear(); rho0_t.clear();
             delta_vz_pim.clear(); delta_vz_pip.clear();
+            opening_angle.clear(); detector_region.clear();
+            pip_vz.clear(); pim_vz.clear();
         }
     };
     clas12::framework::NTupleWriter<Rho0NTupleData> m_ntuple_writer;
@@ -999,6 +1088,29 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
                 h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
             }
+
+            // N-1 cut plots: cut variable with all other cuts applied
+            h_zh_nminus1 = svc->book_hist1D("/Rho0/NMinus1/zh_nminus1",
+                "z_{h} (N-1);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
+            h_lc_nminus1 = svc->book_hist1D("/Rho0/NMinus1/lc_nminus1",
+                "Coherence Length (N-1);l_{c} [fm];Events", 100, 0, 5);
+            h_t_nminus1 = svc->book_hist1D("/Rho0/NMinus1/t_nminus1",
+                "-t (N-1);-t [GeV^{2}];Events", 100, 0, 2);
+            h_delta_vz_pip_nminus1 = svc->book_hist1D("/Rho0/NMinus1/delta_vz_pip_nminus1",
+                "#Delta v_{z} #pi^{+} (N-1);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -20, 20);
+            h_delta_vz_pim_nminus1 = svc->book_hist1D("/Rho0/NMinus1/delta_vz_pim_nminus1",
+                "#Delta v_{z} #pi^{-} (N-1);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -20, 20);
+            // N-1 cut plots: invariant mass with all other cuts applied
+            h_pipim_mass_nminus1_zh = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_zh",
+                "M_{#pi^{+}#pi^{-}} (all cuts except z_{h});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
+            h_pipim_mass_nminus1_lc = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_lc",
+                "M_{#pi^{+}#pi^{-}} (all cuts except l_{c});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
+            h_pipim_mass_nminus1_t = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_t",
+                "M_{#pi^{+}#pi^{-}} (all cuts except -t);M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
+            h_pipim_mass_nminus1_delta_vz_pip = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pip",
+                "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{+});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
+            h_pipim_mass_nminus1_delta_vz_pim = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pim",
+                "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{-});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
 
             // Region-specific histograms (Forward-Forward, Mixed, Central-Central)
             auto book_region = [svc](RegionHistograms& h, const std::string& dir, const std::string& label) {

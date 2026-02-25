@@ -41,6 +41,11 @@ struct PionNTupleData {
     double tof_mass2 = 0.0;
     double tof_path = 0.0;
     int sector = 0;
+    double beta_expected = 0.0;
+    double beta_diff = 0.0;
+    int is_forward = 0;
+    double pcal_lv = 0.0;
+    double pcal_lw = 0.0;
 
     /// Populate from any source with matching field names
     template <typename T>
@@ -49,9 +54,13 @@ struct PionNTupleData {
         vz = c.vz; vx = c.vx; vy = c.vy;
         chi2pid = c.chi2pid; beta = c.beta; delta_t = c.delta_t;
         tof_mass2 = c.tof_mass2; tof_path = c.tof_path; sector = c.sector;
+        beta_expected = c.beta_expected; beta_diff = c.beta_diff;
+        is_forward = c.is_forward_detector ? 1 : 0;
+        pcal_lv = c.pcal_lv; pcal_lw = c.pcal_lw;
     }
 
-    NTUPLE_FIELDS(p, theta, phi, vz, vx, vy, chi2pid, beta, delta_t, tof_mass2, tof_path, sector)
+    NTUPLE_FIELDS(p, theta, phi, vz, vx, vy, chi2pid, beta, delta_t, tof_mass2, tof_path, sector,
+                  beta_expected, beta_diff, is_forward, pcal_lv, pcal_lw)
 };
 
 /**
@@ -251,6 +260,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             cand.passes_all_cuts = m_cutflow_piplus.evaluate(cand);
         }
         fill_pre_cut_histograms(piplus_candidates, true);
+        fill_nminus1_histograms(piplus_candidates, true);
         fill_post_cut_histograms(piplus_candidates, true);
         fill_ntuple(piplus_candidates, true);
 
@@ -266,6 +276,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             cand.passes_all_cuts = m_cutflow_piminus.evaluate(cand);
         }
         fill_pre_cut_histograms(piminus_candidates, false);
+        fill_nminus1_histograms(piminus_candidates, false);
         fill_post_cut_histograms(piminus_candidates, false);
         fill_ntuple(piminus_candidates, false);
 
@@ -467,6 +478,18 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
         // Per-sector delta_t vs p (pre-cut, forward only)
         std::array<clas12::framework::AtomicHistogram2D*, 6> delta_t_vs_p_precut_sector = {};
+
+        // N-1 histograms (forward only)
+        clas12::framework::AtomicHistogram1D* chi2pid_nminus1 = nullptr;
+        clas12::framework::AtomicHistogram1D* momentum_nminus1 = nullptr;
+        clas12::framework::AtomicHistogram1D* vz_nminus1 = nullptr;
+        clas12::framework::AtomicHistogram2D* delta_t_vs_p_nminus1 = nullptr;
+        clas12::framework::AtomicHistogram2D* beta_vs_p_nminus1 = nullptr;
+
+        // Additional diagnostics
+        clas12::framework::AtomicHistogram2D* beta_diff_vs_p = nullptr;
+        clas12::framework::AtomicHistogram1D* tof_mass2 = nullptr;
+        clas12::framework::AtomicHistogram1D* tof_mass2_precut = nullptr;
     };
 
     PionHistograms h_piplus;
@@ -583,6 +606,22 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                     fmt::format("{} Forward #Deltat vs p pre-cut (Sector {});p [GeV/c];#Deltat [ns]", label, sector),
                     100, 0, 10, 200, -2, 2);
             }
+
+            // N-1 histograms (forward only)
+            std::string nm1 = fwd + "/NMinus1";
+            h.chi2pid_nminus1 = svc->book_hist(nm1 + "/chi2pid", label + " Forward #chi^{2}_{PID} (N-1);#chi^{2};Events", 200, -10, 10);
+            h.momentum_nminus1 = svc->book_momentum_hist(nm1 + "/momentum", label + " Forward Momentum (N-1)");
+            h.vz_nminus1 = svc->book_hist(nm1 + "/vz", label + " Forward v_{z} (N-1);v_{z} [cm];Events", 200, -40, 40);
+            h.delta_t_vs_p_nminus1 = svc->book_hist2d(nm1 + "/delta_t_vs_p", label + " Forward #Deltat vs p (N-1);p [GeV/c];#Deltat [ns]",
+                100, 0, 10, 200, -2, 2);
+            h.beta_vs_p_nminus1 = svc->book_hist2d(nm1 + "/beta_vs_p", label + " Forward #beta vs p (N-1);p [GeV/c];#beta",
+                100, 0, 10, 100, 0.7, 1.05);
+
+            // Additional diagnostics
+            h.beta_diff_vs_p = svc->book_hist2d(fwd + "/beta_diff_vs_p", label + " Forward #Delta#beta vs p;p [GeV/c];#beta_{meas} - #beta_{exp}",
+                100, 0, 10, 200, -0.1, 0.1);
+            h.tof_mass2 = svc->book_hist(fwd + "/tof_mass2", label + " Forward TOF m^{2};m^{2} [GeV^{2}];Events", 200, -0.5, 1.5);
+            h.tof_mass2_precut = svc->book_hist(fwd + "/tof_mass2_precut", label + " Forward TOF m^{2} (pre-cut);m^{2} [GeV^{2}];Events", 200, -0.5, 1.5);
         };
 
         // Book histograms for π⁺ and π⁻
@@ -724,6 +763,10 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                     int idx = cand.sector - 1;
                     if (h.delta_t_vs_p_precut_sector[idx]) h.delta_t_vs_p_precut_sector[idx]->fill(cand.p, cand.delta_t);
                 }
+
+                // Additional diagnostics (pre-cut)
+                if (h.beta_diff_vs_p) h.beta_diff_vs_p->fill(cand.p, cand.beta_diff);
+                if (h.tof_mass2_precut) h.tof_mass2_precut->fill(cand.tof_mass2);
             }
 
             // Central detector pre-cut histograms
@@ -764,6 +807,9 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             if (h.delta_t_vs_p) h.delta_t_vs_p->fill(cand.p, cand.delta_t);
             if (h.p_vs_theta) h.p_vs_theta->fill(cand.theta, cand.p);
 
+            // TOF mass² (post-cut)
+            if (h.tof_mass2) h.tof_mass2->fill(cand.tof_mass2);
+
             // Sector-level histograms
             if (cand.sector >= 1 && cand.sector <= 6) {
                 int idx = cand.sector - 1;
@@ -785,6 +831,54 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             if (!cand.passes_all_cuts) continue;
             ntuple.data().from(cand);
             ntuple.fill();
+        }
+    }
+
+    /**
+     * @brief Check if a candidate passes all enabled cuts except the one at index `skip`
+     *
+     * Indices: 0=detector_region, 1=dc_fiducial, 2=chi2pid, 3=momentum, 4=vz, 5=delta_t
+     */
+    auto passes_all_except_pion(const PionCandidate& c, int skip) const -> bool {
+        bool pass_det = (skip == 0) || !m_enable_detector_region_cut.get() ||
+                        c.is_forward_detector ||
+                        (c.is_central_detector && m_enable_central_pions.get());
+        bool pass_fid = (skip == 1) || !m_enable_fiducial_cuts.get() ||
+                        !c.is_forward_detector || c.passes_dc_fiducial;
+        bool pass_chi2 = (skip == 2) || !m_enable_chi2pid_cut.get() || c.passes_chi2pid;
+        bool pass_mom = (skip == 3) || !m_enable_momentum_cut.get() || c.passes_momentum;
+        bool pass_vz = (skip == 4) || !m_enable_vz_cut.get() || c.passes_vz;
+        bool pass_dt = (skip == 5) || !m_enable_delta_t_cut.get() ||
+                       !c.is_forward_detector || c.passes_delta_t;
+        return pass_det && pass_fid && pass_chi2 && pass_mom && pass_vz && pass_dt;
+    }
+
+    /**
+     * @brief Fill N-1 histograms for forward pion candidates
+     */
+    auto fill_nminus1_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
+        auto& h = is_piplus ? h_piplus : h_piminus;
+
+        for (const auto& cand : candidates) {
+            if (!cand.is_forward_detector) continue;
+
+            // N-1 w.r.t. chi2pid (skip=2)
+            if (passes_all_except_pion(cand, 2) && h.chi2pid_nminus1) {
+                h.chi2pid_nminus1->fill(cand.chi2pid);
+            }
+            // N-1 w.r.t. momentum (skip=3)
+            if (passes_all_except_pion(cand, 3) && h.momentum_nminus1) {
+                h.momentum_nminus1->fill(cand.p);
+            }
+            // N-1 w.r.t. vertex Z (skip=4)
+            if (passes_all_except_pion(cand, 4) && h.vz_nminus1) {
+                h.vz_nminus1->fill(cand.vz);
+            }
+            // N-1 w.r.t. delta-t (skip=5): show timing and beta bands
+            if (passes_all_except_pion(cand, 5)) {
+                if (h.delta_t_vs_p_nminus1) h.delta_t_vs_p_nminus1->fill(cand.p, cand.delta_t);
+                if (h.beta_vs_p_nminus1) h.beta_vs_p_nminus1->fill(cand.p, cand.beta);
+            }
         }
     }
 

@@ -31,8 +31,10 @@ struct DISNTupleData {
     double nu = 0.0;
     double xB = 0.0;
     double y = 0.0;
+    double epsilon = 0.0;
+    double gamma_flux = 0.0;
 
-    NTUPLE_FIELDS(e_p, e_theta, e_phi, e_vz, e_chi2pid, Q2, W, nu, xB, y)
+    NTUPLE_FIELDS(e_p, e_theta, e_phi, e_vz, e_chi2pid, Q2, W, nu, xB, y, epsilon, gamma_flux)
 };
 
 /**
@@ -128,11 +130,28 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
         clas12::physics::DISAnalysis::DISKinematics kin =
             clas12::physics::DISAnalysis::calculate_kinematics(electrons_opt->front());
 
+        // Fill pre-cut histograms (after electron selection, before DIS cuts)
+        if (h_Q2_precut) h_Q2_precut->fill(kin.q2);
+        if (h_W_precut) h_W_precut->fill(kin.w);
+        if (h_nu_precut) h_nu_precut->fill(kin.nu);
+        if (h_xB_precut) h_xB_precut->fill(kin.xb);
+        if (h_y_precut) h_y_precut->fill(kin.y);
+
+        // Cache individual cut decisions for N-1 histograms
+        bool pass_q2 = !m_enable_q2_cut.get() || (kin.q2 >= m_q2_min.get() && kin.q2 <= m_q2_max.get());
+        bool pass_w = !m_enable_w_cut.get() || (kin.w >= m_w_min.get() && kin.w <= m_w_max.get());
+        bool pass_y = !m_enable_y_cut.get() || (kin.y >= m_y_min.get() && kin.y <= m_y_max.get());
+
+        // Fill N-1 histograms: each variable with all other cuts applied
+        if (pass_w && pass_y && h_Q2_nminus1) h_Q2_nminus1->fill(kin.q2);
+        if (pass_q2 && pass_y && h_W_nminus1) h_W_nminus1->fill(kin.w);
+        if (pass_q2 && pass_w && h_y_nminus1) h_y_nminus1->fill(kin.y);
+
         // Apply DIS region cuts using CutBuilder
         auto builder = clas12::framework::CutBuilder(m_cutflow);
-        builder.require("Q2 Cut", !m_enable_q2_cut.get() || (kin.q2 >= m_q2_min.get() && kin.q2 <= m_q2_max.get()));
-        builder.require("W Cut", !m_enable_w_cut.get() || (kin.w >= m_w_min.get() && kin.w <= m_w_max.get()));
-        builder.require("y Cut", !m_enable_y_cut.get() || (kin.y >= m_y_min.get() && kin.y <= m_y_max.get()));
+        builder.require("Q2 Cut", pass_q2);
+        builder.require("W Cut", pass_w);
+        builder.require("y Cut", pass_y);
         bool passed = builder.evaluate();
 
         if (!passed) {
@@ -148,12 +167,17 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
         event.store_typed(clas12::framework::Keys::DIS_y, kin.y);
         event.store_typed(clas12::framework::Keys::DIS_nu, kin.nu);
 
-        // Fill histograms (thread-safe)
+        // Fill post-cut 1D histograms
         if (h_Q2) h_Q2->fill(kin.q2);
         if (h_W) h_W->fill(kin.w);
         if (h_nu) h_nu->fill(kin.nu);
         if (h_xB) h_xB->fill(kin.xb);
         if (h_y) h_y->fill(kin.y);
+
+        // Fill post-cut 2D correlation histograms
+        if (h_Q2_vs_W) h_Q2_vs_W->fill(kin.w, kin.q2);
+        if (h_Q2_vs_xB) h_Q2_vs_xB->fill(kin.xb, kin.q2);
+        if (h_W_vs_y) h_W_vs_y->fill(kin.y, kin.w);
 
         // Fill N-tuple using NTupleWriter
         if (m_ntuple && m_enable_ntuple.get()) {
@@ -168,6 +192,8 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
             m_ntuple.data().nu = kin.nu;
             m_ntuple.data().xB = kin.xb;
             m_ntuple.data().y = kin.y;
+            m_ntuple.data().epsilon = kin.epsilon;
+            m_ntuple.data().gamma_flux = kin.gamma;
             m_ntuple.fill();
         }
 
@@ -210,23 +236,61 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
     clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
 
     // Lock-free atomic histograms (managed by HistogramService)
+    // Post-cut 1D
     clas12::framework::AtomicHistogram1D* h_Q2 = nullptr;
     clas12::framework::AtomicHistogram1D* h_W = nullptr;
     clas12::framework::AtomicHistogram1D* h_nu = nullptr;
     clas12::framework::AtomicHistogram1D* h_xB = nullptr;
     clas12::framework::AtomicHistogram1D* h_y = nullptr;
 
+    // Pre-cut 1D
+    clas12::framework::AtomicHistogram1D* h_Q2_precut = nullptr;
+    clas12::framework::AtomicHistogram1D* h_W_precut = nullptr;
+    clas12::framework::AtomicHistogram1D* h_nu_precut = nullptr;
+    clas12::framework::AtomicHistogram1D* h_xB_precut = nullptr;
+    clas12::framework::AtomicHistogram1D* h_y_precut = nullptr;
+
+    // Post-cut 2D correlations
+    clas12::framework::AtomicHistogram2D* h_Q2_vs_W = nullptr;
+    clas12::framework::AtomicHistogram2D* h_Q2_vs_xB = nullptr;
+    clas12::framework::AtomicHistogram2D* h_W_vs_y = nullptr;
+
+    // N-1 histograms
+    clas12::framework::AtomicHistogram1D* h_Q2_nminus1 = nullptr;
+    clas12::framework::AtomicHistogram1D* h_W_nminus1 = nullptr;
+    clas12::framework::AtomicHistogram1D* h_y_nminus1 = nullptr;
+
     // N-tuple writer (replaces individual variables + manual registration)
     clas12::framework::NTupleWriter<DISNTupleData> m_ntuple;
 
     auto book_histograms() -> void {
         clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
-            // All physics histogram methods now use atomic histograms by default
+            // Post-cut 1D histograms
             h_Q2 = svc->book_q2_hist("/DIS/Q2", "Q^{2}");
             h_W = svc->book_w_hist("/DIS/W", "W");
             h_nu = svc->book_hist("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
             h_xB = svc->book_xb_hist("/DIS/xB", "x_{B}");
             h_y = svc->book_hist("/DIS/y", "y;y;Events", 200, 0, 1);
+
+            // Pre-cut 1D histograms
+            h_Q2_precut = svc->book_q2_hist("/DIS/PreCut/Q2", "Q^{2} (pre-cut)");
+            h_W_precut = svc->book_w_hist("/DIS/PreCut/W", "W (pre-cut)");
+            h_nu_precut = svc->book_hist("/DIS/PreCut/nu", "#nu (pre-cut);#nu;Events", 180, 0, 11);
+            h_xB_precut = svc->book_xb_hist("/DIS/PreCut/xB", "x_{B} (pre-cut)");
+            h_y_precut = svc->book_hist("/DIS/PreCut/y", "y (pre-cut);y;Events", 200, 0, 1);
+
+            // 2D correlation histograms (post-cut)
+            h_Q2_vs_W = svc->book_hist2d("/DIS/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]",
+                200, 0, 5, 200, 0, 12);
+            h_Q2_vs_xB = svc->book_hist2d("/DIS/Q2_vs_xB", "Q^{2} vs x_{B};x_{B};Q^{2} [GeV^{2}]",
+                200, 0, 1, 200, 0, 12);
+            h_W_vs_y = svc->book_hist2d("/DIS/W_vs_y", "W vs y;y;W [GeV]",
+                200, 0, 1, 200, 0, 5);
+
+            // N-1 histograms
+            h_Q2_nminus1 = svc->book_q2_hist("/DIS/NMinus1/Q2", "Q^{2} (N-1)");
+            h_W_nminus1 = svc->book_w_hist("/DIS/NMinus1/W", "W (N-1)");
+            h_y_nminus1 = svc->book_hist("/DIS/NMinus1/y", "y (N-1);y;Events", 200, 0, 1);
         });
     }
 };
