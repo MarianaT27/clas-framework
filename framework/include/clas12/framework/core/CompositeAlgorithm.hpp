@@ -17,6 +17,7 @@
 
 #include <clas12/framework/core/IAlgorithm.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
+#include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 
 namespace clas12::framework {
@@ -155,29 +156,40 @@ class FilterSequence : public AlgorithmSequence {
 };
 
 /**
- * @brief Sequence that executes only if event passes a decision
+ * @brief Sequence that executes only if event passes a typed decision
  *
- * Checks a named decision flag in the event store before executing.
+ * Checks a TypedKey<bool> decision flag in the event store before executing.
  * If the flag is not set or is false, the sequence is skipped.
  *
  * Example usage:
  * @code
  * // Earlier algorithm sets decision:
- * event.set_decision("hasElectron", true);
+ * event.set_decision_typed(Decisions::HasGoodElectron, true);
  *
  * // Conditional sequence only runs if decision is true
- * ConditionalSequence seq("ElectronAnalysis", "hasElectron");
+ * TypedConditionalSequence seq("ElectronAnalysis", Decisions::HasGoodElectron);
  * seq.add<ElectronAnalysis>("Analysis");
  * @endcode
  */
-class ConditionalSequence : public AlgorithmSequence {
+class TypedConditionalSequence : public AlgorithmSequence {
    public:
-    /**
-     * @brief Construct with sequence name and decision flag name
-     *
-     * @param name Sequence name
-     * @param decision_name Name of the decision flag to check
-     */
+    TypedConditionalSequence(std::string name, TypedKey<bool> decision_key)
+        : AlgorithmSequence(std::move(name))
+        , m_decision_key(std::move(decision_key)) {}
+
+    auto execute(Event& event) -> StatusCode override;
+
+   private:
+    TypedKey<bool> m_decision_key;
+};
+
+/**
+ * @brief Sequence that executes only if event passes a string decision
+ * @deprecated Use TypedConditionalSequence with TypedKey<bool> instead
+ */
+class [[deprecated("Use TypedConditionalSequence with TypedKey<bool> instead")]]
+ConditionalSequence : public AlgorithmSequence {
+   public:
     ConditionalSequence(std::string name, std::string decision_name)
         : AlgorithmSequence(std::move(name))
         , m_decision_name(std::move(decision_name)) {}
@@ -238,32 +250,39 @@ inline auto make_filter_sequence(std::string name) -> std::unique_ptr<FilterSequ
 }
 
 /**
- * @brief Factory function to create a ConditionalSequence
+ * @brief Factory function to create a TypedConditionalSequence
  *
  * @param name Sequence name
- * @param decision_name Decision flag name to check
- * @return std::unique_ptr<ConditionalSequence> New conditional sequence
+ * @param decision_key Typed decision key to check
+ * @return std::unique_ptr<TypedConditionalSequence> New conditional sequence
  */
-inline auto make_conditional_sequence(std::string name, std::string decision_name)
-    -> std::unique_ptr<ConditionalSequence> {
-    return std::make_unique<ConditionalSequence>(std::move(name), std::move(decision_name));
+inline auto make_conditional_sequence(std::string name, TypedKey<bool> decision_key)
+    -> std::unique_ptr<TypedConditionalSequence> {
+    return std::make_unique<TypedConditionalSequence>(std::move(name), std::move(decision_key));
 }
 
 }  // namespace clas12::framework
 
-// Include Event.hpp for ConditionalSequence::execute implementation
+// Include Event.hpp for execute() implementations
 #include <clas12/framework/core/Event.hpp>
 
 namespace clas12::framework {
 
+inline auto TypedConditionalSequence::execute(Event& event) -> StatusCode {
+    if (!event.passes_decision_typed(m_decision_key)) {
+        return StatusCode::SUCCESS();  // Skip but don't filter
+    }
+    return AlgorithmSequence::execute(event);
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 inline auto ConditionalSequence::execute(Event& event) -> StatusCode {
-    // Check if the decision passes
     if (!event.passes_decision(m_decision_name)) {
         return StatusCode::SUCCESS();  // Skip but don't filter
     }
-
-    // Execute child algorithms
     return AlgorithmSequence::execute(event);
 }
+#pragma GCC diagnostic pop
 
 }  // namespace clas12::framework

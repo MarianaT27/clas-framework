@@ -1,8 +1,9 @@
 #pragma once
 
+#include <cmath>
+
 #include <clas12/framework/core/AtomicHistogram.hpp>
-#include <clas12/framework/core/CutBuilder.hpp>
-#include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
@@ -94,11 +95,20 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
             });
         }
 
-        m_cutflow.add_cut("All Events");
-        m_cutflow.add_cut("Has Electron");
-        m_cutflow.add_cut("Q2 Cut");
-        m_cutflow.add_cut("W Cut");
-        m_cutflow.add_cut("y Cut");
+        m_cutflow.define_always("All Events");
+        m_cutflow.define("Has Electron", [](const auto&) { return true; });  // pre-checked
+        m_cutflow.define_toggleable("Q2 Cut",
+            [this](const auto& k) { return k.q2 >= m_q2_min.get() && k.q2 <= m_q2_max.get(); },
+            m_enable_q2_cut,
+            [](const auto& k) { return k.q2; });
+        m_cutflow.define_toggleable("W Cut",
+            [this](const auto& k) { return k.w >= m_w_min.get() && k.w <= m_w_max.get(); },
+            m_enable_w_cut,
+            [](const auto& k) { return k.w; });
+        m_cutflow.define_toggleable("y Cut",
+            [this](const auto& k) { return k.y >= m_y_min.get() && k.y <= m_y_max.get(); },
+            m_enable_y_cut,
+            [](const auto& k) { return k.y; });
 
         Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
         Log::info(name(), "DIS region: Q2=[{}, {}], W=[{}, {}], y=[{}, {}]",
@@ -113,16 +123,10 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
      * @brief Process a single event
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        m_cutflow.pass("All Events");
-
         // Check for good electron decision from upstream algorithm
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodElectron)) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
-        m_cutflow.pass("Has Electron");
-
-        // Get selected electrons using typed retrieval
-        auto electrons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedElectronsCapital);
+        auto electrons_opt = event.require(
+            clas12::framework::Decisions::HasGoodElectron,
+            clas12::framework::Keys::SelectedElectrons);
         if (!electrons_opt || electrons_opt->empty()) {
             return clas12::framework::StatusCode::FILTERED();
         }
@@ -137,24 +141,22 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
         if (h_xB_precut) h_xB_precut->fill(kin.xb);
         if (h_y_precut) h_y_precut->fill(kin.y);
 
-        // Cache individual cut decisions for N-1 histograms
-        bool pass_q2 = !m_enable_q2_cut.get() || (kin.q2 >= m_q2_min.get() && kin.q2 <= m_q2_max.get());
-        bool pass_w = !m_enable_w_cut.get() || (kin.w >= m_w_min.get() && kin.w <= m_w_max.get());
-        bool pass_y = !m_enable_y_cut.get() || (kin.y >= m_y_min.get() && kin.y <= m_y_max.get());
+        // Evaluate all cuts (no short-circuit) for N-1 histograms
+        auto results = m_cutflow.evaluate_all(kin);
 
-        // Fill N-1 histograms: each variable with all other cuts applied
-        if (pass_w && pass_y && h_Q2_nminus1) h_Q2_nminus1->fill(kin.q2);
-        if (pass_q2 && pass_y && h_W_nminus1) h_W_nminus1->fill(kin.w);
-        if (pass_q2 && pass_w && h_y_nminus1) h_y_nminus1->fill(kin.y);
+        // Fill N-1 histograms using framework support
+        for (std::size_t i = 0; i < m_cutflow.num_cuts(); ++i) {
+            if (results.passes_all_except(i)) {
+                double val = m_cutflow.variable(i, kin);
+                if (!std::isnan(val)) {
+                    if (i < m_nminus1_hists.size() && m_nminus1_hists[i]) {
+                        m_nminus1_hists[i]->fill(val);
+                    }
+                }
+            }
+        }
 
-        // Apply DIS region cuts using CutBuilder
-        auto builder = clas12::framework::CutBuilder(m_cutflow);
-        builder.require("Q2 Cut", pass_q2);
-        builder.require("W Cut", pass_w);
-        builder.require("y Cut", pass_y);
-        bool passed = builder.evaluate();
-
-        if (!passed) {
+        if (!results.all_passed) {
             return clas12::framework::StatusCode::FILTERED();
         }
 
@@ -216,7 +218,7 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
     }
 
    private:
-    clas12::framework::Cutflow m_cutflow;
+    clas12::framework::ContextCutflow<clas12::physics::DISAnalysis::DISKinematics> m_cutflow;
     clas12::physics::DISAnalysis::KinematicRegion m_dis_region;
 
     // Properties for DIS cuts
@@ -255,10 +257,8 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
     clas12::framework::AtomicHistogram2D* h_Q2_vs_xB = nullptr;
     clas12::framework::AtomicHistogram2D* h_W_vs_y = nullptr;
 
-    // N-1 histograms
-    clas12::framework::AtomicHistogram1D* h_Q2_nminus1 = nullptr;
-    clas12::framework::AtomicHistogram1D* h_W_nminus1 = nullptr;
-    clas12::framework::AtomicHistogram1D* h_y_nminus1 = nullptr;
+    // N-1 histograms (indexed by cut, populated in book_histograms)
+    std::vector<clas12::framework::AtomicHistogram1D*> m_nminus1_hists;
 
     // N-tuple writer (replaces individual variables + manual registration)
     clas12::framework::NTupleWriter<DISNTupleData> m_ntuple;
@@ -287,10 +287,12 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
             h_W_vs_y = svc->book_hist2d("/DIS/W_vs_y", "W vs y;y;W [GeV]",
                 200, 0, 1, 200, 0, 5);
 
-            // N-1 histograms
-            h_Q2_nminus1 = svc->book_q2_hist("/DIS/NMinus1/Q2", "Q^{2} (N-1)");
-            h_W_nminus1 = svc->book_w_hist("/DIS/NMinus1/W", "W (N-1)");
-            h_y_nminus1 = svc->book_hist("/DIS/NMinus1/y", "y (N-1);y;Events", 200, 0, 1);
+            // N-1 histograms (one per cut, indexed by cut position)
+            // Cuts: 0=All Events, 1=Has Electron, 2=Q2 Cut, 3=W Cut, 4=y Cut
+            m_nminus1_hists.resize(m_cutflow.num_cuts(), nullptr);
+            m_nminus1_hists[2] = svc->book_q2_hist("/DIS/NMinus1/Q2", "Q^{2} (N-1)");
+            m_nminus1_hists[3] = svc->book_w_hist("/DIS/NMinus1/W", "W (N-1)");
+            m_nminus1_hists[4] = svc->book_hist("/DIS/NMinus1/y", "y (N-1);y;Events", 200, 0, 1);
         });
     }
 };

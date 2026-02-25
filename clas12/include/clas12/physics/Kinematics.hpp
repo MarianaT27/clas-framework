@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <limits>
 #include <vector>
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
@@ -9,11 +10,25 @@
 
 namespace clas12::physics {
 
+namespace detail {
+/// Check if a double is finite (not NaN or Inf)
+inline auto is_finite(double x) -> bool { return std::isfinite(x); }
+
+/// Validate that a particle's 4-vector components are all finite
+inline auto is_valid_4vec(const clas12::Particle& p) -> bool {
+    return is_finite(p.px()) && is_finite(p.py()) &&
+           is_finite(p.pz()) && is_finite(p.E());
+}
+}  // namespace detail
+
 /**
  * @brief Kinematic calculator utilities for particle physics
  *
  * Provides functions for calculating various kinematic quantities
  * used in particle physics analyses.
+ *
+ * All methods validate inputs and return NaN if any particle has
+ * non-finite (NaN/Inf) 4-vector components.
  */
 class KinematicCalculator {
    public:
@@ -27,6 +42,12 @@ class KinematicCalculator {
     static auto missing_mass_squared(const clas12::Particle& beam,
                                      const clas12::Particle& target,
                                      const std::vector<clas12::Particle>& detected_particles) -> double {
+        if (!detail::is_valid_4vec(beam) || !detail::is_valid_4vec(target)) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+        for (const auto& p : detected_particles) {
+            if (!detail::is_valid_4vec(p)) return std::numeric_limits<double>::quiet_NaN();
+        }
         // Four-momentum conservation: P_initial = P_final + P_missing
         double px_missing = beam.px() + target.px();
         double py_missing = beam.py() + target.py();
@@ -64,6 +85,9 @@ class KinematicCalculator {
     static auto calculate_W(const clas12::Particle& beam,
                             const clas12::Particle& scattered,
                             const clas12::Particle& target) -> double {
+        if (!detail::is_valid_4vec(beam) || !detail::is_valid_4vec(scattered) || !detail::is_valid_4vec(target)) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
         // Virtual photon four-momentum
         double q_px = beam.px() - scattered.px();
         double q_py = beam.py() - scattered.py();
@@ -87,6 +111,9 @@ class KinematicCalculator {
      * @return Q² in GeV²
      */
     static auto calculate_Q2(const clas12::Particle& beam, const clas12::Particle& scattered) -> double {
+        if (!detail::is_valid_4vec(beam) || !detail::is_valid_4vec(scattered)) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
         return 4.0 * beam.E() * scattered.E() * std::pow(std::sin(scattered.theta() * clas12::Constants::DEG_TO_RAD / 2.0), 2);
     }
 
@@ -98,6 +125,9 @@ class KinematicCalculator {
      * @return Bjorken x
      */
     static auto calculate_x_bjorken(double Q2, double nu, double M = 0.938) -> double {
+        if (!detail::is_finite(Q2) || !detail::is_finite(nu) || !detail::is_finite(M) || (M * nu) == 0.0) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
         return Q2 / (2.0 * M * nu);
     }
 
@@ -109,6 +139,9 @@ class KinematicCalculator {
      */
     static auto calculate_y(const clas12::Particle& beam,
                             const clas12::Particle& scattered) -> double {
+        if (!detail::is_valid_4vec(beam) || !detail::is_valid_4vec(scattered) || beam.E() == 0.0) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
         double nu = beam.E() - scattered.E();
         return nu / beam.E();
     }
@@ -140,6 +173,9 @@ class KinematicCalculator {
      * @brief Calculate opening angle between two particles (degrees)
      */
     static auto opening_angle(const clas12::Particle& p1, const clas12::Particle& p2) -> double {
+        if (!detail::is_valid_4vec(p1) || !detail::is_valid_4vec(p2) || p1.p() == 0.0 || p2.p() == 0.0) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
         double dot = p1.px() * p2.px() + p1.py() * p2.py() + p1.pz() * p2.pz();
         double cos_theta = dot / (p1.p() * p2.p());
         cos_theta = std::max(-1.0, std::min(1.0, cos_theta));  // Clamp to [-1, 1]

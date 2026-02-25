@@ -3,7 +3,6 @@
 #include <fmt/format.h>
 #include <atomic>
 #include <cstddef>
-#include <functional>
 #include <map>
 #include <string>
 #include <string_view>
@@ -134,34 +133,6 @@ class Cutflow {
     std::string m_name;
     std::vector<std::string> m_cuts;
     std::map<std::string, std::atomic<std::size_t>> m_counters;
-};
-
-/**
- * @brief Extended cutflow with histogram filling capabilities
- */
-template <typename Particle>
-class CutflowWithHistograms : public Cutflow {
-   public:
-    using HistogramFiller = std::function<void(const Particle&, const std::string&)>;
-
-    explicit CutflowWithHistograms(std::string name, HistogramFiller filler = nullptr)
-        : Cutflow(std::move(name)), m_filler(std::move(filler)) {}
-
-    /// Pass a cut and optionally fill histograms
-    auto pass(const std::string& cut_name, const Particle& particle, bool fill = true) -> void {
-        Cutflow::pass(cut_name);
-        if (fill && m_filler) {
-            m_filler(particle, cut_name);
-        }
-    }
-
-    /// Set the histogram filler function
-    auto set_histogram_filler(HistogramFiller filler) -> void {
-        m_filler = std::move(filler);
-    }
-
-   private:
-    HistogramFiller m_filler;
 };
 
 }  // namespace clas12::framework

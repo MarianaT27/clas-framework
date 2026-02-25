@@ -271,19 +271,11 @@ inline const TypedKey<double> Pi0Theta{"pi0_theta"};
 inline const TypedKey<double> Pi0Phi{"pi0_phi"};
 inline const TypedKey<double> PhotonOpeningAngle{"photon_opening_angle"};
 
-// Event flags / Algorithm decisions
-inline const TypedKey<bool> HasGoodElectron{"has_good_electron"};
-inline const TypedKey<bool> HasTriggerElectron{"has_trigger_electron"};
-inline const TypedKey<bool> HasGoodDISElectron{"has_good_dis_electron"};
-inline const TypedKey<bool> IsDIS{"is_dis"};
-inline const TypedKey<bool> PassedFiducialCuts{"passed_fiducial_cuts"};
-inline const TypedKey<bool> HasPi0{"has_pi0"};
-inline const TypedKey<bool> HasPhotonPair{"has_photon_pair"};
-inline const TypedKey<bool> PassedElectronCuts{"passed_electron_cuts"};
-inline const TypedKey<bool> PassedPhotonCuts{"passed_photon_cuts"};
+// NOTE: Boolean decision flags belong in the Decisions namespace (Decisions.hpp).
+// Do not define boolean decision keys here.
 
 // Selected particle collections (algorithm outputs)
-inline const TypedKey<std::vector<clas12::Particle>> SelectedElectrons{"selected_electrons"};
+inline const TypedKey<std::vector<clas12::Particle>> SelectedElectrons{"SelectedElectrons"};
 inline const TypedKey<std::vector<clas12::Particle>> SelectedPhotons{"selected_photons"};
 inline const TypedKey<std::vector<clas12::Particle>> SelectedProtons{"selected_protons"};
 inline const TypedKey<std::vector<clas12::Particle>> SelectedPiPlus{"selected_pi_plus"};
@@ -309,11 +301,12 @@ inline const TypedKey<double> DIS_nu{"dis_nu"};
 // Selected DIS electron
 inline const TypedKey<std::vector<clas12::Particle>> SelectedDISElectron{"SelectedDISElectron"};
 
-// =============================================================================
-// Algorithm-compatible selected particle keys (capital naming convention)
-// =============================================================================
+// Backward compatibility aliases (deprecated)
+[[deprecated("Use Keys::SelectedElectrons instead")]]
 inline const TypedKey<std::vector<clas12::Particle>> SelectedElectronsCapital{"SelectedElectrons"};
+[[deprecated("Use Keys::SelectedPiPlus instead")]]
 inline const TypedKey<std::vector<clas12::Particle>> SelectedPiPlusCapital{"SelectedPiPlus"};
+[[deprecated("Use Keys::SelectedPiMinus instead")]]
 inline const TypedKey<std::vector<clas12::Particle>> SelectedPiMinusCapital{"SelectedPiMinus"};
 
 // =============================================================================

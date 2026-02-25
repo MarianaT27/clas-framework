@@ -48,6 +48,7 @@
 #include <TROOT.h>
 #include <cxxopts.hpp>
 #include <fmt/format.h>
+#include <toml++/toml.hpp>
 
 #include <clas12/FileUtils.hpp>
 #include <clas12/StringUtils.hpp>
@@ -66,6 +67,11 @@ struct AnalysisConfig {
     int num_threads = 1;
     std::string output_file;
     std::vector<std::string> input_files;
+
+    /// Extensible configuration for analysis-specific options.
+    /// ParseExtraFn writes into this table; algorithms read from it.
+    /// Eliminates the need for static variable bridges in entry points.
+    toml::table custom;
 
     [[nodiscard]] auto is_valid() const -> bool {
         return !input_files.empty() && !output_file.empty() && percentage > 0;

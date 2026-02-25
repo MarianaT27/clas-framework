@@ -23,6 +23,7 @@
 #include <clas12/framework/core/ServiceHandle.hpp>
 #include <clas12/framework/core/ServiceManager.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
+#include <clas12/framework/core/TypedEventStore.hpp>
 
 namespace clas12::framework {
 
@@ -514,10 +515,55 @@ protected:
         return *s;
     }
 
+    // ========================================================================
+    // Data Contract (consumes/produces declarations)
+    // ========================================================================
+
+    /**
+     * @brief Declare that this algorithm consumes a typed key from the event store
+     *
+     * Used for pipeline validation at initialization time.
+     * Application warns if a consumed key is not produced by any earlier algorithm.
+     *
+     * @tparam T Value type
+     * @param key The typed key to consume
+     */
+    template <typename T>
+    void consumes(const TypedKey<T>& key) {
+        m_consumed_keys.push_back(key.name);
+    }
+
+    /**
+     * @brief Declare that this algorithm produces a typed key in the event store
+     *
+     * @tparam T Value type
+     * @param key The typed key to produce
+     */
+    template <typename T>
+    void produces(const TypedKey<T>& key) {
+        m_produced_keys.push_back(key.name);
+    }
+
+    /**
+     * @brief Get the list of consumed key names
+     */
+    [[nodiscard]] auto consumed_keys() const -> const std::vector<std::string>& {
+        return m_consumed_keys;
+    }
+
+    /**
+     * @brief Get the list of produced key names
+     */
+    [[nodiscard]] auto produced_keys() const -> const std::vector<std::string>& {
+        return m_produced_keys;
+    }
+
 private:
     std::map<std::string, std::unique_ptr<IServiceHandleBase>> m_required_service_handles;
     std::map<std::string, std::unique_ptr<IServiceHandleBase>> m_optional_service_handles;
     std::vector<std::string> m_required_banks;
+    std::vector<std::string> m_consumed_keys;
+    std::vector<std::string> m_produced_keys;
 };
 
 

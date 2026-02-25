@@ -175,9 +175,34 @@ class Service : public IService {
         return result;
     }
 
+    /**
+     * @brief Set the service locator (called by ServiceManager before initialize)
+     *
+     * Allows services to discover other services during initialization
+     * without requiring manual wiring in ApplicationBuilder.
+     */
+    auto set_service_manager(class ServiceManager* mgr) -> void {
+        m_svc_mgr = mgr;
+    }
+
    protected:
     std::string m_name;
     ServiceState m_state = ServiceState::Created;
+    class ServiceManager* m_svc_mgr = nullptr;
+
+    /**
+     * @brief Locate another service by name (available during and after initialize)
+     *
+     * @tparam T Service type
+     * @param name Service name
+     * @return T* Pointer to the service, or nullptr if not found
+     */
+    template <typename T>
+    auto locate_service(const std::string& name) -> T* {
+        if (!m_svc_mgr) return nullptr;
+        // Forward declaration prevents direct call; implemented after ServiceManager definition
+        return locate_service_impl<T>(name);
+    }
 
     /**
      * @brief Set the service state
@@ -189,6 +214,10 @@ class Service : public IService {
     auto set_state(ServiceState new_state) -> void {
         m_state = new_state;
     }
+
+   private:
+    template <typename T>
+    auto locate_service_impl(const std::string& name) -> T*;
 
     /**
      * @brief Custom initialization hook (override in derived classes)

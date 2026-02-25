@@ -222,8 +222,10 @@ class Event {
      * @tparam T Object type
      * @param key Storage key
      * @param value Object to store
+     * @deprecated Use store_typed() with TypedKey<T> for compile-time type safety
      */
     template <typename T>
+    [[deprecated("Use store_typed(TypedKey<T>, T) instead")]]
     auto store(const std::string& key, T value) -> void {
         m_store[key] = std::any(std::move(value));
     }
@@ -233,8 +235,10 @@ class Event {
      * @tparam T Object type
      * @param key Storage key
      * @return std::optional<T> The stored object, or std::nullopt if not found
+     * @deprecated Use retrieve_typed() with TypedKey<T> for compile-time type safety
      */
     template <typename T>
+    [[deprecated("Use retrieve_typed(TypedKey<T>) instead")]]
     auto retrieve(const std::string& key) const -> std::optional<T> {
         auto it = m_store.find(key);
         if (it == m_store.end()) {
@@ -251,23 +255,29 @@ class Event {
      * @brief Check if a key exists in the event store
      * @param key Storage key
      * @return bool True if key exists
+     * @deprecated Use contains_typed() with TypedKey<T> for compile-time type safety
      */
+    [[deprecated("Use contains_typed(TypedKey<T>) instead")]]
     auto contains(const std::string& key) const -> bool {
         return m_store.find(key) != m_store.end();
     }
 
     /**
      * @brief Store a particle collection in the event
+     * @deprecated Use store_typed() with TypedKey<std::vector<Particle>> instead
      */
     template <typename ParticleType>
+    [[deprecated("Use store_typed(TypedKey<std::vector<T>>, vec) instead")]]
     auto store_particles(const std::string& key, std::vector<ParticleType> particles) -> void {
         m_store[key] = std::any(std::move(particles));
     }
 
     /**
      * @brief Retrieve a particle collection from the event
+     * @deprecated Use retrieve_typed() with TypedKey<std::vector<Particle>> instead
      */
     template <typename ParticleType>
+    [[deprecated("Use retrieve_typed(TypedKey<std::vector<T>>) instead")]]
     auto get_particles(const std::string& key) const -> const std::vector<ParticleType>* {
         auto it = m_store.find(key);
         if (it == m_store.end()) {
@@ -278,17 +288,26 @@ class Event {
 
     /**
      * @brief Set an algorithm decision flag
+     * @deprecated Use set_decision_typed(TypedKey<bool>, bool) instead
      */
+    [[deprecated("Use set_decision_typed(TypedKey<bool>, bool) instead")]]
     auto set_decision(const std::string& decision_name, bool passed) -> void {
-        store(decision_name, passed);
+        m_store[decision_name] = std::any(passed);
     }
 
     /**
      * @brief Check if an algorithm decision was passed
+     * @deprecated Use passes_decision_typed(TypedKey<bool>) instead
      */
+    [[deprecated("Use passes_decision_typed(TypedKey<bool>) instead")]]
     auto passes_decision(const std::string& decision_name) -> bool {
-        auto result = retrieve<bool>(decision_name);
-        return result.value_or(false);
+        auto it = m_store.find(decision_name);
+        if (it == m_store.end()) return false;
+        try {
+            return std::any_cast<bool>(it->second);
+        } catch (const std::bad_any_cast&) {
+            return false;
+        }
     }
 
     // ========================================================================
@@ -376,6 +395,35 @@ class Event {
      */
     auto set_decision_typed(TypedKey<bool> key, bool passed) -> void {
         m_typed_store.store(key, passed);
+    }
+
+    /**
+     * @brief Check a decision and retrieve data in one call
+     *
+     * Combines the common pattern of checking a boolean decision flag
+     * and then retrieving associated data from the event store.
+     * Returns nullopt if the decision fails or the data is not found.
+     *
+     * @tparam T The data type to retrieve
+     * @param decision The decision key to check
+     * @param data The data key to retrieve
+     * @return std::optional<T> The data if decision passes and data exists
+     *
+     * @code
+     * // BEFORE: 3-4 lines repeated everywhere
+     * if (!event.passes_decision_typed(Decisions::HasGoodDISElectron)) return FILTERED();
+     * auto electrons_opt = event.retrieve_typed(Keys::SelectedElectrons);
+     * if (!electrons_opt || electrons_opt->empty()) return FILTERED();
+     *
+     * // AFTER: 1-2 lines
+     * auto electrons = event.require(Decisions::HasGoodDISElectron, Keys::SelectedElectrons);
+     * if (!electrons) return FILTERED();
+     * @endcode
+     */
+    template <typename T>
+    auto require(TypedKey<bool> decision, TypedKey<T> data) -> std::optional<T> {
+        if (!passes_decision_typed(decision)) return std::nullopt;
+        return retrieve_typed(data);
     }
 
     /**

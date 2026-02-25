@@ -32,8 +32,8 @@
 // Framework headers
 #include <clas12/framework/core/Application.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
-#include <clas12/framework/core/CutBuilder.hpp>
-#include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/core/AutoCutflow.hpp>
+#include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/Ranges.hpp>
@@ -186,18 +186,18 @@ public:
         const double vz = trigger_electron.vz();
 
         // ====================================================================
-        // Step 3: Apply cuts using CutBuilder (Requirement 9.1, 9.2, 9.3)
-        // Fluent, chainable API with automatic cutflow tracking
+        // Step 3: Apply cuts using AutoCutflow
         // ====================================================================
-        bool passed = CutBuilder(m_cutflow)
-            .require_in_range("Momentum Cut", p, m_min_momentum.get(), m_max_momentum.get())
-            .require_in_range("Theta Cut", theta, m_min_theta.get(), m_max_theta.get())
-            .require_in_range("Vertex Z Cut", vz, m_vz_min.get(), m_vz_max.get())
-            .evaluate();
+        bool pass_momentum = p >= m_min_momentum.get() && p <= m_max_momentum.get();
+        bool pass_theta = theta >= m_min_theta.get() && theta <= m_max_theta.get();
+        bool pass_vz = vz >= m_vz_min.get() && vz <= m_vz_max.get();
 
-        if (!passed) {
-            return StatusCode::FILTERED();
-        }
+        if (pass_momentum) m_cutflow.pass("Momentum Cut");
+        else return StatusCode::FILTERED();
+        if (pass_theta) m_cutflow.pass("Theta Cut");
+        else return StatusCode::FILTERED();
+        if (pass_vz) m_cutflow.pass("Vertex Z Cut");
+        else return StatusCode::FILTERED();
 
         // Fill "after cuts" histograms
         if (m_h_p_after) m_h_p_after->fill(p);
@@ -210,7 +210,7 @@ public:
         // ====================================================================
         m_event_store.clear();  // Clear previous event data
         m_event_store.store(Keys::TriggerElectron, trigger_electron);
-        m_event_store.store(Keys::HasGoodElectron, true);
+        m_event_store.store(Decisions::HasGoodElectron, true);
 
         // Also store all passing electrons
         std::vector<clas12::Particle> selected_electrons;
@@ -334,7 +334,7 @@ public:
         auto& store = *store_opt;
 
         // Check if we have a good electron
-        auto has_electron = store.retrieve(Keys::HasGoodElectron);
+        auto has_electron = store.retrieve(Decisions::HasGoodElectron);
         if (!has_electron || !*has_electron) {
             return StatusCode::FILTERED();
         }
@@ -388,7 +388,7 @@ public:
 
         // Apply DIS cuts
         bool is_dis = (Q2 > 1.0) && (W > 2.0) && (y < 0.85);
-        kinematics_store.store(Keys::IsDIS, is_dis);
+        kinematics_store.store(Decisions::IsDIS, is_dis);
 
         event.store("kinematics_store", kinematics_store);
 

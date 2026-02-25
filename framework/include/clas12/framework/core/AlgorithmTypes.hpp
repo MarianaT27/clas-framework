@@ -8,6 +8,7 @@
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/TypedEventStore.hpp>
 
 namespace clas12::framework {
 
@@ -106,15 +107,48 @@ private:
 };
 
 /**
- * @brief Conditional sequence that runs only if a decision passes
+ * @brief Typed conditional sequence that runs only if a decision passes
  *
- * ConditionalSequence wraps a sequence with a decision check.
+ * TypedConditionalSequence wraps a sequence with a typed decision check.
  * All algorithms in the sequence are skipped if the decision fails.
  *
- * Example: Run pion analysis sequence only if "HasGoodElectron" is true
+ * Example: Run pion analysis sequence only if HasGoodElectron is true
  *
- * C++ Core Guidelines:
- * - C.128: Virtual functions should specify exactly one of virtual, override, or final
+ * @code
+ * TypedConditionalSequence seq("PionAnalysis", Decisions::HasGoodElectron);
+ * seq.add_algorithm(std::make_unique<PionAnalysisAlg>("PionAnalysis"));
+ * @endcode
+ */
+class TypedConditionalSequence : public AlgorithmSequence {
+public:
+    TypedConditionalSequence(std::string name, TypedKey<bool> decision_key)
+        : AlgorithmSequence(std::move(name)), m_decision_key(std::move(decision_key)) {}
+
+    /// Execute sequence only if typed decision passes
+    auto execute(Event& event) -> StatusCode override {
+        if (!event.passes_decision_typed(m_decision_key)) {
+            return StatusCode::SUCCESS();  // Skip sequence silently
+        }
+        return AlgorithmSequence::execute(event);
+    }
+
+    /// Get the decision key name
+    [[nodiscard]] auto decision_name() const noexcept -> const std::string& {
+        return m_decision_key.name;
+    }
+
+    /// Check if sequence would execute for given event
+    [[nodiscard]] auto would_execute(Event& event) const -> bool {
+        return event.passes_decision_typed(m_decision_key);
+    }
+
+private:
+    TypedKey<bool> m_decision_key;
+};
+
+/**
+ * @brief Conditional sequence using string-based decisions
+ * @deprecated Use TypedConditionalSequence with TypedKey<bool> instead
  */
 class ConditionalSequence : public AlgorithmSequence {
 public:
@@ -123,9 +157,12 @@ public:
 
     /// Execute sequence only if required decision passes
     auto execute(Event& event) -> StatusCode override {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
         if (!event.passes_decision(m_required_decision)) {
             return StatusCode::SUCCESS();  // Skip sequence silently
         }
+#pragma GCC diagnostic pop
         return AlgorithmSequence::execute(event);
     }
 
@@ -136,7 +173,10 @@ public:
 
     /// Check if sequence would execute for given event
     [[nodiscard]] auto would_execute(Event& event) const -> bool {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
         return event.passes_decision(m_required_decision);
+#pragma GCC diagnostic pop
     }
 
 private:

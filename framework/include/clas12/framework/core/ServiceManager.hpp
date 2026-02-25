@@ -98,6 +98,11 @@ class ServiceManager {
             auto it = m_services.find(name);
             if (it == m_services.end()) continue;
 
+            // Inject service locator so services can discover dependencies
+            if (auto* svc = dynamic_cast<Service*>(it->second.get())) {
+                svc->set_service_manager(this);
+            }
+
             clas12::framework::Log::info("ServiceManager", "Initializing service: {}", name);
 
             auto sc = it->second->initialize();
@@ -278,5 +283,11 @@ auto Algorithm::initialize_handle(ServiceHandle<T>& handle) -> StatusCode {
     }
 
     return StatusCode::SUCCESS();
+}
+
+// Service::locate_service_impl - deferred until ServiceManager is complete
+template <typename T>
+auto Service::locate_service_impl(const std::string& name) -> T* {
+    return m_svc_mgr->get_service<T>(name);
 }
 }  // namespace clas12::framework

@@ -264,7 +264,7 @@ public:
 
         // Electron passed all cuts
         event.set_decision_typed(clas12::framework::Decisions::HasGoodElectron, true);
-        event.store_typed(clas12::framework::Keys::SelectedElectronsCapital,
+        event.store_typed(clas12::framework::Keys::SelectedElectrons,
                           std::vector<clas12::Particle>{electron});
 
         // Fill histograms after cuts

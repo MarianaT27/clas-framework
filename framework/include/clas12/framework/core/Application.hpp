@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fmt/format.h>
+#include <atomic>
 #include <memory>
 #include <set>
 #include <string>
@@ -28,6 +29,19 @@ namespace clas12::framework {
 class Application {
    public:
     Application(std::string name) : m_name(std::move(name)) {}
+
+    // Move-only: std::atomic is neither copyable nor movable
+    Application(Application&& other) noexcept
+        : m_name(std::move(other.m_name))
+        , m_svc_mgr(std::move(other.m_svc_mgr))
+        , m_algorithms(std::move(other.m_algorithms))
+        , m_input_files(std::move(other.m_input_files))
+        , m_percentage(other.m_percentage)
+        , m_num_threads(other.m_num_threads)
+        , m_exception_count(other.m_exception_count.load()) {}
+    Application& operator=(Application&&) = delete;
+    Application(const Application&) = delete;
+    Application& operator=(const Application&) = delete;
 
     /**
      * @brief Add an algorithm to the processing sequence
@@ -192,7 +206,7 @@ class Application {
         }, all_required_banks, m_percentage);
 
         if (m_exception_count > 0) {
-            fmt::print("WARNING: {} exception(s) caught during event processing\n", m_exception_count);
+            fmt::print("WARNING: {} exception(s) caught during event processing\n", m_exception_count.load());
         }
         return StatusCode::SUCCESS();
     }
@@ -235,7 +249,7 @@ class Application {
      * @return Number of exceptions caught
      */
     auto exception_count() const -> long {
-        return m_exception_count;
+        return m_exception_count.load();
     }
 
    private:
@@ -245,7 +259,7 @@ class Application {
     std::vector<std::string> m_input_files;
     double m_percentage = 100;
     int m_num_threads = 1;
-    mutable long m_exception_count = 0;
+    mutable std::atomic<long> m_exception_count{0};
 };
 
 }  // namespace clas12::framework

@@ -41,8 +41,7 @@
 
 // Cutflow
 #include <clas12/framework/core/Cutflow.hpp>
-#include <clas12/framework/core/CutBuilder.hpp>
-#include <clas12/framework/core/CutSequence.hpp>
+#include <clas12/framework/core/AutoCutflow.hpp>
 
 // Common services
 #include <clas12/framework/services/HistogramService.hpp>

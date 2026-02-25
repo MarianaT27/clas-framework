@@ -23,11 +23,14 @@
  * @endcode
  */
 
+#include <cstddef>
 #include <functional>
+#include <limits>
 #include <string>
 #include <vector>
 
 #include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 
 namespace clas12::framework {
@@ -215,6 +218,9 @@ public:
 
     using FillFn = std::function<void(const Context&)>;
 
+    /// Function type for extracting the cut variable from context (for N-1 histograms)
+    using VariableExtractor = std::function<double(const Context&)>;
+
     /**
      * @brief Define a cut with its context-aware predicate
      *
@@ -226,6 +232,7 @@ public:
         m_cutflow.add_cut(cut_name);
         m_cuts.emplace_back(std::move(cut_name), std::move(pred));
         m_fill_fns.emplace_back(nullptr);
+        m_variable_extractors.emplace_back(nullptr);
         return *this;
     }
 
@@ -270,6 +277,7 @@ public:
         m_cutflow.add_cut(cut_name);
         m_cuts.emplace_back(std::move(cut_name), std::move(pred));
         m_fill_fns.emplace_back(std::move(fill_fn));
+        m_variable_extractors.emplace_back(nullptr);
         return *this;
     }
 
@@ -348,10 +356,183 @@ public:
 
     [[nodiscard]] auto efficiency() const -> double { return m_cutflow.efficiency(); }
 
+    // ========================================================================
+    // N-1 Histogram Support
+    // ========================================================================
+
+    /**
+     * @brief Define a cut with an associated variable extractor for N-1 histograms
+     *
+     * Like define(), but also registers a function that extracts the cut variable
+     * from the context. This enables automatic N-1 histogram filling via evaluate_all().
+     *
+     * @param cut_name Name of the cut
+     * @param pred Predicate that returns true if cut passes
+     * @param var_fn Function that extracts the cut variable from context
+     * @return ContextCutflow& Reference to this for method chaining
+     *
+     * @code
+     * cutflow.define_with_variable("Delta Vz",
+     *     [](const auto& c) { return std::abs(c.delta_vz) < 5.0; },
+     *     [](const auto& c) { return c.delta_vz; });
+     * @endcode
+     */
+    auto define_with_variable(std::string cut_name, Predicate pred,
+                              VariableExtractor var_fn) -> ContextCutflow& {
+        m_cutflow.add_cut(cut_name);
+        m_cuts.emplace_back(std::move(cut_name), std::move(pred));
+        m_fill_fns.emplace_back(nullptr);
+        m_variable_extractors.emplace_back(std::move(var_fn));
+        return *this;
+    }
+
+    // ========================================================================
+    // Toggleable Cuts
+    // ========================================================================
+
+    /**
+     * @brief Define a cut that can be toggled on/off via a Property<bool>
+     *
+     * When the property is false, the cut always passes (is skipped).
+     * Eliminates the `!enable.get() || pred(ctx)` pattern.
+     *
+     * @param cut_name Name of the cut
+     * @param pred Predicate that returns true if cut passes
+     * @param enable_prop Reference to a Property<bool> that controls this cut
+     * @return ContextCutflow& Reference to this for method chaining
+     */
+    auto define_toggleable(std::string cut_name, Predicate pred,
+                           const Property<bool>& enable_prop) -> ContextCutflow& {
+        auto wrapped = [pred = std::move(pred), &enable_prop](const Context& ctx) {
+            return !enable_prop.get() || pred(ctx);
+        };
+        return define(std::move(cut_name), std::move(wrapped));
+    }
+
+    /**
+     * @brief Define a toggleable cut with a variable extractor for N-1 histograms
+     *
+     * Combines toggleable behavior with N-1 variable extraction.
+     *
+     * @param cut_name Name of the cut
+     * @param pred Predicate that returns true if cut passes
+     * @param enable_prop Reference to a Property<bool> that controls this cut
+     * @param var_fn Function that extracts the cut variable from context
+     * @return ContextCutflow& Reference to this for method chaining
+     */
+    auto define_toggleable(std::string cut_name, Predicate pred,
+                           const Property<bool>& enable_prop,
+                           VariableExtractor var_fn) -> ContextCutflow& {
+        auto wrapped = [pred = std::move(pred), &enable_prop](const Context& ctx) {
+            return !enable_prop.get() || pred(ctx);
+        };
+        return define_with_variable(std::move(cut_name), std::move(wrapped), std::move(var_fn));
+    }
+
+    // ========================================================================
+    // N-1 Evaluation
+    // ========================================================================
+
+    /**
+     * @brief Results from evaluating all cuts (for N-1 analysis)
+     *
+     * Unlike evaluate() which short-circuits, evaluate_all() runs every cut
+     * and stores per-cut pass/fail results. This enables N-1 histogram filling
+     * where you fill a histogram for cut N when all cuts EXCEPT N pass.
+     */
+    struct CutResults {
+        std::vector<bool> passed;  ///< Per-cut pass/fail results
+        bool all_passed = false;   ///< True if every cut passed
+
+        /**
+         * @brief Check if all cuts pass except the one at skip_index
+         * @param skip_index Index of the cut to exclude from the check
+         * @return true if all other cuts passed
+         */
+        [[nodiscard]] auto passes_all_except(std::size_t skip_index) const -> bool {
+            for (std::size_t i = 0; i < passed.size(); ++i) {
+                if (i == skip_index) continue;
+                if (!passed[i]) return false;
+            }
+            return true;
+        }
+    };
+
+    /**
+     * @brief Evaluate ALL cuts without short-circuiting (for N-1 analysis)
+     *
+     * Runs every predicate regardless of failures. Updates cutflow counters
+     * only for cuts that pass. Returns a CutResults object that can be used
+     * to determine N-1 combinations.
+     *
+     * @param ctx Context to pass to predicates
+     * @return CutResults with per-cut pass/fail and overall result
+     *
+     * @code
+     * auto results = m_cutflow.evaluate_all(candidate);
+     * // Fill N-1 histograms
+     * for (size_t i = 0; i < m_cutflow.num_cuts(); ++i) {
+     *     if (results.passes_all_except(i)) {
+     *         nminus1_hists[i]->fill(m_cutflow.variable(i, candidate));
+     *     }
+     * }
+     * if (results.all_passed) { // accept }
+     * @endcode
+     */
+    [[nodiscard]] auto evaluate_all(const Context& ctx) -> CutResults {
+        CutResults results;
+        results.passed.resize(m_cuts.size());
+        results.all_passed = true;
+
+        for (std::size_t i = 0; i < m_cuts.size(); ++i) {
+            results.passed[i] = m_cuts[i].second(ctx);
+            if (results.passed[i]) {
+                m_cutflow.pass(m_cuts[i].first);
+            } else {
+                results.all_passed = false;
+            }
+        }
+        return results;
+    }
+
+    /**
+     * @brief Extract the cut variable for the cut at the given index
+     *
+     * Uses the variable extractor registered via define_with_variable().
+     * Returns NaN if no extractor was registered for that cut.
+     *
+     * @param idx Cut index
+     * @param ctx Context to extract from
+     * @return The extracted variable value, or NaN if no extractor
+     */
+    [[nodiscard]] auto variable(std::size_t idx, const Context& ctx) const -> double {
+        if (idx < m_variable_extractors.size() && m_variable_extractors[idx]) {
+            return m_variable_extractors[idx](ctx);
+        }
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    /**
+     * @brief Get the cut name at the given index
+     * @param idx Cut index
+     * @return The cut name
+     */
+    [[nodiscard]] auto cut_name(std::size_t idx) const -> const std::string& {
+        return m_cuts.at(idx).first;
+    }
+
 private:
     Cutflow m_cutflow;
     std::vector<std::pair<std::string, Predicate>> m_cuts;
     std::vector<FillFn> m_fill_fns;
+    std::vector<VariableExtractor> m_variable_extractors;
+
+    /// Ensure all parallel vectors stay in sync when using define() (no variable extractor)
+    void sync_variable_extractors() {
+        while (m_variable_extractors.size() < m_cuts.size()) {
+            m_variable_extractors.emplace_back(nullptr);
+        }
+    }
 };
 
 }  // namespace clas12::framework

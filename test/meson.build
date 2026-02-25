@@ -108,15 +108,6 @@ test_histogram_templates = executable(
 
 test('Histogram Templates Tests', test_histogram_templates)
 
-# Unit tests for CutBuilder
-test_cutbuilder = executable(
-  'test_cutbuilder',
-  'test_cutbuilder.cpp',
-  dependencies: test_deps,
-)
-
-test('CutBuilder Tests', test_cutbuilder)
-
 # Unit tests for ConfigSchema
 test_config_schema = executable(
   'test_config_schema',
