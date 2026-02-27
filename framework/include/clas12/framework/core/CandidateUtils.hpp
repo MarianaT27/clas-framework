@@ -56,17 +56,23 @@ inline auto compute_timing(double p, double mass, double beta_measured,
 /**
  * @brief Check if particle is in the forward detector (CLAS12 FD)
  * @param status Particle status code from REC::Particle
+ *
+ * Only accepts positive status codes — negative status indicates the particle
+ * failed reconstruction quality checks and should be excluded.
  */
 inline auto is_forward_detector(int status) -> bool {
-    return std::abs(status) >= 2000 && std::abs(status) < 4000;
+    return status >= 2000 && status < 4000;
 }
 
 /**
  * @brief Check if particle is in the central detector (CLAS12 CD)
  * @param status Particle status code from REC::Particle
+ *
+ * Only accepts positive status codes — negative status indicates the particle
+ * failed reconstruction quality checks and should be excluded.
  */
 inline auto is_central_detector(int status) -> bool {
-    return std::abs(status) >= 4000 && std::abs(status) < 6000;
+    return status >= 4000 && status < 6000;
 }
 
 }  // namespace clas12::framework::CandidateUtils

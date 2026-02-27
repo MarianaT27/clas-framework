@@ -702,9 +702,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             cand.tof_mass2 = timing.tof_mass2;
             cand.beta_diff = timing.beta_diff;
 
-            // Skip forward pions with no valid timing (delta_t exactly 0 means no scintillator match)
-            // if (cand.is_forward_detector && cand.delta_t == 0.0) continue;
-
             // Read calorimeter and trajectory banks for fiducial cuts
             auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, pion.index());
             auto traj = clas12::read_Traj_bank(REC_Traj, pion.index());
