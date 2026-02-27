@@ -343,9 +343,31 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             }
         }
 
+        // Process pion cut impact variations (cumulative pion cuts with rho0 cuts)
+        for (const auto& [step, label] : PION_CUT_STEPS) {
+            auto ph_it = m_pion_cut_step_histograms.find(label);
+            if (ph_it == m_pion_cut_step_histograms.end()) continue;
+            auto& ph = ph_it->second;
+
+            auto* nm1_piplus = event.get_particles<clas12::Particle>(fmt::format("PiPlus_{}", label));
+            auto* nm1_piminus = event.get_particles<clas12::Particle>(fmt::format("PiMinus_{}", label));
+
+            if (!nm1_piplus || !nm1_piminus || nm1_piplus->empty() || nm1_piminus->empty()) continue;
+
+            auto step_candidates = build_rho0_candidates(
+                *nm1_piplus, *nm1_piminus, electron, virtual_photon, nu, Q2);
+
+            for (const auto& cand : step_candidates) {
+                if (ph.mass_all) ph.mass_all->fill(cand.mass);
+                if (cand.passes_all_cuts) {
+                    if (ph.mass_selected) ph.mass_selected->fill(cand.mass);
+                }
+            }
+        }
+
         return clas12::framework::StatusCode::SUCCESS();
     }
-    
+
 
     auto on_finalize() -> clas12::framework::StatusCode override {
         using Log = clas12::framework::Log;
@@ -849,6 +871,19 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     };
     std::map<std::string, SigmaScanHistograms> m_sigma_scan_histograms;
 
+    // Pion cut impact histogram set (cumulative pion cut steps)
+    struct PionCutStepHistograms {
+        clas12::framework::AtomicHistogram1D* mass_all = nullptr;       // before rho0 cuts
+        clas12::framework::AtomicHistogram1D* mass_selected = nullptr;  // after all rho0 cuts
+    };
+    std::map<std::string, PionCutStepHistograms> m_pion_cut_step_histograms;
+
+    // Cumulative pion cut step definitions
+    static constexpr std::array<std::pair<int, const char*>, 5> PION_CUT_STEPS = {{
+        {0, "noPionCuts"}, {1, "plusDCFiducial"}, {2, "plusChi2PID"},
+        {3, "plusMomentum"}, {4, "plusVertexZ"}
+    }};
+
     auto get_region_histograms(DetectorRegion region) -> RegionHistograms& {
         switch (region) {
             case DetectorRegion::ForwardForward: return m_hist_ff;
@@ -1164,6 +1199,29 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 }
 
                 m_sigma_scan_histograms[label] = sh;
+            }
+
+            // Book pion cut impact histograms (cumulative pion cut steps)
+            static constexpr std::array<const char*, 5> PION_CUT_DISPLAY_NAMES = {{
+                "No Pion Cuts", "+ DC Fiducial", "+ #chi^{2}_{PID}",
+                "+ Momentum", "+ Vertex Z"
+            }};
+            for (size_t i = 0; i < PION_CUT_STEPS.size(); ++i) {
+                const char* label = PION_CUT_STEPS[i].second;
+                const char* display = PION_CUT_DISPLAY_NAMES[i];
+                std::string dir = fmt::format("/Rho0/PionCutImpact/{}", label);
+
+                PionCutStepHistograms ph;
+                ph.mass_all = svc->book_hist1D(
+                    dir + "/pipim_mass_all",
+                    fmt::format("#pi^{{+}}#pi^{{-}} Mass ({});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", display),
+                    200, 0, 2.0);
+                ph.mass_selected = svc->book_hist1D(
+                    dir + "/pipim_mass_selected",
+                    fmt::format("Selected #rho^{{0}} Mass ({});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", display),
+                    200, 0.4, 1.2);
+
+                m_pion_cut_step_histograms[label] = ph;
             }
         });
     }

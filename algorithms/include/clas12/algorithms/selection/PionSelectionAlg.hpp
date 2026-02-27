@@ -302,6 +302,19 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             }
         }
 
+        // Cumulative pion cut variations: store pion collections at each cut step
+        // Steps 0-4 stored here; step 5 (all cuts) = existing SelectedPiPlus/Minus
+        static constexpr std::array<std::pair<int, const char*>, 5> CUMULATIVE_STEPS = {{
+            {0, "noPionCuts"}, {1, "plusDCFiducial"}, {2, "plusChi2PID"},
+            {3, "plusMomentum"}, {4, "plusVertexZ"}
+        }};
+        for (const auto& [step, label] : CUMULATIVE_STEPS) {
+            event.store_particles(fmt::format("PiPlus_{}", label),
+                collect_passing_cumulative(piplus_candidates, step));
+            event.store_particles(fmt::format("PiMinus_{}", label),
+                collect_passing_cumulative(piminus_candidates, step));
+        }
+
         return clas12::framework::StatusCode::SUCCESS();
     }
 
@@ -890,6 +903,27 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             if (cand.passes_all_cuts) {
                 selected.push_back(cand.pion);
             }
+        }
+        return selected;
+    }
+
+    /**
+     * @brief Collect particles passing cumulative pion cuts up to a given step
+     *
+     * Steps: 0=forward only, 1=+DC fiducial, 2=+chi2PID, 3=+momentum, 4=+vz, 5=+delta_t
+     * Each step adds one more cut on top of all previous ones.
+     */
+    auto collect_passing_cumulative(const std::vector<PionCandidate>& candidates, int max_step) const
+        -> std::vector<clas12::Particle> {
+        std::vector<clas12::Particle> selected;
+        for (const auto& cand : candidates) {
+            if (!cand.is_forward_detector) continue;
+            if (max_step >= 1 && m_enable_fiducial_cuts.get() && !cand.passes_dc_fiducial) continue;
+            if (max_step >= 2 && m_enable_chi2pid_cut.get() && !cand.passes_chi2pid) continue;
+            if (max_step >= 3 && m_enable_momentum_cut.get() && !cand.passes_momentum) continue;
+            if (max_step >= 4 && m_enable_vz_cut.get() && !cand.passes_vz) continue;
+            if (max_step >= 5 && m_enable_delta_t_cut.get() && cand.is_forward_detector && !cand.passes_delta_t) continue;
+            selected.push_back(cand.pion);
         }
         return selected;
     }
