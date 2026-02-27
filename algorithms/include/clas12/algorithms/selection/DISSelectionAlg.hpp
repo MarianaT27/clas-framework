@@ -85,16 +85,6 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
     auto on_initialize() -> clas12::framework::StatusCode override {
         Log::info(name(), "Initializing DIS selection algorithm");
 
-        book_histograms();
-
-        // Setup N-tuple using NTupleWriter
-        if (m_enable_ntuple.get()) {
-            clas12::framework::safe(m_ntuple_svc).with([this](auto* svc) {
-                m_ntuple.init(svc, "dis_kinematics");
-                Log::info(name(), "N-tuple branches registered for DIS kinematics");
-            });
-        }
-
         m_cutflow.define_always("All Events");
         m_cutflow.define("Has Electron", [](const auto&) { return true; });  // pre-checked
         m_cutflow.define_toggleable("Q2 Cut",
@@ -109,6 +99,16 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
             [this](const auto& k) { return k.y >= m_y_min.get() && k.y <= m_y_max.get(); },
             m_enable_y_cut,
             [](const auto& k) { return k.y; });
+
+        book_histograms();
+
+        // Setup N-tuple using NTupleWriter
+        if (m_enable_ntuple.get()) {
+            clas12::framework::safe(m_ntuple_svc).with([this](auto* svc) {
+                m_ntuple.init(svc, "dis_kinematics");
+                Log::info(name(), "N-tuple branches registered for DIS kinematics");
+            });
+        }
 
         Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
         Log::info(name(), "DIS region: Q2=[{}, {}], W=[{}, {}], y=[{}, {}]",
