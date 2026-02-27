@@ -16,13 +16,12 @@
  * const auto& electron = electrons_opt->front();
  *
  * // AFTER: 2 lines
- * auto electron_ref = clas12::framework::EventHelpers::get_dis_electron(event);
- * if (!electron_ref) return FILTERED();
- * const auto& electron = electron_ref->get();
+ * auto electron_opt = clas12::framework::EventHelpers::get_dis_electron(event);
+ * if (!electron_opt) return FILTERED();
+ * const auto& electron = *electron_opt;
  * @endcode
  */
 
-#include <functional>
 #include <optional>
 
 #include <clas12/Particle.hpp>
@@ -33,26 +32,26 @@ namespace clas12::framework::EventHelpers {
 
 /**
  * @brief Retrieve the selected electron (checks HasGoodElectron decision)
- * @return Reference to the first selected electron, or nullopt
+ * @return Copy of the first selected electron, or nullopt
  */
 inline auto get_selected_electron(Event& event)
-    -> std::optional<std::reference_wrapper<const clas12::Particle>> {
+    -> std::optional<clas12::Particle> {
     if (!event.passes_decision_typed(Decisions::HasGoodElectron)) return std::nullopt;
     auto electrons_opt = event.retrieve_typed(Keys::SelectedElectrons);
     if (!electrons_opt || electrons_opt->empty()) return std::nullopt;
-    return std::cref(electrons_opt->front());
+    return electrons_opt->front();
 }
 
 /**
  * @brief Retrieve the DIS electron (checks HasGoodDISElectron decision)
- * @return Reference to the first selected electron, or nullopt
+ * @return Copy of the first selected electron, or nullopt
  */
 inline auto get_dis_electron(Event& event)
-    -> std::optional<std::reference_wrapper<const clas12::Particle>> {
+    -> std::optional<clas12::Particle> {
     if (!event.passes_decision_typed(Decisions::HasGoodDISElectron)) return std::nullopt;
     auto electrons_opt = event.retrieve_typed(Keys::SelectedElectrons);
     if (!electrons_opt || electrons_opt->empty()) return std::nullopt;
-    return std::cref(electrons_opt->front());
+    return electrons_opt->front();
 }
 
 /**

@@ -187,8 +187,8 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
         }
 
         // Check for good DIS electron from upstream
-        auto electron_ref = clas12::framework::EventHelpers::get_dis_electron(event);
-        if (!electron_ref) return clas12::framework::StatusCode::FILTERED();
+        auto electron_opt = clas12::framework::EventHelpers::get_dis_electron(event);
+        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
         m_cutflow.pass("Has Good DIS Electron");
 
         // Get protons and pions from event
@@ -210,7 +210,7 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
         if (h_n_pions) h_n_pions->fill(pions.size());
 
         // Get electron for coplanarity calculation (already retrieved above)
-        const clas12::Particle* electron = &electron_ref->get();
+        const clas12::Particle* electron = &(*electron_opt);
 
         // Find Lambda candidates
         std::vector<LambdaCandidate> candidates;

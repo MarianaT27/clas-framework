@@ -250,9 +250,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         }
 
         // Check for good DIS electron from upstream algorithm
-        auto electron_ref = clas12::framework::EventHelpers::get_dis_electron(event);
-        if (!electron_ref) return clas12::framework::StatusCode::FILTERED();
-        const auto& electron = electron_ref->get();
+        auto electron_opt = clas12::framework::EventHelpers::get_dis_electron(event);
+        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
+        const auto& electron = *electron_opt;
         m_cutflow.pass("Has Good DIS Electron");
 
         // Get DIS kinematics from upstream

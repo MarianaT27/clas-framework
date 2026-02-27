@@ -746,9 +746,9 @@ private:
         m_cutflow_exclusive.pass("Total events");
 
         // 1. Require good DIS electron from upstream
-        auto electron_ref = clas12::framework::EventHelpers::get_dis_electron(event);
-        if (!electron_ref) return clas12::framework::StatusCode::FILTERED();
-        const auto& electron = electron_ref->get();
+        auto electron_opt = clas12::framework::EventHelpers::get_dis_electron(event);
+        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
+        const auto& electron = *electron_opt;
         m_cutflow_exclusive.pass("Has good electron");
         m_cutflow_exclusive.pass("Passes DIS cuts");
 

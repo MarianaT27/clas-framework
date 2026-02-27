@@ -96,9 +96,9 @@ public:
         }
 
         // Get the reconstructed electron from the ElectronSelectionAlg
-        auto electron_ref = clas12::framework::EventHelpers::get_selected_electron(event);
-        if (!electron_ref) return clas12::framework::StatusCode::FILTERED();
-        auto recon_electron = electron_ref->get();
+        auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
+        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
+        auto recon_electron = *electron_opt;
 
         if (-7.8 < electron3VecV.Z() && electron3VecV.Z() < -7.2) h_vz_Cu->fill(recon_electron.vz());
         if (-3 < electron3VecV.Z() && electron3VecV.Z() < -2.4) h_vz_Sn->fill(recon_electron.vz());

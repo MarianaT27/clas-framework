@@ -94,9 +94,9 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAl
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         // Require selected electron
-        auto electron_ref = clas12::framework::EventHelpers::get_selected_electron(event);
-        if (!electron_ref) return clas12::framework::StatusCode::FILTERED();
-        double electron_vz = electron_ref->get().vz();
+        auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
+        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
+        double electron_vz = electron_opt->vz();
 
         const auto& REC_Event = event.get_bank("REC::Event");
         const auto& REC_Particle = event.get_bank("REC::Particle");
