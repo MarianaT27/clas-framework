@@ -411,7 +411,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
     clas12::framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
     clas12::framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
     clas12::framework::Property<bool> m_enable_delta_t_cut{"enable_delta_t_cut", true, "Enable delta-t cut"};
-    clas12::framework::Property<bool> m_enable_central_pions{"enable_central_pions", true, "Enable central detector pion selection"};
+    clas12::framework::Property<bool> m_enable_central_pions{"enable_central_pions", false, "Enable central detector pion selection"};
     clas12::framework::Property<double> m_delta_t_sigma{"delta_t_sigma", 3.0, "Number of sigma for delta_t cut"};
     clas12::framework::Property<std::vector<double>> m_sigma_scan_values{"sigma_scan_values", {}, "Sigma values for delta_t scan (empty=disabled)"};
 
