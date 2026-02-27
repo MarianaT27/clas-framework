@@ -261,6 +261,34 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         double Q2 = dis->Q2;
         double nu = dis->nu;
 
+        // Calculate virtual photon 4-momentum (needed for pion cut impact and rho0 reconstruction)
+        clas12::physics::BeamConfig beam;
+        ROOT::Math::PxPyPzEVector beam_4vec(beam.px, beam.py, beam.pz, beam.energy);
+        ROOT::Math::PxPyPzEVector virtual_photon = beam_4vec - electron.PxPyPzEVector();
+
+        // Process pion cut impact variations (cumulative pion cuts with rho0 cuts)
+        // Must run before selected-pion early returns so we see events with fewer pion cuts
+        for (const auto& [step, label] : PION_CUT_STEPS) {
+            auto ph_it = m_pion_cut_step_histograms.find(label);
+            if (ph_it == m_pion_cut_step_histograms.end()) continue;
+            auto& ph = ph_it->second;
+
+            auto* step_piplus = event.get_particles<clas12::Particle>(fmt::format("PiPlus_{}", label));
+            auto* step_piminus = event.get_particles<clas12::Particle>(fmt::format("PiMinus_{}", label));
+
+            if (!step_piplus || !step_piminus || step_piplus->empty() || step_piminus->empty()) continue;
+
+            auto step_candidates = build_rho0_candidates(
+                *step_piplus, *step_piminus, electron, virtual_photon, nu, Q2);
+
+            for (const auto& cand : step_candidates) {
+                if (ph.mass_all) ph.mass_all->fill(cand.mass);
+                if (cand.passes_all_cuts) {
+                    if (ph.mass_selected) ph.mass_selected->fill(cand.mass);
+                }
+            }
+        }
+
         // Get pre-selected pions from PionSelectionAlg
         auto pions_plus = event.retrieve_typed(clas12::framework::Keys::SelectedPiPlus).value_or(std::vector<clas12::Particle>{});
         auto pions_minus = event.retrieve_typed(clas12::framework::Keys::SelectedPiMinus).value_or(std::vector<clas12::Particle>{});
@@ -270,11 +298,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
         if (pions_minus.empty()) return clas12::framework::StatusCode::FILTERED();
         m_cutflow.pass("Has >= 1 Pi-");
-
-        // Calculate virtual photon 4-momentum
-        clas12::physics::BeamConfig beam;
-        ROOT::Math::PxPyPzEVector beam_4vec(beam.px, beam.py, beam.pz, beam.energy);
-        ROOT::Math::PxPyPzEVector virtual_photon = beam_4vec - electron.PxPyPzEVector();
 
         // Build candidates with all kinematics computed once
         auto candidates = build_rho0_candidates(pions_plus, pions_minus, electron, virtual_photon, nu, Q2);
@@ -339,28 +362,6 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                             break;
                         }
                     }
-                }
-            }
-        }
-
-        // Process pion cut impact variations (cumulative pion cuts with rho0 cuts)
-        for (const auto& [step, label] : PION_CUT_STEPS) {
-            auto ph_it = m_pion_cut_step_histograms.find(label);
-            if (ph_it == m_pion_cut_step_histograms.end()) continue;
-            auto& ph = ph_it->second;
-
-            auto* nm1_piplus = event.get_particles<clas12::Particle>(fmt::format("PiPlus_{}", label));
-            auto* nm1_piminus = event.get_particles<clas12::Particle>(fmt::format("PiMinus_{}", label));
-
-            if (!nm1_piplus || !nm1_piminus || nm1_piplus->empty() || nm1_piminus->empty()) continue;
-
-            auto step_candidates = build_rho0_candidates(
-                *nm1_piplus, *nm1_piminus, electron, virtual_photon, nu, Q2);
-
-            for (const auto& cand : step_candidates) {
-                if (ph.mass_all) ph.mass_all->fill(cand.mass);
-                if (cand.passes_all_cuts) {
-                    if (ph.mass_selected) ph.mass_selected->fill(cand.mass);
                 }
             }
         }
