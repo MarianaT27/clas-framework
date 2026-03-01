@@ -148,7 +148,11 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     explicit Rho0ReconstructionAlg(
         std::string name = "Rho0ReconstructionAlg",
         clas12::Target target = clas12::Target::LD2,
-        std::vector<double> sigma_scan = {}
+        std::vector<double> sigma_scan = {},
+        std::vector<double> lc_scan = {},
+        std::vector<double> zh_scan = {},
+        std::vector<double> t_scan = {},
+        std::vector<double> dvz_scan = {}
     )
         : SimpleAlgorithm(std::move(name))
         , m_target(target)
@@ -166,7 +170,15 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         declare_property(m_enable_ntuple);
         declare_property(m_enable_fitting);
         declare_property(m_sigma_scan_values);
+        declare_property(m_lc_scan_values);
+        declare_property(m_zh_scan_values);
+        declare_property(m_t_scan_values);
+        declare_property(m_dvz_scan_values);
         if (!sigma_scan.empty()) m_sigma_scan_values.set(std::move(sigma_scan));
+        if (!lc_scan.empty()) m_lc_scan_values.set(std::move(lc_scan));
+        if (!zh_scan.empty()) m_zh_scan_values.set(std::move(zh_scan));
+        if (!t_scan.empty()) m_t_scan_values.set(std::move(t_scan));
+        if (!dvz_scan.empty()) m_dvz_scan_values.set(std::move(dvz_scan));
         declare_bank("RUN::config");
     }
 
@@ -200,6 +212,16 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         if (!m_sigma_scan_values.get().empty()) {
             Log::config(name(), "Sigma scan", fmt::format("[{}]", fmt::join(m_sigma_scan_values.get(), ", ")));
         }
+        auto log_cut_scan = [this](const std::string& scan_label, const std::vector<double>& values) {
+            if (!values.empty()) {
+                Log::config(name(), fmt::format("{} scan", scan_label),
+                    fmt::format("[{}]", fmt::join(values, ", ")));
+            }
+        };
+        log_cut_scan("lc", m_lc_scan_values.get());
+        log_cut_scan("zh", m_zh_scan_values.get());
+        log_cut_scan("t", m_t_scan_values.get());
+        log_cut_scan("dvz", m_dvz_scan_values.get());
         Log::blank();
 
         book_histograms();
@@ -318,6 +340,40 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             (void)m_candidate_cutflow.evaluate(cand);
         }
 
+        // Process cut scan variations (rho0-level cut threshold scans)
+        for (const auto& [scan_name, scan_map] : m_cut_scan_histograms) {
+            const std::vector<double>* values_ptr = nullptr;
+            if (scan_name == "lc") values_ptr = &m_lc_scan_values.get();
+            else if (scan_name == "zh") values_ptr = &m_zh_scan_values.get();
+            else if (scan_name == "t") values_ptr = &m_t_scan_values.get();
+            else if (scan_name == "dvz") values_ptr = &m_dvz_scan_values.get();
+            if (!values_ptr) continue;
+
+            for (double scan_value : *values_ptr) {
+                std::string label = format_cut_scan_label(scan_name, scan_value);
+                auto ch_it = scan_map.find(label);
+                if (ch_it == scan_map.end()) continue;
+                auto& ch = ch_it->second;
+
+                for (const auto& cand : candidates) {
+                    if (ch.mass_all) ch.mass_all->fill(cand.mass);
+
+                    if (passes_cut_scan(cand, scan_name, scan_value)) {
+                        if (ch.mass_selected) ch.mass_selected->fill(cand.mass);
+
+                        for (size_t i = 0; i < Q2_BINS.size(); ++i) {
+                            if (Q2 >= Q2_BINS[i].first && Q2 < Q2_BINS[i].second) {
+                                std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
+                                auto it = ch.mass_q2_bins.find(bin_name);
+                                if (it != ch.mass_q2_bins.end() && it->second) it->second->fill(cand.mass);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Check if any candidates passed all cuts
         size_t n_passing = count_passing_candidates(candidates);
         if (n_passing == 0) return clas12::framework::StatusCode::FILTERED();
@@ -402,6 +458,11 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         // Sigma scan analysis
         if (!m_sigma_scan_values.get().empty() && m_enable_fitting.get()) {
             fit_sigma_scan_histograms();
+        }
+
+        // Cut scan analysis (lc, zh, t, delta_vz)
+        if (m_enable_fitting.get() && !m_cut_scan_histograms.empty()) {
+            fit_cut_scan_histograms();
         }
 
         // Save run metadata to ROOT file
@@ -776,6 +837,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
     clas12::framework::Property<bool> m_enable_fitting{"enable_fitting", true, "Enable BW+pol3 fitting in finalize"};
     clas12::framework::Property<std::vector<double>> m_sigma_scan_values{"sigma_scan_values", {}, "Sigma values for delta_t scan (empty=disabled)"};
+    clas12::framework::Property<std::vector<double>> m_lc_scan_values{"lc_scan_values", {}, "lc_max values for coherence length scan (empty=disabled)"};
+    clas12::framework::Property<std::vector<double>> m_zh_scan_values{"zh_scan_values", {}, "zh_min values for energy fraction scan (empty=disabled)"};
+    clas12::framework::Property<std::vector<double>> m_t_scan_values{"t_scan_values", {}, "t_max values for momentum transfer scan (empty=disabled)"};
+    clas12::framework::Property<std::vector<double>> m_dvz_scan_values{"dvz_scan_values", {}, "N-sigma values for delta_vz scan (empty=disabled)"};
 
     /**
      * @brief Delta vz cut range structure
@@ -871,6 +936,28 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         std::map<std::string, clas12::framework::AtomicHistogram1D*> mass_q2_bins;
     };
     std::map<std::string, SigmaScanHistograms> m_sigma_scan_histograms;
+
+    // Cut scan histogram set (for lc, zh, t, delta_vz threshold scans)
+    struct CutScanHistograms {
+        clas12::framework::AtomicHistogram1D* mass_all = nullptr;
+        clas12::framework::AtomicHistogram1D* mass_selected = nullptr;
+        std::map<std::string, clas12::framework::AtomicHistogram1D*> mass_q2_bins;
+    };
+
+    struct CutScanResult {
+        double cut_value = 0.0;
+        double n_rho0 = 0.0;
+        double n_rho0_err = 0.0;
+        double mass = 0.0;
+        double mass_err = 0.0;
+        double chi2_ndf = 0.0;
+        double total_entries = 0.0;
+        bool valid = false;
+    };
+
+    // Key: scan name ("lc", "zh", "t", "dvz")
+    // Value: map from value label (e.g., "lc_0.50") to histograms
+    std::map<std::string, std::map<std::string, CutScanHistograms>> m_cut_scan_histograms;
 
     // Pion cut impact histogram set (cumulative pion cut steps)
     struct PionCutStepHistograms {
@@ -1078,6 +1165,53 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         return fmt::format("{}_{}", base, format_sigma_label(sigma));
     }
 
+    static auto format_cut_scan_label(const std::string& scan_name, double value) -> std::string {
+        return fmt::format("{}_{:.2f}", scan_name, value);
+    }
+
+    /**
+     * @brief Recompute a delta_vz range for a different N-sigma width.
+     *
+     * The existing ranges are defined as mu +/- 3*sigma. This function
+     * extracts mu and sigma from the nominal 3-sigma range, then returns
+     * mu +/- n_sigma * sigma.
+     */
+    static auto get_delta_vz_range_nsigma(const DeltaVzCutRange& nominal, double n_sigma) -> DeltaVzCutRange {
+        double mu    = (nominal.high + nominal.low) / 2.0;
+        double sigma = (nominal.high - nominal.low) / 6.0;
+        return {mu - n_sigma * sigma, mu + n_sigma * sigma};
+    }
+
+    /**
+     * @brief Evaluate whether a candidate passes all rho0 cuts with one cut
+     * replaced by the scan-varied threshold.
+     *
+     * All OTHER cuts use their nominal enabled/threshold values.
+     * The scanned cut uses the provided threshold value.
+     */
+    auto passes_cut_scan(const Rho0Candidate& cand, const std::string& scan_name, double scan_value) const -> bool {
+        bool passes_dvz_pip = !m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip;
+        bool passes_dvz_pim = !m_enable_delta_vz_pim_cut.get() || cand.passes_delta_vz_pim;
+        bool passes_zh = !m_enable_zh_cut.get() || cand.passes_zh;
+        bool passes_lc = !m_enable_lc_cut.get() || cand.passes_lc;
+        bool passes_t  = !m_enable_t_cut.get()  || cand.passes_t;
+
+        if (scan_name == "lc") {
+            passes_lc = cand.lc < scan_value;
+        } else if (scan_name == "zh") {
+            passes_zh = cand.zh > scan_value;
+        } else if (scan_name == "t") {
+            passes_t = (cand.minus_t > m_t_min.get()) && (cand.minus_t < scan_value);
+        } else if (scan_name == "dvz") {
+            auto pip_range = get_delta_vz_range_nsigma(get_piplus_delta_vz_range(), scan_value);
+            auto pim_range = get_delta_vz_range_nsigma(get_piminus_delta_vz_range(), scan_value);
+            passes_dvz_pip = pip_range.contains(cand.delta_vz_pip);
+            passes_dvz_pim = pim_range.contains(cand.delta_vz_pim);
+        }
+
+        return passes_dvz_pip && passes_dvz_pim && passes_zh && passes_lc && passes_t;
+    }
+
     auto book_histograms() -> void {
         clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
 
@@ -1224,6 +1358,53 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
                 m_pion_cut_step_histograms[label] = ph;
             }
+
+            // Book cut scan histograms (lc, zh, t, delta_vz threshold scans)
+            auto book_cut_scan = [this, svc](
+                const std::string& scan_name,
+                const std::vector<double>& values,
+                const std::string& display_prefix,
+                const std::string& unit
+            ) {
+                if (values.empty()) return;
+
+                auto& scan_map = m_cut_scan_histograms[scan_name];
+                for (double val : values) {
+                    std::string label = format_cut_scan_label(scan_name, val);
+                    std::string dir = fmt::format("/Rho0/CutScan/{}/{}", scan_name, label);
+                    std::string val_display = unit.empty()
+                        ? fmt::format("{:.2f}", val)
+                        : fmt::format("{:.2f} {}", val, unit);
+
+                    CutScanHistograms ch;
+                    ch.mass_all = svc->book_hist1D(
+                        dir + "/pipim_mass_all",
+                        fmt::format("#pi^{{+}}#pi^{{-}} Mass ({} = {});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
+                            display_prefix, val_display),
+                        200, 0, 2.0);
+                    ch.mass_selected = svc->book_hist1D(
+                        dir + "/pipim_mass_selected",
+                        fmt::format("Selected #rho^{{0}} Mass ({} = {});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
+                            display_prefix, val_display),
+                        200, 0.4, 1.2);
+
+                    for (const auto& [q2_min, q2_max] : Q2_BINS) {
+                        std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
+                        std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
+                        std::string title = fmt::format(
+                            "#pi^{{+}}#pi^{{-}} Mass ({} = {}, {:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
+                            display_prefix, val_display, q2_min, q2_max);
+                        ch.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+                    }
+
+                    scan_map[label] = ch;
+                }
+            };
+
+            book_cut_scan("lc", m_lc_scan_values.get(), "l_{c}^{max}", "fm");
+            book_cut_scan("zh", m_zh_scan_values.get(), "z_{h}^{min}", "");
+            book_cut_scan("t", m_t_scan_values.get(), "-t^{max}", "GeV^{2}");
+            book_cut_scan("dvz", m_dvz_scan_values.get(), "#Delta v_{z}", "#sigma");
         });
     }
     auto setup_ntuple() -> void {
@@ -1379,6 +1560,186 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
         tree->Write("", TObject::kOverwrite);
         clas12::framework::Log::info(name(), "Sigma scan results saved to TTree with {} entries", tree->GetEntries());
+    }
+
+    /**
+     * @brief Fit all cut scan histograms and print comparison tables
+     */
+    auto fit_cut_scan_histograms() -> void {
+        using Log = clas12::framework::Log;
+
+        struct ScanTypeConfig {
+            std::string name;
+            std::string display_name;
+            std::string column_name;
+            const std::vector<double>& values;
+            double nominal_value;
+        };
+
+        std::vector<ScanTypeConfig> scan_types;
+
+        if (!m_lc_scan_values.get().empty()) {
+            scan_types.push_back({"lc", "Coherence Length", "lc_max [fm]",
+                m_lc_scan_values.get(), m_lc_max.get()});
+        }
+        if (!m_zh_scan_values.get().empty()) {
+            scan_types.push_back({"zh", "Energy Fraction", "zh_min",
+                m_zh_scan_values.get(), m_zh_min.get()});
+        }
+        if (!m_t_scan_values.get().empty()) {
+            scan_types.push_back({"t", "Momentum Transfer", "-t_max [GeV^2]",
+                m_t_scan_values.get(), m_t_max.get()});
+        }
+        if (!m_dvz_scan_values.get().empty()) {
+            scan_types.push_back({"dvz", "Delta Vz", "N-sigma",
+                m_dvz_scan_values.get(), 3.0});
+        }
+
+        for (const auto& scan_type : scan_types) {
+            Log::subsection(fmt::format("{} Cut Scan Results", scan_type.display_name));
+
+            auto scan_map_it = m_cut_scan_histograms.find(scan_type.name);
+            if (scan_map_it == m_cut_scan_histograms.end()) continue;
+            auto& scan_map = scan_map_it->second;
+
+            std::vector<CutScanResult> scan_results;
+
+            for (double val : scan_type.values) {
+                std::string label = format_cut_scan_label(scan_type.name, val);
+                auto ch_it = scan_map.find(label);
+                if (ch_it == scan_map.end()) continue;
+                auto& ch = ch_it->second;
+
+                CutScanResult sr;
+                sr.cut_value = val;
+                sr.total_entries = ch.mass_selected
+                    ? static_cast<double>(ch.mass_selected->entries()) : 0;
+
+                if (ch.mass_selected && ch.mass_selected->entries() > 100) {
+                    auto root_hist = ch.mass_selected->to_root(
+                        fmt::format("cut_scan_{}_{}_fit", scan_type.name, label),
+                        fmt::format("{} = {:.2f}", scan_type.column_name, val));
+
+                    auto result = fit_histogram(root_hist.get(),
+                        fmt::format("{} scan ({:.2f})", scan_type.display_name, val),
+                        0.3, 1.2, 0.6, 1.0);
+
+                    if (result.valid) {
+                        sr.n_rho0 = result.n_rho0;
+                        sr.n_rho0_err = result.n_rho0_err;
+                        sr.mass = result.mass;
+                        sr.mass_err = result.mass_err;
+                        sr.chi2_ndf = result.chi2_ndf;
+                        sr.valid = true;
+                    }
+                }
+                scan_results.push_back(sr);
+            }
+
+            if (scan_results.empty()) continue;
+
+            // Print comparison table
+            std::vector<std::string> columns = {scan_type.column_name, "Entries", "N(rho0)", "Mass [MeV]", "chi2/ndf"};
+            std::vector<std::vector<std::string>> rows;
+
+            double ref_n_rho0 = 0;
+            for (const auto& sr : scan_results) {
+                if (std::abs(sr.cut_value - scan_type.nominal_value) < 0.001 && sr.valid) {
+                    ref_n_rho0 = sr.n_rho0;
+                    break;
+                }
+            }
+
+            for (const auto& sr : scan_results) {
+                rows.push_back({
+                    fmt::format("{:.2f}", sr.cut_value),
+                    fmt::format("{:.0f}", sr.total_entries),
+                    sr.valid ? fmt::format("{:.0f} +/- {:.0f}", sr.n_rho0, sr.n_rho0_err) : "N/A",
+                    sr.valid ? fmt::format("{:.1f} +/- {:.1f}", sr.mass * 1000, sr.mass_err * 1000) : "N/A",
+                    sr.valid ? fmt::format("{:.2f}", sr.chi2_ndf) : "N/A"
+                });
+            }
+
+            Log::print_yield_summary_table(
+                fmt::format("{} Cut Scan: rho0 Yield Comparison", scan_type.display_name),
+                columns, rows);
+
+            // Print relative change table
+            if (ref_n_rho0 > 0) {
+                std::vector<std::string> rel_columns = {scan_type.column_name, "N(rho0)",
+                    fmt::format("Relative to {:.2f}", scan_type.nominal_value)};
+                std::vector<std::vector<std::string>> rel_rows;
+
+                for (const auto& sr : scan_results) {
+                    if (!sr.valid) continue;
+                    double rel = 100.0 * (sr.n_rho0 - ref_n_rho0) / ref_n_rho0;
+                    rel_rows.push_back({
+                        fmt::format("{:.2f}", sr.cut_value),
+                        fmt::format("{:.0f} +/- {:.0f}", sr.n_rho0, sr.n_rho0_err),
+                        fmt::format("{:+.1f}%", rel)
+                    });
+                }
+
+                Log::print_yield_summary_table(
+                    fmt::format("{} Cut Scan: Relative Yield Change", scan_type.display_name),
+                    rel_columns, rel_rows);
+            }
+
+            // Save fit results to ROOT file
+            save_cut_scan_fit_results(scan_type.name, scan_type.display_name, scan_results);
+        }
+    }
+
+    /**
+     * @brief Save cut scan fit results to ROOT file as a TTree
+     */
+    auto save_cut_scan_fit_results(
+        const std::string& scan_name,
+        const std::string& display_name,
+        const std::vector<CutScanResult>& scan_results
+    ) -> void {
+        if (!m_output_svc || !m_output_svc->is_valid()) return;
+        auto* out_svc = m_output_svc->get();
+        if (!out_svc->is_file_open()) return;
+
+        std::lock_guard<std::mutex> lock(out_svc->mutex());
+        TFile* file = out_svc->get_file();
+        if (!file) return;
+
+        std::string dir_path = fmt::format("Rho0/CutScan/{}", scan_name);
+        file->cd();
+        if (!file->GetDirectory(dir_path.c_str())) {
+            file->mkdir(dir_path.c_str());
+        }
+        file->cd(dir_path.c_str());
+
+        std::string tree_name = fmt::format("{}_scan_results", scan_name);
+        auto* tree = new TTree(tree_name.c_str(),
+            fmt::format("{} Cut Scan Results", display_name).c_str());
+
+        double cut_value, n_rho0, n_rho0_err, mass_val, mass_err, chi2_ndf, entries;
+        tree->Branch("cut_value", &cut_value, "cut_value/D");
+        tree->Branch("entries", &entries, "entries/D");
+        tree->Branch("n_rho0", &n_rho0, "n_rho0/D");
+        tree->Branch("n_rho0_err", &n_rho0_err, "n_rho0_err/D");
+        tree->Branch("mass", &mass_val, "mass/D");
+        tree->Branch("mass_err", &mass_err, "mass_err/D");
+        tree->Branch("chi2_ndf", &chi2_ndf, "chi2_ndf/D");
+
+        for (const auto& sr : scan_results) {
+            cut_value = sr.cut_value;
+            entries = sr.total_entries;
+            n_rho0 = sr.valid ? sr.n_rho0 : 0;
+            n_rho0_err = sr.valid ? sr.n_rho0_err : 0;
+            mass_val = sr.valid ? sr.mass : 0;
+            mass_err = sr.valid ? sr.mass_err : 0;
+            chi2_ndf = sr.valid ? sr.chi2_ndf : 0;
+            tree->Fill();
+        }
+
+        tree->Write("", TObject::kOverwrite);
+        clas12::framework::Log::info(name(), "{} scan results saved to TTree with {} entries",
+            display_name, tree->GetEntries());
     }
 
     /**
