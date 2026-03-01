@@ -224,6 +224,35 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         log_cut_scan("dvz", m_dvz_scan_values.get());
         Log::blank();
 
+        // Populate cut scan registry
+        if (!m_lc_scan_values.get().empty()) {
+            m_cut_scan_defs.push_back({"lc", &m_lc_scan_values.get(),
+                [](const Rho0Candidate& c, double v, bool&, bool&, bool&, bool& lc, bool&) {
+                    lc = c.lc < v;
+                }});
+        }
+        if (!m_zh_scan_values.get().empty()) {
+            m_cut_scan_defs.push_back({"zh", &m_zh_scan_values.get(),
+                [](const Rho0Candidate& c, double v, bool&, bool&, bool& zh, bool&, bool&) {
+                    zh = c.zh > v;
+                }});
+        }
+        if (!m_t_scan_values.get().empty()) {
+            m_cut_scan_defs.push_back({"t", &m_t_scan_values.get(),
+                [this](const Rho0Candidate& c, double v, bool&, bool&, bool&, bool&, bool& t) {
+                    t = (c.minus_t > m_t_min.get()) && (c.minus_t < v);
+                }});
+        }
+        if (!m_dvz_scan_values.get().empty()) {
+            m_cut_scan_defs.push_back({"dvz", &m_dvz_scan_values.get(),
+                [this](const Rho0Candidate& c, double v, bool& dvz_pip, bool& dvz_pim, bool&, bool&, bool&) {
+                    auto pip_range = get_delta_vz_range_nsigma(get_piplus_delta_vz_range(), v);
+                    auto pim_range = get_delta_vz_range_nsigma(get_piminus_delta_vz_range(), v);
+                    dvz_pip = pip_range.contains(c.delta_vz_pip);
+                    dvz_pim = pim_range.contains(c.delta_vz_pim);
+                }});
+        }
+
         book_histograms();
 
         if (m_enable_ntuple.get()) {
@@ -341,16 +370,13 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         }
 
         // Process cut scan variations (rho0-level cut threshold scans)
-        for (const auto& [scan_name, scan_map] : m_cut_scan_histograms) {
-            const std::vector<double>* values_ptr = nullptr;
-            if (scan_name == "lc") values_ptr = &m_lc_scan_values.get();
-            else if (scan_name == "zh") values_ptr = &m_zh_scan_values.get();
-            else if (scan_name == "t") values_ptr = &m_t_scan_values.get();
-            else if (scan_name == "dvz") values_ptr = &m_dvz_scan_values.get();
-            if (!values_ptr) continue;
+        for (const auto& def : m_cut_scan_defs) {
+            auto scan_map_it = m_cut_scan_histograms.find(def.name);
+            if (scan_map_it == m_cut_scan_histograms.end()) continue;
+            auto& scan_map = scan_map_it->second;
 
-            for (double scan_value : *values_ptr) {
-                std::string label = format_cut_scan_label(scan_name, scan_value);
+            for (double scan_value : *def.values) {
+                std::string label = format_cut_scan_label(def.name, scan_value);
                 auto ch_it = scan_map.find(label);
                 if (ch_it == scan_map.end()) continue;
                 auto& ch = ch_it->second;
@@ -358,17 +384,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 for (const auto& cand : candidates) {
                     if (ch.mass_all) ch.mass_all->fill(cand.mass);
 
-                    if (passes_cut_scan(cand, scan_name, scan_value)) {
+                    if (passes_cut_scan(cand, def, scan_value)) {
                         if (ch.mass_selected) ch.mass_selected->fill(cand.mass);
-
-                        for (size_t i = 0; i < Q2_BINS.size(); ++i) {
-                            if (Q2 >= Q2_BINS[i].first && Q2 < Q2_BINS[i].second) {
-                                std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
-                                auto it = ch.mass_q2_bins.find(bin_name);
-                                if (it != ch.mass_q2_bins.end() && it->second) it->second->fill(cand.mass);
-                                break;
-                            }
-                        }
+                        fill_binned_histogram(Q2_BINS, "Q2", ch.mass_q2_bins, Q2, cand.mass);
                     }
                 }
             }
@@ -409,15 +427,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
                 if (cand.passes_all_cuts) {
                     if (sh.mass_selected) sh.mass_selected->fill(cand.mass);
-
-                    for (size_t i = 0; i < Q2_BINS.size(); ++i) {
-                        if (Q2 >= Q2_BINS[i].first && Q2 < Q2_BINS[i].second) {
-                            std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
-                            auto it = sh.mass_q2_bins.find(bin_name);
-                            if (it != sh.mass_q2_bins.end() && it->second) it->second->fill(cand.mass);
-                            break;
-                        }
-                    }
+                    fill_binned_histogram(Q2_BINS, "Q2", sh.mass_q2_bins, Q2, cand.mass);
                 }
             }
         }
@@ -455,14 +465,48 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             fit_invariant_mass_histograms();
         }
 
-        // Sigma scan analysis
-        if (!m_sigma_scan_values.get().empty() && m_enable_fitting.get()) {
-            fit_sigma_scan_histograms();
-        }
+        // Scan analyses (sigma and cut scans)
+        if (m_enable_fitting.get()) {
+            // Sigma scan
+            if (!m_sigma_scan_values.get().empty()) {
+                fit_and_report_scan(
+                    {"sigma", "Delta-t Sigma", "Sigma", "{:.1f}", 3.0,
+                     "Rho0/SigmaScan", "sigma_scan_results", "sigma"},
+                    m_sigma_scan_values.get(), m_sigma_scan_histograms,
+                    [](double v) { return format_sigma_label(v); });
+            }
 
-        // Cut scan analysis (lc, zh, t, delta_vz)
-        if (m_enable_fitting.get() && !m_cut_scan_histograms.empty()) {
-            fit_cut_scan_histograms();
+            // Cut scans (lc, zh, t, delta_vz)
+            struct CutScanConfig {
+                std::string name, display_name, column_name, value_format;
+                const std::vector<double>& values;
+                double nominal_value;
+            };
+            std::vector<CutScanConfig> cut_scans;
+            if (!m_lc_scan_values.get().empty())
+                cut_scans.push_back({"lc", "Coherence Length", "lc_max [fm]", "{:.2f}",
+                    m_lc_scan_values.get(), m_lc_max.get()});
+            if (!m_zh_scan_values.get().empty())
+                cut_scans.push_back({"zh", "Energy Fraction", "zh_min", "{:.2f}",
+                    m_zh_scan_values.get(), m_zh_min.get()});
+            if (!m_t_scan_values.get().empty())
+                cut_scans.push_back({"t", "Momentum Transfer", "-t_max [GeV^2]", "{:.2f}",
+                    m_t_scan_values.get(), m_t_max.get()});
+            if (!m_dvz_scan_values.get().empty())
+                cut_scans.push_back({"dvz", "Delta Vz", "N-sigma", "{:.2f}",
+                    m_dvz_scan_values.get(), 3.0});
+
+            for (const auto& cs : cut_scans) {
+                auto scan_map_it = m_cut_scan_histograms.find(cs.name);
+                if (scan_map_it == m_cut_scan_histograms.end()) continue;
+
+                fit_and_report_scan(
+                    {cs.name, cs.display_name, cs.column_name, cs.value_format,
+                     cs.nominal_value, fmt::format("Rho0/CutScan/{}", cs.name),
+                     fmt::format("{}_scan_results", cs.name), "cut_value"},
+                    cs.values, scan_map_it->second,
+                    [&cs](double v) { return format_cut_scan_label(cs.name, v); });
+            }
         }
 
         // Save run metadata to ROOT file
@@ -684,8 +728,8 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 default: break;
             }
 
-            fill_q2_binned_histogram(Q2, cand.mass);
-            fill_region_q2_binned_histogram(rh, Q2, cand.mass);
+            fill_binned_histogram(Q2_BINS, "Q2", h_pipim_mass_q2_bins, Q2, cand.mass);
+            fill_binned_histogram(Q2_BINS, "Q2", rh.mass_q2_bins, Q2, cand.mass);
         }
     }
 
@@ -699,7 +743,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 (!m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip) &&
                 (!m_enable_zh_cut.get() || cand.passes_zh) && passes_Q2 &&
                 (!m_enable_t_cut.get() || cand.passes_t)) {
-                fill_lc_binned_histogram(cand.lc, cand.mass);
+                fill_binned_histogram(LC_BINS, "LC", h_pipim_mass_lc_bins, cand.lc, cand.mass);
             }
         }
     }
@@ -930,22 +974,15 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     std::atomic<size_t> m_rho0_cc{0};
 
     // Sigma scan histogram set
-    struct SigmaScanHistograms {
+    struct ScanHistograms {
         clas12::framework::AtomicHistogram1D* mass_all = nullptr;
         clas12::framework::AtomicHistogram1D* mass_selected = nullptr;
         std::map<std::string, clas12::framework::AtomicHistogram1D*> mass_q2_bins;
     };
-    std::map<std::string, SigmaScanHistograms> m_sigma_scan_histograms;
+    std::map<std::string, ScanHistograms> m_sigma_scan_histograms;
 
-    // Cut scan histogram set (for lc, zh, t, delta_vz threshold scans)
-    struct CutScanHistograms {
-        clas12::framework::AtomicHistogram1D* mass_all = nullptr;
-        clas12::framework::AtomicHistogram1D* mass_selected = nullptr;
-        std::map<std::string, clas12::framework::AtomicHistogram1D*> mass_q2_bins;
-    };
-
-    struct CutScanResult {
-        double cut_value = 0.0;
+    struct ScanFitResult {
+        double scan_value = 0.0;
         double n_rho0 = 0.0;
         double n_rho0_err = 0.0;
         double mass = 0.0;
@@ -957,14 +994,20 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
     // Key: scan name ("lc", "zh", "t", "dvz")
     // Value: map from value label (e.g., "lc_0.50") to histograms
-    std::map<std::string, std::map<std::string, CutScanHistograms>> m_cut_scan_histograms;
+    std::map<std::string, std::map<std::string, ScanHistograms>> m_cut_scan_histograms;
 
-    // Pion cut impact histogram set (cumulative pion cut steps)
-    struct PionCutStepHistograms {
-        clas12::framework::AtomicHistogram1D* mass_all = nullptr;       // before rho0 cuts
-        clas12::framework::AtomicHistogram1D* mass_selected = nullptr;  // after all rho0 cuts
+    // Cut scan registry: eliminates string-based dispatch in process() and passes_cut_scan()
+    using CutOverrideFn = std::function<void(const Rho0Candidate&, double,
+        bool& /*dvz_pip*/, bool& /*dvz_pim*/, bool& /*zh*/, bool& /*lc*/, bool& /*t*/)>;
+
+    struct CutScanDef {
+        std::string name;
+        const std::vector<double>* values;
+        CutOverrideFn apply;
     };
-    std::map<std::string, PionCutStepHistograms> m_pion_cut_step_histograms;
+    std::vector<CutScanDef> m_cut_scan_defs;
+
+    std::map<std::string, ScanHistograms> m_pion_cut_step_histograms;
 
     // Cumulative pion cut step definitions
     static constexpr std::array<std::pair<int, const char*>, 5> PION_CUT_STEPS = {{
@@ -1120,34 +1163,20 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     };
     clas12::framework::NTupleWriter<Rho0NTupleData> m_ntuple_writer;
 
-    auto fill_q2_binned_histogram(double Q2, double mass) -> void {
-        for (size_t i = 0; i < Q2_BINS.size(); ++i) {
-            if (Q2 >= Q2_BINS[i].first && Q2 < Q2_BINS[i].second) {
-                std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
-                auto it = h_pipim_mass_q2_bins.find(bin_name);
-                if (it != h_pipim_mass_q2_bins.end() && it->second) it->second->fill(mass);
-                break;
-            }
-        }
-    }
-
-    auto fill_region_q2_binned_histogram(RegionHistograms& rh, double Q2, double mass) -> void {
-        for (size_t i = 0; i < Q2_BINS.size(); ++i) {
-            if (Q2 >= Q2_BINS[i].first && Q2 < Q2_BINS[i].second) {
-                std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", Q2_BINS[i].first, Q2_BINS[i].second);
-                auto it = rh.mass_q2_bins.find(bin_name);
-                if (it != rh.mass_q2_bins.end() && it->second) it->second->fill(mass);
-                break;
-            }
-        }
-    }
-
-    auto fill_lc_binned_histogram(double lc, double mass) -> void {
-        for (size_t i = 0; i < LC_BINS.size(); ++i) {
-            if (lc >= LC_BINS[i].first && lc < LC_BINS[i].second) {
-                std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", LC_BINS[i].first, LC_BINS[i].second);
-                auto it = h_pipim_mass_lc_bins.find(bin_name);
-                if (it != h_pipim_mass_lc_bins.end() && it->second) it->second->fill(mass);
+    /**
+     * @brief Fill a binned histogram by looking up the appropriate bin for a variable value
+     */
+    template<typename BinArray>
+    static auto fill_binned_histogram(
+        const BinArray& bins, const std::string& prefix,
+        const std::map<std::string, clas12::framework::AtomicHistogram1D*>& hist_map,
+        double variable, double fill_value
+    ) -> void {
+        for (size_t i = 0; i < bins.size(); ++i) {
+            if (variable >= bins[i].first && variable < bins[i].second) {
+                std::string bin_name = fmt::format("{}_{:.1f}_{:.1f}", prefix, bins[i].first, bins[i].second);
+                auto it = hist_map.find(bin_name);
+                if (it != hist_map.end() && it->second) it->second->fill(fill_value);
                 break;
             }
         }
@@ -1189,33 +1218,31 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
      * All OTHER cuts use their nominal enabled/threshold values.
      * The scanned cut uses the provided threshold value.
      */
-    auto passes_cut_scan(const Rho0Candidate& cand, const std::string& scan_name, double scan_value) const -> bool {
-        bool passes_dvz_pip = !m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip;
-        bool passes_dvz_pim = !m_enable_delta_vz_pim_cut.get() || cand.passes_delta_vz_pim;
-        bool passes_zh = !m_enable_zh_cut.get() || cand.passes_zh;
-        bool passes_lc = !m_enable_lc_cut.get() || cand.passes_lc;
-        bool passes_t  = !m_enable_t_cut.get()  || cand.passes_t;
+    auto passes_cut_scan(const Rho0Candidate& cand, const CutScanDef& def, double scan_value) const -> bool {
+        bool dvz_pip = !m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip;
+        bool dvz_pim = !m_enable_delta_vz_pim_cut.get() || cand.passes_delta_vz_pim;
+        bool zh = !m_enable_zh_cut.get() || cand.passes_zh;
+        bool lc = !m_enable_lc_cut.get() || cand.passes_lc;
+        bool t  = !m_enable_t_cut.get()  || cand.passes_t;
 
-        if (scan_name == "lc") {
-            passes_lc = cand.lc < scan_value;
-        } else if (scan_name == "zh") {
-            passes_zh = cand.zh > scan_value;
-        } else if (scan_name == "t") {
-            passes_t = (cand.minus_t > m_t_min.get()) && (cand.minus_t < scan_value);
-        } else if (scan_name == "dvz") {
-            auto pip_range = get_delta_vz_range_nsigma(get_piplus_delta_vz_range(), scan_value);
-            auto pim_range = get_delta_vz_range_nsigma(get_piminus_delta_vz_range(), scan_value);
-            passes_dvz_pip = pip_range.contains(cand.delta_vz_pip);
-            passes_dvz_pim = pim_range.contains(cand.delta_vz_pim);
-        }
+        def.apply(cand, scan_value, dvz_pip, dvz_pim, zh, lc, t);
 
-        return passes_dvz_pip && passes_dvz_pim && passes_zh && passes_lc && passes_t;
+        return dvz_pip && dvz_pim && zh && lc && t;
     }
 
     auto book_histograms() -> void {
         clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
+            book_main_histograms(svc);
+            book_nminus1_histograms(svc);
+            book_region_histograms(svc);
+            book_sigma_scan_histograms(svc);
+            book_pion_cut_step_histograms(svc);
+            book_cut_scan_histograms(svc);
+        });
+    }
 
-        // Rho0 candidate histograms
+    template<typename HistSvc>
+    auto book_main_histograms(HistSvc* svc) -> void {
         h_pipim_mass_all = svc->book_hist1D("/Rho0/pipim_mass_all", "All #pi^{+}#pi^{-} Invariant Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
         h_pipim_mass_selected = svc->book_hist1D("/Rho0/pipim_mass_selected", "Selected #rho^{0} Candidate Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0.4, 1.2);
         h_rho0_momentum = svc->book_hist1D("/Rho0/rho0_momentum", "#rho^{0} Momentum;p [GeV/c];Events", 100, 0, 10);
@@ -1249,163 +1276,171 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             h_pipim_mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
         }
 
-            // lc-binned invariant mass histograms
-            for (const auto& [lc_min, lc_max] : LC_BINS) {
-                std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", lc_min, lc_max);
-                std::string hist_path = fmt::format("/Rho0/LC_bins/pipim_mass_{}", bin_name);
-                std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
-                h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+        // lc-binned invariant mass histograms
+        for (const auto& [lc_min, lc_max] : LC_BINS) {
+            std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", lc_min, lc_max);
+            std::string hist_path = fmt::format("/Rho0/LC_bins/pipim_mass_{}", bin_name);
+            std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
+            h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+        }
+    }
+
+    template<typename HistSvc>
+    auto book_nminus1_histograms(HistSvc* svc) -> void {
+        h_zh_nminus1 = svc->book_hist1D("/Rho0/NMinus1/zh_nminus1",
+            "z_{h} (N-1);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
+        h_lc_nminus1 = svc->book_hist1D("/Rho0/NMinus1/lc_nminus1",
+            "Coherence Length (N-1);l_{c} [fm];Events", 100, 0, 5);
+        h_t_nminus1 = svc->book_hist1D("/Rho0/NMinus1/t_nminus1",
+            "-t (N-1);-t [GeV^{2}];Events", 100, 0, 2);
+        h_delta_vz_pip_nminus1 = svc->book_hist1D("/Rho0/NMinus1/delta_vz_pip_nminus1",
+            "#Delta v_{z} #pi^{+} (N-1);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -20, 20);
+        h_delta_vz_pim_nminus1 = svc->book_hist1D("/Rho0/NMinus1/delta_vz_pim_nminus1",
+            "#Delta v_{z} #pi^{-} (N-1);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -20, 20);
+
+        h_pipim_mass_nminus1_zh = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_zh",
+            "M_{#pi^{+}#pi^{-}} (all cuts except z_{h});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
+        h_pipim_mass_nminus1_lc = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_lc",
+            "M_{#pi^{+}#pi^{-}} (all cuts except l_{c});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
+        h_pipim_mass_nminus1_t = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_t",
+            "M_{#pi^{+}#pi^{-}} (all cuts except -t);M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
+        h_pipim_mass_nminus1_delta_vz_pip = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pip",
+            "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{+});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
+        h_pipim_mass_nminus1_delta_vz_pim = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pim",
+            "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{-});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
+    }
+
+    template<typename HistSvc>
+    auto book_region_histograms(HistSvc* svc) -> void {
+        auto book_region = [svc](RegionHistograms& h, const std::string& dir, const std::string& label) {
+            h.mass_all = svc->book_hist1D(dir + "/pipim_mass_all",
+                fmt::format("{} #pi^{{+}}#pi^{{-}} Invariant Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), 200, 0, 2.0);
+            h.mass_selected = svc->book_hist1D(dir + "/pipim_mass_selected",
+                fmt::format("{} Selected #rho^{{0}} Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), 200, 0.4, 1.2);
+            h.momentum = svc->book_hist1D(dir + "/rho0_momentum",
+                fmt::format("{} #rho^{{0}} Momentum;p [GeV/c];Events", label), 100, 0, 10);
+            h.theta = svc->book_hist1D(dir + "/rho0_theta",
+                fmt::format("{} #rho^{{0}} Theta;#theta [deg];Events", label), 180, 0, 180);
+            h.phi = svc->book_hist1D(dir + "/rho0_phi",
+                fmt::format("{} #rho^{{0}} Phi;#phi [deg];Events", label), 360, -180, 180);
+            h.opening_angle = svc->book_hist1D(dir + "/opening_angle",
+                fmt::format("{} #pi^{{+}}#pi^{{-}} Opening Angle;#theta_{{#pi^{{+}}#pi^{{-}}}} [deg];Events", label), 180, 0, 180);
+            h.mass_vs_momentum = svc->book_hist2D(dir + "/pipim_mass_vs_momentum",
+                fmt::format("{} #pi^{{+}}#pi^{{-}} Mass vs Momentum;p [GeV/c];M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}]", label),
+                100, 0, 10, 100, 0.4, 1.2);
+
+            for (const auto& [q2_min, q2_max] : Q2_BINS) {
+                std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
+                std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
+                std::string title = fmt::format("{} #pi^{{+}}#pi^{{-}} Mass ({:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label, q2_min, q2_max);
+                h.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+            }
+        };
+        book_region(m_hist_ff, "/Rho0/Forward", "FD-FD");
+        book_region(m_hist_mixed, "/Rho0/Mixed", "Mixed");
+        book_region(m_hist_cc, "/Rho0/Central", "CD-CD");
+    }
+
+    template<typename HistSvc>
+    auto book_sigma_scan_histograms(HistSvc* svc) -> void {
+        for (double sigma : m_sigma_scan_values.get()) {
+            std::string label = format_sigma_label(sigma);
+            std::string dir = fmt::format("/Rho0/SigmaScan/{}", label);
+
+            ScanHistograms sh;
+            sh.mass_all = svc->book_hist1D(
+                dir + "/pipim_mass_all",
+                fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f}#sigma);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", sigma),
+                200, 0, 2.0);
+            sh.mass_selected = svc->book_hist1D(
+                dir + "/pipim_mass_selected",
+                fmt::format("Selected #rho^{{0}} Mass ({:.1f}#sigma);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", sigma),
+                200, 0.4, 1.2);
+
+            for (const auto& [q2_min, q2_max] : Q2_BINS) {
+                std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
+                std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
+                std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f}#sigma, {:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
+                    sigma, q2_min, q2_max);
+                sh.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
             }
 
-            // N-1 cut plots: cut variable with all other cuts applied
-            h_zh_nminus1 = svc->book_hist1D("/Rho0/NMinus1/zh_nminus1",
-                "z_{h} (N-1);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
-            h_lc_nminus1 = svc->book_hist1D("/Rho0/NMinus1/lc_nminus1",
-                "Coherence Length (N-1);l_{c} [fm];Events", 100, 0, 5);
-            h_t_nminus1 = svc->book_hist1D("/Rho0/NMinus1/t_nminus1",
-                "-t (N-1);-t [GeV^{2}];Events", 100, 0, 2);
-            h_delta_vz_pip_nminus1 = svc->book_hist1D("/Rho0/NMinus1/delta_vz_pip_nminus1",
-                "#Delta v_{z} #pi^{+} (N-1);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -20, 20);
-            h_delta_vz_pim_nminus1 = svc->book_hist1D("/Rho0/NMinus1/delta_vz_pim_nminus1",
-                "#Delta v_{z} #pi^{-} (N-1);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -20, 20);
-            // N-1 cut plots: invariant mass with all other cuts applied
-            h_pipim_mass_nminus1_zh = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_zh",
-                "M_{#pi^{+}#pi^{-}} (all cuts except z_{h});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
-            h_pipim_mass_nminus1_lc = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_lc",
-                "M_{#pi^{+}#pi^{-}} (all cuts except l_{c});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
-            h_pipim_mass_nminus1_t = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_t",
-                "M_{#pi^{+}#pi^{-}} (all cuts except -t);M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
-            h_pipim_mass_nminus1_delta_vz_pip = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pip",
-                "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{+});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
-            h_pipim_mass_nminus1_delta_vz_pim = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pim",
-                "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{-});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
+            m_sigma_scan_histograms[label] = sh;
+        }
+    }
 
-            // Region-specific histograms (Forward-Forward, Mixed, Central-Central)
-            auto book_region = [svc](RegionHistograms& h, const std::string& dir, const std::string& label) {
-                h.mass_all = svc->book_hist1D(dir + "/pipim_mass_all",
-                    fmt::format("{} #pi^{{+}}#pi^{{-}} Invariant Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), 200, 0, 2.0);
-                h.mass_selected = svc->book_hist1D(dir + "/pipim_mass_selected",
-                    fmt::format("{} Selected #rho^{{0}} Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), 200, 0.4, 1.2);
-                h.momentum = svc->book_hist1D(dir + "/rho0_momentum",
-                    fmt::format("{} #rho^{{0}} Momentum;p [GeV/c];Events", label), 100, 0, 10);
-                h.theta = svc->book_hist1D(dir + "/rho0_theta",
-                    fmt::format("{} #rho^{{0}} Theta;#theta [deg];Events", label), 180, 0, 180);
-                h.phi = svc->book_hist1D(dir + "/rho0_phi",
-                    fmt::format("{} #rho^{{0}} Phi;#phi [deg];Events", label), 360, -180, 180);
-                h.opening_angle = svc->book_hist1D(dir + "/opening_angle",
-                    fmt::format("{} #pi^{{+}}#pi^{{-}} Opening Angle;#theta_{{#pi^{{+}}#pi^{{-}}}} [deg];Events", label), 180, 0, 180);
-                h.mass_vs_momentum = svc->book_hist2D(dir + "/pipim_mass_vs_momentum",
-                    fmt::format("{} #pi^{{+}}#pi^{{-}} Mass vs Momentum;p [GeV/c];M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}]", label),
-                    100, 0, 10, 100, 0.4, 1.2);
+    template<typename HistSvc>
+    auto book_pion_cut_step_histograms(HistSvc* svc) -> void {
+        static constexpr std::array<const char*, 5> PION_CUT_DISPLAY_NAMES = {{
+            "No Pion Cuts", "+ DC Fiducial", "+ #chi^{2}_{PID}",
+            "+ Momentum", "+ Vertex Z"
+        }};
+        for (size_t i = 0; i < PION_CUT_STEPS.size(); ++i) {
+            const char* label = PION_CUT_STEPS[i].second;
+            const char* display = PION_CUT_DISPLAY_NAMES[i];
+            std::string dir = fmt::format("/Rho0/PionCutImpact/{}", label);
 
-                // Q²-binned invariant mass histograms per region
-                for (const auto& [q2_min, q2_max] : Q2_BINS) {
-                    std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
-                    std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
-                    std::string title = fmt::format("{} #pi^{{+}}#pi^{{-}} Mass ({:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label, q2_min, q2_max);
-                    h.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
-                }
-            };
-            book_region(m_hist_ff, "/Rho0/Forward", "FD-FD");
-            book_region(m_hist_mixed, "/Rho0/Mixed", "Mixed");
-            book_region(m_hist_cc, "/Rho0/Central", "CD-CD");
+            ScanHistograms ph;
+            ph.mass_all = svc->book_hist1D(
+                dir + "/pipim_mass_all",
+                fmt::format("#pi^{{+}}#pi^{{-}} Mass ({});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", display),
+                200, 0, 2.0);
+            ph.mass_selected = svc->book_hist1D(
+                dir + "/pipim_mass_selected",
+                fmt::format("Selected #rho^{{0}} Mass ({});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", display),
+                200, 0.4, 1.2);
 
-            // Book sigma scan histograms
-            for (double sigma : m_sigma_scan_values.get()) {
-                std::string label = format_sigma_label(sigma);
-                std::string dir = fmt::format("/Rho0/SigmaScan/{}", label);
+            m_pion_cut_step_histograms[label] = ph;
+        }
+    }
 
-                SigmaScanHistograms sh;
-                sh.mass_all = svc->book_hist1D(
+    template<typename HistSvc>
+    auto book_cut_scan_histograms(HistSvc* svc) -> void {
+        auto book_cut_scan = [this, svc](
+            const std::string& scan_name,
+            const std::vector<double>& values,
+            const std::string& display_prefix,
+            const std::string& unit
+        ) {
+            if (values.empty()) return;
+
+            auto& scan_map = m_cut_scan_histograms[scan_name];
+            for (double val : values) {
+                std::string label = format_cut_scan_label(scan_name, val);
+                std::string dir = fmt::format("/Rho0/CutScan/{}/{}", scan_name, label);
+                std::string val_display = unit.empty()
+                    ? fmt::format("{:.2f}", val)
+                    : fmt::format("{:.2f} {}", val, unit);
+
+                ScanHistograms ch;
+                ch.mass_all = svc->book_hist1D(
                     dir + "/pipim_mass_all",
-                    fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f}#sigma);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", sigma),
+                    fmt::format("#pi^{{+}}#pi^{{-}} Mass ({} = {});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
+                        display_prefix, val_display),
                     200, 0, 2.0);
-                sh.mass_selected = svc->book_hist1D(
+                ch.mass_selected = svc->book_hist1D(
                     dir + "/pipim_mass_selected",
-                    fmt::format("Selected #rho^{{0}} Mass ({:.1f}#sigma);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", sigma),
+                    fmt::format("Selected #rho^{{0}} Mass ({} = {});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
+                        display_prefix, val_display),
                     200, 0.4, 1.2);
 
                 for (const auto& [q2_min, q2_max] : Q2_BINS) {
                     std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
                     std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
-                    std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f}#sigma, {:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
-                        sigma, q2_min, q2_max);
-                    sh.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+                    std::string title = fmt::format(
+                        "#pi^{{+}}#pi^{{-}} Mass ({} = {}, {:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
+                        display_prefix, val_display, q2_min, q2_max);
+                    ch.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
                 }
 
-                m_sigma_scan_histograms[label] = sh;
+                scan_map[label] = ch;
             }
+        };
 
-            // Book pion cut impact histograms (cumulative pion cut steps)
-            static constexpr std::array<const char*, 5> PION_CUT_DISPLAY_NAMES = {{
-                "No Pion Cuts", "+ DC Fiducial", "+ #chi^{2}_{PID}",
-                "+ Momentum", "+ Vertex Z"
-            }};
-            for (size_t i = 0; i < PION_CUT_STEPS.size(); ++i) {
-                const char* label = PION_CUT_STEPS[i].second;
-                const char* display = PION_CUT_DISPLAY_NAMES[i];
-                std::string dir = fmt::format("/Rho0/PionCutImpact/{}", label);
-
-                PionCutStepHistograms ph;
-                ph.mass_all = svc->book_hist1D(
-                    dir + "/pipim_mass_all",
-                    fmt::format("#pi^{{+}}#pi^{{-}} Mass ({});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", display),
-                    200, 0, 2.0);
-                ph.mass_selected = svc->book_hist1D(
-                    dir + "/pipim_mass_selected",
-                    fmt::format("Selected #rho^{{0}} Mass ({});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", display),
-                    200, 0.4, 1.2);
-
-                m_pion_cut_step_histograms[label] = ph;
-            }
-
-            // Book cut scan histograms (lc, zh, t, delta_vz threshold scans)
-            auto book_cut_scan = [this, svc](
-                const std::string& scan_name,
-                const std::vector<double>& values,
-                const std::string& display_prefix,
-                const std::string& unit
-            ) {
-                if (values.empty()) return;
-
-                auto& scan_map = m_cut_scan_histograms[scan_name];
-                for (double val : values) {
-                    std::string label = format_cut_scan_label(scan_name, val);
-                    std::string dir = fmt::format("/Rho0/CutScan/{}/{}", scan_name, label);
-                    std::string val_display = unit.empty()
-                        ? fmt::format("{:.2f}", val)
-                        : fmt::format("{:.2f} {}", val, unit);
-
-                    CutScanHistograms ch;
-                    ch.mass_all = svc->book_hist1D(
-                        dir + "/pipim_mass_all",
-                        fmt::format("#pi^{{+}}#pi^{{-}} Mass ({} = {});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
-                            display_prefix, val_display),
-                        200, 0, 2.0);
-                    ch.mass_selected = svc->book_hist1D(
-                        dir + "/pipim_mass_selected",
-                        fmt::format("Selected #rho^{{0}} Mass ({} = {});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
-                            display_prefix, val_display),
-                        200, 0.4, 1.2);
-
-                    for (const auto& [q2_min, q2_max] : Q2_BINS) {
-                        std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
-                        std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
-                        std::string title = fmt::format(
-                            "#pi^{{+}}#pi^{{-}} Mass ({} = {}, {:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
-                            display_prefix, val_display, q2_min, q2_max);
-                        ch.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
-                    }
-
-                    scan_map[label] = ch;
-                }
-            };
-
-            book_cut_scan("lc", m_lc_scan_values.get(), "l_{c}^{max}", "fm");
-            book_cut_scan("zh", m_zh_scan_values.get(), "z_{h}^{min}", "");
-            book_cut_scan("t", m_t_scan_values.get(), "-t^{max}", "GeV^{2}");
-            book_cut_scan("dvz", m_dvz_scan_values.get(), "#Delta v_{z}", "#sigma");
-        });
+        book_cut_scan("lc", m_lc_scan_values.get(), "l_{c}^{max}", "fm");
+        book_cut_scan("zh", m_zh_scan_values.get(), "z_{h}^{min}", "");
+        book_cut_scan("t", m_t_scan_values.get(), "-t^{max}", "GeV^{2}");
+        book_cut_scan("dvz", m_dvz_scan_values.get(), "#Delta v_{z}", "#sigma");
     }
     auto setup_ntuple() -> void {
         clas12::framework::safe(m_ntuple_svc).with([this](auto* svc) {
@@ -1414,43 +1449,53 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         });
     }
     /**
-     * @brief Fit sigma scan histograms and print comparison table
+     * @brief Definition for a scan type (sigma scan or cut scan)
      */
-    auto fit_sigma_scan_histograms() -> void {
+    struct ScanDefinition {
+        std::string name;           // "sigma", "lc", "zh", "t", "dvz"
+        std::string display_name;   // "Delta-t Sigma", "Coherence Length", ...
+        std::string column_name;    // "Sigma", "lc_max [fm]", ...
+        std::string value_format;   // "{:.1f}" or "{:.2f}"
+        double nominal_value;       // reference value for relative change
+        std::string root_dir;       // "Rho0/SigmaScan" or "Rho0/CutScan/lc"
+        std::string tree_name;      // "sigma_scan_results" or "lc_scan_results"
+        std::string branch_name;    // "sigma" or "cut_value" (preserves ROOT schema)
+    };
+
+    /**
+     * @brief Fit scan histograms, print comparison tables, and save results
+     */
+    auto fit_and_report_scan(
+        const ScanDefinition& def,
+        const std::vector<double>& values,
+        const std::map<std::string, ScanHistograms>& histograms,
+        std::function<std::string(double)> label_formatter
+    ) -> void {
         using Log = clas12::framework::Log;
 
-        Log::subsection("Delta-t Sigma Scan Results");
+        Log::subsection(fmt::format("{} Scan Results", def.display_name));
 
-        struct SigmaScanResult {
-            double sigma = 0.0;
-            double n_rho0 = 0.0;
-            double n_rho0_err = 0.0;
-            double mass = 0.0;
-            double mass_err = 0.0;
-            double chi2_ndf = 0.0;
-            double total_entries = 0.0;
-            bool valid = false;
-        };
+        std::vector<ScanFitResult> scan_results;
 
-        std::vector<SigmaScanResult> scan_results;
-
-        for (double sigma : m_sigma_scan_values.get()) {
-            std::string label = format_sigma_label(sigma);
-            auto sh_it = m_sigma_scan_histograms.find(label);
-            if (sh_it == m_sigma_scan_histograms.end()) continue;
+        for (double val : values) {
+            std::string label = label_formatter(val);
+            auto sh_it = histograms.find(label);
+            if (sh_it == histograms.end()) continue;
             auto& sh = sh_it->second;
 
-            SigmaScanResult sr;
-            sr.sigma = sigma;
+            ScanFitResult sr;
+            sr.scan_value = val;
             sr.total_entries = sh.mass_selected ? static_cast<double>(sh.mass_selected->entries()) : 0;
 
             if (sh.mass_selected && sh.mass_selected->entries() > 100) {
                 auto root_hist = sh.mass_selected->to_root(
-                    fmt::format("sigma_scan_{}_fit", label),
-                    fmt::format("Mass ({:.1f}#sigma)", sigma));
+                    fmt::format("{}_scan_{}_fit", def.name, label),
+                    fmt::format("{} = {}", def.column_name,
+                        fmt::format(fmt::runtime(def.value_format), val)));
 
                 auto result = fit_histogram(root_hist.get(),
-                    fmt::format("Sigma scan ({:.1f}#sigma)", sigma),
+                    fmt::format("{} scan ({})", def.display_name,
+                        fmt::format(fmt::runtime(def.value_format), val)),
                     0.3, 1.2, 0.6, 1.0);
 
                 if (result.valid) {
@@ -1466,237 +1511,65 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             scan_results.push_back(sr);
         }
 
+        if (scan_results.empty()) return;
+
         // Print comparison table
-        if (!scan_results.empty()) {
-            std::vector<std::string> columns = {"Sigma", "Entries", "N(rho0)", "Mass [MeV]", "chi2/ndf"};
-            std::vector<std::vector<std::string>> rows;
+        std::vector<std::string> columns = {def.column_name, "Entries", "N(rho0)", "Mass [MeV]", "chi2/ndf"};
+        std::vector<std::vector<std::string>> rows;
 
-            double ref_n_rho0 = 0;
-            for (const auto& sr : scan_results) {
-                if (std::abs(sr.sigma - 3.0) < 0.01 && sr.valid) {
-                    ref_n_rho0 = sr.n_rho0;
-                    break;
-                }
+        double ref_n_rho0 = 0;
+        for (const auto& sr : scan_results) {
+            if (std::abs(sr.scan_value - def.nominal_value) < 0.01 && sr.valid) {
+                ref_n_rho0 = sr.n_rho0;
+                break;
             }
+        }
+
+        for (const auto& sr : scan_results) {
+            rows.push_back({
+                fmt::format(fmt::runtime(def.value_format), sr.scan_value),
+                fmt::format("{:.0f}", sr.total_entries),
+                sr.valid ? fmt::format("{:.0f} +/- {:.0f}", sr.n_rho0, sr.n_rho0_err) : "N/A",
+                sr.valid ? fmt::format("{:.1f} +/- {:.1f}", sr.mass * 1000, sr.mass_err * 1000) : "N/A",
+                sr.valid ? fmt::format("{:.2f}", sr.chi2_ndf) : "N/A"
+            });
+        }
+
+        Log::print_yield_summary_table(
+            fmt::format("{} Scan: rho0 Yield Comparison", def.display_name),
+            columns, rows);
+
+        // Print relative change table
+        if (ref_n_rho0 > 0) {
+            std::vector<std::string> rel_columns = {def.column_name, "N(rho0)",
+                fmt::format("Relative to {}", fmt::format(fmt::runtime(def.value_format), def.nominal_value))};
+            std::vector<std::vector<std::string>> rel_rows;
 
             for (const auto& sr : scan_results) {
-                rows.push_back({
-                    fmt::format("{:.1f}", sr.sigma),
-                    fmt::format("{:.0f}", sr.total_entries),
-                    sr.valid ? fmt::format("{:.0f} +/- {:.0f}", sr.n_rho0, sr.n_rho0_err) : "N/A",
-                    sr.valid ? fmt::format("{:.1f} +/- {:.1f}", sr.mass * 1000, sr.mass_err * 1000) : "N/A",
-                    sr.valid ? fmt::format("{:.2f}", sr.chi2_ndf) : "N/A"
+                if (!sr.valid) continue;
+                double rel = 100.0 * (sr.n_rho0 - ref_n_rho0) / ref_n_rho0;
+                rel_rows.push_back({
+                    fmt::format(fmt::runtime(def.value_format), sr.scan_value),
+                    fmt::format("{:.0f} +/- {:.0f}", sr.n_rho0, sr.n_rho0_err),
+                    fmt::format("{:+.1f}%", rel)
                 });
             }
 
             Log::print_yield_summary_table(
-                "Delta-t Sigma Scan: rho0 Yield Comparison",
-                columns, rows);
-
-            // Print relative change table
-            if (ref_n_rho0 > 0) {
-                std::vector<std::string> rel_columns = {"Sigma", "N(rho0)", "Relative to 3.0 sigma"};
-                std::vector<std::vector<std::string>> rel_rows;
-
-                for (const auto& sr : scan_results) {
-                    if (!sr.valid) continue;
-                    double rel = 100.0 * (sr.n_rho0 - ref_n_rho0) / ref_n_rho0;
-                    rel_rows.push_back({
-                        fmt::format("{:.1f}", sr.sigma),
-                        fmt::format("{:.0f} +/- {:.0f}", sr.n_rho0, sr.n_rho0_err),
-                        fmt::format("{:+.1f}%", rel)
-                    });
-                }
-
-                Log::print_yield_summary_table(
-                    "Delta-t Sigma Scan: Relative Yield Change",
-                    rel_columns, rel_rows);
-            }
+                fmt::format("{} Scan: Relative Yield Change", def.display_name),
+                rel_columns, rel_rows);
         }
 
         // Save fit results to ROOT file
-        save_sigma_scan_fit_results(scan_results);
+        save_scan_fit_results(def, scan_results);
     }
 
     /**
-     * @brief Save sigma scan fit results to ROOT file as a TTree
+     * @brief Save scan fit results to ROOT file as a TTree
      */
-    template<typename ResultVec>
-    auto save_sigma_scan_fit_results(const ResultVec& scan_results) -> void {
-        if (!m_output_svc || !m_output_svc->is_valid()) return;
-        auto* out_svc = m_output_svc->get();
-        if (!out_svc->is_file_open()) return;
-
-        std::lock_guard<std::mutex> lock(out_svc->mutex());
-        TFile* file = out_svc->get_file();
-        if (!file) return;
-
-        file->cd();
-        if (!file->GetDirectory("Rho0/SigmaScan")) {
-            file->mkdir("Rho0/SigmaScan");
-        }
-        file->cd("Rho0/SigmaScan");
-
-        auto* tree = new TTree("sigma_scan_results", "Delta-t Sigma Scan Results");
-        double sigma_val, n_rho0, n_rho0_err, mass_val, mass_err, chi2_ndf, entries;
-        tree->Branch("sigma", &sigma_val, "sigma/D");
-        tree->Branch("entries", &entries, "entries/D");
-        tree->Branch("n_rho0", &n_rho0, "n_rho0/D");
-        tree->Branch("n_rho0_err", &n_rho0_err, "n_rho0_err/D");
-        tree->Branch("mass", &mass_val, "mass/D");
-        tree->Branch("mass_err", &mass_err, "mass_err/D");
-        tree->Branch("chi2_ndf", &chi2_ndf, "chi2_ndf/D");
-
-        for (const auto& sr : scan_results) {
-            sigma_val = sr.sigma;
-            entries = sr.total_entries;
-            n_rho0 = sr.valid ? sr.n_rho0 : 0;
-            n_rho0_err = sr.valid ? sr.n_rho0_err : 0;
-            mass_val = sr.valid ? sr.mass : 0;
-            mass_err = sr.valid ? sr.mass_err : 0;
-            chi2_ndf = sr.valid ? sr.chi2_ndf : 0;
-            tree->Fill();
-        }
-
-        tree->Write("", TObject::kOverwrite);
-        clas12::framework::Log::info(name(), "Sigma scan results saved to TTree with {} entries", tree->GetEntries());
-    }
-
-    /**
-     * @brief Fit all cut scan histograms and print comparison tables
-     */
-    auto fit_cut_scan_histograms() -> void {
-        using Log = clas12::framework::Log;
-
-        struct ScanTypeConfig {
-            std::string name;
-            std::string display_name;
-            std::string column_name;
-            const std::vector<double>& values;
-            double nominal_value;
-        };
-
-        std::vector<ScanTypeConfig> scan_types;
-
-        if (!m_lc_scan_values.get().empty()) {
-            scan_types.push_back({"lc", "Coherence Length", "lc_max [fm]",
-                m_lc_scan_values.get(), m_lc_max.get()});
-        }
-        if (!m_zh_scan_values.get().empty()) {
-            scan_types.push_back({"zh", "Energy Fraction", "zh_min",
-                m_zh_scan_values.get(), m_zh_min.get()});
-        }
-        if (!m_t_scan_values.get().empty()) {
-            scan_types.push_back({"t", "Momentum Transfer", "-t_max [GeV^2]",
-                m_t_scan_values.get(), m_t_max.get()});
-        }
-        if (!m_dvz_scan_values.get().empty()) {
-            scan_types.push_back({"dvz", "Delta Vz", "N-sigma",
-                m_dvz_scan_values.get(), 3.0});
-        }
-
-        for (const auto& scan_type : scan_types) {
-            Log::subsection(fmt::format("{} Cut Scan Results", scan_type.display_name));
-
-            auto scan_map_it = m_cut_scan_histograms.find(scan_type.name);
-            if (scan_map_it == m_cut_scan_histograms.end()) continue;
-            auto& scan_map = scan_map_it->second;
-
-            std::vector<CutScanResult> scan_results;
-
-            for (double val : scan_type.values) {
-                std::string label = format_cut_scan_label(scan_type.name, val);
-                auto ch_it = scan_map.find(label);
-                if (ch_it == scan_map.end()) continue;
-                auto& ch = ch_it->second;
-
-                CutScanResult sr;
-                sr.cut_value = val;
-                sr.total_entries = ch.mass_selected
-                    ? static_cast<double>(ch.mass_selected->entries()) : 0;
-
-                if (ch.mass_selected && ch.mass_selected->entries() > 100) {
-                    auto root_hist = ch.mass_selected->to_root(
-                        fmt::format("cut_scan_{}_{}_fit", scan_type.name, label),
-                        fmt::format("{} = {:.2f}", scan_type.column_name, val));
-
-                    auto result = fit_histogram(root_hist.get(),
-                        fmt::format("{} scan ({:.2f})", scan_type.display_name, val),
-                        0.3, 1.2, 0.6, 1.0);
-
-                    if (result.valid) {
-                        sr.n_rho0 = result.n_rho0;
-                        sr.n_rho0_err = result.n_rho0_err;
-                        sr.mass = result.mass;
-                        sr.mass_err = result.mass_err;
-                        sr.chi2_ndf = result.chi2_ndf;
-                        sr.valid = true;
-                    }
-                }
-                scan_results.push_back(sr);
-            }
-
-            if (scan_results.empty()) continue;
-
-            // Print comparison table
-            std::vector<std::string> columns = {scan_type.column_name, "Entries", "N(rho0)", "Mass [MeV]", "chi2/ndf"};
-            std::vector<std::vector<std::string>> rows;
-
-            double ref_n_rho0 = 0;
-            for (const auto& sr : scan_results) {
-                if (std::abs(sr.cut_value - scan_type.nominal_value) < 0.001 && sr.valid) {
-                    ref_n_rho0 = sr.n_rho0;
-                    break;
-                }
-            }
-
-            for (const auto& sr : scan_results) {
-                rows.push_back({
-                    fmt::format("{:.2f}", sr.cut_value),
-                    fmt::format("{:.0f}", sr.total_entries),
-                    sr.valid ? fmt::format("{:.0f} +/- {:.0f}", sr.n_rho0, sr.n_rho0_err) : "N/A",
-                    sr.valid ? fmt::format("{:.1f} +/- {:.1f}", sr.mass * 1000, sr.mass_err * 1000) : "N/A",
-                    sr.valid ? fmt::format("{:.2f}", sr.chi2_ndf) : "N/A"
-                });
-            }
-
-            Log::print_yield_summary_table(
-                fmt::format("{} Cut Scan: rho0 Yield Comparison", scan_type.display_name),
-                columns, rows);
-
-            // Print relative change table
-            if (ref_n_rho0 > 0) {
-                std::vector<std::string> rel_columns = {scan_type.column_name, "N(rho0)",
-                    fmt::format("Relative to {:.2f}", scan_type.nominal_value)};
-                std::vector<std::vector<std::string>> rel_rows;
-
-                for (const auto& sr : scan_results) {
-                    if (!sr.valid) continue;
-                    double rel = 100.0 * (sr.n_rho0 - ref_n_rho0) / ref_n_rho0;
-                    rel_rows.push_back({
-                        fmt::format("{:.2f}", sr.cut_value),
-                        fmt::format("{:.0f} +/- {:.0f}", sr.n_rho0, sr.n_rho0_err),
-                        fmt::format("{:+.1f}%", rel)
-                    });
-                }
-
-                Log::print_yield_summary_table(
-                    fmt::format("{} Cut Scan: Relative Yield Change", scan_type.display_name),
-                    rel_columns, rel_rows);
-            }
-
-            // Save fit results to ROOT file
-            save_cut_scan_fit_results(scan_type.name, scan_type.display_name, scan_results);
-        }
-    }
-
-    /**
-     * @brief Save cut scan fit results to ROOT file as a TTree
-     */
-    auto save_cut_scan_fit_results(
-        const std::string& scan_name,
-        const std::string& display_name,
-        const std::vector<CutScanResult>& scan_results
+    auto save_scan_fit_results(
+        const ScanDefinition& def,
+        const std::vector<ScanFitResult>& scan_results
     ) -> void {
         if (!m_output_svc || !m_output_svc->is_valid()) return;
         auto* out_svc = m_output_svc->get();
@@ -1706,19 +1579,17 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         TFile* file = out_svc->get_file();
         if (!file) return;
 
-        std::string dir_path = fmt::format("Rho0/CutScan/{}", scan_name);
         file->cd();
-        if (!file->GetDirectory(dir_path.c_str())) {
-            file->mkdir(dir_path.c_str());
+        if (!file->GetDirectory(def.root_dir.c_str())) {
+            file->mkdir(def.root_dir.c_str());
         }
-        file->cd(dir_path.c_str());
+        file->cd(def.root_dir.c_str());
 
-        std::string tree_name = fmt::format("{}_scan_results", scan_name);
-        auto* tree = new TTree(tree_name.c_str(),
-            fmt::format("{} Cut Scan Results", display_name).c_str());
-
-        double cut_value, n_rho0, n_rho0_err, mass_val, mass_err, chi2_ndf, entries;
-        tree->Branch("cut_value", &cut_value, "cut_value/D");
+        auto* tree = new TTree(def.tree_name.c_str(),
+            fmt::format("{} Scan Results", def.display_name).c_str());
+        double scan_val, n_rho0, n_rho0_err, mass_val, mass_err, chi2_ndf, entries;
+        tree->Branch(def.branch_name.c_str(), &scan_val,
+            fmt::format("{}/D", def.branch_name).c_str());
         tree->Branch("entries", &entries, "entries/D");
         tree->Branch("n_rho0", &n_rho0, "n_rho0/D");
         tree->Branch("n_rho0_err", &n_rho0_err, "n_rho0_err/D");
@@ -1727,7 +1598,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         tree->Branch("chi2_ndf", &chi2_ndf, "chi2_ndf/D");
 
         for (const auto& sr : scan_results) {
-            cut_value = sr.cut_value;
+            scan_val = sr.scan_value;
             entries = sr.total_entries;
             n_rho0 = sr.valid ? sr.n_rho0 : 0;
             n_rho0_err = sr.valid ? sr.n_rho0_err : 0;
@@ -1739,7 +1610,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
 
         tree->Write("", TObject::kOverwrite);
         clas12::framework::Log::info(name(), "{} scan results saved to TTree with {} entries",
-            display_name, tree->GetEntries());
+            def.display_name, tree->GetEntries());
     }
 
     /**
