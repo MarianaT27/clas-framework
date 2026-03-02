@@ -1244,7 +1244,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     template<typename HistSvc>
     auto book_main_histograms(HistSvc* svc) -> void {
         h_pipim_mass_all = svc->book_hist1D("/Rho0/pipim_mass_all", "All #pi^{+}#pi^{-} Invariant Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
-        h_pipim_mass_selected = svc->book_hist1D("/Rho0/pipim_mass_selected", "Selected #rho^{0} Candidate Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0.4, 1.2);
+        h_pipim_mass_selected = svc->book_hist1D("/Rho0/pipim_mass_selected", "Selected #rho^{0} Candidate Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 1.2);
         h_rho0_momentum = svc->book_hist1D("/Rho0/rho0_momentum", "#rho^{0} Momentum;p [GeV/c];Events", 100, 0, 10);
         h_rho0_theta = svc->book_hist1D("/Rho0/rho0_theta", "#rho^{0} Theta;#theta [deg];Events", 180, 0, 180);
         h_rho0_phi = svc->book_hist1D("/Rho0/rho0_phi", "#rho^{0} Phi;#phi [deg];Events", 360, -180, 180);
@@ -1316,7 +1316,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             h.mass_all = svc->book_hist1D(dir + "/pipim_mass_all",
                 fmt::format("{} #pi^{{+}}#pi^{{-}} Invariant Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), 200, 0, 2.0);
             h.mass_selected = svc->book_hist1D(dir + "/pipim_mass_selected",
-                fmt::format("{} Selected #rho^{{0}} Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), 200, 0.4, 1.2);
+                fmt::format("{} Selected #rho^{{0}} Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), 200, 0, 1.2);
             h.momentum = svc->book_hist1D(dir + "/rho0_momentum",
                 fmt::format("{} #rho^{{0}} Momentum;p [GeV/c];Events", label), 100, 0, 10);
             h.theta = svc->book_hist1D(dir + "/rho0_theta",
@@ -1355,7 +1355,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             sh.mass_selected = svc->book_hist1D(
                 dir + "/pipim_mass_selected",
                 fmt::format("Selected #rho^{{0}} Mass ({:.1f}#sigma);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", sigma),
-                200, 0.4, 1.2);
+                200, 0, 1.2);
 
             for (const auto& [q2_min, q2_max] : Q2_BINS) {
                 std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
@@ -1388,7 +1388,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             ph.mass_selected = svc->book_hist1D(
                 dir + "/pipim_mass_selected",
                 fmt::format("Selected #rho^{{0}} Mass ({});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", display),
-                200, 0.4, 1.2);
+                200, 0, 1.2);
 
             m_pion_cut_step_histograms[label] = ph;
         }
@@ -1422,7 +1422,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                     dir + "/pipim_mass_selected",
                     fmt::format("Selected #rho^{{0}} Mass ({} = {});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
                         display_prefix, val_display),
-                    200, 0.4, 1.2);
+                    200, 0, 1.2);
 
                 for (const auto& [q2_min, q2_max] : Q2_BINS) {
                     std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
