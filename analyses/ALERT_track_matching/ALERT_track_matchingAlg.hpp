@@ -203,7 +203,7 @@ public:
         // Select tracks where delta_phi is between 150 and 200 degrees
         std::vector<const AHDCTrackData*> matched_tracks;
 
-        double electron_vz = elastic_electron.vz();
+        double electron_vz = elastic_electron.vz() * 10.0;  // convert cm to mm
 
         for (const auto& track : good_tracks) {
             // Compute track phi from momentum
@@ -328,7 +328,7 @@ public:
                 m_nt_e_p     = elastic_electron.p();
                 m_nt_e_theta = elastic_electron.theta();
                 m_nt_e_phi   = elastic_electron.phi();
-                m_nt_e_vz    = elastic_electron.vz();
+                m_nt_e_vz    = electron_vz;  // already in mm
 
                 // Track
                 m_nt_trackid             = mt->trackid;
@@ -491,7 +491,7 @@ private:
         "phi_cut", 30.0, "Phi matching tolerance in degrees"
     };
     clas12::framework::Property<double> m_delta_vz_cut{
-        "delta_vz_cut", 10.0, "Delta Vz cut in mm"
+        "delta_vz_cut", 999.0, "Delta Vz cut (disabled by default, set tighter after checking histogram)"
     };
     clas12::framework::Property<int> m_ai_hit_id_offset{
         "ai_hit_id_offset", 1, "Offset to subtract from AI matched_atof_hit_id (0 if 0-based, 1 if 1-based)"
