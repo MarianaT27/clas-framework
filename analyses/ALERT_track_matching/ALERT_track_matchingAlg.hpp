@@ -122,6 +122,11 @@ public:
         const auto& elastic_electron = electrons->front();
         double electron_phi = elastic_electron.phi();  // degrees
 
+        // Check required banks exist in this event
+        if (!event.has_bank("AHDC::track") || !event.has_bank("ALERT::ai:projections") || !event.has_bank("ATOF::hits")) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+
         // Read the AHDC::track, ALERT::ai:projections and ATOF::hits banks
         const auto& ahdc_track_bank = event.get_bank("AHDC::track");
         const auto& alert_projections_bank = event.get_bank("ALERT::ai:projections");
