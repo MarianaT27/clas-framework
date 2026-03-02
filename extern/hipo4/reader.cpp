@@ -163,6 +163,11 @@ result<file_metadata> reader::scan_metadata(std::string_view path, reader_option
     if (!r.m_opts.tags.empty())
         r.m_tag_set.insert(r.m_opts.tags.begin(), r.m_opts.tags.end());
 
+    // Fast path: extract metadata from trailer index (2 reads instead of N)
+    auto trailer_result = r.scan_counts_from_trailer();
+    if (trailer_result) return *trailer_result;
+
+    // Fallback: sequential record header scan
     return r.scan_counts();
 }
 
@@ -383,6 +388,72 @@ result<file_metadata> reader::scan_counts() {
         }
 
         pos += static_cast<int64_t>(record_length) * 4;
+    }
+
+    return file_metadata{total_events, num_records};
+}
+
+result<file_metadata> reader::scan_counts_from_trailer() {
+    if (m_info.trailer_position <= 0 ||
+        m_info.trailer_position >= m_info.file_size)
+        return unexpected(error_code::invalid_trailer);
+
+    int trailer_bytes = static_cast<int>(m_info.file_size - m_info.trailer_position);
+    auto res = m_record.read_from(m_file_source, m_info.trailer_position,
+                                   m_info.file_size, trailer_bytes);
+    if (!res || m_record.event_count() == 0)
+        return unexpected(error_code::invalid_trailer);
+
+    auto ev_data = m_record.event_data(0);
+    if (!ev_data)
+        return unexpected(error_code::invalid_trailer);
+
+    // Parse the index structure (group=32111, item=1)
+    auto ev = *ev_data;
+    int position = EVENT_HEADER_SIZE;
+    int event_size = (ev.size() >= 8) ?
+        read_value<int32_t>(ev.data() + 4) : static_cast<int>(ev.size());
+    if (event_size > static_cast<int>(ev.size())) event_size = static_cast<int>(ev.size());
+
+    int index_pos = -1;
+    int index_length = 0;
+    while (position + 8 <= event_size) {
+        auto gid = read_value<uint16_t>(ev.data() + position);
+        auto iid = read_value<uint8_t>(ev.data() + position + 2);
+        auto len = read_value<int32_t>(ev.data() + position + 4);
+        if (gid == 32111 && iid == 1) {
+            index_pos = position + 8;
+            index_length = len;
+            break;
+        }
+        position += len + 8;
+    }
+
+    if (index_pos < 0 || index_length <= 0)
+        return unexpected(error_code::invalid_trailer);
+
+    const char* index_data = ev.data() + index_pos;
+    int rows = index_length / 32;
+
+    int64_t total_events = 0;
+    int num_records = 0;
+    bool need_tags = !m_tag_set.empty();
+
+    for (int i = 0; i < rows; ++i) {
+        int entries = read_value<int32_t>(index_data + rows * 12 + i * 4);
+        entries = maybe_swap32(entries, m_byte_swapped);
+
+        bool accept = true;
+        if (need_tags) {
+            int64_t uid1 = read_value<int64_t>(index_data + rows * 16 + i * 8);
+            uid1 = maybe_swap64(uid1, m_byte_swapped);
+            accept = m_tag_set.contains(uid1);
+        }
+
+        if (accept && entries > 0) {
+            total_events += entries;
+            num_records++;
+        }
     }
 
     return file_metadata{total_events, num_records};

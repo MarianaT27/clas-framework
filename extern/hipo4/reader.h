@@ -483,6 +483,7 @@ private:
     result<void> scan_index();
     result<void> force_scan();
     result<file_metadata> scan_counts();
+    result<file_metadata> scan_counts_from_trailer();
     result<void> read_dictionary();
     result<void> ensure_record_loaded();
     void parse_trailer_stats(std::span<const char> trailer_event);
