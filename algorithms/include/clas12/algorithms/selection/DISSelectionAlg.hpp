@@ -135,11 +135,19 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
             clas12::physics::DISAnalysis::calculate_kinematics(electrons_opt->front());
 
         // Fill pre-cut histograms (after electron selection, before DIS cuts)
+        const auto& electron = electrons_opt->front();
         if (h_Q2_precut) h_Q2_precut->fill(kin.q2);
         if (h_W_precut) h_W_precut->fill(kin.w);
         if (h_nu_precut) h_nu_precut->fill(kin.nu);
         if (h_xB_precut) h_xB_precut->fill(kin.xb);
         if (h_y_precut) h_y_precut->fill(kin.y);
+        if (h_e_p_precut) h_e_p_precut->fill(electron.p());
+        if (h_e_theta_precut) h_e_theta_precut->fill(electron.theta());
+        if (h_e_phi_precut) h_e_phi_precut->fill(electron.phi());
+        if (h_Q2_vs_W_precut) h_Q2_vs_W_precut->fill(kin.w, kin.q2);
+        if (h_Q2_vs_xB_precut) h_Q2_vs_xB_precut->fill(kin.xb, kin.q2);
+        if (h_W_vs_y_precut) h_W_vs_y_precut->fill(kin.y, kin.w);
+        if (h_e_theta_vs_p_precut) h_e_theta_vs_p_precut->fill(electron.p(), electron.theta());
 
         // Evaluate all cuts (no short-circuit) for N-1 histograms
         auto results = m_cutflow.evaluate_all(kin);
@@ -183,7 +191,6 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
 
         // Fill N-tuple using NTupleWriter
         if (m_ntuple && m_enable_ntuple.get()) {
-            const auto& electron = electrons_opt->front();
             m_ntuple.data().e_p = electron.p();
             m_ntuple.data().e_theta = electron.theta();
             m_ntuple.data().e_phi = electron.phi();
@@ -251,6 +258,15 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
     clas12::framework::AtomicHistogram1D* h_nu_precut = nullptr;
     clas12::framework::AtomicHistogram1D* h_xB_precut = nullptr;
     clas12::framework::AtomicHistogram1D* h_y_precut = nullptr;
+    clas12::framework::AtomicHistogram1D* h_e_p_precut = nullptr;
+    clas12::framework::AtomicHistogram1D* h_e_theta_precut = nullptr;
+    clas12::framework::AtomicHistogram1D* h_e_phi_precut = nullptr;
+
+    // Pre-cut 2D correlations
+    clas12::framework::AtomicHistogram2D* h_Q2_vs_W_precut = nullptr;
+    clas12::framework::AtomicHistogram2D* h_Q2_vs_xB_precut = nullptr;
+    clas12::framework::AtomicHistogram2D* h_W_vs_y_precut = nullptr;
+    clas12::framework::AtomicHistogram2D* h_e_theta_vs_p_precut = nullptr;
 
     // Post-cut 2D correlations
     clas12::framework::AtomicHistogram2D* h_Q2_vs_W = nullptr;
@@ -278,6 +294,19 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
             h_nu_precut = svc->book_hist("/DIS/PreCut/nu", "#nu (pre-cut);#nu;Events", 180, 0, 11);
             h_xB_precut = svc->book_xb_hist("/DIS/PreCut/xB", "x_{B} (pre-cut)");
             h_y_precut = svc->book_hist("/DIS/PreCut/y", "y (pre-cut);y;Events", 200, 0, 1);
+            h_e_p_precut = svc->book_momentum_hist("/DIS/PreCut/e_p", "Electron p (pre-cut)");
+            h_e_theta_precut = svc->book_theta_hist("/DIS/PreCut/e_theta", "Electron #theta (pre-cut)");
+            h_e_phi_precut = svc->book_hist("/DIS/PreCut/e_phi", "Electron #phi (pre-cut);#phi [deg];Events", 360, -180, 180);
+
+            // Pre-cut 2D correlation histograms
+            h_Q2_vs_W_precut = svc->book_hist2d("/DIS/PreCut/Q2_vs_W", "Q^{2} vs W (pre-cut);W [GeV];Q^{2} [GeV^{2}]",
+                200, 0, 5, 200, 0, 12);
+            h_Q2_vs_xB_precut = svc->book_hist2d("/DIS/PreCut/Q2_vs_xB", "Q^{2} vs x_{B} (pre-cut);x_{B};Q^{2} [GeV^{2}]",
+                200, 0, 1, 200, 0, 12);
+            h_W_vs_y_precut = svc->book_hist2d("/DIS/PreCut/W_vs_y", "W vs y (pre-cut);y;W [GeV]",
+                200, 0, 1, 200, 0, 5);
+            h_e_theta_vs_p_precut = svc->book_hist2d("/DIS/PreCut/e_theta_vs_p", "#theta vs p (pre-cut);p [GeV/c];#theta [deg]",
+                200, 0, 11, 200, 0, 45);
 
             // 2D correlation histograms (post-cut)
             h_Q2_vs_W = svc->book_hist2d("/DIS/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]",
