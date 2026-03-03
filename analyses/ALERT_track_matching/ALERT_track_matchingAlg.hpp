@@ -44,7 +44,8 @@ public:
         declare_property(m_example_cut);
         declare_property(m_enable_histograms);
         declare_property(m_phi_cut);
-        declare_property(m_delta_vz_cut);
+        declare_property(m_delta_vz_cm_min);
+        declare_property(m_delta_vz_cm_max);
         declare_property(m_enable_ntuple);
         declare_property(m_ai_hit_id_offset);
         // Declare required banks
@@ -212,15 +213,22 @@ public:
             double delta_phi = std::fmod(electron_phi - track_phi, 360.0);
             if (delta_phi < 0.0) delta_phi += 360.0;
 
-            // Compute delta Vz between electron and track
+            // Compute delta Vz between electron and track (mm then cm)
             double delta_vz = electron_vz - track.z;
+            double delta_vz_cm = delta_vz / 10.0;
 
             // Fill histograms before cuts
             if (h_delta_phi) h_delta_phi->fill(delta_phi);
             if (h_delta_vz) h_delta_vz->fill(delta_vz);
+            if (h_delta_vz_cm) h_delta_vz_cm->fill(delta_vz_cm);
 
-            // Select tracks with delta_phi between 150 and 200 degrees and deltaVz within cut
-            if (delta_phi >= 150.0 && delta_phi <= 200.0 && std::abs(delta_vz) <= m_delta_vz_cut) {
+            // Fill delta_phi after delta Vz cm cut
+            if (delta_vz_cm >= m_delta_vz_cm_min && delta_vz_cm <= m_delta_vz_cm_max) {
+                if (h_delta_phi_after_vz_cm_cut) h_delta_phi_after_vz_cm_cut->fill(delta_phi);
+            }
+
+            // Select tracks with delta_phi between 150 and 200 degrees and deltaVz within cm cut
+            if (delta_phi >= 150.0 && delta_phi <= 200.0 && delta_vz_cm >= m_delta_vz_cm_min && delta_vz_cm <= m_delta_vz_cm_max) {
                 matched_tracks.push_back(&track);
                 if (h_best_delta_phi) h_best_delta_phi->fill(delta_phi);
             }
@@ -490,8 +498,11 @@ private:
     clas12::framework::Property<double> m_phi_cut{
         "phi_cut", 30.0, "Phi matching tolerance in degrees"
     };
-    clas12::framework::Property<double> m_delta_vz_cut{
-        "delta_vz_cut", 999.0, "Delta Vz cut (disabled by default, set tighter after checking histogram)"
+    clas12::framework::Property<double> m_delta_vz_cm_min{
+        "delta_vz_cm_min", 12.38, "Delta Vz minimum cut in cm"
+    };
+    clas12::framework::Property<double> m_delta_vz_cm_max{
+        "delta_vz_cm_max", 37.26, "Delta Vz maximum cut in cm"
     };
     clas12::framework::Property<int> m_ai_hit_id_offset{
         "ai_hit_id_offset", 1, "Offset to subtract from AI matched_atof_hit_id (0 if 0-based, 1 if 1-based)"
@@ -516,7 +527,9 @@ private:
     clas12::framework::AtomicHistogram1D* h_vz_Cu = nullptr;
     clas12::framework::AtomicHistogram1D* h_vz_Sn = nullptr;
     clas12::framework::AtomicHistogram1D* h_delta_vz = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_vz_cm = nullptr;
     clas12::framework::AtomicHistogram1D* h_delta_phi = nullptr;
+    clas12::framework::AtomicHistogram1D* h_delta_phi_after_vz_cm_cut = nullptr;
     clas12::framework::AtomicHistogram1D* h_n_predictions = nullptr;
     clas12::framework::AtomicHistogram1D* h_best_delta_phi = nullptr;
     clas12::framework::AtomicHistogram1D* h_n_good_atof_hits = nullptr;
@@ -638,7 +651,9 @@ private:
             h_vz_Cu = svc->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
             h_vz_Sn = svc->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
             h_delta_vz = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_vz", "#DeltaVz (electron - track);#DeltaVz [mm];Events", 200, -100, 100);
+            h_delta_vz_cm = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_vz_cm", "#DeltaVz (electron - track);#DeltaVz [cm];Events", 200, -10, 50);
             h_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 360, 0, 360);
+            h_delta_phi_after_vz_cm_cut = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi_after_vz_cm_cut", "#Delta#phi after #DeltaVz cut;#Delta#phi [deg];Events", 360, 0, 360);
             h_n_predictions = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", 20, 0, 20);
             h_best_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi (track-electron);#Delta#phi [deg];Events", 100, 150, 200);
             h_n_good_atof_hits = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_good_atof_hits", "N good ATOF hits;N hits;Events", 20, 0, 20);
