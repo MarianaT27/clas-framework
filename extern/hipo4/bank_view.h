@@ -58,6 +58,9 @@ public:
     bank_view(const schema* sch, std::span<const char> data, int rows) noexcept
         : m_schema(sch), m_data(data), m_rows(rows) {}
 
+    /** @brief Return the raw column data span for this bank. */
+    std::span<const char> data() const noexcept { return m_data; }
+
     /** @brief Return true if this view has a valid schema and non-negative row count. */
     bool valid() const noexcept { return m_schema != nullptr && m_rows >= 0; }
     /** @brief Return the number of rows in this bank. */
@@ -823,7 +826,10 @@ public:
         // Get event data once (single call)
         auto ev = rec.event_data(event_index);
         if (!ev) return unexpected(ev.error());
-        const char* ev_buf = ev->data();
+
+        // Cache the full raw event bytes (all banks, not just required ones)
+        m_raw_event.assign(ev->begin(), ev->end());
+        const char* ev_buf = m_raw_event.data();
 
         // Build (group, item) pairs for batch lookup (reuses scratch buffers)
         m_group_items.resize(n);
@@ -905,12 +911,23 @@ public:
     /** @brief Return the number of registered banks. */
     size_t size() const noexcept { return m_required.size(); }
 
+    /**
+     * @brief Return the raw event bytes from the last update_from_record() call.
+     *
+     * Contains ALL banks (not just the required ones). Valid until the next
+     * update_from_record() call. Useful for writing complete events to output files.
+     *
+     * @return Span over the cached raw event data, or empty if not available.
+     */
+    std::span<const char> raw_event_data() const noexcept { return m_raw_event; }
+
 private:
     std::vector<std::string>              m_required;
     std::vector<const schema*>            m_schemas;
     std::vector<bank_view>                m_views;
     std::vector<std::pair<int,int>>       m_group_items;  // scratch: (group, item) pairs
     std::vector<structure_position>       m_positions;    // scratch: batch lookup results
+    std::vector<char>                     m_raw_event;    // cached raw event bytes
 };
 
 // --- Inline implementation ---

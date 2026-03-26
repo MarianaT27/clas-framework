@@ -31,9 +31,11 @@ result<void> writer::open(std::string_view path, writer_options opts) {
 
     event_builder ev;
     for (auto const& sch : m_dict) {
-        auto schema_str = sch.to_schema_string();
+        auto schema_json = sch.to_json_string();
+        auto schema_str  = sch.to_schema_string();
         ev.reset();
-        ev.add_string(DICT_GROUP, DICT_ITEM, schema_str);
+        ev.add_string(DICT_GROUP, 1, schema_json);  // JSON schema (item=1) — required by Java reader
+        ev.add_string(DICT_GROUP, DICT_ITEM, schema_str);  // text schema (item=2)
         (void)dict_builder.add_event(ev.data());
     }
 
@@ -57,7 +59,7 @@ result<void> writer::open(std::string_view path, writer_options opts) {
     write_value<int32_t> (header + FH_HEADER_LENGTH_OFFSET,   FILE_HEADER_WORDS);
     write_value<int32_t> (header + FH_RECORD_COUNT_OFFSET,    0);  // patched at close
     write_value<int32_t> (header + FH_INDEX_ARRAY_LEN_OFFSET, 0);
-    write_value<int32_t> (header + FH_BIT_INFO_OFFSET,        6);  // version 6, matching v1 behavior
+    write_value<int32_t> (header + FH_BIT_INFO_OFFSET, 6);  // version 6, matching Java HIPO writer
     write_value<int32_t> (header + FH_USER_HEADER_LEN_OFFSET, dict_record_size);
     write_value<int32_t> (header + FH_MAGIC_NUMBER_OFFSET,    static_cast<int32_t>(HEADER_MAGIC));
     write_value<int64_t> (header + FH_USER_REGISTER_OFFSET,   0);
@@ -225,7 +227,7 @@ result<void> writer::write_index_table() {
 
     // Build a record containing the trailer event
     record_builder_options rb_opts;
-    rb_opts.max_events = 1;
+    rb_opts.max_events = 2;  // need > 1 due to >= boundary check in add_event
     rb_opts.max_record_bytes = estimated_size;
     rb_opts.compression = m_opts.compression;
     record_builder rb(rb_opts);
@@ -234,16 +236,18 @@ result<void> writer::write_index_table() {
     auto build_res = rb.build();
     if (!build_res) return unexpected(build_res.error());
 
+    // Write trailer record as-is (matching Java HIPO writer behavior)
+    auto rec_data = rb.record_data();
+
     int64_t trailer_pos = m_sink.position();
 
-    auto data = rb.record_data();
-    auto wr = m_sink.write(data.data(), static_cast<int>(data.size()));
+    auto wr = m_sink.write(rec_data.data(), static_cast<int>(rec_data.size()));
     if (!wr) return unexpected(wr.error());
 
-    // Patch file header: write trailer position at offset 40
-    char pos_buf[8];
-    write_value<int64_t>(pos_buf, trailer_pos);
-    return m_sink.write_at(FH_TRAILER_POS_OFFSET, pos_buf, 8);
+    // Patch file header: write trailer position at offset 40 (matching Java writer)
+    char patch_buf[8];
+    write_value<int64_t>(patch_buf, trailer_pos);
+    return m_sink.write_at(FH_TRAILER_POS_OFFSET, patch_buf, 8);
 }
 
 result<void> writer::close() {

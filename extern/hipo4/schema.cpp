@@ -151,4 +151,29 @@ std::string schema::to_schema_string() const {
     return fmt::format("{{{}/{}/{}}}{{{}}}", m_name, m_group, m_item, columns);
 }
 
+std::string schema::to_json_string() const {
+    std::string result;
+    result += fmt::format("{{ \"name\": \"{}\", \"group\": {}, \"item\": {}, \"info\": \" \",",
+                          m_name, m_group, m_item);
+    result += "\"entries\": [ ";
+    auto type_str = [](column_type t) -> const char* {
+        switch (t) {
+        case column_type::byte_t:   return "B";
+        case column_type::short_t:  return "S";
+        case column_type::int_t:    return "I";
+        case column_type::float_t:  return "F";
+        case column_type::double_t: return "D";
+        case column_type::long_t:   return "L";
+        }
+        return "?";
+    };
+    for (int i = 0; i < static_cast<int>(m_entries.size()); ++i) {
+        if (i > 0) result += ',';
+        result += fmt::format("{{\"name\":\"{}\", \"type\":\"{}\", \"info\":\" \"}}",
+                              m_entries[i].name, type_str(m_entries[i].type));
+    }
+    result += "] }";
+    return result;
+}
+
 } // namespace hipo

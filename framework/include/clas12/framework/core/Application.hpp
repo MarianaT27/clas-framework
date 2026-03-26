@@ -3,7 +3,6 @@
 #include <fmt/format.h>
 #include <atomic>
 #include <memory>
-#include <set>
 #include <string>
 #include <vector>
 #include <clas12/framework/core/Event.hpp>
@@ -146,22 +145,6 @@ class Application {
             return StatusCode::FAILURE();
         }
 
-        // Collect the union of all required banks from algorithms
-        std::set<std::string> bank_set;
-        for (const auto& alg : m_algorithms) {
-            for (const auto& bank : alg->required_banks()) {
-                bank_set.insert(bank);
-            }
-        }
-        std::vector<std::string> all_required_banks(bank_set.begin(), bank_set.end());
-
-        Log::info("Application", "");
-        Log::info("Application", "Starting event processing...");
-        Log::info("Application", "  Input files: {}", m_input_files.size());
-        Log::info("Application", "  Algorithms: {}", m_algorithms.size());
-        Log::info("Application", "  Required banks: {}", all_required_banks.size());
-        Log::info("Application", "  Threads: {}", m_num_threads);
-
         // Create HIPO chain for parallel processing
         hipo::chain chain({.threads = m_num_threads, .show_progress = true});
         for (const auto& file : m_input_files) {
@@ -172,6 +155,16 @@ class Application {
             Log::error("Application", "Failed to open HIPO chain");
             return StatusCode::FAILURE();
         }
+
+        // Load all available banks from the HIPO dictionary
+        auto all_required_banks = chain.dict().schema_names();
+
+        Log::info("Application", "");
+        Log::info("Application", "Starting event processing...");
+        Log::info("Application", "  Input files: {}", m_input_files.size());
+        Log::info("Application", "  Algorithms: {}", m_algorithms.size());
+        Log::info("Application", "  Available banks: {}", all_required_banks.size());
+        Log::info("Application", "  Threads: {}", m_num_threads);
 
         // Process events
         chain.process([this](hipo::bank_view_set& banks, int file_idx, int64_t evt_idx) {

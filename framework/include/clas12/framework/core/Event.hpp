@@ -130,6 +130,14 @@ class Event {
     }
 
     /**
+     * @brief Get the underlying bank view set (e.g., for event serialization)
+     * @return const hipo::bank_view_set& Reference to the bank view set
+     */
+    auto get_bank_view_set() const -> const hipo::bank_view_set& {
+        return m_banks;
+    }
+
+    /**
      * @brief Get a HIPO bank view by name
      * @param bank_name Name of the bank (e.g., "REC::Particle")
      * @return const hipo::bank_view& Reference to the bank view

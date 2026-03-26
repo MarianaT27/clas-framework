@@ -78,13 +78,12 @@ result<void> record_builder::build() {
     write_value<int32_t>(h + 8,  RECORD_HEADER_WORDS);                                // word 3: header length in words
     write_value<int32_t>(h + 12, m_index_count);                                       // word 4: event count
     write_value<int32_t>(h + 16, index_size);                                          // word 5: index data length (bytes)
-    int version_word = (rounding << BITINFO_PAD3_SHIFT) | 6;                           // pad3 + version 6
+    int version_word = (rounding << 24) | 6;                                            // pad3 + version 6 (matching JLab C++ hipo4)
     write_value<int32_t>(h + 20, version_word);                                        // word 6: bit-info
     write_value<int32_t>(h + 24, 0);                                                   // word 7: user header length
     write_value<int32_t>(h + 28, static_cast<int32_t>(HEADER_MAGIC));                 // word 8: magic number
-    write_value<int32_t>(h + 32, events_size);                                         // word 9: data length (uncompressed events only)
-    int comp_type_bits = static_cast<int>(m_opts.compression) << COMP_TYPE_SHIFT;
-    int comp_word = comp_type_bits | (compressed_words & static_cast<int>(COMP_LENGTH_MASK));
+    write_value<int32_t>(h + 32, events_size);                                         // word 9: uncompressed event data length
+    int comp_word = (1 << 28) | (0x0FFFFFFF & compressed_words);                       // LZ4 type + compressed words
     write_value<int32_t>(h + 36, comp_word);                                           // word 10: compression word
     write_value<int64_t>(h + 40, m_user_word_one);                                     // words 11-12: user word one
     write_value<int64_t>(h + 48, m_user_word_two);                                     // words 13-14: user word two
@@ -138,15 +137,12 @@ result<void> record_builder::build_with_user_header(std::span<const char> user_h
     write_value<int32_t>(h + 8,  RECORD_HEADER_WORDS);
     write_value<int32_t>(h + 12, 0);                                                   // no events
     write_value<int32_t>(h + 16, 0);                                                   // no index
-    int version_word = (uh_padding << BITINFO_PAD1_SHIFT)                              // pad1 = user header padding
-                     | (rounding << BITINFO_PAD3_SHIFT)                                // pad3 = compressed data padding
-                     | 6;                                                              // version 6
+    int version_word = (uh_padding << 20) | (rounding << 24) | 6;                       // pad1 + pad3 + version 6
     write_value<int32_t>(h + 20, version_word);
     write_value<int32_t>(h + 24, uh_len);                                              // user header length (bytes)
     write_value<int32_t>(h + 28, static_cast<int32_t>(HEADER_MAGIC));
     write_value<int32_t>(h + 32, 0);                                                   // data length = 0 (no events)
-    int comp_type_bits = static_cast<int>(m_opts.compression) << COMP_TYPE_SHIFT;
-    int comp_word = comp_type_bits | (compressed_words & static_cast<int>(COMP_LENGTH_MASK));
+    int comp_word = (1 << 28) | (0x0FFFFFFF & compressed_words);                       // LZ4 + compressed words
     write_value<int32_t>(h + 36, comp_word);
     write_value<int64_t>(h + 40, m_user_word_one);
     write_value<int64_t>(h + 48, m_user_word_two);

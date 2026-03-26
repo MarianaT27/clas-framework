@@ -276,6 +276,12 @@ public:
     std::string to_schema_string() const;
 
     /**
+     * @brief Serialize this schema into JSON format (required by Java HIPO reader).
+     * @return The JSON schema string for dictionary record item=1.
+     */
+    std::string to_json_string() const;
+
+    /**
      * @brief Three-way comparison by (group, item).
      *
      * Schemas are ordered first by group number, then by item number.

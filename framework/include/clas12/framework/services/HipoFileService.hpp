@@ -160,6 +160,26 @@ public:
     }
 
     /**
+     * @brief Write raw event bytes to the output file
+     * @param event_data Raw serialized event bytes (all banks preserved)
+     * @return true if successful
+     */
+    auto write_event(std::span<const char> event_data) -> bool {
+        if (!m_writer || !m_enable_output) {
+            return false;
+        }
+
+        std::lock_guard<std::mutex> lock(m_write_mutex);
+        auto res = m_writer->add_event(event_data);
+        if (!res) {
+            Log::error(name(), "Failed to write raw event");
+            return false;
+        }
+        m_events_written++;
+        return true;
+    }
+
+    /**
      * @brief Get the dictionary from the first input file
      */
     auto get_dictionary() -> hipo::dictionary* {

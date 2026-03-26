@@ -755,7 +755,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 if (h.phi_precut) h.phi_precut->fill(cand.phi);
                 if (h.vz_precut) h.vz_precut->fill(cand.vz);
                 if (h.chi2pid_precut) h.chi2pid_precut->fill(cand.chi2pid);
-                if (h.delta_t_precut) h.delta_t_precut->fill(cand.delta_t);
+                if (h.delta_t_precut && cand.delta_t != 0.0) h.delta_t_precut->fill(cand.delta_t);
 
                 // PCAL fiducial diagnostics (before fiducial cuts)
                 if (h.pcal_lv_precut) h.pcal_lv_precut->fill(cand.pcal_lv);
@@ -765,13 +765,13 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 // 2D correlations (pre-cut for diagnostics)
                 if (h.chi2pid_vs_p) h.chi2pid_vs_p->fill(cand.p, cand.chi2pid);
                 if (h.vz_vs_theta) h.vz_vs_theta->fill(cand.theta, cand.vz);
-                if (h.delta_t_vs_theta) h.delta_t_vs_theta->fill(cand.theta, cand.delta_t);
-                if (h.delta_t_vs_p_precut) h.delta_t_vs_p_precut->fill(cand.p, cand.delta_t);
+                if (h.delta_t_vs_theta && cand.delta_t != 0.0) h.delta_t_vs_theta->fill(cand.theta, cand.delta_t);
+                if (h.delta_t_vs_p_precut && cand.delta_t != 0.0) h.delta_t_vs_p_precut->fill(cand.p, cand.delta_t);
 
                 // Per-sector delta_t vs p (pre-cut)
                 if (cand.sector >= 1 && cand.sector <= 6) {
                     int idx = cand.sector - 1;
-                    if (h.delta_t_vs_p_precut_sector[idx]) h.delta_t_vs_p_precut_sector[idx]->fill(cand.p, cand.delta_t);
+                    if (h.delta_t_vs_p_precut_sector[idx] && cand.delta_t != 0.0) h.delta_t_vs_p_precut_sector[idx]->fill(cand.p, cand.delta_t);
                 }
 
                 // Additional diagnostics (pre-cut)
@@ -787,9 +787,9 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 if (h.vz_central) h.vz_central->fill(cand.vz);
                 if (h.chi2pid_central) h.chi2pid_central->fill(cand.chi2pid);
                 if (h.beta_central) h.beta_central->fill(cand.beta);
-                if (h.delta_t_central) h.delta_t_central->fill(cand.delta_t);
+                if (h.delta_t_central && cand.delta_t != 0.0) h.delta_t_central->fill(cand.delta_t);
                 if (h.beta_vs_p_central) h.beta_vs_p_central->fill(cand.p, cand.beta);
-                if (h.delta_t_vs_p_central) h.delta_t_vs_p_central->fill(cand.p, cand.delta_t);
+                if (h.delta_t_vs_p_central && cand.delta_t != 0.0) h.delta_t_vs_p_central->fill(cand.p, cand.delta_t);
                 if (h.p_vs_theta_central) h.p_vs_theta_central->fill(cand.theta, cand.p);
             }
         }
@@ -814,7 +814,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
 
             // 2D histograms (post-cut)
             if (h.beta_vs_p) h.beta_vs_p->fill(cand.p, cand.beta);
-            if (h.delta_t_vs_p) h.delta_t_vs_p->fill(cand.p, cand.delta_t);
+            if (h.delta_t_vs_p && cand.delta_t != 0.0) h.delta_t_vs_p->fill(cand.p, cand.delta_t);
             if (h.p_vs_theta) h.p_vs_theta->fill(cand.theta, cand.p);
 
             // TOF mass² (post-cut)
@@ -825,7 +825,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
                 int idx = cand.sector - 1;
                 if (h.momentum_sector[idx]) h.momentum_sector[idx]->fill(cand.p);
                 if (h.theta_sector[idx]) h.theta_sector[idx]->fill(cand.theta);
-                if (h.delta_t_vs_p_sector[idx]) h.delta_t_vs_p_sector[idx]->fill(cand.p, cand.delta_t);
+                if (h.delta_t_vs_p_sector[idx] && cand.delta_t != 0.0) h.delta_t_vs_p_sector[idx]->fill(cand.p, cand.delta_t);
             }
         }
     }
@@ -886,7 +886,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             }
             // N-1 w.r.t. delta-t (skip=5): show timing and beta bands
             if (passes_all_except_pion(cand, 5)) {
-                if (h.delta_t_vs_p_nminus1) h.delta_t_vs_p_nminus1->fill(cand.p, cand.delta_t);
+                if (h.delta_t_vs_p_nminus1 && cand.delta_t != 0.0) h.delta_t_vs_p_nminus1->fill(cand.p, cand.delta_t);
                 if (h.beta_vs_p_nminus1) h.beta_vs_p_nminus1->fill(cand.p, cand.beta);
             }
         }
