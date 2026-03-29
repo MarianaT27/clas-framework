@@ -56,8 +56,8 @@ inline auto to_string(Polarity polarity) -> std::string {
 }
 
 inline auto string_to_polarity(const std::string& str) -> Polarity {
-    if (str == "In") return Polarity::Inbending;
-    if (str == "Out") return Polarity::Outbending;
+    if (str == "In" || str == "IB" || str == "Inbending" || str == "inbending") return Polarity::Inbending;
+    if (str == "Out" || str == "OB" || str == "Outbending" || str == "outbending") return Polarity::Outbending;
     return Polarity::Inbending;  // Default value
 }
 
