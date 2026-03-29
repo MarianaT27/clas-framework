@@ -73,6 +73,13 @@ executable(
   dependencies: analysis_deps,
 )
 
+# Pi0 multiplicity skim (event filter)
+executable(
+  'pi0_multiplicity_skim',
+  files('pi0_multiplicity_skim/pi0_multiplicity_skim.cpp'),
+  dependencies: analysis_deps,
+)
+
 # AI hadron PID analysis
 executable(
   'ai_pid_hadron',
