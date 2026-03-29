@@ -10,9 +10,12 @@
 #include <typeinfo>
 #include <vector>
 
-// Forward declaration for MCParticle
+// Forward declarations
 namespace clas12 {
 class MCParticle;
+}
+namespace clas12::physics {
+class CompositeParticle;
 }
 
 namespace clas12::framework {
@@ -270,6 +273,10 @@ inline const TypedKey<double> Pi0Momentum{"pi0_momentum"};
 inline const TypedKey<double> Pi0Theta{"pi0_theta"};
 inline const TypedKey<double> Pi0Phi{"pi0_phi"};
 inline const TypedKey<double> PhotonOpeningAngle{"photon_opening_angle"};
+
+// Pi0 reconstruction outputs (collections)
+inline const TypedKey<std::vector<clas12::Particle>> SelectedPhotons_Pi0{"selected_photons_pi0"};
+inline const TypedKey<std::vector<clas12::physics::CompositeParticle>> Pi0Candidates{"pi0_candidates"};
 
 // NOTE: Boolean decision flags belong in the Decisions namespace (Decisions.hpp).
 // Do not define boolean decision keys here.

@@ -66,6 +66,13 @@ executable(
   dependencies: analysis_deps,
 )
 
+# Pi0 multiplicity ratio
+executable(
+  'pi0_multiplicity',
+  files('pi0_multiplicity/pi0_multiplicity.cpp'),
+  dependencies: analysis_deps,
+)
+
 # AI hadron PID analysis
 executable(
   'ai_pid_hadron',
