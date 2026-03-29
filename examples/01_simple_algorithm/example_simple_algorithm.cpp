@@ -1,12 +1,11 @@
 /**
  * @file example_simple_algorithm.cpp
- * @brief Example demonstrating SimpleAlgorithm and LambdaAlgorithm usage
+ * @brief Example demonstrating SimpleAlgorithm usage
  *
  * This example verifies the algorithm infrastructure by demonstrating:
  * - SimpleAlgorithm CRTP base class with automatic service injection
- * - LambdaAlgorithm for quick, inline algorithm definitions
  * - Property system integration
- * - Service injection via require_service<T>()
+ * - Service access via svc<T>()
  *
  * @see Requirements 4.1, 4.2, 4.3
  */
@@ -49,31 +48,20 @@ public:
     }
 
     /**
-     * @brief Configure services needed by this algorithm
-     *
-     * Called automatically during initialize() before on_initialize().
-     * Use require_service<T>() to declare service dependencies.
-     */
-    auto configure() -> void override {
-        // Declare required services - they will be automatically injected
-        m_hist_svc = &require_service<HistogramService>("HistogramService");
-    }
-
-    /**
-     * @brief Custom initialization after services are injected
-     *
-     * Book histograms and set up any resources needed for processing.
+     * @brief Custom initialization — obtain services and book histograms
      */
     auto on_initialize() -> StatusCode override {
+        m_hist_svc = svc<HistogramService>();
+
         fmt::print("  [{}] Initializing with momentum range [{}, {}] GeV\n",
                    name(), m_min_momentum.get(), m_max_momentum.get());
 
-        // Book histograms using the injected service
-        if (m_hist_svc && m_hist_svc->is_valid()) {
-            m_h_electron_momentum = m_hist_svc->get()->book_hist1D(
+        // Book histograms using the service
+        if (m_hist_svc) {
+            m_h_electron_momentum = m_hist_svc->book_hist1D(
                 "electron_momentum", "Electron Momentum;p [GeV];Counts",
                 100, 0.0, 10.0);
-            m_h_electron_count = m_hist_svc->get()->book_hist1D(
+            m_h_electron_count = m_hist_svc->book_hist1D(
                 "electron_count", "Electrons per Event;N_{e};Events",
                 10, 0, 10);
         }
@@ -136,8 +124,8 @@ private:
     Property<double> m_max_momentum{"max_momentum", 10.0, "Maximum electron momentum [GeV]"};
     Property<bool> m_verbose{"verbose", false, "Print per-event information"};
 
-    // Service handle (injected automatically)
-    ServiceHandle<HistogramService>* m_hist_svc = nullptr;
+    // Service pointer
+    HistogramService* m_hist_svc = nullptr;
 
     // Histogram pointers (atomic for thread-safety)
     AtomicHistogram1D* m_h_electron_momentum = nullptr;
@@ -161,17 +149,14 @@ public:
         declare_property(m_energy_threshold);
     }
 
-    auto configure() -> void override {
-        // Request multiple services
-        m_hist_svc = &require_service<HistogramService>("HistogramService");
-    }
-
     auto on_initialize() -> StatusCode override {
+        m_hist_svc = svc<HistogramService>();
+
         fmt::print("  [{}] Initializing with energy threshold {} GeV\n",
                    name(), m_energy_threshold.get());
 
-        if (m_hist_svc && m_hist_svc->is_valid()) {
-            m_h_photon_energy = m_hist_svc->get()->book_hist1D(
+        if (m_hist_svc) {
+            m_h_photon_energy = m_hist_svc->book_hist1D(
                 "photon_energy", "Photon Energy;E [GeV];Counts",
                 100, 0.0, 5.0);
         }
@@ -201,7 +186,7 @@ public:
 
 private:
     Property<double> m_energy_threshold{"energy_threshold", 0.1, "Minimum photon energy [GeV]"};
-    ServiceHandle<HistogramService>* m_hist_svc = nullptr;
+    HistogramService* m_hist_svc = nullptr;
     AtomicHistogram1D* m_h_photon_energy = nullptr;
     int m_photon_count = 0;
 };
@@ -211,7 +196,7 @@ private:
 // ============================================================================
 
 int main(int argc, char* argv[]) {
-    fmt::print("=== SimpleAlgorithm and LambdaAlgorithm Example ===\n\n");
+    fmt::print("=== SimpleAlgorithm Example ===\n\n");
 
     // Determine data directory
     std::string data_dir = "data/";
@@ -239,49 +224,7 @@ int main(int argc, char* argv[]) {
     fmt::print("  ✓ Services configured via with_standard_services()\n");
     fmt::print("  ✓ SimpleAlgorithm instances added\n");
 
-    // ========================================================================
-    // Add LambdaAlgorithm instances (added after build due to captures)
-    // ========================================================================
-    fmt::print("\nAdding LambdaAlgorithm instances...\n");
-
-    // Simple event counter using lambda
-    int event_count = 0;
-    auto counter_alg = make_algorithm("EventCounter",
-        [&event_count]([[maybe_unused]] Event& event) -> StatusCode {
-            event_count++;
-            return StatusCode::SUCCESS();
-        });
-    app.add_algorithm(std::move(counter_alg));
-
-    // Event filter using lambda (filters events without electrons)
-    auto filter_alg = make_algorithm("ElectronFilter",
-        [](Event& event) -> StatusCode {
-            auto electrons = event.particles(clas12::PIDs::ELECTRON);
-            if (electrons.empty()) {
-                return StatusCode::FILTERED();
-            }
-            return StatusCode::SUCCESS();
-        });
-    app.add_algorithm(std::move(filter_alg));
-
-    // Lambda with init and finalize callbacks
-    int filtered_events = 0;
-    auto stats_alg = make_algorithm(
-        "FilteredEventStats",
-        [&filtered_events]([[maybe_unused]] Event& event) -> StatusCode {
-            filtered_events++;
-            return StatusCode::SUCCESS();
-        },
-        []() -> StatusCode {
-            fmt::print("  [FilteredEventStats] Initialized\n");
-            return StatusCode::SUCCESS();
-        },
-        [&filtered_events]() -> StatusCode {
-            fmt::print("  [FilteredEventStats] Events after filter: {}\n", filtered_events);
-            return StatusCode::SUCCESS();
-        }
-    );
-    app.add_algorithm(std::move(stats_alg));
+    fmt::print("\n  ✓ SimpleAlgorithm instances configured\n");
 
     // ========================================================================
     // Run application
@@ -306,7 +249,6 @@ int main(int argc, char* argv[]) {
 
         fmt::print("\n=== Summary ===\n");
         fmt::print("  SimpleAlgorithm: ElectronCounter, PhotonAnalysis\n");
-        fmt::print("  LambdaAlgorithm: EventCounter, ElectronFilter, FilteredEventStats\n");
         fmt::print("  Service injection: VERIFIED\n");
         fmt::print("\n✓ Algorithm infrastructure checkpoint complete!\n");
 
@@ -340,8 +282,6 @@ int main(int argc, char* argv[]) {
 
     // Print summary
     fmt::print("\n=== Final Summary ===\n");
-    fmt::print("  Total events processed: {}\n", event_count);
-    fmt::print("  Events passing electron filter: {}\n", filtered_events);
     fmt::print("  Output file: algorithm_example_output.root\n");
 
     fmt::print("\n✓ Algorithm infrastructure checkpoint complete!\n");

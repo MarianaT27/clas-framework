@@ -184,23 +184,6 @@ class TypedConditionalSequence : public AlgorithmSequence {
 };
 
 /**
- * @brief Sequence that executes only if event passes a string decision
- * @deprecated Use TypedConditionalSequence with TypedKey<bool> instead
- */
-class [[deprecated("Use TypedConditionalSequence with TypedKey<bool> instead")]]
-ConditionalSequence : public AlgorithmSequence {
-   public:
-    ConditionalSequence(std::string name, std::string decision_name)
-        : AlgorithmSequence(std::move(name))
-        , m_decision_name(std::move(decision_name)) {}
-
-    auto execute(Event& event) -> StatusCode override;
-
-   private:
-    std::string m_decision_name;
-};
-
-/**
  * @brief Sequence that collects multiple results without short-circuiting
  *
  * Executes all child algorithms regardless of their return status.
@@ -274,15 +257,5 @@ inline auto TypedConditionalSequence::execute(Event& event) -> StatusCode {
     }
     return AlgorithmSequence::execute(event);
 }
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-inline auto ConditionalSequence::execute(Event& event) -> StatusCode {
-    if (!event.passes_decision(m_decision_name)) {
-        return StatusCode::SUCCESS();  // Skip but don't filter
-    }
-    return AlgorithmSequence::execute(event);
-}
-#pragma GCC diagnostic pop
 
 }  // namespace clas12::framework

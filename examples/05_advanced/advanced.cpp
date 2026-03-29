@@ -14,6 +14,7 @@
 #include <clas12/framework/core/Application.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
 #include <clas12/framework/core/AlgorithmTypes.hpp>
+#include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
 #include <clas12/framework/services/ConditionsService.hpp>
@@ -95,9 +96,9 @@ int main(int argc, char** argv) {
 
     // 3. Create a conditional sequence for electron-tagged events
     fmt::print("\n[3] Electron-Tagged Event Sequence (conditional)\n");
-    auto electron_seq = std::make_unique<clas12::framework::ConditionalSequence>(
+    auto electron_seq = std::make_unique<clas12::framework::TypedConditionalSequence>(
         "ElectronSequence",
-        "TriggerElectronFilter"  // Only run if this decision is true
+        clas12::framework::Decisions::HasTriggerElectron
     );
 
     // 3a. Electron Analysis (using config struct)

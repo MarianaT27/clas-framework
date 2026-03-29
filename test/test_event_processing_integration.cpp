@@ -344,12 +344,14 @@ TEST_F(EventProcessingIntegrationTest, EventStoreWithRealData) {
 
         // Store computed values
         auto& electrons = event.particles(clas12::PIDs::ELECTRON);
-        event.store("n_electrons", static_cast<int>(electrons.size()));
-        event.store("has_electron", !electrons.empty());
+        clas12::framework::TypedKey<int> n_electrons_key("n_electrons");
+        clas12::framework::TypedKey<bool> has_electron_key("has_electron");
+        event.store_typed(n_electrons_key, static_cast<int>(electrons.size()));
+        event.store_typed(has_electron_key, !electrons.empty());
 
         // Retrieve and verify
-        auto n_electrons = event.retrieve<int>("n_electrons");
-        auto has_electron = event.retrieve<bool>("has_electron");
+        auto n_electrons = event.retrieve_typed(n_electrons_key);
+        auto has_electron = event.retrieve_typed(has_electron_key);
 
         ASSERT_TRUE(n_electrons.has_value());
         ASSERT_TRUE(has_electron.has_value());

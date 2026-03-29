@@ -8,7 +8,6 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ServiceHelpers.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -42,7 +41,7 @@ struct DISNTupleData {
  * @brief Algorithm for DIS event selection
  *
  * Modernized using SimpleAlgorithm CRTP pattern with:
- * - Automatic service injection via require_service<T>()
+ * - Automatic service injection via svc<T>()
  * - Property system for configuration
  * - CutBuilder for fluent cut definitions
  * - NTupleWriter for simplified N-tuple management
@@ -72,17 +71,12 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
     }
 
     /**
-     * @brief Configure required services
-     */
-    auto configure() -> void override {
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-        m_ntuple_svc = &require_service<clas12::framework::NTupleService>("NTupleService");
-    }
-
-    /**
      * @brief Custom initialization after services are injected
      */
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_hist_svc = svc<clas12::framework::HistogramService>();
+        m_ntuple_svc = svc<clas12::framework::NTupleService>();
+
         Log::info(name(), "Initializing DIS selection algorithm");
 
         m_cutflow.define_always("All Events");
@@ -103,11 +97,9 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
         book_histograms();
 
         // Setup N-tuple using NTupleWriter
-        if (m_enable_ntuple.get()) {
-            clas12::framework::safe(m_ntuple_svc).with([this](auto* svc) {
-                m_ntuple.init(svc, "dis_kinematics");
-                Log::info(name(), "N-tuple branches registered for DIS kinematics");
-            });
+        if (m_enable_ntuple.get() && m_ntuple_svc) {
+            m_ntuple.init(m_ntuple_svc, "dis_kinematics");
+            Log::info(name(), "N-tuple branches registered for DIS kinematics");
         }
 
         Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
@@ -215,10 +207,10 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
     auto on_finalize() -> clas12::framework::StatusCode override {
         Log::info(name(), "Finalizing DIS selection algorithm");
 
-        clas12::framework::safe(m_ntuple_svc).with([this](auto* svc) {
-            auto entries = svc->get_entries("dis_kinematics");
+        if (m_ntuple_svc) {
+            auto entries = m_ntuple_svc->get_entries("dis_kinematics");
             Log::info(name(), "N-tuple has {} entries", entries);
-        });
+        }
 
         m_cutflow.print();
         return clas12::framework::StatusCode::SUCCESS();
@@ -240,9 +232,9 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
     clas12::framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
     clas12::framework::Property<bool> m_enable_y_cut{"enable_y_cut", true, "Enable y cut"};
 
-    // Service handles (auto-injected via require_service)
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
+    // Service pointers (cached in on_initialize via svc<T>())
+    clas12::framework::HistogramService* m_hist_svc = nullptr;
+    clas12::framework::NTupleService* m_ntuple_svc = nullptr;
 
     // Lock-free atomic histograms (managed by HistogramService)
     // Post-cut 1D
@@ -280,7 +272,7 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
     clas12::framework::NTupleWriter<DISNTupleData> m_ntuple;
 
     auto book_histograms() -> void {
-        clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
+        if (m_hist_svc) { auto* svc = m_hist_svc;
             // Post-cut 1D histograms
             h_Q2 = svc->book_q2_hist("/DIS/Q2", "Q^{2}");
             h_W = svc->book_w_hist("/DIS/W", "W");
@@ -322,7 +314,7 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
             m_nminus1_hists[2] = svc->book_q2_hist("/DIS/NMinus1/Q2", "Q^{2} (N-1)");
             m_nminus1_hists[3] = svc->book_w_hist("/DIS/NMinus1/W", "W (N-1)");
             m_nminus1_hists[4] = svc->book_hist("/DIS/NMinus1/y", "y (N-1);y;Events", 200, 0, 1);
-        });
+        }
     }
 };
 

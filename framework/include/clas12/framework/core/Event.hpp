@@ -6,9 +6,7 @@
 #include <clas12/physics/ParticleUtils.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 
-#include <any>
 #include <functional>
-#include <map>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -225,99 +223,6 @@ class Event {
         m_file_index = file_idx;
     }
 
-    /**
-     * @brief Store a custom object in the event
-     * @tparam T Object type
-     * @param key Storage key
-     * @param value Object to store
-     * @deprecated Use store_typed() with TypedKey<T> for compile-time type safety
-     */
-    template <typename T>
-    [[deprecated("Use store_typed(TypedKey<T>, T) instead")]]
-    auto store(const std::string& key, T value) -> void {
-        m_store[key] = std::any(std::move(value));
-    }
-
-    /**
-     * @brief Retrieve a custom object from the event
-     * @tparam T Object type
-     * @param key Storage key
-     * @return std::optional<T> The stored object, or std::nullopt if not found
-     * @deprecated Use retrieve_typed() with TypedKey<T> for compile-time type safety
-     */
-    template <typename T>
-    [[deprecated("Use retrieve_typed(TypedKey<T>) instead")]]
-    auto retrieve(const std::string& key) const -> std::optional<T> {
-        auto it = m_store.find(key);
-        if (it == m_store.end()) {
-            return std::nullopt;
-        }
-        try {
-            return std::any_cast<T>(it->second);
-        } catch (const std::bad_any_cast&) {
-            return std::nullopt;
-        }
-    }
-
-    /**
-     * @brief Check if a key exists in the event store
-     * @param key Storage key
-     * @return bool True if key exists
-     * @deprecated Use contains_typed() with TypedKey<T> for compile-time type safety
-     */
-    [[deprecated("Use contains_typed(TypedKey<T>) instead")]]
-    auto contains(const std::string& key) const -> bool {
-        return m_store.find(key) != m_store.end();
-    }
-
-    /**
-     * @brief Store a particle collection in the event
-     * @deprecated Use store_typed() with TypedKey<std::vector<Particle>> instead
-     */
-    template <typename ParticleType>
-    [[deprecated("Use store_typed(TypedKey<std::vector<T>>, vec) instead")]]
-    auto store_particles(const std::string& key, std::vector<ParticleType> particles) -> void {
-        m_store[key] = std::any(std::move(particles));
-    }
-
-    /**
-     * @brief Retrieve a particle collection from the event
-     * @deprecated Use retrieve_typed() with TypedKey<std::vector<Particle>> instead
-     */
-    template <typename ParticleType>
-    [[deprecated("Use retrieve_typed(TypedKey<std::vector<T>>) instead")]]
-    auto get_particles(const std::string& key) const -> const std::vector<ParticleType>* {
-        auto it = m_store.find(key);
-        if (it == m_store.end()) {
-            return nullptr;
-        }
-        return std::any_cast<std::vector<ParticleType>>(&it->second);
-    }
-
-    /**
-     * @brief Set an algorithm decision flag
-     * @deprecated Use set_decision_typed(TypedKey<bool>, bool) instead
-     */
-    [[deprecated("Use set_decision_typed(TypedKey<bool>, bool) instead")]]
-    auto set_decision(const std::string& decision_name, bool passed) -> void {
-        m_store[decision_name] = std::any(passed);
-    }
-
-    /**
-     * @brief Check if an algorithm decision was passed
-     * @deprecated Use passes_decision_typed(TypedKey<bool>) instead
-     */
-    [[deprecated("Use passes_decision_typed(TypedKey<bool>) instead")]]
-    auto passes_decision(const std::string& decision_name) -> bool {
-        auto it = m_store.find(decision_name);
-        if (it == m_store.end()) return false;
-        try {
-            return std::any_cast<bool>(it->second);
-        } catch (const std::bad_any_cast&) {
-            return false;
-        }
-    }
-
     // ========================================================================
     // Type-safe event store API (compile-time type checking)
     // ========================================================================
@@ -459,7 +364,6 @@ class Event {
     std::optional<double> m_start_time;
     long m_event_number = -1;
     int m_file_index = -1;
-    std::map<std::string, std::any> m_store;
     TypedEventStore m_typed_store;
 
     /**

@@ -3,6 +3,7 @@
 #include <clas12/ElectronCuts.hpp>
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
+#include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
@@ -76,7 +77,7 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerE
 
         const auto& electrons = m_particle->get_electrons(particles);
         if (electrons.empty()) {
-            event.set_decision(name(), false);
+            event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Has Electron");
@@ -84,7 +85,7 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerE
         // Find trigger electron
         auto trigger_e = clas12::physics::ParticleUtils::find_trigger_electron(electrons, {2000, 4000});
         if (m_enable_trigger_status_cut.get() && !trigger_e.has_value()) {
-            event.set_decision(name(), false);
+            event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Trigger Status");
@@ -94,28 +95,28 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerE
 
         // Apply basic cuts
         if (m_enable_chi2pid_cut.get() && !clas12::ElectronCuts::pass_chi2pid_cut(electron.chi2pid())) {
-            event.set_decision(name(), false);
+            event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Chi2 PID");
 
         if (m_enable_momentum_cut.get() && !clas12::ElectronCuts::pass_electron_momentum_cut(electron.p())) {
-            event.set_decision(name(), false);
+            event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Momentum");
 
         if (m_enable_vz_cut.get() && !clas12::ElectronCuts::pass_electron_vz_cut(electron.vz(), m_target)) {
-            event.set_decision(name(), false);
+            event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
             return clas12::framework::StatusCode::FILTERED();
         }
         m_cutflow.pass("Vertex Z");
 
         // Store the trigger electron for downstream use
-        event.store("TriggerElectron", electron);
+        event.store_typed(clas12::framework::Keys::TriggerElectron, electron);
 
         // Event passes filter
-        event.set_decision(name(), true);
+        event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, true);
         return clas12::framework::StatusCode::SUCCESS();
     }
 

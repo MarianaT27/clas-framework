@@ -3,6 +3,7 @@
 #include <cmath>
 #include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
@@ -26,7 +27,7 @@ using clas12::framework::Log;
  * Events passing all cuts are written to an output HIPO file.
  *
  * Uses SimpleAlgorithm CRTP pattern with:
- * - Automatic service injection via require_service<T>()
+ * - Automatic service injection via svc<T>()
  * - Property system for configuration
  */
 class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAlg> {
@@ -93,17 +94,12 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
     }
 
     /**
-     * @brief Configure required services
-     */
-    auto configure() -> void override {
-        m_hipo_svc = &require_service<clas12::framework::HipoFileService>("HipoFileService");
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-    }
-
-    /**
      * @brief Custom initialization after services are injected
      */
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_hipo_svc = svc<clas12::framework::HipoFileService>();
+        m_hist_svc = svc<clas12::framework::HistogramService>();
+
         Log::info(name(), "Initializing Di-Pion filter algorithm");
         Log::info(name(), "  DIS cuts: Q2 > {} GeV^2, W > {} GeV",
                   m_q2_min.get(), m_w_min.get());
@@ -128,9 +124,9 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
         }
 
         // Check HIPO output service
-        if (!m_hipo_svc || !m_hipo_svc->is_valid()) {
+        if (!m_hipo_svc) {
             Log::warning(name(), "HipoFileService not available - output disabled");
-        } else if (!m_hipo_svc->get()->is_output_enabled()) {
+        } else if (!m_hipo_svc->is_output_enabled()) {
             Log::warning(name(), "HIPO output file not configured");
         }
 
@@ -259,16 +255,16 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
         }
 
         // Write event to output HIPO file
-        if (m_hipo_svc && m_hipo_svc->is_valid() && m_hipo_svc->get()->is_output_enabled()) {
+        if (m_hipo_svc && m_hipo_svc->is_output_enabled()) {
             // TODO: event writing needs migration to new hipo4 API
             // The old API used: event.hipo_event().raw_event()
             // m_hipo_svc->get()->write_event(raw_event);
         }
 
         // Store selected particles for downstream algorithms
-        event.set_decision("HasDiPionEvent", true);
-        event.store("dipion_Q2", kin.q2);
-        event.store("dipion_W", kin.w);
+        event.set_decision_typed(clas12::framework::Decisions::HasDiPionEvent, true);
+        event.store_typed(clas12::framework::Keys::DiPionQ2, kin.q2);
+        event.store_typed(clas12::framework::Keys::DiPionW, kin.w);
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -280,9 +276,9 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
         Log::info(name(), "Finalizing Di-Pion filter algorithm");
         Log::info(name(), "Events passing all cuts: {}", m_events_passed);
 
-        if (m_hipo_svc && m_hipo_svc->is_valid()) {
+        if (m_hipo_svc) {
             Log::info(name(), "Events written to HIPO: {}",
-                      m_hipo_svc->get()->events_written());
+                      m_hipo_svc->events_written());
         }
 
         m_cutflow.print();
@@ -305,9 +301,9 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
     clas12::framework::Property<bool> m_enable_piminus_momentum_cut{"enable_piminus_momentum_cut", true, "Enable pi- momentum cut"};
     clas12::framework::Property<bool> m_enable_piminus_chi2pid_cut{"enable_piminus_chi2pid_cut", true, "Enable pi- chi2PID cut"};
 
-    // Service handles (auto-injected via require_service)
-    clas12::framework::ServiceHandle<clas12::framework::HipoFileService>* m_hipo_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    // Service pointers (cached in on_initialize via svc<T>())
+    clas12::framework::HipoFileService* m_hipo_svc = nullptr;
+    clas12::framework::HistogramService* m_hist_svc = nullptr;
 
     // Statistics
     size_t m_events_passed = 0;
@@ -322,8 +318,8 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAl
     clas12::framework::AtomicHistogram2D* h_Q2_vs_W = nullptr;
 
     auto book_histograms() -> void {
-        if (!m_hist_svc || !m_hist_svc->is_valid()) return;
-        auto* svc = m_hist_svc->get();
+        if (!m_hist_svc) return;
+        auto* svc = m_hist_svc;
 
         // Use lock-free atomic histogram templates for DIS kinematics
         h_Q2 = svc->book_atomic_q2_hist("/DiPion/Q2", "Q^{2}");

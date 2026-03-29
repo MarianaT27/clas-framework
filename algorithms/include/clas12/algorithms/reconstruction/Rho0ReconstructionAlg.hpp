@@ -25,7 +25,6 @@
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ServiceHelpers.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -182,13 +181,11 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         declare_bank("RUN::config");
     }
 
-    auto configure() -> void override {
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-        m_ntuple_svc = &require_service<clas12::framework::NTupleService>("NTupleService");
-        m_output_svc = &require_service<clas12::framework::OutputFileService>("OutputFileService");
-    }
-
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_hist_svc = svc<clas12::framework::HistogramService>();
+        m_ntuple_svc = svc<clas12::framework::NTupleService>();
+        m_output_svc = svc<clas12::framework::OutputFileService>();
+
         using Log = clas12::framework::Log;
 
         Log::subsection(fmt::format("{} Configuration", name()));
@@ -256,7 +253,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         book_histograms();
 
         if (m_enable_ntuple.get()) {
-            clas12::framework::safe(m_ntuple_svc).with([this](auto*) { setup_ntuple(); });
+            if (m_ntuple_svc) { setup_ntuple(); }
         }
 
         m_cutflow.add_cut("All Events");
@@ -324,8 +321,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             if (ph_it == m_pion_cut_step_histograms.end()) continue;
             auto& ph = ph_it->second;
 
-            auto* step_piplus = event.get_particles<clas12::Particle>(fmt::format("PiPlus_{}", label));
-            auto* step_piminus = event.get_particles<clas12::Particle>(fmt::format("PiMinus_{}", label));
+            auto step_piplus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(fmt::format("PiPlus_{}", label)));
+            auto step_piminus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(fmt::format("PiMinus_{}", label)));
+            auto* step_piplus = step_piplus_opt.has_value() ? &step_piplus_opt.value() : nullptr;
+            auto* step_piminus = step_piminus_opt.has_value() ? &step_piminus_opt.value() : nullptr;
 
             if (!step_piplus || !step_piminus || step_piplus->empty() || step_piminus->empty()) continue;
 
@@ -412,15 +411,15 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
             if (sh_it == m_sigma_scan_histograms.end()) continue;
             auto& sh = sh_it->second;
 
-            auto* scan_piplus = event.get_particles<clas12::Particle>(
-                format_sigma_key("SelectedPiPlus", scan_sigma));
-            auto* scan_piminus = event.get_particles<clas12::Particle>(
-                format_sigma_key("SelectedPiMinus", scan_sigma));
+            auto scan_piplus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(
+                format_sigma_key("SelectedPiPlus", scan_sigma)));
+            auto scan_piminus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(
+                format_sigma_key("SelectedPiMinus", scan_sigma)));
 
-            if (!scan_piplus || !scan_piminus || scan_piplus->empty() || scan_piminus->empty()) continue;
+            if (!scan_piplus_opt || !scan_piminus_opt || scan_piplus_opt->empty() || scan_piminus_opt->empty()) continue;
 
             auto scan_candidates = build_rho0_candidates(
-                *scan_piplus, *scan_piminus, electron, virtual_photon, nu, Q2);
+                *scan_piplus_opt, *scan_piminus_opt, electron, virtual_photon, nu, Q2);
 
             for (const auto& cand : scan_candidates) {
                 if (sh.mass_all) sh.mass_all->fill(cand.mass);
@@ -525,9 +524,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
      * @brief Save run metadata to the output ROOT file
      */
     auto save_run_metadata() -> void {
-        if (!m_output_svc || !m_output_svc->is_valid() || m_runs.empty()) return;
+        if (!m_output_svc || m_runs.empty()) return;
 
-        auto* out_svc = m_output_svc->get();
+        auto* out_svc = m_output_svc;
         if (!out_svc->is_file_open()) {
             clas12::framework::Log::error(name(), "Output file is not open for writing metadata");
             return;
@@ -853,7 +852,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
                 stored_particles.push_back(cand.pim);
             }
         }
-        event.store_particles("Rho0_PionPairs", stored_particles);
+        event.store_typed(clas12::framework::Keys::Rho0PionPairs, stored_particles);
     }
 
     /**
@@ -936,10 +935,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         }
     }
 
-    // Service handles
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::OutputFileService>* m_output_svc = nullptr;
+    // Service pointers (cached in on_initialize via svc<T>())
+    clas12::framework::HistogramService* m_hist_svc = nullptr;
+    clas12::framework::NTupleService* m_ntuple_svc = nullptr;
+    clas12::framework::OutputFileService* m_output_svc = nullptr;
 
     // Cutflow (event-level + candidate-level)
     clas12::framework::Cutflow m_cutflow;
@@ -1231,14 +1230,15 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
     }
 
     auto book_histograms() -> void {
-        clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
+        if (m_hist_svc) {
+            auto* svc = m_hist_svc;
             book_main_histograms(svc);
             book_nminus1_histograms(svc);
             book_region_histograms(svc);
             book_sigma_scan_histograms(svc);
             book_pion_cut_step_histograms(svc);
             book_cut_scan_histograms(svc);
-        });
+        }
     }
 
     template<typename HistSvc>
@@ -1443,10 +1443,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         book_cut_scan("dvz", m_dvz_scan_values.get(), "#Delta v_{z}", "#sigma");
     }
     auto setup_ntuple() -> void {
-        clas12::framework::safe(m_ntuple_svc).with([this](auto* svc) {
-            m_ntuple_writer.init(svc, "rho0_events");
+        if (m_ntuple_svc) {
+            m_ntuple_writer.init(m_ntuple_svc, "rho0_events");
             clas12::framework::Log::info(name(), "N-tuple branches registered for rho0_events");
-        });
+        }
     }
     /**
      * @brief Definition for a scan type (sigma scan or cut scan)
@@ -1571,8 +1571,8 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         const ScanDefinition& def,
         const std::vector<ScanFitResult>& scan_results
     ) -> void {
-        if (!m_output_svc || !m_output_svc->is_valid()) return;
-        auto* out_svc = m_output_svc->get();
+        if (!m_output_svc) return;
+        auto* out_svc = m_output_svc;
         if (!out_svc->is_file_open()) return;
 
         std::lock_guard<std::mutex> lock(out_svc->mutex());
@@ -1775,9 +1775,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0Reco
         const BinArray& bins,
         const FitResultsConfig& config
     ) -> void {
-        if (!m_output_svc || !m_output_svc->is_valid()) return;
+        if (!m_output_svc) return;
 
-        auto* out_svc = m_output_svc->get();
+        auto* out_svc = m_output_svc;
         if (!out_svc->is_file_open()) {
             clas12::framework::Log::error(name(), "Output file is not open for writing fit results");
             return;

@@ -308,14 +308,6 @@ inline const TypedKey<double> DIS_nu{"dis_nu"};
 // Selected DIS electron
 inline const TypedKey<std::vector<clas12::Particle>> SelectedDISElectron{"SelectedDISElectron"};
 
-// Backward compatibility aliases (deprecated)
-[[deprecated("Use Keys::SelectedElectrons instead")]]
-inline const TypedKey<std::vector<clas12::Particle>> SelectedElectronsCapital{"SelectedElectrons"};
-[[deprecated("Use Keys::SelectedPiPlus instead")]]
-inline const TypedKey<std::vector<clas12::Particle>> SelectedPiPlusCapital{"SelectedPiPlus"};
-[[deprecated("Use Keys::SelectedPiMinus instead")]]
-inline const TypedKey<std::vector<clas12::Particle>> SelectedPiMinusCapital{"SelectedPiMinus"};
-
 // =============================================================================
 // Lambda reconstruction variables
 // =============================================================================
@@ -340,6 +332,31 @@ inline const TypedKey<std::vector<clas12::MCParticle>> MCPiMinus{"mc_pi_minus"};
 // MC matching flags
 inline const TypedKey<bool> ElectronMatchedToMC{"electron_matched_to_mc"};
 inline const TypedKey<double> ElectronMCMatchQuality{"electron_mc_match_quality"};
+
+// =============================================================================
+// Elastic scattering variables
+// =============================================================================
+inline const TypedKey<clas12::Particle> ElasticElectron{"elastic_electron"};
+inline const TypedKey<double> ElasticQ2{"elastic_Q2"};
+inline const TypedKey<double> ElasticW{"elastic_W"};
+inline const TypedKey<double> ElasticNu{"elastic_nu"};
+
+// =============================================================================
+// Di-pion variables
+// =============================================================================
+inline const TypedKey<double> DiPionQ2{"dipion_Q2"};
+inline const TypedKey<double> DiPionW{"dipion_W"};
+
+// =============================================================================
+// Decays Lambda variables
+// =============================================================================
+inline const TypedKey<double> DecaysLambdaMass{"decays_lambda_mass"};
+inline const TypedKey<double> DecaysLambdaMomentum{"decays_lambda_p"};
+
+// =============================================================================
+// Rho0 reconstruction outputs
+// =============================================================================
+inline const TypedKey<std::vector<clas12::Particle>> Rho0PionPairs{"Rho0_PionPairs"};
 
 }  // namespace Keys
 

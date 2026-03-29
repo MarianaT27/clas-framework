@@ -5,7 +5,7 @@
  * @brief Pion analysis algorithm with calorimeter and DC quality histograms
  *
  * Modernized using SimpleAlgorithm CRTP pattern with:
- * - Automatic service injection via require_service<T>()
+ * - Automatic service injection via svc<T>()
  * - Property system for configuration
  * - Reduced boilerplate through CRTP
  *

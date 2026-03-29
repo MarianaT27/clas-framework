@@ -85,17 +85,10 @@ public:
     }
 
     /**
-     * @brief Configure required services
-     * Called automatically during initialize() (Requirement 4.2)
-     */
-    auto configure() -> void override {
-        m_hist_svc = &require_service<HistogramService>("HistogramService");
-    }
-
-    /**
-     * @brief Initialize algorithm - set up cutflow and histograms
+     * @brief Initialize algorithm - obtain services, set up cutflow and histograms
      */
     auto on_initialize() -> StatusCode override {
+        m_hist_svc = svc<HistogramService>();
         Log::info(name(), "Initializing with momentum range [{}, {}] GeV",
                   m_min_momentum.get(), m_max_momentum.get());
         Log::info(name(), "Theta range: [{}, {}] deg", m_min_theta.get(), m_max_theta.get());
@@ -110,8 +103,8 @@ public:
         m_cutflow.add_cut("Vertex Z Cut");
 
         // Book histograms
-        if (m_hist_svc && m_hist_svc->is_valid()) {
-            auto* svc = m_hist_svc->get();
+        if (m_hist_svc) {
+            auto* svc = m_hist_svc;
             m_h_p_before = svc->book_hist1D(
                 "/Selection/p_before", "Electron p (before cuts);p [GeV/c];Events",
                 120, 0, 12);
@@ -224,7 +217,7 @@ public:
         m_event_store.store(Keys::Electrons, selected_electrons);
 
         // Store in event for downstream algorithms
-        event.store("electron_store", m_event_store);
+        event.store_typed(TypedKey<TypedEventStore>("electron_store"), m_event_store);
 
         m_selected_events++;
         return StatusCode::SUCCESS();
@@ -253,8 +246,8 @@ private:
     Property<double> m_vz_min{"vz_min", -12.0, "Minimum vertex z [cm]"};
     Property<double> m_vz_max{"vz_max", 10.0, "Maximum vertex z [cm]"};
 
-    // Service handle (auto-injected)
-    ServiceHandle<HistogramService>* m_hist_svc = nullptr;
+    // Service pointer
+    HistogramService* m_hist_svc = nullptr;
 
     // Cutflow for tracking selection efficiency
     Cutflow m_cutflow;
@@ -293,16 +286,13 @@ public:
         declare_property(m_target_mass);
     }
 
-    auto configure() -> void override {
-        m_hist_svc = &require_service<HistogramService>("HistogramService");
-    }
-
     auto on_initialize() -> StatusCode override {
+        m_hist_svc = svc<HistogramService>();
         Log::info(name(), "Beam energy: {} GeV", m_beam_energy.get());
         Log::info(name(), "Target mass: {} GeV", m_target_mass.get());
 
-        if (m_hist_svc && m_hist_svc->is_valid()) {
-            auto* svc = m_hist_svc->get();
+        if (m_hist_svc) {
+            auto* svc = m_hist_svc;
             m_h_Q2 = svc->book_hist1D(
                 "/Kinematics/Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 10);
             m_h_W = svc->book_hist1D(
@@ -326,7 +316,7 @@ public:
         // ====================================================================
         // Retrieve electron from TypedEventStore (Requirement 8.2, 8.3)
         // ====================================================================
-        auto store_opt = event.retrieve<TypedEventStore>("electron_store");
+        auto store_opt = event.retrieve_typed(TypedKey<TypedEventStore>("electron_store"));
         if (!store_opt) {
             return StatusCode::FILTERED();
         }
@@ -390,7 +380,7 @@ public:
         bool is_dis = (Q2 > 1.0) && (W > 2.0) && (y < 0.85);
         kinematics_store.store(Decisions::IsDIS, is_dis);
 
-        event.store("kinematics_store", kinematics_store);
+        event.store_typed(TypedKey<TypedEventStore>("kinematics_store"), kinematics_store);
 
         if (is_dis) {
             m_dis_events++;
@@ -408,7 +398,7 @@ private:
     Property<double> m_beam_energy{"beam_energy", 10.6, "Beam energy [GeV]"};
     Property<double> m_target_mass{"target_mass", 0.938272, "Target mass [GeV]"};
 
-    ServiceHandle<HistogramService>* m_hist_svc = nullptr;
+    HistogramService* m_hist_svc = nullptr;
 
     AtomicHistogram1D* m_h_Q2 = nullptr;
     AtomicHistogram1D* m_h_W = nullptr;
@@ -434,17 +424,13 @@ class ElectronHistogramAlg : public SimpleAlgorithm<ElectronHistogramAlg> {
 public:
     ElectronHistogramAlg() : SimpleAlgorithm("ElectronHistograms") {}
 
-    auto configure() -> void override {
-        m_hist_svc = &require_service<HistogramService>("HistogramService");
-    }
-
     auto on_initialize() -> StatusCode override {
-        if (m_hist_svc && m_hist_svc->is_valid()) {
-            auto* svc = m_hist_svc->get();
-            m_h_p_theta_ratio = svc->book_hist1D(
+        m_hist_svc = svc<HistogramService>();
+        if (m_hist_svc) {
+            m_h_p_theta_ratio = m_hist_svc->book_hist1D(
                 "/Analysis/p_theta_ratio", "p/#theta;p/#theta [GeV/deg];Events",
                 100, 0, 1);
-            m_h_phi_vs_sector = svc->book_hist2D(
+            m_h_phi_vs_sector = m_hist_svc->book_hist2D(
                 "/Analysis/phi_vs_sector", "#phi vs Sector;Sector;#phi [deg]",
                 6, 0.5, 6.5, 72, -180, 180);
         }
@@ -452,7 +438,7 @@ public:
     }
 
     auto process(Event& event) -> StatusCode override {
-        auto store_opt = event.retrieve<TypedEventStore>("electron_store");
+        auto store_opt = event.retrieve_typed(TypedKey<TypedEventStore>("electron_store"));
         if (!store_opt) {
             return StatusCode::FILTERED();
         }
@@ -485,7 +471,7 @@ public:
     }
 
 private:
-    ServiceHandle<HistogramService>* m_hist_svc = nullptr;
+    HistogramService* m_hist_svc = nullptr;
     AtomicHistogram1D* m_h_p_theta_ratio = nullptr;
     AtomicHistogram2D* m_h_phi_vs_sector = nullptr;
 };
@@ -615,7 +601,7 @@ auto main(int argc, char* argv[]) -> int {
     fmt::print("║  ✓ TypedEventStore type-safe storage (Req 8.1-8.4)           ║\n");
     fmt::print("║  ✓ Property system with validation (Req 2.1-2.3)             ║\n");
     fmt::print("║  ✓ Automatic service injection (Req 4.2, 12.1-12.2)          ║\n");
-    fmt::print("║  ✓ LambdaAlgorithm for simple cases (Req 4.3)                ║\n");
+    fmt::print("║  ✓ SimpleAlgorithm CRTP pattern (Req 4.1)                    ║\n");
     fmt::print("╚══════════════════════════════════════════════════════════════╝\n");
 
     return EXIT_SUCCESS;

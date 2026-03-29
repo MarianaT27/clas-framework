@@ -31,7 +31,6 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ServiceHelpers.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
@@ -58,12 +57,10 @@ class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm<PhotonSelec
         declare_bank("REC::Calorimeter");
     }
 
-    auto configure() -> void override {
-        m_hist = &require_service<clas12::framework::HistogramService>("HistogramService");
-        m_photon_cuts = &require_service<clas12::framework::PhotonCutsService>("PhotonCutsService");
-    }
-
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_hist = svc<clas12::framework::HistogramService>();
+        m_photon_cuts = svc<clas12::framework::PhotonCutsService>();
+
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::config(name(), "Use AI selection", m_use_ai.get() ? "yes" : "no");
         Log::config(name(), "Min photon energy", fmt::format("{} GeV", m_min_energy.get()));
@@ -101,7 +98,7 @@ class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm<PhotonSelec
         // Step 1: AI-based or energy-threshold selection
         std::vector<clas12::Particle> candidates;
         if (m_use_ai.get()) {
-            candidates = m_photon_cuts->get()->select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
+            candidates = m_photon_cuts->select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
         } else {
             for (const auto& photon : all_photons) {
                 if (photon.E() >= m_min_energy.get()) candidates.push_back(photon);
@@ -152,9 +149,9 @@ class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm<PhotonSelec
     clas12::framework::Property<double> m_max_beta{"max_beta", 1.1, "Maximum photon beta"};
     clas12::framework::Property<bool> m_use_ai{"use_ai", true, "Use AI-based photon selection"};
 
-    // Service handles
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::PhotonCutsService>* m_photon_cuts = nullptr;
+    // Service pointers (cached in on_initialize via svc<T>())
+    clas12::framework::HistogramService* m_hist = nullptr;
+    clas12::framework::PhotonCutsService* m_photon_cuts = nullptr;
 
     // Cutflow
     clas12::framework::Cutflow m_cutflow;
@@ -170,7 +167,7 @@ class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm<PhotonSelec
     clas12::framework::AtomicHistogram1D* h_phi_selected = nullptr;
 
     auto book_histograms() -> void {
-        clas12::framework::safe(m_hist).with([this](auto* svc) {
+        if (m_hist) { auto* svc = m_hist;
             const std::string dir = "/PhotonSelection";
 
             // Raw photon distributions
@@ -184,7 +181,7 @@ class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm<PhotonSelec
             h_energy_selected = svc->book_atomic_hist1D(dir + "/energy_selected", "Photon Energy (selected);E [GeV];Photons", 100, 0, 5);
             h_theta_selected = svc->book_atomic_hist1D(dir + "/theta_selected", "Photon #theta (selected);#theta [deg];Photons", 180, 0, 40);
             h_phi_selected = svc->book_atomic_phi_hist(dir + "/phi_selected", "Photon #phi (selected)");
-        });
+        }
     }
 };
 

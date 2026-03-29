@@ -27,7 +27,6 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ServiceHelpers.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
@@ -44,11 +43,9 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm<Pi0Mul
         declare_property(m_beam_energy);
     }
 
-    auto configure() -> void override {
-        m_hist = &require_service<clas12::framework::HistogramService>("HistogramService");
-    }
-
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_hist = svc<clas12::framework::HistogramService>();
+
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::config(name(), "Beam energy", fmt::format("{} GeV", m_beam_energy.get()));
         Log::config(name(), "Q2 bins", fmt::format("{}", m_Q2_edges.size() - 1));
@@ -205,8 +202,8 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm<Pi0Mul
     // Properties
     clas12::framework::Property<double> m_beam_energy{"beam_energy", 10.53, "Beam energy [GeV]"};
 
-    // Service handles
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist = nullptr;
+    // Service pointers (cached in on_initialize via svc<T>())
+    clas12::framework::HistogramService* m_hist = nullptr;
 
     // Cutflow
     clas12::framework::Cutflow m_cutflow;
@@ -244,7 +241,7 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm<Pi0Mul
     std::vector<clas12::framework::AtomicHistogram1D*> h_pT2_zbin;
 
     auto book_histograms() -> void {
-        clas12::framework::safe(m_hist).with([this](auto* svc) {
+        if (m_hist) { auto* svc = m_hist;
             const std::string dir = "/Pi0Multiplicity";
 
             // DIS normalization
@@ -312,7 +309,7 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm<Pi0Mul
                     fmt::format("#pi^{{0}} p_{{T}}^{{2}}, z #in [{:.1f}, {:.1f}];p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_z_edges[i], m_z_edges[i + 1]),
                     100, 0, 2);
             }
-        });
+        }
     }
 };
 

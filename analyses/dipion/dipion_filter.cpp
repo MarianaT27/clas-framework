@@ -39,12 +39,9 @@ public:
     explicit HipoEventWriterAlg(std::string name = "HipoEventWriterAlg")
         : SimpleAlgorithm(std::move(name)) {}
 
-    auto configure() -> void override {
-        m_hipo_svc = &require_service<clas12::framework::HipoFileService>("HipoFileService");
-    }
-
     auto on_initialize() -> clas12::framework::StatusCode override {
-        if (!m_hipo_svc || !m_hipo_svc->is_valid() || !m_hipo_svc->get()->is_output_enabled()) {
+        m_hipo_svc = svc<clas12::framework::HipoFileService>();
+        if (!m_hipo_svc || !m_hipo_svc->is_output_enabled()) {
             clas12::framework::Log::warning(name(), "HIPO output not configured — writer disabled");
             m_enabled = false;
         } else {
@@ -62,20 +59,20 @@ public:
         auto raw = event.get_bank_view_set().raw_event_data();
         if (raw.empty()) return clas12::framework::StatusCode::SUCCESS();
 
-        m_hipo_svc->get()->write_event(raw);
+        m_hipo_svc->write_event(raw);
         return clas12::framework::StatusCode::SUCCESS();
     }
 
     auto on_finalize() -> clas12::framework::StatusCode override {
-        if (m_enabled && m_hipo_svc && m_hipo_svc->is_valid()) {
+        if (m_enabled && m_hipo_svc) {
             clas12::framework::Log::info(name(), "Events written to HIPO: {}",
-                                          m_hipo_svc->get()->events_written());
+                                          m_hipo_svc->events_written());
         }
         return clas12::framework::StatusCode::SUCCESS();
     }
 
 private:
-    clas12::framework::ServiceHandle<clas12::framework::HipoFileService>* m_hipo_svc = nullptr;
+    clas12::framework::HipoFileService* m_hipo_svc = nullptr;
     bool m_enabled = false;
 };
 

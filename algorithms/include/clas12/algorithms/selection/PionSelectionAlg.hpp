@@ -295,10 +295,10 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
         if (!m_sigma_scan_values.get().empty()) {
             for (double scan_sigma : m_sigma_scan_values.get()) {
                 auto scan_piplus = collect_passing_with_sigma(piplus_candidates, true, scan_sigma);
-                event.store_particles(format_sigma_key("SelectedPiPlus", scan_sigma), std::move(scan_piplus));
+                event.store_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(format_sigma_key("SelectedPiPlus", scan_sigma)), std::move(scan_piplus));
 
                 auto scan_piminus = collect_passing_with_sigma(piminus_candidates, false, scan_sigma);
-                event.store_particles(format_sigma_key("SelectedPiMinus", scan_sigma), std::move(scan_piminus));
+                event.store_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(format_sigma_key("SelectedPiMinus", scan_sigma)), std::move(scan_piminus));
             }
         }
 
@@ -309,9 +309,9 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelection
             {3, "plusMomentum"}, {4, "plusVertexZ"}
         }};
         for (const auto& [step, label] : CUMULATIVE_STEPS) {
-            event.store_particles(fmt::format("PiPlus_{}", label),
+            event.store_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(fmt::format("PiPlus_{}", label)),
                 collect_passing_cumulative(piplus_candidates, step));
-            event.store_particles(fmt::format("PiMinus_{}", label),
+            event.store_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(fmt::format("PiMinus_{}", label)),
                 collect_passing_cumulative(piminus_candidates, step));
         }
 

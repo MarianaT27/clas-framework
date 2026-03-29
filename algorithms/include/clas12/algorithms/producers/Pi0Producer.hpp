@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <clas12/PIDs.hpp>
+#include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
@@ -39,11 +40,9 @@ class Pi0Producer : public clas12::framework::SimpleAlgorithm<Pi0Producer> {
         declare_bank("REC::Particle");
     }
 
-    auto configure() -> void override {
-        m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
-    }
-
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_particle_svc = svc<clas12::framework::ParticleSelectorService>();
+
         fmt::print("  {} - Initializing\n", name());
         fmt::print("    π⁰ mass window: {:.3f} ± {:.3f} GeV/c²\n", m_mass_center, m_mass_width);
         return clas12::framework::StatusCode::SUCCESS();
@@ -67,10 +66,10 @@ class Pi0Producer : public clas12::framework::SimpleAlgorithm<Pi0Producer> {
         const auto& REC_Particle = event.get_bank("REC::Particle");
 
         // Extract photons using ParticleSelectorService
-        clas12::framework::ParticleMap particles = m_particle_svc->get()->extract_particles(
+        clas12::framework::ParticleMap particles = m_particle_svc->extract_particles(
             REC_Particle, {clas12::PIDs::PHOTON});
 
-        const auto& photons = m_particle_svc->get()->get_photons(particles);
+        const auto& photons = m_particle_svc->get_photons(particles);
 
         // Reconstruct π⁰ candidates
         auto pi0_candidates = clas12::physics::CompositeParticleBuilder::reconstruct_pi0(photons);
@@ -86,11 +85,11 @@ class Pi0Producer : public clas12::framework::SimpleAlgorithm<Pi0Producer> {
         m_pi0_produced += good_pi0s.size();
 
         // Store π⁰ candidates in event for downstream algorithms
-        event.store("Pi0Candidates", good_pi0s);
+        event.store_typed(clas12::framework::Keys::Pi0Candidates, good_pi0s);
 
         // Also set a decision if we found at least one π⁰
         if (!good_pi0s.empty()) {
-            event.set_decision("HasPi0", true);
+            event.set_decision_typed(clas12::framework::Decisions::HasPi0, true);
         }
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -101,7 +100,7 @@ class Pi0Producer : public clas12::framework::SimpleAlgorithm<Pi0Producer> {
     double m_mass_width;
     size_t m_events_processed = 0;
     size_t m_pi0_produced = 0;
-    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
+    clas12::framework::ParticleSelectorService* m_particle_svc = nullptr;
 };
 
 }  // namespace clas12::algorithms

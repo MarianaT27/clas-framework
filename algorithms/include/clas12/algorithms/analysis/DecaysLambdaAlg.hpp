@@ -9,6 +9,7 @@
 #include <clas12/PIDs.hpp>
 #include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
@@ -288,7 +289,7 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
         if (selected_lambdas.empty()) return clas12::framework::StatusCode::FILTERED();
 
         // Store results
-        event.set_decision("HasDecaysLambda", true);
+        event.set_decision_typed(clas12::framework::Decisions::HasDecaysLambda, true);
 
         // Find best candidate (closest to PDG mass)
         auto best_it = std::min_element(selected_lambdas.begin(), selected_lambdas.end(),
@@ -296,8 +297,8 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAl
                                             return std::abs(a.mass - LAMBDA_MASS_PDG) < std::abs(b.mass - LAMBDA_MASS_PDG);
                                         });
 
-        event.store("decays_lambda_mass", best_it->mass);
-        event.store("decays_lambda_p", best_it->momentum());
+        event.store_typed(clas12::framework::Keys::DecaysLambdaMass, best_it->mass);
+        event.store_typed(clas12::framework::Keys::DecaysLambdaMomentum, best_it->momentum());
 
         // Fill histograms for selected Lambdas
         for (const auto& lambda : selected_lambdas) {

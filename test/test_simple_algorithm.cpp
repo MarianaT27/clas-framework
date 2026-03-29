@@ -11,6 +11,8 @@ using namespace clas12::framework;
 
 class MockHistogramService : public Service {
 public:
+    static constexpr auto service_name() -> std::string_view { return "HistogramService"; }
+
     explicit MockHistogramService(std::string name = "HistogramService")
         : Service(std::move(name)) {}
 
@@ -41,6 +43,8 @@ private:
 
 class MockLoggingService : public Service {
 public:
+    static constexpr auto service_name() -> std::string_view { return "LoggingService"; }
+
     explicit MockLoggingService(std::string name = "LoggingService")
         : Service(std::move(name)) {}
         
@@ -64,20 +68,16 @@ public:
         declare_property(m_threshold);
     }
 
-    auto configure() -> void override {
-        m_hist_svc = &require_service<MockHistogramService>("HistogramService");
-        m_configure_called = true;
-    }
-
     auto process([[maybe_unused]] Event& event) -> StatusCode override {
         m_process_count++;
-        if (m_hist_svc && m_hist_svc->is_valid()) {
-            m_hist_svc->get()->fill("test_hist", m_threshold.get());
+        if (m_hist_svc) {
+            m_hist_svc->fill("test_hist", m_threshold.get());
         }
         return StatusCode::SUCCESS();
     }
 
     auto on_initialize() -> StatusCode override {
+        m_hist_svc = svc<MockHistogramService>();
         m_on_initialize_called = true;
         return StatusCode::SUCCESS();
     }
@@ -88,20 +88,15 @@ public:
     }
 
     // Test accessors
-    auto configure_called() const -> bool { return m_configure_called; }
     auto on_initialize_called() const -> bool { return m_on_initialize_called; }
     auto on_finalize_called() const -> bool { return m_on_finalize_called; }
     auto process_count() const -> int { return m_process_count; }
     auto threshold() const -> double { return m_threshold.get(); }
-    
-    // Expose protected methods for testing
-    using SimpleAlgorithm<TestSimpleAlgorithm>::service_count;
-    using SimpleAlgorithm<TestSimpleAlgorithm>::has_service;
+    auto hist_svc() const -> MockHistogramService* { return m_hist_svc; }
 
 private:
     Property<double> m_threshold{"threshold", 2.0, "Test threshold"};
-    ServiceHandle<MockHistogramService>* m_hist_svc = nullptr;
-    bool m_configure_called = false;
+    MockHistogramService* m_hist_svc = nullptr;
     bool m_on_initialize_called = false;
     bool m_on_finalize_called = false;
     int m_process_count = 0;
@@ -112,9 +107,10 @@ class MultiServiceAlgorithm : public SimpleAlgorithm<MultiServiceAlgorithm> {
 public:
     MultiServiceAlgorithm() : SimpleAlgorithm("MultiServiceAlgorithm") {}
 
-    auto configure() -> void override {
-        m_hist_svc = &require_service<MockHistogramService>("HistogramService");
-        m_log_svc = &require_service<MockLoggingService>("LoggingService");
+    auto on_initialize() -> StatusCode override {
+        m_hist_svc = svc<MockHistogramService>();
+        m_log_svc = svc<MockLoggingService>();
+        return StatusCode::SUCCESS();
     }
 
     auto process([[maybe_unused]] Event& event) -> StatusCode override {
@@ -122,16 +118,16 @@ public:
     }
 
     auto hist_service_valid() const -> bool {
-        return m_hist_svc && m_hist_svc->is_valid();
+        return m_hist_svc != nullptr;
     }
-    
+
     auto log_service_valid() const -> bool {
-        return m_log_svc && m_log_svc->is_valid();
+        return m_log_svc != nullptr;
     }
 
 private:
-    ServiceHandle<MockHistogramService>* m_hist_svc = nullptr;
-    ServiceHandle<MockLoggingService>* m_log_svc = nullptr;
+    MockHistogramService* m_hist_svc = nullptr;
+    MockLoggingService* m_log_svc = nullptr;
 };
 
 // Algorithm that returns FILTERED
@@ -165,6 +161,7 @@ protected:
         // Add mock services
         (void)svc_mgr->add_service(std::make_unique<MockHistogramService>("HistogramService"));
         (void)svc_mgr->add_service(std::make_unique<MockLoggingService>("LoggingService"));
+        (void)svc_mgr->initialize_all();
     }
 
     std::unique_ptr<ServiceManager> svc_mgr;
@@ -179,16 +176,13 @@ TEST_F(SimpleAlgorithmTest, NameIsSet) {
     EXPECT_EQ(alg.name(), "TestSimpleAlgorithm");
 }
 
-TEST_F(SimpleAlgorithmTest, InitializeCallsConfigureFirst) {
+TEST_F(SimpleAlgorithmTest, InitializeSucceeds) {
     TestSimpleAlgorithm alg;
     alg.set_service_manager(svc_mgr.get());
-    
-    EXPECT_FALSE(alg.configure_called());
-    
+
     auto sc = alg.initialize();
-    
+
     EXPECT_TRUE(sc.is_success());
-    EXPECT_TRUE(alg.configure_called());
 }
 
 TEST_F(SimpleAlgorithmTest, InitializeCallsOnInitialize) {
@@ -206,45 +200,22 @@ TEST_F(SimpleAlgorithmTest, InitializeCallsOnInitialize) {
 TEST_F(SimpleAlgorithmTest, InitializeInjectsServices) {
     TestSimpleAlgorithm alg;
     alg.set_service_manager(svc_mgr.get());
-    
+
     auto sc = alg.initialize();
-    
+
     EXPECT_TRUE(sc.is_success());
-    // Service should be injected - we can verify by checking service_count
-    EXPECT_EQ(alg.service_count(), 1);
-    EXPECT_TRUE(alg.has_service("HistogramService"));
+    // Service should be accessible via svc<T>()
+    EXPECT_NE(alg.hist_svc(), nullptr);
 }
 
-TEST_F(SimpleAlgorithmTest, InitializeFailsWithMissingService) {
-    // Create algorithm that requires a non-existent service
-    class MissingServiceAlg : public SimpleAlgorithm<MissingServiceAlg> {
-    public:
-        MissingServiceAlg() : SimpleAlgorithm("MissingServiceAlg") {}
-        auto configure() -> void override {
-            require_service<MockHistogramService>("NonExistentService");
-        }
-        auto process([[maybe_unused]] Event& event) -> StatusCode override {
-            return StatusCode::SUCCESS();
-        }
-    };
-    
-    MissingServiceAlg alg;
-    alg.set_service_manager(svc_mgr.get());
-    
-    auto sc = alg.initialize();
-    
-    EXPECT_TRUE(sc.is_failure());
-    EXPECT_NE(sc.message().find("NonExistentService"), std::string::npos);
-}
-
-TEST_F(SimpleAlgorithmTest, InitializeFailsWithoutServiceManager) {
+TEST_F(SimpleAlgorithmTest, InitializeWithoutServiceManagerReturnsNullServices) {
     TestSimpleAlgorithm alg;
-    // Don't set service manager
-    
+    // Don't set service manager — svc<T>() returns nullptr
+
     auto sc = alg.initialize();
-    
-    EXPECT_TRUE(sc.is_failure());
-    EXPECT_NE(sc.message().find("ServiceManager"), std::string::npos);
+
+    EXPECT_TRUE(sc.is_success());
+    EXPECT_EQ(alg.hist_svc(), nullptr);
 }
 
 TEST_F(SimpleAlgorithmTest, FinalizeCallsOnFinalize) {
@@ -296,148 +267,3 @@ TEST_F(SimpleAlgorithmTest, FilteringStatusCode) {
     EXPECT_EQ(alg.name(), "FilteringAlgorithm");
 }
 
-// ============================================================================
-// LambdaAlgorithm Tests
-// ============================================================================
-
-TEST(LambdaAlgorithmTest, BasicConstruction) {
-    int call_count = 0;
-    
-    auto alg = make_algorithm("TestLambda", [&call_count]([[maybe_unused]] Event& event) {
-        call_count++;
-        return StatusCode::SUCCESS();
-    });
-    
-    EXPECT_EQ(alg->name(), "TestLambda");
-}
-
-TEST(LambdaAlgorithmTest, InitializeReturnsSuccess) {
-    auto alg = make_algorithm("TestLambda", []([[maybe_unused]] Event& event) {
-        return StatusCode::SUCCESS();
-    });
-    
-    auto sc = alg->initialize();
-    EXPECT_TRUE(sc.is_success());
-}
-
-TEST(LambdaAlgorithmTest, FinalizeReturnsSuccess) {
-    auto alg = make_algorithm("TestLambda", []([[maybe_unused]] Event& event) {
-        return StatusCode::SUCCESS();
-    });
-    
-    auto sc = alg->finalize();
-    EXPECT_TRUE(sc.is_success());
-}
-
-TEST(LambdaAlgorithmTest, WithInitCallback) {
-    bool init_called = false;
-    
-    LambdaAlgorithm alg("TestLambda", []([[maybe_unused]] Event& event) {
-        return StatusCode::SUCCESS();
-    });
-    
-    alg.with_init([&init_called]() {
-        init_called = true;
-        return StatusCode::SUCCESS();
-    });
-    
-    EXPECT_FALSE(init_called);
-    (void)alg.initialize();
-    EXPECT_TRUE(init_called);
-}
-
-TEST(LambdaAlgorithmTest, WithFinalizeCallback) {
-    bool finalize_called = false;
-    
-    LambdaAlgorithm alg("TestLambda", []([[maybe_unused]] Event& event) {
-        return StatusCode::SUCCESS();
-    });
-    
-    alg.with_finalize([&finalize_called]() {
-        finalize_called = true;
-        return StatusCode::SUCCESS();
-    });
-    
-    EXPECT_FALSE(finalize_called);
-    (void)alg.finalize();
-    EXPECT_TRUE(finalize_called);
-}
-
-TEST(LambdaAlgorithmTest, FullConstructor) {
-    bool init_called = false;
-    bool finalize_called = false;
-    int process_count = 0;
-    
-    auto alg = make_algorithm(
-        "FullLambda",
-        [&process_count]([[maybe_unused]] Event& event) {
-            process_count++;
-            return StatusCode::SUCCESS();
-        },
-        [&init_called]() {
-            init_called = true;
-            return StatusCode::SUCCESS();
-        },
-        [&finalize_called]() {
-            finalize_called = true;
-            return StatusCode::SUCCESS();
-        }
-    );
-    
-    (void)alg->initialize();
-    EXPECT_TRUE(init_called);
-    
-    (void)alg->finalize();
-    EXPECT_TRUE(finalize_called);
-}
-
-TEST(LambdaAlgorithmTest, InitFailurePropagates) {
-    auto alg = make_algorithm(
-        "FailingInit",
-        []([[maybe_unused]] Event& event) { return StatusCode::SUCCESS(); },
-        []() { return StatusCode::failure("Init failed"); },
-        []() { return StatusCode::SUCCESS(); }
-    );
-    
-    auto sc = alg->initialize();
-    EXPECT_TRUE(sc.is_failure());
-    EXPECT_NE(sc.message().find("Init failed"), std::string::npos);
-}
-
-TEST(LambdaAlgorithmTest, FinalizeFailurePropagates) {
-    auto alg = make_algorithm(
-        "FailingFinalize",
-        []([[maybe_unused]] Event& event) { return StatusCode::SUCCESS(); },
-        []() { return StatusCode::SUCCESS(); },
-        []() { return StatusCode::failure("Finalize failed"); }
-    );
-    
-    (void)alg->initialize();
-    auto sc = alg->finalize();
-    EXPECT_TRUE(sc.is_failure());
-    EXPECT_NE(sc.message().find("Finalize failed"), std::string::npos);
-}
-
-TEST(LambdaAlgorithmTest, ChainedConfiguration) {
-    bool init_called = false;
-    bool finalize_called = false;
-    
-    LambdaAlgorithm alg("ChainedLambda", []([[maybe_unused]] Event& event) {
-        return StatusCode::SUCCESS();
-    });
-    
-    // Test method chaining
-    alg.with_init([&init_called]() {
-        init_called = true;
-        return StatusCode::SUCCESS();
-    }).with_finalize([&finalize_called]() {
-        finalize_called = true;
-        return StatusCode::SUCCESS();
-    });
-    
-    (void)alg.initialize();
-    (void)alg.finalize();
-    
-    EXPECT_TRUE(init_called);
-    EXPECT_TRUE(finalize_called);
-}

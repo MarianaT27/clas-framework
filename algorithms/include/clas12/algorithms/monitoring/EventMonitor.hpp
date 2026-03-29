@@ -5,7 +5,6 @@
 #include <clas12/PIDs.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
-#include <clas12/framework/core/ServiceHandle.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
@@ -37,15 +36,13 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
 
     void set_particle_types(std::vector<clas12::PIDs> pids) { m_monitored_pids = std::move(pids); }
 
-    auto configure() -> void override {
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-        m_particle_svc = &require_service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
-    }
-
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_hist_svc = svc<clas12::framework::HistogramService>();
+        m_particle_svc = svc<clas12::framework::ParticleSelectorService>();
+
         clas12::framework::Log::info("Event Monitor", "  {} - Initializing", name());
 
-        if (m_hist_svc->is_valid()) {
+        if (m_hist_svc) {
             book_histograms();
         }
 
@@ -91,19 +88,19 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
      * @brief Book all monitoring histograms
      */
     void book_histograms() {
-        if (!m_hist_svc->is_valid()) return;
+        if (!m_hist_svc) return;
 
-        h_particles_per_event = m_hist_svc->get()->book_hist1D(
+        h_particles_per_event = m_hist_svc->book_hist1D(
             "/Monitor/particles_per_event",
             "Particles per Event;N_{particles};Events",
             PARTICLES_HIST_BINS, PARTICLES_HIST_MIN, PARTICLES_HIST_MAX);
 
-        h_electrons_per_event = m_hist_svc->get()->book_hist1D(
+        h_electrons_per_event = m_hist_svc->book_hist1D(
             "/Monitor/electrons_per_event",
             "Electrons per Event;N_{e};Events",
             ELECTRONS_HIST_BINS, ELECTRONS_HIST_MIN, ELECTRONS_HIST_MAX);
 
-        h_processing_time = m_hist_svc->get()->book_hist1D(
+        h_processing_time = m_hist_svc->book_hist1D(
             "/Monitor/processing_time",
             "Event Processing Time;Time [#mus];Events",
             TIME_HIST_BINS, TIME_HIST_MIN, TIME_HIST_MAX);
@@ -123,10 +120,10 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
         }
 
         // Extract particles for detailed monitoring using ParticleSelectorService
-        const clas12::framework::ParticleMap particles = m_particle_svc->get()->extract_particles(
+        const clas12::framework::ParticleMap particles = m_particle_svc->extract_particles(
             REC_Particle, m_monitored_pids);
 
-        const int n_electrons = m_particle_svc->get()->get_electrons(particles).size();
+        const int n_electrons = m_particle_svc->get_electrons(particles).size();
 
         if (h_electrons_per_event) {
             h_electrons_per_event->fill(n_electrons);
@@ -183,8 +180,8 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
     }
 
     // Services
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
+    clas12::framework::HistogramService* m_hist_svc = nullptr;
+    clas12::framework::ParticleSelectorService* m_particle_svc = nullptr;
 
     // Monitoring histograms (atomic for thread-safety)
     clas12::framework::AtomicHistogram1D* h_particles_per_event = nullptr;

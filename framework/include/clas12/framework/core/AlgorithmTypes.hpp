@@ -147,43 +147,6 @@ private:
 };
 
 /**
- * @brief Conditional sequence using string-based decisions
- * @deprecated Use TypedConditionalSequence with TypedKey<bool> instead
- */
-class ConditionalSequence : public AlgorithmSequence {
-public:
-    explicit ConditionalSequence(std::string name, std::string required_decision)
-        : AlgorithmSequence(std::move(name)), m_required_decision(std::move(required_decision)) {}
-
-    /// Execute sequence only if required decision passes
-    auto execute(Event& event) -> StatusCode override {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-        if (!event.passes_decision(m_required_decision)) {
-            return StatusCode::SUCCESS();  // Skip sequence silently
-        }
-#pragma GCC diagnostic pop
-        return AlgorithmSequence::execute(event);
-    }
-
-    /// Get the required decision name
-    [[nodiscard]] auto required_decision() const noexcept -> const std::string& {
-        return m_required_decision;
-    }
-
-    /// Check if sequence would execute for given event
-    [[nodiscard]] auto would_execute(Event& event) const -> bool {
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-        return event.passes_decision(m_required_decision);
-#pragma GCC diagnostic pop
-    }
-
-private:
-    std::string m_required_decision;
-};
-
-/**
  * @brief Sequence that stops on first FILTERED status
  *
  * Unlike AlgorithmSequence which continues on FILTERED,

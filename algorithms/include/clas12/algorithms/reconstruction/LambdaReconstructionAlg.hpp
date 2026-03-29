@@ -88,14 +88,6 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
         declare_property(m_enable_coplanarity_cut);
     }
 
-    /**
-     * @brief Configure required services
-     */
-    auto configure() -> void override {
-        m_log_svc = &require_service<clas12::framework::LoggingService>("LoggingService");
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-        m_ntuple_svc = &optional_service<clas12::framework::NTupleService>("NTupleService");
-    }
 
     /**
      * @brief Check if particle is in forward detector
@@ -133,6 +125,10 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_log_svc = svc<clas12::framework::LoggingService>();
+        m_hist_svc = svc<clas12::framework::HistogramService>();
+        m_ntuple_svc = svc<clas12::framework::NTupleService>();
+
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::config(name(), "Mass window", fmt::format("{} GeV", m_mass_window.get()));
         Log::config(name(), "Chi2pid max", m_max_chi2pid.get());
@@ -143,13 +139,13 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
         Log::config(name(), "Beam energy", fmt::format("{} GeV", m_beam_energy.get()));
         Log::config(name(), "Displaced vz range", fmt::format("[{}, {}] cm", m_min_displaced_vz.get(), m_max_displaced_vz.get()));
 
-        if (!m_hist_svc || !m_hist_svc->is_valid()) {
+        if (!m_hist_svc) {
             Log::error(name(), "Could not get HistogramService");
             return clas12::framework::StatusCode::FAILURE();
         }
 
         book_histograms();
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) setup_ntuple();
+        if (m_ntuple_svc) setup_ntuple();
 
         // Setup cutflow
         m_cutflow.add_cut("All Events");
@@ -476,10 +472,10 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
 
     clas12::framework::Cutflow m_cutflow;
 
-    // Services (pointers set by configure())
-    clas12::framework::ServiceHandle<clas12::framework::LoggingService>* m_log_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
+    // Service pointers (cached in on_initialize via svc<T>())
+    clas12::framework::LoggingService* m_log_svc = nullptr;
+    clas12::framework::HistogramService* m_hist_svc = nullptr;
+    clas12::framework::NTupleService* m_ntuple_svc = nullptr;
 
     mutable std::mutex m_ntuple_mutex;
 
@@ -533,29 +529,29 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<Lambda
     clas12::framework::NTupleWriter<LambdaNTupleData> m_ntuple;
 
     void book_histograms() {
-        h_n_protons = m_hist_svc->get()->book_atomic_hist1D("/Lambda/n_protons", "Number of protons;N_{p};Events", 10, 0, 10);
-        h_n_pions = m_hist_svc->get()->book_atomic_hist1D("/Lambda/n_pions", "Number of #pi^{-};N_{#pi^{-}};Events", 10, 0, 10);
-        h_proton_momentum = m_hist_svc->get()->book_atomic_hist1D("/Lambda/proton_p", "Proton momentum;p [GeV];Events", 100, 0, 5);
-        h_pion_momentum = m_hist_svc->get()->book_atomic_hist1D("/Lambda/pion_p", "#pi^{-} momentum;p [GeV];Events", 100, 0, 3);
-        h_ppim_mass_nocuts = m_hist_svc->get()->book_atomic_hist1D("/Lambda/ppim_mass_nocuts", "p#pi^{-} invariant mass (no cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_ppim_mass_all = m_hist_svc->get()->book_atomic_hist1D("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (FD+p cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_ppim_mass_selected = m_hist_svc->get()->book_atomic_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_lambda_momentum = m_hist_svc->get()->book_atomic_hist1D("/Lambda/lambda_p", "#Lambda momentum;p [GeV];Events", 100, 0, 6);
-        h_lambda_theta = m_hist_svc->get()->book_atomic_hist1D("/Lambda/lambda_theta", "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
-        h_coplanarity = m_hist_svc->get()->book_atomic_hist1D("/Lambda/coplanarity", "Coplanarity;#Delta#phi [deg];Events", 90, 0, 90);
-        h_coplanarity_precut = m_hist_svc->get()->book_atomic_hist1D("/Lambda/coplanarity_precut", "Coplanarity (pre-cut);#Delta#phi [deg];Events", 180, 0, 180);
-        h_delta_vz = m_hist_svc->get()->book_atomic_hist1D("/Lambda/delta_vz", "Vertex #Deltaz;#Deltaz [cm];Events", 100, 0, 5);
-        h_delta_vz_precut = m_hist_svc->get()->book_atomic_hist1D("/Lambda/delta_vz_precut", "Vertex #Deltaz (pre-cut);#Deltaz [cm];Events", 100, 0, 20);
-        h_opening_angle = m_hist_svc->get()->book_atomic_hist1D("/Lambda/opening_angle", "Opening angle p-#pi^{-};#theta_{open} [deg];Events", 90, 0, 90);
-        h_missing_mass = m_hist_svc->get()->book_atomic_hist1D("/Lambda/missing_mass", "Missing mass M(e,e'#Lambda)X;M_{X} [GeV];Events", 200, -1, 3);
-        h_displaced_vz = m_hist_svc->get()->book_atomic_hist1D("/Lambda/displaced_vz", "Displaced vertex z (decay - primary);#Deltaz [cm];Events", 200, -20, 40);
-        h_displaced_vz_precut = m_hist_svc->get()->book_atomic_hist1D("/Lambda/displaced_vz_precut", "Displaced vertex z (pre-cut);#Deltaz [cm];Events", 200, -20, 40);
-        h_decay_length = m_hist_svc->get()->book_atomic_hist1D("/Lambda/decay_length", "Decay length;L [cm];Events", 200, -20, 60);
+        h_n_protons = m_hist_svc->book_atomic_hist1D("/Lambda/n_protons", "Number of protons;N_{p};Events", 10, 0, 10);
+        h_n_pions = m_hist_svc->book_atomic_hist1D("/Lambda/n_pions", "Number of #pi^{-};N_{#pi^{-}};Events", 10, 0, 10);
+        h_proton_momentum = m_hist_svc->book_atomic_hist1D("/Lambda/proton_p", "Proton momentum;p [GeV];Events", 100, 0, 5);
+        h_pion_momentum = m_hist_svc->book_atomic_hist1D("/Lambda/pion_p", "#pi^{-} momentum;p [GeV];Events", 100, 0, 3);
+        h_ppim_mass_nocuts = m_hist_svc->book_atomic_hist1D("/Lambda/ppim_mass_nocuts", "p#pi^{-} invariant mass (no cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
+        h_ppim_mass_all = m_hist_svc->book_atomic_hist1D("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (FD+p cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
+        h_ppim_mass_selected = m_hist_svc->book_atomic_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
+        h_lambda_momentum = m_hist_svc->book_atomic_hist1D("/Lambda/lambda_p", "#Lambda momentum;p [GeV];Events", 100, 0, 6);
+        h_lambda_theta = m_hist_svc->book_atomic_hist1D("/Lambda/lambda_theta", "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
+        h_coplanarity = m_hist_svc->book_atomic_hist1D("/Lambda/coplanarity", "Coplanarity;#Delta#phi [deg];Events", 90, 0, 90);
+        h_coplanarity_precut = m_hist_svc->book_atomic_hist1D("/Lambda/coplanarity_precut", "Coplanarity (pre-cut);#Delta#phi [deg];Events", 180, 0, 180);
+        h_delta_vz = m_hist_svc->book_atomic_hist1D("/Lambda/delta_vz", "Vertex #Deltaz;#Deltaz [cm];Events", 100, 0, 5);
+        h_delta_vz_precut = m_hist_svc->book_atomic_hist1D("/Lambda/delta_vz_precut", "Vertex #Deltaz (pre-cut);#Deltaz [cm];Events", 100, 0, 20);
+        h_opening_angle = m_hist_svc->book_atomic_hist1D("/Lambda/opening_angle", "Opening angle p-#pi^{-};#theta_{open} [deg];Events", 90, 0, 90);
+        h_missing_mass = m_hist_svc->book_atomic_hist1D("/Lambda/missing_mass", "Missing mass M(e,e'#Lambda)X;M_{X} [GeV];Events", 200, -1, 3);
+        h_displaced_vz = m_hist_svc->book_atomic_hist1D("/Lambda/displaced_vz", "Displaced vertex z (decay - primary);#Deltaz [cm];Events", 200, -20, 40);
+        h_displaced_vz_precut = m_hist_svc->book_atomic_hist1D("/Lambda/displaced_vz_precut", "Displaced vertex z (pre-cut);#Deltaz [cm];Events", 200, -20, 40);
+        h_decay_length = m_hist_svc->book_atomic_hist1D("/Lambda/decay_length", "Decay length;L [cm];Events", 200, -20, 60);
     }
 
     void setup_ntuple() {
-        if (m_ntuple_svc && m_ntuple_svc->is_valid()) {
-            m_ntuple.init(m_ntuple_svc->get(), "lambda_analysis");
+        if (m_ntuple_svc) {
+            m_ntuple.init(m_ntuple_svc, "lambda_analysis");
             Log::info(name(), "N-tuple branches registered for Lambda analysis");
         }
     }

@@ -37,7 +37,6 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ServiceHelpers.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
@@ -57,11 +56,9 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         declare_property(m_beam_energy);
     }
 
-    auto configure() -> void override {
-        m_hist = &require_service<clas12::framework::HistogramService>("HistogramService");
-    }
-
     auto on_initialize() -> clas12::framework::StatusCode override {
+        m_hist = svc<clas12::framework::HistogramService>();
+
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::config(name(), "Max pool events", fmt::format("{}", m_max_pool_events.get()));
         Log::config(name(), "Beam energy", fmt::format("{} GeV", m_beam_energy.get()));
@@ -265,8 +262,8 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
     clas12::framework::Property<int> m_max_pool_events{"max_pool_events", 10, "Max events per DIS bin"};
     clas12::framework::Property<double> m_beam_energy{"beam_energy", 10.53, "Beam energy [GeV]"};
 
-    // Service handles
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist = nullptr;
+    // Service pointers (cached in on_initialize via svc<T>())
+    clas12::framework::HistogramService* m_hist = nullptr;
 
     // Cutflow
     clas12::framework::Cutflow m_cutflow;
@@ -406,7 +403,7 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
     // =========================================================================
 
     auto book_histograms() -> void {
-        clas12::framework::safe(m_hist).with([this](auto* svc) {
+        if (m_hist) { auto* svc = m_hist;
             const std::string dir = "/Pi0EventMixing";
 
             // Inclusive histograms
@@ -463,7 +460,7 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
             }
 
             Log::info("Pi0EventMixing", "Booked {} same + {} mixed histograms", total_bins, total_bins);
-        });
+        }
     }
 };
 

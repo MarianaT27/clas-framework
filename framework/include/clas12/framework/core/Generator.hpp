@@ -66,7 +66,7 @@
  *
  * - All existing algorithms using execute() continue to work unchanged
  * - The Application class event loop is unchanged
- * - SimpleAlgorithm and LambdaAlgorithm work as before
+ * - SimpleAlgorithm works as before
  * - Coroutines are opt-in and don't affect existing code
  *
  * @see Requirements 5.1, 5.2, 5.4

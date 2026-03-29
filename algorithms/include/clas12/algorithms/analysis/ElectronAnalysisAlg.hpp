@@ -5,6 +5,7 @@
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
@@ -239,7 +240,7 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAn
         }
 
         // Set decision flag for downstream algorithms
-        event.set_decision("HasGoodElectron", true);
+        event.set_decision_typed(clas12::framework::Decisions::HasGoodElectron, true);
 
         return clas12::framework::StatusCode::SUCCESS();
     }

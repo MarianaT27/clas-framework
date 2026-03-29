@@ -1,7 +1,5 @@
 #pragma once
 
-#include <functional>
-#include <optional>
 #include <string>
 #include <vector>
 #include <clas12/Particle.hpp>
@@ -13,44 +11,6 @@ namespace clas12::physics {
  */
 class PhysicsHelpers {
    public:
-    /**
-     * @brief Particle pair combination generator
-     * Generates all unique pairs of particles (without replacement)
-     */
-    template <typename ParticleType>
-    static auto generate_pairs(const std::vector<ParticleType>& particles)
-        -> std::vector<std::pair<ParticleType, ParticleType>> {
-        std::vector<std::pair<ParticleType, ParticleType>> pairs;
-
-        for (size_t i = 0; i < particles.size(); ++i) {
-            for (size_t j = i + 1; j < particles.size(); ++j) {
-                pairs.emplace_back(particles[i], particles[j]);
-            }
-        }
-
-        return pairs;
-    }
-
-    /**
-     * @brief Find best pair based on criterion
-     * Example: Find pair with invariant mass closest to target
-     */
-    template <typename ParticleType, typename Criterion>
-    static auto find_best_pair(
-        const std::vector<ParticleType>& particles,
-        Criterion criterion) -> std::optional<std::pair<ParticleType, ParticleType>> {
-        auto pairs = generate_pairs(particles);
-        if (pairs.empty()) return std::nullopt;
-
-        auto best = std::min_element(
-            pairs.begin(), pairs.end(),
-            [&criterion](const auto& a, const auto& b) {
-                return criterion(a) < criterion(b);
-            });
-
-        return *best;
-    }
-
     /**
      * @brief Rapidity calculation
      * y = 0.5 * ln[(E + p_z)/(E - p_z)]
@@ -71,18 +31,11 @@ class PhysicsHelpers {
     }
 
     /**
-     * @brief Transverse momentum
-     */
-    static auto pt(const clas12::Particle& p) -> double {
-        return std::sqrt(p.px() * p.px() + p.py() * p.py());
-    }
-
-    /**
      * @brief Transverse mass
      * m_T = sqrt(m² + p_T²)
      */
     static auto transverse_mass(const clas12::Particle& p) -> double {
-        double pt_val = pt(p);
+        double pt_val = p.pt();
         double m = p.mass();
         return std::sqrt(m * m + pt_val * pt_val);
     }
@@ -137,25 +90,6 @@ class PhysicsHelpers {
         }
 
         return total;
-    }
-
-    /**
-     * @brief Boost particle to center-of-mass frame
-     * Simplified boost along z-axis
-     */
-    static auto boost_to_cm(
-        const clas12::Particle& p,
-        double beta_z) -> FourMomentum {
-        double gamma = 1.0 / std::sqrt(1.0 - beta_z * beta_z);
-
-        double E_cm = gamma * (p.E() - beta_z * p.pz());
-        double pz_cm = gamma * (p.pz() - beta_z * p.E());
-
-        return FourMomentum{
-            .px = p.px(),
-            .py = p.py(),
-            .pz = pz_cm,
-            .E = E_cm};
     }
 
     /**

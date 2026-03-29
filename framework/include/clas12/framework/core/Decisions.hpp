@@ -128,6 +128,15 @@ inline const TypedKey<bool> HasLambda{"HasLambda"};
 /// Event has a reconstructed rho0 meson
 inline const TypedKey<bool> HasRho0{"HasRho0"};
 
+/// Event has an elastic electron
+inline const TypedKey<bool> HasElasticElectron{"HasElasticElectron"};
+
+/// Event has a di-pion event
+inline const TypedKey<bool> HasDiPionEvent{"HasDiPionEvent"};
+
+/// Event has a reconstructed Lambda from decays
+inline const TypedKey<bool> HasDecaysLambda{"HasDecaysLambda"};
+
 }  // namespace Decisions
 
 }  // namespace clas12::framework

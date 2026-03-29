@@ -60,12 +60,6 @@ public:
      *
      * Called during initialization to declare required services.
      */
-    auto configure() -> void override {
-        // Declare required services
-        m_hist_svc = &require_service<clas12::framework::HistogramService>("HistogramService");
-        m_ntuple_svc = &require_service<clas12::framework::NTupleService>("NTupleService");
-    }
-
     /**
      * @brief Custom initialization
      *
@@ -73,14 +67,15 @@ public:
      * @return StatusCode SUCCESS to continue, FAILURE to abort
      */
     auto on_initialize() -> clas12::framework::StatusCode override {
-        if (m_enable_histograms && m_hist_svc && m_hist_svc->is_valid()) {
-            // Book your histograms here
-            // m_hist_svc->get()->book_hist1D("hist_name", "Title", 100, 0.0, 10.0);
+        m_hist_svc = svc<clas12::framework::HistogramService>();
+        m_ntuple_svc = svc<clas12::framework::NTupleService>();
+
+        if (m_enable_histograms && m_hist_svc) {
             book_histograms();
         }
 
-        if (m_enable_ntuple.get()) {
-            clas12::framework::safe(m_ntuple_svc).with([this](auto*) { setup_ntuple(); });
+        if (m_enable_ntuple.get() && m_ntuple_svc) {
+            setup_ntuple();
         }
 
         // Read the file analyses/ALERT_track_matching/atof_wedge_H2.data
@@ -113,15 +108,15 @@ public:
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
 
         // Check for elastic electron decision from upstream algorithm
-        if (!event.passes_decision("HasElasticElectron")) {
+        if (!event.passes_decision_typed(clas12::framework::Decisions::HasElasticElectron)) {
             return clas12::framework::StatusCode::FILTERED();
         }
-        // Get elastic electron using particle retrieval
-        const auto* electrons = event.get_particles<clas12::Particle>("ElasticElectron");
-        if (!electrons || electrons->empty()) {
+        // Get elastic electron using typed retrieval
+        auto electron_opt = event.retrieve_typed(clas12::framework::Keys::ElasticElectron);
+        if (!electron_opt) {
             return clas12::framework::StatusCode::FILTERED();
         }
-        const auto& elastic_electron = electrons->front();
+        const auto& elastic_electron = *electron_opt;
         double electron_phi = elastic_electron.phi();  // degrees
 
         // Read the AHDC::track, ALERT::ai:projections and ATOF::hits banks
@@ -323,8 +318,8 @@ public:
         }  // end for matched_tracks
 
         // Fill NTuple with per-event data for Python analysis
-        if (m_enable_ntuple.get()) {
-            clas12::framework::safe(m_ntuple_svc).with([&, this](auto* svc) {
+        if (m_enable_ntuple.get() && m_ntuple_svc) {
+            {
                 std::lock_guard<std::mutex> lock(m_ntuple_mutex);
 
                 const auto* mt = matched_tracks.front();
@@ -427,8 +422,8 @@ public:
                     m_nt_is_exact_match          = 0;
                 }
 
-                svc->fill("alert_track_matching");
-            });
+                m_ntuple_svc->fill("alert_track_matching");
+            }
         }
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -512,9 +507,9 @@ private:
         "enable_ntuple", true, "Enable N-tuple output"
     };
 
-    // Service handles
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
+    // Service pointers
+    clas12::framework::HistogramService* m_hist_svc = nullptr;
+    clas12::framework::NTupleService* m_ntuple_svc = nullptr;
 
     // Mutex for thread-safe NTuple filling
     mutable std::mutex m_ntuple_mutex;
@@ -579,8 +574,8 @@ private:
     int    m_nt_n_true_atof_hits = 0, m_nt_n_matched_tracks = 0;
 
     auto setup_ntuple() -> void {
-        if (!m_ntuple_svc || !m_ntuple_svc->is_valid()) return;
-        auto* svc = m_ntuple_svc->get();
+        if (!m_ntuple_svc) return;
+        auto* svc = m_ntuple_svc;
         const std::string tree = "alert_track_matching";
 
         // Electron
@@ -642,40 +637,38 @@ private:
     }
 
     auto book_histograms() -> void {
-        clas12::framework::safe(m_hist_svc).with([this](auto* svc) {
-            // Use lock-free atomic histograms for parallel accumulation
-            h_p = svc->book_atomic_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
-            h_phi = svc->book_atomic_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
-            h_theta = svc->book_atomic_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
-            h_vz = svc->book_atomic_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -30, 30);
-            h_vz_Cu = svc->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
-            h_vz_Sn = svc->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
-            h_delta_vz = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_vz", "#DeltaVz (electron - track);#DeltaVz [mm];Events", 200, -100, 100);
-            h_delta_vz_cm = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_vz_cm", "#DeltaVz (electron - track);#DeltaVz [cm];Events", 200, -10, 50);
-            h_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 360, 0, 360);
-            h_delta_phi_after_vz_cm_cut = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi_after_vz_cm_cut", "#Delta#phi after #DeltaVz cut;#Delta#phi [deg];Events", 360, 0, 360);
-            h_n_predictions = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", 20, 0, 20);
-            h_best_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi (track-electron);#Delta#phi [deg];Events", 100, 150, 200);
-            h_n_good_atof_hits = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_good_atof_hits", "N good ATOF hits;N hits;Events", 20, 0, 20);
-            h_matched_atof_hit_id = svc->book_atomic_hist1D("/ALERT/TrackMatching/matched_atof_hit_id", "Matched ATOF hit ID;Hit ID;Events", 50, -1, 49);
+        // Use lock-free atomic histograms for parallel accumulation
+        auto* svc = m_hist_svc;
+        h_p = svc->book_atomic_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
+        h_phi = svc->book_atomic_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
+        h_theta = svc->book_atomic_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
+        h_vz = svc->book_atomic_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -30, 30);
+        h_vz_Cu = svc->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
+        h_vz_Sn = svc->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
+        h_delta_vz = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_vz", "#DeltaVz (electron - track);#DeltaVz [mm];Events", 200, -100, 100);
+        h_delta_vz_cm = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_vz_cm", "#DeltaVz (electron - track);#DeltaVz [cm];Events", 200, -10, 50);
+        h_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 360, 0, 360);
+        h_delta_phi_after_vz_cm_cut = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi_after_vz_cm_cut", "#Delta#phi after #DeltaVz cut;#Delta#phi [deg];Events", 360, 0, 360);
+        h_n_predictions = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", 20, 0, 20);
+        h_best_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi (track-electron);#Delta#phi [deg];Events", 100, 150, 200);
+        h_n_good_atof_hits = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_good_atof_hits", "N good ATOF hits;N hits;Events", 20, 0, 20);
+        h_matched_atof_hit_id = svc->book_atomic_hist1D("/ALERT/TrackMatching/matched_atof_hit_id", "Matched ATOF hit ID;Hit ID;Events", 50, -1, 49);
 
-            // ATOF-electron delta_phi histograms
-            h_atof_electron_delta_phi_all = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_all", "#Delta#phi(e, ATOF hit) all good;#Delta#phi [deg];Hits", 360, 0, 360);
-            h_atof_electron_delta_phi_true = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_true", "#Delta#phi(e, ATOF hit) true;#Delta#phi [deg];Hits", 100, 150, 200);
-            h_atof_electron_delta_phi_best = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_best", "Best #Delta#phi(e, ATOF hit);#Delta#phi [deg];Hits", 100, 150, 200);
-            h_n_true_atof_hits = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_true_atof_hits", "N true ATOF hits;N hits;Events", 20, 0, 20);
+        // ATOF-electron delta_phi histograms
+        h_atof_electron_delta_phi_all = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_all", "#Delta#phi(e, ATOF hit) all good;#Delta#phi [deg];Hits", 360, 0, 360);
+        h_atof_electron_delta_phi_true = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_true", "#Delta#phi(e, ATOF hit) true;#Delta#phi [deg];Hits", 100, 150, 200);
+        h_atof_electron_delta_phi_best = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_best", "Best #Delta#phi(e, ATOF hit);#Delta#phi [deg];Hits", 100, 150, 200);
+        h_n_true_atof_hits = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_true_atof_hits", "N true ATOF hits;N hits;Events", 20, 0, 20);
 
-            // Debug histograms
-            h_track_atof_dphi = svc->book_atomic_hist1D("/ALERT/Debug/track_atof_dphi", "Track-ATOF #Delta#phi (all true hits);|#Delta#phi| [deg];Hits", 100, 0, 180);
-            h_best_track_atof_dphi = svc->book_atomic_hist1D("/ALERT/Debug/best_track_atof_dphi", "Best track-ATOF #Delta#phi (selected truth);|#Delta#phi| [deg];Events", 100, 0, 60);
-            h_delta_component = svc->book_atomic_hist1D("/ALERT/Debug/delta_component", "AI - true component;#Delta component;Events", 41, -20, 20);
-            h_delta_sector = svc->book_atomic_hist1D("/ALERT/Debug/delta_sector", "AI - true sector;#Delta sector;Events", 31, -15, 15);
-            h_ai_vs_true_component = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_component", "AI vs true component;True component;AI component", 20, 0, 20, 20, 0, 20);
-            h_ai_vs_true_layer = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_layer", "AI vs true layer;True layer;AI layer", 10, 0, 10, 10, 0, 10);
-            h_ai_vs_true_sector = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_sector", "AI vs true sector;True sector;AI sector", 15, 0, 15, 15, 0, 15);
-            h_track_phi_vs_atof_phi = svc->book_atomic_hist2D("/ALERT/Debug/track_phi_vs_atof_phi", "Track #phi vs best true ATOF #phi;True ATOF #phi [deg];Track #phi [deg]", 72, -180, 180, 72, -180, 180);
-
-        });
+        // Debug histograms
+        h_track_atof_dphi = svc->book_atomic_hist1D("/ALERT/Debug/track_atof_dphi", "Track-ATOF #Delta#phi (all true hits);|#Delta#phi| [deg];Hits", 100, 0, 180);
+        h_best_track_atof_dphi = svc->book_atomic_hist1D("/ALERT/Debug/best_track_atof_dphi", "Best track-ATOF #Delta#phi (selected truth);|#Delta#phi| [deg];Events", 100, 0, 60);
+        h_delta_component = svc->book_atomic_hist1D("/ALERT/Debug/delta_component", "AI - true component;#Delta component;Events", 41, -20, 20);
+        h_delta_sector = svc->book_atomic_hist1D("/ALERT/Debug/delta_sector", "AI - true sector;#Delta sector;Events", 31, -15, 15);
+        h_ai_vs_true_component = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_component", "AI vs true component;True component;AI component", 20, 0, 20, 20, 0, 20);
+        h_ai_vs_true_layer = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_layer", "AI vs true layer;True layer;AI layer", 10, 0, 10, 10, 0, 10);
+        h_ai_vs_true_sector = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_sector", "AI vs true sector;True sector;AI sector", 15, 0, 15, 15, 0, 15);
+        h_track_phi_vs_atof_phi = svc->book_atomic_hist2D("/ALERT/Debug/track_phi_vs_atof_phi", "Track #phi vs best true ATOF #phi;True ATOF #phi [deg];Track #phi [deg]", 72, -180, 180, 72, -180, 180);
     }
 
     struct ATOFWedgeH2Data {

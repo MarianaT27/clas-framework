@@ -116,12 +116,3 @@ test_config_schema = executable(
 )
 
 test('ConfigSchema Tests', test_config_schema)
-
-# Unit tests for Inject and InjectableAlgorithm
-test_inject = executable(
-  'test_inject',
-  'test_inject.cpp',
-  dependencies: test_deps,
-)
-
-test('Inject Tests', test_inject)

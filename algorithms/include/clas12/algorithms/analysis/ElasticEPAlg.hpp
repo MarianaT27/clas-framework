@@ -6,6 +6,7 @@
 #include <clas12/Particle.hpp>
 #include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
@@ -199,11 +200,11 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
         m_cutflow.pass("W Cut");
 
         // Store results
-        event.set_decision("HasElasticElectron", true);
-        event.store_particles<clas12::Particle>("ElasticElectron", {electron});
-        event.store("elastic_Q2", kin.Q2);
-        event.store("elastic_W", kin.W);
-        event.store("elastic_nu", kin.nu);
+        event.set_decision_typed(clas12::framework::Decisions::HasElasticElectron, true);
+        event.store_typed(clas12::framework::Keys::ElasticElectron, electron);
+        event.store_typed(clas12::framework::Keys::ElasticQ2, kin.Q2);
+        event.store_typed(clas12::framework::Keys::ElasticW, kin.W);
+        event.store_typed(clas12::framework::Keys::ElasticNu, kin.nu);
 
         // Fill histograms
         fill_histograms(kin);
