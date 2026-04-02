@@ -48,7 +48,7 @@ using clas12::framework::Log;
 class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixingAlg> {
    public:
     explicit Pi0EventMixingAlg(std::string name = "Pi0EventMixing",
-                                int max_pool_events = 10)
+                                int max_pool_events = 50)
         : SimpleAlgorithm(std::move(name))
         , m_max_pool_events{"max_pool_events", max_pool_events, "Max events per DIS bin in mixing pool"}
         , m_cutflow("Pi0 Event Mixing") {
@@ -119,13 +119,8 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         int dis_bin = find_dis_bin(Q2, xB);
 
         // =====================================================================
-        // 1. Fill same-event histograms and collect 4D bins for mixed-event use
-        //    (no pool access, fully parallel)
+        // 1. Fill same-event histograms (no pool access, fully parallel)
         // =====================================================================
-        // same_event_bins: the 4D bins where this event has same-event pi0 candidates.
-        // Mixed-event masses will be filled into these same bins (not independently binned).
-        std::vector<int> same_event_bins;
-
         if (photons.size() >= 2) {
             for (size_t i = 0; i < photons.size(); ++i) {
                 for (size_t j = i + 1; j < photons.size(); ++j) {
@@ -151,7 +146,6 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
                     int bin_4d = find_4d_bin(Q2, xB, z, pT);
                     if (bin_4d >= 0 && h_mgg_same.count(bin_4d)) {
                         h_mgg_same[bin_4d]->fill(mgg);
-                        same_event_bins.push_back(bin_4d);
                     }
 
                     m_cutflow.pass("Same-event pairs");
@@ -161,52 +155,43 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
 
         // =====================================================================
         // 2. Fill mixed-event histograms (shared lock — concurrent reads)
-        //    Mixed masses are assigned to the SAME 4D bins as same-event pairs,
-        //    not independently binned. This ensures the background shape matches
-        //    the same-event combinatorial background in each kinematic bin.
+        //    Each mixed pair is independently binned using its own z and pT
+        //    computed from the mixed pi0 4-vector.
         // =====================================================================
-        if (dis_bin >= 0 && !same_event_bins.empty()) {
+        if (dis_bin >= 0 && !photons.empty()) {
             std::shared_lock lock(m_pool_mutex);
 
             auto pool_it = m_photon_pools.find(dis_bin);
-            if (pool_it != m_photon_pools.end() && !pool_it->second.empty()) {
-                for (const auto& stored_photons : pool_it->second) {
-                    // Compute ALL valid mixed invariant masses:
-                    // current event photons × stored event photons
-                    std::vector<double> mixed_masses;
-                    mixed_masses.reserve(photons.size() * stored_photons.size());
+            if (pool_it != m_photon_pools.end() && !pool_it->second.photons.empty()) {
+                const auto& pool_photons = pool_it->second.photons;
+                for (size_t i = 0; i < photons.size(); ++i) {
+                    for (size_t j = 0; j < pool_photons.size(); ++j) {
+                        auto g1_4v = photons[i].PxPyPzEVector();
+                        auto g2_4v = pool_photons[j].PxPyPzEVector();
 
-                    for (size_t i = 0; i < photons.size(); ++i) {
-                        for (size_t j = 0; j < stored_photons.size(); ++j) {
-                            auto g1_4v = photons[i].PxPyPzEVector();
-                            auto g2_4v = stored_photons[j].PxPyPzEVector();
+                        // Apply pair validation cuts (g1=current photon, g2=stored photon)
+                        if (!validate_photon_pair(electron_4v, g1_4v, g2_4v, true)) continue;
 
-                            // Apply same pair validation cuts as same-event
-                            if (!validate_photon_pair(electron_4v, g1_4v, g2_4v)) continue;
+                        // Compute mixed pi0 kinematics independently
+                        auto pi0_4v = g1_4v + g2_4v;
+                        double mgg = pi0_4v.M();
+                        double z = pi0_4v.E() / nu;
+                        ROOT::Math::XYZVector pi0_3v(pi0_4v.Px(), pi0_4v.Py(), pi0_4v.Pz());
+                        double p_parallel = pi0_3v.Dot(q_hat);
+                        ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
+                        double pT = std::sqrt(p_perp.Mag2());
 
-                            mixed_masses.push_back((g1_4v + g2_4v).M());
-                        }
-                    }
-
-                    if (mixed_masses.empty()) continue;
-
-                    // Fill all mixed masses into each same-event 4D bin
-                    // (matching reference: event_mixing.cpp:162-169)
-                    for (int bin_4d : same_event_bins) {
-                        if (h_mgg_mixed.count(bin_4d)) {
-                            for (double mgg : mixed_masses) {
-                                h_mgg_mixed[bin_4d]->fill(mgg);
-                            }
-                        }
-                    }
-
-                    // Fill inclusive mixed histogram (once per stored event, not per bin)
-                    for (double mgg : mixed_masses) {
+                        // Fill inclusive mixed histogram
                         if (h_mgg_mixed_all) h_mgg_mixed_all->fill(mgg);
-                    }
 
-                    m_cutflow.pass("Mixed-event pairs");
+                        // Find 4D bin for THIS mixed pair and fill
+                        int bin_4d = find_4d_bin(Q2, xB, z, pT);
+                        if (bin_4d >= 0 && h_mgg_mixed.count(bin_4d)) {
+                            h_mgg_mixed[bin_4d]->fill(mgg);
+                        }
+                    }
                 }
+                m_cutflow.pass("Mixed-event pairs");
             }
         }
 
@@ -218,9 +203,13 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
             std::unique_lock lock(m_pool_mutex);
 
             auto& pool = m_photon_pools[dis_bin];
-            pool.push_back(photons);
-            while (static_cast<int>(pool.size()) > m_max_pool_events.get()) {
-                pool.pop_front();
+            pool.photons.insert(pool.photons.end(), photons.begin(), photons.end());
+            pool.event_sizes.push_back(photons.size());
+            // Evict oldest events when exceeding pool capacity
+            while (static_cast<int>(pool.event_sizes.size()) > m_max_pool_events.get()) {
+                size_t n = pool.event_sizes.front();
+                pool.photons.erase(pool.photons.begin(), pool.photons.begin() + static_cast<ptrdiff_t>(n));
+                pool.event_sizes.pop_front();
             }
         }
 
@@ -234,18 +223,24 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         size_t total_stored = 0;
         size_t bins_used = 0;
         size_t max_occupancy = 0;
+        size_t total_photons = 0;
+        size_t max_photons = 0;
         for (const auto& [bin, pool] : m_photon_pools) {
-            if (!pool.empty()) {
+            if (!pool.event_sizes.empty()) {
                 bins_used++;
-                total_stored += pool.size();
-                max_occupancy = std::max(max_occupancy, pool.size());
+                total_stored += pool.event_sizes.size();
+                max_occupancy = std::max(max_occupancy, pool.event_sizes.size());
+                total_photons += pool.photons.size();
+                max_photons = std::max(max_photons, pool.photons.size());
             }
         }
         double avg_occupancy = bins_used > 0 ? static_cast<double>(total_stored) / bins_used : 0.0;
         Log::stat(name(), "DIS bins used", bins_used);
         Log::stat(name(), "Total events in pools", total_stored);
-        Log::stat(name(), "Avg pool occupancy", fmt::format("{:.1f}", avg_occupancy));
-        Log::stat(name(), "Max pool occupancy", max_occupancy);
+        Log::stat(name(), "Total photons in pools", total_photons);
+        Log::stat(name(), "Avg event occupancy", fmt::format("{:.1f}", avg_occupancy));
+        Log::stat(name(), "Max event occupancy", max_occupancy);
+        Log::stat(name(), "Max photon pool size", max_photons);
         Log::info(name(), "Offline normalization: scale mixed to same in sideband [{:.2f}, {:.2f}] GeV",
                   SIDEBAND_LOW, SIDEBAND_HIGH);
         Log::info(name(), "Offline fit region: [{:.2f}, {:.2f}] GeV", FIT_RANGE_LOW, FIT_RANGE_HIGH);
@@ -259,7 +254,7 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
 
    private:
     // Properties
-    clas12::framework::Property<int> m_max_pool_events{"max_pool_events", 10, "Max events per DIS bin"};
+    clas12::framework::Property<int> m_max_pool_events{"max_pool_events", 50, "Max events per DIS bin"};
     clas12::framework::Property<double> m_beam_energy{"beam_energy", 10.53, "Beam energy [GeV]"};
 
     // Service pointers (cached in on_initialize via svc<T>())
@@ -268,8 +263,12 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
     // Cutflow
     clas12::framework::Cutflow m_cutflow;
 
-    // Photon pool: DIS bin index → FIFO deque of photon collections
-    std::map<int, std::deque<std::vector<clas12::Particle>>> m_photon_pools;
+    // Photon pool: flat collection of all photons from the last N events per DIS bin
+    struct PhotonPool {
+        std::vector<clas12::Particle> photons;   // flat pool of all stored photons
+        std::deque<size_t> event_sizes;           // number of photons per event (for FIFO eviction)
+    };
+    std::map<int, PhotonPool> m_photon_pools;
     mutable std::shared_mutex m_pool_mutex;
 
     // Binning edges
@@ -316,17 +315,23 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
 
     /// Validate a photon pair against quality cuts
     /// Checks: electron-photon angles, invariant mass, momentum-dependent opening angle
+    /// For mixed events, only check g1 (current event photon) against the electron;
+    /// g2 (stored photon) already passed this cut with its own electron.
     static auto validate_photon_pair(
         const ROOT::Math::PxPyPzEVector& electron_4v,
         const ROOT::Math::PxPyPzEVector& g1_4v,
-        const ROOT::Math::PxPyPzEVector& g2_4v) -> bool {
+        const ROOT::Math::PxPyPzEVector& g2_4v,
+        bool is_mixed = false) -> bool {
 
-        // Check electron-photon angle for each photon (> 8 degrees)
+        // Check electron-photon angle (> 8 degrees)
+        // For mixed events, only check g1 (current event photon) — g2 is from a different event
         double angle1 = ROOT::Math::VectorUtil::Angle(electron_4v, g1_4v) * 180.0 / M_PI;
         if (angle1 < MIN_ELECTRON_PHOTON_ANGLE) return false;
 
-        double angle2 = ROOT::Math::VectorUtil::Angle(electron_4v, g2_4v) * 180.0 / M_PI;
-        if (angle2 < MIN_ELECTRON_PHOTON_ANGLE) return false;
+        if (!is_mixed) {
+            double angle2 = ROOT::Math::VectorUtil::Angle(electron_4v, g2_4v) * 180.0 / M_PI;
+            if (angle2 < MIN_ELECTRON_PHOTON_ANGLE) return false;
+        }
 
         // Check invariant mass above minimum
         auto total = g1_4v + g2_4v;

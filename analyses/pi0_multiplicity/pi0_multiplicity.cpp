@@ -23,7 +23,7 @@
 
 // Pi0-specific cut parameters
 static double s_mass_window = 0.2;
-static int s_max_pool_events = 10;
+static int s_max_pool_events = 50;
 
 auto main(int argc, char* argv[]) -> int {
     return clas12::framework::AnalysisRunner::run(
@@ -45,7 +45,7 @@ auto main(int argc, char* argv[]) -> int {
         [](cxxopts::Options& opts) {
             opts.add_options()
                 ("mass_window", "Pi0 mass window [GeV]", cxxopts::value<double>()->default_value("0.2"))
-                ("max_pool_events", "Max events per DIS bin in mixing pool", cxxopts::value<int>()->default_value("10"));
+                ("max_pool_events", "Max events per DIS bin in mixing pool", cxxopts::value<int>()->default_value("50"));
         },
         // Parse extra options
         [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& /*config*/) {

@@ -3,6 +3,7 @@
 #include <fmt/format.h>
 #include <atomic>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 #include <clas12/framework/core/Event.hpp>
@@ -156,14 +157,22 @@ class Application {
             return StatusCode::FAILURE();
         }
 
-        // Load all available banks from the HIPO dictionary
-        auto all_required_banks = chain.dict().schema_names();
+        // Collect only the banks that algorithms actually need
+        std::set<std::string> unique_banks;
+        for (auto& alg : m_algorithms) {
+            for (auto& bank : alg->required_banks()) {
+                unique_banks.insert(bank);
+            }
+        }
+        // Always include REC::Particle as it's needed by the Event class
+        unique_banks.insert("REC::Particle");
+        auto all_required_banks = std::vector<std::string>(unique_banks.begin(), unique_banks.end());
 
         Log::info("Application", "");
         Log::info("Application", "Starting event processing...");
         Log::info("Application", "  Input files: {}", m_input_files.size());
         Log::info("Application", "  Algorithms: {}", m_algorithms.size());
-        Log::info("Application", "  Available banks: {}", all_required_banks.size());
+        Log::info("Application", "  Required banks: {}", all_required_banks.size());
         Log::info("Application", "  Threads: {}", m_num_threads);
 
         // Process events
