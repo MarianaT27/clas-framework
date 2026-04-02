@@ -9,8 +9,13 @@
  * same kinematic bin (Q², x_B, W, photon multiplicity) are paired to construct a background
  * shape that can be subtracted from the same-event distribution.
  *
- * Produces same-event and mixed-event mgg histograms in 4D kinematic bins
- * (Q², x_B, z, p_T). Background subtraction and signal fitting are done offline.
+ * Also implements the rotational background technique: one photon's azimuthal
+ * angle is rotated by 180° around the beam axis within the same event, preserving
+ * event-level correlations while breaking the real γγ pairing.
+ *
+ * Produces same-event, mixed-event, and rotated-background mgg histograms in 4D
+ * kinematic bins (Q², x_B, z, p_T). Background subtraction and signal fitting
+ * are done offline.
  *
  * Thread-safe: uses std::shared_mutex (readers-writer lock) so multiple threads
  * can read the photon pool concurrently while writes are brief and exclusive.
@@ -73,6 +78,7 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         m_cutflow.add_cut("Has DIS Electron");
         m_cutflow.add_cut("Has Photons");
         m_cutflow.add_cut("Same-event pairs");
+        m_cutflow.add_cut("Rotated-bg pairs");
         m_cutflow.add_cut("Mixed-event pairs");
 
         book_histograms();
@@ -156,7 +162,44 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         }
 
         // =====================================================================
-        // 2. Fill mixed-event histograms (shared lock — concurrent reads)
+        // 2. Fill rotated-background histograms (no pool access, fully parallel)
+        //    Rotate one photon's φ by 180° around the beam axis, pair with
+        //    the other unmodified photon. Preserves event-level correlations.
+        // =====================================================================
+        if (photons.size() >= 2) {
+            for (size_t i = 0; i < photons.size(); ++i) {
+                for (size_t j = i + 1; j < photons.size(); ++j) {
+                    auto g1_4v = photons[i].PxPyPzEVector();
+                    auto g2_4v = photons[j].PxPyPzEVector();
+
+                    // Rotate g2 azimuthal angle by 180° around beam axis
+                    auto g2_rot = rotate_phi_180(g2_4v);
+
+                    // Apply same validation cuts as same-event pairs
+                    if (!validate_photon_pair(electron_4v, g1_4v, g2_rot)) continue;
+
+                    auto pi0_4v = g1_4v + g2_rot;
+                    double mgg = pi0_4v.M();
+                    double z = pi0_4v.E() / nu;
+                    ROOT::Math::XYZVector pi0_3v(pi0_4v.Px(), pi0_4v.Py(), pi0_4v.Pz());
+                    double p_parallel = pi0_3v.Dot(q_hat);
+                    ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
+                    double pT = std::sqrt(p_perp.Mag2());
+
+                    if (h_mgg_rotated_all) h_mgg_rotated_all->fill(mgg);
+
+                    int bin_4d = find_4d_bin(Q2, xB, z, pT);
+                    if (bin_4d >= 0 && h_mgg_rotated.count(bin_4d)) {
+                        h_mgg_rotated[bin_4d]->fill(mgg);
+                    }
+
+                    m_cutflow.pass("Rotated-bg pairs");
+                }
+            }
+        }
+
+        // =====================================================================
+        // 3. Fill mixed-event histograms (shared lock — concurrent reads)
         //    Each mixed pair is independently binned using its own z and pT
         //    computed from the mixed pi0 4-vector.
         // =====================================================================
@@ -198,7 +241,7 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         }
 
         // =====================================================================
-        // 3. Add current photons to pool (>= 1 photon sufficient)
+        // 4. Add current photons to pool (>= 1 photon sufficient)
         //    Exclusive lock — brief O(1) operation
         // =====================================================================
         if (pool_bin >= 0 && !photons.empty()) {
@@ -284,10 +327,12 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
     // Histograms: per 4D bin
     std::map<int, clas12::framework::AtomicHistogram1D*> h_mgg_same;
     std::map<int, clas12::framework::AtomicHistogram1D*> h_mgg_mixed;
+    std::map<int, clas12::framework::AtomicHistogram1D*> h_mgg_rotated;
 
     // Histograms: inclusive
     clas12::framework::AtomicHistogram1D* h_mgg_same_all = nullptr;
     clas12::framework::AtomicHistogram1D* h_mgg_mixed_all = nullptr;
+    clas12::framework::AtomicHistogram1D* h_mgg_rotated_all = nullptr;
 
     // =========================================================================
     // Photon pair validation cuts (matching reference implementation)
@@ -311,6 +356,12 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
     static constexpr double MIN_PHOTON_ANGLE_A = 17.561;
     static constexpr double MIN_PHOTON_ANGLE_B = 0.756;
     static constexpr double MIN_PHOTON_ANGLE_OFFSET = 1.0;
+
+    /// Rotate a 4-vector's azimuthal angle by 180° around the beam axis (z)
+    /// Preserves pT, pz, and energy; flips px → -px, py → -py
+    static auto rotate_phi_180(const ROOT::Math::PxPyPzEVector& v) -> ROOT::Math::PxPyPzEVector {
+        return ROOT::Math::PxPyPzEVector(-v.Px(), -v.Py(), v.Pz(), v.E());
+    }
 
     /// Momentum-dependent minimum photon opening angle (degrees)
     static auto min_photon_opening_angle(double momentum) -> double {
@@ -437,6 +488,10 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
                 dir + "/mgg_mixed_all",
                 "Mixed-event M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts",
                 200, 0.0, 0.3);
+            h_mgg_rotated_all = svc->book_atomic_hist1D(
+                dir + "/mgg_rotated_all",
+                "Rotated-bg M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts",
+                200, 0.0, 0.3);
 
             // Per 4D bin histograms
             int n_Q2 = static_cast<int>(m_Q2_edges.size() - 1);
@@ -479,9 +534,26 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
                 h_mgg_mixed[idx] = svc->book_atomic_hist1D(
                     fmt::format("{}/mixed/mgg_mixed_bin{}", dir, idx),
                     title_mixed, 200, 0.0, 0.3);
+
+                std::string title_rotated = fmt::format(
+                    "Rotated M_{{#gamma#gamma}} "
+                    "Q^{{2}}#in[{:.1f},{:.1f}] "
+                    "x_{{B}}#in[{:.2f},{:.2f}] "
+                    "z#in[{:.2f},{:.2f}] "
+                    "p_{{T}}#in[{:.2f},{:.2f}]"
+                    ";M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts",
+                    m_Q2_edges[iq], m_Q2_edges[iq + 1],
+                    m_xB_edges[ix], m_xB_edges[ix + 1],
+                    m_z_edges[iz], m_z_edges[iz + 1],
+                    m_pT_edges[ip], m_pT_edges[ip + 1]);
+
+                h_mgg_rotated[idx] = svc->book_atomic_hist1D(
+                    fmt::format("{}/rotated/mgg_rotated_bin{}", dir, idx),
+                    title_rotated, 200, 0.0, 0.3);
             }
 
-            Log::info("Pi0EventMixing", "Booked {} same + {} mixed histograms", total_bins, total_bins);
+            Log::info("Pi0EventMixing", "Booked {} same + {} mixed + {} rotated histograms",
+                       total_bins, total_bins, total_bins);
         }
     }
 };
