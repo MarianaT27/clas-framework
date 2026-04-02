@@ -6,7 +6,7 @@
  *
  * Implements the event-mixing technique to estimate combinatorial background
  * in the γγ invariant mass spectrum. Photons from different events in the
- * same DIS kinematic bin (Q², x_B) are paired to construct a background
+ * same kinematic bin (Q², x_B, W, photon multiplicity) are paired to construct a background
  * shape that can be subtracted from the same-event distribution.
  *
  * Produces same-event and mixed-event mgg histograms in 4D kinematic bins
@@ -62,9 +62,9 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::config(name(), "Max pool events", fmt::format("{}", m_max_pool_events.get()));
         Log::config(name(), "Beam energy", fmt::format("{} GeV", m_beam_energy.get()));
-        Log::config(name(), "DIS bins (Q2 x xB)", fmt::format("{} x {} = {}",
-            m_Q2_edges.size() - 1, m_xB_edges.size() - 1,
-            (m_Q2_edges.size() - 1) * (m_xB_edges.size() - 1)));
+        Log::config(name(), "Pool bins (Q2 x xB x W x mult)", fmt::format("{} x {} x {} x {} = {}",
+            m_Q2_edges.size() - 1, m_xB_edges.size() - 1, m_W_edges.size() - 1, N_MULT_BINS,
+            (m_Q2_edges.size() - 1) * (m_xB_edges.size() - 1) * (m_W_edges.size() - 1) * N_MULT_BINS));
         Log::config(name(), "4D bins total", fmt::format("{}",
             (m_Q2_edges.size() - 1) * (m_xB_edges.size() - 1) *
             (m_z_edges.size() - 1) * (m_pT_edges.size() - 1)));
@@ -90,11 +90,13 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         auto Q2_opt = event.retrieve_typed(clas12::framework::Keys::DIS_Q2);
         auto xB_opt = event.retrieve_typed(clas12::framework::Keys::DIS_xB);
         auto nu_opt = event.retrieve_typed(clas12::framework::Keys::DIS_nu);
-        if (!Q2_opt || !xB_opt || !nu_opt) return clas12::framework::StatusCode::FILTERED();
+        auto W_opt  = event.retrieve_typed(clas12::framework::Keys::DIS_W);
+        if (!Q2_opt || !xB_opt || !nu_opt || !W_opt) return clas12::framework::StatusCode::FILTERED();
 
         double Q2 = *Q2_opt;
         double xB = *xB_opt;
         double nu = *nu_opt;
+        double W  = *W_opt;
 
         // Retrieve selected photons (need >= 1 for pool, >= 2 for same-event pairs)
         auto photons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedPhotons_Pi0);
@@ -115,8 +117,8 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         double q_mag = std::sqrt(q_3v.Mag2());
         ROOT::Math::XYZVector q_hat = q_3v / q_mag;
 
-        // Find DIS bin for pool organization
-        int dis_bin = find_dis_bin(Q2, xB);
+        // Find pool bin for mixing organization (Q2, xB, W, photon multiplicity)
+        int pool_bin = find_pool_bin(Q2, xB, W, photons.size());
 
         // =====================================================================
         // 1. Fill same-event histograms (no pool access, fully parallel)
@@ -158,10 +160,10 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         //    Each mixed pair is independently binned using its own z and pT
         //    computed from the mixed pi0 4-vector.
         // =====================================================================
-        if (dis_bin >= 0 && !photons.empty()) {
+        if (pool_bin >= 0 && !photons.empty()) {
             std::shared_lock lock(m_pool_mutex);
 
-            auto pool_it = m_photon_pools.find(dis_bin);
+            auto pool_it = m_photon_pools.find(pool_bin);
             if (pool_it != m_photon_pools.end() && !pool_it->second.photons.empty()) {
                 const auto& pool_photons = pool_it->second.photons;
                 for (size_t i = 0; i < photons.size(); ++i) {
@@ -199,10 +201,10 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         // 3. Add current photons to pool (>= 1 photon sufficient)
         //    Exclusive lock — brief O(1) operation
         // =====================================================================
-        if (dis_bin >= 0 && !photons.empty()) {
+        if (pool_bin >= 0 && !photons.empty()) {
             std::unique_lock lock(m_pool_mutex);
 
-            auto& pool = m_photon_pools[dis_bin];
+            auto& pool = m_photon_pools[pool_bin];
             pool.photons.insert(pool.photons.end(), photons.begin(), photons.end());
             pool.event_sizes.push_back(photons.size());
             // Evict oldest events when exceeding pool capacity
@@ -235,7 +237,7 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
             }
         }
         double avg_occupancy = bins_used > 0 ? static_cast<double>(total_stored) / bins_used : 0.0;
-        Log::stat(name(), "DIS bins used", bins_used);
+        Log::stat(name(), "Pool bins used", bins_used);
         Log::stat(name(), "Total events in pools", total_stored);
         Log::stat(name(), "Total photons in pools", total_photons);
         Log::stat(name(), "Avg event occupancy", fmt::format("{:.1f}", avg_occupancy));
@@ -276,6 +278,8 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
     std::vector<double> m_xB_edges = {0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.7};
     std::vector<double> m_z_edges = {0.0, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.8, 1.0};
     std::vector<double> m_pT_edges = {0.0, 0.15, 0.30, 0.50};
+    std::vector<double> m_W_edges = {2.0, 2.5, 3.0, 3.5, 4.0, 5.0};
+    static constexpr int N_MULT_BINS = 4;  // photon multiplicity bins: 1, 2, 3, 4+
 
     // Histograms: per 4D bin
     std::map<int, clas12::framework::AtomicHistogram1D*> h_mgg_same;
@@ -293,8 +297,8 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
     // To extract pi0 signal: scale mixed histogram so that
     //   integral_same(sideband) == integral_mixed(sideband)
     // then subtract: h_signal = h_same - scale * h_mixed
-    static constexpr double SIDEBAND_LOW = 0.17;
-    static constexpr double SIDEBAND_HIGH = 0.30;
+    static constexpr double SIDEBAND_LOW = 0.19;
+    static constexpr double SIDEBAND_HIGH = 0.24;
     // Pi0 fit region (GeV)
     static constexpr double FIT_RANGE_LOW = 0.10;
     static constexpr double FIT_RANGE_HIGH = 0.16;
@@ -357,11 +361,24 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixi
         return -1;
     }
 
-    auto find_dis_bin(double Q2, double xB) const -> int {
+    /// Map photon multiplicity to bin index: 0=1γ, 1=2γ, 2=3γ, 3=4+γ
+    static auto find_multiplicity_bin(size_t n_photons) -> int {
+        if (n_photons == 0) return -1;
+        if (n_photons >= 4) return 3;
+        return static_cast<int>(n_photons) - 1;
+    }
+
+    /// Compute pool bin from (Q2, xB, W, photon multiplicity)
+    auto find_pool_bin(double Q2, double xB, double W, size_t n_photons) const -> int {
         int iq = find_1d_bin(Q2, m_Q2_edges);
         int ix = find_1d_bin(xB, m_xB_edges);
-        if (iq < 0 || ix < 0) return -1;
-        return iq * static_cast<int>(m_xB_edges.size() - 1) + ix;
+        int iw = find_1d_bin(W, m_W_edges);
+        int im = find_multiplicity_bin(n_photons);
+        if (iq < 0 || ix < 0 || iw < 0 || im < 0) return -1;
+
+        int n_xB = static_cast<int>(m_xB_edges.size() - 1);
+        int n_W  = static_cast<int>(m_W_edges.size() - 1);
+        return ((iq * n_xB + ix) * n_W + iw) * N_MULT_BINS + im;
     }
 
     auto find_4d_bin(double Q2, double xB, double z, double pT) const -> int {
