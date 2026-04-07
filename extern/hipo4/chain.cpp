@@ -32,17 +32,56 @@ result<void> chain::open() {
     if (m_files.empty())
         return unexpected(error_code::chain_no_files);
 
-    load_metadata();
-
-    // Load dictionary from first valid file
-    for (auto const& f : m_files) {
-        if (!f.valid) continue;
-        auto rdr = reader::open(f.path, m_opts.reader_opts);
-        if (rdr) {
-            m_dict = rdr->dict();
-            break;
-        }
+    // Full open: build index + dictionary for each file in parallel
+    std::unique_ptr<ProgressTracker> progress;
+    if (m_opts.show_progress && m_files.size() > 1) {
+        ProgressTracker::Config config;
+        config.label = "Opening files";
+        config.show_eta = true;
+        config.show_rate = true;
+        progress = std::make_unique<ProgressTracker>(m_files.size(), config);
+        progress->start();
     }
+
+    // Capture dictionary from first valid file (thread-safe)
+    std::mutex dict_mutex;
+    bool dict_loaded = false;
+
+    std::vector<std::future<void>> futures;
+    for (auto& f : m_files) {
+        futures.push_back(m_thread_pool->submit([file = &f, &progress,
+                                                  reader_opts = m_opts.reader_opts,
+                                                  &dict_mutex, &dict_loaded, this]() {
+            auto rdr = reader::open(file->path, reader_opts);
+            if (!rdr) {
+                file->valid = false;
+                file->error = fmt::format("{}", rdr.error());
+            } else {
+                file->total_events = rdr->total_events();
+                file->num_records  = rdr->num_records();
+                file->event_index  = rdr->index();
+                file->has_index    = true;
+
+                // Capture dictionary from first file that succeeds
+                std::lock_guard lock(dict_mutex);
+                if (!dict_loaded) {
+                    m_dict = rdr->dict();
+                    dict_loaded = true;
+                }
+            }
+            if (progress) progress->increment();
+        }));
+    }
+    for (auto& fut : futures) fut.get();
+
+    if (progress) progress->finish();
+
+    // Compute totals
+    int64_t total = 0;
+    for (auto const& f : m_files)
+        if (f.valid) total += f.total_events;
+    m_stats.total_events = total;
+    m_metadata_loaded = true;
 
     return ok();
 }

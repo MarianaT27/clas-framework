@@ -458,6 +458,25 @@ public:
     event_loop loop(bank_view_set& banks) { return event_loop(this, banks); }
 
     /**
+     * @brief Open a lightweight reader using a shared index and dictionary.
+     *
+     * Opens only the file descriptor (or mmap) without scanning the index
+     * or parsing the dictionary. Uses the pre-built index and dictionary
+     * provided by the caller (typically from a chain that already opened
+     * the file).
+     *
+     * @param path  Filesystem path to the HIPO file.
+     * @param index Pre-built file event index (shared, not copied).
+     * @param dict  Pre-built dictionary (shared, not copied).
+     * @param file_size Total file size in bytes.
+     * @return A result containing the lightweight reader, or an error.
+     */
+    static result<reader> open_lightweight(std::string_view path,
+                                           const file_event_index& index,
+                                           const dictionary& dict,
+                                           int64_t file_size);
+
+    /**
      * @brief Load a specific record by index into the provided record object.
      *
      * Used by the chain class for parallel record-level access.
@@ -469,6 +488,21 @@ public:
     result<void> load_record(record& rec, int record_index);
 
     /**
+     * @brief Load a record using an external index (avoids needing a full reader).
+     *
+     * @param source       Open file source for reading.
+     * @param index        Pre-built file event index.
+     * @param rec          Record object to populate.
+     * @param record_index Zero-based record index.
+     * @param file_size    Total file size for bounds checking.
+     * @return result<void> indicating success or an I/O error.
+     */
+    static result<void> load_record_from(file_source& source,
+                                          const file_event_index& index,
+                                          record& rec, int record_index,
+                                          int64_t file_size);
+
+    /**
      * @brief Return the file byte offset of a record.
      * @param record_index Zero-based record index.
      * @return File position in bytes.
@@ -477,6 +511,9 @@ public:
 
     /** @brief Return the total file size in bytes. */
     int64_t file_size() const noexcept { return m_info.file_size; }
+
+    /** @brief Return a const reference to the file event index. */
+    const file_event_index& index() const noexcept { return m_index; }
 
 private:
     result<void> read_file_header();

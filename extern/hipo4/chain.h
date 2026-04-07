@@ -29,13 +29,16 @@ namespace hipo {
  * to build the parallel work list.
  */
 struct chain_file_info {
-    std::string    path;                            /**< @brief Filesystem path of the file. */
-    int            index        = 0;                /**< @brief Zero-based index in the chain's file list. */
-    int64_t        total_events = -1;               /**< @brief Total events in the file (-1 if not yet scanned). */
-    int            num_records  = -1;               /**< @brief Number of data records (-1 if not yet scanned). */
-    std::uintmax_t file_size    = 0;                /**< @brief File size in bytes. */
-    bool           valid        = true;             /**< @brief Whether the file could be opened and scanned successfully. */
-    std::string    error;                           /**< @brief Error message if the file is invalid. */
+    std::string      path;                            /**< @brief Filesystem path of the file. */
+    int              index        = 0;                /**< @brief Zero-based index in the chain's file list. */
+    int64_t          total_events = -1;               /**< @brief Total events in the file (-1 if not yet scanned). */
+    int              num_records  = -1;               /**< @brief Number of data records (-1 if not yet scanned). */
+    std::uintmax_t   file_size    = 0;                /**< @brief File size in bytes. */
+    bool             valid        = true;             /**< @brief Whether the file could be opened and scanned successfully. */
+    std::string      error;                           /**< @brief Error message if the file is invalid. */
+    file_event_index event_index;                     /**< @brief Pre-built record index (populated during open). */
+    bool             has_index    = false;             /**< @brief Whether event_index is populated. */
+    std::shared_ptr<file_source> shared_source;       /**< @brief Shared file source for all threads (opened during process). */
 };
 
 /**
@@ -305,7 +308,7 @@ void chain::process(F&& func, G&& filter, std::vector<std::string> required_bank
     m_stats.reset();
     m_stats.total_events = target;
 
-    // Build work list
+    // Build work list with per-file event limits
     struct work_item {
         int file_idx;
         int num_records;
@@ -322,6 +325,8 @@ void chain::process(F&& func, G&& filter, std::vector<std::string> required_bank
         }
     }
 
+    if (work_list.empty()) return;
+
     std::unique_ptr<ProgressTracker> progress;
     if (m_opts.show_progress && accumulated > 0) {
         ProgressTracker::Config config;
@@ -332,59 +337,104 @@ void chain::process(F&& func, G&& filter, std::vector<std::string> required_bank
         progress->start();
     }
 
-    for (auto const& work : work_list) {
-        auto const& file = m_files[work.file_idx];
-        std::atomic<int> next_record{0};
-        std::atomic<int64_t> events_in_file{0};
-        std::vector<std::future<void>> futures;
+    // Per-file event counters for max_events enforcement
+    std::vector<std::atomic<int64_t>> events_per_file(work_list.size());
+    for (auto& e : events_per_file) e.store(0);
 
-        for (int t = 0; t < m_num_threads; ++t) {
-            futures.push_back(m_thread_pool->submit([&, file_path = std::string(file.path), this]() {
-                auto rdr = reader::open(file_path, m_opts.reader_opts);
-                if (!rdr) return;
+    // Open one shared file_source per file (single fd shared by all threads)
+    for (auto& work : work_list) {
+        auto& file = m_files[work.file_idx];
+        if (!file.has_index) continue;
+        auto src = file_source::open(file.path);
+        if (!src) { file.valid = false; continue; }
+        file.shared_source = std::make_shared<file_source>(std::move(*src));
+    }
 
-                bank_view_set banks;
-                for (auto const& name : required_banks)
-                    banks.require(name);
-                auto bind_res = banks.bind(rdr->dict());
-                if (!bind_res) return;
-
-                record rec;
-
-                while (true) {
-                    int rec_idx = next_record.fetch_add(1);
-                    if (rec_idx >= work.num_records) break;
-                    if (events_in_file.load() >= work.max_events) break;
-
-                    auto load_res = rdr->load_record(rec, rec_idx);
-                    if (!load_res) continue;
-
-                    int events_in_record = rec.event_count();
-                    for (int e = 0; e < events_in_record; ++e) {
-                        int64_t count = events_in_file.fetch_add(1);
-                        if (count >= work.max_events) {
-                            events_in_file.fetch_sub(1);
-                            break;
-                        }
-
-                        (void)banks.update_from_record(rec, e);
-
-                        // Apply filter: skip event if filter returns false
-                        if (!filter(banks, file.index, count)) {
-                            if (progress) progress->increment();
-                            m_stats.events_processed++;
-                            continue;
-                        }
-
-                        func(banks, file.index, count);
-                        m_stats.events_processed++;
-                        if (progress) progress->increment();
-                    }
-                }
-            }));
+    // Build global work queue across all files
+    struct global_record {
+        int work_idx;
+        int record_idx;
+    };
+    std::vector<global_record> global_queue;
+    for (int w = 0; w < static_cast<int>(work_list.size()); ++w) {
+        for (int r = 0; r < work_list[w].num_records; ++r) {
+            global_queue.push_back({w, r});
         }
+    }
 
-        for (auto& f : futures) f.get();
+    // Prefetch: tell kernel to start loading all record data into page cache
+    for (auto const& item : global_queue) {
+        auto const& work = work_list[item.work_idx];
+        auto const& file = m_files[work.file_idx];
+        if (!file.shared_source) continue;
+        int64_t pos = file.event_index.record_position(item.record_idx);
+        int bytes = file.event_index.record_bytes(item.record_idx);
+        if (bytes > 0) {
+            file.shared_source->prefetch(pos, bytes);
+        }
+    }
+
+    std::atomic<int> next_global{0};
+    int global_size = static_cast<int>(global_queue.size());
+
+    std::vector<std::future<void>> futures;
+    for (int t = 0; t < m_num_threads; ++t) {
+        futures.push_back(m_thread_pool->submit([&, this]() {
+            bank_view_set banks;
+            for (auto const& name : required_banks)
+                banks.require(name);
+            auto bind_res = banks.bind(m_dict);
+            if (!bind_res) return;
+
+            record rec;
+
+            while (true) {
+                int idx = next_global.fetch_add(1);
+                if (idx >= global_size) break;
+
+                auto [work_idx, rec_idx] = global_queue[idx];
+                auto const& work = work_list[work_idx];
+                auto const& file = m_files[work.file_idx];
+
+                if (events_per_file[work_idx].load(std::memory_order_relaxed) >= work.max_events)
+                    continue;
+
+                if (!file.shared_source) continue;
+
+                auto load_res = reader::load_record_from(
+                    *file.shared_source, file.event_index, rec, rec_idx,
+                    static_cast<int64_t>(file.file_size));
+                if (!load_res) continue;
+
+                int events_in_record = rec.event_count();
+                for (int e = 0; e < events_in_record; ++e) {
+                    int64_t count = events_per_file[work_idx].fetch_add(1);
+                    if (count >= work.max_events) {
+                        events_per_file[work_idx].fetch_sub(1);
+                        break;
+                    }
+
+                    (void)banks.update_from_record(rec, e);
+
+                    if (!filter(banks, file.index, count)) {
+                        if (progress) progress->increment();
+                        m_stats.events_processed++;
+                        continue;
+                    }
+
+                    func(banks, file.index, count);
+                    m_stats.events_processed++;
+                    if (progress) progress->increment();
+                }
+            }
+        }));
+    }
+
+    for (auto& f : futures) f.get();
+
+    // Release shared sources
+    for (auto& work : work_list) {
+        m_files[work.file_idx].shared_source.reset();
     }
 
     m_stats.end_time = std::chrono::steady_clock::now();
@@ -442,6 +492,8 @@ R chain::process_to(F&& func, G&& filter, Reducer&& reducer, R init,
         }
     }
 
+    if (work_list.empty()) return init;
+
     std::unique_ptr<ProgressTracker> progress;
     if (m_opts.show_progress && accumulated > 0) {
         ProgressTracker::Config config;
@@ -452,70 +504,113 @@ R chain::process_to(F&& func, G&& filter, Reducer&& reducer, R init,
         progress->start();
     }
 
+    std::vector<std::atomic<int64_t>> events_per_file(work_list.size());
+    for (auto& e : events_per_file) e.store(0);
+
     R global_result = init;
     std::mutex result_mutex;
 
-    for (auto const& work : work_list) {
+    // Open one shared file_source per file
+    for (auto& work : work_list) {
+        auto& file = m_files[work.file_idx];
+        if (!file.has_index) continue;
+        auto src = file_source::open(file.path);
+        if (!src) { file.valid = false; continue; }
+        file.shared_source = std::make_shared<file_source>(std::move(*src));
+    }
+
+    struct global_record {
+        int work_idx;
+        int record_idx;
+    };
+    std::vector<global_record> global_queue;
+    for (int w = 0; w < static_cast<int>(work_list.size()); ++w) {
+        for (int r = 0; r < work_list[w].num_records; ++r) {
+            global_queue.push_back({w, r});
+        }
+    }
+
+    // Prefetch all records
+    for (auto const& item : global_queue) {
+        auto const& work = work_list[item.work_idx];
         auto const& file = m_files[work.file_idx];
-        std::atomic<int> next_record{0};
-        std::atomic<int64_t> events_in_file{0};
-        std::vector<std::future<R>> futures;
+        if (!file.shared_source) continue;
+        int64_t pos = file.event_index.record_position(item.record_idx);
+        int bytes = file.event_index.record_bytes(item.record_idx);
+        if (bytes > 0) {
+            file.shared_source->prefetch(pos, bytes);
+        }
+    }
 
-        for (int t = 0; t < m_num_threads; ++t) {
-            futures.push_back(m_thread_pool->submit([&, file_path = std::string(file.path),
-                                                      local_init = init, this]() mutable -> R {
-                R local = std::move(local_init);
+    std::atomic<int> next_global{0};
+    int global_size = static_cast<int>(global_queue.size());
 
-                auto rdr = reader::open(file_path, m_opts.reader_opts);
-                if (!rdr) return local;
+    std::vector<std::future<R>> futures;
+    for (int t = 0; t < m_num_threads; ++t) {
+        futures.push_back(m_thread_pool->submit([&, local_init = init, this]() mutable -> R {
+            R local = std::move(local_init);
 
-                bank_view_set banks;
-                for (auto const& name : required_banks)
-                    banks.require(name);
-                auto bind_res = banks.bind(rdr->dict());
-                if (!bind_res) return local;
+            bank_view_set banks;
+            for (auto const& name : required_banks)
+                banks.require(name);
+            auto bind_res = banks.bind(m_dict);
+            if (!bind_res) return local;
 
-                record rec;
+            record rec;
 
-                while (true) {
-                    int rec_idx = next_record.fetch_add(1);
-                    if (rec_idx >= work.num_records) break;
-                    if (events_in_file.load() >= work.max_events) break;
+            while (true) {
+                int idx = next_global.fetch_add(1);
+                if (idx >= global_size) break;
 
-                    auto load_res = rdr->load_record(rec, rec_idx);
-                    if (!load_res) continue;
+                auto [work_idx, rec_idx] = global_queue[idx];
+                auto const& work = work_list[work_idx];
+                auto const& file = m_files[work.file_idx];
 
-                    int events_in_record = rec.event_count();
-                    for (int e = 0; e < events_in_record; ++e) {
-                        int64_t count = events_in_file.fetch_add(1);
-                        if (count >= work.max_events) {
-                            events_in_file.fetch_sub(1);
-                            break;
-                        }
+                if (events_per_file[work_idx].load(std::memory_order_relaxed) >= work.max_events)
+                    continue;
 
-                        (void)banks.update_from_record(rec, e);
+                if (!file.shared_source) continue;
 
-                        if (!filter(banks, file.index, count)) {
-                            if (progress) progress->increment();
-                            m_stats.events_processed++;
-                            continue;
-                        }
+                auto load_res = reader::load_record_from(
+                    *file.shared_source, file.event_index, rec, rec_idx,
+                    static_cast<int64_t>(file.file_size));
+                if (!load_res) continue;
 
-                        local = reducer(std::move(local),
-                                        static_cast<R>(func(banks, file.index, count)));
-                        m_stats.events_processed++;
-                        if (progress) progress->increment();
+                int events_in_record = rec.event_count();
+                for (int e = 0; e < events_in_record; ++e) {
+                    int64_t count = events_per_file[work_idx].fetch_add(1);
+                    if (count >= work.max_events) {
+                        events_per_file[work_idx].fetch_sub(1);
+                        break;
                     }
-                }
-                return local;
-            }));
-        }
 
-        for (auto& f : futures) {
-            R thread_result = f.get();
-            std::lock_guard lock(result_mutex);
-            global_result = reducer(std::move(global_result), std::move(thread_result));
-        }
+                    (void)banks.update_from_record(rec, e);
+
+                    if (!filter(banks, file.index, count)) {
+                        if (progress) progress->increment();
+                        m_stats.events_processed++;
+                        continue;
+                    }
+
+                    local = reducer(std::move(local),
+                                    static_cast<R>(func(banks, file.index, count)));
+                    m_stats.events_processed++;
+                    if (progress) progress->increment();
+                }
+            }
+            return local;
+        }));
+    }
+
+    for (auto& f : futures) {
+        R thread_result = f.get();
+        std::lock_guard lock(result_mutex);
+        global_result = reducer(std::move(global_result), std::move(thread_result));
+    }
+
+    // Release shared sources
+    for (auto& work : work_list) {
+        m_files[work.file_idx].shared_source.reset();
     }
 
     m_stats.end_time = std::chrono::steady_clock::now();

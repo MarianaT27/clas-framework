@@ -52,6 +52,7 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm<Pi0Mul
         Log::config(name(), "xB bins", fmt::format("{}", m_xB_edges.size() - 1));
         Log::config(name(), "z bins", fmt::format("{}", m_z_edges.size() - 1));
         Log::config(name(), "pT2 bins", fmt::format("{}", m_pT2_edges.size() - 1));
+        Log::config(name(), "Total 4D bins", fmt::format("{}", total_4D_bins()));
 
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Has DIS Electron");
@@ -160,29 +161,45 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm<Pi0Mul
             if (h_z_vs_pT2) h_z_vs_pT2->fill(pT2, z);
             if (h_pT2_vs_Q2) h_pT2_vs_Q2->fill(Q2, pT2);
 
-            // Fill multiplicity histograms per Q2 bin
+            // Find bin indices once for all binned fills
+            int iQ2 = -1, ixB = -1, iz = -1, ipT2 = -1;
             for (size_t i = 0; i < m_Q2_edges.size() - 1; ++i) {
-                if (Q2 >= m_Q2_edges[i] && Q2 < m_Q2_edges[i + 1]) {
-                    if (h_z_Q2bin[i]) h_z_Q2bin[i]->fill(z);
-                    if (h_pT2_Q2bin[i]) h_pT2_Q2bin[i]->fill(pT2);
-                    break;
-                }
+                if (Q2 >= m_Q2_edges[i] && Q2 < m_Q2_edges[i + 1]) { iQ2 = static_cast<int>(i); break; }
+            }
+            for (size_t i = 0; i < m_xB_edges.size() - 1; ++i) {
+                if (xB >= m_xB_edges[i] && xB < m_xB_edges[i + 1]) { ixB = static_cast<int>(i); break; }
+            }
+            for (size_t i = 0; i < m_z_edges.size() - 1; ++i) {
+                if (z >= m_z_edges[i] && z < m_z_edges[i + 1]) { iz = static_cast<int>(i); break; }
+            }
+            for (size_t i = 0; i < m_pT2_edges.size() - 1; ++i) {
+                if (pT2 >= m_pT2_edges[i] && pT2 < m_pT2_edges[i + 1]) { ipT2 = static_cast<int>(i); break; }
+            }
+
+            // Fill multiplicity histograms per Q2 bin
+            if (iQ2 >= 0) {
+                if (h_z_Q2bin[iQ2]) h_z_Q2bin[iQ2]->fill(z);
+                if (h_pT2_Q2bin[iQ2]) h_pT2_Q2bin[iQ2]->fill(pT2);
             }
 
             // Fill multiplicity histograms per xB bin
-            for (size_t i = 0; i < m_xB_edges.size() - 1; ++i) {
-                if (xB >= m_xB_edges[i] && xB < m_xB_edges[i + 1]) {
-                    if (h_z_xBbin[i]) h_z_xBbin[i]->fill(z);
-                    break;
-                }
+            if (ixB >= 0) {
+                if (h_z_xBbin[ixB]) h_z_xBbin[ixB]->fill(z);
             }
 
             // Fill multiplicity histograms per z bin
-            for (size_t i = 0; i < m_z_edges.size() - 1; ++i) {
-                if (z >= m_z_edges[i] && z < m_z_edges[i + 1]) {
-                    if (h_pT2_zbin[i]) h_pT2_zbin[i]->fill(pT2);
-                    break;
-                }
+            if (iz >= 0) {
+                if (h_pT2_zbin[iz]) h_pT2_zbin[iz]->fill(pT2);
+            }
+
+            // Fill 4D flat-indexed histograms for pT broadening and azimuthal moments
+            if (iQ2 >= 0 && ixB >= 0 && iz >= 0 && ipT2 >= 0) {
+                double phi_h_rad = phi_h * M_PI / 180.0;
+                double idx = static_cast<double>(flat_4D_index(iQ2, ixB, iz, ipT2)) + 0.5;
+                if (h_counts_4D) h_counts_4D->fill(idx);
+                if (h_sum_pT2_4D) h_sum_pT2_4D->fill(idx, pT2);
+                if (h_sum_cosphi_4D) h_sum_cosphi_4D->fill(idx, std::cos(phi_h_rad));
+                if (h_sum_sinphi_4D) h_sum_sinphi_4D->fill(idx, std::sin(phi_h_rad));
             }
         }
 
@@ -239,6 +256,23 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm<Pi0Mul
     std::vector<clas12::framework::AtomicHistogram1D*> h_pT2_Q2bin;
     std::vector<clas12::framework::AtomicHistogram1D*> h_z_xBbin;
     std::vector<clas12::framework::AtomicHistogram1D*> h_pT2_zbin;
+
+    // pT broadening and azimuthal moments in 4D bins (Q2, xB, z, pT2)
+    clas12::framework::AtomicHistogram1D* h_counts_4D = nullptr;
+    clas12::framework::AtomicHistogram1D* h_sum_pT2_4D = nullptr;
+    clas12::framework::AtomicHistogram1D* h_sum_cosphi_4D = nullptr;
+    clas12::framework::AtomicHistogram1D* h_sum_sinphi_4D = nullptr;
+
+    [[nodiscard]] auto flat_4D_index(int iQ2, int ixB, int iz, int ipT2) const -> int {
+        int N_xB = static_cast<int>(m_xB_edges.size()) - 1;
+        int N_z = static_cast<int>(m_z_edges.size()) - 1;
+        int N_pT2 = static_cast<int>(m_pT2_edges.size()) - 1;
+        return ((iQ2 * N_xB + ixB) * N_z + iz) * N_pT2 + ipT2;
+    }
+
+    [[nodiscard]] auto total_4D_bins() const -> int {
+        return static_cast<int>((m_Q2_edges.size() - 1) * (m_xB_edges.size() - 1) * (m_z_edges.size() - 1) * (m_pT2_edges.size() - 1));
+    }
 
     auto book_histograms() -> void {
         if (m_hist) { auto* svc = m_hist;
@@ -309,6 +343,17 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm<Pi0Mul
                     fmt::format("#pi^{{0}} p_{{T}}^{{2}}, z #in [{:.1f}, {:.1f}];p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_z_edges[i], m_z_edges[i + 1]),
                     100, 0, 2);
             }
+
+            // 4D flat-indexed histograms for pT broadening and azimuthal moments
+            int n4D = total_4D_bins();
+            h_counts_4D = svc->book_atomic_hist1D(dir + "/4D/counts",
+                "4D bin counts (Q^{2}, x_{B}, z, p_{T}^{2});flat bin;Counts", n4D, 0, n4D);
+            h_sum_pT2_4D = svc->book_atomic_hist1D(dir + "/4D/sum_pT2",
+                "#Sigma p_{T}^{2} per 4D bin;flat bin;#Sigma p_{T}^{2}", n4D, 0, n4D);
+            h_sum_cosphi_4D = svc->book_atomic_hist1D(dir + "/4D/sum_cosphi",
+                "#Sigma cos(#phi_{h}) per 4D bin;flat bin;#Sigma cos#phi_{h}", n4D, 0, n4D);
+            h_sum_sinphi_4D = svc->book_atomic_hist1D(dir + "/4D/sum_sinphi",
+                "#Sigma sin(#phi_{h}) per 4D bin;flat bin;#Sigma sin#phi_{h}", n4D, 0, n4D);
         }
     }
 };

@@ -19,6 +19,8 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/Particle.hpp>
 #include <cmath>
+#include <array>
+#include <string>
 #include "Math/GenVector/PxPyPzE4D.h"
 #include "Math/Vector3Dfwd.h"
 
@@ -69,40 +71,83 @@ public:
      * @return StatusCode SUCCESS to continue, FILTERED to skip, FAILURE to stop
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        // Get the first electron from the MC::Particle bank
-        const auto& MC_particles = event.get_bank("MC::Particle");
-        ROOT::Math::PxPyPzE4D electron4VecP;
-        ROOT::Math::XYZVector electron3VecV;
-        for (int i = 0; i < MC_particles.rows(); ++i) {
-            int pid = MC_particles.get<int32_t>("pid", i);
-            if (pid == 11) {
-                double px = static_cast<double>(MC_particles.get<float>("px", i));
-                double py = static_cast<double>(MC_particles.get<float>("py", i));
-                double pz = static_cast<double>(MC_particles.get<float>("pz", i));
-                double vx = static_cast<double>(MC_particles.get<float>("vx", i));
-                double vy = static_cast<double>(MC_particles.get<float>("vy", i));
-                double vz = static_cast<double>(MC_particles.get<float>("vz", i));
-                double E = std::sqrt(px * px + py * py + pz * pz + 0.000511 * 0.000511);
-                electron4VecP = ROOT::Math::PxPyPzE4D(px, py, pz, E);
-                electron3VecV = ROOT::Math::XYZVector(vx, vy, vz);
+        // MC truth block (conditional - only available in simulation data)
+        double mc_vz = 0;
+        bool has_mc = event.has_bank("MC::Particle");
+        if (has_mc) {
+            const auto& MC_particles = event.get_bank("MC::Particle");
+            ROOT::Math::PxPyPzE4D electron4VecP;
+            ROOT::Math::XYZVector electron3VecV;
+            for (int i = 0; i < MC_particles.rows(); ++i) {
+                int pid = MC_particles.get<int32_t>("pid", i);
+                if (pid == 11) {
+                    double px = static_cast<double>(MC_particles.get<float>("px", i));
+                    double py = static_cast<double>(MC_particles.get<float>("py", i));
+                    double pz = static_cast<double>(MC_particles.get<float>("pz", i));
+                    double vx = static_cast<double>(MC_particles.get<float>("vx", i));
+                    double vy = static_cast<double>(MC_particles.get<float>("vy", i));
+                    double vz = static_cast<double>(MC_particles.get<float>("vz", i));
+                    double E = std::sqrt(px * px + py * py + pz * pz + 0.000511 * 0.000511);
+                    electron4VecP = ROOT::Math::PxPyPzE4D(px, py, pz, E);
+                    electron3VecV = ROOT::Math::XYZVector(vx, vy, vz);
+                }
             }
-        }
 
-        if (m_enable_histograms && h_p && h_phi && h_theta && h_vz) {
-            h_p->fill(electron4VecP.P());
-            h_phi->fill(electron4VecP.Phi() * 180.0 / M_PI);
-            h_theta->fill(electron4VecP.Theta() * 180.0 / M_PI);
-            h_vz->fill(electron3VecV.Z());
+            if (m_enable_histograms && h_p && h_phi && h_theta && h_vz) {
+                h_p->fill(electron4VecP.P());
+                h_phi->fill(electron4VecP.Phi() * 180.0 / M_PI);
+                h_theta->fill(electron4VecP.Theta() * 180.0 / M_PI);
+                h_vz->fill(electron3VecV.Z());
+                double mc_theta_deg = electron4VecP.Theta() * 180.0 / M_PI;
+                double mc_p = electron4VecP.P();
+                h_vz_vs_theta->fill(mc_theta_deg, electron3VecV.Z());
+                h_vz_vs_p->fill(mc_p, electron3VecV.Z());
+                for (int i = 0; i < N_P_BINS; ++i) {
+                    if (mc_p >= p_bin_edges[i] && mc_p < p_bin_edges[i + 1]) {
+                        h_vz_vs_theta_pbin[i]->fill(mc_theta_deg, electron3VecV.Z());
+                        break;
+                    }
+                }
+            }
+            mc_vz = electron3VecV.Z();
         }
 
         // Get the reconstructed electron from the ElectronSelectionAlg
         auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
         if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
         auto recon_electron = *electron_opt;
+        double rec_vz = recon_electron.vz();
 
-        if (-7.8 < electron3VecV.Z() && electron3VecV.Z() < -7.2) h_vz_Cu->fill(recon_electron.vz());
-        if (-3 < electron3VecV.Z() && electron3VecV.Z() < -2.4) h_vz_Sn->fill(recon_electron.vz());
+        // Fill reconstructed data histograms (works for both MC and real data)
+        if (m_enable_histograms && h_rec_p) {
+            h_rec_p->fill(recon_electron.p());
+            h_rec_phi->fill(recon_electron.phi());
+            h_rec_theta->fill(recon_electron.theta());
+            h_rec_vz->fill(rec_vz);
+            double rec_theta = recon_electron.theta();
+            double rec_p = recon_electron.p();
+            h_rec_vz_vs_theta->fill(rec_theta, rec_vz);
+            h_rec_vz_vs_p->fill(rec_p, rec_vz);
+            for (int i = 0; i < N_P_BINS; ++i) {
+                if (rec_p >= p_bin_edges[i] && rec_p < p_bin_edges[i + 1]) {
+                    h_rec_vz_vs_theta_pbin[i]->fill(rec_theta, rec_vz);
+                    break;
+                }
+            }
+        }
 
+        // Reconstructed-only target selection (for real data comparison)
+        // RG-D vz ranges: Cu [-10.6, -6.5], Sn [-5.5, 5.0], CuSn [-10.6, 5.0]
+        if (-10.6 < rec_vz && rec_vz < -6.5) h_rec_vz_Cu->fill(rec_vz);
+        if (-5.5 < rec_vz && rec_vz < 5.0) h_rec_vz_Sn->fill(rec_vz);
+        if (-10.6 < rec_vz && rec_vz < 5.0) h_rec_vz_CuSn->fill(rec_vz);
+
+        // MC-gated target selection (only when MC truth is available)
+        if (has_mc) {
+            if (-10.6 < mc_vz && mc_vz < -6.5) h_vz_Cu->fill(rec_vz);
+            if (-5.5 < mc_vz && mc_vz < 5.0) h_vz_Sn->fill(rec_vz);
+            if (-10.6 < mc_vz && mc_vz < 5.0) h_vz_CuSn->fill(rec_vz);
+        }
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -137,14 +182,67 @@ private:
     clas12::framework::AtomicHistogram1D* h_vz = nullptr;
     clas12::framework::AtomicHistogram1D* h_vz_Cu = nullptr;
     clas12::framework::AtomicHistogram1D* h_vz_Sn = nullptr;
+    clas12::framework::AtomicHistogram1D* h_vz_CuSn = nullptr;
+
+    // Reconstructed data histograms
+    clas12::framework::AtomicHistogram1D* h_rec_p = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rec_phi = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rec_theta = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rec_vz = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rec_vz_Cu = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rec_vz_Sn = nullptr;
+    clas12::framework::AtomicHistogram1D* h_rec_vz_CuSn = nullptr;
+
+    // Momentum bin edges [GeV/c]
+    static constexpr int N_P_BINS = 5;
+    static constexpr std::array<double, N_P_BINS + 1> p_bin_edges = {0, 2, 4, 6, 8, 10};
+
+    // MC 2D histograms
+    clas12::framework::AtomicHistogram2D* h_vz_vs_theta = nullptr;
+    clas12::framework::AtomicHistogram2D* h_vz_vs_p = nullptr;
+    std::array<clas12::framework::AtomicHistogram2D*, N_P_BINS> h_vz_vs_theta_pbin = {};
+
+    // Reconstructed 2D histograms
+    clas12::framework::AtomicHistogram2D* h_rec_vz_vs_theta = nullptr;
+    clas12::framework::AtomicHistogram2D* h_rec_vz_vs_p = nullptr;
+    std::array<clas12::framework::AtomicHistogram2D*, N_P_BINS> h_rec_vz_vs_theta_pbin = {};
 
     auto book_histograms() -> void {
         h_p = m_hist->book_atomic_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
         h_phi = m_hist->book_atomic_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
         h_theta = m_hist->book_atomic_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
-        h_vz = m_hist->book_atomic_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -30, 30);
-        h_vz_Cu = m_hist->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
-        h_vz_Sn = m_hist->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
+        h_vz = m_hist->book_atomic_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -13, 0);
+        h_vz_Cu = m_hist->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -13, 0);
+        h_vz_Sn = m_hist->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -13, 0);
+        h_vz_CuSn = m_hist->book_atomic_hist1D("/MC/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", 100, -13, 0);
+
+        // Reconstructed data histograms
+        h_rec_p = m_hist->book_atomic_hist1D("/Data/Electron/p", "p;p;Events", 100, 0, 10);
+        h_rec_phi = m_hist->book_atomic_hist1D("/Data/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
+        h_rec_theta = m_hist->book_atomic_hist1D("/Data/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
+        h_rec_vz = m_hist->book_atomic_hist1D("/Data/Electron/vz", "vz;vz;Events", 100, -13, 0);
+        h_rec_vz_Cu = m_hist->book_atomic_hist1D("/Data/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -13, 0);
+        h_rec_vz_Sn = m_hist->book_atomic_hist1D("/Data/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -13, 0);
+        h_rec_vz_CuSn = m_hist->book_atomic_hist1D("/Data/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", 100, -13, 0);
+
+        // MC 2D histograms
+        h_vz_vs_theta = m_hist->book_atomic_hist2D("/MC/Electron/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 100, 0, 40, 100, -13, 0);
+        h_vz_vs_p = m_hist->book_atomic_hist2D("/MC/Electron/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 100, 0, 10, 100, -13, 0);
+
+        // Reconstructed 2D histograms
+        h_rec_vz_vs_theta = m_hist->book_atomic_hist2D("/Data/Electron/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 100, 0, 40, 100, -13, 0);
+        h_rec_vz_vs_p = m_hist->book_atomic_hist2D("/Data/Electron/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 100, 0, 10, 100, -13, 0);
+
+        // vz vs theta in momentum bins
+        for (int i = 0; i < N_P_BINS; ++i) {
+            auto plo = std::to_string(static_cast<int>(p_bin_edges[i]));
+            auto phi = std::to_string(static_cast<int>(p_bin_edges[i + 1]));
+            auto title = "vz vs #theta (" + plo + "<p<" + phi + " GeV/c);#theta [deg];vz [cm]";
+            h_vz_vs_theta_pbin[i] = m_hist->book_atomic_hist2D(
+                "/MC/Electron/vz_vs_theta_p" + plo + "_" + phi, title, 100, 0, 40, 100, -13, 0);
+            h_rec_vz_vs_theta_pbin[i] = m_hist->book_atomic_hist2D(
+                "/Data/Electron/vz_vs_theta_p" + plo + "_" + phi, title, 100, 0, 40, 100, -13, 0);
+        }
     }
 };
 

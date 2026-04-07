@@ -68,6 +68,18 @@ result<int> file_source::read_at(int64_t pos, char* dest, int size) {
     return static_cast<int>(n);
 }
 
+void file_source::prefetch(int64_t pos, int64_t size) const noexcept {
+#ifdef __linux__
+    if (m_fd >= 0) {
+        (void)::posix_fadvise(m_fd, static_cast<off_t>(pos),
+                              static_cast<off_t>(size), POSIX_FADV_WILLNEED);
+    }
+#else
+    (void)pos;
+    (void)size;
+#endif
+}
+
 void file_source::close() {
     if (m_fd >= 0) {
         ::close(m_fd);

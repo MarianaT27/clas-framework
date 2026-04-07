@@ -574,16 +574,42 @@ void reader::read_bank(bank_view_set& banks) {
     (void)banks.update_from_record(m_record, event_in_record);
 }
 
+result<reader> reader::open_lightweight(std::string_view path,
+                                        const file_event_index& index,
+                                        const dictionary& dict,
+                                        int64_t file_size) {
+    reader r;
+    r.m_info.path = std::string(path);
+    r.m_info.file_size = file_size;
+    r.m_info.total_events = index.max_events();
+    r.m_info.record_count = index.num_records();
+    r.m_index = index;
+    r.m_dict = dict;
+
+    auto src = file_source::open(path);
+    if (!src) return unexpected(src.error());
+    r.m_file_source = std::move(*src);
+
+    return r;
+}
+
 result<void> reader::load_record(record& rec, int record_index) {
-    if (record_index < 0 || record_index >= m_index.num_records())
+    return load_record_from(m_file_source, m_index, rec, record_index, m_info.file_size);
+}
+
+result<void> reader::load_record_from(file_source& source,
+                                       const file_event_index& index,
+                                       record& rec, int record_index,
+                                       int64_t file_size) {
+    if (record_index < 0 || record_index >= index.num_records())
         return unexpected(error_code::record_invalid_index);
 
-    int64_t pos = m_index.record_position(record_index);
-    int rbytes = m_index.record_bytes(record_index);
+    int64_t pos = index.record_position(record_index);
+    int rbytes = index.record_bytes(record_index);
     if (rbytes > 0)
-        return rec.read_from(m_file_source, pos, m_info.file_size, rbytes);
+        return rec.read_from(source, pos, file_size, rbytes);
     else
-        return rec.read_from(m_file_source, pos, m_info.file_size);
+        return rec.read_from(source, pos, file_size);
 }
 
 void reader::parse_trailer_stats(std::span<const char> trailer_event) {
