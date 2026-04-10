@@ -46,7 +46,7 @@ struct DISNTupleData {
  * - CutBuilder for fluent cut definitions
  * - NTupleWriter for simplified N-tuple management
  */
-class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAlg> {
+class DISSelectionAlg : public clas12::framework::SimpleAlgorithm {
    public:
     explicit DISSelectionAlg(std::string name = "DISSelectionAlg",
                               clas12::physics::DISAnalysis::KinematicRegion dis_region = clas12::physics::DISAnalysis::full_phase_space())
@@ -116,7 +116,7 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm<DISSelectionAl
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         // Check for good electron decision from upstream algorithm
-        auto electrons_opt = event.require(
+        auto electrons_opt = event.require_if(
             clas12::framework::Decisions::HasGoodElectron,
             clas12::framework::Keys::SelectedElectrons);
         if (!electrons_opt || electrons_opt->empty()) {

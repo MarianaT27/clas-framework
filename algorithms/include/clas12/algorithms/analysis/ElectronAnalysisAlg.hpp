@@ -53,7 +53,7 @@ struct ElectronAnalysisConfig {
     double theta_bin_width = 5.0;
 };
 
-class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm<ElectronAnalysisAlg> {
+class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
    public:
     using Config = ElectronAnalysisConfig;
 

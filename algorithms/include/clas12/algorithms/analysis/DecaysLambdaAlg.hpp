@@ -111,7 +111,7 @@ struct DecaysDaughter {
  * - Decay vertex analysis
  * - Daughter particle correlations
  */
-class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm<DecaysLambdaAlg> {
+class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm {
    public:
     explicit DecaysLambdaAlg(std::string name = "DecaysLambdaAlg")
         : SimpleAlgorithm(std::move(name)), m_cutflow("DECAYS Lambda Analysis") {

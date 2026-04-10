@@ -339,7 +339,7 @@ struct HadronTreeData {
  * - "rich": Uses RICH::Particle best_PID as truth label
  * - "exclusive": Uses ed -> ep(n)pi+pi- reaction topology as truth label
  */
-class AiPidHadronAlg : public clas12::framework::SimpleAlgorithm<AiPidHadronAlg> {
+class AiPidHadronAlg : public clas12::framework::SimpleAlgorithm {
 public:
     explicit AiPidHadronAlg(std::string name = "AiPidHadronAlg",
                             std::string truth_mode = "rich")

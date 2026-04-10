@@ -14,19 +14,18 @@
 
 #include "AiPidHadronAlg.hpp"
 
-// AI PID-specific parameter
-static std::string s_truth_mode = "rich";
-
 auto main(int argc, char* argv[]) -> int {
     return clas12::framework::AnalysisRunner::run(
         argc, argv, "AI PID Hadron Analysis", "ai_pid_hadron",
         [](auto& builder, const auto& config) {
+            const std::string truth_mode =
+                config.custom["truth-mode"].template value<std::string>().value_or(std::string{"rich"});
             builder
                 .template add_service<clas12::framework::ElectronCutsService>()
                 .template add_service<clas12::framework::FiducialService>()
                 .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", config.target, config.polarity)
                 .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::physics::DISAnalysis::high_q2_region())
-                .template add_algorithm<ai_pid_hadron::AiPidHadronAlg>("AiPidHadronAlg", s_truth_mode);
+                .template add_algorithm<ai_pid_hadron::AiPidHadronAlg>("AiPidHadronAlg", truth_mode);
         },
         // Extra CLI options
         [](cxxopts::Options& opts) {
@@ -35,7 +34,7 @@ auto main(int argc, char* argv[]) -> int {
                     cxxopts::value<std::string>()->default_value("rich"));
         },
         // Parse extra options
-        [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& /*config*/) {
-            s_truth_mode = args["truth-mode"].as<std::string>();
+        [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& config) {
+            config.custom.insert_or_assign("truth-mode", args["truth-mode"].as<std::string>());
         });
 }

@@ -30,7 +30,7 @@ namespace clas12::algorithms {
  * }
  * @endcode
  */
-class Pi0Producer : public clas12::framework::SimpleAlgorithm<Pi0Producer> {
+class Pi0Producer : public clas12::framework::SimpleAlgorithm {
    public:
     explicit Pi0Producer(
         std::string name = "Pi0Producer",

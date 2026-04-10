@@ -7,6 +7,7 @@
 #include <clas12/framework/core/TypedEventStore.hpp>
 
 #include <functional>
+#include <map>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -329,12 +330,12 @@ class Event {
      * if (!electrons_opt || electrons_opt->empty()) return FILTERED();
      *
      * // AFTER: 1-2 lines
-     * auto electrons = event.require(Decisions::HasGoodDISElectron, Keys::SelectedElectrons);
+     * auto electrons = event.require_if(Decisions::HasGoodDISElectron, Keys::SelectedElectrons);
      * if (!electrons) return FILTERED();
      * @endcode
      */
     template <typename T>
-    auto require(TypedKey<bool> decision, TypedKey<T> data) -> std::optional<T> {
+    auto require_if(TypedKey<bool> decision, TypedKey<T> data) -> std::optional<T> {
         if (!passes_decision_typed(decision)) return std::nullopt;
         return retrieve_typed(data);
     }

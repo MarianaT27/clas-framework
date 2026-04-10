@@ -5,5 +5,5 @@
 executable(
   'batch',
   files('batch.cpp'),
-  dependencies: [clas12_dep, hipo4_dep, fmt_dep, cxxopts_dep, root_dep],
+  dependencies: [framework_dep, clas12_dep, hipo4_dep, fmt_dep, cxxopts_dep, root_dep],
 )

@@ -32,7 +32,7 @@ namespace CuSnContamination {
  * This algorithm demonstrates the SimpleAlgorithm CRTP pattern.
  * Customize the process() method to implement your analysis logic.
  */
-class CuSnContaminationAlg : public clas12::framework::SimpleAlgorithm<CuSnContaminationAlg> {
+class CuSnContaminationAlg : public clas12::framework::SimpleAlgorithm {
 public:
     /**
      * @brief Construct the algorithm

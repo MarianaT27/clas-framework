@@ -45,7 +45,7 @@ using clas12::framework::Log;
 /**
  * @brief Pion analysis with calorimeter SF and DC quality histograms
  */
-class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm<PionAnalysisAlg> {
+class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
    public:
     explicit PionAnalysisAlg(std::string name = "PionAnalysis",
                               clas12::Target target = clas12::Target::LD2,

@@ -440,11 +440,8 @@ private:
  * };
  * @endcode
  *
- * @tparam Derived The derived class (CRTP pattern)
- *
  * @see Requirement 2.2
  */
-template <typename Derived>
 class PropertyMixin {
 public:
     /**

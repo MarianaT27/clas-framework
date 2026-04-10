@@ -60,6 +60,17 @@ class Application {
     }
 
     /**
+     * @brief Read-only view of registered algorithms (in execution order)
+     *
+     * Intended for introspection tools like the service-graph emitter.
+     * Do not mutate the algorithms through this reference.
+     */
+    [[nodiscard]] auto algorithms() const
+        -> const std::vector<std::unique_ptr<IAlgorithm>>& {
+        return m_algorithms;
+    }
+
+    /**
      * @brief Set input files
      * @param files Vector of file paths
      */

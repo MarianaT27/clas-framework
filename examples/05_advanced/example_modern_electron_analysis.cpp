@@ -70,7 +70,7 @@ using namespace clas12::framework;
  * - TypedEventStore for sharing selected electrons (Requirement 8.1, 8.2)
  * - Property system for configuration (Requirement 2.1, 2.2)
  */
-class ModernElectronSelectionAlg : public SimpleAlgorithm<ModernElectronSelectionAlg> {
+class ModernElectronSelectionAlg : public SimpleAlgorithm {
 public:
     ModernElectronSelectionAlg()
         : SimpleAlgorithm("ModernElectronSelection")
@@ -279,7 +279,7 @@ private:
  * - Property system for beam energy configuration
  * - Storing computed quantities for downstream use
  */
-class DISKinematicsAlg : public SimpleAlgorithm<DISKinematicsAlg> {
+class DISKinematicsAlg : public SimpleAlgorithm {
 public:
     DISKinematicsAlg() : SimpleAlgorithm("DISKinematics") {
         declare_property(m_beam_energy);
@@ -420,7 +420,7 @@ private:
  * Demonstrates LambdaAlgorithm for simple, inline algorithm definitions
  * (Requirement 4.3)
  */
-class ElectronHistogramAlg : public SimpleAlgorithm<ElectronHistogramAlg> {
+class ElectronHistogramAlg : public SimpleAlgorithm {
 public:
     ElectronHistogramAlg() : SimpleAlgorithm("ElectronHistograms") {}
 

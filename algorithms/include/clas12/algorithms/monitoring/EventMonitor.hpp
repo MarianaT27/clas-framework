@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <vector>
 #include <clas12/PIDs.hpp>
@@ -24,7 +25,7 @@ namespace clas12::algorithms {
  * app.add_algorithm(std::move(monitor));
  * @endcode
  */
-class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
+class EventMonitor : public clas12::framework::SimpleAlgorithm {
    public:
     explicit EventMonitor(std::string name = "EventMonitor")
         : SimpleAlgorithm(std::move(name)), m_monitored_pids(initialize_default_pids()) {
@@ -61,7 +62,7 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         const auto event_start = std::chrono::high_resolution_clock::now();
-        m_events_processed++;
+        m_events_processed.fetch_add(1, std::memory_order_relaxed);
         process_particle_statistics(event);
         record_processing_time(event_start);
 
@@ -113,7 +114,7 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
         const auto& REC_Particle = event.get_bank("REC::Particle");
 
         const int n_particles = REC_Particle.rows();
-        m_total_particles += n_particles;
+        m_total_particles.fetch_add(static_cast<size_t>(n_particles), std::memory_order_relaxed);
 
         if (h_particles_per_event) {
             h_particles_per_event->fill(n_particles);
@@ -149,16 +150,18 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
      * @brief Calculate and return average event rate
      */
     [[nodiscard]] double calculate_event_rate(long duration_seconds) const {
-        return duration_seconds > 0 ? static_cast<double>(m_events_processed) / duration_seconds : 0.0;
+        return duration_seconds > 0
+                   ? static_cast<double>(m_events_processed.load(std::memory_order_relaxed)) / duration_seconds
+                   : 0.0;
     }
 
     /**
      * @brief Calculate and return average particles per event
      */
     [[nodiscard]] double calculate_avg_particles() const {
-        return m_events_processed > 0
-                   ? static_cast<double>(m_total_particles) / m_events_processed
-                   : 0.0;
+        const auto events = m_events_processed.load(std::memory_order_relaxed);
+        const auto particles = m_total_particles.load(std::memory_order_relaxed);
+        return events > 0 ? static_cast<double>(particles) / static_cast<double>(events) : 0.0;
     }
 
     /**
@@ -169,7 +172,7 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
         const auto duration = std::chrono::duration_cast<std::chrono::seconds>(end_time - m_start_time);
 
         clas12::framework::Log::info("EventMonitor", "Event Monitor Statistics:");
-        clas12::framework::Log::info("EventMonitor", "   - Total events processed: {}", m_events_processed);
+        clas12::framework::Log::info("EventMonitor", "   - Total events processed: {}", m_events_processed.load(std::memory_order_relaxed));
         clas12::framework::Log::info("EventMonitor", "   - Total runtime: {} seconds", duration.count());
         clas12::framework::Log::info("EventMonitor", "   - Average rate: {:.1f} events/second", calculate_event_rate(duration.count()));
         clas12::framework::Log::info("EventMonitor", "   - Average particles/event: {:.2f}", calculate_avg_particles());
@@ -188,9 +191,10 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm<EventMonitor> {
     clas12::framework::AtomicHistogram1D* h_electrons_per_event = nullptr;
     clas12::framework::AtomicHistogram1D* h_processing_time = nullptr;
 
-    // Statistics counters
-    size_t m_events_processed = 0;
-    size_t m_total_particles = 0;
+    // Statistics counters. Atomic because process() is invoked concurrently
+    // from many worker threads on the same algorithm instance.
+    std::atomic<size_t> m_events_processed{0};
+    std::atomic<size_t> m_total_particles{0};
     std::chrono::time_point<std::chrono::high_resolution_clock> m_start_time;
 
     // Configuration

@@ -18,17 +18,11 @@
 
 #include <clas12/framework/core/Application.hpp>
 #include <clas12/framework/core/IAlgorithm.hpp>
-#include <clas12/framework/services/ConditionsService.hpp>
-#include <clas12/framework/services/HipoFileService.hpp>
-#include <clas12/framework/services/HistogramService.hpp>
-#include <clas12/framework/services/LoggingService.hpp>
-#include <clas12/framework/services/MetadataService.hpp>
-#include <clas12/framework/services/NTupleService.hpp>
-#include <clas12/framework/services/OutputFileService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
-#include <clas12/framework/services/ProfilingService.hpp>
-#include <clas12/framework/services/RootFileService.hpp>
-#include <clas12/framework/services/SamplingFractionService.hpp>
+// Concrete service headers used to be included here so
+// add_standard_services_to() could instantiate them inline. That function
+// now lives in ApplicationBuilder.cpp; the eleven service headers only
+// need to be parsed once during framework_lib compilation instead of once
+// per analysis translation unit.
 
 namespace clas12::framework {
 
@@ -173,36 +167,7 @@ public:
     // ========================================================================
 
     /// Build and return the configured Application
-    [[nodiscard]] auto build() -> Application {
-        Application app(m_name);
-
-        // Add standard services if requested
-        if (m_add_standard_services) {
-            add_standard_services_to(app);
-        }
-
-        // Add custom services
-        for (auto& factory : m_service_factories) {
-            factory(app.service_manager());
-        }
-
-        // Configure services
-        for (auto& configurator : m_service_configurators) {
-            configurator(app.service_manager());
-        }
-
-        // Add algorithms
-        for (auto& factory : m_algorithm_factories) {
-            app.add_algorithm(factory());
-        }
-
-        // Configure application
-        app.set_input_files(m_input_files);
-        app.set_percentage(m_percentage);
-        app.set_num_threads(m_num_threads);
-
-        return app;
-    }
+    [[nodiscard]] auto build() -> Application;
 
 private:
     std::string m_name;
@@ -222,61 +187,7 @@ private:
     std::vector<std::function<void(ServiceManager&)>> m_service_configurators;
     std::vector<std::function<std::unique_ptr<IAlgorithm>()>> m_algorithm_factories;
 
-    auto add_standard_services_to(Application& app) -> void {
-        auto& mgr = app.service_manager();
-
-        // Core services
-        auto log_svc = std::make_unique<LoggingService>();
-        auto output_svc = std::make_unique<OutputFileService>();
-        auto hist_svc = std::make_unique<HistogramService>();
-        auto ntuple_svc = std::make_unique<NTupleService>();
-        auto conditions_svc = std::make_unique<ConditionsService>();
-        auto particle_svc = std::make_unique<ParticleSelectorService>();
-        auto sf_svc = std::make_unique<SamplingFractionService>();
-
-        // File services
-        auto hipo_svc = std::make_unique<HipoFileService>();
-        auto root_svc = std::make_unique<RootFileService>();
-        auto metadata_svc = std::make_unique<MetadataService>();
-        auto profiling_svc = std::make_unique<ProfilingService>();
-
-        // Configure OutputFileService with output file
-        output_svc->set_output_file(m_output_file);
-        
-        // Get raw pointer to OutputFileService before moving it
-        OutputFileService* output_svc_ptr = output_svc.get();
-        
-        // Wire HistogramService, NTupleService, and MetadataService to use OutputFileService
-        hist_svc->set_output_file_service(output_svc_ptr);
-        ntuple_svc->set_output_file_service(output_svc_ptr);
-        metadata_svc->set_output_file_service(output_svc_ptr);
-
-        // Configure other file services
-        root_svc->set_default_output(m_output_file);
-        metadata_svc->set_output_file(m_output_file);  // Fallback if OutputFileService not available
-        hipo_svc->set_input_files(m_input_files);
-
-        // Configure metadata
-        metadata_svc->set_version(m_version);
-        metadata_svc->set_beam_energy(m_beam_energy);
-        if (!m_target.empty()) {
-            metadata_svc->set_target(m_target);
-        }
-
-        // Add services in dependency order
-        // OutputFileService MUST be added and initialized FIRST
-        mgr.add_service(std::move(log_svc));
-        mgr.add_service(std::move(output_svc));  // Must be before hist_svc and ntuple_svc
-        mgr.add_service(std::move(hipo_svc));
-        mgr.add_service(std::move(root_svc));
-        mgr.add_service(std::move(conditions_svc));
-        mgr.add_service(std::move(hist_svc));
-        mgr.add_service(std::move(ntuple_svc));
-        mgr.add_service(std::move(particle_svc));
-        mgr.add_service(std::move(sf_svc));
-        mgr.add_service(std::move(metadata_svc));
-        mgr.add_service(std::move(profiling_svc));
-    }
+    auto add_standard_services_to(Application& app) -> void;
 };
 
 /**

@@ -50,7 +50,7 @@ namespace clas12::algorithms {
 
 using clas12::framework::Log;
 
-class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm<Pi0EventMixingAlg> {
+class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm {
    public:
     explicit Pi0EventMixingAlg(std::string name = "Pi0EventMixing",
                                 int max_pool_events = 50)

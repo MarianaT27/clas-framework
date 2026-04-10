@@ -30,7 +30,7 @@ using clas12::framework::Log;
  * - Automatic service injection via svc<T>()
  * - Property system for configuration
  */
-class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm<DiPionFilterAlg> {
+class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm {
    public:
     explicit DiPionFilterAlg(std::string name = "DiPionFilterAlg")
         : SimpleAlgorithm(std::move(name))

@@ -116,3 +116,12 @@ test_config_schema = executable(
 )
 
 test('ConfigSchema Tests', test_config_schema)
+
+# Concurrency regression test for IAlgorithm state and counters
+test_algorithm_concurrency = executable(
+  'test_algorithm_concurrency',
+  'test_algorithm_concurrency.cpp',
+  dependencies: test_deps,
+)
+
+test('Algorithm Concurrency Tests', test_algorithm_concurrency)

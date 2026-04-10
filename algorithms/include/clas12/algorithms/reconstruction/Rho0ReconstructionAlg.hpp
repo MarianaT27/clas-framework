@@ -138,7 +138,7 @@ struct Rho0Candidate {
  *
  * Fits invariant mass with Breit-Wigner + pol3 background
  */
-class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Rho0ReconstructionAlg> {
+class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
    public:
     static constexpr double RHO0_MASS = clas12::Constants::RHO0MASS;  // GeV/c² (~770 MeV)
     static constexpr double RHO0_WIDTH = 0.150;                      // GeV (~150 MeV natural width)

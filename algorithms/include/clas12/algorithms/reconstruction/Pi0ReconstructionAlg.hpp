@@ -31,7 +31,7 @@ namespace clas12::algorithms {
  * - Keys::Pi0Candidates: vector of CompositeParticle (π⁰ candidates)
  * - Decisions::HasPi0: true if at least one candidate found
  */
-class Pi0ReconstructionAlg : public clas12::framework::SimpleAlgorithm<Pi0ReconstructionAlg> {
+class Pi0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
    public:
     explicit Pi0ReconstructionAlg(
         std::string name = "Pi0ReconstructionAlg",

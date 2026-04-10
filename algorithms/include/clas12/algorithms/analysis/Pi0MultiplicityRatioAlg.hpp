@@ -35,7 +35,7 @@ namespace clas12::algorithms {
 
 using clas12::framework::Log;
 
-class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm<Pi0MultiplicityRatioAlg> {
+class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
    public:
     explicit Pi0MultiplicityRatioAlg(std::string name = "Pi0MultiplicityRatio")
         : SimpleAlgorithm(std::move(name))

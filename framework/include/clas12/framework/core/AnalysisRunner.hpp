@@ -54,6 +54,7 @@
 #include <clas12/StringUtils.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
+#include <clas12/framework/services/WorkflowVisualizationService.hpp>
 
 namespace clas12::framework {
 
@@ -73,8 +74,31 @@ struct AnalysisConfig {
     /// Eliminates the need for static variable bridges in entry points.
     toml::table custom;
 
+    /// Returns std::nullopt if the configuration is valid.
+    /// Otherwise returns a human-readable error describing the first failing check.
+    [[nodiscard]] auto validate() const -> std::optional<std::string> {
+        if (input_files.empty()) {
+            return std::string{"no input files provided"};
+        }
+        if (output_file.empty()) {
+            return std::string{"output file path is empty"};
+        }
+        if (!(percentage > 0.0 && percentage <= 100.0)) {
+            return "percentage must be in (0, 100], got " + std::to_string(percentage);
+        }
+        if (num_threads < 1) {
+            return "num_threads must be >= 1, got " + std::to_string(num_threads);
+        }
+        const std::filesystem::path out_path{output_file};
+        const auto ext = out_path.extension().string();
+        if (ext != ".root" && ext != ".hipo") {
+            return "output_file must end in .root or .hipo, got '" + output_file + "'";
+        }
+        return std::nullopt;
+    }
+
     [[nodiscard]] auto is_valid() const -> bool {
-        return !input_files.empty() && !output_file.empty() && percentage > 0;
+        return !validate().has_value();
     }
 };
 
@@ -124,8 +148,8 @@ public:
                                        extra_options_fn, parse_extra_fn);
         if (!config) return EXIT_SUCCESS;  // --help was requested
 
-        if (!config->is_valid()) {
-            Log::error("Main", "Invalid configuration or no input files found");
+        if (auto err = config->validate(); err) {
+            Log::error("Main", "Invalid configuration: {}", *err);
             return EXIT_FAILURE;
         }
 
@@ -150,6 +174,11 @@ public:
             Log::error("Main", "Initialization failed: {}", sc.message());
             return EXIT_FAILURE;
         }
+
+        // Emit a GraphViz snapshot of the service + algorithm pipeline so
+        // ordering bugs like the old NTupleService special case would show
+        // up visually before running the first event.
+        emit_service_graph(app, output_prefix);
 
         // Log configuration
         Log::section(analysis_name);
@@ -181,6 +210,36 @@ public:
     }
 
 private:
+    /// Dump a "{prefix}_service_graph.dot" next to the output file so operators
+    /// can eyeball the service + algorithm wiring. Non-fatal: a filesystem error
+    /// logs a warning and moves on.
+    static auto emit_service_graph(Application& app, const std::string& output_prefix) -> void {
+        WorkflowVisualizationService viz;
+
+        auto& mgr = app.service_manager();
+        for (const auto& name : mgr.service_names()) {
+            viz.register_algorithm(name, {}, WorkflowVisualizationService::NodeType::SERVICE);
+        }
+
+        std::string previous;
+        for (const auto& alg : app.algorithms()) {
+            const auto& name = alg->name();
+            if (previous.empty()) {
+                viz.register_algorithm(name);
+            } else {
+                viz.register_algorithm(name, {previous});
+            }
+            previous = name;
+        }
+
+        const std::string dot_path = output_prefix + "_service_graph.dot";
+        if (!viz.generate_dot(dot_path)) {
+            Log::warning("Main", "Could not emit service graph to {}", dot_path);
+        } else {
+            Log::info("Main", "Service graph written to {}", dot_path);
+        }
+    }
+
     [[nodiscard]] static auto parse_arguments(
         int argc, char* argv[],
         const std::string& analysis_name,

@@ -38,7 +38,7 @@ using namespace clas12::framework;
  * - Automatic service injection via require_service<T>()
  * - Using on_initialize() and on_finalize() hooks
  */
-class ElectronCounterAlg : public SimpleAlgorithm<ElectronCounterAlg> {
+class ElectronCounterAlg : public SimpleAlgorithm {
 public:
     ElectronCounterAlg() : SimpleAlgorithm("ElectronCounter") {
         // Declare properties in constructor
@@ -143,7 +143,7 @@ private:
 /**
  * @brief Algorithm demonstrating multiple service injection
  */
-class PhotonAnalysisAlg : public SimpleAlgorithm<PhotonAnalysisAlg> {
+class PhotonAnalysisAlg : public SimpleAlgorithm {
 public:
     PhotonAnalysisAlg() : SimpleAlgorithm("PhotonAnalysis") {
         declare_property(m_energy_threshold);

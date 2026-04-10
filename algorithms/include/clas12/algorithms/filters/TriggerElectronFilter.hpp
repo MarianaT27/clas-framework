@@ -25,7 +25,7 @@ namespace clas12::algorithms {
  * // Decision "TriggerFilter" is set (true/false)
  * @endcode
  */
-class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm<TriggerElectronFilter> {
+class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm {
    public:
     explicit TriggerElectronFilter(
         std::string name = "TriggerElectronFilter",

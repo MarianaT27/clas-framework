@@ -144,7 +144,7 @@ struct PionCandidate {
  * - Beta cuts
  * - Cutflow tracking for efficiency
  */
-class PionSelectionAlg : public clas12::framework::SimpleAlgorithm<PionSelectionAlg> {
+class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
    public:
     explicit PionSelectionAlg(std::string name = "PionSelection",
                               clas12::Target target = clas12::Target::LD2,

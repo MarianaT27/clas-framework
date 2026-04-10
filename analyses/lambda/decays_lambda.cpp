@@ -15,28 +15,14 @@
 #include <clas12/algorithms/analysis/DecaysLambdaAlg.hpp>
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
 
-// Lambda-specific cut parameters stored alongside the standard AnalysisConfig
-static double s_mass_window = 0.2;
-static double s_min_momentum = 0.0;
-static double s_min_decay_length = 0.0;
-static double s_min_vertex_detach = 1.0;
-static double s_max_vertex_detach = 100.0;
-
 auto main(int argc, char* argv[]) -> int {
     return clas12::framework::AnalysisRunner::run(
         argc, argv, "DECAYS Lambda Analysis", "decays_lambda_analysis",
-        [](auto& builder, [[maybe_unused]] const auto& config) {
-            // Create algorithm with cuts configured via Property system
+        [](auto& builder, const auto& config) {
+            // Create algorithm and configure properties from the parsed CLI options
+            // stored in config.custom (same keys the ParseExtraFn writes below).
             auto decays_lambda_alg = std::make_unique<clas12::algorithms::DecaysLambdaAlg>("DecaysLambdaAnalysis");
-
-            // Configure properties via TOML table
-            toml::table decays_config;
-            decays_config.insert("mass_window", s_mass_window);
-            decays_config.insert("min_momentum", s_min_momentum);
-            decays_config.insert("min_decay_length", s_min_decay_length);
-            decays_config.insert("min_vertex_detach", s_min_vertex_detach);
-            decays_config.insert("max_vertex_detach", s_max_vertex_detach);
-            decays_lambda_alg->configure_from_toml(decays_config);
+            decays_lambda_alg->configure_from_toml(config.custom);
 
             builder
                 .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
@@ -52,11 +38,11 @@ auto main(int argc, char* argv[]) -> int {
                 ("max_vertex_detach", "Max vertex detachment z [cm] (0=no limit)", cxxopts::value<double>()->default_value("100"));
         },
         // Parse extra options
-        [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& /*config*/) {
-            s_mass_window = args["mass_window"].as<double>();
-            s_min_momentum = args["min_momentum"].as<double>();
-            s_min_decay_length = args["min_decay_length"].as<double>();
-            s_min_vertex_detach = args["min_vertex_detach"].as<double>();
-            s_max_vertex_detach = args["max_vertex_detach"].as<double>();
+        [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& config) {
+            config.custom.insert_or_assign("mass_window",       args["mass_window"].as<double>());
+            config.custom.insert_or_assign("min_momentum",      args["min_momentum"].as<double>());
+            config.custom.insert_or_assign("min_decay_length",  args["min_decay_length"].as<double>());
+            config.custom.insert_or_assign("min_vertex_detach", args["min_vertex_detach"].as<double>());
+            config.custom.insert_or_assign("max_vertex_detach", args["max_vertex_detach"].as<double>());
         });
 }

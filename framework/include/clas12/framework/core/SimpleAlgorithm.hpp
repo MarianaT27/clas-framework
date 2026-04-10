@@ -31,11 +31,12 @@ class Event;
 
 
 /**
- * @brief CRTP base class for simplified algorithm implementations
+ * @brief Base class for simplified algorithm implementations
  *
  * SimpleAlgorithm provides a simplified interface for writing algorithms
- * with automatic service injection and reduced boilerplate. Algorithms
- * inherit from this class using the CRTP pattern.
+ * with automatic service injection and reduced boilerplate. Derived classes
+ * override the virtual hooks configure(), process(), on_initialize(), and
+ * on_finalize().
  *
  * The derived class should:
  * - Override configure() to declare services and properties
@@ -44,40 +45,33 @@ class Event;
  *
  * Example usage:
  * @code
- * class MyAnalysis : public SimpleAlgorithm<MyAnalysis> {
+ * class MyAnalysis : public SimpleAlgorithm {
  * public:
  *     MyAnalysis() : SimpleAlgorithm("MyAnalysis") {
  *         // Declare properties in constructor
  *         declare_property(m_momentum_cut);
  *     }
  *
- *     auto configure() -> void override {
- *         // Declare required services
- *         m_hist_svc = &require_service<HistogramService>("HistogramService");
- *     }
- *
  *     auto process(Event& event) -> StatusCode override {
- *         // Per-event processing logic
- *         for (const auto& electron : event.particles(clas12::PIDs::ELECTRON)) {
- *             if (electron.p() > m_momentum_cut) {
- *                 m_hist_svc->get()->fill("electron_p", electron.p());
+ *         for (const auto& e : event.particles(clas12::PIDs::ELECTRON)) {
+ *             if (e.p() > m_momentum_cut) {
+ *                 m_hist_svc->fill("electron_p", e.p());
  *             }
  *         }
  *         return StatusCode::SUCCESS();
  *     }
- *
- * private:
- *     Property<double> m_momentum_cut{"momentum_cut", 2.0, "Minimum momentum [GeV]"};
- *     ServiceHandle<HistogramService>* m_hist_svc = nullptr;
  * };
  * @endcode
  *
- * @tparam Derived The derived class (CRTP pattern)
+ * @note Previously a CRTP template. The CRTP parameter was dropped because
+ *       Application dispatches through std::unique_ptr<IAlgorithm>, so
+ *       every execute() call is already a virtual call: the
+ *       static_cast<Derived*> shortcut had no codegen benefit and only
+ *       caused template bloat.
  *
  * @see Requirement 4.1
  */
-template <typename Derived>
-class SimpleAlgorithm : public Algorithm, public PropertyMixin<Derived> {
+class SimpleAlgorithm : public Algorithm, public PropertyMixin {
 public:
     /**
      * @brief Construct a SimpleAlgorithm with the given name
@@ -144,10 +138,10 @@ public:
         }
 
         // Step 1: Call configure() to let derived class declare banks
-        static_cast<Derived*>(this)->configure();
+        this->configure();
 
         // Step 2: Call on_initialize() for custom initialization
-        auto result = static_cast<Derived*>(this)->on_initialize();
+        auto result = this->on_initialize();
 
         // Update state on success
         if (result.is_success()) {
@@ -167,22 +161,17 @@ public:
      * @return StatusCode from process()
      */
     auto execute(Event& event) -> StatusCode final {
-        // Validate state transition
+        // Validate state transition. Do NOT flip m_state here: execute() runs
+        // concurrently on many worker threads and a store->restore dance on a
+        // shared atomic would race with every sibling worker's own transition.
+        // State transitions belong exclusively in initialize()/finalize(),
+        // which are serial.
         auto state_check = this->validate_state_transition(AlgorithmState::Running);
         if (state_check.is_failure()) {
             return state_check;
         }
 
-        // Track running state during execution
-        auto previous_state = this->state();
-        this->set_state(AlgorithmState::Running);
-
-        auto result = static_cast<Derived*>(this)->process(event);
-
-        // Restore to initialized state after processing
-        this->set_state(previous_state);
-
-        return result;
+        return this->process(event);
     }
 
     /**
@@ -200,7 +189,7 @@ public:
             return state_check;
         }
 
-        auto result = static_cast<Derived*>(this)->on_finalize();
+        auto result = this->on_finalize();
 
         // Update state regardless of result
         this->set_state(AlgorithmState::Finalized);
@@ -295,36 +284,6 @@ protected:
             // Fallback: try common naming convention (type name)
             return nullptr;
         }
-    }
-
-    /**
-     * @brief Get a required service by type (throws if not available)
-     *
-     * Similar to svc<T>() but throws an exception if the service is not found.
-     * Use this in on_initialize() for services that are mandatory.
-     *
-     * @tparam T Service type (must satisfy ServiceConcept and have service_name())
-     * @return T& Reference to the service
-     * @throws std::runtime_error if service is not available
-     *
-     * Usage:
-     * @code
-     * auto on_initialize() -> StatusCode override {
-     *     auto& hist = require<HistogramService>();
-     *     hist.book_hist1D("/p", "p", 100, 0, 10);
-     *     return StatusCode::SUCCESS();
-     * }
-     * @endcode
-     */
-    template <ServiceConcept T>
-    auto require() -> T& {
-        auto* s = svc<T>();
-        if (!s) {
-            throw std::runtime_error(
-                fmt::format("Algorithm '{}': Required service '{}' not available",
-                            m_name, std::string(T::service_name())));
-        }
-        return *s;
     }
 
     // ========================================================================

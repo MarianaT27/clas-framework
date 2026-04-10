@@ -54,8 +54,13 @@ class NTupleService : public Service {
         : Service(std::move(name)) {}
 
     auto initialize() -> StatusCode override {
+        // Look up OutputFileService through the service manager (DI). The
+        // declared dependency in ApplicationBuilder guarantees ordering.
         if (!m_output_svc) {
-            Log::error(name(), "OutputFileService not set! Call set_output_file_service() before initialize()");
+            m_output_svc = locate_service<OutputFileService>("OutputFileService");
+        }
+        if (!m_output_svc) {
+            Log::error(name(), "OutputFileService not available via ServiceManager");
             return StatusCode::FAILURE();
         }
 

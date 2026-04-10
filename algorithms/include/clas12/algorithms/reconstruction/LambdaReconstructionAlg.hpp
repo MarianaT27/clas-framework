@@ -65,7 +65,7 @@ struct LambdaCandidate {
  * 3. Calculating invariant mass for each pair
  * 4. Selecting candidates within a mass window around the Λ mass
  */
-class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm<LambdaReconstructionAlg> {
+class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm {
    public:
     explicit LambdaReconstructionAlg(std::string name = "LambdaReconstructionAlg")
         : SimpleAlgorithm(std::move(name)), m_cutflow("Lambda Reconstruction") {

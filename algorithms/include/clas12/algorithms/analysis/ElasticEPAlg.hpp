@@ -109,7 +109,7 @@ struct ElasticKinematics {
  *
  * Note: This algorithm does NOT require recoil particle detection.
  */
-class ElasticEPAlg : public clas12::framework::SimpleAlgorithm<ElasticEPAlg> {
+class ElasticEPAlg : public clas12::framework::SimpleAlgorithm {
    public:
     explicit ElasticEPAlg(std::string name = "ElasticEPAlg", NuclearTarget target = NuclearTarget::Proton, double beam_energy = 10.6)
         : SimpleAlgorithm(std::move(name)), m_target(target), m_target_mass(get_target_mass(target)), m_cutflow("Elastic e-" + get_target_name(target) + " Selection (W-only)") {

@@ -34,7 +34,7 @@ namespace {
  * data (which may be in EVIO format) by scanning all bank structures and
  * re-serializing them using event_builder.
  */
-class HipoEventWriterAlg : public clas12::framework::SimpleAlgorithm<HipoEventWriterAlg> {
+class HipoEventWriterAlg : public clas12::framework::SimpleAlgorithm {
 public:
     explicit HipoEventWriterAlg(std::string name = "HipoEventWriterAlg")
         : SimpleAlgorithm(std::move(name)) {}
@@ -78,12 +78,13 @@ private:
 
 }  // namespace
 
-static std::string s_hipo_output;
-
 auto main(int argc, char* argv[]) -> int {
     return clas12::framework::AnalysisRunner::run(
         argc, argv, "Di-Pion Analysis", "dipion_analysis",
         [](auto& builder, const auto& config) {
+            const std::string hipo_output =
+                config.custom["hipo-output"].template value<std::string>().value_or(std::string{});
+
             builder
                 .template add_service<clas12::framework::ElectronCutsService>()
                 .template add_service<clas12::framework::FiducialService>()
@@ -95,10 +96,10 @@ auto main(int argc, char* argv[]) -> int {
                 //.template add_algorithm<clas12::algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", config.target);
 
             // If HIPO output requested, configure the service and add the writer algorithm
-            if (!s_hipo_output.empty()) {
+            if (!hipo_output.empty()) {
                 builder.template configure_service<clas12::framework::HipoFileService>(
-                    [](clas12::framework::HipoFileService& svc) {
-                        svc.set_output_file(s_hipo_output);
+                    [hipo_output](clas12::framework::HipoFileService& svc) {
+                        svc.set_output_file(hipo_output);
                     });
                 builder.template add_algorithm<HipoEventWriterAlg>("HipoEventWriter");
             }
@@ -110,7 +111,7 @@ auto main(int argc, char* argv[]) -> int {
                     cxxopts::value<std::string>()->default_value(""));
         },
         // Parse extra options
-        [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& /*config*/) {
-            s_hipo_output = args["hipo-output"].as<std::string>();
+        [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& config) {
+            config.custom.insert_or_assign("hipo-output", args["hipo-output"].as<std::string>());
         });
 }

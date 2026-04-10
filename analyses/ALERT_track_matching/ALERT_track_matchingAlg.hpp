@@ -32,7 +32,7 @@ namespace ALERT_track_matching {
  * This algorithm demonstrates the SimpleAlgorithm CRTP pattern.
  * Customize the process() method to implement your analysis logic.
  */
-class ALERT_track_matchingAlg : public clas12::framework::SimpleAlgorithm<ALERT_track_matchingAlg> {
+class ALERT_track_matchingAlg : public clas12::framework::SimpleAlgorithm {
 public:
     /**
      * @brief Construct the algorithm

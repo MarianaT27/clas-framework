@@ -119,7 +119,7 @@ struct ElectronCutContext {
  * @see FiducialService for fiducial cut configuration
  * @see ElectronCutsService for PID and kinematic cut configuration
  */
-class ElectronSelectionAlg : public clas12::framework::SimpleAlgorithm<ElectronSelectionAlg> {
+class ElectronSelectionAlg : public clas12::framework::SimpleAlgorithm {
 public:
     // ========================================================================
     // Construction

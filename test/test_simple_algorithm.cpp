@@ -62,7 +62,7 @@ private:
 // Test SimpleAlgorithm Implementation
 // ============================================================================
 
-class TestSimpleAlgorithm : public SimpleAlgorithm<TestSimpleAlgorithm> {
+class TestSimpleAlgorithm : public SimpleAlgorithm {
 public:
     TestSimpleAlgorithm() : SimpleAlgorithm("TestSimpleAlgorithm") {
         declare_property(m_threshold);
@@ -103,7 +103,7 @@ private:
 };
 
 // Algorithm with multiple services
-class MultiServiceAlgorithm : public SimpleAlgorithm<MultiServiceAlgorithm> {
+class MultiServiceAlgorithm : public SimpleAlgorithm {
 public:
     MultiServiceAlgorithm() : SimpleAlgorithm("MultiServiceAlgorithm") {}
 
@@ -131,7 +131,7 @@ private:
 };
 
 // Algorithm that returns FILTERED
-class FilteringAlgorithm : public SimpleAlgorithm<FilteringAlgorithm> {
+class FilteringAlgorithm : public SimpleAlgorithm {
 public:
     FilteringAlgorithm() : SimpleAlgorithm("FilteringAlgorithm") {}
 

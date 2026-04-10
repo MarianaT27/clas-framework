@@ -14,13 +14,11 @@
 #include <clas12/framework/services/PhotonCutsService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
-// Pi0-specific cut parameters stored alongside the standard AnalysisConfig
-static double s_mass_window = 0.2;
-
 auto main(int argc, char* argv[]) -> int {
     return clas12::framework::AnalysisRunner::run(
         argc, argv, "Pi0 Analysis", "pi0_analysis",
-        [](auto& builder, [[maybe_unused]] const auto& config) {
+        [](auto& builder, const auto& config) {
+            const double mass_window = config.custom["mass_window"].template value<double>().value_or(0.2);
             builder
                 .template add_service<clas12::framework::ElectronCutsService>()
                 .template add_service<clas12::framework::FiducialService>()
@@ -29,7 +27,7 @@ auto main(int argc, char* argv[]) -> int {
                 .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>()
                 .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::physics::DISAnalysis::standard_dis_region())
                 .template add_algorithm<clas12::algorithms::PhotonSelectionAlg>("PhotonSelection")
-                .template add_algorithm<clas12::algorithms::Pi0ReconstructionAlg>("Pi0Reconstruction", s_mass_window);
+                .template add_algorithm<clas12::algorithms::Pi0ReconstructionAlg>("Pi0Reconstruction", mass_window);
         },
         // Extra CLI options
         [](cxxopts::Options& opts) {
@@ -37,7 +35,7 @@ auto main(int argc, char* argv[]) -> int {
                 ("mass_window", "Pi0 mass window [GeV]", cxxopts::value<double>()->default_value("0.2"));
         },
         // Parse extra options
-        [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& /*config*/) {
-            s_mass_window = args["mass_window"].as<double>();
+        [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& config) {
+            config.custom.insert_or_assign("mass_window", args["mass_window"].as<double>());
         });
 }

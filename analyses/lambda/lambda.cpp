@@ -17,30 +17,15 @@
 #include <clas12/framework/services/FiducialService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
-// Lambda-specific cut parameters stored alongside the standard AnalysisConfig
-static double s_mass_window = 0.5;
-static double s_max_delta_vz = 5.0;
-static double s_coplanarity = 0.0;
-static double s_beam_energy = 10.53;
-static double s_min_displaced_vz = -1000.0;
-static double s_max_displaced_vz = 0.0;
-
 auto main(int argc, char* argv[]) -> int {
     return clas12::framework::AnalysisRunner::run(
         argc, argv, "Lambda Analysis", "lambda_analysis",
         [](auto& builder, const auto& config) {
-            // Create lambda algorithm with cuts configured via Property system
+            // Create lambda algorithm and configure properties from config.custom,
+            // which contains the parsed CLI options. configure_from_toml reads the
+            // same key names that ParseExtraFn wrote below.
             auto lambda_alg = std::make_unique<clas12::algorithms::LambdaReconstructionAlg>("LambdaReconstruction");
-
-            // Configure properties via TOML table
-            toml::table lambda_config;
-            lambda_config.insert("mass_window", s_mass_window);
-            lambda_config.insert("max_delta_vz", s_max_delta_vz);
-            lambda_config.insert("max_coplanarity", s_coplanarity);
-            lambda_config.insert("beam_energy", s_beam_energy);
-            lambda_config.insert("min_displaced_vz", s_min_displaced_vz);
-            lambda_config.insert("max_displaced_vz", s_max_displaced_vz);
-            lambda_alg->configure_from_toml(lambda_config);
+            lambda_alg->configure_from_toml(config.custom);
 
             builder
                 .template add_service<clas12::framework::ElectronCutsService>()
@@ -63,12 +48,12 @@ auto main(int argc, char* argv[]) -> int {
                 ("max_displaced_vz", "Max displaced vertex z [cm] (0=no limit)", cxxopts::value<double>()->default_value("0"));
         },
         // Parse extra options
-        [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& /*config*/) {
-            s_mass_window = args["mass_window"].as<double>();
-            s_max_delta_vz = args["max_delta_vz"].as<double>();
-            s_coplanarity = args["coplanarity"].as<double>();
-            s_beam_energy = args["beam_energy"].as<double>();
-            s_min_displaced_vz = args["min_displaced_vz"].as<double>();
-            s_max_displaced_vz = args["max_displaced_vz"].as<double>();
+        [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& config) {
+            config.custom.insert_or_assign("mass_window",      args["mass_window"].as<double>());
+            config.custom.insert_or_assign("max_delta_vz",     args["max_delta_vz"].as<double>());
+            config.custom.insert_or_assign("max_coplanarity",  args["coplanarity"].as<double>());
+            config.custom.insert_or_assign("beam_energy",      args["beam_energy"].as<double>());
+            config.custom.insert_or_assign("min_displaced_vz", args["min_displaced_vz"].as<double>());
+            config.custom.insert_or_assign("max_displaced_vz", args["max_displaced_vz"].as<double>());
         });
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fmt/format.h>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <string>
@@ -45,6 +46,17 @@ enum class AlgorithmState : std::uint8_t {
  * 2. initialize() - Called once at the beginning
  * 3. execute() - Called for each event
  * 4. finalize() - Called once at the end
+ *
+ * THREAD SAFETY:
+ * Application invokes execute() concurrently from N worker threads on the
+ * same algorithm instance (see Application::run -> hipo::chain::process).
+ * Derived classes MUST ensure all mutable member state accessed from
+ * execute()/process() is either:
+ *   1. atomic (std::atomic<T>, AtomicHistogram, atomic Cutflow counters)
+ *   2. mutex-guarded
+ *   3. thread-local (one instance per worker via thread_local storage)
+ *   4. append-only after initialize() (e.g. configuration, ServiceHandle)
+ * initialize() and finalize() are serial; execute()/process() is concurrent.
  */
 class IAlgorithm {
    public:
@@ -140,13 +152,16 @@ class Algorithm : public IAlgorithm {
      * @return AlgorithmState Current lifecycle state
      */
     [[nodiscard]] auto state() const -> AlgorithmState override {
-        return m_state;
+        return m_state.load(std::memory_order_acquire);
     }
 
    protected:
     std::string m_name;
     ServiceManager* m_svc_mgr = nullptr;
-    AlgorithmState m_state = AlgorithmState::Uninitialized;
+    // Atomic because execute() runs concurrently on many worker threads and
+    // some call paths observe state() to gate work. Transitions only happen
+    // from the serial initialize()/finalize() stages.
+    std::atomic<AlgorithmState> m_state{AlgorithmState::Uninitialized};
 
     /**
      * @brief Set the algorithm state
@@ -156,7 +171,7 @@ class Algorithm : public IAlgorithm {
      * @param new_state The new state to set
      */
     auto set_state(AlgorithmState new_state) -> void {
-        m_state = new_state;
+        m_state.store(new_state, std::memory_order_release);
     }
 
     /**
@@ -172,19 +187,20 @@ class Algorithm : public IAlgorithm {
      * @return StatusCode SUCCESS if valid, FAILURE with message if invalid
      */
     [[nodiscard]] auto validate_state_transition(AlgorithmState target_state) const -> StatusCode {
+        const auto current = m_state.load(std::memory_order_acquire);
         switch (target_state) {
             case AlgorithmState::Initialized:
-                if (m_state != AlgorithmState::Uninitialized) {
+                if (current != AlgorithmState::Uninitialized) {
                     return StatusCode::failure(
                         fmt::format("Algorithm '{}': Cannot initialize from state {}",
-                                    m_name, static_cast<int>(m_state)));
+                                    m_name, static_cast<int>(current)));
                 }
                 break;
             case AlgorithmState::Running:
-                if (m_state != AlgorithmState::Initialized && m_state != AlgorithmState::Running) {
+                if (current != AlgorithmState::Initialized && current != AlgorithmState::Running) {
                     return StatusCode::failure(
                         fmt::format("Algorithm '{}': Cannot execute from state {}",
-                                    m_name, static_cast<int>(m_state)));
+                                    m_name, static_cast<int>(current)));
                 }
                 break;
             case AlgorithmState::Finalized:

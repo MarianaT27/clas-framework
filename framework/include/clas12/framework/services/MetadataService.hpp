@@ -47,6 +47,11 @@ class MetadataService : public Service {
 
     auto initialize() -> StatusCode override {
         m_start_time = std::chrono::system_clock::now();
+        // Optional dependency: OutputFileService preferred, but the service
+        // can fall back to opening m_output_file directly if unavailable.
+        if (!m_output_svc) {
+            m_output_svc = locate_service<OutputFileService>("OutputFileService");
+        }
         return StatusCode::SUCCESS();
     }
 

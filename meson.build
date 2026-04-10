@@ -95,11 +95,14 @@ root_dep = declare_dependency(
 #                              CORE LIBRARIES                                   #
 #══════════════════════════════════════════════════════════════════════════════#
 
-# Framework - Core reusable analysis framework
-subdir('framework')
-
-# CLAS12 - CLAS12-specific components
+# CLAS12 - pure data types (Particle, PIDs, Target, physics helpers).
+# Has zero dependency on framework, so it builds first.
 subdir('clas12')
+
+# Framework - algorithm/service infrastructure. Consumes clas12 types,
+# so it depends on clas12_dep (dependency inverted from the previous
+# setup which hid the real direction behind an include-path hack).
+subdir('framework')
 
 # Algorithms - Standard physics algorithms
 subdir('algorithms')

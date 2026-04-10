@@ -41,7 +41,7 @@ namespace clas12::algorithms {
 
 using clas12::framework::Log;
 
-class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm<PhotonSelectionAlg> {
+class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm {
    public:
     explicit PhotonSelectionAlg(std::string name = "PhotonSelection",
                                  bool use_ai = true)

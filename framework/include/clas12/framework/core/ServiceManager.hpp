@@ -7,6 +7,8 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <typeindex>
+#include <unordered_map>
 #include <vector>
 #include <clas12/framework/core/Concepts.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -51,6 +53,10 @@ class ServiceManager {
             clas12::framework::Log::error("ServiceManager", "Service '{}' already exists", name);
             return StatusCode::failure(fmt::format("Service '{}' already exists", name));
         }
+        // Cache the dynamic type so get_service<T>() can do an O(1) lookup
+        // without a dynamic_cast loop across every registered service.
+        IService* raw = service.get();
+        m_type_cache[std::type_index(typeid(*raw))] = raw;
         m_services[name] = std::move(service);
         m_dependencies[name] = std::move(dependencies);
         return StatusCode::SUCCESS();
@@ -77,6 +83,21 @@ class ServiceManager {
             return nullptr;
         }
         return dynamic_cast<T*>(it->second.get());
+    }
+
+    /**
+     * @brief Retrieve a service by concrete type (O(1) lookup)
+     *
+     * Uses a type-indexed cache populated in add_service. Only the concrete
+     * type is matched; a base-class lookup returns nullptr. For interface
+     * lookups or multiple instances of the same type, use the name-based
+     * overload instead.
+     */
+    template <ServiceConcept T>
+    auto get_service() -> T* {
+        auto it = m_type_cache.find(std::type_index(typeid(T)));
+        if (it == m_type_cache.end()) return nullptr;
+        return static_cast<T*>(it->second);
     }
 
     /**
@@ -186,15 +207,6 @@ class ServiceManager {
                             fmt::join(cycle_services, ", ")));
         }
 
-        // SPECIAL CASE: NTupleService must finalize FIRST (initialize LAST)
-        // Move NTupleService to the end of initialization order
-        auto ntuple_it = std::find(result.begin(), result.end(), "NTupleService");
-        if (ntuple_it != result.end()) {
-            std::string ntuple_name = *ntuple_it;
-            result.erase(ntuple_it);
-            result.push_back(ntuple_name);
-        }
-
         return Result<std::vector<std::string>>::ok(result);
     }
 
@@ -247,9 +259,24 @@ class ServiceManager {
         return m_services.size();
     }
 
+    /**
+     * @brief Return the names of all registered services, in no particular order
+     *
+     * Used by introspection tools (service-graph emitter, etc.).
+     */
+    [[nodiscard]] auto service_names() const -> std::vector<std::string> {
+        std::vector<std::string> names;
+        names.reserve(m_services.size());
+        for (const auto& [name, _] : m_services) {
+            names.push_back(name);
+        }
+        return names;
+    }
+
    private:
     std::map<std::string, std::unique_ptr<IService>> m_services;
     std::map<std::string, std::vector<std::string>> m_dependencies;
+    std::unordered_map<std::type_index, IService*> m_type_cache;
 };
 
 }  // namespace clas12::framework
