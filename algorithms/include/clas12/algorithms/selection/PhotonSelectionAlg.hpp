@@ -174,13 +174,13 @@ class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm {
             h_n_photons_raw = svc->book_atomic_hist1D(dir + "/n_photons_raw", "Number of Photons (raw);N_{#gamma};Events", 20, 0, 20);
             h_energy_raw = svc->book_atomic_hist1D(dir + "/energy_raw", "Photon Energy (raw);E [GeV];Photons", 100, 0, 5);
             h_theta_raw = svc->book_atomic_hist1D(dir + "/theta_raw", "Photon #theta (raw);#theta [deg];Photons", 180, 0, 40);
-            h_phi_raw = svc->book_atomic_phi_hist(dir + "/phi_raw", "Photon #phi (raw)");
+            h_phi_raw = svc->book_phi_hist(dir + "/phi_raw", "Photon #phi (raw)");
 
             // Selected photon distributions
             h_n_photons_selected = svc->book_atomic_hist1D(dir + "/n_photons_selected", "Number of Photons (selected);N_{#gamma};Events", 20, 0, 20);
             h_energy_selected = svc->book_atomic_hist1D(dir + "/energy_selected", "Photon Energy (selected);E [GeV];Photons", 100, 0, 5);
             h_theta_selected = svc->book_atomic_hist1D(dir + "/theta_selected", "Photon #theta (selected);#theta [deg];Photons", 180, 0, 40);
-            h_phi_selected = svc->book_atomic_phi_hist(dir + "/phi_selected", "Photon #phi (selected)");
+            h_phi_selected = svc->book_phi_hist(dir + "/phi_selected", "Photon #phi (selected)");
         }
     }
 };

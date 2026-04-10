@@ -322,12 +322,12 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm {
         auto* svc = m_hist_svc;
 
         // Use lock-free atomic histogram templates for DIS kinematics
-        h_Q2 = svc->book_atomic_q2_hist("/DiPion/Q2", "Q^{2}");
-        h_W = svc->book_atomic_w_hist("/DiPion/W", "W");
+        h_Q2 = svc->book_q2_hist("/DiPion/Q2", "Q^{2}");
+        h_W = svc->book_w_hist("/DiPion/W", "W");
 
         // Use atomic momentum templates for pion histograms
-        h_piplus_p = svc->book_atomic_momentum_hist("/DiPion/piplus_p", "#pi^{+} Momentum", 100, 0, 6);
-        h_piminus_p = svc->book_atomic_momentum_hist("/DiPion/piminus_p", "#pi^{-} Momentum", 100, 0, 6);
+        h_piplus_p = svc->book_momentum_hist("/DiPion/piplus_p", "#pi^{+} Momentum", 100, 0, 6);
+        h_piminus_p = svc->book_momentum_hist("/DiPion/piminus_p", "#pi^{-} Momentum", 100, 0, 6);
 
         // Chi2PID histograms (lock-free atomic)
         h_piplus_chi2pid = svc->book_atomic_hist1D("/DiPion/piplus_chi2pid", "#pi^{+} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);

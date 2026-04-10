@@ -28,18 +28,6 @@ namespace clas12 {
  * - Resolution measurements (p_rec - p_true)
  * - Background studies (identifying true signal vs combinatorial)
  * - Decay chain analysis (following parent-daughter relationships)
- *
- * Example usage:
- * @code
- * // Load MC particles via MCTruthService
- * auto mc_particles = mc_svc->mc_particles(PIDs::ELECTRON);
- *
- * // Check if reconstructed electron matches MC truth
- * auto* mc_match = mc_svc->match(electron, rec_match_bank);
- * if (mc_match) {
- *     double p_resolution = (electron.p() - mc_match->p()) / mc_match->p();
- * }
- * @endcode
  */
 class MCParticle {
 
@@ -62,7 +50,6 @@ class MCParticle {
     double m_vz{std::numeric_limits<double>::quiet_NaN()};
     double m_vt{0.0}; ///< Production time (typically 0 for primaries)
 
-    // Matching information (set by MCTruthService)
     int m_matched_rec_index{-1}; ///< Matched reconstructed particle index (-1 if unmatched)
     float m_match_quality{0.0f}; ///< Match quality from MC::RecMatch bank
 
@@ -240,7 +227,7 @@ class MCParticle {
     // MC-Reconstruction Matching
     // ========================================================================
 
-    /// Set matched reconstructed particle index (called by MCTruthService)
+    /// Set matched reconstructed particle index
     auto set_matched_rec_index(int idx) -> void { m_matched_rec_index = idx; }
 
     /// Get matched reconstructed particle index (-1 if unmatched)

@@ -563,57 +563,6 @@ class HistogramService : public Service {
         return m_atomic_hist2D.size();
     }
 
-    // ========================================================================
-    // Explicit Atomic Aliases (for clarity when needed)
-    // ========================================================================
-    //
-    // These methods are aliases that explicitly indicate atomic histogram usage.
-    // They are equivalent to the non-prefixed versions since all physics-specific
-    // booking methods now use atomic histograms by default.
-
-    /// Alias for book_momentum_hist() - explicitly indicates atomic
-    auto book_atomic_momentum_hist(const std::string& path, const std::string& title,
-                                   int nbins = 100, double pmin = 0.0, double pmax = 11.0) -> AtomicHistogram1D* {
-        return book_momentum_hist(path, title, nbins, pmin, pmax);
-    }
-
-    /// Alias for book_theta_hist() - explicitly indicates atomic
-    auto book_atomic_theta_hist(const std::string& path, const std::string& title,
-                                int nbins = 180) -> AtomicHistogram1D* {
-        return book_theta_hist(path, title, nbins);
-    }
-
-    /// Alias for book_phi_hist() - explicitly indicates atomic
-    auto book_atomic_phi_hist(const std::string& path, const std::string& title,
-                              int nbins = 360) -> AtomicHistogram1D* {
-        return book_phi_hist(path, title, nbins);
-    }
-
-    /// Alias for book_q2_hist() - explicitly indicates atomic
-    auto book_atomic_q2_hist(const std::string& path, const std::string& title,
-                             int nbins = 100, double q2min = 0.0, double q2max = 12.0) -> AtomicHistogram1D* {
-        return book_q2_hist(path, title, nbins, q2min, q2max);
-    }
-
-    /// Alias for book_w_hist() - explicitly indicates atomic
-    auto book_atomic_w_hist(const std::string& path, const std::string& title,
-                            int nbins = 100, double wmin = 0.0, double wmax = 5.0) -> AtomicHistogram1D* {
-        return book_w_hist(path, title, nbins, wmin, wmax);
-    }
-
-    /// Alias for book_xb_hist() - explicitly indicates atomic
-    auto book_atomic_xb_hist(const std::string& path, const std::string& title,
-                             int nbins = 100) -> AtomicHistogram1D* {
-        return book_xb_hist(path, title, nbins);
-    }
-
-    /// Alias for book_theta_vs_p() - explicitly indicates atomic
-    auto book_atomic_theta_vs_p(const std::string& path, const std::string& title,
-                                int nbinsp = 50, double pmin = 0.0, double pmax = 11.0,
-                                int nbinsth = 90) -> AtomicHistogram2D* {
-        return book_theta_vs_p(path, title, nbinsp, pmin, pmax, nbinsth);
-    }
-
    private:
     bool m_auto_write = true;     // Automatically write histograms on finalize
     bool m_verify_output = false; // Verify histograms after writing (disabled by default)
