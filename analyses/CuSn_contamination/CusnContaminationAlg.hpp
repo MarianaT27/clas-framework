@@ -194,8 +194,8 @@ private:
     clas12::framework::AtomicHistogram1D* h_rec_vz_CuSn = nullptr;
 
     // Momentum bin edges [GeV/c]
-    static constexpr int N_P_BINS = 5;
-    static constexpr std::array<double, N_P_BINS + 1> p_bin_edges = {0, 2, 4, 6, 8, 10};
+    static constexpr int N_P_BINS = 20;
+    static constexpr std::array<double, N_P_BINS + 1> p_bin_edges = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0};
 
     // MC 2D histograms
     clas12::framework::AtomicHistogram2D* h_vz_vs_theta = nullptr;
