@@ -71,14 +71,12 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
         if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return clas12::framework::StatusCode::FILTERED();
         m_cutflow.pass("Has DIS Electron");
 
-        auto Q2_opt = event.retrieve_typed(clas12::framework::Keys::DIS_Q2);
-        auto xB_opt = event.retrieve_typed(clas12::framework::Keys::DIS_xB);
-        auto nu_opt = event.retrieve_typed(clas12::framework::Keys::DIS_nu);
-        if (!Q2_opt || !xB_opt || !nu_opt) return clas12::framework::StatusCode::FILTERED();
+        auto dis = clas12::framework::EventHelpers::get_dis_kinematics(event);
+        if (!dis) return clas12::framework::StatusCode::FILTERED();
 
-        double Q2 = *Q2_opt;
-        double xB = *xB_opt;
-        double nu = *nu_opt;
+        const double Q2 = dis->Q2;
+        const double xB = dis->xB;
+        const double nu = dis->nu;
 
         // Fill DIS normalization histograms (one entry per DIS event)
         if (h_n_DIS_events) h_n_DIS_events->fill(0.5);

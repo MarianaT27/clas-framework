@@ -6,6 +6,7 @@
 #include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
@@ -116,18 +117,16 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm {
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         // Check for good electron decision from upstream algorithm
-        auto electrons_opt = event.require_if(
-            clas12::framework::Decisions::HasGoodElectron,
-            clas12::framework::Keys::SelectedElectrons);
-        if (!electrons_opt || electrons_opt->empty()) {
+        auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
+        if (!electron_opt) {
             return clas12::framework::StatusCode::FILTERED();
         }
+        const auto& electron = *electron_opt;
 
         clas12::physics::DISAnalysis::DISKinematics kin =
-            clas12::physics::DISAnalysis::calculate_kinematics(electrons_opt->front());
+            clas12::physics::DISAnalysis::calculate_kinematics(electron);
 
         // Fill pre-cut histograms (after electron selection, before DIS cuts)
-        const auto& electron = electrons_opt->front();
         if (h_Q2_precut) h_Q2_precut->fill(kin.q2);
         if (h_W_precut) h_W_precut->fill(kin.w);
         if (h_nu_precut) h_nu_precut->fill(kin.nu);
@@ -162,7 +161,7 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm {
 
         // Electron passed all cuts - set decision and store for downstream algorithms
         event.set_decision_typed(clas12::framework::Decisions::HasGoodDISElectron, true);
-        event.store_typed(clas12::framework::Keys::SelectedDISElectron, std::vector<clas12::Particle>{electrons_opt->front()});
+        event.store_typed(clas12::framework::Keys::SelectedDISElectron, std::vector<clas12::Particle>{electron});
         event.store_typed(clas12::framework::Keys::DIS_Q2, kin.q2);
         event.store_typed(clas12::framework::Keys::DIS_W, kin.w);
         event.store_typed(clas12::framework::Keys::DIS_xB, kin.xb);
