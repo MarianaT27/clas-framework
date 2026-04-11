@@ -4,6 +4,7 @@
 #include <clas12/PIDs.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/physics/CompositeParticle.hpp>
@@ -58,41 +59,36 @@ class Pi0Producer : public clas12::framework::SimpleAlgorithm {
     }
 
     /**
-     * @brief Produce π⁰ candidates from photon pairs
+     * @brief Produce π⁰ candidates from photon pairs.
+     *
+     * The heavy lifting (photon pair enumeration, mass-window filter)
+     * is delegated to `CompositeParticleBuilder::reconstruct_pi0`
+     * followed by an in-place mass-window filter; the pipeline owns
+     * the ntuple-style bookkeeping (processed counter, publish,
+     * decision flag).
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        m_events_processed++;
+        using namespace clas12::framework;
 
-        const auto& REC_Particle = event.get_bank("REC::Particle");
-
-        // Extract photons using ParticleSelectorService
-        clas12::framework::ParticleMap particles = m_particle_svc->extract_particles(
-            REC_Particle, {clas12::PIDs::PHOTON});
-
+        ParticleMap particles = m_particle_svc->extract_particles(
+            event.get_bank("REC::Particle"), {clas12::PIDs::PHOTON});
         const auto& photons = m_particle_svc->get_photons(particles);
-
-        // Reconstruct π⁰ candidates
         auto pi0_candidates = clas12::physics::CompositeParticleBuilder::reconstruct_pi0(photons);
 
-        // Filter by mass window
         std::vector<clas12::physics::CompositeParticle> good_pi0s;
+        good_pi0s.reserve(pi0_candidates.size());
         for (const auto& pi0 : pi0_candidates) {
-            if (pi0.in_mass_window(m_mass_center, m_mass_width)) {
-                good_pi0s.push_back(pi0);
-            }
+            if (pi0.in_mass_window(m_mass_center, m_mass_width)) good_pi0s.push_back(pi0);
         }
 
-        m_pi0_produced += good_pi0s.size();
-
-        // Store π⁰ candidates in event for downstream algorithms
-        event.store_typed(clas12::framework::Keys::Pi0Candidates, good_pi0s);
-
-        // Also set a decision if we found at least one π⁰
-        if (!good_pi0s.empty()) {
-            event.set_decision_typed(clas12::framework::Decisions::HasPi0, true);
-        }
-
-        return clas12::framework::StatusCode::SUCCESS();
+        return pipeline(event)
+            .tap([&] {
+                ++m_events_processed;
+                m_pi0_produced += good_pi0s.size();
+            })
+            .publish(Keys::Pi0Candidates, good_pi0s)
+            .set_decision(Decisions::HasPi0, !good_pi0s.empty())
+            .status();
     }
 
    private:

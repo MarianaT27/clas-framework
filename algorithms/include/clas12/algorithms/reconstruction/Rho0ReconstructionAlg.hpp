@@ -31,6 +31,7 @@
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
+#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
@@ -288,9 +289,11 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        m_cutflow.pass("All Events");
+        using namespace clas12::framework;
 
-        // Track run number from RUN::config bank
+        // Track run number once per event, outside the pipeline, because
+        // the `m_runs` set is a shared member and the pipeline DSL
+        // doesn't give a single obvious stage for "unconditional setup".
         clas12::bankdefs::RUN_config run_config;
         run_config.bind(event.get_bank("RUN::config"));
         if (run_config.rows() > 0) {
@@ -299,141 +302,131 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
             m_runs.insert(run);
         }
 
-        // Check for good DIS electron from upstream algorithm
-        auto electron_opt = clas12::framework::EventHelpers::get_dis_electron(event);
-        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
-        const auto& electron = *electron_opt;
-        m_cutflow.pass("Has Good DIS Electron");
+        auto electron_opt = EventHelpers::get_dis_electron(event);
+        auto dis          = EventHelpers::get_dis_kinematics(event);
 
-        // Get DIS kinematics from upstream
-        auto dis = clas12::framework::EventHelpers::get_dis_kinematics(event);
-        if (!dis) return clas12::framework::StatusCode::FILTERED();
-        double Q2 = dis->Q2;
-        double nu = dis->nu;
-
-        // Calculate virtual photon 4-momentum (needed for pion cut impact and rho0 reconstruction)
+        // Virtual photon 4-vector (only valid when we actually have
+        // an electron; default to zero otherwise).
         clas12::physics::BeamConfig beam;
         ROOT::Math::PxPyPzEVector beam_4vec(beam.px, beam.py, beam.pz, beam.energy);
-        ROOT::Math::PxPyPzEVector virtual_photon = beam_4vec - electron.PxPyPzEVector();
+        ROOT::Math::PxPyPzEVector virtual_photon = electron_opt
+            ? beam_4vec - electron_opt->PxPyPzEVector()
+            : ROOT::Math::PxPyPzEVector{};
 
-        // Process pion cut impact variations (cumulative pion cuts with rho0 cuts)
-        // Must run before selected-pion early returns so we see events with fewer pion cuts
-        for (const auto& [step, label] : PION_CUT_STEPS) {
-            auto ph_it = m_pion_cut_step_histograms.find(label);
-            if (ph_it == m_pion_cut_step_histograms.end()) continue;
-            auto& ph = ph_it->second;
+        const double Q2 = dis ? dis->Q2 : 0.0;
+        const double nu = dis ? dis->nu : 0.0;
 
-            auto step_piplus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(fmt::format("PiPlus_{}", label)));
-            auto step_piminus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(fmt::format("PiMinus_{}", label)));
-            auto* step_piplus = step_piplus_opt.has_value() ? &step_piplus_opt.value() : nullptr;
-            auto* step_piminus = step_piminus_opt.has_value() ? &step_piminus_opt.value() : nullptr;
+        auto pions_plus  = event.retrieve_typed(Keys::SelectedPiPlus).value_or(std::vector<clas12::Particle>{});
+        auto pions_minus = event.retrieve_typed(Keys::SelectedPiMinus).value_or(std::vector<clas12::Particle>{});
 
-            if (!step_piplus || !step_piminus || step_piplus->empty() || step_piminus->empty()) continue;
-
-            auto step_candidates = build_rho0_candidates(
-                *step_piplus, *step_piminus, electron, virtual_photon, nu, Q2);
-
-            for (const auto& cand : step_candidates) {
-                if (ph.mass_all) ph.mass_all->fill(cand.mass);
-                if (cand.passes_all_cuts) {
-                    if (ph.mass_selected) ph.mass_selected->fill(cand.mass);
-                }
-            }
+        // Build rho0 candidates from the nominal pion collections.
+        // Sigma scans and cut scans run via taps below.
+        std::vector<Rho0Candidate> candidates;
+        if (electron_opt && dis && !pions_plus.empty() && !pions_minus.empty()) {
+            candidates = build_rho0_candidates(pions_plus, pions_minus, *electron_opt,
+                                               virtual_photon, nu, Q2);
         }
+        const size_t n_passing = candidates.empty() ? 0 : count_passing_candidates(candidates);
 
-        // Get pre-selected pions from PionSelectionAlg
-        auto pions_plus = event.retrieve_typed(clas12::framework::Keys::SelectedPiPlus).value_or(std::vector<clas12::Particle>{});
-        auto pions_minus = event.retrieve_typed(clas12::framework::Keys::SelectedPiMinus).value_or(std::vector<clas12::Particle>{});
+        return pipeline(event, m_cutflow)
+            .count("All Events")
+            .filter("Has Good DIS Electron", electron_opt.has_value())
+            .filter("has DIS kinematics",    dis.has_value())
+            // Pion cut impact scan: iterates the cumulative pion cut
+            // steps and rebuilds rho0 candidates per step. Runs before
+            // the selected-pion gates so fewer-cut events are still
+            // scanned.
+            .tap([&] {
+                if (!electron_opt || !dis) return;
+                const auto& electron = *electron_opt;
+                for (const auto& [step, label] : PION_CUT_STEPS) {
+                    auto ph_it = m_pion_cut_step_histograms.find(label);
+                    if (ph_it == m_pion_cut_step_histograms.end()) continue;
+                    auto& ph = ph_it->second;
 
-        if (pions_plus.empty()) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Has >= 1 Pi+");
+                    auto step_piplus_opt  = event.retrieve_typed(TypedKey<std::vector<clas12::Particle>>(fmt::format("PiPlus_{}",  label)));
+                    auto step_piminus_opt = event.retrieve_typed(TypedKey<std::vector<clas12::Particle>>(fmt::format("PiMinus_{}", label)));
+                    if (!step_piplus_opt || !step_piminus_opt
+                        || step_piplus_opt->empty() || step_piminus_opt->empty()) continue;
 
-        if (pions_minus.empty()) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Has >= 1 Pi-");
-
-        // Build candidates with all kinematics computed once
-        auto candidates = build_rho0_candidates(pions_plus, pions_minus, electron, virtual_photon, nu, Q2);
-        if (candidates.empty()) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Rho0 Found");
-
-        // Fill pre-cut histograms
-        fill_pre_cut_histograms(candidates);
-
-        // Fill N-1 cut plots
-        fill_nminus1_histograms(candidates);
-
-        // Fill lc-binned histograms (with specific cut combination)
-        fill_lc_binned_histograms(candidates, Q2);
-
-        // Update candidate-level cutflow counters
-        for (const auto& cand : candidates) {
-            (void)m_candidate_cutflow.evaluate(cand);
-        }
-
-        // Process cut scan variations (rho0-level cut threshold scans)
-        for (const auto& def : m_cut_scan_defs) {
-            auto scan_map_it = m_cut_scan_histograms.find(def.name);
-            if (scan_map_it == m_cut_scan_histograms.end()) continue;
-            auto& scan_map = scan_map_it->second;
-
-            for (double scan_value : *def.values) {
-                std::string label = format_cut_scan_label(def.name, scan_value);
-                auto ch_it = scan_map.find(label);
-                if (ch_it == scan_map.end()) continue;
-                auto& ch = ch_it->second;
-
-                for (const auto& cand : candidates) {
-                    if (ch.mass_all) ch.mass_all->fill(cand.mass);
-
-                    if (passes_cut_scan(cand, def, scan_value)) {
-                        if (ch.mass_selected) ch.mass_selected->fill(cand.mass);
-                        fill_binned_histogram(Q2_BINS, "Q2", ch.mass_q2_bins, Q2, cand.mass);
+                    auto step_candidates = build_rho0_candidates(
+                        *step_piplus_opt, *step_piminus_opt, electron, virtual_photon, nu, Q2);
+                    for (const auto& cand : step_candidates) {
+                        if (ph.mass_all) ph.mass_all->fill(cand.mass);
+                        if (cand.passes_all_cuts && ph.mass_selected) ph.mass_selected->fill(cand.mass);
                     }
                 }
-            }
-        }
-
-        // Check if any candidates passed all cuts
-        size_t n_passing = count_passing_candidates(candidates);
-        if (n_passing == 0) return clas12::framework::StatusCode::FILTERED();
-
-        // Fill post-cut histograms
-        fill_post_cut_histograms(candidates, Q2);
-
-        // Store candidates in event for downstream algorithms
-        store_candidates_in_event(candidates, event);
-
-        // Fill ntuple
-        fill_ntuple(candidates, electron, *dis, n_passing);
-
-        // Process sigma scan variations
-        for (double scan_sigma : m_sigma_scan_values.get()) {
-            std::string label = format_sigma_label(scan_sigma);
-            auto sh_it = m_sigma_scan_histograms.find(label);
-            if (sh_it == m_sigma_scan_histograms.end()) continue;
-            auto& sh = sh_it->second;
-
-            auto scan_piplus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(
-                format_sigma_key("SelectedPiPlus", scan_sigma)));
-            auto scan_piminus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(
-                format_sigma_key("SelectedPiMinus", scan_sigma)));
-
-            if (!scan_piplus_opt || !scan_piminus_opt || scan_piplus_opt->empty() || scan_piminus_opt->empty()) continue;
-
-            auto scan_candidates = build_rho0_candidates(
-                *scan_piplus_opt, *scan_piminus_opt, electron, virtual_photon, nu, Q2);
-
-            for (const auto& cand : scan_candidates) {
-                if (sh.mass_all) sh.mass_all->fill(cand.mass);
-
-                if (cand.passes_all_cuts) {
-                    if (sh.mass_selected) sh.mass_selected->fill(cand.mass);
-                    fill_binned_histogram(Q2_BINS, "Q2", sh.mass_q2_bins, Q2, cand.mass);
+            })
+            .filter("Has >= 1 Pi+",  !pions_plus.empty())
+            .filter("Has >= 1 Pi-",  !pions_minus.empty())
+            .filter("Rho0 Found",    !candidates.empty())
+            // Pre-cut histograms + N-1 + lc-binned fills and per-candidate
+            // cutflow evaluation.
+            .tap([&] {
+                fill_pre_cut_histograms(candidates);
+                fill_nminus1_histograms(candidates);
+                fill_lc_binned_histograms(candidates, Q2);
+                for (const auto& cand : candidates) {
+                    (void)m_candidate_cutflow.evaluate(cand);
                 }
-            }
-        }
+            })
+            // Rho0-level cut-threshold scans.
+            .tap([&] {
+                for (const auto& def : m_cut_scan_defs) {
+                    auto scan_map_it = m_cut_scan_histograms.find(def.name);
+                    if (scan_map_it == m_cut_scan_histograms.end()) continue;
+                    auto& scan_map = scan_map_it->second;
 
-        return clas12::framework::StatusCode::SUCCESS();
+                    for (double scan_value : *def.values) {
+                        std::string label = format_cut_scan_label(def.name, scan_value);
+                        auto ch_it = scan_map.find(label);
+                        if (ch_it == scan_map.end()) continue;
+                        auto& ch = ch_it->second;
+
+                        for (const auto& cand : candidates) {
+                            if (ch.mass_all) ch.mass_all->fill(cand.mass);
+                            if (passes_cut_scan(cand, def, scan_value)) {
+                                if (ch.mass_selected) ch.mass_selected->fill(cand.mass);
+                                fill_binned_histogram(Q2_BINS, "Q2", ch.mass_q2_bins, Q2, cand.mass);
+                            }
+                        }
+                    }
+                }
+            })
+            .filter("any candidate passes all cuts", n_passing > 0)
+            .tap([&] {
+                fill_post_cut_histograms(candidates, Q2);
+                store_candidates_in_event(candidates, event);
+                if (dis) fill_ntuple(candidates, *electron_opt, *dis, n_passing);
+            })
+            // Sigma-scan variants: re-evaluate rho0 candidates with
+            // alternative pion PID sigma cuts.
+            .tap([&] {
+                if (!electron_opt) return;
+                const auto& electron = *electron_opt;
+                for (double scan_sigma : m_sigma_scan_values.get()) {
+                    std::string label = format_sigma_label(scan_sigma);
+                    auto sh_it = m_sigma_scan_histograms.find(label);
+                    if (sh_it == m_sigma_scan_histograms.end()) continue;
+                    auto& sh = sh_it->second;
+
+                    auto scan_piplus_opt  = event.retrieve_typed(TypedKey<std::vector<clas12::Particle>>(format_sigma_key("SelectedPiPlus",  scan_sigma)));
+                    auto scan_piminus_opt = event.retrieve_typed(TypedKey<std::vector<clas12::Particle>>(format_sigma_key("SelectedPiMinus", scan_sigma)));
+                    if (!scan_piplus_opt || !scan_piminus_opt
+                        || scan_piplus_opt->empty() || scan_piminus_opt->empty()) continue;
+
+                    auto scan_candidates = build_rho0_candidates(
+                        *scan_piplus_opt, *scan_piminus_opt, electron, virtual_photon, nu, Q2);
+                    for (const auto& cand : scan_candidates) {
+                        if (sh.mass_all) sh.mass_all->fill(cand.mass);
+                        if (cand.passes_all_cuts) {
+                            if (sh.mass_selected) sh.mass_selected->fill(cand.mass);
+                            fill_binned_histogram(Q2_BINS, "Q2", sh.mass_q2_bins, Q2, cand.mass);
+                        }
+                    }
+                }
+            })
+            .status();
     }
 
 
@@ -608,58 +601,57 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
         double nu,
         double Q2
     ) const -> std::vector<Rho0Candidate> {
-        std::vector<Rho0Candidate> candidates;
-        if (pions_plus.empty() || pions_minus.empty()) return candidates;
+        if (pions_plus.empty() || pions_minus.empty()) return {};
 
-        double e_vz = electron.vz();
+        const double e_vz = electron.vz();
 
-        for (const auto& pip : pions_plus) {
-            for (const auto& pim : pions_minus) {
+        // PairPipeline walks the pi+ x pi- Cartesian product and uses
+        // build<> to emit a fully-populated Rho0Candidate per pair.
+        // No cutflow bump here - the candidate-level cutflow is driven
+        // from process() via `m_candidate_cutflow.evaluate(cand)`.
+        return clas12::framework::particle_pairs(pions_plus, pions_minus)
+            .build([this, &virtual_photon, nu, Q2, e_vz](
+                       const clas12::Particle& pip, const clas12::Particle& pim) {
                 Rho0Candidate cand;
                 cand.pip = pip;
                 cand.pim = pim;
 
-                // Classify detector region
-                bool pip_fwd = clas12::framework::CandidateUtils::is_forward_detector(pip.status());
-                bool pim_fwd = clas12::framework::CandidateUtils::is_forward_detector(pim.status());
-                bool pip_cd  = clas12::framework::CandidateUtils::is_central_detector(pip.status());
-                bool pim_cd  = clas12::framework::CandidateUtils::is_central_detector(pim.status());
+                // Detector-region classification.
+                const bool pip_fwd = clas12::framework::CandidateUtils::is_forward_detector(pip.status());
+                const bool pim_fwd = clas12::framework::CandidateUtils::is_forward_detector(pim.status());
+                const bool pip_cd  = clas12::framework::CandidateUtils::is_central_detector(pip.status());
+                const bool pim_cd  = clas12::framework::CandidateUtils::is_central_detector(pim.status());
+                if (pip_fwd && pim_fwd)       cand.detector_region = DetectorRegion::ForwardForward;
+                else if (pip_cd && pim_cd)    cand.detector_region = DetectorRegion::CentralCentral;
+                else                          cand.detector_region = DetectorRegion::Mixed;
 
-                if (pip_fwd && pim_fwd) cand.detector_region = DetectorRegion::ForwardForward;
-                else if (pip_cd && pim_cd) cand.detector_region = DetectorRegion::CentralCentral;
-                else cand.detector_region = DetectorRegion::Mixed;
-
-                // Compute rho0 4-momentum
+                // rho0 4-momentum + derived kinematics.
                 auto p_rho0 = pip.PxPyPzEVector() + pim.PxPyPzEVector();
-                cand.mass = p_rho0.M();
+                cand.mass     = p_rho0.M();
                 cand.momentum = std::sqrt(p_rho0.Px() * p_rho0.Px() +
                                           p_rho0.Py() * p_rho0.Py() +
                                           p_rho0.Pz() * p_rho0.Pz());
                 cand.theta = std::acos(p_rho0.Pz() / cand.momentum) * 180.0 / M_PI;
-                cand.phi = std::atan2(p_rho0.Py(), p_rho0.Px()) * 180.0 / M_PI;
+                cand.phi   = std::atan2(p_rho0.Py(), p_rho0.Px()) * 180.0 / M_PI;
 
-                // Compute opening angle
                 auto p1_3 = pip.PxPyPzVector();
                 auto p2_3 = pim.PxPyPzVector();
-                double cos_angle = p1_3.Dot(p2_3) / (p1_3.R() * p2_3.R());
+                const double cos_angle = p1_3.Dot(p2_3) / (p1_3.R() * p2_3.R());
                 cand.opening_angle = std::acos(cos_angle) * 180.0 / M_PI;
 
-                // Compute kinematic variables
-                cand.zh = p_rho0.E() / nu;
-                cand.lc = calculate_coherence_length(nu, Q2);
-                cand.t = calculate_t(virtual_photon, p_rho0);
+                cand.zh      = p_rho0.E() / nu;
+                cand.lc      = calculate_coherence_length(nu, Q2);
+                cand.t       = calculate_t(virtual_photon, p_rho0);
                 cand.minus_t = -cand.t;
 
-                // Compute vertex differences
                 cand.delta_vz_pip = e_vz - pip.vz();
                 cand.delta_vz_pim = e_vz - pim.vz();
 
-                // Apply cuts using target-specific and charge-specific ranges
                 cand.passes_delta_vz_pip = get_piplus_delta_vz_range().contains(cand.delta_vz_pip);
                 cand.passes_delta_vz_pim = get_piminus_delta_vz_range().contains(cand.delta_vz_pim);
                 cand.passes_zh = cand.zh > m_zh_min.get();
                 cand.passes_lc = cand.lc < m_lc_max.get();
-                cand.passes_t = (cand.minus_t > m_t_min.get()) && (cand.minus_t < m_t_max.get());
+                cand.passes_t  = (cand.minus_t > m_t_min.get()) && (cand.minus_t < m_t_max.get());
                 cand.passes_all_cuts =
                     (!m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip) &&
                     (!m_enable_delta_vz_pim_cut.get() || cand.passes_delta_vz_pim) &&
@@ -667,11 +659,8 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
                     (!m_enable_lc_cut.get() || cand.passes_lc) &&
                     (!m_enable_t_cut.get() || cand.passes_t);
 
-                candidates.push_back(std::move(cand));
-            }
-        }
-
-        return candidates;
+                return cand;
+            });
     }
 
     /**

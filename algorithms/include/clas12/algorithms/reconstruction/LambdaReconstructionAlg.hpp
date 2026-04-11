@@ -13,6 +13,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
+#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -167,259 +168,205 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        m_cutflow.pass("All Events");
+        using namespace clas12::framework;
 
-        // Get ALL protons and pions from event BEFORE any electron cuts
-        // This is for debugging - to see if we have Lambda signal at all
+        // Raw-mass baseline: pairs without any cut, for the
+        // `h_ppim_mass_nocuts` debug histogram. Walk the full
+        // Cartesian product via PairPipeline and tap the invariant-mass
+        // fill; no cutflow bump.
         const auto& all_protons = event.particles(clas12::PIDs::PROTON);
-        const auto& all_pions = event.particles(clas12::PIDs::PIMINUS);
-
-        // Fill raw mass distribution before ANY cuts (including electron)
-        for (const auto& proton : all_protons) {
-            for (const auto& pion : all_pions) {
-                double mass_raw = calculate_invariant_mass(proton, pion);
+        const auto& all_pions   = event.particles(clas12::PIDs::PIMINUS);
+        particle_pairs(all_protons, all_pions)
+            .tap([&](const clas12::Particle& proton, const clas12::Particle& pion) {
+                const double mass_raw = calculate_invariant_mass(proton, pion);
                 if (h_ppim_mass_nocuts) h_ppim_mass_nocuts->fill(mass_raw);
-            }
-        }
+            })
+            .run();
 
-        // Check for good DIS electron from upstream
-        auto electron_opt = clas12::framework::EventHelpers::get_dis_electron(event);
-        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Has Good DIS Electron");
-
-        // Get protons and pions from event
+        auto electron_opt = EventHelpers::get_dis_electron(event);
         const auto& protons = event.particles(clas12::PIDs::PROTON);
-        const auto& pions = event.particles(clas12::PIDs::PIMINUS);
+        const auto& pions   = event.particles(clas12::PIDs::PIMINUS);
 
-        if (protons.empty()) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
-        m_cutflow.pass("Has Proton");
+        // Per-particle per-leg cuts (FD, momentum, chi2pid) run first;
+        // the resulting collections feed a PairPipeline that applies
+        // the pair-level vertex/mass cuts and builds the candidate.
+        auto good_protons = electron_opt
+            ? particles(protons, m_cutflow)
+                .filter("Proton in FD",      [this](const clas12::Particle& p) {
+                    return !m_enable_proton_fd_cut.get() || is_forward_detector(p);
+                })
+                .filter("Proton Momentum",   [this](const clas12::Particle& p) {
+                    return !m_enable_proton_momentum_cut.get() || p.p() >= m_min_proton_p.get();
+                })
+                .filter("Proton chi2pid",    [this](const clas12::Particle& p) {
+                    return std::abs(p.chi2pid()) <= m_max_chi2pid.get();
+                })
+                .collect()
+            : std::vector<clas12::Particle>{};
 
-        if (pions.empty()) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
-        m_cutflow.pass("Has PiMinus");
+        auto good_pions = electron_opt
+            ? particles(pions, m_cutflow)
+                .filter("Pion in FD",        [this](const clas12::Particle& p) {
+                    return !m_enable_pion_fd_cut.get() || is_forward_detector(p);
+                })
+                .filter("Pion Momentum",     [this](const clas12::Particle& p) {
+                    return !m_enable_pion_momentum_cut.get() || p.p() >= m_min_pion_p.get();
+                })
+                .filter("Pion chi2pid",      [this](const clas12::Particle& p) {
+                    return std::abs(p.chi2pid()) <= m_max_chi2pid.get();
+                })
+                .collect()
+            : std::vector<clas12::Particle>{};
 
-        // Fill pre-selection histograms
-        if (h_n_protons) h_n_protons->fill(protons.size());
-        if (h_n_pions) h_n_pions->fill(pions.size());
-
-        // Get electron for coplanarity calculation (already retrieved above)
-        const clas12::Particle* electron = &(*electron_opt);
-
-        // Find Lambda candidates
-        std::vector<LambdaCandidate> candidates;
-        std::vector<LambdaCandidate> candidates_after_displaced;
-        std::vector<LambdaCandidate> candidates_after_copla;
-        bool passed_proton_fd = false;
-        bool passed_pion_fd = false;
-        bool passed_proton_p = false;
-        bool passed_pion_p = false;
-        bool passed_vertex_dz = false;
-        bool passed_mass = false;
-        bool passed_displaced_vz = false;
-        bool passed_coplanarity = false;
-
-        for (const auto& proton : protons) {
-            // Require proton in forward detector
-            if (m_enable_proton_fd_cut.get() && !is_forward_detector(proton)) continue;
-            passed_proton_fd = true;
-
-            if (m_enable_proton_momentum_cut.get() && proton.p() < m_min_proton_p.get()) continue;
-            passed_proton_p = true;
-
-            // Chi2pid cut for proton (good PID quality)
-            if (std::abs(proton.chi2pid()) > m_max_chi2pid.get()) continue;
-
-            for (const auto& pion : pions) {
-                // Require pion in forward detector
-                if (m_enable_pion_fd_cut.get() && !is_forward_detector(pion)) continue;
-                passed_pion_fd = true;
-
-                if (m_enable_pion_momentum_cut.get() && pion.p() < m_min_pion_p.get()) continue;
-                passed_pion_p = true;
-
-                // Chi2pid cut for pion (good PID quality)
-                if (std::abs(pion.chi2pid()) > m_max_chi2pid.get()) continue;
-
-                // Vertex z difference cut
-                double delta_vz = std::abs(proton.vz() - pion.vz());
-                if (h_delta_vz_precut) h_delta_vz_precut->fill(delta_vz);
-                if (m_enable_vertex_dz_cut.get() && delta_vz > m_max_delta_vz.get()) continue;
-                passed_vertex_dz = true;
-
-                // Calculate invariant mass
-                double mass = calculate_invariant_mass(proton, pion);
-
-                // Fill all combinations histogram (after FD and momentum cuts)
-                if (h_ppim_mass_all) h_ppim_mass_all->fill(mass);
-
-                // Check mass window
-                if (m_enable_mass_window_cut.get() && std::abs(mass - LAMBDA_MASS) > m_mass_window.get()) continue;
-                passed_mass = true;
-
-                // Build candidate with full kinematics
-                LambdaCandidate candidate;
-                candidate.proton = proton;
-                candidate.pion = pion;
-                candidate.mass = mass;
-                candidate.delta_vz = delta_vz;
-
-                // Calculate Lambda 4-momentum
-                double px = proton.px() + pion.px();
-                double py = proton.py() + pion.py();
-                double pz = proton.pz() + pion.pz();
-                candidate.momentum = std::sqrt(px * px + py * py + pz * pz);
-                candidate.theta = std::acos(pz / candidate.momentum);
-                candidate.phi = std::atan2(py, px);
-                candidate.vertex_z = (proton.vz() + pion.vz()) / 2.0;  // Decay vertex
-
-                // Opening angle between proton and pion
-                candidate.opening_angle = calculate_opening_angle(proton, pion);
-
-                // Displaced vertex calculation (Lambda decays downstream of primary vertex)
-                // Primary vertex is the electron vertex
-                if (electron) {
-                    candidate.primary_vz = electron->vz();
-                    candidate.displaced_vz = candidate.vertex_z - candidate.primary_vz;
-
-                    // Estimate decay length (approximate, using z displacement and Lambda angle)
-                    if (candidate.theta > 0.01) {  // Avoid division by zero
-                        candidate.decay_length = candidate.displaced_vz / std::cos(candidate.theta);
-                    }
-                }
-
-                // Fill displaced vertex histogram before cut
-                if (h_displaced_vz_precut && electron) h_displaced_vz_precut->fill(candidate.displaced_vz);
-
-                // Coplanarity with electron
-                if (electron) {
-                    candidate.coplanarity = calculate_coplanarity(*electron, candidate.phi);
-
-                    // Calculate missing mass M(e,e'Λ)X
-                    double E_beam = m_beam_energy.get();
-                    double E_e = electron->E();
-                    double E_lambda = std::sqrt(candidate.momentum * candidate.momentum + LAMBDA_MASS * LAMBDA_MASS);
-                    double px_miss = -electron->px() - px;
-                    double py_miss = -electron->py() - py;
-                    double pz_miss = E_beam - electron->pz() - pz;
-                    double E_miss = E_beam + clas12::Constants::PROTONMASS - E_e - E_lambda;
-                    double mm2 = E_miss * E_miss - px_miss * px_miss - py_miss * py_miss - pz_miss * pz_miss;
-                    candidate.missing_mass = (mm2 > 0) ? std::sqrt(mm2) : -std::sqrt(-mm2);
-                }
-
-                // Fill pre-coplanarity histograms
-                if (h_coplanarity_precut) h_coplanarity_precut->fill(candidate.coplanarity);
-                if (h_opening_angle) h_opening_angle->fill(candidate.opening_angle);
-
-                candidates.push_back(candidate);
-
-                // Apply displaced vertex cut (Lambda decays downstream)
-                // Require decay vertex to be downstream of primary vertex
-                if (m_enable_displaced_vertex_cut.get() && electron && m_min_displaced_vz.get() > -999) {
-                    if (candidate.displaced_vz < m_min_displaced_vz.get()) continue;
-                    if (m_max_displaced_vz.get() > 0 && candidate.displaced_vz > m_max_displaced_vz.get()) continue;
-                }
-                passed_displaced_vz = true;
-                candidates_after_displaced.push_back(candidate);
-
-                // Apply coplanarity cut
-                if (m_enable_coplanarity_cut.get() && m_max_coplanarity.get() > 0 && candidate.coplanarity > m_max_coplanarity.get()) continue;
-                passed_coplanarity = true;
-                candidates_after_copla.push_back(candidate);
-            }
+        // Pair pipeline: vertex-dz + mass-window + optional displaced-vz
+        // and coplanarity. The `.build<>` terminal constructs the full
+        // LambdaCandidate so downstream histograms / ntuple fills read
+        // directly off the built vector.
+        std::vector<LambdaCandidate> final_candidates;
+        if (electron_opt && !good_protons.empty() && !good_pions.empty()) {
+            const clas12::Particle* electron = &(*electron_opt);
+            final_candidates = particle_pairs(good_protons, good_pions, m_cutflow)
+                .filter("Vertex dz", [this](const clas12::Particle& proton, const clas12::Particle& pion) {
+                    const double delta_vz = std::abs(proton.vz() - pion.vz());
+                    if (h_delta_vz_precut) h_delta_vz_precut->fill(delta_vz);
+                    return !m_enable_vertex_dz_cut.get() || delta_vz <= m_max_delta_vz.get();
+                })
+                .tap([&](const clas12::Particle& proton, const clas12::Particle& pion) {
+                    if (h_ppim_mass_all) h_ppim_mass_all->fill(calculate_invariant_mass(proton, pion));
+                })
+                .filter("Lambda Mass Window", [this](const clas12::Particle& proton, const clas12::Particle& pion) {
+                    const double mass = calculate_invariant_mass(proton, pion);
+                    return !m_enable_mass_window_cut.get()
+                        || std::abs(mass - LAMBDA_MASS) <= m_mass_window.get();
+                })
+                .tap([this, electron](const clas12::Particle& proton, const clas12::Particle& pion) {
+                    // Pre-cut displaced/coplanarity diagnostics.
+                    LambdaCandidate c = build_lambda_candidate(proton, pion, electron);
+                    if (h_displaced_vz_precut) h_displaced_vz_precut->fill(c.displaced_vz);
+                    if (h_coplanarity_precut)  h_coplanarity_precut->fill(c.coplanarity);
+                    if (h_opening_angle)       h_opening_angle->fill(c.opening_angle);
+                })
+                .filter("Displaced Vertex", [this, electron](const clas12::Particle& proton, const clas12::Particle& pion) {
+                    if (!m_enable_displaced_vertex_cut.get() || m_min_displaced_vz.get() <= -999) return true;
+                    const double dvz = ((proton.vz() + pion.vz()) / 2.0) - electron->vz();
+                    if (dvz < m_min_displaced_vz.get()) return false;
+                    if (m_max_displaced_vz.get() > 0 && dvz > m_max_displaced_vz.get()) return false;
+                    return true;
+                })
+                .filter("Coplanarity", [this, electron](const clas12::Particle& proton, const clas12::Particle& pion) {
+                    if (!m_enable_coplanarity_cut.get() || m_max_coplanarity.get() <= 0) return true;
+                    LambdaCandidate c = build_lambda_candidate(proton, pion, electron);
+                    return c.coplanarity <= m_max_coplanarity.get();
+                })
+                .build([this, electron](const clas12::Particle& proton, const clas12::Particle& pion) {
+                    return build_lambda_candidate(proton, pion, electron);
+                });
         }
 
-        if (!passed_proton_fd) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Proton in FD");
-
-        if (!passed_pion_fd) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Pion in FD");
-
-        if (!passed_proton_p) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Proton Momentum");
-
-        if (!passed_pion_p) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Pion Momentum");
-
-        if (!passed_vertex_dz) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Vertex dz");
-
-        if (!passed_mass) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Lambda Mass Window");
-
-        if (m_enable_displaced_vertex_cut.get() && m_min_displaced_vz.get() > -999 && !passed_displaced_vz) return clas12::framework::StatusCode::FILTERED();
-        if (!m_enable_displaced_vertex_cut.get() || m_min_displaced_vz.get() > -999) m_cutflow.pass("Displaced Vertex");
-
-        if (m_enable_coplanarity_cut.get() && m_max_coplanarity.get() > 0 && !passed_coplanarity) return clas12::framework::StatusCode::FILTERED();
-        if (!m_enable_coplanarity_cut.get() || m_max_coplanarity.get() > 0) m_cutflow.pass("Coplanarity");
-
-        // Use candidates after all cuts
-        // Priority: coplanarity > displaced > mass window
-        std::vector<LambdaCandidate>* final_candidates_ptr = &candidates;
-        if (m_enable_displaced_vertex_cut.get() && m_min_displaced_vz.get() > -999) final_candidates_ptr = &candidates_after_displaced;
-        if (m_enable_coplanarity_cut.get() && m_max_coplanarity.get() > 0) final_candidates_ptr = &candidates_after_copla;
-        auto& final_candidates = *final_candidates_ptr;
-        if (final_candidates.empty()) return clas12::framework::StatusCode::FILTERED();
-
-        // Store results
-        event.set_decision_typed(clas12::framework::Decisions::HasLambda, true);
-
-        // Find best candidate (closest to Lambda mass)
+        // Best candidate (closest to Lambda PDG mass) - used for the
+        // typed publishes below. `have_best` drives the final filter.
         auto best_it = std::min_element(final_candidates.begin(), final_candidates.end(),
-                                        [](const LambdaCandidate& a, const LambdaCandidate& b) {
-                                            return std::abs(a.mass - LAMBDA_MASS) < std::abs(b.mass - LAMBDA_MASS);
-                                        });
+            [](const LambdaCandidate& a, const LambdaCandidate& b) {
+                return std::abs(a.mass - LAMBDA_MASS) < std::abs(b.mass - LAMBDA_MASS);
+            });
+        const bool have_best = best_it != final_candidates.end();
 
-        // Store best Lambda using typed keys
-        event.store_typed(clas12::framework::Keys::LambdaMass, best_it->mass);
-        event.store_typed(clas12::framework::Keys::LambdaMomentum, best_it->momentum);
-        event.store_typed(clas12::framework::Keys::LambdaTheta, best_it->theta);
-        event.store_typed(clas12::framework::Keys::LambdaCoplanarity, best_it->coplanarity);
-        event.store_typed(clas12::framework::Keys::LambdaMissingMass, best_it->missing_mass);
+        return pipeline(event, m_cutflow)
+            .count("All Events")
+            .filter("Has Good DIS Electron", electron_opt.has_value())
+            .filter("Has Proton",  !protons.empty())
+            .filter("Has PiMinus", !pions.empty())
+            .tap([&] {
+                if (h_n_protons) h_n_protons->fill(protons.size());
+                if (h_n_pions)   h_n_pions->fill(pions.size());
+            })
+            .filter("has lambda candidate", have_best)
+            .set_decision(Decisions::HasLambda, true)
+            .publish(Keys::LambdaMass,        have_best ? best_it->mass        : 0.0)
+            .publish(Keys::LambdaMomentum,    have_best ? best_it->momentum    : 0.0)
+            .publish(Keys::LambdaTheta,       have_best ? best_it->theta       : 0.0)
+            .publish(Keys::LambdaCoplanarity, have_best ? best_it->coplanarity : 0.0)
+            .publish(Keys::LambdaMissingMass, have_best ? best_it->missing_mass: 0.0)
+            .tap([&] {
+                for (const auto& cand : final_candidates) {
+                    if (h_ppim_mass_selected) h_ppim_mass_selected->fill(cand.mass);
+                    if (h_lambda_momentum)    h_lambda_momentum->fill(cand.momentum);
+                    if (h_lambda_theta)       h_lambda_theta->fill(cand.theta * clas12::Constants::RAD_TO_DEG);
+                    if (h_proton_momentum)    h_proton_momentum->fill(cand.proton.p());
+                    if (h_pion_momentum)      h_pion_momentum->fill(cand.pion.p());
+                    if (h_coplanarity)        h_coplanarity->fill(cand.coplanarity);
+                    if (h_delta_vz)           h_delta_vz->fill(cand.delta_vz);
+                    if (h_missing_mass)       h_missing_mass->fill(cand.missing_mass);
+                    if (h_displaced_vz)       h_displaced_vz->fill(cand.displaced_vz);
+                    if (h_decay_length)       h_decay_length->fill(cand.decay_length);
+                }
 
-        // Fill histograms for all candidates
-        for (const auto& cand : final_candidates) {
-            if (h_ppim_mass_selected) h_ppim_mass_selected->fill(cand.mass);
-            if (h_lambda_momentum) h_lambda_momentum->fill(cand.momentum);
-            if (h_lambda_theta) h_lambda_theta->fill(cand.theta * clas12::Constants::RAD_TO_DEG);
-            if (h_proton_momentum) h_proton_momentum->fill(cand.proton.p());
-            if (h_pion_momentum) h_pion_momentum->fill(cand.pion.p());
-            if (h_coplanarity) h_coplanarity->fill(cand.coplanarity);
-            if (h_delta_vz) h_delta_vz->fill(cand.delta_vz);
-            if (h_missing_mass) h_missing_mass->fill(cand.missing_mass);
-            if (h_displaced_vz) h_displaced_vz->fill(cand.displaced_vz);
-            if (h_decay_length) h_decay_length->fill(cand.decay_length);
-        }
+                if (m_ntuple.is_initialized()) {
+                    std::lock_guard<std::mutex> lock(m_ntuple_mutex);
+                    auto& nt = m_ntuple.data();
+                    nt.clear_vectors();
+                    if (electron_opt) {
+                        nt.e_p     = electron_opt->p();
+                        nt.e_theta = electron_opt->theta();
+                        nt.e_phi   = electron_opt->phi();
+                    }
+                    for (const auto& cand : final_candidates) {
+                        nt.lambda_mass.push_back(cand.mass);
+                        nt.lambda_p.push_back(cand.momentum);
+                        nt.lambda_theta.push_back(cand.theta);
+                        nt.proton_p.push_back(cand.proton.p());
+                        nt.pion_p.push_back(cand.pion.p());
+                        nt.coplanarity.push_back(cand.coplanarity);
+                        nt.missing_mass.push_back(cand.missing_mass);
+                        nt.delta_vz.push_back(cand.delta_vz);
+                    }
+                    m_ntuple.fill();
+                }
+            })
+            .status();
+    }
 
-        // Fill N-tuple
-        if (m_ntuple.is_initialized()) {
-            std::lock_guard<std::mutex> lock(m_ntuple_mutex);
-            auto& nt = m_ntuple.data();
-            nt.clear_vectors();
+    /// Compute a full LambdaCandidate from a (proton, pion) pair and the
+    /// optional electron vertex. Extracted from the old imperative loop
+    /// so PairPipeline's filter/build callbacks can share the same
+    /// kinematics calculation without duplicating the 25 lines of math.
+    auto build_lambda_candidate(const clas12::Particle& proton,
+                                const clas12::Particle& pion,
+                                const clas12::Particle* electron) const -> LambdaCandidate {
+        LambdaCandidate c;
+        c.proton    = proton;
+        c.pion      = pion;
+        c.mass      = calculate_invariant_mass(proton, pion);
+        c.delta_vz  = std::abs(proton.vz() - pion.vz());
 
-            if (electron) {
-                nt.e_p = electron->p();
-                nt.e_theta = electron->theta();
-                nt.e_phi = electron->phi();
+        const double px = proton.px() + pion.px();
+        const double py = proton.py() + pion.py();
+        const double pz = proton.pz() + pion.pz();
+        c.momentum  = std::sqrt(px*px + py*py + pz*pz);
+        c.theta     = std::acos(pz / c.momentum);
+        c.phi       = std::atan2(py, px);
+        c.vertex_z  = (proton.vz() + pion.vz()) / 2.0;
+        c.opening_angle = calculate_opening_angle(proton, pion);
+
+        if (electron) {
+            c.primary_vz   = electron->vz();
+            c.displaced_vz = c.vertex_z - c.primary_vz;
+            if (c.theta > 0.01) {
+                c.decay_length = c.displaced_vz / std::cos(c.theta);
             }
+            c.coplanarity = calculate_coplanarity(*electron, c.phi);
 
-            for (const auto& cand : final_candidates) {
-                nt.lambda_mass.push_back(cand.mass);
-                nt.lambda_p.push_back(cand.momentum);
-                nt.lambda_theta.push_back(cand.theta);
-                nt.proton_p.push_back(cand.proton.p());
-                nt.pion_p.push_back(cand.pion.p());
-                nt.coplanarity.push_back(cand.coplanarity);
-                nt.missing_mass.push_back(cand.missing_mass);
-                nt.delta_vz.push_back(cand.delta_vz);
-            }
-
-            m_ntuple.fill();
+            const double E_beam   = m_beam_energy.get();
+            const double E_e      = electron->E();
+            const double E_lambda = std::sqrt(c.momentum * c.momentum + LAMBDA_MASS * LAMBDA_MASS);
+            const double px_miss  = -electron->px() - px;
+            const double py_miss  = -electron->py() - py;
+            const double pz_miss  = E_beam - electron->pz() - pz;
+            const double E_miss   = E_beam + clas12::Constants::PROTONMASS - E_e - E_lambda;
+            const double mm2      = E_miss*E_miss - px_miss*px_miss - py_miss*py_miss - pz_miss*pz_miss;
+            c.missing_mass = (mm2 > 0) ? std::sqrt(mm2) : -std::sqrt(-mm2);
         }
-
-        return clas12::framework::StatusCode::SUCCESS();
+        return c;
     }
 
     auto on_finalize() -> clas12::framework::StatusCode override {
