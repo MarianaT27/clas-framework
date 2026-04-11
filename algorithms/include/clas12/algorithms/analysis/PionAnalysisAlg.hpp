@@ -20,6 +20,7 @@
 #include <clas12/Constants.hpp>
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
+#include <clas12/bankdefs/REC_Event.hpp>
 #include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/CandidateUtils.hpp>
@@ -98,19 +99,20 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
         double electron_vz = electron_opt->vz();
 
-        const auto& REC_Event = event.get_bank("REC::Event");
+        clas12::bankdefs::REC_Event rec_event;
+        rec_event.bind(event.get_bank("REC::Event"));
         const auto& REC_Particle = event.get_bank("REC::Particle");
         const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
         const auto& REC_Traj = event.get_bank("REC::Traj");
         const auto& REC_Track = event.get_bank("REC::Track");
         const auto& REC_Scintillator = event.get_bank("REC::Scintillator");
 
-        if (REC_Event.rows() == 0) {
+        if (rec_event.rows() == 0) {
             return clas12::framework::StatusCode::FILTERED();
         }
 
         // Get start time for timing calculations
-        double start_time = static_cast<double>(REC_Event.get<float>("startTime", 0));
+        const double start_time = static_cast<double>(rec_event.startTime(0));
 
         // Extract pions
         auto particles = m_particle->extract_particles(

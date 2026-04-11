@@ -4,6 +4,7 @@
 #include <clas12/Particle.hpp>
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
+#include <clas12/bankdefs/REC_Event.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -138,7 +139,8 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         m_cutflow.pass("All Events");
 
         // Get all needed banks using individual get_bank calls
-        const auto& REC_Event = event.get_bank("REC::Event");
+        clas12::bankdefs::REC_Event rec_event;
+        rec_event.bind(event.get_bank("REC::Event"));
         const auto& REC_Particle = event.get_bank("REC::Particle");
         const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
         const auto& REC_Cherenkov = event.get_bank("REC::Cherenkov");
@@ -147,9 +149,9 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         const auto& REC_Track = event.get_bank("REC::Track");
 
         // Early exit if no event data
-        if (REC_Event.rows() == 0) return clas12::framework::StatusCode::SUCCESS();
+        if (rec_event.rows() == 0) return clas12::framework::StatusCode::SUCCESS();
 
-        const double event_start_time = REC_Event.get<float>("startTime", 0);
+        const double event_start_time = rec_event.startTime(0);
 
         // Extract particles
         clas12::framework::ParticleMap particles = m_particle->extract_particles(REC_Particle, {clas12::PIDs::ELECTRON});

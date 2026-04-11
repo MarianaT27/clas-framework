@@ -16,6 +16,9 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/Particle.hpp>
+#include <clas12/bankdefs/AHDC_track.hpp>
+#include <clas12/bankdefs/ALERT_ai_projections.hpp>
+#include <clas12/bankdefs/ATOF_hits.hpp>
 #include <atomic>
 #include <cmath>
 #include <mutex>
@@ -119,18 +122,24 @@ public:
         const auto& elastic_electron = *electron_opt;
         double electron_phi = elastic_electron.phi();  // degrees
 
-        // Read the AHDC::track, ALERT::ai:projections and ATOF::hits banks
-        const auto& ahdc_track_bank = event.get_bank("AHDC::track");
-        const auto& alert_projections_bank = event.get_bank("ALERT::ai:projections");
-        const auto& atof_hits_bank = event.get_bank("ATOF::hits");
+        // Bind generated wrappers for AHDC::track, ALERT::ai:projections
+        // and ATOF::hits. bind() resolves every column handle once, so the
+        // per-row getters below go through pre-resolved handles with zero
+        // string lookups in the hot path.
+        clas12::bankdefs::AHDC_track ahdc_tracks;
+        clas12::bankdefs::ALERT_ai_projections alert_projections;
+        clas12::bankdefs::ATOF_hits atof_hits;
+        ahdc_tracks.bind(event.get_bank("AHDC::track"));
+        alert_projections.bind(event.get_bank("ALERT::ai:projections"));
+        atof_hits.bind(event.get_bank("ATOF::hits"));
 
         // Select good atof hits based on the m_atof_wedge_H2_data
         std::vector<int> good_atof_hit_indices;
-        for (int i = 0; i < atof_hits_bank.rows(); ++i) {
-            int sector = static_cast<int>(atof_hits_bank.get<int16_t>("sector", i));
-            int layer = static_cast<int>(atof_hits_bank.get<int16_t>("layer", i));
-            int component = static_cast<int>(atof_hits_bank.get<int16_t>("component", i));
-            double time = static_cast<double>(atof_hits_bank.get<float>("time", i));
+        for (int i = 0; i < atof_hits.rows(); ++i) {
+            const int sector = atof_hits.sector(i);
+            const int layer = atof_hits.layer(i);
+            const int component = atof_hits.component(i);
+            const double time = static_cast<double>(atof_hits.time(i));
             // Find matching H2 data
             auto it = std::find_if(m_atof_wedge_H2_data.begin(), m_atof_wedge_H2_data.end(),
                                    [sector, layer, component](const ATOFWedgeH2Data& data) {
@@ -148,9 +157,9 @@ public:
         std::vector<double> true_atof_hit_phis;
 
         for (int idx : good_atof_hit_indices) {
-            float hit_x = atof_hits_bank.get<float>("x", idx);
-            float hit_y = atof_hits_bank.get<float>("y", idx);
-            double atof_phi = std::atan2(hit_y, hit_x) * 180.0 / M_PI;
+            const float hit_x = atof_hits.x(idx);
+            const float hit_y = atof_hits.y(idx);
+            const double atof_phi = std::atan2(hit_y, hit_x) * 180.0 / M_PI;
 
             double delta_phi = std::fmod(electron_phi - atof_phi, 360.0);
             if (delta_phi < 0.0) delta_phi += 360.0;
@@ -166,22 +175,22 @@ public:
 
         // Read AHDC tracks
         std::vector<AHDCTrackData> good_tracks;
-        for (int i = 0; i < ahdc_track_bank.rows(); ++i) {
+        for (int i = 0; i < ahdc_tracks.rows(); ++i) {
             AHDCTrackData track;
-            track.trackid = ahdc_track_bank.get<int32_t>("trackid", i);
-            track.x = ahdc_track_bank.get<float>("x", i);
-            track.y = ahdc_track_bank.get<float>("y", i);
-            track.z = ahdc_track_bank.get<float>("z", i);
-            track.px = ahdc_track_bank.get<float>("px", i);
-            track.py = ahdc_track_bank.get<float>("py", i);
-            track.pz = ahdc_track_bank.get<float>("pz", i);
-            track.n_hits = ahdc_track_bank.get<int32_t>("n_hits", i);
-            track.sum_adc = ahdc_track_bank.get<int32_t>("sum_adc", i);
-            track.path = ahdc_track_bank.get<float>("path", i);
-            track.dEdx = ahdc_track_bank.get<float>("dEdx", i);
-            track.p_drift = ahdc_track_bank.get<float>("p_drift", i);
-            track.chi2 = ahdc_track_bank.get<float>("chi2", i);
-            track.sum_residuals = ahdc_track_bank.get<float>("sum_residuals", i);
+            track.trackid       = ahdc_tracks.trackid(i);
+            track.x             = ahdc_tracks.x(i);
+            track.y             = ahdc_tracks.y(i);
+            track.z             = ahdc_tracks.z(i);
+            track.px            = ahdc_tracks.px(i);
+            track.py            = ahdc_tracks.py(i);
+            track.pz            = ahdc_tracks.pz(i);
+            track.n_hits        = ahdc_tracks.n_hits(i);
+            track.sum_adc       = ahdc_tracks.sum_adc(i);
+            track.path          = ahdc_tracks.path(i);
+            track.dEdx          = ahdc_tracks.dEdx(i);
+            track.p_drift       = ahdc_tracks.p_drift(i);
+            track.chi2          = ahdc_tracks.chi2(i);
+            track.sum_residuals = ahdc_tracks.sum_residuals(i);
             good_tracks.push_back(track);
         }
 
@@ -254,9 +263,9 @@ public:
             }
 
             if (best_true_atof_hit_index >= 0) {
-                float hx = atof_hits_bank.get<float>("x", best_true_atof_hit_index);
-                float hy = atof_hits_bank.get<float>("y", best_true_atof_hit_index);
-                double best_atof_phi = std::atan2(hy, hx) * 180.0 / M_PI;
+                const float hx = atof_hits.x(best_true_atof_hit_index);
+                const float hy = atof_hits.y(best_true_atof_hit_index);
+                const double best_atof_phi = std::atan2(hy, hx) * 180.0 / M_PI;
                 double best_delta_phi = std::fmod(electron_phi - best_atof_phi, 360.0);
                 if (best_delta_phi < 0.0) best_delta_phi += 360.0;
                 if (h_atof_electron_delta_phi_best) h_atof_electron_delta_phi_best->fill(best_delta_phi);
@@ -271,10 +280,10 @@ public:
 
             // Find the ATOF hit associated with the matched track using ALERT::ai:projections
             int matched_atof_hit_id = -1;
-            for (int i = 0; i < alert_projections_bank.rows(); ++i) {
-                int proj_trackid = alert_projections_bank.get<int32_t>("trackid", i);
+            for (int i = 0; i < alert_projections.rows(); ++i) {
+                const int proj_trackid = alert_projections.trackid(i);
                 if (proj_trackid == matched_track->trackid) {
-                    matched_atof_hit_id = alert_projections_bank.get<int32_t>("matched_atof_hit_id", i) - m_ai_hit_id_offset;
+                    matched_atof_hit_id = alert_projections.matched_atof_hit_id(i) - m_ai_hit_id_offset;
                     break;
                 }
             }
@@ -285,16 +294,16 @@ public:
             if (best_true_atof_hit_index >= 0) {
                 ++m_n_true_sample;  // denominator: true track + true ATOF hit
 
-                if (matched_atof_hit_id >= 0 && matched_atof_hit_id < atof_hits_bank.rows()) {
+                if (matched_atof_hit_id >= 0 && matched_atof_hit_id < atof_hits.rows()) {
                     ++m_n_ai_has_match;
 
-                    int ai_sector = static_cast<int>(atof_hits_bank.get<int16_t>("sector", matched_atof_hit_id));
-                    int ai_layer = static_cast<int>(atof_hits_bank.get<int16_t>("layer", matched_atof_hit_id));
-                    int ai_component = static_cast<int>(atof_hits_bank.get<int16_t>("component", matched_atof_hit_id));
+                    const int ai_sector    = atof_hits.sector(matched_atof_hit_id);
+                    const int ai_layer     = atof_hits.layer(matched_atof_hit_id);
+                    const int ai_component = atof_hits.component(matched_atof_hit_id);
 
-                    int true_sector = static_cast<int>(atof_hits_bank.get<int16_t>("sector", best_true_atof_hit_index));
-                    int true_layer = static_cast<int>(atof_hits_bank.get<int16_t>("layer", best_true_atof_hit_index));
-                    int true_component = static_cast<int>(atof_hits_bank.get<int16_t>("component", best_true_atof_hit_index));
+                    const int true_sector    = atof_hits.sector(best_true_atof_hit_index);
+                    const int true_layer     = atof_hits.layer(best_true_atof_hit_index);
+                    const int true_component = atof_hits.component(best_true_atof_hit_index);
 
                     if (h_delta_component) h_delta_component->fill(ai_component - true_component);
                     if (h_delta_sector) h_delta_sector->fill(ai_sector - true_sector);
@@ -363,11 +372,11 @@ public:
                 // True ATOF hit info
                 m_nt_has_true_atof_hit = (best_true_atof_hit_index >= 0) ? 1 : 0;
                 if (best_true_atof_hit_index >= 0) {
-                    m_nt_true_sector    = static_cast<int>(atof_hits_bank.get<int16_t>("sector", best_true_atof_hit_index));
-                    m_nt_true_layer     = static_cast<int>(atof_hits_bank.get<int16_t>("layer", best_true_atof_hit_index));
-                    m_nt_true_component = static_cast<int>(atof_hits_bank.get<int16_t>("component", best_true_atof_hit_index));
-                    float hx = atof_hits_bank.get<float>("x", best_true_atof_hit_index);
-                    float hy = atof_hits_bank.get<float>("y", best_true_atof_hit_index);
+                    m_nt_true_sector    = atof_hits.sector(best_true_atof_hit_index);
+                    m_nt_true_layer     = atof_hits.layer(best_true_atof_hit_index);
+                    m_nt_true_component = atof_hits.component(best_true_atof_hit_index);
+                    const float hx = atof_hits.x(best_true_atof_hit_index);
+                    const float hy = atof_hits.y(best_true_atof_hit_index);
                     m_nt_true_atof_phi     = std::atan2(hy, hx) * 180.0 / M_PI;
                     m_nt_best_phi_distance = best_phi_distance;
                 } else {
@@ -380,19 +389,19 @@ public:
 
                 // AI ATOF hit info
                 int ai_hit_id = -1;
-                for (int i = 0; i < alert_projections_bank.rows(); ++i) {
-                    if (alert_projections_bank.get<int32_t>("trackid", i) == mt->trackid) {
-                        ai_hit_id = alert_projections_bank.get<int32_t>("matched_atof_hit_id", i) - m_ai_hit_id_offset;
+                for (int i = 0; i < alert_projections.rows(); ++i) {
+                    if (alert_projections.trackid(i) == mt->trackid) {
+                        ai_hit_id = alert_projections.matched_atof_hit_id(i) - m_ai_hit_id_offset;
                         break;
                     }
                 }
                 m_nt_matched_atof_hit_id = ai_hit_id;
-                m_nt_has_ai_match = (ai_hit_id >= 0 && ai_hit_id < atof_hits_bank.rows()) ? 1 : 0;
+                m_nt_has_ai_match = (ai_hit_id >= 0 && ai_hit_id < atof_hits.rows()) ? 1 : 0;
 
                 if (m_nt_has_ai_match) {
-                    m_nt_ai_sector    = static_cast<int>(atof_hits_bank.get<int16_t>("sector", ai_hit_id));
-                    m_nt_ai_layer     = static_cast<int>(atof_hits_bank.get<int16_t>("layer", ai_hit_id));
-                    m_nt_ai_component = static_cast<int>(atof_hits_bank.get<int16_t>("component", ai_hit_id));
+                    m_nt_ai_sector    = atof_hits.sector(ai_hit_id);
+                    m_nt_ai_layer     = atof_hits.layer(ai_hit_id);
+                    m_nt_ai_component = atof_hits.component(ai_hit_id);
                 } else {
                     m_nt_ai_sector    = -1;
                     m_nt_ai_layer     = -1;

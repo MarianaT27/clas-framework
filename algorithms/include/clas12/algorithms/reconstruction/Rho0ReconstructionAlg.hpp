@@ -18,6 +18,7 @@
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/Target.hpp>
+#include <clas12/bankdefs/RUN_config.hpp>
 #include <clas12/framework/core/CandidateUtils.hpp>
 #include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
@@ -290,9 +291,10 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
         m_cutflow.pass("All Events");
 
         // Track run number from RUN::config bank
-        auto& run_config = event.get_bank("RUN::config");
+        clas12::bankdefs::RUN_config run_config;
+        run_config.bind(event.get_bank("RUN::config"));
         if (run_config.rows() > 0) {
-            int run = run_config.get<int>("run", 0);
+            const int run = run_config.run(0);
             std::lock_guard<std::mutex> lock(m_runs_mutex);
             m_runs.insert(run);
         }
