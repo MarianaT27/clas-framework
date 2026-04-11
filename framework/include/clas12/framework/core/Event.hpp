@@ -432,11 +432,37 @@ class Event {
     auto rows_for_pindex(int pindex) -> PindexRowView<T> {
         auto& bound = bank<T>();  // ensures wrapper is bound and cached
         auto& slot = m_bank_cache[std::type_index(typeid(T))];
-        if (!slot.linker_built) {
-            slot.linker.build(bound.view(), bound.pindex_handle());
-            slot.linker_built = true;
+        if (!slot.pindex_linker_built) {
+            slot.pindex_linker.build(bound.view(), bound.pindex_handle());
+            slot.pindex_linker_built = true;
         }
-        return PindexRowView<T>{&bound, slot.linker.rows_for(pindex)};
+        return PindexRowView<T>{&bound, slot.pindex_linker.rows_for(pindex)};
+    }
+
+    /**
+     * @brief Return a lazy view of `T::Row` proxies whose `index` column
+     *        matches the given key.
+     *
+     * Symmetric to `rows_for_pindex<T>()` but keyed on `T::index_handle()`
+     * instead of `T::pindex_handle()`. Useful for sibling-row links such
+     * as FMT::Tracks -> REC::Track, where the `index` column holds a row
+     * index into another bank. The cache holds an independent linker
+     * slot per bank type so pindex and index lookups don't interfere.
+     *
+     * @tparam T Generated bank wrapper type exposing `Row`, `row(int)`
+     *           and `index_handle()`.
+     * @param key Row index of the target bank to look up.
+     * @return Lazy row-proxy view (empty if no matching rows).
+     */
+    template <typename T>
+    auto rows_for_index(int key) -> PindexRowView<T> {
+        auto& bound = bank<T>();
+        auto& slot = m_bank_cache[std::type_index(typeid(T))];
+        if (!slot.index_linker_built) {
+            slot.index_linker.build(bound.view(), bound.index_handle());
+            slot.index_linker_built = true;
+        }
+        return PindexRowView<T>{&bound, slot.index_linker.rows_for(key)};
     }
 
    private:
@@ -448,12 +474,18 @@ class Event {
     int m_file_index = -1;
     TypedEventStore m_typed_store;
 
-    /// Per-event cache of bound generated wrappers and their pindex linkers.
-    /// The key is a std::type_index(typeid(T)) for the wrapper class.
+    /// Per-event cache of bound generated wrappers and their reverse indexes.
+    /// The key is a std::type_index(typeid(T)) for the wrapper class. Two
+    /// independent linker slots are held: one keyed by `pindex_handle()`
+    /// (for the usual particle -> hit lookup) and one keyed by
+    /// `index_handle()` (for sibling-row links like FMT::Tracks.index ->
+    /// REC::Track row). Each is built lazily on first use.
     struct BankCacheEntry {
-        std::any wrapper;              ///< Holds a concrete T by value.
-        PindexLinker linker;           ///< Lazily built on first rows_for_pindex<T>.
-        bool linker_built = false;
+        std::any wrapper;                  ///< Holds a concrete T by value.
+        PindexLinker pindex_linker;        ///< Built on first rows_for_pindex<T>.
+        PindexLinker index_linker;         ///< Built on first rows_for_index<T>.
+        bool pindex_linker_built = false;
+        bool index_linker_built  = false;
     };
     std::unordered_map<std::type_index, BankCacheEntry> m_bank_cache;
 

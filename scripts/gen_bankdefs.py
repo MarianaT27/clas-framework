@@ -405,6 +405,10 @@ def has_pindex(bank_def: dict) -> bool:
     return any(e["name"] == "pindex" for e in bank_def["entries"])
 
 
+def has_index(bank_def: dict) -> bool:
+    return any(e["name"] == "index" for e in bank_def["entries"])
+
+
 def default_init(public_type: str) -> str:
     """POD field default: NaN for floats, zero for integers."""
     if public_type in ("float", "double"):
@@ -413,13 +417,22 @@ def default_init(public_type: str) -> str:
 
 
 def gen_row_struct_and_reader(bank_def: dict) -> list[str]:
-    """Emit a generic flat row struct + vector reader for a pindex-linked bank."""
+    """Emit a flat row struct + one or two vector readers for a linked bank.
+
+    Every bank exposing a ``pindex`` column gets a
+    ``read_<Bank>_rows(Event&, int pindex)`` helper keyed via the
+    framework's pindex linker. Banks that also expose an ``index`` column
+    additionally get ``read_<Bank>_rows_by_index(Event&, int key)`` keyed
+    via the framework's index linker - useful for sibling-row joins where
+    one bank stores row indices pointing at another.
+    """
     name = bank_def["name"]
     cls  = bank_to_class_name(name)
     cols = emit_column_info(bank_def["entries"])
 
     struct_name = f"{cls}Row"
-    fn_name     = f"read_{cls}_rows"
+    has_pin     = has_pindex(bank_def)
+    has_idx     = has_index(bank_def)
 
     lines: list[str] = []
     lines.append(f"// ---- {name} ".ljust(78, "-"))
@@ -430,20 +443,35 @@ def gen_row_struct_and_reader(bank_def: dict) -> list[str]:
     lines.append("    int row_index = -1;")
     lines.append("};")
     lines.append("")
-    lines.append(f"/// Read every `{name}` row linked to `pindex`.")
-    lines.append(f"inline auto {fn_name}(clas12::framework::Event& event, int pindex)")
-    lines.append(f"    -> std::vector<{struct_name}> {{")
-    lines.append(f"    std::vector<{struct_name}> result;")
-    lines.append(f"    for (auto r : event.rows_for_pindex<clas12::bankdefs::{cls}>(pindex)) {{")
-    lines.append(f"        {struct_name} s;")
-    for c in cols:
-        lines.append(f"        s.{c['cxx_name']} = r.{c['cxx_name']}();")
-    lines.append("        s.row_index = r.row_index();")
-    lines.append("        result.push_back(s);")
-    lines.append("    }")
-    lines.append("    return result;")
-    lines.append("}")
-    lines.append("")
+
+    def emit_reader(fn_suffix: str, key_name: str, rows_call: str, doc: str):
+        fn_name = f"read_{cls}_rows{fn_suffix}"
+        lines.append(f"/// {doc}")
+        lines.append(f"inline auto {fn_name}(clas12::framework::Event& event, int {key_name})")
+        lines.append(f"    -> std::vector<{struct_name}> {{")
+        lines.append(f"    std::vector<{struct_name}> result;")
+        lines.append(f"    for (auto r : event.{rows_call}<clas12::bankdefs::{cls}>({key_name})) {{")
+        lines.append(f"        {struct_name} s;")
+        for c in cols:
+            lines.append(f"        s.{c['cxx_name']} = r.{c['cxx_name']}();")
+        lines.append("        s.row_index = r.row_index();")
+        lines.append("        result.push_back(s);")
+        lines.append("    }")
+        lines.append("    return result;")
+        lines.append("}")
+        lines.append("")
+
+    if has_pin:
+        emit_reader("",
+                    "pindex",
+                    "rows_for_pindex",
+                    f"Read every `{name}` row whose pindex column equals `pindex`.")
+    if has_idx:
+        emit_reader("_by_index",
+                    "key",
+                    "rows_for_index",
+                    f"Read every `{name}` row whose index column equals `key`.")
+
     return lines
 
 
@@ -603,7 +631,7 @@ def gen_physics_view(bank_def: dict, cfg: dict, banks_by_name: dict) -> list[str
 
 def gen_generated_readers_header(all_bank_defs: list[dict], banks_by_name: dict) -> str:
     """Assemble the full text of clas12/bankdefs/generated_readers.hpp."""
-    pindex_banks = [b for b in all_bank_defs if has_pindex(b)]
+    linkable_banks = [b for b in all_bank_defs if has_pindex(b) or has_index(b)]
 
     lines: list[str] = []
     lines.append("// =============================================================================")
@@ -611,7 +639,10 @@ def gen_generated_readers_header(all_bank_defs: list[dict], banks_by_name: dict)
     lines.append("//")
     lines.append("// Contents:")
     lines.append("//   1. `clas12::bankdefs::<Bank>Row` + `read_<Bank>_rows(Event&, int pindex)`")
-    lines.append("//      for every bank that has a `pindex` column. Generic flat row + vector.")
+    lines.append("//      for every bank that has a `pindex` column, and additionally")
+    lines.append("//      `read_<Bank>_rows_by_index(Event&, int key)` for every bank that has")
+    lines.append("//      an `index` column (for sibling-row joins like FMT::Tracks.index ->")
+    lines.append("//      REC::Track row).")
     lines.append("//   2. `clas12::<View>Bank` + `read_<View>_bank(Event&, int pindex)` for each")
     lines.append("//      entry in PHYSICS_VIEWS - denormalized physics-view structs driven by")
     lines.append("//      the declarative strategy config (first_matching / best_by_priority /")
@@ -627,14 +658,16 @@ def gen_generated_readers_header(all_bank_defs: list[dict], banks_by_name: dict)
     lines.append("#include <clas12/Detectors.hpp>")
     lines.append("#include <clas12/framework/core/Event.hpp>")
     lines.append("")
-    # Include every pindex-linked wrapper header.
-    for b in pindex_banks:
+    # Include every linkable wrapper header (covers both pindex and index
+    # banks; sets make sure there are no duplicate #includes).
+    for b in linkable_banks:
         lines.append(f"#include <clas12/bankdefs/{bank_to_filename(b['name'])}>")
     # Include every sibling extras bank referenced by PHYSICS_VIEWS that isn't
-    # itself pindex-linked (e.g. REC::CaloExtras has no pindex column).
+    # itself in the linkable set (e.g. REC::CaloExtras has no pindex column).
+    linkable_names = {b["name"] for b in linkable_banks}
     extras_banks = {cfg["extras"] for cfg in PHYSICS_VIEWS.values() if "extras" in cfg}
     for extras in sorted(extras_banks):
-        if extras not in {b["name"] for b in pindex_banks}:
+        if extras not in linkable_names:
             if extras not in banks_by_name:
                 raise ValueError(f"PHYSICS_VIEWS references unknown extras bank {extras!r}")
             lines.append(f"#include <clas12/bankdefs/{bank_to_filename(extras)}>")
@@ -643,7 +676,7 @@ def gen_generated_readers_header(all_bank_defs: list[dict], banks_by_name: dict)
     # ---- generic row structs + readers (clas12::bankdefs) -------------------
     lines.append("namespace clas12::bankdefs {")
     lines.append("")
-    for b in pindex_banks:
+    for b in linkable_banks:
         lines.extend(gen_row_struct_and_reader(b))
     lines.append("}  // namespace clas12::bankdefs")
     lines.append("")
@@ -758,12 +791,15 @@ def main() -> int:
     readers_text = gen_generated_readers_header(all_bank_defs, banks_by_name)
     (out_dir / "generated_readers.hpp").write_text(readers_text)
     n_pindex = sum(1 for b in all_bank_defs if has_pindex(b))
+    n_index  = sum(1 for b in all_bank_defs if has_index(b))
+    n_linkable = sum(1 for b in all_bank_defs if has_pindex(b) or has_index(b))
 
     print(f"Generated {len(all_class_infos)} bank wrappers ({total_cols} columns, "
           f"{total_links} link columns)")
     print(f"  -> {out_dir}")
     print(f"  umbrella: analysis_banks.hpp covers {sum(1 for i in all_class_infos if i['bank_name'] in UMBRELLA_BANKS)} banks")
-    print(f"  generated_readers.hpp: {n_pindex} pindex banks + {len(PHYSICS_VIEWS)} physics views")
+    print(f"  generated_readers.hpp: {n_linkable} linkable banks "
+          f"({n_pindex} pindex, {n_index} index), {len(PHYSICS_VIEWS)} physics views")
     return 0
 
 

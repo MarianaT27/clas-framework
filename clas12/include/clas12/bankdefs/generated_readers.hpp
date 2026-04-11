@@ -3,7 +3,10 @@
 //
 // Contents:
 //   1. `clas12::bankdefs::<Bank>Row` + `read_<Bank>_rows(Event&, int pindex)`
-//      for every bank that has a `pindex` column. Generic flat row + vector.
+//      for every bank that has a `pindex` column, and additionally
+//      `read_<Bank>_rows_by_index(Event&, int key)` for every bank that has
+//      an `index` column (for sibling-row joins like FMT::Tracks.index ->
+//      REC::Track row).
 //   2. `clas12::<View>Bank` + `read_<View>_bank(Event&, int pindex)` for each
 //      entry in PHYSICS_VIEWS - denormalized physics-view structs driven by
 //      the declarative strategy config (first_matching / best_by_priority /
@@ -19,6 +22,8 @@
 #include <clas12/Detectors.hpp>
 #include <clas12/framework/core/Event.hpp>
 
+#include <clas12/bankdefs/CVTRec_KFTrajectory.hpp>
+#include <clas12/bankdefs/CVT_KFTrajectory.hpp>
 #include <clas12/bankdefs/RECHBAI_Calorimeter.hpp>
 #include <clas12/bankdefs/RECHBAI_Cherenkov.hpp>
 #include <clas12/bankdefs/RECHBAI_ForwardTagger.hpp>
@@ -57,8 +62,16 @@
 #include <clas12/bankdefs/REC_TrackCross.hpp>
 #include <clas12/bankdefs/REC_CovMat.hpp>
 #include <clas12/bankdefs/REC_Traj.hpp>
+#include <clas12/bankdefs/FMT_Clusters.hpp>
+#include <clas12/bankdefs/FMT_Crosses.hpp>
+#include <clas12/bankdefs/FMT_Tracks.hpp>
+#include <clas12/bankdefs/FMT_Trajectory.hpp>
+#include <clas12/bankdefs/MC_Lund.hpp>
 #include <clas12/bankdefs/MC_GenMatch.hpp>
 #include <clas12/bankdefs/MC_RecMatch.hpp>
+#include <clas12/bankdefs/MUVT_tracks.hpp>
+#include <clas12/bankdefs/MUVT_trajectory.hpp>
+#include <clas12/bankdefs/nn_dchits.hpp>
 #include <clas12/bankdefs/RICH_Response.hpp>
 #include <clas12/bankdefs/RICH_Hadron.hpp>
 #include <clas12/bankdefs/RICH_Photon.hpp>
@@ -71,6 +84,110 @@
 #include <clas12/bankdefs/REC_ScintExtras.hpp>
 
 namespace clas12::bankdefs {
+
+// ---- CVTRec::KFTrajectory -------------------------------------------------
+/// Flat POD row mirroring every column of `CVTRec::KFTrajectory`.
+struct CVTRec_KFTrajectoryRow {
+    int id = 0;
+    int detector = 0;
+    int layer = 0;
+    int index = 0;
+    float x = std::numeric_limits<float>::quiet_NaN();
+    float y = std::numeric_limits<float>::quiet_NaN();
+    float z = std::numeric_limits<float>::quiet_NaN();
+    float px = std::numeric_limits<float>::quiet_NaN();
+    float py = std::numeric_limits<float>::quiet_NaN();
+    float pz = std::numeric_limits<float>::quiet_NaN();
+    float path = std::numeric_limits<float>::quiet_NaN();
+    float dx = std::numeric_limits<float>::quiet_NaN();
+    float dE = std::numeric_limits<float>::quiet_NaN();
+    float trackRes = std::numeric_limits<float>::quiet_NaN();
+    float transportedRes = std::numeric_limits<float>::quiet_NaN();
+    float filteredRes = std::numeric_limits<float>::quiet_NaN();
+    float smoothedRes = std::numeric_limits<float>::quiet_NaN();
+    int row_index = -1;
+};
+
+/// Read every `CVTRec::KFTrajectory` row whose index column equals `key`.
+inline auto read_CVTRec_KFTrajectory_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<CVTRec_KFTrajectoryRow> {
+    std::vector<CVTRec_KFTrajectoryRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::CVTRec_KFTrajectory>(key)) {
+        CVTRec_KFTrajectoryRow s;
+        s.id = r.id();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.index = r.index();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.path = r.path();
+        s.dx = r.dx();
+        s.dE = r.dE();
+        s.trackRes = r.trackRes();
+        s.transportedRes = r.transportedRes();
+        s.filteredRes = r.filteredRes();
+        s.smoothedRes = r.smoothedRes();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+// ---- CVT::KFTrajectory ----------------------------------------------------
+/// Flat POD row mirroring every column of `CVT::KFTrajectory`.
+struct CVT_KFTrajectoryRow {
+    int id = 0;
+    int detector = 0;
+    int layer = 0;
+    int index = 0;
+    float x = std::numeric_limits<float>::quiet_NaN();
+    float y = std::numeric_limits<float>::quiet_NaN();
+    float z = std::numeric_limits<float>::quiet_NaN();
+    float px = std::numeric_limits<float>::quiet_NaN();
+    float py = std::numeric_limits<float>::quiet_NaN();
+    float pz = std::numeric_limits<float>::quiet_NaN();
+    float path = std::numeric_limits<float>::quiet_NaN();
+    float dx = std::numeric_limits<float>::quiet_NaN();
+    float dE = std::numeric_limits<float>::quiet_NaN();
+    float trackRes = std::numeric_limits<float>::quiet_NaN();
+    float transportedRes = std::numeric_limits<float>::quiet_NaN();
+    float filteredRes = std::numeric_limits<float>::quiet_NaN();
+    float smoothedRes = std::numeric_limits<float>::quiet_NaN();
+    int row_index = -1;
+};
+
+/// Read every `CVT::KFTrajectory` row whose index column equals `key`.
+inline auto read_CVT_KFTrajectory_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<CVT_KFTrajectoryRow> {
+    std::vector<CVT_KFTrajectoryRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::CVT_KFTrajectory>(key)) {
+        CVT_KFTrajectoryRow s;
+        s.id = r.id();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.index = r.index();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.path = r.path();
+        s.dx = r.dx();
+        s.dE = r.dE();
+        s.trackRes = r.trackRes();
+        s.transportedRes = r.transportedRes();
+        s.filteredRes = r.filteredRes();
+        s.smoothedRes = r.smoothedRes();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
 
 // ---- RECHBAI::Calorimeter -------------------------------------------------
 /// Flat POD row mirroring every column of `RECHBAI::Calorimeter`.
@@ -106,11 +223,51 @@ struct RECHBAI_CalorimeterRow {
     int row_index = -1;
 };
 
-/// Read every `RECHBAI::Calorimeter` row linked to `pindex`.
+/// Read every `RECHBAI::Calorimeter` row whose pindex column equals `pindex`.
 inline auto read_RECHBAI_Calorimeter_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHBAI_CalorimeterRow> {
     std::vector<RECHBAI_CalorimeterRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHBAI_Calorimeter>(pindex)) {
+        RECHBAI_CalorimeterRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.hx = r.hx();
+        s.hy = r.hy();
+        s.hz = r.hz();
+        s.lu = r.lu();
+        s.lv = r.lv();
+        s.lw = r.lw();
+        s.du = r.du();
+        s.dv = r.dv();
+        s.dw = r.dw();
+        s.m2u = r.m2u();
+        s.m2v = r.m2v();
+        s.m2w = r.m2w();
+        s.m3u = r.m3u();
+        s.m3v = r.m3v();
+        s.m3w = r.m3w();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHBAI::Calorimeter` row whose index column equals `key`.
+inline auto read_RECHBAI_Calorimeter_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHBAI_CalorimeterRow> {
+    std::vector<RECHBAI_CalorimeterRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHBAI_Calorimeter>(key)) {
         RECHBAI_CalorimeterRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -166,11 +323,37 @@ struct RECHBAI_CherenkovRow {
     int row_index = -1;
 };
 
-/// Read every `RECHBAI::Cherenkov` row linked to `pindex`.
+/// Read every `RECHBAI::Cherenkov` row whose pindex column equals `pindex`.
 inline auto read_RECHBAI_Cherenkov_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHBAI_CherenkovRow> {
     std::vector<RECHBAI_CherenkovRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHBAI_Cherenkov>(pindex)) {
+        RECHBAI_CherenkovRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.nphe = r.nphe();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.dtheta = r.dtheta();
+        s.dphi = r.dphi();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHBAI::Cherenkov` row whose index column equals `key`.
+inline auto read_RECHBAI_Cherenkov_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHBAI_CherenkovRow> {
+    std::vector<RECHBAI_CherenkovRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHBAI_Cherenkov>(key)) {
         RECHBAI_CherenkovRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -214,11 +397,39 @@ struct RECHBAI_ForwardTaggerRow {
     int row_index = -1;
 };
 
-/// Read every `RECHBAI::ForwardTagger` row linked to `pindex`.
+/// Read every `RECHBAI::ForwardTagger` row whose pindex column equals `pindex`.
 inline auto read_RECHBAI_ForwardTagger_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHBAI_ForwardTaggerRow> {
     std::vector<RECHBAI_ForwardTaggerRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHBAI_ForwardTagger>(pindex)) {
+        RECHBAI_ForwardTaggerRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.dx = r.dx();
+        s.dy = r.dy();
+        s.radius = r.radius();
+        s.size = r.size();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHBAI::ForwardTagger` row whose index column equals `key`.
+inline auto read_RECHBAI_ForwardTagger_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHBAI_ForwardTaggerRow> {
+    std::vector<RECHBAI_ForwardTaggerRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHBAI_ForwardTagger>(key)) {
         RECHBAI_ForwardTaggerRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -265,11 +476,40 @@ struct RECHBAI_ScintillatorRow {
     int row_index = -1;
 };
 
-/// Read every `RECHBAI::Scintillator` row linked to `pindex`.
+/// Read every `RECHBAI::Scintillator` row whose pindex column equals `pindex`.
 inline auto read_RECHBAI_Scintillator_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHBAI_ScintillatorRow> {
     std::vector<RECHBAI_ScintillatorRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHBAI_Scintillator>(pindex)) {
+        RECHBAI_ScintillatorRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.component = r.component();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.hx = r.hx();
+        s.hy = r.hy();
+        s.hz = r.hz();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHBAI::Scintillator` row whose index column equals `key`.
+inline auto read_RECHBAI_Scintillator_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHBAI_ScintillatorRow> {
+    std::vector<RECHBAI_ScintillatorRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHBAI_Scintillator>(key)) {
         RECHBAI_ScintillatorRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -308,11 +548,31 @@ struct RECHBAI_TrackRow {
     int row_index = -1;
 };
 
-/// Read every `RECHBAI::Track` row linked to `pindex`.
+/// Read every `RECHBAI::Track` row whose pindex column equals `pindex`.
 inline auto read_RECHBAI_Track_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHBAI_TrackRow> {
     std::vector<RECHBAI_TrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHBAI_Track>(pindex)) {
+        RECHBAI_TrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHBAI::Track` row whose index column equals `key`.
+inline auto read_RECHBAI_Track_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHBAI_TrackRow> {
+    std::vector<RECHBAI_TrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHBAI_Track>(key)) {
         RECHBAI_TrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -346,11 +606,35 @@ struct RECHBAI_TrackCrossRow {
     int row_index = -1;
 };
 
-/// Read every `RECHBAI::TrackCross` row linked to `pindex`.
+/// Read every `RECHBAI::TrackCross` row whose pindex column equals `pindex`.
 inline auto read_RECHBAI_TrackCross_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHBAI_TrackCrossRow> {
     std::vector<RECHBAI_TrackCrossRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHBAI_TrackCross>(pindex)) {
+        RECHBAI_TrackCrossRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.c_x = r.c_x();
+        s.c_y = r.c_y();
+        s.c_z = r.c_z();
+        s.c_ux = r.c_ux();
+        s.c_uy = r.c_uy();
+        s.c_uz = r.c_uz();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHBAI::TrackCross` row whose index column equals `key`.
+inline auto read_RECHBAI_TrackCross_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHBAI_TrackCrossRow> {
+    std::vector<RECHBAI_TrackCrossRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHBAI_TrackCross>(key)) {
         RECHBAI_TrackCrossRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -388,11 +672,35 @@ struct RECHBAI_TrajRow {
     int row_index = -1;
 };
 
-/// Read every `RECHBAI::Traj` row linked to `pindex`.
+/// Read every `RECHBAI::Traj` row whose pindex column equals `pindex`.
 inline auto read_RECHBAI_Traj_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHBAI_TrajRow> {
     std::vector<RECHBAI_TrajRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHBAI_Traj>(pindex)) {
+        RECHBAI_TrajRow s;
+        s.pindex = r.pindex();
+        s.index = r.index();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.cx = r.cx();
+        s.cy = r.cy();
+        s.cz = r.cz();
+        s.path = r.path();
+        s.edge = r.edge();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHBAI::Traj` row whose index column equals `key`.
+inline auto read_RECHBAI_Traj_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHBAI_TrajRow> {
+    std::vector<RECHBAI_TrajRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHBAI_Traj>(key)) {
         RECHBAI_TrajRow s;
         s.pindex = r.pindex();
         s.index = r.index();
@@ -446,11 +754,51 @@ struct RECAI_CalorimeterRow {
     int row_index = -1;
 };
 
-/// Read every `RECAI::Calorimeter` row linked to `pindex`.
+/// Read every `RECAI::Calorimeter` row whose pindex column equals `pindex`.
 inline auto read_RECAI_Calorimeter_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECAI_CalorimeterRow> {
     std::vector<RECAI_CalorimeterRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECAI_Calorimeter>(pindex)) {
+        RECAI_CalorimeterRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.hx = r.hx();
+        s.hy = r.hy();
+        s.hz = r.hz();
+        s.lu = r.lu();
+        s.lv = r.lv();
+        s.lw = r.lw();
+        s.du = r.du();
+        s.dv = r.dv();
+        s.dw = r.dw();
+        s.m2u = r.m2u();
+        s.m2v = r.m2v();
+        s.m2w = r.m2w();
+        s.m3u = r.m3u();
+        s.m3v = r.m3v();
+        s.m3w = r.m3w();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECAI::Calorimeter` row whose index column equals `key`.
+inline auto read_RECAI_Calorimeter_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECAI_CalorimeterRow> {
+    std::vector<RECAI_CalorimeterRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECAI_Calorimeter>(key)) {
         RECAI_CalorimeterRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -506,11 +854,37 @@ struct RECAI_CherenkovRow {
     int row_index = -1;
 };
 
-/// Read every `RECAI::Cherenkov` row linked to `pindex`.
+/// Read every `RECAI::Cherenkov` row whose pindex column equals `pindex`.
 inline auto read_RECAI_Cherenkov_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECAI_CherenkovRow> {
     std::vector<RECAI_CherenkovRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECAI_Cherenkov>(pindex)) {
+        RECAI_CherenkovRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.nphe = r.nphe();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.dtheta = r.dtheta();
+        s.dphi = r.dphi();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECAI::Cherenkov` row whose index column equals `key`.
+inline auto read_RECAI_Cherenkov_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECAI_CherenkovRow> {
+    std::vector<RECAI_CherenkovRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECAI_Cherenkov>(key)) {
         RECAI_CherenkovRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -554,11 +928,39 @@ struct RECAI_ForwardTaggerRow {
     int row_index = -1;
 };
 
-/// Read every `RECAI::ForwardTagger` row linked to `pindex`.
+/// Read every `RECAI::ForwardTagger` row whose pindex column equals `pindex`.
 inline auto read_RECAI_ForwardTagger_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECAI_ForwardTaggerRow> {
     std::vector<RECAI_ForwardTaggerRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECAI_ForwardTagger>(pindex)) {
+        RECAI_ForwardTaggerRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.dx = r.dx();
+        s.dy = r.dy();
+        s.radius = r.radius();
+        s.size = r.size();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECAI::ForwardTagger` row whose index column equals `key`.
+inline auto read_RECAI_ForwardTagger_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECAI_ForwardTaggerRow> {
+    std::vector<RECAI_ForwardTaggerRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECAI_ForwardTagger>(key)) {
         RECAI_ForwardTaggerRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -605,11 +1007,40 @@ struct RECAI_ScintillatorRow {
     int row_index = -1;
 };
 
-/// Read every `RECAI::Scintillator` row linked to `pindex`.
+/// Read every `RECAI::Scintillator` row whose pindex column equals `pindex`.
 inline auto read_RECAI_Scintillator_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECAI_ScintillatorRow> {
     std::vector<RECAI_ScintillatorRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECAI_Scintillator>(pindex)) {
+        RECAI_ScintillatorRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.component = r.component();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.hx = r.hx();
+        s.hy = r.hy();
+        s.hz = r.hz();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECAI::Scintillator` row whose index column equals `key`.
+inline auto read_RECAI_Scintillator_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECAI_ScintillatorRow> {
+    std::vector<RECAI_ScintillatorRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECAI_Scintillator>(key)) {
         RECAI_ScintillatorRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -648,11 +1079,31 @@ struct RECAI_TrackRow {
     int row_index = -1;
 };
 
-/// Read every `RECAI::Track` row linked to `pindex`.
+/// Read every `RECAI::Track` row whose pindex column equals `pindex`.
 inline auto read_RECAI_Track_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECAI_TrackRow> {
     std::vector<RECAI_TrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECAI_Track>(pindex)) {
+        RECAI_TrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECAI::Track` row whose index column equals `key`.
+inline auto read_RECAI_Track_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECAI_TrackRow> {
+    std::vector<RECAI_TrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECAI_Track>(key)) {
         RECAI_TrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -688,11 +1139,37 @@ struct RECAI_UTrackRow {
     int row_index = -1;
 };
 
-/// Read every `RECAI::UTrack` row linked to `pindex`.
+/// Read every `RECAI::UTrack` row whose pindex column equals `pindex`.
 inline auto read_RECAI_UTrack_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECAI_UTrackRow> {
     std::vector<RECAI_UTrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECAI_UTrack>(pindex)) {
+        RECAI_UTrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.vx = r.vx();
+        s.vy = r.vy();
+        s.vz = r.vz();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECAI::UTrack` row whose index column equals `key`.
+inline auto read_RECAI_UTrack_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECAI_UTrackRow> {
+    std::vector<RECAI_UTrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECAI_UTrack>(key)) {
         RECAI_UTrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -734,11 +1211,37 @@ struct RECHBAI_UTrackRow {
     int row_index = -1;
 };
 
-/// Read every `RECHBAI::UTrack` row linked to `pindex`.
+/// Read every `RECHBAI::UTrack` row whose pindex column equals `pindex`.
 inline auto read_RECHBAI_UTrack_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHBAI_UTrackRow> {
     std::vector<RECHBAI_UTrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHBAI_UTrack>(pindex)) {
+        RECHBAI_UTrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.vx = r.vx();
+        s.vy = r.vy();
+        s.vz = r.vz();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHBAI::UTrack` row whose index column equals `key`.
+inline auto read_RECHBAI_UTrack_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHBAI_UTrackRow> {
+    std::vector<RECHBAI_UTrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHBAI_UTrack>(key)) {
         RECHBAI_UTrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -780,11 +1283,37 @@ struct RECAI_FTrackRow {
     int row_index = -1;
 };
 
-/// Read every `RECAI::FTrack` row linked to `pindex`.
+/// Read every `RECAI::FTrack` row whose pindex column equals `pindex`.
 inline auto read_RECAI_FTrack_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECAI_FTrackRow> {
     std::vector<RECAI_FTrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECAI_FTrack>(pindex)) {
+        RECAI_FTrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.vx = r.vx();
+        s.vy = r.vy();
+        s.vz = r.vz();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECAI::FTrack` row whose index column equals `key`.
+inline auto read_RECAI_FTrack_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECAI_FTrackRow> {
+    std::vector<RECAI_FTrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECAI_FTrack>(key)) {
         RECAI_FTrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -826,11 +1355,37 @@ struct RECHBAI_FTrackRow {
     int row_index = -1;
 };
 
-/// Read every `RECHBAI::FTrack` row linked to `pindex`.
+/// Read every `RECHBAI::FTrack` row whose pindex column equals `pindex`.
 inline auto read_RECHBAI_FTrack_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHBAI_FTrackRow> {
     std::vector<RECHBAI_FTrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHBAI_FTrack>(pindex)) {
+        RECHBAI_FTrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.vx = r.vx();
+        s.vy = r.vy();
+        s.vz = r.vz();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHBAI::FTrack` row whose index column equals `key`.
+inline auto read_RECHBAI_FTrack_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHBAI_FTrackRow> {
+    std::vector<RECHBAI_FTrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHBAI_FTrack>(key)) {
         RECHBAI_FTrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -870,11 +1425,35 @@ struct RECAI_TrackCrossRow {
     int row_index = -1;
 };
 
-/// Read every `RECAI::TrackCross` row linked to `pindex`.
+/// Read every `RECAI::TrackCross` row whose pindex column equals `pindex`.
 inline auto read_RECAI_TrackCross_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECAI_TrackCrossRow> {
     std::vector<RECAI_TrackCrossRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECAI_TrackCross>(pindex)) {
+        RECAI_TrackCrossRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.c_x = r.c_x();
+        s.c_y = r.c_y();
+        s.c_z = r.c_z();
+        s.c_ux = r.c_ux();
+        s.c_uy = r.c_uy();
+        s.c_uz = r.c_uz();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECAI::TrackCross` row whose index column equals `key`.
+inline auto read_RECAI_TrackCross_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECAI_TrackCrossRow> {
+    std::vector<RECAI_TrackCrossRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECAI_TrackCross>(key)) {
         RECAI_TrackCrossRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -923,11 +1502,46 @@ struct RECAI_CovMatRow {
     int row_index = -1;
 };
 
-/// Read every `RECAI::CovMat` row linked to `pindex`.
+/// Read every `RECAI::CovMat` row whose pindex column equals `pindex`.
 inline auto read_RECAI_CovMat_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECAI_CovMatRow> {
     std::vector<RECAI_CovMatRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECAI_CovMat>(pindex)) {
+        RECAI_CovMatRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.C11 = r.C11();
+        s.C12 = r.C12();
+        s.C13 = r.C13();
+        s.C14 = r.C14();
+        s.C15 = r.C15();
+        s.C16 = r.C16();
+        s.C22 = r.C22();
+        s.C23 = r.C23();
+        s.C24 = r.C24();
+        s.C25 = r.C25();
+        s.C26 = r.C26();
+        s.C33 = r.C33();
+        s.C34 = r.C34();
+        s.C35 = r.C35();
+        s.C36 = r.C36();
+        s.C44 = r.C44();
+        s.C45 = r.C45();
+        s.C46 = r.C46();
+        s.C55 = r.C55();
+        s.C56 = r.C56();
+        s.C66 = r.C66();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECAI::CovMat` row whose index column equals `key`.
+inline auto read_RECAI_CovMat_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECAI_CovMatRow> {
+    std::vector<RECAI_CovMatRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECAI_CovMat>(key)) {
         RECAI_CovMatRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -976,11 +1590,35 @@ struct RECAI_TrajRow {
     int row_index = -1;
 };
 
-/// Read every `RECAI::Traj` row linked to `pindex`.
+/// Read every `RECAI::Traj` row whose pindex column equals `pindex`.
 inline auto read_RECAI_Traj_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECAI_TrajRow> {
     std::vector<RECAI_TrajRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECAI_Traj>(pindex)) {
+        RECAI_TrajRow s;
+        s.pindex = r.pindex();
+        s.index = r.index();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.cx = r.cx();
+        s.cy = r.cy();
+        s.cz = r.cz();
+        s.path = r.path();
+        s.edge = r.edge();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECAI::Traj` row whose index column equals `key`.
+inline auto read_RECAI_Traj_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECAI_TrajRow> {
+    std::vector<RECAI_TrajRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECAI_Traj>(key)) {
         RECAI_TrajRow s;
         s.pindex = r.pindex();
         s.index = r.index();
@@ -1034,11 +1672,51 @@ struct RECHB_CalorimeterRow {
     int row_index = -1;
 };
 
-/// Read every `RECHB::Calorimeter` row linked to `pindex`.
+/// Read every `RECHB::Calorimeter` row whose pindex column equals `pindex`.
 inline auto read_RECHB_Calorimeter_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHB_CalorimeterRow> {
     std::vector<RECHB_CalorimeterRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHB_Calorimeter>(pindex)) {
+        RECHB_CalorimeterRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.hx = r.hx();
+        s.hy = r.hy();
+        s.hz = r.hz();
+        s.lu = r.lu();
+        s.lv = r.lv();
+        s.lw = r.lw();
+        s.du = r.du();
+        s.dv = r.dv();
+        s.dw = r.dw();
+        s.m2u = r.m2u();
+        s.m2v = r.m2v();
+        s.m2w = r.m2w();
+        s.m3u = r.m3u();
+        s.m3v = r.m3v();
+        s.m3w = r.m3w();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHB::Calorimeter` row whose index column equals `key`.
+inline auto read_RECHB_Calorimeter_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHB_CalorimeterRow> {
+    std::vector<RECHB_CalorimeterRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHB_Calorimeter>(key)) {
         RECHB_CalorimeterRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1094,11 +1772,37 @@ struct RECHB_CherenkovRow {
     int row_index = -1;
 };
 
-/// Read every `RECHB::Cherenkov` row linked to `pindex`.
+/// Read every `RECHB::Cherenkov` row whose pindex column equals `pindex`.
 inline auto read_RECHB_Cherenkov_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHB_CherenkovRow> {
     std::vector<RECHB_CherenkovRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHB_Cherenkov>(pindex)) {
+        RECHB_CherenkovRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.nphe = r.nphe();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.dtheta = r.dtheta();
+        s.dphi = r.dphi();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHB::Cherenkov` row whose index column equals `key`.
+inline auto read_RECHB_Cherenkov_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHB_CherenkovRow> {
+    std::vector<RECHB_CherenkovRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHB_Cherenkov>(key)) {
         RECHB_CherenkovRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1142,11 +1846,39 @@ struct RECHB_ForwardTaggerRow {
     int row_index = -1;
 };
 
-/// Read every `RECHB::ForwardTagger` row linked to `pindex`.
+/// Read every `RECHB::ForwardTagger` row whose pindex column equals `pindex`.
 inline auto read_RECHB_ForwardTagger_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHB_ForwardTaggerRow> {
     std::vector<RECHB_ForwardTaggerRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHB_ForwardTagger>(pindex)) {
+        RECHB_ForwardTaggerRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.dx = r.dx();
+        s.dy = r.dy();
+        s.radius = r.radius();
+        s.size = r.size();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHB::ForwardTagger` row whose index column equals `key`.
+inline auto read_RECHB_ForwardTagger_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHB_ForwardTaggerRow> {
+    std::vector<RECHB_ForwardTaggerRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHB_ForwardTagger>(key)) {
         RECHB_ForwardTaggerRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1193,11 +1925,40 @@ struct RECHB_ScintillatorRow {
     int row_index = -1;
 };
 
-/// Read every `RECHB::Scintillator` row linked to `pindex`.
+/// Read every `RECHB::Scintillator` row whose pindex column equals `pindex`.
 inline auto read_RECHB_Scintillator_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHB_ScintillatorRow> {
     std::vector<RECHB_ScintillatorRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHB_Scintillator>(pindex)) {
+        RECHB_ScintillatorRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.component = r.component();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.hx = r.hx();
+        s.hy = r.hy();
+        s.hz = r.hz();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHB::Scintillator` row whose index column equals `key`.
+inline auto read_RECHB_Scintillator_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHB_ScintillatorRow> {
+    std::vector<RECHB_ScintillatorRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHB_Scintillator>(key)) {
         RECHB_ScintillatorRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1236,11 +1997,31 @@ struct RECHB_TrackRow {
     int row_index = -1;
 };
 
-/// Read every `RECHB::Track` row linked to `pindex`.
+/// Read every `RECHB::Track` row whose pindex column equals `pindex`.
 inline auto read_RECHB_Track_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHB_TrackRow> {
     std::vector<RECHB_TrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHB_Track>(pindex)) {
+        RECHB_TrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHB::Track` row whose index column equals `key`.
+inline auto read_RECHB_Track_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHB_TrackRow> {
+    std::vector<RECHB_TrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHB_Track>(key)) {
         RECHB_TrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1274,11 +2055,35 @@ struct RECHB_TrackCrossRow {
     int row_index = -1;
 };
 
-/// Read every `RECHB::TrackCross` row linked to `pindex`.
+/// Read every `RECHB::TrackCross` row whose pindex column equals `pindex`.
 inline auto read_RECHB_TrackCross_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHB_TrackCrossRow> {
     std::vector<RECHB_TrackCrossRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHB_TrackCross>(pindex)) {
+        RECHB_TrackCrossRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.c_x = r.c_x();
+        s.c_y = r.c_y();
+        s.c_z = r.c_z();
+        s.c_ux = r.c_ux();
+        s.c_uy = r.c_uy();
+        s.c_uz = r.c_uz();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHB::TrackCross` row whose index column equals `key`.
+inline auto read_RECHB_TrackCross_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHB_TrackCrossRow> {
+    std::vector<RECHB_TrackCrossRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHB_TrackCross>(key)) {
         RECHB_TrackCrossRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1316,11 +2121,35 @@ struct RECHB_TrajRow {
     int row_index = -1;
 };
 
-/// Read every `RECHB::Traj` row linked to `pindex`.
+/// Read every `RECHB::Traj` row whose pindex column equals `pindex`.
 inline auto read_RECHB_Traj_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHB_TrajRow> {
     std::vector<RECHB_TrajRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHB_Traj>(pindex)) {
+        RECHB_TrajRow s;
+        s.pindex = r.pindex();
+        s.index = r.index();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.cx = r.cx();
+        s.cy = r.cy();
+        s.cz = r.cz();
+        s.path = r.path();
+        s.edge = r.edge();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHB::Traj` row whose index column equals `key`.
+inline auto read_RECHB_Traj_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHB_TrajRow> {
+    std::vector<RECHB_TrajRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHB_Traj>(key)) {
         RECHB_TrajRow s;
         s.pindex = r.pindex();
         s.index = r.index();
@@ -1374,11 +2203,51 @@ struct REC_CalorimeterRow {
     int row_index = -1;
 };
 
-/// Read every `REC::Calorimeter` row linked to `pindex`.
+/// Read every `REC::Calorimeter` row whose pindex column equals `pindex`.
 inline auto read_REC_Calorimeter_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<REC_CalorimeterRow> {
     std::vector<REC_CalorimeterRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::REC_Calorimeter>(pindex)) {
+        REC_CalorimeterRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.hx = r.hx();
+        s.hy = r.hy();
+        s.hz = r.hz();
+        s.lu = r.lu();
+        s.lv = r.lv();
+        s.lw = r.lw();
+        s.du = r.du();
+        s.dv = r.dv();
+        s.dw = r.dw();
+        s.m2u = r.m2u();
+        s.m2v = r.m2v();
+        s.m2w = r.m2w();
+        s.m3u = r.m3u();
+        s.m3v = r.m3v();
+        s.m3w = r.m3w();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `REC::Calorimeter` row whose index column equals `key`.
+inline auto read_REC_Calorimeter_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<REC_CalorimeterRow> {
+    std::vector<REC_CalorimeterRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::REC_Calorimeter>(key)) {
         REC_CalorimeterRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1434,11 +2303,37 @@ struct REC_CherenkovRow {
     int row_index = -1;
 };
 
-/// Read every `REC::Cherenkov` row linked to `pindex`.
+/// Read every `REC::Cherenkov` row whose pindex column equals `pindex`.
 inline auto read_REC_Cherenkov_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<REC_CherenkovRow> {
     std::vector<REC_CherenkovRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::REC_Cherenkov>(pindex)) {
+        REC_CherenkovRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.nphe = r.nphe();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.dtheta = r.dtheta();
+        s.dphi = r.dphi();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `REC::Cherenkov` row whose index column equals `key`.
+inline auto read_REC_Cherenkov_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<REC_CherenkovRow> {
+    std::vector<REC_CherenkovRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::REC_Cherenkov>(key)) {
         REC_CherenkovRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1482,11 +2377,39 @@ struct REC_ForwardTaggerRow {
     int row_index = -1;
 };
 
-/// Read every `REC::ForwardTagger` row linked to `pindex`.
+/// Read every `REC::ForwardTagger` row whose pindex column equals `pindex`.
 inline auto read_REC_ForwardTagger_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<REC_ForwardTaggerRow> {
     std::vector<REC_ForwardTaggerRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::REC_ForwardTagger>(pindex)) {
+        REC_ForwardTaggerRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.dx = r.dx();
+        s.dy = r.dy();
+        s.radius = r.radius();
+        s.size = r.size();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `REC::ForwardTagger` row whose index column equals `key`.
+inline auto read_REC_ForwardTagger_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<REC_ForwardTaggerRow> {
+    std::vector<REC_ForwardTaggerRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::REC_ForwardTagger>(key)) {
         REC_ForwardTaggerRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1533,11 +2456,40 @@ struct REC_ScintillatorRow {
     int row_index = -1;
 };
 
-/// Read every `REC::Scintillator` row linked to `pindex`.
+/// Read every `REC::Scintillator` row whose pindex column equals `pindex`.
 inline auto read_REC_Scintillator_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<REC_ScintillatorRow> {
     std::vector<REC_ScintillatorRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::REC_Scintillator>(pindex)) {
+        REC_ScintillatorRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.component = r.component();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.hx = r.hx();
+        s.hy = r.hy();
+        s.hz = r.hz();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `REC::Scintillator` row whose index column equals `key`.
+inline auto read_REC_Scintillator_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<REC_ScintillatorRow> {
+    std::vector<REC_ScintillatorRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::REC_Scintillator>(key)) {
         REC_ScintillatorRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1577,11 +2529,32 @@ struct REC_TrackRow {
     int row_index = -1;
 };
 
-/// Read every `REC::Track` row linked to `pindex`.
+/// Read every `REC::Track` row whose pindex column equals `pindex`.
 inline auto read_REC_Track_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<REC_TrackRow> {
     std::vector<REC_TrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::REC_Track>(pindex)) {
+        REC_TrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.hbindex = r.hbindex();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `REC::Track` row whose index column equals `key`.
+inline auto read_REC_Track_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<REC_TrackRow> {
+    std::vector<REC_TrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::REC_Track>(key)) {
         REC_TrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1619,11 +2592,38 @@ struct REC_UTrackRow {
     int row_index = -1;
 };
 
-/// Read every `REC::UTrack` row linked to `pindex`.
+/// Read every `REC::UTrack` row whose pindex column equals `pindex`.
 inline auto read_REC_UTrack_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<REC_UTrackRow> {
     std::vector<REC_UTrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::REC_UTrack>(pindex)) {
+        REC_UTrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.hbindex = r.hbindex();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.vx = r.vx();
+        s.vy = r.vy();
+        s.vz = r.vz();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `REC::UTrack` row whose index column equals `key`.
+inline auto read_REC_UTrack_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<REC_UTrackRow> {
+    std::vector<REC_UTrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::REC_UTrack>(key)) {
         REC_UTrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1667,11 +2667,38 @@ struct RECHB_UTrackRow {
     int row_index = -1;
 };
 
-/// Read every `RECHB::UTrack` row linked to `pindex`.
+/// Read every `RECHB::UTrack` row whose pindex column equals `pindex`.
 inline auto read_RECHB_UTrack_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHB_UTrackRow> {
     std::vector<RECHB_UTrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHB_UTrack>(pindex)) {
+        RECHB_UTrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.hbindex = r.hbindex();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.vx = r.vx();
+        s.vy = r.vy();
+        s.vz = r.vz();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHB::UTrack` row whose index column equals `key`.
+inline auto read_RECHB_UTrack_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHB_UTrackRow> {
+    std::vector<RECHB_UTrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHB_UTrack>(key)) {
         RECHB_UTrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1715,11 +2742,38 @@ struct REC_FTrackRow {
     int row_index = -1;
 };
 
-/// Read every `REC::FTrack` row linked to `pindex`.
+/// Read every `REC::FTrack` row whose pindex column equals `pindex`.
 inline auto read_REC_FTrack_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<REC_FTrackRow> {
     std::vector<REC_FTrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::REC_FTrack>(pindex)) {
+        REC_FTrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.hbindex = r.hbindex();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.vx = r.vx();
+        s.vy = r.vy();
+        s.vz = r.vz();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `REC::FTrack` row whose index column equals `key`.
+inline auto read_REC_FTrack_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<REC_FTrackRow> {
+    std::vector<REC_FTrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::REC_FTrack>(key)) {
         REC_FTrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1763,11 +2817,38 @@ struct RECHB_FTrackRow {
     int row_index = -1;
 };
 
-/// Read every `RECHB::FTrack` row linked to `pindex`.
+/// Read every `RECHB::FTrack` row whose pindex column equals `pindex`.
 inline auto read_RECHB_FTrack_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RECHB_FTrackRow> {
     std::vector<RECHB_FTrackRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RECHB_FTrack>(pindex)) {
+        RECHB_FTrackRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.status = r.status();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.hbindex = r.hbindex();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.vx = r.vx();
+        s.vy = r.vy();
+        s.vz = r.vz();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RECHB::FTrack` row whose index column equals `key`.
+inline auto read_RECHB_FTrack_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RECHB_FTrackRow> {
+    std::vector<RECHB_FTrackRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RECHB_FTrack>(key)) {
         RECHB_FTrackRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1808,11 +2889,35 @@ struct REC_TrackCrossRow {
     int row_index = -1;
 };
 
-/// Read every `REC::TrackCross` row linked to `pindex`.
+/// Read every `REC::TrackCross` row whose pindex column equals `pindex`.
 inline auto read_REC_TrackCross_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<REC_TrackCrossRow> {
     std::vector<REC_TrackCrossRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::REC_TrackCross>(pindex)) {
+        REC_TrackCrossRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.c_x = r.c_x();
+        s.c_y = r.c_y();
+        s.c_z = r.c_z();
+        s.c_ux = r.c_ux();
+        s.c_uy = r.c_uy();
+        s.c_uz = r.c_uz();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `REC::TrackCross` row whose index column equals `key`.
+inline auto read_REC_TrackCross_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<REC_TrackCrossRow> {
+    std::vector<REC_TrackCrossRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::REC_TrackCross>(key)) {
         REC_TrackCrossRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1861,11 +2966,46 @@ struct REC_CovMatRow {
     int row_index = -1;
 };
 
-/// Read every `REC::CovMat` row linked to `pindex`.
+/// Read every `REC::CovMat` row whose pindex column equals `pindex`.
 inline auto read_REC_CovMat_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<REC_CovMatRow> {
     std::vector<REC_CovMatRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::REC_CovMat>(pindex)) {
+        REC_CovMatRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.C11 = r.C11();
+        s.C12 = r.C12();
+        s.C13 = r.C13();
+        s.C14 = r.C14();
+        s.C15 = r.C15();
+        s.C16 = r.C16();
+        s.C22 = r.C22();
+        s.C23 = r.C23();
+        s.C24 = r.C24();
+        s.C25 = r.C25();
+        s.C26 = r.C26();
+        s.C33 = r.C33();
+        s.C34 = r.C34();
+        s.C35 = r.C35();
+        s.C36 = r.C36();
+        s.C44 = r.C44();
+        s.C45 = r.C45();
+        s.C46 = r.C46();
+        s.C55 = r.C55();
+        s.C56 = r.C56();
+        s.C66 = r.C66();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `REC::CovMat` row whose index column equals `key`.
+inline auto read_REC_CovMat_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<REC_CovMatRow> {
+    std::vector<REC_CovMatRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::REC_CovMat>(key)) {
         REC_CovMatRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -1914,7 +3054,7 @@ struct REC_TrajRow {
     int row_index = -1;
 };
 
-/// Read every `REC::Traj` row linked to `pindex`.
+/// Read every `REC::Traj` row whose pindex column equals `pindex`.
 inline auto read_REC_Traj_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<REC_TrajRow> {
     std::vector<REC_TrajRow> result;
@@ -1938,6 +3078,260 @@ inline auto read_REC_Traj_rows(clas12::framework::Event& event, int pindex)
     return result;
 }
 
+/// Read every `REC::Traj` row whose index column equals `key`.
+inline auto read_REC_Traj_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<REC_TrajRow> {
+    std::vector<REC_TrajRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::REC_Traj>(key)) {
+        REC_TrajRow s;
+        s.pindex = r.pindex();
+        s.index = r.index();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.cx = r.cx();
+        s.cy = r.cy();
+        s.cz = r.cz();
+        s.path = r.path();
+        s.edge = r.edge();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+// ---- FMT::Clusters --------------------------------------------------------
+/// Flat POD row mirroring every column of `FMT::Clusters`.
+struct FMT_ClustersRow {
+    int index = 0;
+    int sector = 0;
+    int layer = 0;
+    int size = 0;
+    float centroid = std::numeric_limits<float>::quiet_NaN();
+    float centroidError = std::numeric_limits<float>::quiet_NaN();
+    float residual = std::numeric_limits<float>::quiet_NaN();
+    float doca = std::numeric_limits<float>::quiet_NaN();
+    float energy = std::numeric_limits<float>::quiet_NaN();
+    float time = std::numeric_limits<float>::quiet_NaN();
+    int seedStrip = 0;
+    int seedIndex = 0;
+    int trackIndex = 0;
+    int row_index = -1;
+};
+
+/// Read every `FMT::Clusters` row whose index column equals `key`.
+inline auto read_FMT_Clusters_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<FMT_ClustersRow> {
+    std::vector<FMT_ClustersRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::FMT_Clusters>(key)) {
+        FMT_ClustersRow s;
+        s.index = r.index();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.size = r.size();
+        s.centroid = r.centroid();
+        s.centroidError = r.centroidError();
+        s.residual = r.residual();
+        s.doca = r.doca();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.seedStrip = r.seedStrip();
+        s.seedIndex = r.seedIndex();
+        s.trackIndex = r.trackIndex();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+// ---- FMT::Crosses ---------------------------------------------------------
+/// Flat POD row mirroring every column of `FMT::Crosses`.
+struct FMT_CrossesRow {
+    int index = 0;
+    int sector = 0;
+    int region = 0;
+    float x = std::numeric_limits<float>::quiet_NaN();
+    float y = std::numeric_limits<float>::quiet_NaN();
+    float z = std::numeric_limits<float>::quiet_NaN();
+    float err_x = std::numeric_limits<float>::quiet_NaN();
+    float err_y = std::numeric_limits<float>::quiet_NaN();
+    float err_z = std::numeric_limits<float>::quiet_NaN();
+    float ux = std::numeric_limits<float>::quiet_NaN();
+    float uy = std::numeric_limits<float>::quiet_NaN();
+    float uz = std::numeric_limits<float>::quiet_NaN();
+    int cluster1Index = 0;
+    int cluster2Index = 0;
+    int trkID = 0;
+    int row_index = -1;
+};
+
+/// Read every `FMT::Crosses` row whose index column equals `key`.
+inline auto read_FMT_Crosses_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<FMT_CrossesRow> {
+    std::vector<FMT_CrossesRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::FMT_Crosses>(key)) {
+        FMT_CrossesRow s;
+        s.index = r.index();
+        s.sector = r.sector();
+        s.region = r.region();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.err_x = r.err_x();
+        s.err_y = r.err_y();
+        s.err_z = r.err_z();
+        s.ux = r.ux();
+        s.uy = r.uy();
+        s.uz = r.uz();
+        s.cluster1Index = r.cluster1Index();
+        s.cluster2Index = r.cluster2Index();
+        s.trkID = r.trkID();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+// ---- FMT::Tracks ----------------------------------------------------------
+/// Flat POD row mirroring every column of `FMT::Tracks`.
+struct FMT_TracksRow {
+    int index = 0;
+    int status = 0;
+    int sector = 0;
+    float Vtx0_x = std::numeric_limits<float>::quiet_NaN();
+    float Vtx0_y = std::numeric_limits<float>::quiet_NaN();
+    float Vtx0_z = std::numeric_limits<float>::quiet_NaN();
+    float p0_x = std::numeric_limits<float>::quiet_NaN();
+    float p0_y = std::numeric_limits<float>::quiet_NaN();
+    float p0_z = std::numeric_limits<float>::quiet_NaN();
+    int q = 0;
+    float chi2 = std::numeric_limits<float>::quiet_NaN();
+    int NDF = 0;
+    int row_index = -1;
+};
+
+/// Read every `FMT::Tracks` row whose index column equals `key`.
+inline auto read_FMT_Tracks_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<FMT_TracksRow> {
+    std::vector<FMT_TracksRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::FMT_Tracks>(key)) {
+        FMT_TracksRow s;
+        s.index = r.index();
+        s.status = r.status();
+        s.sector = r.sector();
+        s.Vtx0_x = r.Vtx0_x();
+        s.Vtx0_y = r.Vtx0_y();
+        s.Vtx0_z = r.Vtx0_z();
+        s.p0_x = r.p0_x();
+        s.p0_y = r.p0_y();
+        s.p0_z = r.p0_z();
+        s.q = r.q();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+// ---- FMT::Trajectory ------------------------------------------------------
+/// Flat POD row mirroring every column of `FMT::Trajectory`.
+struct FMT_TrajectoryRow {
+    int index = 0;
+    int detector = 0;
+    int layer = 0;
+    float x = std::numeric_limits<float>::quiet_NaN();
+    float y = std::numeric_limits<float>::quiet_NaN();
+    float z = std::numeric_limits<float>::quiet_NaN();
+    float tx = std::numeric_limits<float>::quiet_NaN();
+    float ty = std::numeric_limits<float>::quiet_NaN();
+    float tz = std::numeric_limits<float>::quiet_NaN();
+    float lx = std::numeric_limits<float>::quiet_NaN();
+    float ly = std::numeric_limits<float>::quiet_NaN();
+    float lz = std::numeric_limits<float>::quiet_NaN();
+    float dx = std::numeric_limits<float>::quiet_NaN();
+    float dy = std::numeric_limits<float>::quiet_NaN();
+    float dz = std::numeric_limits<float>::quiet_NaN();
+    float path = std::numeric_limits<float>::quiet_NaN();
+    int row_index = -1;
+};
+
+/// Read every `FMT::Trajectory` row whose index column equals `key`.
+inline auto read_FMT_Trajectory_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<FMT_TrajectoryRow> {
+    std::vector<FMT_TrajectoryRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::FMT_Trajectory>(key)) {
+        FMT_TrajectoryRow s;
+        s.index = r.index();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.tx = r.tx();
+        s.ty = r.ty();
+        s.tz = r.tz();
+        s.lx = r.lx();
+        s.ly = r.ly();
+        s.lz = r.lz();
+        s.dx = r.dx();
+        s.dy = r.dy();
+        s.dz = r.dz();
+        s.path = r.path();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+// ---- MC::Lund -------------------------------------------------------------
+/// Flat POD row mirroring every column of `MC::Lund`.
+struct MC_LundRow {
+    int index = 0;
+    float lifetime = std::numeric_limits<float>::quiet_NaN();
+    int type = 0;
+    int pid = 0;
+    int parent = 0;
+    int daughter = 0;
+    float px = std::numeric_limits<float>::quiet_NaN();
+    float py = std::numeric_limits<float>::quiet_NaN();
+    float pz = std::numeric_limits<float>::quiet_NaN();
+    float energy = std::numeric_limits<float>::quiet_NaN();
+    float mass = std::numeric_limits<float>::quiet_NaN();
+    float vx = std::numeric_limits<float>::quiet_NaN();
+    float vy = std::numeric_limits<float>::quiet_NaN();
+    float vz = std::numeric_limits<float>::quiet_NaN();
+    int row_index = -1;
+};
+
+/// Read every `MC::Lund` row whose index column equals `key`.
+inline auto read_MC_Lund_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<MC_LundRow> {
+    std::vector<MC_LundRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::MC_Lund>(key)) {
+        MC_LundRow s;
+        s.index = r.index();
+        s.lifetime = r.lifetime();
+        s.type = r.type();
+        s.pid = r.pid();
+        s.parent = r.parent();
+        s.daughter = r.daughter();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.energy = r.energy();
+        s.mass = r.mass();
+        s.vx = r.vx();
+        s.vy = r.vy();
+        s.vz = r.vz();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
 // ---- MC::GenMatch ---------------------------------------------------------
 /// Flat POD row mirroring every column of `MC::GenMatch`.
 struct MC_GenMatchRow {
@@ -1951,7 +3345,7 @@ struct MC_GenMatchRow {
     int row_index = -1;
 };
 
-/// Read every `MC::GenMatch` row linked to `pindex`.
+/// Read every `MC::GenMatch` row whose pindex column equals `pindex`.
 inline auto read_MC_GenMatch_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<MC_GenMatchRow> {
     std::vector<MC_GenMatchRow> result;
@@ -1983,7 +3377,7 @@ struct MC_RecMatchRow {
     int row_index = -1;
 };
 
-/// Read every `MC::RecMatch` row linked to `pindex`.
+/// Read every `MC::RecMatch` row whose pindex column equals `pindex`.
 inline auto read_MC_RecMatch_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<MC_RecMatchRow> {
     std::vector<MC_RecMatchRow> result;
@@ -1996,6 +3390,120 @@ inline auto read_MC_RecMatch_rows(clas12::framework::Event& event, int pindex)
         s.mclayer1 = r.mclayer1();
         s.mclayer2 = r.mclayer2();
         s.quality = r.quality();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+// ---- MUVT::tracks ---------------------------------------------------------
+/// Flat POD row mirroring every column of `MUVT::tracks`.
+struct MUVT_tracksRow {
+    int index = 0;
+    int status = 0;
+    int sector = 0;
+    float vx = std::numeric_limits<float>::quiet_NaN();
+    float vy = std::numeric_limits<float>::quiet_NaN();
+    float vz = std::numeric_limits<float>::quiet_NaN();
+    float px = std::numeric_limits<float>::quiet_NaN();
+    float py = std::numeric_limits<float>::quiet_NaN();
+    float pz = std::numeric_limits<float>::quiet_NaN();
+    int charge = 0;
+    float chi2 = std::numeric_limits<float>::quiet_NaN();
+    int NDF = 0;
+    int row_index = -1;
+};
+
+/// Read every `MUVT::tracks` row whose index column equals `key`.
+inline auto read_MUVT_tracks_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<MUVT_tracksRow> {
+    std::vector<MUVT_tracksRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::MUVT_tracks>(key)) {
+        MUVT_tracksRow s;
+        s.index = r.index();
+        s.status = r.status();
+        s.sector = r.sector();
+        s.vx = r.vx();
+        s.vy = r.vy();
+        s.vz = r.vz();
+        s.px = r.px();
+        s.py = r.py();
+        s.pz = r.pz();
+        s.charge = r.charge();
+        s.chi2 = r.chi2();
+        s.NDF = r.NDF();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+// ---- MUVT::trajectory -----------------------------------------------------
+/// Flat POD row mirroring every column of `MUVT::trajectory`.
+struct MUVT_trajectoryRow {
+    int index = 0;
+    int detector = 0;
+    int layer = 0;
+    float x = std::numeric_limits<float>::quiet_NaN();
+    float y = std::numeric_limits<float>::quiet_NaN();
+    float z = std::numeric_limits<float>::quiet_NaN();
+    float tx = std::numeric_limits<float>::quiet_NaN();
+    float ty = std::numeric_limits<float>::quiet_NaN();
+    float tz = std::numeric_limits<float>::quiet_NaN();
+    float lx = std::numeric_limits<float>::quiet_NaN();
+    float ly = std::numeric_limits<float>::quiet_NaN();
+    float lz = std::numeric_limits<float>::quiet_NaN();
+    float dx = std::numeric_limits<float>::quiet_NaN();
+    float dy = std::numeric_limits<float>::quiet_NaN();
+    float dz = std::numeric_limits<float>::quiet_NaN();
+    float path = std::numeric_limits<float>::quiet_NaN();
+    int row_index = -1;
+};
+
+/// Read every `MUVT::trajectory` row whose index column equals `key`.
+inline auto read_MUVT_trajectory_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<MUVT_trajectoryRow> {
+    std::vector<MUVT_trajectoryRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::MUVT_trajectory>(key)) {
+        MUVT_trajectoryRow s;
+        s.index = r.index();
+        s.detector = r.detector();
+        s.layer = r.layer();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.tx = r.tx();
+        s.ty = r.ty();
+        s.tz = r.tz();
+        s.lx = r.lx();
+        s.ly = r.ly();
+        s.lz = r.lz();
+        s.dx = r.dx();
+        s.dy = r.dy();
+        s.dz = r.dz();
+        s.path = r.path();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+// ---- nn::dchits -----------------------------------------------------------
+/// Flat POD row mirroring every column of `nn::dchits`.
+struct nn_dchitsRow {
+    int id = 0;
+    int index = 0;
+    int row_index = -1;
+};
+
+/// Read every `nn::dchits` row whose index column equals `key`.
+inline auto read_nn_dchits_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<nn_dchitsRow> {
+    std::vector<nn_dchitsRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::nn_dchits>(key)) {
+        nn_dchitsRow s;
+        s.id = r.id();
+        s.index = r.index();
         s.row_index = r.row_index();
         result.push_back(s);
     }
@@ -2024,11 +3532,39 @@ struct RICH_ResponseRow {
     int row_index = -1;
 };
 
-/// Read every `RICH::Response` row linked to `pindex`.
+/// Read every `RICH::Response` row whose pindex column equals `pindex`.
 inline auto read_RICH_Response_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RICH_ResponseRow> {
     std::vector<RICH_ResponseRow> result;
     for (auto r : event.rows_for_pindex<clas12::bankdefs::RICH_Response>(pindex)) {
+        RICH_ResponseRow s;
+        s.index = r.index();
+        s.pindex = r.pindex();
+        s.detector = r.detector();
+        s.sector = r.sector();
+        s.layer = r.layer();
+        s.energy = r.energy();
+        s.time = r.time();
+        s.path = r.path();
+        s.chi2 = r.chi2();
+        s.x = r.x();
+        s.y = r.y();
+        s.z = r.z();
+        s.hx = r.hx();
+        s.hy = r.hy();
+        s.hz = r.hz();
+        s.status = r.status();
+        s.row_index = r.row_index();
+        result.push_back(s);
+    }
+    return result;
+}
+
+/// Read every `RICH::Response` row whose index column equals `key`.
+inline auto read_RICH_Response_rows_by_index(clas12::framework::Event& event, int key)
+    -> std::vector<RICH_ResponseRow> {
+    std::vector<RICH_ResponseRow> result;
+    for (auto r : event.rows_for_index<clas12::bankdefs::RICH_Response>(key)) {
         RICH_ResponseRow s;
         s.index = r.index();
         s.pindex = r.pindex();
@@ -2079,7 +3615,7 @@ struct RICH_HadronRow {
     int row_index = -1;
 };
 
-/// Read every `RICH::Hadron` row linked to `pindex`.
+/// Read every `RICH::Hadron` row whose pindex column equals `pindex`.
 inline auto read_RICH_Hadron_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RICH_HadronRow> {
     std::vector<RICH_HadronRow> result;
@@ -2147,7 +3683,7 @@ struct RICH_PhotonRow {
     int row_index = -1;
 };
 
-/// Read every `RICH::Photon` row linked to `pindex`.
+/// Read every `RICH::Photon` row whose pindex column equals `pindex`.
 inline auto read_RICH_Photon_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RICH_PhotonRow> {
     std::vector<RICH_PhotonRow> result;
@@ -2208,7 +3744,7 @@ struct RICH_RingRow {
     int row_index = -1;
 };
 
-/// Read every `RICH::Ring` row linked to `pindex`.
+/// Read every `RICH::Ring` row whose pindex column equals `pindex`.
 inline auto read_RICH_Ring_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RICH_RingRow> {
     std::vector<RICH_RingRow> result;
@@ -2261,7 +3797,7 @@ struct RICH_ParticleRow {
     int row_index = -1;
 };
 
-/// Read every `RICH::Particle` row linked to `pindex`.
+/// Read every `RICH::Particle` row whose pindex column equals `pindex`.
 inline auto read_RICH_Particle_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RICH_ParticleRow> {
     std::vector<RICH_ParticleRow> result;
@@ -2334,7 +3870,7 @@ struct RICH_calibRow {
     int row_index = -1;
 };
 
-/// Read every `RICH::calib` row linked to `pindex`.
+/// Read every `RICH::calib` row whose pindex column equals `pindex`.
 inline auto read_RICH_calib_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<RICH_calibRow> {
     std::vector<RICH_calibRow> result;
@@ -2417,7 +3953,7 @@ struct FTOF_calibRow {
     int row_index = -1;
 };
 
-/// Read every `FTOF::calib` row linked to `pindex`.
+/// Read every `FTOF::calib` row whose pindex column equals `pindex`.
 inline auto read_FTOF_calib_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<FTOF_calibRow> {
     std::vector<FTOF_calibRow> result;
@@ -2496,7 +4032,7 @@ struct CTOF_calibRow {
     int row_index = -1;
 };
 
-/// Read every `CTOF::calib` row linked to `pindex`.
+/// Read every `CTOF::calib` row whose pindex column equals `pindex`.
 inline auto read_CTOF_calib_rows(clas12::framework::Event& event, int pindex)
     -> std::vector<CTOF_calibRow> {
     std::vector<CTOF_calibRow> result;
