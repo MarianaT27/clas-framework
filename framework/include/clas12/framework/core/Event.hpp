@@ -6,11 +6,13 @@
 #include <clas12/physics/ParticleUtils.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 
+#include <array>
 #include <functional>
 #include <map>
 #include <optional>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -369,12 +371,17 @@ class Event {
 
     /**
      * @brief Load particles from REC::Particle bank
+     *
+     * Hot-path note: resolves every column handle exactly once before the
+     * row loop so per-particle access is handle-based, never name-based.
+     * For an event with N particles this replaces 11*N schema binary
+     * searches with 11 + N typed reads through a pre-resolved handle.
      */
     auto load_particles() -> void {
         const auto& REC_Particle = m_banks["REC::Particle"];
 
         // Initialize particle vectors for common types
-        std::vector<clas12::PIDs> target_types = {
+        static constexpr std::array<clas12::PIDs, 9> target_types = {
             clas12::PIDs::ELECTRON, clas12::PIDs::POSITRON,
             clas12::PIDs::PHOTON,
             clas12::PIDs::PROTON, clas12::PIDs::NEUTRON,
@@ -385,11 +392,45 @@ class Event {
             m_particles[type] = std::vector<clas12::Particle>();
         }
 
-        // Extract particles from bank
-        for (int i = 0; i < REC_Particle.rows(); i++) {
-            const int pid = REC_Particle.get<int32_t>("pid", i);
+        const int n_rows = REC_Particle.rows();
+        if (n_rows == 0) {
+            m_particles_loaded = true;
+            return;
+        }
 
-            // Find matching particle type
+        // Resolve every column handle once up front. Anything missing
+        // leaves the handle invalid; subsequent get<T>() calls on an
+        // invalid handle return garbage, so we early-out if pid itself is
+        // missing (which would mean we're not looking at a REC::Particle).
+        const auto& schema = REC_Particle.get_schema();
+        auto resolve = [&](std::string_view name) -> hipo::column_handle {
+            auto h = schema.get_handle(name);
+            return h ? *h : hipo::column_handle{};
+        };
+
+        const auto h_pid     = resolve("pid");
+        if (!h_pid.valid()) {
+            m_particles_loaded = true;
+            return;
+        }
+        const auto h_status  = resolve("status");
+        const auto h_charge  = resolve("charge");
+        const auto h_px      = resolve("px");
+        const auto h_py      = resolve("py");
+        const auto h_pz      = resolve("pz");
+        const auto h_vx      = resolve("vx");
+        const auto h_vy      = resolve("vy");
+        const auto h_vz      = resolve("vz");
+        const auto h_vt      = resolve("vt");
+        const auto h_beta    = resolve("beta");
+        const auto h_chi2pid = resolve("chi2pid");
+
+        for (int i = 0; i < n_rows; ++i) {
+            const int pid = REC_Particle.get<int32_t>(h_pid, i);
+
+            // Find matching particle type. target_types is small (9) and
+            // sorted by selection frequency; linear scan is faster than a
+            // hash or map lookup at this size.
             clas12::PIDs particle_type;
             bool found = false;
             for (const auto& type : target_types) {
@@ -399,21 +440,19 @@ class Event {
                     break;
                 }
             }
-
             if (!found) continue;
 
-            const int status = static_cast<int>(REC_Particle.get<int16_t>("status", i));
-            const int charge = static_cast<int>(REC_Particle.get<int8_t>("charge", i));
-            // REC::Particle stores momentum and vertex as floats
-            const double px = static_cast<double>(REC_Particle.get<float>("px", i));
-            const double py = static_cast<double>(REC_Particle.get<float>("py", i));
-            const double pz = static_cast<double>(REC_Particle.get<float>("pz", i));
-            const double vx = static_cast<double>(REC_Particle.get<float>("vx", i));
-            const double vy = static_cast<double>(REC_Particle.get<float>("vy", i));
-            const double vz = static_cast<double>(REC_Particle.get<float>("vz", i));
-            const double vt = static_cast<double>(REC_Particle.get<float>("vt", i));
-            const double beta = static_cast<double>(REC_Particle.get<float>("beta", i));
-            const double chi2pid = static_cast<double>(REC_Particle.get<float>("chi2pid", i));
+            const int status  = static_cast<int>(REC_Particle.get<int16_t>(h_status, i));
+            const int charge  = static_cast<int>(REC_Particle.get<int8_t>(h_charge, i));
+            const double px   = static_cast<double>(REC_Particle.get<float>(h_px, i));
+            const double py   = static_cast<double>(REC_Particle.get<float>(h_py, i));
+            const double pz   = static_cast<double>(REC_Particle.get<float>(h_pz, i));
+            const double vx   = static_cast<double>(REC_Particle.get<float>(h_vx, i));
+            const double vy   = static_cast<double>(REC_Particle.get<float>(h_vy, i));
+            const double vz   = static_cast<double>(REC_Particle.get<float>(h_vz, i));
+            const double vt   = static_cast<double>(REC_Particle.get<float>(h_vt, i));
+            const double beta = static_cast<double>(REC_Particle.get<float>(h_beta, i));
+            const double chi2pid = static_cast<double>(REC_Particle.get<float>(h_chi2pid, i));
 
             const double mass = clas12::physics::ParticleUtils::get_mass(pid);
             const double E = clas12::physics::ParticleUtils::compute_energy(px, py, pz, pid);
