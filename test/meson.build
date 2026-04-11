@@ -125,3 +125,12 @@ test_algorithm_concurrency = executable(
 )
 
 test('Algorithm Concurrency Tests', test_algorithm_concurrency)
+
+# Smoke test for generated bank wrappers + PindexLinker
+test_bankdefs_compile = executable(
+  'test_bankdefs_compile',
+  'test_bankdefs_compile.cpp',
+  dependencies: test_deps,
+)
+
+test('BankDefs Compile Tests', test_bankdefs_compile)

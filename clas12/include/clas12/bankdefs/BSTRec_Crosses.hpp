@@ -1,0 +1,346 @@
+// =============================================================================
+// Auto-generated from bst.json - do not edit by hand.
+// Regenerate via: python3 scripts/gen_bankdefs.py
+// Source of truth:
+//   https://github.com/JeffersonLab/coatjava/tree/development/etc/bankdefs/hipo4
+// =============================================================================
+
+#pragma once
+
+#include <cstdint>
+#include <span>
+#include <string_view>
+
+#include <bank_view.h>
+#include <schema.h>
+
+namespace clas12::bankdefs {
+
+
+/// HIPO bank wrapper for `BSTRec::Crosses` (group 20200, item 25).
+/// first reconstructed BST crosses
+///
+/// Bind the wrapper to a `hipo::bank_view` once, then access columns
+/// via zero-cost handle-based getters.
+///
+/// Example:
+/// @code
+/// BSTRec_Crosses bank;
+/// if (auto sc = bank.bind(event.get_bank("BSTRec::Crosses")); !sc) return FAILURE();
+/// for (int i = 0; i < bank.rows(); ++i) {
+///     auto row = bank.row(i);
+///     auto ID = row.ID();
+/// }
+/// @endcode
+class BSTRec_Crosses {
+ public:
+    static constexpr std::string_view bank_name = "BSTRec::Crosses";
+    static constexpr int bank_group = 20200;
+    static constexpr int bank_item  = 25;
+
+    class Row;
+
+    BSTRec_Crosses() = default;
+
+    /// Bind to a live bank_view. Resolves every column handle exactly once.
+    /// Returns false if any required column is missing in the schema.
+    bool bind(const hipo::bank_view& view) noexcept {
+        m_view = view;
+        if (!view.valid()) return false;
+        const auto& schema = view.get_schema();
+        if (auto h = schema.get_handle("ID"); h) h_ID = *h;
+        else h_ID = {};
+        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
+        else h_sector = {};
+        if (auto h = schema.get_handle("region"); h) h_region = *h;
+        else h_region = {};
+        if (auto h = schema.get_handle("x"); h) h_x = *h;
+        else h_x = {};
+        if (auto h = schema.get_handle("y"); h) h_y = *h;
+        else h_y = {};
+        if (auto h = schema.get_handle("z"); h) h_z = *h;
+        else h_z = {};
+        if (auto h = schema.get_handle("err_x"); h) h_err_x = *h;
+        else h_err_x = {};
+        if (auto h = schema.get_handle("err_y"); h) h_err_y = *h;
+        else h_err_y = {};
+        if (auto h = schema.get_handle("err_z"); h) h_err_z = *h;
+        else h_err_z = {};
+        if (auto h = schema.get_handle("x0"); h) h_x0 = *h;
+        else h_x0 = {};
+        if (auto h = schema.get_handle("y0"); h) h_y0 = *h;
+        else h_y0 = {};
+        if (auto h = schema.get_handle("z0"); h) h_z0 = *h;
+        else h_z0 = {};
+        if (auto h = schema.get_handle("err_x0"); h) h_err_x0 = *h;
+        else h_err_x0 = {};
+        if (auto h = schema.get_handle("err_y0"); h) h_err_y0 = *h;
+        else h_err_y0 = {};
+        if (auto h = schema.get_handle("err_z0"); h) h_err_z0 = *h;
+        else h_err_z0 = {};
+        if (auto h = schema.get_handle("ux"); h) h_ux = *h;
+        else h_ux = {};
+        if (auto h = schema.get_handle("uy"); h) h_uy = *h;
+        else h_uy = {};
+        if (auto h = schema.get_handle("uz"); h) h_uz = *h;
+        else h_uz = {};
+        if (auto h = schema.get_handle("Cluster1_ID"); h) h_Cluster1_ID = *h;
+        else h_Cluster1_ID = {};
+        if (auto h = schema.get_handle("Cluster2_ID"); h) h_Cluster2_ID = *h;
+        else h_Cluster2_ID = {};
+        if (auto h = schema.get_handle("trkID"); h) h_trkID = *h;
+        else h_trkID = {};
+        return true;
+    }
+
+    /// Current row count of the bound bank view.
+    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+
+    /// True if bind() has been called with a valid view.
+    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+
+    /// Access the underlying bank_view (for advanced use).
+    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+
+    // -------------------------------------------------------------------
+    // Per-row scalar getters (handle-based, zero string lookup)
+    // -------------------------------------------------------------------
+    /// ID: ID
+    [[nodiscard]] int ID(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_ID, row));
+    }
+    /// sector: sector
+    [[nodiscard]] int sector(int row) const noexcept {
+        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+    }
+    /// region: region
+    [[nodiscard]] int region(int row) const noexcept {
+        return static_cast<int>(m_view.get<int8_t>(h_region, row));
+    }
+    /// x: BST cross x-coordinate
+    [[nodiscard]] float x(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_x, row));
+    }
+    /// y: BST cross y-coordinate
+    [[nodiscard]] float y(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_y, row));
+    }
+    /// z: BST cross z-coordinate
+    [[nodiscard]] float z(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_z, row));
+    }
+    /// err_x: BST cross x-coordinate error
+    [[nodiscard]] float err_x(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_err_x, row));
+    }
+    /// err_y: BST cross y-coordinate error
+    [[nodiscard]] float err_y(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_err_y, row));
+    }
+    /// err_z: BST cross z-coordinate error
+    [[nodiscard]] float err_z(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_err_z, row));
+    }
+    /// x0: BST cross x0-coordinate
+    [[nodiscard]] float x0(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_x0, row));
+    }
+    /// y0: BST cross y0-coordinate
+    [[nodiscard]] float y0(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_y0, row));
+    }
+    /// z0: BST cross z0-coordinate
+    [[nodiscard]] float z0(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_z0, row));
+    }
+    /// err_x0: BST cross x0-coordinate error
+    [[nodiscard]] float err_x0(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_err_x0, row));
+    }
+    /// err_y0: BST cross y0-coordinate error
+    [[nodiscard]] float err_y0(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_err_y0, row));
+    }
+    /// err_z0: BST cross z0-coordinate error
+    [[nodiscard]] float err_z0(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_err_z0, row));
+    }
+    /// ux: BST cross x-direction (track unit tangent vector at the cross)
+    [[nodiscard]] float ux(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_ux, row));
+    }
+    /// uy: BST cross y-direction (track unit tangent vector at the cross)
+    [[nodiscard]] float uy(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_uy, row));
+    }
+    /// uz: BST cross z-direction (track unit tangent vector at the cross)
+    [[nodiscard]] float uz(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_uz, row));
+    }
+    /// Cluster1_ID: ID of the  cluster in the Cross
+    [[nodiscard]] int Cluster1_ID(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_Cluster1_ID, row));
+    }
+    /// Cluster2_ID: ID of the top layer  cluster in the Cross
+    [[nodiscard]] int Cluster2_ID(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_Cluster2_ID, row));
+    }
+    /// trkID: associated track ID
+    [[nodiscard]] int trkID(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_trkID, row));
+    }
+
+    // -------------------------------------------------------------------
+    // Whole-column span accessors (SIMD-friendly, zero-copy)
+    // -------------------------------------------------------------------
+    /// ID column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> ID_col() const noexcept {
+        return m_view.column<int16_t>(h_ID);
+    }
+    /// sector column as a contiguous span.
+    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
+        return m_view.column<int8_t>(h_sector);
+    }
+    /// region column as a contiguous span.
+    [[nodiscard]] std::span<const int8_t> region_col() const noexcept {
+        return m_view.column<int8_t>(h_region);
+    }
+    /// x column as a contiguous span.
+    [[nodiscard]] std::span<const float> x_col() const noexcept {
+        return m_view.column<float>(h_x);
+    }
+    /// y column as a contiguous span.
+    [[nodiscard]] std::span<const float> y_col() const noexcept {
+        return m_view.column<float>(h_y);
+    }
+    /// z column as a contiguous span.
+    [[nodiscard]] std::span<const float> z_col() const noexcept {
+        return m_view.column<float>(h_z);
+    }
+    /// err_x column as a contiguous span.
+    [[nodiscard]] std::span<const float> err_x_col() const noexcept {
+        return m_view.column<float>(h_err_x);
+    }
+    /// err_y column as a contiguous span.
+    [[nodiscard]] std::span<const float> err_y_col() const noexcept {
+        return m_view.column<float>(h_err_y);
+    }
+    /// err_z column as a contiguous span.
+    [[nodiscard]] std::span<const float> err_z_col() const noexcept {
+        return m_view.column<float>(h_err_z);
+    }
+    /// x0 column as a contiguous span.
+    [[nodiscard]] std::span<const float> x0_col() const noexcept {
+        return m_view.column<float>(h_x0);
+    }
+    /// y0 column as a contiguous span.
+    [[nodiscard]] std::span<const float> y0_col() const noexcept {
+        return m_view.column<float>(h_y0);
+    }
+    /// z0 column as a contiguous span.
+    [[nodiscard]] std::span<const float> z0_col() const noexcept {
+        return m_view.column<float>(h_z0);
+    }
+    /// err_x0 column as a contiguous span.
+    [[nodiscard]] std::span<const float> err_x0_col() const noexcept {
+        return m_view.column<float>(h_err_x0);
+    }
+    /// err_y0 column as a contiguous span.
+    [[nodiscard]] std::span<const float> err_y0_col() const noexcept {
+        return m_view.column<float>(h_err_y0);
+    }
+    /// err_z0 column as a contiguous span.
+    [[nodiscard]] std::span<const float> err_z0_col() const noexcept {
+        return m_view.column<float>(h_err_z0);
+    }
+    /// ux column as a contiguous span.
+    [[nodiscard]] std::span<const float> ux_col() const noexcept {
+        return m_view.column<float>(h_ux);
+    }
+    /// uy column as a contiguous span.
+    [[nodiscard]] std::span<const float> uy_col() const noexcept {
+        return m_view.column<float>(h_uy);
+    }
+    /// uz column as a contiguous span.
+    [[nodiscard]] std::span<const float> uz_col() const noexcept {
+        return m_view.column<float>(h_uz);
+    }
+    /// Cluster1_ID column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> Cluster1_ID_col() const noexcept {
+        return m_view.column<int16_t>(h_Cluster1_ID);
+    }
+    /// Cluster2_ID column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> Cluster2_ID_col() const noexcept {
+        return m_view.column<int16_t>(h_Cluster2_ID);
+    }
+    /// trkID column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> trkID_col() const noexcept {
+        return m_view.column<int16_t>(h_trkID);
+    }
+
+    /// Construct a lightweight Row view for the given index.
+    [[nodiscard]] Row row(int index) const noexcept;
+
+ private:
+    hipo::bank_view m_view{};
+    hipo::column_handle h_ID{};
+    hipo::column_handle h_sector{};
+    hipo::column_handle h_region{};
+    hipo::column_handle h_x{};
+    hipo::column_handle h_y{};
+    hipo::column_handle h_z{};
+    hipo::column_handle h_err_x{};
+    hipo::column_handle h_err_y{};
+    hipo::column_handle h_err_z{};
+    hipo::column_handle h_x0{};
+    hipo::column_handle h_y0{};
+    hipo::column_handle h_z0{};
+    hipo::column_handle h_err_x0{};
+    hipo::column_handle h_err_y0{};
+    hipo::column_handle h_err_z0{};
+    hipo::column_handle h_ux{};
+    hipo::column_handle h_uy{};
+    hipo::column_handle h_uz{};
+    hipo::column_handle h_Cluster1_ID{};
+    hipo::column_handle h_Cluster2_ID{};
+    hipo::column_handle h_trkID{};
+
+    friend class Row;
+};
+
+/// Lightweight row view for BSTRec::Crosses. Stores a pointer + row index only.
+class BSTRec_Crosses::Row {
+ public:
+    Row(const BSTRec_Crosses* bank, int row) noexcept : m_bank(bank), m_row(row) {}
+    [[nodiscard]] int row_index() const noexcept { return m_row; }
+    [[nodiscard]] int ID() const noexcept { return m_bank->ID(m_row); }
+    [[nodiscard]] int sector() const noexcept { return m_bank->sector(m_row); }
+    [[nodiscard]] int region() const noexcept { return m_bank->region(m_row); }
+    [[nodiscard]] float x() const noexcept { return m_bank->x(m_row); }
+    [[nodiscard]] float y() const noexcept { return m_bank->y(m_row); }
+    [[nodiscard]] float z() const noexcept { return m_bank->z(m_row); }
+    [[nodiscard]] float err_x() const noexcept { return m_bank->err_x(m_row); }
+    [[nodiscard]] float err_y() const noexcept { return m_bank->err_y(m_row); }
+    [[nodiscard]] float err_z() const noexcept { return m_bank->err_z(m_row); }
+    [[nodiscard]] float x0() const noexcept { return m_bank->x0(m_row); }
+    [[nodiscard]] float y0() const noexcept { return m_bank->y0(m_row); }
+    [[nodiscard]] float z0() const noexcept { return m_bank->z0(m_row); }
+    [[nodiscard]] float err_x0() const noexcept { return m_bank->err_x0(m_row); }
+    [[nodiscard]] float err_y0() const noexcept { return m_bank->err_y0(m_row); }
+    [[nodiscard]] float err_z0() const noexcept { return m_bank->err_z0(m_row); }
+    [[nodiscard]] float ux() const noexcept { return m_bank->ux(m_row); }
+    [[nodiscard]] float uy() const noexcept { return m_bank->uy(m_row); }
+    [[nodiscard]] float uz() const noexcept { return m_bank->uz(m_row); }
+    [[nodiscard]] int Cluster1_ID() const noexcept { return m_bank->Cluster1_ID(m_row); }
+    [[nodiscard]] int Cluster2_ID() const noexcept { return m_bank->Cluster2_ID(m_row); }
+    [[nodiscard]] int trkID() const noexcept { return m_bank->trkID(m_row); }
+ private:
+    const BSTRec_Crosses* m_bank;
+    int m_row;
+};
+
+inline BSTRec_Crosses::Row BSTRec_Crosses::row(int index) const noexcept {
+    return Row{this, index};
+}
+
+}  // namespace clas12::bankdefs

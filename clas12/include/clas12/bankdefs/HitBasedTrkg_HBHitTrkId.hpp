@@ -1,0 +1,154 @@
+// =============================================================================
+// Auto-generated from dc.json - do not edit by hand.
+// Regenerate via: python3 scripts/gen_bankdefs.py
+// Source of truth:
+//   https://github.com/JeffersonLab/coatjava/tree/development/etc/bankdefs/hipo4
+// =============================================================================
+
+#pragma once
+
+#include <cstdint>
+#include <span>
+#include <string_view>
+
+#include <bank_view.h>
+#include <schema.h>
+
+namespace clas12::bankdefs {
+
+
+/// HIPO bank wrapper for `HitBasedTrkg::HBHitTrkId` (group 20600, item 27).
+/// pointers between track and hit banks
+///
+/// Bind the wrapper to a `hipo::bank_view` once, then access columns
+/// via zero-cost handle-based getters.
+///
+/// Example:
+/// @code
+/// HitBasedTrkg_HBHitTrkId bank;
+/// if (auto sc = bank.bind(event.get_bank("HitBasedTrkg::HBHitTrkId")); !sc) return FAILURE();
+/// for (int i = 0; i < bank.rows(); ++i) {
+///     auto row = bank.row(i);
+///     auto id = row.id();
+/// }
+/// @endcode
+class HitBasedTrkg_HBHitTrkId {
+ public:
+    static constexpr std::string_view bank_name = "HitBasedTrkg::HBHitTrkId";
+    static constexpr int bank_group = 20600;
+    static constexpr int bank_item  = 27;
+
+    class Row;
+
+    HitBasedTrkg_HBHitTrkId() = default;
+
+    /// Bind to a live bank_view. Resolves every column handle exactly once.
+    /// Returns false if any required column is missing in the schema.
+    bool bind(const hipo::bank_view& view) noexcept {
+        m_view = view;
+        if (!view.valid()) return false;
+        const auto& schema = view.get_schema();
+        if (auto h = schema.get_handle("id"); h) h_id = *h;
+        else h_id = {};
+        if (auto h = schema.get_handle("tid"); h) h_tid = *h;
+        else h_tid = {};
+        if (auto h = schema.get_handle("B"); h) h_B = *h;
+        else h_B = {};
+        if (auto h = schema.get_handle("TProp"); h) h_TProp = *h;
+        else h_TProp = {};
+        if (auto h = schema.get_handle("TFlight"); h) h_TFlight = *h;
+        else h_TFlight = {};
+        return true;
+    }
+
+    /// Current row count of the bound bank view.
+    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+
+    /// True if bind() has been called with a valid view.
+    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+
+    /// Access the underlying bank_view (for advanced use).
+    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+
+    // -------------------------------------------------------------------
+    // Per-row scalar getters (handle-based, zero string lookup)
+    // -------------------------------------------------------------------
+    /// id: id of the hit
+    [[nodiscard]] int id(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+    }
+    /// tid: id of the track
+    [[nodiscard]] int tid(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_tid, row));
+    }
+    /// B: B-field intensity at hit position in tilted-sector system
+    [[nodiscard]] float B(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_B, row));
+    }
+    /// TProp: t propagation along the wire
+    [[nodiscard]] float TProp(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_TProp, row));
+    }
+    /// TFlight: time of flight correction
+    [[nodiscard]] float TFlight(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_TFlight, row));
+    }
+
+    // -------------------------------------------------------------------
+    // Whole-column span accessors (SIMD-friendly, zero-copy)
+    // -------------------------------------------------------------------
+    /// id column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
+        return m_view.column<int16_t>(h_id);
+    }
+    /// tid column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> tid_col() const noexcept {
+        return m_view.column<int16_t>(h_tid);
+    }
+    /// B column as a contiguous span.
+    [[nodiscard]] std::span<const float> B_col() const noexcept {
+        return m_view.column<float>(h_B);
+    }
+    /// TProp column as a contiguous span.
+    [[nodiscard]] std::span<const float> TProp_col() const noexcept {
+        return m_view.column<float>(h_TProp);
+    }
+    /// TFlight column as a contiguous span.
+    [[nodiscard]] std::span<const float> TFlight_col() const noexcept {
+        return m_view.column<float>(h_TFlight);
+    }
+
+    /// Construct a lightweight Row view for the given index.
+    [[nodiscard]] Row row(int index) const noexcept;
+
+ private:
+    hipo::bank_view m_view{};
+    hipo::column_handle h_id{};
+    hipo::column_handle h_tid{};
+    hipo::column_handle h_B{};
+    hipo::column_handle h_TProp{};
+    hipo::column_handle h_TFlight{};
+
+    friend class Row;
+};
+
+/// Lightweight row view for HitBasedTrkg::HBHitTrkId. Stores a pointer + row index only.
+class HitBasedTrkg_HBHitTrkId::Row {
+ public:
+    Row(const HitBasedTrkg_HBHitTrkId* bank, int row) noexcept : m_bank(bank), m_row(row) {}
+    [[nodiscard]] int row_index() const noexcept { return m_row; }
+    [[nodiscard]] int id() const noexcept { return m_bank->id(m_row); }
+    [[nodiscard]] int tid() const noexcept { return m_bank->tid(m_row); }
+    [[nodiscard]] float B() const noexcept { return m_bank->B(m_row); }
+    [[nodiscard]] float TProp() const noexcept { return m_bank->TProp(m_row); }
+    [[nodiscard]] float TFlight() const noexcept { return m_bank->TFlight(m_row); }
+ private:
+    const HitBasedTrkg_HBHitTrkId* m_bank;
+    int m_row;
+};
+
+inline HitBasedTrkg_HBHitTrkId::Row HitBasedTrkg_HBHitTrkId::row(int index) const noexcept {
+    return Row{this, index};
+}
+
+}  // namespace clas12::bankdefs

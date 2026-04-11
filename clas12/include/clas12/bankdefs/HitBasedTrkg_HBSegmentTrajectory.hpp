@@ -1,0 +1,166 @@
+// =============================================================================
+// Auto-generated from dc.json - do not edit by hand.
+// Regenerate via: python3 scripts/gen_bankdefs.py
+// Source of truth:
+//   https://github.com/JeffersonLab/coatjava/tree/development/etc/bankdefs/hipo4
+// =============================================================================
+
+#pragma once
+
+#include <cstdint>
+#include <span>
+#include <string_view>
+
+#include <bank_view.h>
+#include <schema.h>
+
+namespace clas12::bankdefs {
+
+
+/// HIPO bank wrapper for `HitBasedTrkg::HBSegmentTrajectory` (group 20600, item 24).
+/// reconstructed segment trajectory from hit-based tracking
+///
+/// Bind the wrapper to a `hipo::bank_view` once, then access columns
+/// via zero-cost handle-based getters.
+///
+/// Example:
+/// @code
+/// HitBasedTrkg_HBSegmentTrajectory bank;
+/// if (auto sc = bank.bind(event.get_bank("HitBasedTrkg::HBSegmentTrajectory")); !sc) return FAILURE();
+/// for (int i = 0; i < bank.rows(); ++i) {
+///     auto row = bank.row(i);
+///     auto segmentID = row.segmentID();
+/// }
+/// @endcode
+class HitBasedTrkg_HBSegmentTrajectory {
+ public:
+    static constexpr std::string_view bank_name = "HitBasedTrkg::HBSegmentTrajectory";
+    static constexpr int bank_group = 20600;
+    static constexpr int bank_item  = 24;
+
+    class Row;
+
+    HitBasedTrkg_HBSegmentTrajectory() = default;
+
+    /// Bind to a live bank_view. Resolves every column handle exactly once.
+    /// Returns false if any required column is missing in the schema.
+    bool bind(const hipo::bank_view& view) noexcept {
+        m_view = view;
+        if (!view.valid()) return false;
+        const auto& schema = view.get_schema();
+        if (auto h = schema.get_handle("segmentID"); h) h_segmentID = *h;
+        else h_segmentID = {};
+        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
+        else h_sector = {};
+        if (auto h = schema.get_handle("superlayer"); h) h_superlayer = *h;
+        else h_superlayer = {};
+        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
+        else h_layer = {};
+        if (auto h = schema.get_handle("matchedHitID"); h) h_matchedHitID = *h;
+        else h_matchedHitID = {};
+        if (auto h = schema.get_handle("trkDoca"); h) h_trkDoca = *h;
+        else h_trkDoca = {};
+        return true;
+    }
+
+    /// Current row count of the bound bank view.
+    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+
+    /// True if bind() has been called with a valid view.
+    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+
+    /// Access the underlying bank_view (for advanced use).
+    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+
+    // -------------------------------------------------------------------
+    // Per-row scalar getters (handle-based, zero string lookup)
+    // -------------------------------------------------------------------
+    /// segmentID: id of the segment
+    [[nodiscard]] int segmentID(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_segmentID, row));
+    }
+    /// sector: sector of DC
+    [[nodiscard]] int sector(int row) const noexcept {
+        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+    }
+    /// superlayer: superlayer
+    [[nodiscard]] int superlayer(int row) const noexcept {
+        return static_cast<int>(m_view.get<int8_t>(h_superlayer, row));
+    }
+    /// layer: layer
+    [[nodiscard]] int layer(int row) const noexcept {
+        return static_cast<int>(m_view.get<int8_t>(h_layer, row));
+    }
+    /// matchedHitID: matched hit id
+    [[nodiscard]] int matchedHitID(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_matchedHitID, row));
+    }
+    /// trkDoca: calculated track doca
+    [[nodiscard]] float trkDoca(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_trkDoca, row));
+    }
+
+    // -------------------------------------------------------------------
+    // Whole-column span accessors (SIMD-friendly, zero-copy)
+    // -------------------------------------------------------------------
+    /// segmentID column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> segmentID_col() const noexcept {
+        return m_view.column<int16_t>(h_segmentID);
+    }
+    /// sector column as a contiguous span.
+    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
+        return m_view.column<int8_t>(h_sector);
+    }
+    /// superlayer column as a contiguous span.
+    [[nodiscard]] std::span<const int8_t> superlayer_col() const noexcept {
+        return m_view.column<int8_t>(h_superlayer);
+    }
+    /// layer column as a contiguous span.
+    [[nodiscard]] std::span<const int8_t> layer_col() const noexcept {
+        return m_view.column<int8_t>(h_layer);
+    }
+    /// matchedHitID column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> matchedHitID_col() const noexcept {
+        return m_view.column<int16_t>(h_matchedHitID);
+    }
+    /// trkDoca column as a contiguous span.
+    [[nodiscard]] std::span<const float> trkDoca_col() const noexcept {
+        return m_view.column<float>(h_trkDoca);
+    }
+
+    /// Construct a lightweight Row view for the given index.
+    [[nodiscard]] Row row(int index) const noexcept;
+
+ private:
+    hipo::bank_view m_view{};
+    hipo::column_handle h_segmentID{};
+    hipo::column_handle h_sector{};
+    hipo::column_handle h_superlayer{};
+    hipo::column_handle h_layer{};
+    hipo::column_handle h_matchedHitID{};
+    hipo::column_handle h_trkDoca{};
+
+    friend class Row;
+};
+
+/// Lightweight row view for HitBasedTrkg::HBSegmentTrajectory. Stores a pointer + row index only.
+class HitBasedTrkg_HBSegmentTrajectory::Row {
+ public:
+    Row(const HitBasedTrkg_HBSegmentTrajectory* bank, int row) noexcept : m_bank(bank), m_row(row) {}
+    [[nodiscard]] int row_index() const noexcept { return m_row; }
+    [[nodiscard]] int segmentID() const noexcept { return m_bank->segmentID(m_row); }
+    [[nodiscard]] int sector() const noexcept { return m_bank->sector(m_row); }
+    [[nodiscard]] int superlayer() const noexcept { return m_bank->superlayer(m_row); }
+    [[nodiscard]] int layer() const noexcept { return m_bank->layer(m_row); }
+    [[nodiscard]] int matchedHitID() const noexcept { return m_bank->matchedHitID(m_row); }
+    [[nodiscard]] float trkDoca() const noexcept { return m_bank->trkDoca(m_row); }
+ private:
+    const HitBasedTrkg_HBSegmentTrajectory* m_bank;
+    int m_row;
+};
+
+inline HitBasedTrkg_HBSegmentTrajectory::Row HitBasedTrkg_HBSegmentTrajectory::row(int index) const noexcept {
+    return Row{this, index};
+}
+
+}  // namespace clas12::bankdefs

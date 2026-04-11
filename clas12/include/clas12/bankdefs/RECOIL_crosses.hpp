@@ -1,0 +1,226 @@
+// =============================================================================
+// Auto-generated from recoil.json - do not edit by hand.
+// Regenerate via: python3 scripts/gen_bankdefs.py
+// Source of truth:
+//   https://github.com/JeffersonLab/coatjava/tree/development/etc/bankdefs/hipo4
+// =============================================================================
+
+#pragma once
+
+#include <cstdint>
+#include <span>
+#include <string_view>
+
+#include <bank_view.h>
+#include <schema.h>
+
+namespace clas12::bankdefs {
+
+
+/// HIPO bank wrapper for `RECOIL::crosses` (group 22600, item 23).
+/// reconstructed crosses from RECOIL
+///
+/// Bind the wrapper to a `hipo::bank_view` once, then access columns
+/// via zero-cost handle-based getters.
+///
+/// Example:
+/// @code
+/// RECOIL_crosses bank;
+/// if (auto sc = bank.bind(event.get_bank("RECOIL::crosses")); !sc) return FAILURE();
+/// for (int i = 0; i < bank.rows(); ++i) {
+///     auto row = bank.row(i);
+///     auto id = row.id();
+/// }
+/// @endcode
+class RECOIL_crosses {
+ public:
+    static constexpr std::string_view bank_name = "RECOIL::crosses";
+    static constexpr int bank_group = 22600;
+    static constexpr int bank_item  = 23;
+
+    class Row;
+
+    RECOIL_crosses() = default;
+
+    /// Bind to a live bank_view. Resolves every column handle exactly once.
+    /// Returns false if any required column is missing in the schema.
+    bool bind(const hipo::bank_view& view) noexcept {
+        m_view = view;
+        if (!view.valid()) return false;
+        const auto& schema = view.get_schema();
+        if (auto h = schema.get_handle("id"); h) h_id = *h;
+        else h_id = {};
+        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
+        else h_sector = {};
+        if (auto h = schema.get_handle("region"); h) h_region = *h;
+        else h_region = {};
+        if (auto h = schema.get_handle("energy"); h) h_energy = *h;
+        else h_energy = {};
+        if (auto h = schema.get_handle("time"); h) h_time = *h;
+        else h_time = {};
+        if (auto h = schema.get_handle("x"); h) h_x = *h;
+        else h_x = {};
+        if (auto h = schema.get_handle("y"); h) h_y = *h;
+        else h_y = {};
+        if (auto h = schema.get_handle("z"); h) h_z = *h;
+        else h_z = {};
+        if (auto h = schema.get_handle("cluster1"); h) h_cluster1 = *h;
+        else h_cluster1 = {};
+        if (auto h = schema.get_handle("cluster2"); h) h_cluster2 = *h;
+        else h_cluster2 = {};
+        if (auto h = schema.get_handle("status"); h) h_status = *h;
+        else h_status = {};
+        return true;
+    }
+
+    /// Current row count of the bound bank view.
+    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+
+    /// True if bind() has been called with a valid view.
+    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+
+    /// Access the underlying bank_view (for advanced use).
+    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+
+    // -------------------------------------------------------------------
+    // Per-row scalar getters (handle-based, zero string lookup)
+    // -------------------------------------------------------------------
+    /// id: id of the cross
+    [[nodiscard]] int id(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+    }
+    /// sector: sector of RECOIL
+    [[nodiscard]] int sector(int row) const noexcept {
+        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+    }
+    /// region: region of RECOIL
+    [[nodiscard]] int region(int row) const noexcept {
+        return static_cast<int>(m_view.get<int8_t>(h_region, row));
+    }
+    /// energy: energy of the cross (eV)
+    [[nodiscard]] float energy(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_energy, row));
+    }
+    /// time: time of the cross (ns)
+    [[nodiscard]] float time(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_time, row));
+    }
+    /// x: x coordinate (cm)
+    [[nodiscard]] float x(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_x, row));
+    }
+    /// y: y coordinate (cm)
+    [[nodiscard]] float y(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_y, row));
+    }
+    /// z: z coordinate (cm)
+    [[nodiscard]] float z(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_z, row));
+    }
+    /// cluster1: id of the cluster in the V layer
+    [[nodiscard]] int cluster1(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_cluster1, row));
+    }
+    /// cluster2: id of the cluster in the W layer
+    [[nodiscard]] int cluster2(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_cluster2, row));
+    }
+    /// status: status of the cluster
+    [[nodiscard]] int status(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_status, row));
+    }
+
+    // -------------------------------------------------------------------
+    // Whole-column span accessors (SIMD-friendly, zero-copy)
+    // -------------------------------------------------------------------
+    /// id column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
+        return m_view.column<int16_t>(h_id);
+    }
+    /// sector column as a contiguous span.
+    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
+        return m_view.column<int8_t>(h_sector);
+    }
+    /// region column as a contiguous span.
+    [[nodiscard]] std::span<const int8_t> region_col() const noexcept {
+        return m_view.column<int8_t>(h_region);
+    }
+    /// energy column as a contiguous span.
+    [[nodiscard]] std::span<const float> energy_col() const noexcept {
+        return m_view.column<float>(h_energy);
+    }
+    /// time column as a contiguous span.
+    [[nodiscard]] std::span<const float> time_col() const noexcept {
+        return m_view.column<float>(h_time);
+    }
+    /// x column as a contiguous span.
+    [[nodiscard]] std::span<const float> x_col() const noexcept {
+        return m_view.column<float>(h_x);
+    }
+    /// y column as a contiguous span.
+    [[nodiscard]] std::span<const float> y_col() const noexcept {
+        return m_view.column<float>(h_y);
+    }
+    /// z column as a contiguous span.
+    [[nodiscard]] std::span<const float> z_col() const noexcept {
+        return m_view.column<float>(h_z);
+    }
+    /// cluster1 column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> cluster1_col() const noexcept {
+        return m_view.column<int16_t>(h_cluster1);
+    }
+    /// cluster2 column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> cluster2_col() const noexcept {
+        return m_view.column<int16_t>(h_cluster2);
+    }
+    /// status column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> status_col() const noexcept {
+        return m_view.column<int16_t>(h_status);
+    }
+
+    /// Construct a lightweight Row view for the given index.
+    [[nodiscard]] Row row(int index) const noexcept;
+
+ private:
+    hipo::bank_view m_view{};
+    hipo::column_handle h_id{};
+    hipo::column_handle h_sector{};
+    hipo::column_handle h_region{};
+    hipo::column_handle h_energy{};
+    hipo::column_handle h_time{};
+    hipo::column_handle h_x{};
+    hipo::column_handle h_y{};
+    hipo::column_handle h_z{};
+    hipo::column_handle h_cluster1{};
+    hipo::column_handle h_cluster2{};
+    hipo::column_handle h_status{};
+
+    friend class Row;
+};
+
+/// Lightweight row view for RECOIL::crosses. Stores a pointer + row index only.
+class RECOIL_crosses::Row {
+ public:
+    Row(const RECOIL_crosses* bank, int row) noexcept : m_bank(bank), m_row(row) {}
+    [[nodiscard]] int row_index() const noexcept { return m_row; }
+    [[nodiscard]] int id() const noexcept { return m_bank->id(m_row); }
+    [[nodiscard]] int sector() const noexcept { return m_bank->sector(m_row); }
+    [[nodiscard]] int region() const noexcept { return m_bank->region(m_row); }
+    [[nodiscard]] float energy() const noexcept { return m_bank->energy(m_row); }
+    [[nodiscard]] float time() const noexcept { return m_bank->time(m_row); }
+    [[nodiscard]] float x() const noexcept { return m_bank->x(m_row); }
+    [[nodiscard]] float y() const noexcept { return m_bank->y(m_row); }
+    [[nodiscard]] float z() const noexcept { return m_bank->z(m_row); }
+    [[nodiscard]] int cluster1() const noexcept { return m_bank->cluster1(m_row); }
+    [[nodiscard]] int cluster2() const noexcept { return m_bank->cluster2(m_row); }
+    [[nodiscard]] int status() const noexcept { return m_bank->status(m_row); }
+ private:
+    const RECOIL_crosses* m_bank;
+    int m_row;
+};
+
+inline RECOIL_crosses::Row RECOIL_crosses::row(int index) const noexcept {
+    return Row{this, index};
+}
+
+}  // namespace clas12::bankdefs

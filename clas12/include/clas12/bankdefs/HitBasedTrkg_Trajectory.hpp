@@ -1,0 +1,262 @@
+// =============================================================================
+// Auto-generated from dc.json - do not edit by hand.
+// Regenerate via: python3 scripts/gen_bankdefs.py
+// Source of truth:
+//   https://github.com/JeffersonLab/coatjava/tree/development/etc/bankdefs/hipo4
+// =============================================================================
+
+#pragma once
+
+#include <cstdint>
+#include <span>
+#include <string_view>
+
+#include <bank_view.h>
+#include <schema.h>
+
+namespace clas12::bankdefs {
+
+
+/// HIPO bank wrapper for `HitBasedTrkg::Trajectory` (group 20600, item 30).
+/// Trajectory bank
+///
+/// Bind the wrapper to a `hipo::bank_view` once, then access columns
+/// via zero-cost handle-based getters.
+///
+/// Example:
+/// @code
+/// HitBasedTrkg_Trajectory bank;
+/// if (auto sc = bank.bind(event.get_bank("HitBasedTrkg::Trajectory")); !sc) return FAILURE();
+/// for (int i = 0; i < bank.rows(); ++i) {
+///     auto row = bank.row(i);
+///     auto id = row.id();
+/// }
+/// @endcode
+class HitBasedTrkg_Trajectory {
+ public:
+    static constexpr std::string_view bank_name = "HitBasedTrkg::Trajectory";
+    static constexpr int bank_group = 20600;
+    static constexpr int bank_item  = 30;
+
+    class Row;
+
+    HitBasedTrkg_Trajectory() = default;
+
+    /// Bind to a live bank_view. Resolves every column handle exactly once.
+    /// Returns false if any required column is missing in the schema.
+    bool bind(const hipo::bank_view& view) noexcept {
+        m_view = view;
+        if (!view.valid()) return false;
+        const auto& schema = view.get_schema();
+        if (auto h = schema.get_handle("id"); h) h_id = *h;
+        else h_id = {};
+        if (auto h = schema.get_handle("detector"); h) h_detector = *h;
+        else h_detector = {};
+        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
+        else h_sector = {};
+        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
+        else h_layer = {};
+        if (auto h = schema.get_handle("x"); h) h_x = *h;
+        else h_x = {};
+        if (auto h = schema.get_handle("y"); h) h_y = *h;
+        else h_y = {};
+        if (auto h = schema.get_handle("z"); h) h_z = *h;
+        else h_z = {};
+        if (auto h = schema.get_handle("tx"); h) h_tx = *h;
+        else h_tx = {};
+        if (auto h = schema.get_handle("ty"); h) h_ty = *h;
+        else h_ty = {};
+        if (auto h = schema.get_handle("tz"); h) h_tz = *h;
+        else h_tz = {};
+        if (auto h = schema.get_handle("B"); h) h_B = *h;
+        else h_B = {};
+        if (auto h = schema.get_handle("path"); h) h_path = *h;
+        else h_path = {};
+        if (auto h = schema.get_handle("dx"); h) h_dx = *h;
+        else h_dx = {};
+        if (auto h = schema.get_handle("edge"); h) h_edge = *h;
+        else h_edge = {};
+        return true;
+    }
+
+    /// Current row count of the bound bank view.
+    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+
+    /// True if bind() has been called with a valid view.
+    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+
+    /// Access the underlying bank_view (for advanced use).
+    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+
+    // -------------------------------------------------------------------
+    // Per-row scalar getters (handle-based, zero string lookup)
+    // -------------------------------------------------------------------
+    /// id: id of the track
+    [[nodiscard]] int id(int row) const noexcept {
+        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+    }
+    /// detector: id of the detector
+    [[nodiscard]] int detector(int row) const noexcept {
+        return static_cast<int>(m_view.get<int8_t>(h_detector, row));
+    }
+    /// sector: id of the sector
+    [[nodiscard]] int sector(int row) const noexcept {
+        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+    }
+    /// layer: id of the layer
+    [[nodiscard]] int layer(int row) const noexcept {
+        return static_cast<int>(m_view.get<int8_t>(h_layer, row));
+    }
+    /// x: track x position at detector surface (cm)
+    [[nodiscard]] float x(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_x, row));
+    }
+    /// y: track y position at detector surface (cm)
+    [[nodiscard]] float y(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_y, row));
+    }
+    /// z: track z position at detector surface (cm)
+    [[nodiscard]] float z(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_z, row));
+    }
+    /// tx: track unit direction vector x component at detector surface
+    [[nodiscard]] float tx(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_tx, row));
+    }
+    /// ty: track unit direction vector y component at detector surface
+    [[nodiscard]] float ty(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_ty, row));
+    }
+    /// tz: track unit direction vector z component at detector surface
+    [[nodiscard]] float tz(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_tz, row));
+    }
+    /// B: B-field magnitude at detector surface (cm)
+    [[nodiscard]] float B(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_B, row));
+    }
+    /// path: pathlength of the track from the track vertex to the detector surface (cm)
+    [[nodiscard]] float path(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_path, row));
+    }
+    /// dx: pathlength of the track through the detector element (cm)
+    [[nodiscard]] float dx(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_dx, row));
+    }
+    /// edge: distance to the closest detector edge (cm), -1 if edge is not defined, 0 if outside, >0 if inside
+    [[nodiscard]] float edge(int row) const noexcept {
+        return static_cast<float>(m_view.get<float>(h_edge, row));
+    }
+
+    // -------------------------------------------------------------------
+    // Whole-column span accessors (SIMD-friendly, zero-copy)
+    // -------------------------------------------------------------------
+    /// id column as a contiguous span.
+    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
+        return m_view.column<int16_t>(h_id);
+    }
+    /// detector column as a contiguous span.
+    [[nodiscard]] std::span<const int8_t> detector_col() const noexcept {
+        return m_view.column<int8_t>(h_detector);
+    }
+    /// sector column as a contiguous span.
+    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
+        return m_view.column<int8_t>(h_sector);
+    }
+    /// layer column as a contiguous span.
+    [[nodiscard]] std::span<const int8_t> layer_col() const noexcept {
+        return m_view.column<int8_t>(h_layer);
+    }
+    /// x column as a contiguous span.
+    [[nodiscard]] std::span<const float> x_col() const noexcept {
+        return m_view.column<float>(h_x);
+    }
+    /// y column as a contiguous span.
+    [[nodiscard]] std::span<const float> y_col() const noexcept {
+        return m_view.column<float>(h_y);
+    }
+    /// z column as a contiguous span.
+    [[nodiscard]] std::span<const float> z_col() const noexcept {
+        return m_view.column<float>(h_z);
+    }
+    /// tx column as a contiguous span.
+    [[nodiscard]] std::span<const float> tx_col() const noexcept {
+        return m_view.column<float>(h_tx);
+    }
+    /// ty column as a contiguous span.
+    [[nodiscard]] std::span<const float> ty_col() const noexcept {
+        return m_view.column<float>(h_ty);
+    }
+    /// tz column as a contiguous span.
+    [[nodiscard]] std::span<const float> tz_col() const noexcept {
+        return m_view.column<float>(h_tz);
+    }
+    /// B column as a contiguous span.
+    [[nodiscard]] std::span<const float> B_col() const noexcept {
+        return m_view.column<float>(h_B);
+    }
+    /// path column as a contiguous span.
+    [[nodiscard]] std::span<const float> path_col() const noexcept {
+        return m_view.column<float>(h_path);
+    }
+    /// dx column as a contiguous span.
+    [[nodiscard]] std::span<const float> dx_col() const noexcept {
+        return m_view.column<float>(h_dx);
+    }
+    /// edge column as a contiguous span.
+    [[nodiscard]] std::span<const float> edge_col() const noexcept {
+        return m_view.column<float>(h_edge);
+    }
+
+    /// Construct a lightweight Row view for the given index.
+    [[nodiscard]] Row row(int index) const noexcept;
+
+ private:
+    hipo::bank_view m_view{};
+    hipo::column_handle h_id{};
+    hipo::column_handle h_detector{};
+    hipo::column_handle h_sector{};
+    hipo::column_handle h_layer{};
+    hipo::column_handle h_x{};
+    hipo::column_handle h_y{};
+    hipo::column_handle h_z{};
+    hipo::column_handle h_tx{};
+    hipo::column_handle h_ty{};
+    hipo::column_handle h_tz{};
+    hipo::column_handle h_B{};
+    hipo::column_handle h_path{};
+    hipo::column_handle h_dx{};
+    hipo::column_handle h_edge{};
+
+    friend class Row;
+};
+
+/// Lightweight row view for HitBasedTrkg::Trajectory. Stores a pointer + row index only.
+class HitBasedTrkg_Trajectory::Row {
+ public:
+    Row(const HitBasedTrkg_Trajectory* bank, int row) noexcept : m_bank(bank), m_row(row) {}
+    [[nodiscard]] int row_index() const noexcept { return m_row; }
+    [[nodiscard]] int id() const noexcept { return m_bank->id(m_row); }
+    [[nodiscard]] int detector() const noexcept { return m_bank->detector(m_row); }
+    [[nodiscard]] int sector() const noexcept { return m_bank->sector(m_row); }
+    [[nodiscard]] int layer() const noexcept { return m_bank->layer(m_row); }
+    [[nodiscard]] float x() const noexcept { return m_bank->x(m_row); }
+    [[nodiscard]] float y() const noexcept { return m_bank->y(m_row); }
+    [[nodiscard]] float z() const noexcept { return m_bank->z(m_row); }
+    [[nodiscard]] float tx() const noexcept { return m_bank->tx(m_row); }
+    [[nodiscard]] float ty() const noexcept { return m_bank->ty(m_row); }
+    [[nodiscard]] float tz() const noexcept { return m_bank->tz(m_row); }
+    [[nodiscard]] float B() const noexcept { return m_bank->B(m_row); }
+    [[nodiscard]] float path() const noexcept { return m_bank->path(m_row); }
+    [[nodiscard]] float dx() const noexcept { return m_bank->dx(m_row); }
+    [[nodiscard]] float edge() const noexcept { return m_bank->edge(m_row); }
+ private:
+    const HitBasedTrkg_Trajectory* m_bank;
+    int m_row;
+};
+
+inline HitBasedTrkg_Trajectory::Row HitBasedTrkg_Trajectory::row(int index) const noexcept {
+    return Row{this, index};
+}
+
+}  // namespace clas12::bankdefs
