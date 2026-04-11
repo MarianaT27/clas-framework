@@ -44,7 +44,9 @@
  */
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <span>
 #include <vector>
 
@@ -153,5 +155,70 @@ inline auto link_by_pindex(const BankT& bank) -> PindexLinker {
     linker.build(bank.view(), bank.pindex_handle());
     return linker;
 }
+
+/**
+ * @brief Lazy range over `BankT::Row` proxies for a set of row indices.
+ *
+ * Holds a pointer into Event's per-event bank cache (`BankT*`) plus a span
+ * of row indices (typically obtained from `PindexLinker::rows_for`). Each
+ * dereference constructs a `BankT::Row` by value — the Row is a lightweight
+ * proxy (pointer + int), so the range carries no allocations and can be
+ * copied freely.
+ *
+ * Any generated wrapper that exposes a nested `Row` type and a
+ * `row(int)` accessor works; that covers every bank produced by
+ * `scripts/gen_bankdefs.py`.
+ */
+template <typename BankT>
+class PindexRowView {
+   public:
+    using Row = typename BankT::Row;
+
+    PindexRowView() noexcept = default;
+    PindexRowView(const BankT* bank, std::span<const int> rows) noexcept
+        : m_bank{bank}, m_rows{rows} {}
+
+    class iterator {
+       public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type        = Row;
+        using difference_type   = std::ptrdiff_t;
+        using pointer           = void;
+        using reference         = Row;
+
+        iterator() noexcept = default;
+        iterator(const BankT* bank, const int* ptr) noexcept
+            : m_bank{bank}, m_ptr{ptr} {}
+
+        auto operator*() const noexcept -> Row { return m_bank->row(*m_ptr); }
+        auto operator++() noexcept -> iterator& { ++m_ptr; return *this; }
+        auto operator++(int) noexcept -> iterator { auto tmp = *this; ++m_ptr; return tmp; }
+        auto operator==(const iterator& o) const noexcept -> bool { return m_ptr == o.m_ptr; }
+        auto operator!=(const iterator& o) const noexcept -> bool { return m_ptr != o.m_ptr; }
+
+       private:
+        const BankT* m_bank = nullptr;
+        const int*   m_ptr  = nullptr;
+    };
+
+    [[nodiscard]] auto begin() const noexcept -> iterator { return {m_bank, m_rows.data()}; }
+    [[nodiscard]] auto end()   const noexcept -> iterator { return {m_bank, m_rows.data() + m_rows.size()}; }
+    [[nodiscard]] auto size()  const noexcept -> std::size_t { return m_rows.size(); }
+    [[nodiscard]] auto empty() const noexcept -> bool { return m_rows.empty(); }
+    [[nodiscard]] auto operator[](std::size_t i) const noexcept -> Row {
+        return m_bank->row(m_rows[i]);
+    }
+
+    /// Raw row indices, for callers that need the underlying span (e.g. to
+    /// cross-reference a sibling bank via `BankT::row(row_index())`).
+    [[nodiscard]] auto row_indices() const noexcept -> std::span<const int> { return m_rows; }
+
+    /// Pointer to the underlying bound bank wrapper.
+    [[nodiscard]] auto bank() const noexcept -> const BankT* { return m_bank; }
+
+   private:
+    const BankT*          m_bank = nullptr;
+    std::span<const int>  m_rows{};
+};
 
 }  // namespace clas12::framework

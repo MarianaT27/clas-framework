@@ -13,7 +13,6 @@
 #include <map>
 #include <optional>
 #include <ranges>
-#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -403,8 +402,8 @@ class Event {
     }
 
     /**
-     * @brief Return the row indices of bank T whose pindex column matches
-     *        the given particle index.
+     * @brief Return a lazy view of `T::Row` proxies whose pindex column
+     *        matches the given particle index.
      *
      * On the first call for a given bank type, binds the wrapper via
      * bank<T>() and builds a PindexLinker from T::pindex_handle(). The
@@ -412,19 +411,32 @@ class Event {
      * calls - the whole pindex column is read via visit_column exactly
      * once per event per bank.
      *
-     * @tparam T Generated bank wrapper type with a pindex_handle() member.
+     * The returned `PindexRowView<T>` yields `T::Row` proxies on
+     * dereference; each Row is a lightweight (pointer + index) object
+     * generated for every HIPO bank. Callers iterate with a range-for
+     * loop and read column values directly off the row:
+     *
+     * @code
+     * for (auto hit : event.rows_for_pindex<REC_Calorimeter>(pindex)) {
+     *     if (hit.detector() != ECAL) continue;
+     *     // hit.energy(), hit.layer(), hit.lu(), ...
+     * }
+     * @endcode
+     *
+     * @tparam T Generated bank wrapper type with `Row`, `row(int)` and
+     *           `pindex_handle()` members (all emitted by gen_bankdefs.py).
      * @param pindex Particle index to look up.
-     * @return Span over the row indices linked to that pindex (empty if none).
+     * @return Lazy row-proxy view (empty if no matching rows).
      */
     template <typename T>
-    auto rows_for_pindex(int pindex) -> std::span<const int> {
+    auto rows_for_pindex(int pindex) -> PindexRowView<T> {
         auto& bound = bank<T>();  // ensures wrapper is bound and cached
         auto& slot = m_bank_cache[std::type_index(typeid(T))];
         if (!slot.linker_built) {
             slot.linker.build(bound.view(), bound.pindex_handle());
             slot.linker_built = true;
         }
-        return slot.linker.rows_for(pindex);
+        return PindexRowView<T>{&bound, slot.linker.rows_for(pindex)};
     }
 
    private:

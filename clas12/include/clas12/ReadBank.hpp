@@ -4,17 +4,18 @@
  * @file ReadBank.hpp
  * @brief Physics-view bank readers for CLAS12 detector data.
  *
- * Every read_*_bank function takes a clas12::framework::Event& and goes
- * through the per-event generated-wrapper cache:
+ * Every read_*_bank function takes a clas12::framework::Event& and
+ * iterates row proxies from the framework's pindex-linked row view:
  *
- *   event.bank<clas12::bankdefs::REC_Calorimeter>()     // bind + cache
- *   event.rows_for_pindex<clas12::bankdefs::REC_Calorimeter>(pindex)
+ *   for (auto hit : event.rows_for_pindex<REC_Calorimeter>(pindex)) {
+ *       if (hit.detector() != ECAL) continue;
+ *       ... hit.energy(), hit.layer(), ...
+ *   }
  *
  * The first call per bank per event binds the generated wrapper and
- * builds a PindexLinker; subsequent calls on the same bank type reuse
- * both. For a selection pipeline that reads the same calorimeter bank
- * N times per event, N-1 of those reads cost nothing beyond a hash
- * lookup.
+ * builds a PindexLinker; subsequent calls reuse both via the cache in
+ * Event. The Row proxies yielded by the view carry a pointer + row
+ * index only, so iteration allocates nothing.
  *
  * The denormalized physics-view struct types (CalorimeterBank with
  * pcal/inner/outer, DCTrajBank with region1/region2/region3, etc.) are
@@ -39,7 +40,7 @@
 #include <clas12/framework/core/Event.hpp>
 
 #include <cstdint>
-#include <span>
+#include <optional>
 
 namespace clas12 {
 
@@ -54,23 +55,20 @@ namespace clas12 {
  */
 inline auto read_Cherenkov_bank(clas12::framework::Event& event, int pindex) -> CherenkovBank {
     CherenkovBank result;
-    auto& cher = event.bank<clas12::bankdefs::REC_Cherenkov>();
-    if (!cher.valid()) return result;
+    for (auto hit : event.rows_for_pindex<clas12::bankdefs::REC_Cherenkov>(pindex)) {
+        if (hit.detector() != HTCC) continue;
 
-    for (int row : event.rows_for_pindex<clas12::bankdefs::REC_Cherenkov>(pindex)) {
-        if (cher.detector(row) != HTCC) continue;
-
-        result.sector = cher.sector(row);
-        result.nphe   = cher.nphe(row);
-        result.time   = cher.time(row);
-        result.path   = cher.path(row);
-        result.chi2   = cher.chi2(row);
-        result.x      = cher.x(row);
-        result.y      = cher.y(row);
-        result.z      = cher.z(row);
-        result.dtheta = cher.dtheta(row);
-        result.dphi   = cher.dphi(row);
-        result.status = cher.status(row);
+        result.sector = hit.sector();
+        result.nphe   = hit.nphe();
+        result.time   = hit.time();
+        result.path   = hit.path();
+        result.chi2   = hit.chi2();
+        result.x      = hit.x();
+        result.y      = hit.y();
+        result.z      = hit.z();
+        result.dtheta = hit.dtheta();
+        result.dphi   = hit.dphi();
+        result.status = hit.status();
         break;  // Take first HTCC hit.
     }
 
@@ -84,52 +82,52 @@ inline auto read_Cherenkov_bank(clas12::framework::Event& event, int pindex) -> 
 namespace detail {
 
 inline auto fill_calo_base(CalorimeterBank::CalorimeterStruct& out,
-                           const clas12::bankdefs::REC_Calorimeter& calo, int row) -> void {
-    out.sector = calo.sector(row);
-    out.layer  = calo.layer(row);
-    out.energy = calo.energy(row);
-    out.time   = calo.time(row);
-    out.path   = calo.path(row);
-    out.chi2   = calo.chi2(row);
-    out.x      = calo.x(row);
-    out.y      = calo.y(row);
-    out.z      = calo.z(row);
-    out.lu     = calo.lu(row);
-    out.lv     = calo.lv(row);
-    out.lw     = calo.lw(row);
+                           const clas12::bankdefs::REC_Calorimeter::Row& calo) -> void {
+    out.sector = calo.sector();
+    out.layer  = calo.layer();
+    out.energy = calo.energy();
+    out.time   = calo.time();
+    out.path   = calo.path();
+    out.chi2   = calo.chi2();
+    out.x      = calo.x();
+    out.y      = calo.y();
+    out.z      = calo.z();
+    out.lu     = calo.lu();
+    out.lv     = calo.lv();
+    out.lw     = calo.lw();
 }
 
 inline auto fill_calo_extended(CalorimeterBank::CalorimeterStruct& out,
-                               const clas12::bankdefs::REC_Calorimeter& calo, int row) -> void {
-    out.du  = calo.du(row);
-    out.dv  = calo.dv(row);
-    out.dw  = calo.dw(row);
-    out.m2u = calo.m2u(row);
-    out.m2v = calo.m2v(row);
-    out.m2w = calo.m2w(row);
-    out.m3u = calo.m3u(row);
-    out.m3v = calo.m3v(row);
-    out.m3w = calo.m3w(row);
+                               const clas12::bankdefs::REC_Calorimeter::Row& calo) -> void {
+    out.du  = calo.du();
+    out.dv  = calo.dv();
+    out.dw  = calo.dw();
+    out.m2u = calo.m2u();
+    out.m2v = calo.m2v();
+    out.m2w = calo.m2w();
+    out.m3u = calo.m3u();
+    out.m3v = calo.m3v();
+    out.m3w = calo.m3w();
 }
 
 inline auto fill_calo_extras(CalorimeterBank::CalorimeterStruct& out,
-                             const clas12::bankdefs::REC_CaloExtras& extras, int row) -> void {
-    out.dbstU  = static_cast<int16_t>(extras.dbstU(row));
-    out.dbstV  = static_cast<int16_t>(extras.dbstV(row));
-    out.dbstW  = static_cast<int16_t>(extras.dbstW(row));
-    out.rawEU  = extras.rawEU(row);
-    out.rawEV  = extras.rawEV(row);
-    out.rawEW  = extras.rawEW(row);
-    out.recEU  = extras.recEU(row);
-    out.recEV  = extras.recEV(row);
-    out.recEW  = extras.recEW(row);
-    out.recDTU = extras.recDTU(row);
-    out.recDTV = extras.recDTV(row);
-    out.recDTW = extras.recDTW(row);
-    out.recFTU = extras.recFTU(row);
-    out.recFTV = extras.recFTV(row);
-    out.recFTW = extras.recFTW(row);
-    out.size   = extras.size(row);
+                             const clas12::bankdefs::REC_CaloExtras::Row& extras) -> void {
+    out.dbstU  = static_cast<int16_t>(extras.dbstU());
+    out.dbstV  = static_cast<int16_t>(extras.dbstV());
+    out.dbstW  = static_cast<int16_t>(extras.dbstW());
+    out.rawEU  = extras.rawEU();
+    out.rawEV  = extras.rawEV();
+    out.rawEW  = extras.rawEW();
+    out.recEU  = extras.recEU();
+    out.recEV  = extras.recEV();
+    out.recEW  = extras.recEW();
+    out.recDTU = extras.recDTU();
+    out.recDTV = extras.recDTV();
+    out.recDTW = extras.recDTW();
+    out.recFTU = extras.recFTU();
+    out.recFTV = extras.recFTV();
+    out.recFTW = extras.recFTW();
+    out.size   = extras.size();
 }
 
 inline auto calo_target(CalorimeterBank& result, int layer)
@@ -149,15 +147,12 @@ inline auto calo_target(CalorimeterBank& result, int layer)
  */
 inline auto read_Calorimeter_bank(clas12::framework::Event& event, int pindex) -> CalorimeterBank {
     CalorimeterBank result;
-    auto& calo = event.bank<clas12::bankdefs::REC_Calorimeter>();
-    if (!calo.valid()) return result;
+    for (auto calo : event.rows_for_pindex<clas12::bankdefs::REC_Calorimeter>(pindex)) {
+        if (calo.detector() != ECAL) continue;
 
-    for (int row : event.rows_for_pindex<clas12::bankdefs::REC_Calorimeter>(pindex)) {
-        if (calo.detector(row) != ECAL) continue;
-
-        auto* target = detail::calo_target(result, calo.layer(row));
+        auto* target = detail::calo_target(result, calo.layer());
         if (!target) continue;
-        detail::fill_calo_base(*target, calo, row);
+        detail::fill_calo_base(*target, calo);
     }
 
     return result;
@@ -171,20 +166,20 @@ inline auto read_Calorimeter_bank(clas12::framework::Event& event, int pindex) -
  */
 inline auto read_Calorimeter_bank_with_extras(clas12::framework::Event& event, int pindex) -> CalorimeterBank {
     CalorimeterBank result;
-    auto& calo   = event.bank<clas12::bankdefs::REC_Calorimeter>();
     auto& extras = event.bank<clas12::bankdefs::REC_CaloExtras>();
-    if (!calo.valid()) return result;
     const bool has_extras = extras.valid();
+    const int extras_rows = extras.rows();
 
-    for (int row : event.rows_for_pindex<clas12::bankdefs::REC_Calorimeter>(pindex)) {
-        if (calo.detector(row) != ECAL) continue;
+    for (auto calo : event.rows_for_pindex<clas12::bankdefs::REC_Calorimeter>(pindex)) {
+        if (calo.detector() != ECAL) continue;
 
-        auto* target = detail::calo_target(result, calo.layer(row));
+        auto* target = detail::calo_target(result, calo.layer());
         if (!target) continue;
-        detail::fill_calo_base(*target, calo, row);
-        detail::fill_calo_extended(*target, calo, row);
-        if (has_extras && row < extras.rows()) {
-            detail::fill_calo_extras(*target, extras, row);
+        detail::fill_calo_base(*target, calo);
+        detail::fill_calo_extended(*target, calo);
+        const int row = calo.row_index();
+        if (has_extras && row < extras_rows) {
+            detail::fill_calo_extras(*target, extras.row(row));
         }
     }
 
@@ -200,21 +195,18 @@ inline auto read_Calorimeter_bank_with_extras(clas12::framework::Event& event, i
  */
 inline auto read_Track_bank(clas12::framework::Event& event, int pindex) -> TrackBank {
     TrackBank result;
-    auto& track = event.bank<clas12::bankdefs::REC_Track>();
-    if (!track.valid()) return result;
+    for (auto track : event.rows_for_pindex<clas12::bankdefs::REC_Track>(pindex)) {
+        if (track.detector() != DC) continue;
 
-    for (int row : event.rows_for_pindex<clas12::bankdefs::REC_Track>(pindex)) {
-        if (track.detector(row) != DC) continue;
-
-        result.index    = track.index(row);
-        result.pindex   = track.pindex(row);
-        result.detector = track.detector(row);
-        result.sector   = track.sector(row);
-        result.status   = track.status(row);
-        result.q        = track.q(row);
-        result.chi2     = track.chi2(row);
-        result.ndf      = track.NDF(row);
-        result.hbindex  = track.hbindex(row);
+        result.index    = track.index();
+        result.pindex   = track.pindex();
+        result.detector = track.detector();
+        result.sector   = track.sector();
+        result.status   = track.status();
+        result.q        = track.q();
+        result.chi2     = track.chi2();
+        result.ndf      = track.NDF();
+        result.hbindex  = track.hbindex();
         break;  // Take first DC track.
     }
 
@@ -227,19 +219,19 @@ inline auto read_Track_bank(clas12::framework::Event& event, int pindex) -> Trac
 
 namespace detail {
 
-inline auto fill_traj(TrajBank& out, const clas12::bankdefs::REC_Traj& traj, int row) -> void {
-    out.pindex   = traj.pindex(row);
-    out.index    = traj.index(row);
-    out.detector = traj.detector(row);
-    out.layer    = traj.layer(row);
-    out.x  = traj.x(row);
-    out.y  = traj.y(row);
-    out.z  = traj.z(row);
-    out.cx = traj.cx(row);
-    out.cy = traj.cy(row);
-    out.cz = traj.cz(row);
-    out.path = traj.path(row);
-    out.edge = traj.edge(row);
+inline auto fill_traj(TrajBank& out, const clas12::bankdefs::REC_Traj::Row& traj) -> void {
+    out.pindex   = traj.pindex();
+    out.index    = traj.index();
+    out.detector = traj.detector();
+    out.layer    = traj.layer();
+    out.x  = traj.x();
+    out.y  = traj.y();
+    out.z  = traj.z();
+    out.cx = traj.cx();
+    out.cy = traj.cy();
+    out.cz = traj.cz();
+    out.path = traj.path();
+    out.edge = traj.edge();
 }
 
 }  // namespace detail
@@ -249,16 +241,13 @@ inline auto fill_traj(TrajBank& out, const clas12::bankdefs::REC_Traj& traj, int
  */
 inline auto read_Traj_bank(clas12::framework::Event& event, int pindex) -> DCTrajBank {
     DCTrajBank result;
-    auto& traj = event.bank<clas12::bankdefs::REC_Traj>();
-    if (!traj.valid()) return result;
+    for (auto traj : event.rows_for_pindex<clas12::bankdefs::REC_Traj>(pindex)) {
+        if (traj.detector() != DC) continue;
 
-    for (int row : event.rows_for_pindex<clas12::bankdefs::REC_Traj>(pindex)) {
-        if (traj.detector(row) != DC) continue;
-
-        switch (traj.layer(row)) {
-            case DC1: detail::fill_traj(result.region1, traj, row); break;
-            case DC3: detail::fill_traj(result.region2, traj, row); break;
-            case DC6: detail::fill_traj(result.region3, traj, row); break;
+        switch (traj.layer()) {
+            case DC1: detail::fill_traj(result.region1, traj); break;
+            case DC3: detail::fill_traj(result.region2, traj); break;
+            case DC6: detail::fill_traj(result.region3, traj); break;
         }
     }
 
@@ -272,45 +261,46 @@ inline auto read_Traj_bank(clas12::framework::Event& event, int pindex) -> DCTra
 namespace detail {
 
 inline auto fill_scint_base(ScintillatorBank& out,
-                            const clas12::bankdefs::REC_Scintillator& scint, int row) -> void {
-    out.index     = scint.index(row);
-    out.pindex    = scint.pindex(row);
-    out.detector  = scint.detector(row);
-    out.sector    = scint.sector(row);
-    out.layer     = scint.layer(row);
-    out.component = scint.component(row);
-    out.energy    = scint.energy(row);
-    out.time      = scint.time(row);
-    out.path      = scint.path(row);
-    out.chi2      = scint.chi2(row);
-    out.x         = scint.x(row);
-    out.y         = scint.y(row);
-    out.z         = scint.z(row);
-    out.hx        = scint.hx(row);
-    out.hy        = scint.hy(row);
-    out.hz        = scint.hz(row);
-    out.status    = scint.status(row);
+                            const clas12::bankdefs::REC_Scintillator::Row& scint) -> void {
+    out.index     = scint.index();
+    out.pindex    = scint.pindex();
+    out.detector  = scint.detector();
+    out.sector    = scint.sector();
+    out.layer     = scint.layer();
+    out.component = scint.component();
+    out.energy    = scint.energy();
+    out.time      = scint.time();
+    out.path      = scint.path();
+    out.chi2      = scint.chi2();
+    out.x         = scint.x();
+    out.y         = scint.y();
+    out.z         = scint.z();
+    out.hx        = scint.hx();
+    out.hy        = scint.hy();
+    out.hz        = scint.hz();
+    out.status    = scint.status();
 }
 
-/// Select the best FTOF row from the linked rows (priority: 1B > 1A > 2).
-inline auto select_best_ftof(const clas12::bankdefs::REC_Scintillator& scint,
-                             std::span<const int> rows) -> int {
-    int best_row = -1;
+/// Select the best FTOF Row from the linked rows (priority: 1B > 1A > 2).
+inline auto select_best_ftof(
+    clas12::framework::PindexRowView<clas12::bankdefs::REC_Scintillator> rows)
+    -> std::optional<clas12::bankdefs::REC_Scintillator::Row> {
+    std::optional<clas12::bankdefs::REC_Scintillator::Row> best;
     int best_layer = -1;
-    for (int row : rows) {
-        if (scint.detector(row) != FTOF) continue;
+    for (auto scint : rows) {
+        if (scint.detector() != FTOF) continue;
 
-        const int layer = scint.layer(row);
+        const int layer = scint.layer();
         const bool is_better =
             (layer == FTOF1B && best_layer != FTOF1B) ||
             (layer == FTOF1A && best_layer != FTOF1B && best_layer != FTOF1A) ||
-            (layer == FTOF2  && best_row == -1);
+            (layer == FTOF2  && !best.has_value());
         if (is_better) {
-            best_row = row;
+            best = scint;
             best_layer = layer;
         }
     }
-    return best_row;
+    return best;
 }
 
 }  // namespace detail
@@ -322,14 +312,11 @@ inline auto select_best_ftof(const clas12::bankdefs::REC_Scintillator& scint,
  */
 inline auto read_Scintillator_bank(clas12::framework::Event& event, int pindex) -> ScintillatorBank {
     ScintillatorBank result;
-    auto& scint = event.bank<clas12::bankdefs::REC_Scintillator>();
-    if (!scint.valid()) return result;
+    auto best = detail::select_best_ftof(
+        event.rows_for_pindex<clas12::bankdefs::REC_Scintillator>(pindex));
+    if (!best.has_value()) return result;
 
-    const int best_row = detail::select_best_ftof(
-        scint, event.rows_for_pindex<clas12::bankdefs::REC_Scintillator>(pindex));
-    if (best_row < 0) return result;
-
-    detail::fill_scint_base(result, scint, best_row);
+    detail::fill_scint_base(result, *best);
     return result;
 }
 
@@ -338,20 +325,19 @@ inline auto read_Scintillator_bank(clas12::framework::Event& event, int pindex) 
  */
 inline auto read_Scintillator_bank_with_extras(clas12::framework::Event& event, int pindex) -> ScintillatorBank {
     ScintillatorBank result;
-    auto& scint  = event.bank<clas12::bankdefs::REC_Scintillator>();
+    auto best = detail::select_best_ftof(
+        event.rows_for_pindex<clas12::bankdefs::REC_Scintillator>(pindex));
+    if (!best.has_value()) return result;
+
+    detail::fill_scint_base(result, *best);
+
     auto& extras = event.bank<clas12::bankdefs::REC_ScintExtras>();
-    if (!scint.valid()) return result;
-    const bool has_extras = extras.valid();
-
-    const int best_row = detail::select_best_ftof(
-        scint, event.rows_for_pindex<clas12::bankdefs::REC_Scintillator>(pindex));
-    if (best_row < 0) return result;
-
-    detail::fill_scint_base(result, scint, best_row);
-    if (has_extras && best_row < extras.rows()) {
-        result.dedx      = extras.dedx(best_row);
-        result.size      = static_cast<int16_t>(extras.size(best_row));
-        result.layermult = static_cast<char>(extras.layermult(best_row));
+    const int best_row = best->row_index();
+    if (extras.valid() && best_row < extras.rows()) {
+        auto ext = extras.row(best_row);
+        result.dedx      = ext.dedx();
+        result.size      = static_cast<int16_t>(ext.size());
+        result.layermult = static_cast<char>(ext.layermult());
     }
 
     return result;
@@ -366,36 +352,33 @@ inline auto read_Scintillator_bank_with_extras(clas12::framework::Event& event, 
  */
 inline auto read_RICHParticle_bank(clas12::framework::Event& event, int pindex) -> RICHParticleBank {
     RICHParticleBank result;
-    auto& rich = event.bank<clas12::bankdefs::RICH_Particle>();
-    if (!rich.valid()) return result;
-
     // RICH::Particle exposes a pindex handle; use the cached linker to
     // skip straight to the matched rows instead of a linear scan.
-    for (int row : event.rows_for_pindex<clas12::bankdefs::RICH_Particle>(pindex)) {
-        result.id       = rich.id(row);
-        result.hindex   = rich.hindex(row);
+    for (auto rich : event.rows_for_pindex<clas12::bankdefs::RICH_Particle>(pindex)) {
+        result.id       = rich.id();
+        result.hindex   = rich.hindex();
         result.pindex   = pindex;
 
-        result.emilay   = rich.emilay(row);
-        result.emico    = rich.emico(row);
-        result.enico    = rich.enico(row);
-        result.emqua    = rich.emqua(row);
-        result.mchi2    = rich.mchi2(row);
-        result.mass     = rich.mass(row);
+        result.emilay   = rich.emilay();
+        result.emico    = rich.emico();
+        result.enico    = rich.enico();
+        result.emqua    = rich.emqua();
+        result.mchi2    = rich.mchi2();
+        result.mass     = rich.mass();
 
-        result.best_PID = rich.best_PID(row);
-        result.RQ       = rich.RQ(row);
-        result.ReQ      = rich.ReQ(row);
-        result.el_logl  = rich.el_logl(row);
-        result.pi_logl  = rich.pi_logl(row);
-        result.k_logl   = rich.k_logl(row);
-        result.pr_logl  = rich.pr_logl(row);
+        result.best_PID = rich.best_PID();
+        result.RQ       = rich.RQ();
+        result.ReQ      = rich.ReQ();
+        result.el_logl  = rich.el_logl();
+        result.pi_logl  = rich.pi_logl();
+        result.k_logl   = rich.k_logl();
+        result.pr_logl  = rich.pr_logl();
 
-        result.best_ch   = rich.best_ch(row);
-        result.best_c2   = rich.best_c2(row);
-        result.best_RL   = rich.best_RL(row);
-        result.best_ntot = rich.best_ntot(row);
-        result.best_mass = rich.best_mass(row);
+        result.best_ch   = rich.best_ch();
+        result.best_c2   = rich.best_c2();
+        result.best_RL   = rich.best_RL();
+        result.best_ntot = rich.best_ntot();
+        result.best_mass = rich.best_mass();
         break;  // Take first match.
     }
 
@@ -411,12 +394,9 @@ inline auto read_RICHParticle_bank(clas12::framework::Event& event, int pindex) 
  */
 inline auto get_mc_particle_index(clas12::framework::Event& event, int rec_pindex,
                                   float min_quality = 0.92f) -> int {
-    auto& match = event.bank<clas12::bankdefs::MC_RecMatch>();
-    if (!match.valid()) return -1;
-
-    for (int row : event.rows_for_pindex<clas12::bankdefs::MC_RecMatch>(rec_pindex)) {
-        const int mc_index = match.mcindex(row);
-        const float quality = match.quality(row);
+    for (auto match : event.rows_for_pindex<clas12::bankdefs::MC_RecMatch>(rec_pindex)) {
+        const int mc_index = match.mcindex();
+        const float quality = match.quality();
         if (quality >= min_quality && mc_index >= 0) return mc_index;
         break;  // pindex is unique.
     }
