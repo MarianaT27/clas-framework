@@ -683,7 +683,7 @@ private:
                 }
 
                 // Determine particle sector from scintillator
-                auto ftof = clas12::read_Scintillator_bank_with_extras(event, particle.index());
+                auto ftof = clas12::read_Scintillator_bank(event, particle.index());
                 int sector = ftof.sector;
 
                 // Sector 1: track agreement and fill comparison histograms
@@ -719,9 +719,9 @@ private:
 
                 // Fill TTree
                 if (m_ntuple) {
-                    auto calo = clas12::read_Calorimeter_bank_with_extras(event, particle.index());
+                    auto calo = clas12::read_Calorimeter_bank(event, particle.index());
                     auto htcc = clas12::read_Cherenkov_bank(event, particle.index());
-                    auto ftof = clas12::read_Scintillator_bank_with_extras(event, particle.index());
+                    auto ftof = clas12::read_Scintillator_bank(event, particle.index());
 
                     populate_particle_data(particle, rich);
                     populate_calorimeter_data(calo);
@@ -1029,9 +1029,9 @@ private:
     void fill_exclusive_ntuple(clas12::framework::Event& event,
                                const clas12::Particle& hadron, int true_pid,
                                const ExclusivityVars& excl) {
-        auto calo = clas12::read_Calorimeter_bank_with_extras(event, hadron.index());
+        auto calo = clas12::read_Calorimeter_bank(event, hadron.index());
         auto htcc = clas12::read_Cherenkov_bank(event, hadron.index());
-        auto ftof = clas12::read_Scintillator_bank_with_extras(event, hadron.index());
+        auto ftof = clas12::read_Scintillator_bank(event, hadron.index());
 
         auto& d = m_ntuple.data();
         d.rich_pid       = 0;
@@ -1062,91 +1062,107 @@ private:
     void populate_calorimeter_data(const clas12::CalorimeterBank& calo) {
         auto& d = m_ntuple.data();
 
-        // Helper to populate one layer's fields
-        auto fill_layer = [](auto& d_E, auto& d_chi2, auto& d_time, auto& d_path,
-                             auto& d_lu, auto& d_lv, auto& d_lw,
-                             auto& d_du, auto& d_dv, auto& d_dw,
-                             auto& d_m2u, auto& d_m2v, auto& d_m2w,
-                             auto& d_m3u, auto& d_m3v, auto& d_m3w,
-                             auto& d_dbstU, auto& d_dbstV, auto& d_dbstW,
-                             auto& d_rawEU, auto& d_rawEV, auto& d_rawEW,
-                             auto& d_recEU, auto& d_recEV, auto& d_recEW,
-                             auto& d_recDTU, auto& d_recDTV, auto& d_recDTW,
-                             auto& d_recFTU, auto& d_recFTV, auto& d_recFTW,
-                             auto& d_size,
-                             const clas12::CalorimeterBank::CalorimeterStruct& layer) {
-            d_E     = layer.energy;
-            d_chi2  = layer.chi2;
-            d_time  = layer.time;
-            d_path  = layer.path;
-            d_lu    = layer.lu;
-            d_lv    = layer.lv;
-            d_lw    = layer.lw;
-            d_du    = layer.du;
-            d_dv    = layer.dv;
-            d_dw    = layer.dw;
-            d_m2u   = layer.m2u;
-            d_m2v   = layer.m2v;
-            d_m2w   = layer.m2w;
-            d_m3u   = layer.m3u;
-            d_m3v   = layer.m3v;
-            d_m3w   = layer.m3w;
-            d_dbstU = layer.dbstU;
-            d_dbstV = layer.dbstV;
-            d_dbstW = layer.dbstW;
-            d_rawEU = layer.rawEU;
-            d_rawEV = layer.rawEV;
-            d_rawEW = layer.rawEW;
-            d_recEU = layer.recEU;
-            d_recEV = layer.recEV;
-            d_recEW = layer.recEW;
-            d_recDTU = layer.recDTU;
-            d_recDTV = layer.recDTV;
-            d_recDTW = layer.recDTW;
-            d_recFTU = layer.recFTU;
-            d_recFTV = layer.recFTV;
-            d_recFTW = layer.recFTW;
-            d_size   = layer.size;
-        };
-
         // PCAL
-        fill_layer(d.PCAL_E, d.PCAL_chi2, d.PCAL_time, d.PCAL_path,
-                   d.PCAL_lu, d.PCAL_lv, d.PCAL_lw,
-                   d.PCAL_du, d.PCAL_dv, d.PCAL_dw,
-                   d.PCAL_m2u, d.PCAL_m2v, d.PCAL_m2w,
-                   d.PCAL_m3u, d.PCAL_m3v, d.PCAL_m3w,
-                   d.PCAL_dbstU, d.PCAL_dbstV, d.PCAL_dbstW,
-                   d.PCAL_rawEU, d.PCAL_rawEV, d.PCAL_rawEW,
-                   d.PCAL_recEU, d.PCAL_recEV, d.PCAL_recEW,
-                   d.PCAL_recDTU, d.PCAL_recDTV, d.PCAL_recDTW,
-                   d.PCAL_recFTU, d.PCAL_recFTV, d.PCAL_recFTW,
-                   d.PCAL_size, calo.pcal);
+        d.PCAL_E      = calo.pcal_energy;
+        d.PCAL_chi2   = calo.pcal_chi2;
+        d.PCAL_time   = calo.pcal_time;
+        d.PCAL_path   = calo.pcal_path;
+        d.PCAL_lu     = calo.pcal_lu;
+        d.PCAL_lv     = calo.pcal_lv;
+        d.PCAL_lw     = calo.pcal_lw;
+        d.PCAL_du     = calo.pcal_du;
+        d.PCAL_dv     = calo.pcal_dv;
+        d.PCAL_dw     = calo.pcal_dw;
+        d.PCAL_m2u    = calo.pcal_m2u;
+        d.PCAL_m2v    = calo.pcal_m2v;
+        d.PCAL_m2w    = calo.pcal_m2w;
+        d.PCAL_m3u    = calo.pcal_m3u;
+        d.PCAL_m3v    = calo.pcal_m3v;
+        d.PCAL_m3w    = calo.pcal_m3w;
+        d.PCAL_dbstU  = calo.pcal_dbstU;
+        d.PCAL_dbstV  = calo.pcal_dbstV;
+        d.PCAL_dbstW  = calo.pcal_dbstW;
+        d.PCAL_rawEU  = calo.pcal_rawEU;
+        d.PCAL_rawEV  = calo.pcal_rawEV;
+        d.PCAL_rawEW  = calo.pcal_rawEW;
+        d.PCAL_recEU  = calo.pcal_recEU;
+        d.PCAL_recEV  = calo.pcal_recEV;
+        d.PCAL_recEW  = calo.pcal_recEW;
+        d.PCAL_recDTU = calo.pcal_recDTU;
+        d.PCAL_recDTV = calo.pcal_recDTV;
+        d.PCAL_recDTW = calo.pcal_recDTW;
+        d.PCAL_recFTU = calo.pcal_recFTU;
+        d.PCAL_recFTV = calo.pcal_recFTV;
+        d.PCAL_recFTW = calo.pcal_recFTW;
+        d.PCAL_size   = calo.pcal_size;
 
         // ECIN
-        fill_layer(d.ICAL_E, d.ICAL_chi2, d.ICAL_time, d.ICAL_path,
-                   d.ICAL_lu, d.ICAL_lv, d.ICAL_lw,
-                   d.ICAL_du, d.ICAL_dv, d.ICAL_dw,
-                   d.ICAL_m2u, d.ICAL_m2v, d.ICAL_m2w,
-                   d.ICAL_m3u, d.ICAL_m3v, d.ICAL_m3w,
-                   d.ICAL_dbstU, d.ICAL_dbstV, d.ICAL_dbstW,
-                   d.ICAL_rawEU, d.ICAL_rawEV, d.ICAL_rawEW,
-                   d.ICAL_recEU, d.ICAL_recEV, d.ICAL_recEW,
-                   d.ICAL_recDTU, d.ICAL_recDTV, d.ICAL_recDTW,
-                   d.ICAL_recFTU, d.ICAL_recFTV, d.ICAL_recFTW,
-                   d.ICAL_size, calo.inner);
+        d.ICAL_E      = calo.inner_energy;
+        d.ICAL_chi2   = calo.inner_chi2;
+        d.ICAL_time   = calo.inner_time;
+        d.ICAL_path   = calo.inner_path;
+        d.ICAL_lu     = calo.inner_lu;
+        d.ICAL_lv     = calo.inner_lv;
+        d.ICAL_lw     = calo.inner_lw;
+        d.ICAL_du     = calo.inner_du;
+        d.ICAL_dv     = calo.inner_dv;
+        d.ICAL_dw     = calo.inner_dw;
+        d.ICAL_m2u    = calo.inner_m2u;
+        d.ICAL_m2v    = calo.inner_m2v;
+        d.ICAL_m2w    = calo.inner_m2w;
+        d.ICAL_m3u    = calo.inner_m3u;
+        d.ICAL_m3v    = calo.inner_m3v;
+        d.ICAL_m3w    = calo.inner_m3w;
+        d.ICAL_dbstU  = calo.inner_dbstU;
+        d.ICAL_dbstV  = calo.inner_dbstV;
+        d.ICAL_dbstW  = calo.inner_dbstW;
+        d.ICAL_rawEU  = calo.inner_rawEU;
+        d.ICAL_rawEV  = calo.inner_rawEV;
+        d.ICAL_rawEW  = calo.inner_rawEW;
+        d.ICAL_recEU  = calo.inner_recEU;
+        d.ICAL_recEV  = calo.inner_recEV;
+        d.ICAL_recEW  = calo.inner_recEW;
+        d.ICAL_recDTU = calo.inner_recDTU;
+        d.ICAL_recDTV = calo.inner_recDTV;
+        d.ICAL_recDTW = calo.inner_recDTW;
+        d.ICAL_recFTU = calo.inner_recFTU;
+        d.ICAL_recFTV = calo.inner_recFTV;
+        d.ICAL_recFTW = calo.inner_recFTW;
+        d.ICAL_size   = calo.inner_size;
 
         // ECOUT
-        fill_layer(d.OCAL_E, d.OCAL_chi2, d.OCAL_time, d.OCAL_path,
-                   d.OCAL_lu, d.OCAL_lv, d.OCAL_lw,
-                   d.OCAL_du, d.OCAL_dv, d.OCAL_dw,
-                   d.OCAL_m2u, d.OCAL_m2v, d.OCAL_m2w,
-                   d.OCAL_m3u, d.OCAL_m3v, d.OCAL_m3w,
-                   d.OCAL_dbstU, d.OCAL_dbstV, d.OCAL_dbstW,
-                   d.OCAL_rawEU, d.OCAL_rawEV, d.OCAL_rawEW,
-                   d.OCAL_recEU, d.OCAL_recEV, d.OCAL_recEW,
-                   d.OCAL_recDTU, d.OCAL_recDTV, d.OCAL_recDTW,
-                   d.OCAL_recFTU, d.OCAL_recFTV, d.OCAL_recFTW,
-                   d.OCAL_size, calo.outer);
+        d.OCAL_E      = calo.outer_energy;
+        d.OCAL_chi2   = calo.outer_chi2;
+        d.OCAL_time   = calo.outer_time;
+        d.OCAL_path   = calo.outer_path;
+        d.OCAL_lu     = calo.outer_lu;
+        d.OCAL_lv     = calo.outer_lv;
+        d.OCAL_lw     = calo.outer_lw;
+        d.OCAL_du     = calo.outer_du;
+        d.OCAL_dv     = calo.outer_dv;
+        d.OCAL_dw     = calo.outer_dw;
+        d.OCAL_m2u    = calo.outer_m2u;
+        d.OCAL_m2v    = calo.outer_m2v;
+        d.OCAL_m2w    = calo.outer_m2w;
+        d.OCAL_m3u    = calo.outer_m3u;
+        d.OCAL_m3v    = calo.outer_m3v;
+        d.OCAL_m3w    = calo.outer_m3w;
+        d.OCAL_dbstU  = calo.outer_dbstU;
+        d.OCAL_dbstV  = calo.outer_dbstV;
+        d.OCAL_dbstW  = calo.outer_dbstW;
+        d.OCAL_rawEU  = calo.outer_rawEU;
+        d.OCAL_rawEV  = calo.outer_rawEV;
+        d.OCAL_rawEW  = calo.outer_rawEW;
+        d.OCAL_recEU  = calo.outer_recEU;
+        d.OCAL_recEV  = calo.outer_recEV;
+        d.OCAL_recEW  = calo.outer_recEW;
+        d.OCAL_recDTU = calo.outer_recDTU;
+        d.OCAL_recDTV = calo.outer_recDTV;
+        d.OCAL_recDTW = calo.outer_recDTW;
+        d.OCAL_recFTU = calo.outer_recFTU;
+        d.OCAL_recFTV = calo.outer_recFTV;
+        d.OCAL_recFTW = calo.outer_recFTW;
+        d.OCAL_size   = calo.outer_size;
     }
 
     void populate_cherenkov_data(const clas12::CherenkovBank& htcc) {

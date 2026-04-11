@@ -100,30 +100,30 @@ public:
         if (!group) return;
 
         const double p = electron.p();
-        const double E_tot = calo.pcal.energy + calo.inner.energy + calo.outer.energy;
+        const double E_tot = calo.pcal_energy + calo.inner_energy + calo.outer_energy;
 
         // Basic kinematics
         fill_kinematics_with_pid(group, electron);
 
         // Sector
-        group->hist1d("sector").fill(static_cast<double>(calo.pcal.sector));
+        group->hist1d("sector").fill(static_cast<double>(calo.pcal_sector));
 
         // Calorimeter energies
-        group->hist1d("pcal_E").fill(calo.pcal.energy);
-        group->hist1d("ecin_E").fill(calo.inner.energy);
-        group->hist1d("ecout_E").fill(calo.outer.energy);
+        group->hist1d("pcal_E").fill(calo.pcal_energy);
+        group->hist1d("ecin_E").fill(calo.inner_energy);
+        group->hist1d("ecout_E").fill(calo.outer_energy);
         group->hist1d("ecal_E").fill(E_tot);
         group->hist1d("sampling_fraction").fill(SF);
 
         // DC chi2/NDF (guard against division by zero when bank data is missing)
-        if (trk_r1.ndf > 0) group->hist1d("dc_chi2_R1").fill(trk_r1.chi2 / trk_r1.ndf);
-        if (trk_r2.ndf > 0) group->hist1d("dc_chi2_R2").fill(trk_r2.chi2 / trk_r2.ndf);
-        if (trk_r3.ndf > 0) group->hist1d("dc_chi2_R3").fill(trk_r3.chi2 / trk_r3.ndf);
+        if (trk_r1.NDF > 0) group->hist1d("dc_chi2_R1").fill(trk_r1.chi2 / trk_r1.NDF);
+        if (trk_r2.NDF > 0) group->hist1d("dc_chi2_R2").fill(trk_r2.chi2 / trk_r2.NDF);
+        if (trk_r3.NDF > 0) group->hist1d("dc_chi2_R3").fill(trk_r3.chi2 / trk_r3.NDF);
 
         // PCAL fiducial
-        group->hist1d("pcal_lu").fill(calo.pcal.lu);
-        group->hist1d("pcal_lv").fill(calo.pcal.lv);
-        group->hist1d("pcal_lw").fill(calo.pcal.lw);
+        group->hist1d("pcal_lu").fill(calo.pcal_lu);
+        group->hist1d("pcal_lv").fill(calo.pcal_lv);
+        group->hist1d("pcal_lw").fill(calo.pcal_lw);
 
         // 2D correlations
         group->hist2d("sf_vs_p").fill(p, SF);
@@ -132,8 +132,8 @@ public:
         group->hist2d("vz_vs_theta").fill(electron.theta(), electron.vz());
         group->hist2d("theta_vs_phi").fill(electron.phi(), electron.theta());
         group->hist2d("p_vs_theta").fill(electron.theta(), p);
-        group->hist2d("pcal_lv_vs_lu").fill(calo.pcal.lu, calo.pcal.lv);
-        group->hist2d("ecin_vs_pcal").fill(calo.pcal.energy, calo.inner.energy);
+        group->hist2d("pcal_lv_vs_lu").fill(calo.pcal_lu, calo.pcal_lv);
+        group->hist2d("ecin_vs_pcal").fill(calo.pcal_energy, calo.inner_energy);
     }
 
     /**

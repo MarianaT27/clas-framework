@@ -403,8 +403,8 @@ class ElectronCutsService : public Service {
         results.chi2pid = pass_chi2pid_cut(electron.chi2pid());
         results.momentum = pass_momentum_cut(electron.p());
         results.vz = pass_vz_cut(electron.vz());
-        results.pcal_fiducial = pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw);
-        results.dc_chi2ndf = pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge);
+        results.pcal_fiducial = pass_pcal_fiducial_cut(calorimeter.pcal_lv, calorimeter.pcal_lw);
+        results.dc_chi2ndf = pass_dc_edge_cut(traj.region1_edge, traj.region2_edge, traj.region3_edge);
         results.sampling_fraction = true;  // Not evaluated without SF service
 
         return results;

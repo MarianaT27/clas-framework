@@ -718,8 +718,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
             auto traj = clas12::read_Traj_bank(event, pion.index());
 
             // Store PCAL fiducial variables and count NaN
-            cand.pcal_lv = calo.pcal.lv;
-            cand.pcal_lw = calo.pcal.lw;
+            cand.pcal_lv = calo.pcal_lv;
+            cand.pcal_lw = calo.pcal_lw;
             if (cand.is_forward_detector && (std::isnan(cand.pcal_lv) || std::isnan(cand.pcal_lw))) {
                 if (is_piplus) m_piplus_pcal_nan++;
                 else m_piminus_pcal_nan++;
@@ -1045,9 +1045,9 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
         double r1_min = is_piplus ? 3.875 : 2.125;
         double r2_min = is_piplus ? 4.375 : 3.625;
         double r3_min = is_piplus ? 2.625 : 9.625;
-        return traj.region1.edge > r1_min &&
-               traj.region2.edge > r2_min &&
-               traj.region3.edge > r3_min;
+        return traj.region1_edge > r1_min &&
+               traj.region2_edge > r2_min &&
+               traj.region3_edge > r3_min;
     }
 
     // Cut functions - using configurable properties

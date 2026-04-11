@@ -207,14 +207,14 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         fill_after_cut("SamplingFraction", electron, calorimeter, traj, track);
 
         // PCAL fiducial cut
-        if (m_enable_pcal_fiducial_cut.get() && !m_electron_cuts->pass_pcal_fiducial_cut(calorimeter.pcal.lv, calorimeter.pcal.lw)) {
+        if (m_enable_pcal_fiducial_cut.get() && !m_electron_cuts->pass_pcal_fiducial_cut(calorimeter.pcal_lv, calorimeter.pcal_lw)) {
             return clas12::framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("PCAL Fiducial");
         fill_after_cut("PCALFiducial", electron, calorimeter, traj, track);
 
         // DC edge cut
-        if (m_enable_dc_chi2ndf_cut.get() && !m_electron_cuts->pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) {
+        if (m_enable_dc_chi2ndf_cut.get() && !m_electron_cuts->pass_dc_edge_cut(traj.region1_edge, traj.region2_edge, traj.region3_edge)) {
             return clas12::framework::StatusCode::SUCCESS();
         }
         m_cutflow.pass("DC Chi2/NDF");
@@ -286,11 +286,11 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         candidate.calorimeter = clas12::read_Calorimeter_bank(event, electron.index());
         candidate.trajectory  = clas12::read_Traj_bank(event, electron.index());
         candidate.track       = clas12::read_Track_bank(event, electron.index());
-        candidate.total_energy = candidate.calorimeter.pcal.energy +
-                                 candidate.calorimeter.inner.energy +
-                                 candidate.calorimeter.outer.energy;
+        candidate.total_energy = candidate.calorimeter.pcal_energy +
+                                 candidate.calorimeter.inner_energy +
+                                 candidate.calorimeter.outer_energy;
         candidate.sampling_fraction = candidate.total_energy / electron.p();
-        candidate.sector = candidate.calorimeter.pcal.sector;
+        candidate.sector = candidate.calorimeter.pcal_sector;
         return candidate;
     }
 
@@ -330,14 +330,14 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         }
 
         // PCAL fiducial cut
-        if (m_enable_pcal_fiducial_cut.get() && !m_electron_cuts->pass_pcal_fiducial_cut(calo.pcal.lv, calo.pcal.lw)) return false;
+        if (m_enable_pcal_fiducial_cut.get() && !m_electron_cuts->pass_pcal_fiducial_cut(calo.pcal_lv, calo.pcal_lw)) return false;
         m_cutflow.pass("PCAL Fiducial");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("PCALFiducial", e, calo, traj, candidate.track);
         }
 
         // DC edge cut
-        if (m_enable_dc_chi2ndf_cut.get() && !m_electron_cuts->pass_dc_edge_cut(traj.region1.edge, traj.region2.edge, traj.region3.edge)) return false;
+        if (m_enable_dc_chi2ndf_cut.get() && !m_electron_cuts->pass_dc_edge_cut(traj.region1_edge, traj.region2_edge, traj.region3_edge)) return false;
         m_cutflow.pass("DC Chi2/NDF");
         if (m_config.enable_cut_stage_histograms) {
             fill_after_cut("DCChi2", e, calo, traj, candidate.track);
@@ -627,10 +627,10 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         cut_hists.phi->fill(electron.phi());
         cut_hists.vz->fill(electron.vz());
 
-        const double E_tot = calo.pcal.energy + calo.inner.energy + calo.outer.energy;
+        const double E_tot = calo.pcal_energy + calo.inner_energy + calo.outer_energy;
         const double SF = E_tot / electron.p();
         cut_hists.sampling_fraction->fill(electron.p(), SF);
-        cut_hists.dc_edge_r1->fill(traj.region1.edge);
+        cut_hists.dc_edge_r1->fill(traj.region1_edge);
     }
 
     /**
@@ -755,18 +755,18 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
             clas12::CherenkovBank   cherenkov = clas12::read_Cherenkov_bank(event, track.index());
             [[maybe_unused]] clas12::ScintillatorBank scint = clas12::read_Scintillator_bank(event, track.index());
             clas12::DCTrajBank      traj      = clas12::read_Traj_bank(event, track.index());
-            clas12::TrackBank       trk_r1    = clas12::read_Track_bank(event, traj.region1.index);
-            clas12::TrackBank       trk_r2    = clas12::read_Track_bank(event, traj.region2.index);
-            clas12::TrackBank       trk_r3    = clas12::read_Track_bank(event, traj.region3.index);
+            clas12::TrackBank       trk_r1    = clas12::read_Track_bank(event, traj.region1_index);
+            clas12::TrackBank       trk_r2    = clas12::read_Track_bank(event, traj.region2_index);
+            clas12::TrackBank       trk_r3    = clas12::read_Track_bank(event, traj.region3_index);
 
-            const int sector = calo.pcal.sector;
+            const int sector = calo.pcal_sector;
             if (sector < 1 || sector > 6) continue;
 
             // Calorimeter quantities
-            const double E_tot = calo.pcal.energy + calo.inner.energy + calo.outer.energy;
+            const double E_tot = calo.pcal_energy + calo.inner_energy + calo.outer_energy;
             const double SF = E_tot / track.p();
-            const double E_cal = calo.inner.energy + calo.outer.energy;
-            const double E_pcal = calo.pcal.energy;
+            const double E_cal = calo.inner_energy + calo.outer_energy;
+            const double E_pcal = calo.pcal_energy;
             const int nphe = cherenkov.nphe;
 
             if (E_pcal == 0) continue; // Should not happen for electrons because of EB cut EPCal > 0.06 GeV
@@ -801,33 +801,33 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
                 return std::atan2(std::hypot(c * x - s * y, s * x + c * y), z) * 180.0 / M_PI;
             };
 
-            const double theta_r1 = compute_local_theta(traj.region1.x, traj.region1.y, traj.region1.z, trk_r1.sector);
-            const double theta_r2 = compute_local_theta(traj.region2.x, traj.region2.y, traj.region2.z, trk_r2.sector);
-            const double theta_r3 = compute_local_theta(traj.region3.x, traj.region3.y, traj.region3.z, trk_r3.sector);
+            const double theta_r1 = compute_local_theta(traj.region1_x, traj.region1_y, traj.region1_z, trk_r1.sector);
+            const double theta_r2 = compute_local_theta(traj.region2_x, traj.region2_y, traj.region2_z, trk_r2.sector);
+            const double theta_r3 = compute_local_theta(traj.region3_x, traj.region3_y, traj.region3_z, trk_r3.sector);
 
-            histograms.edge_vs_theta_r1[sector]->fill(traj.region1.edge, theta_r1);
-            histograms.edge_vs_theta_r2[sector]->fill(traj.region2.edge, theta_r2);
-            histograms.edge_vs_theta_r3[sector]->fill(traj.region3.edge, theta_r3);
+            histograms.edge_vs_theta_r1[sector]->fill(traj.region1_edge, theta_r1);
+            histograms.edge_vs_theta_r2[sector]->fill(traj.region2_edge, theta_r2);
+            histograms.edge_vs_theta_r3[sector]->fill(traj.region3_edge, theta_r3);
 
             // Edge vs chi2/ndf
-            const double chi2ndf_r1 = trk_r1.ndf > 0 ? trk_r1.chi2 / trk_r1.ndf : std::numeric_limits<double>::quiet_NaN();
-            const double chi2ndf_r2 = trk_r2.ndf > 0 ? trk_r2.chi2 / trk_r2.ndf : std::numeric_limits<double>::quiet_NaN();
-            const double chi2ndf_r3 = trk_r3.ndf > 0 ? trk_r3.chi2 / trk_r3.ndf : std::numeric_limits<double>::quiet_NaN();
+            const double chi2ndf_r1 = trk_r1.NDF > 0 ? trk_r1.chi2 / trk_r1.NDF : std::numeric_limits<double>::quiet_NaN();
+            const double chi2ndf_r2 = trk_r2.NDF > 0 ? trk_r2.chi2 / trk_r2.NDF : std::numeric_limits<double>::quiet_NaN();
+            const double chi2ndf_r3 = trk_r3.NDF > 0 ? trk_r3.chi2 / trk_r3.NDF : std::numeric_limits<double>::quiet_NaN();
 
-            histograms.edge_vs_chi2ndf_r1[sector]->fill(traj.region1.edge, chi2ndf_r1);
-            histograms.edge_vs_chi2ndf_r2[sector]->fill(traj.region2.edge, chi2ndf_r2);
-            histograms.edge_vs_chi2ndf_r3[sector]->fill(traj.region3.edge, chi2ndf_r3);
+            histograms.edge_vs_chi2ndf_r1[sector]->fill(traj.region1_edge, chi2ndf_r1);
+            histograms.edge_vs_chi2ndf_r2[sector]->fill(traj.region2_edge, chi2ndf_r2);
+            histograms.edge_vs_chi2ndf_r3[sector]->fill(traj.region3_edge, chi2ndf_r3);
 
             // SF vs lv,w
-            histograms.lv_vs_SF[sector]->fill(calo.pcal.lv, SF);
-            histograms.lw_vs_SF[sector]->fill(calo.pcal.lw, SF);
+            histograms.lv_vs_SF[sector]->fill(calo.pcal_lv, SF);
+            histograms.lw_vs_SF[sector]->fill(calo.pcal_lw, SF);
 
             // Low end and high end of lu
-            histograms.lu_vs_SF_low[sector]->fill(calo.pcal.lu, SF);
-            histograms.lu_vs_SF_high[sector]->fill(calo.pcal.lu, SF);
-            if (calo.pcal.lv > 9 && calo.pcal.lw > 9) {
-                histograms.lu_vs_SF_low_with_cut[sector]->fill(calo.pcal.lu, SF);
-                histograms.lu_vs_SF_high_with_cut[sector]->fill(calo.pcal.lu, SF);
+            histograms.lu_vs_SF_low[sector]->fill(calo.pcal_lu, SF);
+            histograms.lu_vs_SF_high[sector]->fill(calo.pcal_lu, SF);
+            if (calo.pcal_lv > 9 && calo.pcal_lw > 9) {
+                histograms.lu_vs_SF_low_with_cut[sector]->fill(calo.pcal_lu, SF);
+                histograms.lu_vs_SF_high_with_cut[sector]->fill(calo.pcal_lu, SF);
             }
         }
     }
@@ -843,16 +843,16 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         h_electron.phi_vs_theta->fill(electron.theta(), electron.phi());
 
         // Fill calorimeter - PCAL
-        h_calorimeter.lu_vs_lv_pcal->fill(calo.pcal.lv, calo.pcal.lu);
-        h_calorimeter.lu_vs_lw_pcal->fill(calo.pcal.lw, calo.pcal.lu);
+        h_calorimeter.lu_vs_lv_pcal->fill(calo.pcal_lv, calo.pcal_lu);
+        h_calorimeter.lu_vs_lw_pcal->fill(calo.pcal_lw, calo.pcal_lu);
 
         // Fill calorimeter - Inner EC
-        h_calorimeter.lu_vs_lv_inner->fill(calo.inner.lv, calo.inner.lu);
-        h_calorimeter.lu_vs_lw_inner->fill(calo.inner.lw, calo.inner.lu);
+        h_calorimeter.lu_vs_lv_inner->fill(calo.inner_lv, calo.inner_lu);
+        h_calorimeter.lu_vs_lw_inner->fill(calo.inner_lw, calo.inner_lu);
 
         // Fill calorimeter - Outer EC
-        h_calorimeter.lu_vs_lv_outer->fill(calo.outer.lv, calo.outer.lu);
-        h_calorimeter.lu_vs_lw_outer->fill(calo.outer.lw, calo.outer.lu);
+        h_calorimeter.lu_vs_lv_outer->fill(calo.outer_lv, calo.outer_lu);
+        h_calorimeter.lu_vs_lw_outer->fill(calo.outer_lw, calo.outer_lu);
 
         // Fill DC histograms by momentum bin
         fill_dc_momentum_binned(electron.p(), traj, track);
@@ -863,7 +863,7 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
     /// Fill DC histograms in the appropriate momentum bin
     auto fill_dc_momentum_binned(double p, const clas12::DCTrajBank& traj, const clas12::TrackBank& track) -> void {
         // Compute chi2/ndf safely
-        const double chi2ndf = (track.ndf > 0) ? track.chi2 / track.ndf : 0.0;
+        const double chi2ndf = (track.NDF > 0) ? track.chi2 / track.NDF : 0.0;
 
         // Determine momentum bin using configurable range
         const int bin_idx = static_cast<int>((p - m_config.p_bin_min) / m_config.p_bin_width);
@@ -877,19 +877,19 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
 
         // Fill thread-safe histogram if it exists for this bin
         if (auto it = h_dc.chi2ndf_vs_edge_r1.find(bin_key); it != h_dc.chi2ndf_vs_edge_r1.end()) {
-            it->second->fill(traj.region1.edge, chi2ndf);
+            it->second->fill(traj.region1_edge, chi2ndf);
         }
         if (auto it = h_dc.chi2ndf_vs_edge_r2.find(bin_key); it != h_dc.chi2ndf_vs_edge_r2.end()) {
-            it->second->fill(traj.region2.edge, chi2ndf);
+            it->second->fill(traj.region2_edge, chi2ndf);
         }
         if (auto it = h_dc.chi2ndf_vs_edge_r3.find(bin_key); it != h_dc.chi2ndf_vs_edge_r3.end()) {
-            it->second->fill(traj.region3.edge, chi2ndf);
+            it->second->fill(traj.region3_edge, chi2ndf);
         }
     }
 
     auto fill_dc_theta_binned(double theta, const clas12::DCTrajBank& traj, const clas12::TrackBank& track) -> void {
         // Compute chi2/ndf safely
-        const double chi2ndf = (track.ndf > 0) ? track.chi2 / track.ndf : 0.0;
+        const double chi2ndf = (track.NDF > 0) ? track.chi2 / track.NDF : 0.0;
 
         // Determine theta bin using configurable range
         const int bin_idx = static_cast<int>((theta - m_config.theta_bin_min) / m_config.theta_bin_width);
@@ -903,13 +903,13 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
 
         // Fill thread-safe histogram if it exists for this bin
         if (auto it = h_dc.chi2ndf_vs_edge_r1.find(bin_key); it != h_dc.chi2ndf_vs_edge_r1.end()) {
-            it->second->fill(traj.region1.edge, chi2ndf);
+            it->second->fill(traj.region1_edge, chi2ndf);
         }
         if (auto it = h_dc.chi2ndf_vs_edge_r2.find(bin_key); it != h_dc.chi2ndf_vs_edge_r2.end()) {
-            it->second->fill(traj.region2.edge, chi2ndf);
+            it->second->fill(traj.region2_edge, chi2ndf);
         }
         if (auto it = h_dc.chi2ndf_vs_edge_r3.find(bin_key); it != h_dc.chi2ndf_vs_edge_r3.end()) {
-            it->second->fill(traj.region3.edge, chi2ndf);
+            it->second->fill(traj.region3_edge, chi2ndf);
         }
     }
 };

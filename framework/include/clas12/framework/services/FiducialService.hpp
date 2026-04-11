@@ -191,7 +191,7 @@ class FiducialService : public Service {
 
         // Get sector from calorimeter if not provided
         if (sector <= 0) {
-            sector = calo.pcal.sector;
+            sector = calo.pcal_sector;
         }
 
         // Get parameters (sector-dependent if enabled)
@@ -206,9 +206,9 @@ class FiducialService : public Service {
         }
 
         // Evaluate DC edge cuts
-        bool dc_r1_pass = evaluate_dc_edge(traj.region1.edge, params.dc_r1_edge_min);
-        bool dc_r2_pass = evaluate_dc_edge(traj.region2.edge, params.dc_r2_edge_min);
-        bool dc_r3_pass = evaluate_dc_edge(traj.region3.edge, params.dc_r3_edge_min);
+        bool dc_r1_pass = evaluate_dc_edge(traj.region1_edge, params.dc_r1_edge_min);
+        bool dc_r2_pass = evaluate_dc_edge(traj.region2_edge, params.dc_r2_edge_min);
+        bool dc_r3_pass = evaluate_dc_edge(traj.region3_edge, params.dc_r3_edge_min);
 
         result.region_results[DetectorRegion::DC_R1] = dc_r1_pass;
         result.region_results[DetectorRegion::DC_R2] = dc_r2_pass;
@@ -242,7 +242,7 @@ class FiducialService : public Service {
      * @brief Evaluate PCAL fiducial cut only
      */
     [[nodiscard]] auto evaluate_pcal(const clas12::CalorimeterBank& calo, int sector = -1) const -> bool {
-        if (sector <= 0) sector = calo.pcal.sector;
+        if (sector <= 0) sector = calo.pcal_sector;
         const auto& params = get_sector_params(sector);
         return evaluate_pcal_fiducial(calo, params);
     }
@@ -252,9 +252,9 @@ class FiducialService : public Service {
      */
     [[nodiscard]] auto evaluate_dc(const clas12::DCTrajBank& traj, int sector = -1) const -> bool {
         const auto& params = get_sector_params(sector);
-        return evaluate_dc_edge(traj.region1.edge, params.dc_r1_edge_min) &&
-               evaluate_dc_edge(traj.region2.edge, params.dc_r2_edge_min) &&
-               evaluate_dc_edge(traj.region3.edge, params.dc_r3_edge_min);
+        return evaluate_dc_edge(traj.region1_edge, params.dc_r1_edge_min) &&
+               evaluate_dc_edge(traj.region2_edge, params.dc_r2_edge_min) &&
+               evaluate_dc_edge(traj.region3_edge, params.dc_r3_edge_min);
     }
 
     /**
@@ -426,8 +426,8 @@ class FiducialService : public Service {
      */
     [[nodiscard]] auto evaluate_pcal_fiducial(const clas12::CalorimeterBank& calo,
                                               const SectorParams& params) const -> bool {
-        return calo.pcal.lv > params.pcal_lv_min &&
-               calo.pcal.lw > params.pcal_lw_min;
+        return calo.pcal_lv > params.pcal_lv_min &&
+               calo.pcal_lw > params.pcal_lw_min;
     }
 
     /**

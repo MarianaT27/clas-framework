@@ -229,14 +229,14 @@ public:
         // read_Track_bank calls below share a single binding + linker.
         const auto calorimeter = clas12::read_Calorimeter_bank(event, electron.index());
         const auto traj = clas12::read_Traj_bank(event, electron.index());
-        const auto trk_r1 = clas12::read_Track_bank(event, traj.region1.index);
-        const auto trk_r2 = clas12::read_Track_bank(event, traj.region2.index);
-        const auto trk_r3 = clas12::read_Track_bank(event, traj.region3.index);
+        const auto trk_r1 = clas12::read_Track_bank(event, traj.region1_index);
+        const auto trk_r2 = clas12::read_Track_bank(event, traj.region2_index);
+        const auto trk_r3 = clas12::read_Track_bank(event, traj.region3_index);
 
         // Calculate derived quantities
-        const double E_total = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;
+        const double E_total = calorimeter.pcal_energy + calorimeter.inner_energy + calorimeter.outer_energy;
         const double SF = E_total / electron.p();
-        const int sector = calorimeter.pcal.sector;
+        const int sector = calorimeter.pcal_sector;
 
         // Pre-compute fiducial result using FiducialService
         auto fiducial_result = m_fiducial->evaluate(electron, calorimeter, traj, sector);
@@ -472,15 +472,15 @@ private:
         const std::string& stage) {
 
         if (stage == "before_cuts") {
-            if (h_pcal_lv_lw_before) h_pcal_lv_lw_before->fill(calo.pcal.lv, calo.pcal.lw);
-            if (h_dc_r1_edge_before) h_dc_r1_edge_before->fill(traj.region1.edge);
-            if (h_dc_r2_edge_before) h_dc_r2_edge_before->fill(traj.region2.edge);
-            if (h_dc_r3_edge_before) h_dc_r3_edge_before->fill(traj.region3.edge);
+            if (h_pcal_lv_lw_before) h_pcal_lv_lw_before->fill(calo.pcal_lv, calo.pcal_lw);
+            if (h_dc_r1_edge_before) h_dc_r1_edge_before->fill(traj.region1_edge);
+            if (h_dc_r2_edge_before) h_dc_r2_edge_before->fill(traj.region2_edge);
+            if (h_dc_r3_edge_before) h_dc_r3_edge_before->fill(traj.region3_edge);
         } else {
-            if (h_pcal_lv_lw_after) h_pcal_lv_lw_after->fill(calo.pcal.lv, calo.pcal.lw);
-            if (h_dc_r1_edge_after) h_dc_r1_edge_after->fill(traj.region1.edge);
-            if (h_dc_r2_edge_after) h_dc_r2_edge_after->fill(traj.region2.edge);
-            if (h_dc_r3_edge_after) h_dc_r3_edge_after->fill(traj.region3.edge);
+            if (h_pcal_lv_lw_after) h_pcal_lv_lw_after->fill(calo.pcal_lv, calo.pcal_lw);
+            if (h_dc_r1_edge_after) h_dc_r1_edge_after->fill(traj.region1_edge);
+            if (h_dc_r2_edge_after) h_dc_r2_edge_after->fill(traj.region2_edge);
+            if (h_dc_r3_edge_after) h_dc_r3_edge_after->fill(traj.region3_edge);
         }
     }
 

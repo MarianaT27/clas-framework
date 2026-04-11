@@ -336,11 +336,11 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         auto traj  = clas12::read_Traj_bank(event, pion.index());
         auto calo  = clas12::read_Calorimeter_bank(event, pion.index());
 
-        double chi2ndf = (track.ndf > 0) ? track.chi2 / track.ndf : 0.0;
-        double edge_r1 = traj.region1.edge;
-        double edge_r2 = traj.region2.edge;
-        double edge_r3 = traj.region3.edge;
-        double E_tot = calo.pcal.energy + calo.inner.energy + calo.outer.energy;
+        double chi2ndf = (track.NDF > 0) ? track.chi2 / track.NDF : 0.0;
+        double edge_r1 = traj.region1_edge;
+        double edge_r2 = traj.region2_edge;
+        double edge_r3 = traj.region3_edge;
+        double E_tot = calo.pcal_energy + calo.inner_energy + calo.outer_energy;
         bool in_forward_detector = clas12::framework::CandidateUtils::is_forward_detector(pion.status());
 
         // Fill PRE-CUT DC edge histograms (for candidates in forward detector)
@@ -354,14 +354,14 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         }
 
         // Evaluate all cuts declaratively
-        PionCutContext ctx{in_forward_detector, pion.p(), E_tot, track.ndf > 0};
+        PionCutContext ctx{in_forward_detector, pion.p(), E_tot, track.NDF > 0};
         if (!cutflow.evaluate(ctx)) return;
 
         // Calculate quantities
         double p = pion.p();
         double SF = E_tot / p;
-        double lv = calo.pcal.lv;
-        double lw = calo.pcal.lw;
+        double lv = calo.pcal_lv;
+        double lw = calo.pcal_lw;
 
         // Cherenkov nphe (if available)
         auto cherenkov = clas12::read_Cherenkov_bank(event, pion.index());
@@ -407,14 +407,14 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
 
         // Sector-level calorimeter histograms
         if (h.sector_histograms.booked) {
-            int calo_sector = calo.pcal.sector;
+            int calo_sector = calo.pcal_sector;
             if (calo_sector < 1 || calo_sector > 6) return;
             h.sector_histograms.edge_vs_chi2ndf_r1[calo_sector]->fill(edge_r1, chi2ndf);
             h.sector_histograms.edge_vs_chi2ndf_r2[calo_sector]->fill(edge_r2, chi2ndf);
             h.sector_histograms.edge_vs_chi2ndf_r3[calo_sector]->fill(edge_r3, chi2ndf);
 
-            double E_cal = calo.inner.energy + calo.outer.energy;
-            double E_pcal = calo.pcal.energy;
+            double E_cal = calo.inner_energy + calo.outer_energy;
+            double E_pcal = calo.pcal_energy;
             if (E_pcal == 0) return;
             h.sector_histograms.lv_vs_SF[calo_sector]->fill(lv, SF);
             h.sector_histograms.lw_vs_SF[calo_sector]->fill(lw, SF);
