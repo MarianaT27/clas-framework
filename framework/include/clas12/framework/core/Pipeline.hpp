@@ -53,6 +53,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -333,6 +334,199 @@ inline auto particles(std::span<const clas12::Particle> input,
 
 inline auto particles(std::span<const clas12::Particle> input) -> ParticlePipeline {
     return ParticlePipeline(input, nullptr);
+}
+
+// =============================================================================
+// PairPipeline
+// =============================================================================
+
+/**
+ * @brief Lazy combinatoric-pair pipeline over two particle collections.
+ *
+ * Iterates the Cartesian product of `lhs` x `rhs` once on the terminal
+ * call, applying every accumulated stage per pair. Mirrors the
+ * shape of `ParticlePipeline` but every stage receives two particles.
+ *
+ * Typical use - reconstructing pi0 from a photon collection:
+ * @code
+ * auto pi0s = unique_pairs(photons, m_cutflow)
+ *     .filter("mass window", [](auto& a, auto& b) {
+ *         return std::abs((a+b).M() - 0.135) < 0.03;
+ *     })
+ *     .tap([&](auto& a, auto& b) { h_mass->fill((a+b).M()); })
+ *     .build<CompositeParticle>([](auto& a, auto& b) {
+ *         return CompositeParticle{a, b};
+ *     });
+ * @endcode
+ *
+ * Two input modes:
+ *  - `particle_pairs(lhs, rhs, cf)` - two distinct collections,
+ *    iterates every `(i, j)` in row-major order.
+ *  - `unique_pairs(xs, cf)` - single collection, iterates the
+ *    upper-triangle `i < j` so same-collection pairs aren't
+ *    double-counted.
+ *
+ * Cutflow semantics: `count(label)` bumps once per pair reaching the
+ * stage, `filter(label, pred)` bumps on pass. That's per-pair, not
+ * per-particle - important when the caller also has a
+ * `ParticlePipeline` feeding the same cutflow.
+ */
+template <typename A = clas12::Particle, typename B = clas12::Particle>
+class PairPipeline {
+   public:
+    using Predicate = std::function<bool(const A&, const B&)>;
+    using Tap       = std::function<void(const A&, const B&)>;
+
+    /// Distinct-collection constructor: walks lhs x rhs.
+    PairPipeline(std::span<const A> lhs, std::span<const B> rhs,
+                 Cutflow* cf = nullptr)
+        : m_lhs(lhs), m_rhs(rhs), m_cutflow(cf) {}
+
+    /// Same-collection factory: walks i<j over `xs`. Only usable when
+    /// A == B; enforced by the `requires` clause on the call site.
+    template <typename T = A>
+    [[nodiscard]] static auto from_unique(std::span<const T> xs, Cutflow* cf)
+        -> PairPipeline<T, T> {
+        PairPipeline<T, T> p{xs, xs, cf};
+        p.m_unique_upper_triangle = true;
+        return p;
+    }
+
+    auto count(std::string label) -> PairPipeline& {
+        m_stages.push_back(Stage{StageKind::Count, std::move(label), {}, {}});
+        return *this;
+    }
+
+    auto filter(std::string label, Predicate pred) -> PairPipeline& {
+        m_stages.push_back(Stage{StageKind::Filter, std::move(label),
+                                 std::move(pred), {}});
+        return *this;
+    }
+
+    auto tap(Tap fn) -> PairPipeline& {
+        m_stages.push_back(Stage{StageKind::Tap, {}, {}, std::move(fn)});
+        return *this;
+    }
+
+    /// Terminal: materialise the surviving pairs.
+    [[nodiscard]] auto collect_pairs() -> std::vector<std::pair<A, B>> {
+        std::vector<std::pair<A, B>> out;
+        walk([&](const A& a, const B& b) { out.emplace_back(a, b); });
+        return out;
+    }
+
+    /// Terminal: build a custom output type from each surviving pair.
+    ///
+    /// `fn` must be callable as `T fn(const A&, const B&)`. The return
+    /// type `T` is deduced from `std::invoke_result_t<Fn, A, B>` so
+    /// callers can write `build([&](auto&, auto&){ ... })` without
+    /// naming `T` explicitly.
+    template <typename Fn,
+              typename T = std::invoke_result_t<Fn, const A&, const B&>>
+    [[nodiscard]] auto build(Fn fn) -> std::vector<T> {
+        std::vector<T> out;
+        walk([&](const A& a, const B& b) { out.push_back(fn(a, b)); });
+        return out;
+    }
+
+    /// Terminal: walk without collecting. Returns the number of pairs
+    /// that reached the end of the stage stack.
+    auto run() -> std::size_t {
+        std::size_t n = 0;
+        walk([&](const A&, const B&) { ++n; });
+        return n;
+    }
+
+    /// Terminal: true iff at least one pair survives every stage.
+    [[nodiscard]] auto any() -> bool {
+        bool found = false;
+        walk([&](const A&, const B&) { found = true; });
+        return found;
+    }
+
+   private:
+    enum class StageKind { Count, Filter, Tap };
+
+    struct Stage {
+        StageKind   kind;
+        std::string label;
+        Predicate   pred;
+        Tap         tap;
+    };
+
+    /// Walk every stage for one (a, b) pair. Returns false as soon as
+    /// a filter rejects - skipping the remaining stages and any
+    /// subsequent emit to the terminal sink.
+    auto run_stages(const A& a, const B& b) -> bool {
+        for (const auto& s : m_stages) {
+            switch (s.kind) {
+                case StageKind::Count:
+                    if (m_cutflow) m_cutflow->pass(s.label);
+                    break;
+                case StageKind::Filter:
+                    if (!s.pred(a, b)) return false;
+                    if (m_cutflow) m_cutflow->pass(s.label);
+                    break;
+                case StageKind::Tap:
+                    s.tap(a, b);
+                    break;
+            }
+        }
+        return true;
+    }
+
+    /// Iterate lhs x rhs (or the upper triangle when
+    /// `m_unique_upper_triangle`), emitting every surviving pair to
+    /// `sink`. Terminals wrap this with their own sink closure.
+    template <typename Sink>
+    auto walk(Sink&& sink) -> void {
+        if (m_unique_upper_triangle) {
+            const std::size_t n = m_lhs.size();
+            for (std::size_t i = 0; i < n; ++i) {
+                for (std::size_t j = i + 1; j < n; ++j) {
+                    if (run_stages(m_lhs[i], m_lhs[j])) {
+                        sink(m_lhs[i], m_lhs[j]);
+                    }
+                }
+            }
+        } else {
+            for (const auto& a : m_lhs) {
+                for (const auto& b : m_rhs) {
+                    if (run_stages(a, b)) sink(a, b);
+                }
+            }
+        }
+    }
+
+    std::span<const A>  m_lhs;
+    std::span<const B>  m_rhs;
+    Cutflow*            m_cutflow                = nullptr;
+    bool                m_unique_upper_triangle  = false;
+    std::vector<Stage>  m_stages;
+};
+
+/// Factory: two distinct collections, full lhs x rhs walk.
+inline auto particle_pairs(std::span<const clas12::Particle> lhs,
+                           std::span<const clas12::Particle> rhs,
+                           Cutflow& cf) -> PairPipeline<> {
+    return PairPipeline<>(lhs, rhs, &cf);
+}
+
+inline auto particle_pairs(std::span<const clas12::Particle> lhs,
+                           std::span<const clas12::Particle> rhs)
+    -> PairPipeline<> {
+    return PairPipeline<>(lhs, rhs, nullptr);
+}
+
+/// Factory: single collection, upper-triangle walk (i < j).
+inline auto unique_pairs(std::span<const clas12::Particle> xs,
+                         Cutflow& cf) -> PairPipeline<> {
+    return PairPipeline<>::template from_unique<clas12::Particle>(xs, &cf);
+}
+
+inline auto unique_pairs(std::span<const clas12::Particle> xs)
+    -> PairPipeline<> {
+    return PairPipeline<>::template from_unique<clas12::Particle>(xs, nullptr);
 }
 
 }  // namespace clas12::framework
