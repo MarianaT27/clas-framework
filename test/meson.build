@@ -134,3 +134,13 @@ test_bankdefs_compile = executable(
 )
 
 test('BankDefs Compile Tests', test_bankdefs_compile)
+
+# Unit tests for column-oriented vectorised fill (Event::column<T> +
+# AtomicHistogram::fill_span).
+test_column_fill = executable(
+  'test_column_fill',
+  'test_column_fill.cpp',
+  dependencies: test_deps,
+)
+
+test('Column Fill Tests', test_column_fill)

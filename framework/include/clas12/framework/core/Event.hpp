@@ -402,6 +402,29 @@ class Event {
     }
 
     /**
+     * @brief Column-oriented view of a generated bank wrapper.
+     *
+     * Alias for `bank<T>()` documenting that the caller intends to read
+     * whole columns via the generated `*_col()` span accessors rather
+     * than row-by-row. The returned object is the same cached wrapper,
+     * so repeated calls reuse the bind + linker state built by
+     * `bank<T>()` / `rows_for_pindex<T>()`.
+     *
+     * @code
+     * // Vectorised histogram fill over every REC::Calorimeter energy.
+     * auto energies = event.column<REC_Calorimeter>().energy_col();
+     * h_energy->fill_span(energies);
+     * @endcode
+     *
+     * @tparam T Generated bank wrapper type.
+     * @return Reference to the bound wrapper (same object `bank<T>()` returns).
+     */
+    template <typename T>
+    auto column() -> T& {
+        return bank<T>();
+    }
+
+    /**
      * @brief Return a lazy view of `T::Row` proxies whose pindex column
      *        matches the given particle index.
      *

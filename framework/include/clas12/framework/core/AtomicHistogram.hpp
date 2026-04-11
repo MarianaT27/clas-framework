@@ -11,8 +11,10 @@
 
 #include <atomic>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -82,6 +84,32 @@ class AtomicHistogram1D {
         atomic_add(m_bins[bin], weight);
         atomic_add(m_sum_w2[bin], weight * weight);
         m_entries.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Vectorised fill from a contiguous span of values.
+     *
+     * Equivalent to calling `fill(v)` once per element, but avoids the
+     * per-call function overhead and lets the compiler hoist a local
+     * accumulator per bin out of the inner loop when the values are
+     * statistically spread across bins. Thread-safe.
+     */
+    template <typename T>
+    auto fill_span(std::span<const T> values) -> void {
+        for (T v : values) fill(static_cast<double>(v));
+    }
+
+    /**
+     * @brief Vectorised weighted fill from parallel spans of values + weights.
+     *
+     * `values` and `weights` must be the same length. Thread-safe.
+     */
+    template <typename T, typename W>
+    auto fill_span(std::span<const T> values, std::span<const W> weights) -> void {
+        const std::size_t n = std::min(values.size(), weights.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            fill(static_cast<double>(values[i]), static_cast<double>(weights[i]));
+        }
     }
 
     /**
@@ -299,6 +327,34 @@ class AtomicHistogram2D {
         atomic_add(m_bins[bin], weight);
         atomic_add(m_sum_w2[bin], weight * weight);
         m_entries.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Vectorised fill from parallel spans of x and y coordinates.
+     *
+     * `xs` and `ys` must be the same length. Thread-safe.
+     */
+    template <typename TX, typename TY>
+    auto fill_span(std::span<const TX> xs, std::span<const TY> ys) -> void {
+        const std::size_t n = std::min(xs.size(), ys.size());
+        for (std::size_t i = 0; i < n; ++i) {
+            fill(static_cast<double>(xs[i]), static_cast<double>(ys[i]));
+        }
+    }
+
+    /**
+     * @brief Vectorised weighted fill from parallel spans of x, y, weight.
+     *
+     * `xs`, `ys`, and `weights` must be the same length. Thread-safe.
+     */
+    template <typename TX, typename TY, typename W>
+    auto fill_span(std::span<const TX> xs, std::span<const TY> ys,
+                   std::span<const W> weights) -> void {
+        const std::size_t n = std::min({xs.size(), ys.size(), weights.size()});
+        for (std::size_t i = 0; i < n; ++i) {
+            fill(static_cast<double>(xs[i]), static_cast<double>(ys[i]),
+                 static_cast<double>(weights[i]));
+        }
     }
 
     /**
