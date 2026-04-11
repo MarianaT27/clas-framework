@@ -11,6 +11,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
+#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/ConditionsService.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
@@ -138,108 +139,115 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        m_cutflow.pass("All Events");
+        using namespace clas12::framework;
 
         // Bind REC::Event up front for the per-event start time.
         clas12::bankdefs::REC_Event rec_event;
         rec_event.bind(event.get_bank("REC::Event"));
         const auto& REC_Particle = event.get_bank("REC::Particle");
+        const bool have_event  = rec_event.rows() > 0;
+        const double event_start_time = have_event ? rec_event.startTime(0) : 0.0;
 
-        // Early exit if no event data.
-        if (rec_event.rows() == 0) return clas12::framework::StatusCode::SUCCESS();
-
-        const double event_start_time = rec_event.startTime(0);
-
-        // Extract particles
-        clas12::framework::ParticleMap particles = m_particle->extract_particles(REC_Particle, {clas12::PIDs::ELECTRON});
-
-        std::map<int, std::vector<clas12::Particle>> charged_tracks = m_particle->get_particles_by_charge(REC_Particle);
-        std::vector<clas12::Particle> neg_tracks = charged_tracks[-1];
-
-        // Process tracks and fill histograms
-        process_tracks(neg_tracks, h_neg_tracks, event, event_start_time);
-
-        const auto& electrons = m_particle->get_electrons(particles);
-        if (electrons.empty()) return clas12::framework::StatusCode::SUCCESS();
-
-        // Select trigger electron using configurable momentum range
-        std::optional<clas12::Particle> trigger_e = clas12::physics::ParticleUtils::find_trigger_electron(electrons, {clas12::FD, clas12::CD});
-        if (!trigger_e.has_value()) return clas12::framework::StatusCode::SUCCESS();
-        m_cutflow.pass("Trigger Electron");
-
-        // Build electron candidate with all detector information
-        auto candidate = build_candidate(trigger_e.value(), event);
-
-        process_tracks({candidate.particle}, h_electron_tracks, event, event_start_time);
-
-        // Apply cuts using the candidate
-        const auto& electron = candidate.particle;
-        const auto& calorimeter = candidate.calorimeter;
-        const auto& traj = candidate.trajectory;
-        const auto& track = candidate.track;
-
-        // Chi2 PID cut
-        if (m_enable_chi2pid_cut.get() && !m_electron_cuts->pass_chi2pid_cut(electron.chi2pid())) {
-            return clas12::framework::StatusCode::SUCCESS();
-        }
-        m_cutflow.pass("Chi2 PID");
-        fill_after_cut("Chi2PID", electron, calorimeter, traj, track);
-
-        // Momentum cut
-        if (m_enable_momentum_cut.get() && !m_electron_cuts->pass_momentum_cut(electron.p())) {
-            return clas12::framework::StatusCode::SUCCESS();
-        }
-        m_cutflow.pass("Momentum > 0.8 GeV");
-        fill_after_cut("Momentum", electron, calorimeter, traj, track);
-
-        // Vertex Z cut
-        if (m_enable_vz_cut.get() && !m_electron_cuts->pass_vz_cut(electron.vz())) {
-            return clas12::framework::StatusCode::SUCCESS();
-        }
-        m_cutflow.pass("Vertex Z");
-        fill_after_cut("VertexZ", electron, calorimeter, traj, track);
-
-        // Sampling fraction cut
-        if (m_enable_sf_cut.get() && !m_sf->passes_cut(candidate.sampling_fraction, electron.p(), candidate.sector, m_polarity)) {
-            return clas12::framework::StatusCode::SUCCESS();
-        }
-        m_cutflow.pass("Sampling Fraction");
-        fill_after_cut("SamplingFraction", electron, calorimeter, traj, track);
-
-        // PCAL fiducial cut
-        if (m_enable_pcal_fiducial_cut.get() && !m_electron_cuts->pass_pcal_fiducial_cut(calorimeter.pcal_lv, calorimeter.pcal_lw)) {
-            return clas12::framework::StatusCode::SUCCESS();
-        }
-        m_cutflow.pass("PCAL Fiducial");
-        fill_after_cut("PCALFiducial", electron, calorimeter, traj, track);
-
-        // DC edge cut
-        if (m_enable_dc_chi2ndf_cut.get() && !m_electron_cuts->pass_dc_edge_cut(traj.region1_edge, traj.region2_edge, traj.region3_edge)) {
-            return clas12::framework::StatusCode::SUCCESS();
-        }
-        m_cutflow.pass("DC Chi2/NDF");
-        fill_after_cut("DCChi2", electron, calorimeter, traj, track);
-
-        // All cuts passed - fill final histograms
-        fill_final_histograms(electron, calorimeter, traj, track);
-
-        // Fill N-tuple if service is available
-        if (m_ntuple && m_config.enable_ntuple) {
-            m_nt_e_p = electron.p();
-            m_nt_e_theta = electron.theta();
-            m_nt_e_phi = electron.phi();
-            m_nt_e_vz = electron.vz();
-            m_nt_e_chi2pid = electron.chi2pid();
-            m_nt_sampling_fraction = candidate.sampling_fraction;
-            m_nt_sector = candidate.sector;
-
-            m_ntuple->fill("electron_analysis");
+        // Particle extraction (may be empty; pipeline filters gate the rest).
+        ParticleMap particles;
+        std::vector<clas12::Particle> neg_tracks;
+        if (have_event) {
+            particles = m_particle->extract_particles(REC_Particle, {clas12::PIDs::ELECTRON});
+            auto charged_tracks = m_particle->get_particles_by_charge(REC_Particle);
+            neg_tracks = std::move(charged_tracks[-1]);
         }
 
-        // Set decision flag for downstream algorithms
-        event.set_decision_typed(clas12::framework::Decisions::HasGoodElectron, true);
+        static const std::vector<clas12::Particle> kEmptyParticles;
+        const auto& electrons = have_event
+            ? m_particle->get_electrons(particles)
+            : kEmptyParticles;
+        auto trigger_e = (!electrons.empty())
+            ? clas12::physics::ParticleUtils::find_trigger_electron(electrons, {clas12::FD, clas12::CD})
+            : std::optional<clas12::Particle>{};
 
-        return clas12::framework::StatusCode::SUCCESS();
+        // Build the candidate only when we have a trigger electron.
+        ElectronCandidate candidate{};
+        if (trigger_e.has_value()) {
+            candidate = build_candidate(*trigger_e, event);
+        }
+
+        // Cut decisions (preserving the old "disabled => pass" semantics).
+        const bool pass_chi2 = trigger_e && (!m_enable_chi2pid_cut.get()
+            || m_electron_cuts->pass_chi2pid_cut(candidate.particle.chi2pid()));
+        const bool pass_mom  = trigger_e && (!m_enable_momentum_cut.get()
+            || m_electron_cuts->pass_momentum_cut(candidate.particle.p()));
+        const bool pass_vz   = trigger_e && (!m_enable_vz_cut.get()
+            || m_electron_cuts->pass_vz_cut(candidate.particle.vz()));
+        const bool pass_sf   = trigger_e && (!m_enable_sf_cut.get()
+            || m_sf->passes_cut(candidate.sampling_fraction,
+                                candidate.particle.p(),
+                                candidate.sector, m_polarity));
+        const bool pass_pcal = trigger_e && (!m_enable_pcal_fiducial_cut.get()
+            || m_electron_cuts->pass_pcal_fiducial_cut(
+                   candidate.calorimeter.pcal_lv,
+                   candidate.calorimeter.pcal_lw));
+        const bool pass_dc   = trigger_e && (!m_enable_dc_chi2ndf_cut.get()
+            || m_electron_cuts->pass_dc_edge_cut(
+                   candidate.trajectory.region1_edge,
+                   candidate.trajectory.region2_edge,
+                   candidate.trajectory.region3_edge));
+
+        return pipeline(event, m_cutflow)
+            .count("All Events")
+            // Fill negative-track histograms regardless of whether a
+            // trigger electron is later found, matching the original
+            // ordering.
+            .tap([&] {
+                if (have_event) {
+                    process_tracks(neg_tracks, h_neg_tracks, event, event_start_time);
+                }
+            })
+            .filter("has event data", have_event)
+            .filter("has electrons",  !electrons.empty())
+            .filter("Trigger Electron", trigger_e.has_value())
+            .tap([&] {
+                process_tracks({candidate.particle}, h_electron_tracks, event, event_start_time);
+            })
+            .filter("Chi2 PID",             pass_chi2)
+            .tap   ([&] { fill_after_cut("Chi2PID",
+                                         candidate.particle, candidate.calorimeter,
+                                         candidate.trajectory, candidate.track); })
+            .filter("Momentum > 0.8 GeV",   pass_mom)
+            .tap   ([&] { fill_after_cut("Momentum",
+                                         candidate.particle, candidate.calorimeter,
+                                         candidate.trajectory, candidate.track); })
+            .filter("Vertex Z",             pass_vz)
+            .tap   ([&] { fill_after_cut("VertexZ",
+                                         candidate.particle, candidate.calorimeter,
+                                         candidate.trajectory, candidate.track); })
+            .filter("Sampling Fraction",    pass_sf)
+            .tap   ([&] { fill_after_cut("SamplingFraction",
+                                         candidate.particle, candidate.calorimeter,
+                                         candidate.trajectory, candidate.track); })
+            .filter("PCAL Fiducial",        pass_pcal)
+            .tap   ([&] { fill_after_cut("PCALFiducial",
+                                         candidate.particle, candidate.calorimeter,
+                                         candidate.trajectory, candidate.track); })
+            .filter("DC Chi2/NDF",          pass_dc)
+            .tap   ([&] { fill_after_cut("DCChi2",
+                                         candidate.particle, candidate.calorimeter,
+                                         candidate.trajectory, candidate.track); })
+            .tap([&] {
+                fill_final_histograms(candidate.particle, candidate.calorimeter,
+                                      candidate.trajectory, candidate.track);
+                if (m_ntuple && m_config.enable_ntuple) {
+                    m_nt_e_p               = candidate.particle.p();
+                    m_nt_e_theta           = candidate.particle.theta();
+                    m_nt_e_phi             = candidate.particle.phi();
+                    m_nt_e_vz              = candidate.particle.vz();
+                    m_nt_e_chi2pid         = candidate.particle.chi2pid();
+                    m_nt_sampling_fraction = candidate.sampling_fraction;
+                    m_nt_sector            = candidate.sector;
+                    m_ntuple->fill("electron_analysis");
+                }
+            })
+            .set_decision(Decisions::HasGoodElectron, true)
+            .status();
     }
 
     auto on_finalize() -> clas12::framework::StatusCode override {

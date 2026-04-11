@@ -15,6 +15,7 @@
 #include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
+#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
@@ -419,11 +420,27 @@ public:
         return clas12::framework::StatusCode::SUCCESS();
     }
 
+    /**
+     * @brief Top-level dispatcher.
+     *
+     * The two execution modes (RICH and exclusive) each have their own
+     * helper that returns a StatusCode. The top-level pipeline is
+     * trivial: one filter that picks the mode, one tap that runs the
+     * mode, and a `.status()` that propagates success/filter back up.
+     * Because both helpers still own their own decision logic, the
+     * outer pipeline doesn't try to duplicate it - it just owns the
+     * dispatch.
+     */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        if (m_truth_mode.get() == "exclusive") {
-            return process_exclusive(event);
-        }
-        return process_rich(event);
+        auto sc = (m_truth_mode.get() == "exclusive")
+            ? process_exclusive(event)
+            : process_rich(event);
+
+        return clas12::framework::pipeline(event)
+            .filter("mode handler ok",
+                    sc.is_success() || sc.is_filtered())
+            .filter("mode handler accepted event", sc.is_success())
+            .status();
     }
 
     auto on_finalize() -> clas12::framework::StatusCode override {
@@ -632,139 +649,131 @@ private:
     // ========================================================================
 
     auto process_rich(clas12::framework::Event& event) -> clas12::framework::StatusCode {
+        using namespace clas12::framework;
+
         const auto& REC_Particle = event.get_bank("REC::Particle");
-        // Every detector bank below is accessed via the per-event
-        // generated-wrapper cache through the read_*_bank helpers; no
-        // local hipo::bank_view handles are needed here.
+        const bool has_rich = event.get_bank("RICH::Particle").rows() > 0;
 
-        if (event.get_bank("RICH::Particle").rows() == 0) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
+        auto particle_map = has_rich
+            ? m_particle->extract_particles(
+                  REC_Particle,
+                  {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
+                   clas12::PIDs::KPLUS, clas12::PIDs::KMINUS})
+            : ParticleMap{};
 
-        // Extract all charged hadrons from REC::Particle
-        auto particles = m_particle->extract_particles(
-            REC_Particle,
-            {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
-             clas12::PIDs::KPLUS, clas12::PIDs::KMINUS});
+        return pipeline(event)
+            .filter("has RICH::Particle", has_rich)
+            .tap([&] {
+                // One ParticlePipeline per REC PID. Each runs through
+                // the same cutflow / histogram / ntuple sequence but
+                // against the right cutflow object.
+                for (auto& [pid_type, particle_vec] : particle_map) {
+                    Cutflow* cf = nullptr;
+                    if (pid_type == static_cast<int>(clas12::PIDs::PIPLUS))       cf = &m_cutflow_piplus;
+                    else if (pid_type == static_cast<int>(clas12::PIDs::PIMINUS)) cf = &m_cutflow_piminus;
+                    else if (pid_type == static_cast<int>(clas12::PIDs::KPLUS))   cf = &m_cutflow_kplus;
+                    else if (pid_type == static_cast<int>(clas12::PIDs::KMINUS))  cf = &m_cutflow_kminus;
 
-        // Loop over all hadron candidates and look up their RICH info
-        for (const auto& [pid_type, particle_vec] : particles) {
-            for (const auto& particle : particle_vec) {
-                // Determine cutflow based on REC PID
-                clas12::framework::Cutflow* cf = nullptr;
-                if (pid_type == static_cast<int>(clas12::PIDs::PIPLUS))       cf = &m_cutflow_piplus;
-                else if (pid_type == static_cast<int>(clas12::PIDs::PIMINUS)) cf = &m_cutflow_piminus;
-                else if (pid_type == static_cast<int>(clas12::PIDs::KPLUS))   cf = &m_cutflow_kplus;
-                else if (pid_type == static_cast<int>(clas12::PIDs::KMINUS))  cf = &m_cutflow_kminus;
+                    const int rec_pid = static_cast<int>(pid_type);
+                    auto pp = cf
+                        ? clas12::framework::particles(particle_vec, *cf)
+                        : clas12::framework::particles(particle_vec);
 
-                if (cf) cf->pass("RICH hadrons");
+                    pp
+                        .count("RICH hadrons")
+                        // Pre-sector bookkeeping + comparison histograms.
+                        // This tap can't use a return, so we thread state
+                        // via a small lambda and fall through.
+                        .tap([&](const clas12::Particle& particle) {
+                            auto rich = clas12::read_RICHParticle_bank(event, particle.index());
+                            const int best_pid = rich.best_PID;
+                            {
+                                std::lock_guard<std::mutex> lock(m_pid_count_mutex);
+                                m_rich_pid_counts[best_pid]++;
+                            }
+                            auto ftof = clas12::read_Scintillator_bank(event, particle.index());
+                            if (ftof.sector == 1) {
+                                {
+                                    std::lock_guard<std::mutex> lock(m_pid_count_mutex);
+                                    if (best_pid == rec_pid) m_pid_agreement[rec_pid].agree++;
+                                    else                     m_pid_agreement[rec_pid].disagree++;
+                                }
+                                if (m_enable_histograms) {
+                                    fill_comparison(particle, rec_pid, best_pid);
+                                }
+                            }
+                        })
+                        // Drop particles with no recognised RICH PID set.
+                        .filter("RICH PID match", [&](const clas12::Particle& particle) {
+                            auto rich = clas12::read_RICHParticle_bank(event, particle.index());
+                            const int best_pid = rich.best_PID;
+                            return best_pid == static_cast<int>(clas12::PIDs::PIPLUS)
+                                || best_pid == static_cast<int>(clas12::PIDs::PIMINUS)
+                                || best_pid == static_cast<int>(clas12::PIDs::KPLUS)
+                                || best_pid == static_cast<int>(clas12::PIDs::KMINUS);
+                        })
+                        .tap([&](const clas12::Particle& particle) {
+                            auto rich = clas12::read_RICHParticle_bank(event, particle.index());
+                            const int bp = rich.best_PID;
+                            if (bp == static_cast<int>(clas12::PIDs::PIPLUS))  fill_precut_histograms(particle, rich, h_piplus);
+                            else if (bp == static_cast<int>(clas12::PIDs::PIMINUS)) fill_precut_histograms(particle, rich, h_piminus);
+                            else if (bp == static_cast<int>(clas12::PIDs::KPLUS))   fill_precut_histograms(particle, rich, h_kplus);
+                            else if (bp == static_cast<int>(clas12::PIDs::KMINUS))  fill_precut_histograms(particle, rich, h_kminus);
+                        })
+                        .filter("RQ > 0.1", [&](const clas12::Particle& particle) {
+                            return clas12::read_RICHParticle_bank(event, particle.index()).RQ > 0.1f;
+                        })
+                        .filter("best_ntot > 2.5", [&](const clas12::Particle& particle) {
+                            return clas12::read_RICHParticle_bank(event, particle.index()).best_ntot > 2.5f;
+                        })
+                        .tap([&](const clas12::Particle& particle) {
+                            auto rich = clas12::read_RICHParticle_bank(event, particle.index());
+                            const int bp = rich.best_PID;
+                            if (bp == static_cast<int>(clas12::PIDs::PIPLUS))  fill_postcut_histograms(particle, rich, h_piplus);
+                            else if (bp == static_cast<int>(clas12::PIDs::PIMINUS)) fill_postcut_histograms(particle, rich, h_piminus);
+                            else if (bp == static_cast<int>(clas12::PIDs::KPLUS))   fill_postcut_histograms(particle, rich, h_kplus);
+                            else if (bp == static_cast<int>(clas12::PIDs::KMINUS))  fill_postcut_histograms(particle, rich, h_kminus);
 
-                auto rich = clas12::read_RICHParticle_bank(event, particle.index());
-
-                // Determine histogram set based on RICH best_PID
-                int best_pid = rich.best_PID;
-                HadronHistograms* h = nullptr;
-
-                if (best_pid == static_cast<int>(clas12::PIDs::PIPLUS)) {
-                    h = &h_piplus;
-                } else if (best_pid == static_cast<int>(clas12::PIDs::PIMINUS)) {
-                    h = &h_piminus;
-                } else if (best_pid == static_cast<int>(clas12::PIDs::KPLUS)) {
-                    h = &h_kplus;
-                } else if (best_pid == static_cast<int>(clas12::PIDs::KMINUS)) {
-                    h = &h_kminus;
+                            if (m_ntuple) {
+                                auto calo = clas12::read_Calorimeter_bank(event, particle.index());
+                                auto htcc = clas12::read_Cherenkov_bank(event, particle.index());
+                                auto ftof = clas12::read_Scintillator_bank(event, particle.index());
+                                populate_particle_data(particle, rich);
+                                populate_calorimeter_data(calo);
+                                populate_cherenkov_data(htcc);
+                                populate_scintillator_data(ftof);
+                                m_ntuple.fill();
+                            }
+                        })
+                        .run();
                 }
-
-                // Count all RICH best_PIDs (before any cuts)
-                int rec_pid = static_cast<int>(pid_type);
-                {
-                    std::lock_guard<std::mutex> lock(m_pid_count_mutex);
-                    m_rich_pid_counts[best_pid]++;
-                }
-
-                // Determine particle sector from scintillator
-                auto ftof = clas12::read_Scintillator_bank(event, particle.index());
-                int sector = ftof.sector;
-
-                // Sector 1: track agreement and fill comparison histograms
-                if (sector == 1) {
-                    {
-                        std::lock_guard<std::mutex> lock(m_pid_count_mutex);
-                        if (best_pid == rec_pid) {
-                            m_pid_agreement[rec_pid].agree++;
-                        } else {
-                            m_pid_agreement[rec_pid].disagree++;
-                        }
-                    }
-                    if (m_enable_histograms) {
-                        fill_comparison(particle, rec_pid, best_pid);
-                    }
-                }
-
-                if (!h) continue;
-                if (cf) cf->pass("RICH PID match");
-
-                // Fill pre-cut histograms
-                fill_precut_histograms(particle, rich, *h);
-
-                // Apply quality cuts
-                if (rich.RQ <= 0.1f) continue;
-                if (cf) cf->pass("RQ > 0.1");
-
-                if (rich.best_ntot <= 2.5f) continue;
-                if (cf) cf->pass("best_ntot > 2.5");
-
-                // Fill post-cut histograms
-                fill_postcut_histograms(particle, rich, *h);
-
-                // Fill TTree
-                if (m_ntuple) {
-                    auto calo = clas12::read_Calorimeter_bank(event, particle.index());
-                    auto htcc = clas12::read_Cherenkov_bank(event, particle.index());
-                    auto ftof = clas12::read_Scintillator_bank(event, particle.index());
-
-                    populate_particle_data(particle, rich);
-                    populate_calorimeter_data(calo);
-                    populate_cherenkov_data(htcc);
-                    populate_scintillator_data(ftof);
-                    m_ntuple.fill();
-                }
-            }
-        }
-
-        return clas12::framework::StatusCode::SUCCESS();
+            })
+            .status();
     }
+
 
     // ========================================================================
     // Exclusive mode processing: ed -> ep(n)pi+pi-
     // ========================================================================
 
     auto process_exclusive(clas12::framework::Event& event) -> clas12::framework::StatusCode {
-        m_cutflow_exclusive.pass("Total events");
+        using namespace clas12::framework;
 
-        // 1. Require good DIS electron from upstream
-        auto electron_opt = clas12::framework::EventHelpers::get_dis_electron(event);
-        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
-        const auto& electron = *electron_opt;
-        m_cutflow_exclusive.pass("Has good electron");
-        m_cutflow_exclusive.pass("Passes DIS cuts");
-
-        // 2. Extract hadrons from REC::Particle. Detector banks are read
-        // through the per-event generated-wrapper cache inside the
-        // fill_exclusive_ntuple helper, so no local bank-view handles
-        // are needed here.
+        auto electron_opt = EventHelpers::get_dis_electron(event);
         const auto& REC_Particle = event.get_bank("REC::Particle");
 
-        auto particles = m_particle->extract_particles(
-            REC_Particle,
-            {clas12::PIDs::PROTON, clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
-             clas12::PIDs::KPLUS, clas12::PIDs::KMINUS, clas12::PIDs::NEUTRON});
-
-        const auto& protons = m_particle->get_protons(particles);
-        const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
-        const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
+        auto particles = electron_opt
+            ? m_particle->extract_particles(
+                  REC_Particle,
+                  {clas12::PIDs::PROTON, clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
+                   clas12::PIDs::KPLUS, clas12::PIDs::KMINUS, clas12::PIDs::NEUTRON})
+            : ParticleMap{};
 
         static const std::vector<clas12::Particle> empty;
+        const auto& protons     = electron_opt ? m_particle->get_protons(particles) : empty;
+        const auto& pions_plus  = electron_opt ? ParticleSelectorService::get_pions_plus(particles)  : empty;
+        const auto& pions_minus = electron_opt ? ParticleSelectorService::get_pions_minus(particles) : empty;
+
         auto kp_it = particles.find(clas12::PIDs::KPLUS);
         auto km_it = particles.find(clas12::PIDs::KMINUS);
         auto n_it  = particles.find(clas12::PIDs::NEUTRON);
@@ -772,17 +781,23 @@ private:
         const auto& kaons_minus = (km_it != particles.end()) ? km_it->second : empty;
         const auto& neutrons    = (n_it  != particles.end()) ? n_it->second  : empty;
 
-        // 3. Topology check: require proton + (pi+pi- or K+K-)
-        if (protons.empty()) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow_exclusive.pass("Has >= 1 proton");
+        const bool has_pion_pair = !pions_plus.empty() && !pions_minus.empty();
+        const bool has_kaon_pair = !kaons_plus.empty() && !kaons_minus.empty();
 
-        bool has_pion_pair = !pions_plus.empty() && !pions_minus.empty();
-        bool has_kaon_pair = !kaons_plus.empty() && !kaons_minus.empty();
+        // Pipeline preamble: run the full cutflow cascade through a
+        // single EventPipeline. On any failed filter, `.status()`
+        // returns FILTERED() and we short-circuit.
+        auto sc = pipeline(event, m_cutflow_exclusive)
+            .count("Total events")
+            .filter("Has good electron", electron_opt.has_value())
+            .count("Passes DIS cuts")
+            .filter("Has >= 1 proton",   !protons.empty())
+            .filter("Has meson pair",    has_pion_pair || has_kaon_pair)
+            .status();
+        if (!sc.is_success()) return sc;
 
-        if (!has_pion_pair && !has_kaon_pair) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow_exclusive.pass("Has meson pair");
+        const auto& electron = *electron_opt;
 
-        // 3b. Fill hadron cut variable histograms (before quality cuts)
         const double e_vz = electron.vz();
         if (m_enable_histograms) {
             fill_all_cut_histograms(e_vz, protons, pions_plus, pions_minus, kaons_plus, kaons_minus);

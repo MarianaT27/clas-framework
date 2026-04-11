@@ -6,15 +6,16 @@
  *
  */
 
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Decisions.hpp>
+#include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/Property.hpp>
+#include <clas12/framework/core/ServiceHelpers.hpp>
+#include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
-#include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
-#include <clas12/framework/core/ServiceHelpers.hpp>
-#include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/Decisions.hpp>
+#include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/bankdefs/AHDC_track.hpp>
 #include <clas12/bankdefs/ALERT_ai_projections.hpp>
@@ -109,18 +110,25 @@ public:
      * @return StatusCode SUCCESS to continue, FILTERED to skip, FAILURE to stop
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+        using namespace clas12::framework;
 
-        // Check for elastic electron decision from upstream algorithm
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasElasticElectron)) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
-        // Get elastic electron using typed retrieval
-        auto electron_opt = event.retrieve_typed(clas12::framework::Keys::ElasticElectron);
-        if (!electron_opt) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
-        const auto& elastic_electron = *electron_opt;
-        double electron_phi = elastic_electron.phi();  // degrees
+        // This algorithm does its heavy lifting in a single `run_processing`
+        // helper that consumes a bound AHDC / ALERT / ATOF wrapper triple and
+        // writes to per-event state. The pipeline is only responsible for
+        // gating on the upstream elastic-electron decision and typed retrieval.
+
+        auto electron_opt = event.retrieve_typed(Keys::ElasticElectron);
+
+        return pipeline(event)
+            .require(Decisions::HasElasticElectron)
+            .filter("elastic electron retrievable", electron_opt.has_value())
+            .tap([&] { run_processing(event, *electron_opt); })
+            .status();
+    }
+
+    auto run_processing(clas12::framework::Event& event,
+                        const clas12::Particle& elastic_electron) -> void {
+        const double electron_phi = elastic_electron.phi();  // degrees
 
         // Bind generated wrappers for AHDC::track, ALERT::ai:projections
         // and ATOF::hits. bind() resolves every column handle once, so the
@@ -200,7 +208,7 @@ public:
         if (h_n_true_atof_hits) h_n_true_atof_hits->fill(true_atof_hit_indices.size());
 
         if (good_tracks.empty() || good_atof_hit_indices.empty()) {
-            return clas12::framework::StatusCode::FILTERED();
+            return;
         }
 
         // Match tracks to the elastic electron using phi angle
@@ -239,7 +247,7 @@ public:
         }
 
         if (matched_tracks.empty() || matched_tracks.size() > 1) {
-            return clas12::framework::StatusCode::FILTERED();
+            return;
         }
 
         // Select best true ATOF hit: closest in phi to the matched track prediction
@@ -434,8 +442,6 @@ public:
                 m_ntuple_svc->fill("alert_track_matching");
             }
         }
-
-        return clas12::framework::StatusCode::SUCCESS();
     }
 
     /**

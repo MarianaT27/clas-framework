@@ -35,6 +35,7 @@
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/ServiceHelpers.hpp>
+#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
 #include <clas12/framework/services/FiducialService.hpp>
@@ -206,76 +207,67 @@ public:
      * @brief Process a single event
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        // Get electrons from event
+        using namespace clas12::framework;
+
+        // Default decision: filtered out. Flipped to true on success.
+        event.set_decision_typed(Decisions::HasGoodElectron, false);
+
         const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
+        auto trigger_e = !electrons.empty()
+            ? clas12::physics::ParticleUtils::find_trigger_electron(
+                  electrons, {clas12::FD, clas12::BD})
+            : std::optional<clas12::Particle>{};
 
-        if (electrons.empty()) {
-            event.set_decision_typed(clas12::framework::Decisions::HasGoodElectron, false);
-            return clas12::framework::StatusCode::FILTERED();
-        }
+        // Pre-compute detector reads + derived quantities. These are
+        // safe to run on a default-constructed Particle (read_*_bank
+        // returns a NaN-filled struct) so the pipeline below can still
+        // short-circuit on the missing-electron filter.
+        const clas12::Particle electron = trigger_e.value_or(clas12::Particle{});
+        const auto calorimeter = trigger_e
+            ? clas12::read_Calorimeter_bank(event, electron.index())
+            : clas12::CalorimeterBank{};
+        const auto traj = trigger_e
+            ? clas12::read_Traj_bank(event, electron.index())
+            : clas12::DCTrajBank{};
+        const auto trk_r1 = trigger_e ? clas12::read_Track_bank(event, traj.region1_index) : clas12::TrackBank{};
+        const auto trk_r2 = trigger_e ? clas12::read_Track_bank(event, traj.region2_index) : clas12::TrackBank{};
+        const auto trk_r3 = trigger_e ? clas12::read_Track_bank(event, traj.region3_index) : clas12::TrackBank{};
 
-        // Select trigger electron (highest momentum in FD)
-        const auto possible_electron =
-            clas12::physics::ParticleUtils::find_trigger_electron(electrons, {clas12::FD, clas12::BD});
-
-        if (!possible_electron.has_value()) {
-            event.set_decision_typed(clas12::framework::Decisions::HasGoodElectron, false);
-            return clas12::framework::StatusCode::FILTERED();
-        }
-        const clas12::Particle& electron = possible_electron.value();
-
-        // Read detector bank data. Every read_*_bank call below reuses the
-        // per-event generated-wrapper cache owned by Event, so the three
-        // read_Track_bank calls below share a single binding + linker.
-        const auto calorimeter = clas12::read_Calorimeter_bank(event, electron.index());
-        const auto traj = clas12::read_Traj_bank(event, electron.index());
-        const auto trk_r1 = clas12::read_Track_bank(event, traj.region1_index);
-        const auto trk_r2 = clas12::read_Track_bank(event, traj.region2_index);
-        const auto trk_r3 = clas12::read_Track_bank(event, traj.region3_index);
-
-        // Calculate derived quantities
         const double E_total = calorimeter.pcal_energy + calorimeter.inner_energy + calorimeter.outer_energy;
-        const double SF = E_total / electron.p();
-        const int sector = calorimeter.pcal_sector;
+        const double SF      = trigger_e ? (E_total / electron.p()) : 0.0;
+        const int    sector  = calorimeter.pcal_sector;
 
-        // Pre-compute fiducial result using FiducialService
-        auto fiducial_result = m_fiducial->evaluate(electron, calorimeter, traj, sector);
+        auto fiducial_result = trigger_e
+            ? m_fiducial->evaluate(electron, calorimeter, traj, sector)
+            : decltype(m_fiducial->evaluate(electron, calorimeter, traj, sector)){};
 
-        // Fill histograms before cuts
-        clas12::framework::HistogramFiller::fill_electron(
-            kinematics_groups["before_cuts"].get(), electron, calorimeter, trk_r1, trk_r2, trk_r3, SF);
-
-        // Fill fiducial diagnostic histograms
-        if (m_enable_fiducial_histograms.get()) {
-            fill_fiducial_histograms(calorimeter, traj, fiducial_result, "before_cuts");
-        }
-
-        // Create context for cut evaluation
         ElectronCutContext ctx{electron, calorimeter, traj, SF, sector, fiducial_result};
+        const bool passes_cuts = trigger_e && m_cutflow.evaluate(ctx);
 
-        // Evaluate all cuts via cutflow
-        if (!m_cutflow.evaluate(ctx)) {
-            event.set_decision_typed(clas12::framework::Decisions::HasGoodElectron, false);
-            return clas12::framework::StatusCode::FILTERED();
-        }
-
-        // Electron passed all cuts
-        event.set_decision_typed(clas12::framework::Decisions::HasGoodElectron, true);
-        event.store_typed(clas12::framework::Keys::SelectedElectrons,
-                          std::vector<clas12::Particle>{electron});
-
-        // Fill histograms after cuts
-        clas12::framework::HistogramFiller::fill_electron(
-            kinematics_groups["after_cuts"].get(), electron, calorimeter, trk_r1, trk_r2, trk_r3, SF);
-
-        if (m_enable_fiducial_histograms.get()) {
-            fill_fiducial_histograms(calorimeter, traj, fiducial_result, "after_cuts");
-        }
-
-        // Fill N-tuple
-        fill_ntuple(electron, SF, sector);
-
-        return clas12::framework::StatusCode::SUCCESS();
+        return pipeline(event)
+            .filter("has electrons",    !electrons.empty())
+            .filter("trigger electron", trigger_e.has_value())
+            .tap([&] {
+                HistogramFiller::fill_electron(
+                    kinematics_groups["before_cuts"].get(),
+                    electron, calorimeter, trk_r1, trk_r2, trk_r3, SF);
+                if (m_enable_fiducial_histograms.get()) {
+                    fill_fiducial_histograms(calorimeter, traj, fiducial_result, "before_cuts");
+                }
+            })
+            .filter("passes cuts", passes_cuts)
+            .set_decision(Decisions::HasGoodElectron, true)
+            .publish(Keys::SelectedElectrons, std::vector<clas12::Particle>{electron})
+            .tap([&] {
+                HistogramFiller::fill_electron(
+                    kinematics_groups["after_cuts"].get(),
+                    electron, calorimeter, trk_r1, trk_r2, trk_r3, SF);
+                if (m_enable_fiducial_histograms.get()) {
+                    fill_fiducial_histograms(calorimeter, traj, fiducial_result, "after_cuts");
+                }
+                fill_ntuple(electron, SF, sector);
+            })
+            .status();
     }
 
     // ========================================================================

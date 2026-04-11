@@ -5,6 +5,7 @@
 #include <vector>
 #include <clas12/PIDs.hpp>
 #include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -58,15 +59,22 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm {
     }
 
     /**
-     * @brief Monitor event characteristics
+     * @brief Monitor event characteristics.
+     *
+     * No filtering - this is a pure monitoring pipeline that always
+     * passes through. The event start timestamp is captured before
+     * the pipeline runs so the processing-time histogram sees the
+     * full body duration.
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         const auto event_start = std::chrono::high_resolution_clock::now();
-        m_events_processed.fetch_add(1, std::memory_order_relaxed);
-        process_particle_statistics(event);
-        record_processing_time(event_start);
-
-        return clas12::framework::StatusCode::SUCCESS();
+        return clas12::framework::pipeline(event)
+            .tap([&] {
+                m_events_processed.fetch_add(1, std::memory_order_relaxed);
+                process_particle_statistics(event);
+                record_processing_time(event_start);
+            })
+            .status();
     }
 
    private:

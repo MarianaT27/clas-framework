@@ -13,6 +13,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
+#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -163,29 +164,23 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        m_cutflow.pass("All Events");
+        using namespace clas12::framework;
 
-        // Bind the generated DECAYS::Particle wrapper so every field access
-        // goes through a pre-resolved column_handle. One binding up front
-        // replaces 22 + 14 string-keyed lookups per row.
+        // Pre-compute everything the pipeline needs: read DECAYS bank,
+        // apply per-Lambda cuts, record which cuts have at least one
+        // survivor. The pipeline below just gates on those booleans in
+        // sequence; there is no per-row loop inside `.tap()` because
+        // the cuts are applied here (with the `continue` fall-through
+        // semantics the old imperative body used).
         clas12::bankdefs::DECAYS_Particle decays;
-        if (!decays.bind(event.get_bank("DECAYS::Particle"))) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
+        const bool bank_bound = decays.bind(event.get_bank("DECAYS::Particle"));
+        const int nrows = bank_bound ? decays.rows() : 0;
 
-        const int nrows = decays.rows();
-        if (nrows == 0) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
-        m_cutflow.pass("Has DECAYS Bank");
-
-        // Read all particles from DECAYS bank and find Lambdas
-        std::vector<DecaysLambda> lambdas;
+        std::vector<DecaysLambda>   lambdas;
         std::vector<DecaysDaughter> all_daughters;
 
         for (int i = 0; i < nrows; ++i) {
             const int pid = decays.pid(i);
-
             if (pid == LAMBDA_PID) {
                 DecaysLambda lambda;
                 lambda.idx     = decays.idx(i);
@@ -211,10 +206,8 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm {
                 lambda.dau3idx = decays.dau3idx(i);
                 lambda.det     = decays.det(i);
                 lambda.r       = decays.r(i);
-
                 lambdas.push_back(lambda);
             } else {
-                // Store as potential daughter
                 DecaysDaughter dau;
                 dau.idx    = decays.idx(i);
                 dau.pid    = pid;
@@ -230,48 +223,36 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm {
                 dau.upz    = decays.upz(i);
                 dau.charge = decays.charge(i);
                 dau.det    = decays.det(i);
-
                 all_daughters.push_back(dau);
             }
         }
 
-        if (lambdas.empty()) {
-            return clas12::framework::StatusCode::FILTERED();
-        }
-        m_cutflow.pass("Has Lambda");
-
-        // Fill pre-cut histograms
-        if (h_n_lambdas) h_n_lambdas->fill(lambdas.size());
-        for (const auto& lambda : lambdas) {
-            if (h_mass_nocuts) h_mass_nocuts->fill(lambda.mass);
-        }
-
-        // Apply selection cuts
+        // Apply cuts in the same fall-through order as the old body.
+        // `passed_*` tracks "at least one Lambda reached this stage".
         std::vector<DecaysLambda> selected_lambdas;
-        bool passed_mass = false;
-        bool passed_momentum = false;
-        bool passed_decay_length = false;
+        bool passed_mass          = false;
+        bool passed_momentum      = false;
+        bool passed_decay_length  = false;
         bool passed_vertex_detach = false;
 
         for (const auto& lambda : lambdas) {
-            // Fill pre-cut vertex detachment histogram
             if (h_vertex_detach_precut) h_vertex_detach_precut->fill(lambda.vertex_detach_z());
 
-            // Mass window cut
-            if (m_enable_mass_window_cut.get() && std::abs(lambda.mass - LAMBDA_MASS_PDG) > m_mass_window.get()) continue;
+            if (m_enable_mass_window_cut.get()
+                && std::abs(lambda.mass - LAMBDA_MASS_PDG) > m_mass_window.get()) continue;
             passed_mass = true;
 
-            // Momentum cut
-            if (m_enable_momentum_cut.get() && lambda.momentum() < m_min_momentum.get()) continue;
+            if (m_enable_momentum_cut.get()
+                && lambda.momentum() < m_min_momentum.get()) continue;
             passed_momentum = true;
 
-            // Decay length cut
-            if (m_enable_decay_length_cut.get() && m_min_decay_length.get() > 0 && lambda.decay_length() < m_min_decay_length.get()) continue;
+            if (m_enable_decay_length_cut.get()
+                && m_min_decay_length.get() > 0
+                && lambda.decay_length() < m_min_decay_length.get()) continue;
             passed_decay_length = true;
 
-            // Vertex detachment cut
             if (m_enable_vertex_detach_cut.get() && m_min_vertex_detach.get() > -999) {
-                double detach = lambda.vertex_detach_z();
+                const double detach = lambda.vertex_detach_z();
                 if (detach < m_min_vertex_detach.get()) continue;
                 if (m_max_vertex_detach.get() > 0 && detach > m_max_vertex_detach.get()) continue;
             }
@@ -280,43 +261,40 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm {
             selected_lambdas.push_back(lambda);
         }
 
-        if (!passed_mass) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Mass Window");
-
-        if (!passed_momentum) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Momentum Cut");
-
-        if (!passed_decay_length) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Decay Length Cut");
-
-        if (!passed_vertex_detach) return clas12::framework::StatusCode::FILTERED();
-        m_cutflow.pass("Vertex Detach Cut");
-
-        if (selected_lambdas.empty()) return clas12::framework::StatusCode::FILTERED();
-
-        // Store results
-        event.set_decision_typed(clas12::framework::Decisions::HasDecaysLambda, true);
-
-        // Find best candidate (closest to PDG mass)
+        // Find the best candidate up front so the `publish(...)` stages
+        // below can reference it cleanly.
         auto best_it = std::min_element(selected_lambdas.begin(), selected_lambdas.end(),
-                                        [](const DecaysLambda& a, const DecaysLambda& b) {
-                                            return std::abs(a.mass - LAMBDA_MASS_PDG) < std::abs(b.mass - LAMBDA_MASS_PDG);
-                                        });
+            [](const DecaysLambda& a, const DecaysLambda& b) {
+                return std::abs(a.mass - LAMBDA_MASS_PDG)
+                     < std::abs(b.mass - LAMBDA_MASS_PDG);
+            });
+        const bool have_best = best_it != selected_lambdas.end();
 
-        event.store_typed(clas12::framework::Keys::DecaysLambdaMass, best_it->mass);
-        event.store_typed(clas12::framework::Keys::DecaysLambdaMomentum, best_it->momentum());
-
-        // Fill histograms for selected Lambdas
-        for (const auto& lambda : selected_lambdas) {
-            fill_lambda_histograms(lambda, all_daughters);
-        }
-
-        // Fill N-tuple
-        if (m_ntuple && m_ntuple != nullptr) {
-            fill_ntuple(selected_lambdas, all_daughters);
-        }
-
-        return clas12::framework::StatusCode::SUCCESS();
+        return pipeline(event, m_cutflow)
+            .count("All Events")
+            .filter("Has DECAYS Bank", bank_bound && nrows > 0)
+            .tap([&] {
+                if (h_n_lambdas) h_n_lambdas->fill(lambdas.size());
+                for (const auto& lambda : lambdas) {
+                    if (h_mass_nocuts) h_mass_nocuts->fill(lambda.mass);
+                }
+            })
+            .filter("Has Lambda",         !lambdas.empty())
+            .filter("Mass Window",        passed_mass)
+            .filter("Momentum Cut",       passed_momentum)
+            .filter("Decay Length Cut",   passed_decay_length)
+            .filter("Vertex Detach Cut",  passed_vertex_detach)
+            .filter("has selected lambda", !selected_lambdas.empty() && have_best)
+            .set_decision(Decisions::HasDecaysLambda, true)
+            .publish(Keys::DecaysLambdaMass,     have_best ? best_it->mass : 0.0)
+            .publish(Keys::DecaysLambdaMomentum, have_best ? best_it->momentum() : 0.0)
+            .tap([&] {
+                for (const auto& lambda : selected_lambdas) {
+                    fill_lambda_histograms(lambda, all_daughters);
+                }
+                if (m_ntuple) fill_ntuple(selected_lambdas, all_daughters);
+            })
+            .status();
     }
 
     auto on_finalize() -> clas12::framework::StatusCode override {
