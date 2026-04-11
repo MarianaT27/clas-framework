@@ -12,7 +12,9 @@
  *
  * Uses modern framework patterns:
  * - HistogramFiller for efficient histogram filling
- * - ContextCutflow for combined cut definition and tracking
+ * - EventPipeline / plain Cutflow: every cut is an inline `.filter`
+ *   stage in process(), and the cutflow labels are pre-registered in
+ *   define_cutflow() so the print order stays stable
  * - NTupleWriter for struct-based N-tuple management
  * - FiducialService for unified fiducial cuts
  *
@@ -28,6 +30,7 @@
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/framework/core/AutoCutflow.hpp>
+#include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/HistogramFiller.hpp>
@@ -67,28 +70,6 @@ struct ElectronNTupleData {
     int e_sector     = 0;    ///< PCAL sector (1-6)
 
     NTUPLE_FIELDS(e_p, e_theta, e_phi, e_vz, e_chi2pid, e_sf, e_sector)
-};
-
-// ============================================================================
-// Cut Context
-// ============================================================================
-
-/**
- * @brief Context for electron cut evaluation
- *
- * Holds all per-event data needed for cut decisions, enabling
- * the ContextCutflow to evaluate cuts with full context access.
- */
-struct ElectronCutContext {
-    const clas12::Particle& electron;       ///< The electron candidate
-    const clas12::CalorimeterBank& calo;    ///< Calorimeter data
-    const clas12::DCTrajBank& traj;         ///< Drift chamber trajectory
-    const clas12::TrackBank& trk_r1;        ///< DC track region-1 info
-    const clas12::TrackBank& trk_r2;        ///< DC track region-2 info
-    const clas12::TrackBank& trk_r3;        ///< DC track region-3 info
-    double SF;                               ///< Sampling fraction (E_total/p)
-    int sector;                              ///< PCAL sector (1-6)
-    clas12::framework::FiducialResult fiducial_result;  ///< Pre-computed fiducial result
 };
 
 // ============================================================================
@@ -244,34 +225,67 @@ public:
             ? m_fiducial->evaluate(electron, calorimeter, traj, sector)
             : decltype(m_fiducial->evaluate(electron, calorimeter, traj, sector)){};
 
-        ElectronCutContext ctx{electron, calorimeter, traj,
-                                trk_r1, trk_r2, trk_r3,
-                                SF, sector, fiducial_result};
-        const bool passes_cuts = trigger_e && m_cutflow.evaluate(ctx);
-
-        return pipeline(event)
+        return pipeline(event, m_cutflow)
+            .count("All Events")
             .filter("has electrons",    !electrons.empty())
             .filter("trigger electron", trigger_e.has_value())
-            .fill(&ElectronSelectionAlg::fill_stage, this, "before_cuts", ctx)
-            .filter("passes cuts", passes_cuts)
+            .count("Has Electron")
+            .fill(&ElectronSelectionAlg::fill_stage, this, "before_cuts",
+                  electron, calorimeter, traj, trk_r1, trk_r2, trk_r3,
+                  SF, fiducial_result)
+            .filter("Chi2 PID",
+                    !m_enable_chi2pid_cut.get()
+                        || m_electron_cuts->pass_chi2pid_cut(electron.chi2pid()))
+            .filter("Momentum > 0.8 GeV",
+                    !m_enable_momentum_cut.get()
+                        || m_electron_cuts->pass_momentum_cut(electron.p()))
+            .filter("Vertex Z",
+                    !m_enable_vz_cut.get()
+                        || m_electron_cuts->pass_vz_cut(electron.vz()))
+            .filter("Sampling Fraction",
+                    !m_enable_sf_cut.get()
+                        || m_electron_cuts->pass_sampling_fraction_cut(SF, electron.p(), sector))
+            .filter("PCAL Fiducial",
+                    !m_enable_pcal_fiducial_cut.get()
+                        || fiducial_result.passed_region(DetectorRegion::PCAL))
+            .filter("DC R1 Edge",
+                    !m_enable_dc_r1_cut.get()
+                        || fiducial_result.passed_region(DetectorRegion::DC_R1))
+            .filter("DC R2 Edge",
+                    !m_enable_dc_r2_cut.get()
+                        || fiducial_result.passed_region(DetectorRegion::DC_R2))
+            .filter("DC R3 Edge",
+                    !m_enable_dc_r3_cut.get()
+                        || fiducial_result.passed_region(DetectorRegion::DC_R3))
             .set_decision(Decisions::HasGoodElectron, true)
             .publish(Keys::SelectedElectrons, std::vector<clas12::Particle>{electron})
-            .fill(&ElectronSelectionAlg::fill_stage, this, "after_cuts",  ctx)
+            .fill(&ElectronSelectionAlg::fill_stage, this, "after_cuts",
+                  electron, calorimeter, traj, trk_r1, trk_r2, trk_r3,
+                  SF, fiducial_result)
             .fill(&ElectronSelectionAlg::fill_ntuple, this, electron, SF, sector)
             .status();
     }
 
-    /// Per-stage histogram fill. Called once for "before_cuts" (before
-    /// the cutflow gate) and once for "after_cuts" (after it passes).
-    /// Bundles the 7-arg HistogramFiller::fill_electron call + the
-    /// optional fiducial-histogram fill so the pipeline body stays a
-    /// one-liner per stage.
-    auto fill_stage(std::string_view stage, const ElectronCutContext& c) -> void {
+    /// Per-stage histogram fill. Called via `.fill(...)` twice per
+    /// surviving event: once before the cut cascade ("before_cuts")
+    /// and once after every cut passes ("after_cuts"). Bundles the
+    /// 7-arg HistogramFiller::fill_electron call + the optional
+    /// fiducial-histogram fill so the pipeline body stays one line
+    /// per stage.
+    auto fill_stage(std::string_view stage,
+                    const clas12::Particle& electron,
+                    const clas12::CalorimeterBank& calo,
+                    const clas12::DCTrajBank& traj,
+                    const clas12::TrackBank& trk_r1,
+                    const clas12::TrackBank& trk_r2,
+                    const clas12::TrackBank& trk_r3,
+                    double SF,
+                    const clas12::framework::FiducialResult& fiducial_result) -> void {
         clas12::framework::HistogramFiller::fill_electron(
             kinematics_groups[std::string(stage)].get(),
-            c.electron, c.calo, c.trk_r1, c.trk_r2, c.trk_r3, c.SF);
+            electron, calo, trk_r1, trk_r2, trk_r3, SF);
         if (m_enable_fiducial_histograms.get()) {
-            fill_fiducial_histograms(c.calo, c.traj, c.fiducial_result, stage);
+            fill_fiducial_histograms(calo, traj, fiducial_result, stage);
         }
     }
 
@@ -343,7 +357,7 @@ private:
     // Cutflow
     // ========================================================================
 
-    clas12::framework::ContextCutflow<ElectronCutContext> m_cutflow;
+    clas12::framework::Cutflow m_cutflow;
 
     // ========================================================================
     // Histograms
@@ -425,38 +439,24 @@ private:
     }
 
     /**
-     * @brief Define cutflow with all electron selection cuts
+     * @brief Register cutflow labels in the pipeline's cutflow.
+     *
+     * The cuts themselves are expressed inline as `.filter(...)` stages
+     * inside `process()`; this helper only pre-registers the labels so
+     * the cutflow prints them in the expected order even when an event
+     * fails the very first cut.
      */
     void define_cutflow() {
-        m_cutflow
-            .define_always("All Events")
-            .define("Has Electron", [](const ElectronCutContext&) {
-                return true;  // Already filtered before context creation
-            })
-            .define("Chi2 PID", [this](const ElectronCutContext& ctx) {
-                return !m_enable_chi2pid_cut.get() || m_electron_cuts->pass_chi2pid_cut(ctx.electron.chi2pid());
-            })
-            .define("Momentum > 0.8 GeV", [this](const ElectronCutContext& ctx) {
-                return !m_enable_momentum_cut.get() || m_electron_cuts->pass_momentum_cut(ctx.electron.p());
-            })
-            .define("Vertex Z", [this](const ElectronCutContext& ctx) {
-                return !m_enable_vz_cut.get() || m_electron_cuts->pass_vz_cut(ctx.electron.vz());
-            })
-            .define("Sampling Fraction", [this](const ElectronCutContext& ctx) {
-                return !m_enable_sf_cut.get() || m_electron_cuts->pass_sampling_fraction_cut(ctx.SF, ctx.electron.p(), ctx.sector);
-            })
-            .define("PCAL Fiducial", [this](const ElectronCutContext& ctx) {
-                return !m_enable_pcal_fiducial_cut.get() || ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::PCAL);
-            })
-            .define("DC R1 Edge", [this](const ElectronCutContext& ctx) {
-                return !m_enable_dc_r1_cut.get() || ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::DC_R1);
-            })
-            .define("DC R2 Edge", [this](const ElectronCutContext& ctx) {
-                return !m_enable_dc_r2_cut.get() || ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::DC_R2);
-            })
-            .define("DC R3 Edge", [this](const ElectronCutContext& ctx) {
-                return !m_enable_dc_r3_cut.get() || ctx.fiducial_result.passed_region(clas12::framework::DetectorRegion::DC_R3);
-            });
+        m_cutflow.add_cut("All Events");
+        m_cutflow.add_cut("Has Electron");
+        m_cutflow.add_cut("Chi2 PID");
+        m_cutflow.add_cut("Momentum > 0.8 GeV");
+        m_cutflow.add_cut("Vertex Z");
+        m_cutflow.add_cut("Sampling Fraction");
+        m_cutflow.add_cut("PCAL Fiducial");
+        m_cutflow.add_cut("DC R1 Edge");
+        m_cutflow.add_cut("DC R2 Edge");
+        m_cutflow.add_cut("DC R3 Edge");
     }
 
     /**
