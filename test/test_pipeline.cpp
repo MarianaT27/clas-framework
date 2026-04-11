@@ -1,17 +1,24 @@
 #include <gtest/gtest.h>
 
+#include <memory>
 #include <vector>
+
+#include <bank_view.h>
 
 #include <clas12/Particle.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
+#include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/ThreadLocalHistogram.hpp>
 
 using clas12::Particle;
 using clas12::framework::Cutflow;
+using clas12::framework::Event;
+using clas12::framework::EventPipeline;
 using clas12::framework::ParticlePipeline;
 using clas12::framework::ThreadLocalHistogram1D;
 using clas12::framework::particles;
+using clas12::framework::pipeline;
 
 namespace {
 
@@ -167,4 +174,107 @@ TEST(ParticlePipeline, WorksWithoutCutflow) {
         .collect();
 
     EXPECT_EQ(selected.size(), 1U);
+}
+
+// =============================================================================
+// EventPipeline::fill — variadic-args wrapper around std::invoke
+// =============================================================================
+
+namespace {
+
+// Fresh Event per test. Default-constructed bank_view_set is empty but
+// valid; the .fill tests never touch its banks.
+class EventPipelineFillTest : public ::testing::Test {
+   protected:
+    hipo::bank_view_set m_banks;
+    std::unique_ptr<Event> m_event = std::make_unique<Event>(m_banks);
+};
+
+struct FillCtx {
+    int    id;
+    double value;
+};
+
+// A toy histogram-like sink that records every fill call. Used to
+// verify the pipeline calls `.fill` in the correct order and skips
+// when the pipeline is filtered.
+struct Recorder {
+    std::vector<std::pair<std::string, double>> calls;
+
+    auto push(std::string tag, double v) -> void { calls.emplace_back(std::move(tag), v); }
+
+    auto push_member(const FillCtx& c) -> void {
+        calls.emplace_back("member", c.value);
+    }
+};
+
+}  // namespace
+
+TEST_F(EventPipelineFillTest, FillInvokesLambda) {
+    Recorder rec;
+    auto sc = pipeline(*m_event)
+        .fill([&] { rec.push("a", 1.0); })
+        .fill([&] { rec.push("b", 2.0); })
+        .status();
+
+    EXPECT_TRUE(sc.is_success());
+    ASSERT_EQ(rec.calls.size(), 2U);
+    EXPECT_EQ(rec.calls[0].first, "a");
+    EXPECT_DOUBLE_EQ(rec.calls[1].second, 2.0);
+}
+
+TEST_F(EventPipelineFillTest, FillForwardsArgumentsToLambda) {
+    Recorder rec;
+    FillCtx ctx{42, 3.14};
+
+    auto sink = [&](std::string tag, const FillCtx& c) {
+        rec.push(std::move(tag), c.value);
+    };
+
+    (void)pipeline(*m_event)
+        .fill(sink, "before", ctx)
+        .fill(sink, "after",  ctx)
+        .status();
+
+    ASSERT_EQ(rec.calls.size(), 2U);
+    EXPECT_EQ(rec.calls[0].first, "before");
+    EXPECT_EQ(rec.calls[1].first, "after");
+    EXPECT_DOUBLE_EQ(rec.calls[0].second, 3.14);
+}
+
+TEST_F(EventPipelineFillTest, FillSupportsMemberFunctionPointer) {
+    Recorder rec;
+    FillCtx ctx{7, 2.718};
+
+    (void)pipeline(*m_event)
+        .fill(&Recorder::push_member, &rec, ctx)
+        .status();
+
+    ASSERT_EQ(rec.calls.size(), 1U);
+    EXPECT_EQ(rec.calls[0].first, "member");
+    EXPECT_DOUBLE_EQ(rec.calls[0].second, 2.718);
+}
+
+TEST_F(EventPipelineFillTest, FillSkipsWhenFiltered) {
+    Recorder rec;
+
+    (void)pipeline(*m_event)
+        .filter("always fails", false)
+        .fill([&] { rec.push("never", 0.0); })
+        .status();
+
+    EXPECT_TRUE(rec.calls.empty());
+}
+
+TEST_F(EventPipelineFillTest, FillAfterPassingFilterStillRuns) {
+    Recorder rec;
+
+    auto sc = pipeline(*m_event)
+        .filter("passes", true)
+        .fill([&] { rec.push("ran", 1.0); })
+        .status();
+
+    EXPECT_TRUE(sc.is_success());
+    ASSERT_EQ(rec.calls.size(), 1U);
+    EXPECT_EQ(rec.calls[0].first, "ran");
 }

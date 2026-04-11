@@ -83,6 +83,9 @@ struct ElectronCutContext {
     const clas12::Particle& electron;       ///< The electron candidate
     const clas12::CalorimeterBank& calo;    ///< Calorimeter data
     const clas12::DCTrajBank& traj;         ///< Drift chamber trajectory
+    const clas12::TrackBank& trk_r1;        ///< DC track region-1 info
+    const clas12::TrackBank& trk_r2;        ///< DC track region-2 info
+    const clas12::TrackBank& trk_r3;        ///< DC track region-3 info
     double SF;                               ///< Sampling fraction (E_total/p)
     int sector;                              ///< PCAL sector (1-6)
     clas12::framework::FiducialResult fiducial_result;  ///< Pre-computed fiducial result
@@ -241,33 +244,35 @@ public:
             ? m_fiducial->evaluate(electron, calorimeter, traj, sector)
             : decltype(m_fiducial->evaluate(electron, calorimeter, traj, sector)){};
 
-        ElectronCutContext ctx{electron, calorimeter, traj, SF, sector, fiducial_result};
+        ElectronCutContext ctx{electron, calorimeter, traj,
+                                trk_r1, trk_r2, trk_r3,
+                                SF, sector, fiducial_result};
         const bool passes_cuts = trigger_e && m_cutflow.evaluate(ctx);
 
         return pipeline(event)
             .filter("has electrons",    !electrons.empty())
             .filter("trigger electron", trigger_e.has_value())
-            .tap([&] {
-                HistogramFiller::fill_electron(
-                    kinematics_groups["before_cuts"].get(),
-                    electron, calorimeter, trk_r1, trk_r2, trk_r3, SF);
-                if (m_enable_fiducial_histograms.get()) {
-                    fill_fiducial_histograms(calorimeter, traj, fiducial_result, "before_cuts");
-                }
-            })
+            .fill(&ElectronSelectionAlg::fill_stage, this, "before_cuts", ctx)
             .filter("passes cuts", passes_cuts)
             .set_decision(Decisions::HasGoodElectron, true)
             .publish(Keys::SelectedElectrons, std::vector<clas12::Particle>{electron})
-            .tap([&] {
-                HistogramFiller::fill_electron(
-                    kinematics_groups["after_cuts"].get(),
-                    electron, calorimeter, trk_r1, trk_r2, trk_r3, SF);
-                if (m_enable_fiducial_histograms.get()) {
-                    fill_fiducial_histograms(calorimeter, traj, fiducial_result, "after_cuts");
-                }
-                fill_ntuple(electron, SF, sector);
-            })
+            .fill(&ElectronSelectionAlg::fill_stage, this, "after_cuts",  ctx)
+            .fill(&ElectronSelectionAlg::fill_ntuple, this, electron, SF, sector)
             .status();
+    }
+
+    /// Per-stage histogram fill. Called once for "before_cuts" (before
+    /// the cutflow gate) and once for "after_cuts" (after it passes).
+    /// Bundles the 7-arg HistogramFiller::fill_electron call + the
+    /// optional fiducial-histogram fill so the pipeline body stays a
+    /// one-liner per stage.
+    auto fill_stage(std::string_view stage, const ElectronCutContext& c) -> void {
+        clas12::framework::HistogramFiller::fill_electron(
+            kinematics_groups[std::string(stage)].get(),
+            c.electron, c.calo, c.trk_r1, c.trk_r2, c.trk_r3, c.SF);
+        if (m_enable_fiducial_histograms.get()) {
+            fill_fiducial_histograms(c.calo, c.traj, c.fiducial_result, stage);
+        }
     }
 
     // ========================================================================
@@ -461,7 +466,7 @@ private:
         const clas12::CalorimeterBank& calo,
         const clas12::DCTrajBank& traj,
         [[maybe_unused]] const clas12::framework::FiducialResult& result,
-        const std::string& stage) {
+        std::string_view stage) {
 
         if (stage == "before_cuts") {
             if (h_pcal_lv_lw_before) h_pcal_lv_lw_before->fill(calo.pcal_lv, calo.pcal_lw);

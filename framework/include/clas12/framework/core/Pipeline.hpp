@@ -177,6 +177,39 @@ class EventPipeline {
         return *this;
     }
 
+    /**
+     * @brief Invoke a callable with explicit arguments.
+     *
+     * Thin wrapper around `std::invoke(fn, args...)` that skips when
+     * the pipeline is in the filtered state. Equivalent to
+     * `.tap([&]{ fn(args...); })` but without the lambda wrapper -
+     * the intent ("call this filler with this state") is now in the
+     * method name instead of buried inside a closure body.
+     *
+     * Supports plain functions, lambdas, function objects,
+     * std::function, and pointer-to-member functions (pass the
+     * instance as the first arg, then the remaining arguments).
+     *
+     * Typical usage - a per-stage histogram filler bound once on the
+     * algorithm with the stage name + bundled state struct:
+     *
+     * @code
+     * auto fill_stage(std::string_view stage, const Ctx& c) -> void { ... }
+     *
+     * return pipeline(event)
+     *     .fill(&Alg::fill_stage, this, "before_cuts", ctx)
+     *     .filter("passes cuts", passes_cuts)
+     *     .fill(&Alg::fill_stage, this, "after_cuts",  ctx)
+     *     .status();
+     * @endcode
+     */
+    template <typename Fn, typename... Args>
+    auto fill(Fn&& fn, Args&&... args) -> EventPipeline& {
+        if (m_filtered) return *this;
+        std::invoke(std::forward<Fn>(fn), std::forward<Args>(args)...);
+        return *this;
+    }
+
     /// Store a typed value in the event store (no-op when filtered).
     template <typename T>
     auto publish(TypedKey<T> key, T value) -> EventPipeline& {
