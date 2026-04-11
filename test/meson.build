@@ -154,3 +154,14 @@ test_thread_local_histogram = executable(
 )
 
 test('ThreadLocalHistogram Tests', test_thread_local_histogram)
+
+# Round-trip tests for the RNTuple-backed NTupleService: write
+# scalar / vector / multi-ntuple entries, close, reopen via
+# RNTupleReader, and verify the values match.
+test_rntuple_service = executable(
+  'test_rntuple_service',
+  'test_rntuple_service.cpp',
+  dependencies: test_deps,
+)
+
+test('RNTuple Service Tests', test_rntuple_service)
