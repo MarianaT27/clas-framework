@@ -70,8 +70,8 @@ concept ServiceConcept = std::derived_from<T, IService> &&
  * - Satisfies ServiceConcept
  * - Has book_hist1D() method for booking 1D histograms
  * - Has book_hist2D() method for booking 2D histograms
- * - Has get_hist1D() method for retrieving 1D histograms
- * - Has get_hist2D() method for retrieving 2D histograms
+ * - Has get_output_hist1D() method for retrieving 1D histograms
+ * - Has get_output_hist2D() method for retrieving 2D histograms
  *
  * This concept is useful for algorithms that need histogram services
  * but want to be generic over the specific histogram service implementation.
@@ -92,8 +92,8 @@ concept HistogramProvider = ServiceConcept<T> &&
              int nbins, double xmin, double xmax, int nbinsy, double ymin, double ymax) {
         { svc.book_hist1D(path, title, nbins, xmin, xmax) } -> std::same_as<TH1D*>;
         { svc.book_hist2D(path, title, nbins, xmin, xmax, nbinsy, ymin, ymax) } -> std::same_as<TH2D*>;
-        { svc.get_hist1D(path) } -> std::same_as<TH1D*>;
-        { svc.get_hist2D(path) } -> std::same_as<TH2D*>;
+        { svc.get_output_hist1D(path) } -> std::same_as<TH1D*>;
+        { svc.get_output_hist2D(path) } -> std::same_as<TH2D*>;
     };
 
 /**

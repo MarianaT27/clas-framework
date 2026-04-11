@@ -128,8 +128,8 @@ private:
     HistogramService* m_hist_svc = nullptr;
 
     // Histogram pointers (atomic for thread-safety)
-    AtomicHistogram1D* m_h_electron_momentum = nullptr;
-    AtomicHistogram1D* m_h_electron_count = nullptr;
+    ThreadLocalHistogram1D* m_h_electron_momentum = nullptr;
+    ThreadLocalHistogram1D* m_h_electron_count = nullptr;
 
     // Counters
     int m_events_processed = 0;
@@ -187,7 +187,7 @@ public:
 private:
     Property<double> m_energy_threshold{"energy_threshold", 0.1, "Minimum photon energy [GeV]"};
     HistogramService* m_hist_svc = nullptr;
-    AtomicHistogram1D* m_h_photon_energy = nullptr;
+    ThreadLocalHistogram1D* m_h_photon_energy = nullptr;
     int m_photon_count = 0;
 };
 

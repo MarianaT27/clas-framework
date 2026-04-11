@@ -310,24 +310,24 @@ private:
 };
 
 /**
- * @brief Static utility class for filling AtomicHistogramGroup-based templates
+ * @brief Static utility class for filling ThreadLocalHistogramGroup-based templates
  *
  * Provides one-call filling of all histograms in PionDiagnostics and other
- * AtomicHistogramTemplates, reducing ~30 manual fill lines to a single call.
+ * ThreadLocalHistogramTemplates, reducing ~30 manual fill lines to a single call.
  */
 class AtomicHistogramFiller {
 public:
     /**
      * @brief Fill all pion diagnostic histograms from PionDiagnostics template
      *
-     * @param group AtomicHistogramGroup created by PionDiagnostics::create()
+     * @param group ThreadLocalHistogramGroup created by PionDiagnostics::create()
      * @param pion The pion particle
      * @param timing Timing result from CandidateUtils::compute_timing()
      * @param electron_vz Electron vertex z for delta_vz calculation
      * @param tof_path TOF path length [cm]
      * @param sector Scintillator sector (1-6), or -1 if unknown
      */
-    static auto fill_pion_diagnostics(AtomicHistogramGroup* group,
+    static auto fill_pion_diagnostics(ThreadLocalHistogramGroup* group,
                                        const clas12::Particle& pion,
                                        const CandidateUtils::TimingResult& timing,
                                        double electron_vz,

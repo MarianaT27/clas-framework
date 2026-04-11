@@ -955,14 +955,14 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
 
     // Region-specific histogram set (mass + kinematics)
     struct RegionHistograms {
-        clas12::framework::AtomicHistogram1D* mass_all = nullptr;
-        clas12::framework::AtomicHistogram1D* mass_selected = nullptr;
-        clas12::framework::AtomicHistogram1D* momentum = nullptr;
-        clas12::framework::AtomicHistogram1D* theta = nullptr;
-        clas12::framework::AtomicHistogram1D* phi = nullptr;
-        clas12::framework::AtomicHistogram1D* opening_angle = nullptr;
-        clas12::framework::AtomicHistogram2D* mass_vs_momentum = nullptr;
-        std::map<std::string, clas12::framework::AtomicHistogram1D*> mass_q2_bins;
+        clas12::framework::ThreadLocalHistogram1D* mass_all = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* mass_selected = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* momentum = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* opening_angle = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* mass_vs_momentum = nullptr;
+        std::map<std::string, clas12::framework::ThreadLocalHistogram1D*> mass_q2_bins;
     };
 
     RegionHistograms m_hist_ff;     // Forward-Forward
@@ -976,9 +976,9 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
 
     // Sigma scan histogram set
     struct ScanHistograms {
-        clas12::framework::AtomicHistogram1D* mass_all = nullptr;
-        clas12::framework::AtomicHistogram1D* mass_selected = nullptr;
-        std::map<std::string, clas12::framework::AtomicHistogram1D*> mass_q2_bins;
+        clas12::framework::ThreadLocalHistogram1D* mass_all = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* mass_selected = nullptr;
+        std::map<std::string, clas12::framework::ThreadLocalHistogram1D*> mass_q2_bins;
     };
     std::map<std::string, ScanHistograms> m_sigma_scan_histograms;
 
@@ -1026,46 +1026,46 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     // Histograms - Rho0 candidates (atomic for thread-safety)
-    clas12::framework::AtomicHistogram1D* h_pipim_mass_all = nullptr;
-    clas12::framework::AtomicHistogram1D* h_pipim_mass_selected = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rho0_momentum = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rho0_theta = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rho0_phi = nullptr;
-    clas12::framework::AtomicHistogram1D* h_opening_angle = nullptr;
-    clas12::framework::AtomicHistogram2D* h_pipim_mass_vs_momentum = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_all = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rho0_momentum = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rho0_theta = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rho0_phi = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_opening_angle = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_pipim_mass_vs_momentum = nullptr;
 
     // Histograms - Kinematic variables (before cuts)
-    clas12::framework::AtomicHistogram1D* h_zh = nullptr;
-    clas12::framework::AtomicHistogram1D* h_lc = nullptr;
-    clas12::framework::AtomicHistogram1D* h_t = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_vz_pim = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_vz_pip = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_zh = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_lc = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_t = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pim = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pip = nullptr;
 
     // Histograms - Kinematic variables (after cuts)
-    clas12::framework::AtomicHistogram1D* h_zh_selected = nullptr;
-    clas12::framework::AtomicHistogram1D* h_lc_selected = nullptr;
-    clas12::framework::AtomicHistogram1D* h_t_selected = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_vz_pim_selected = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_vz_pip_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_zh_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_lc_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_t_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pim_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pip_selected = nullptr;
 
     // N-1 histograms: cut variable distributions with all other cuts applied
-    clas12::framework::AtomicHistogram1D* h_zh_nminus1 = nullptr;
-    clas12::framework::AtomicHistogram1D* h_lc_nminus1 = nullptr;
-    clas12::framework::AtomicHistogram1D* h_t_nminus1 = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_vz_pip_nminus1 = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_vz_pim_nminus1 = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_zh_nminus1 = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_lc_nminus1 = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_t_nminus1 = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pip_nminus1 = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pim_nminus1 = nullptr;
     // N-1 histograms: invariant mass with all other cuts applied
-    clas12::framework::AtomicHistogram1D* h_pipim_mass_nminus1_zh = nullptr;
-    clas12::framework::AtomicHistogram1D* h_pipim_mass_nminus1_lc = nullptr;
-    clas12::framework::AtomicHistogram1D* h_pipim_mass_nminus1_t = nullptr;
-    clas12::framework::AtomicHistogram1D* h_pipim_mass_nminus1_delta_vz_pip = nullptr;
-    clas12::framework::AtomicHistogram1D* h_pipim_mass_nminus1_delta_vz_pim = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_zh = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_lc = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_t = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_delta_vz_pip = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_delta_vz_pim = nullptr;
 
     // Q²-binned invariant mass histograms
-    std::map<std::string, clas12::framework::AtomicHistogram1D*> h_pipim_mass_q2_bins;
+    std::map<std::string, clas12::framework::ThreadLocalHistogram1D*> h_pipim_mass_q2_bins;
 
     // lc-binned invariant mass histograms
-    std::map<std::string, clas12::framework::AtomicHistogram1D*> h_pipim_mass_lc_bins;
+    std::map<std::string, clas12::framework::ThreadLocalHistogram1D*> h_pipim_mass_lc_bins;
 
     // Q² bin edges: 1.0-2.0, 2.0-2.5, 2.5-3.0, 3.0-3.5, 3.5-4.5, 4.5-6 GeV²
     static constexpr std::array<std::pair<double, double>, 6> Q2_BINS = {{
@@ -1170,7 +1170,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
     template<typename BinArray>
     static auto fill_binned_histogram(
         const BinArray& bins, const std::string& prefix,
-        const std::map<std::string, clas12::framework::AtomicHistogram1D*>& hist_map,
+        const std::map<std::string, clas12::framework::ThreadLocalHistogram1D*>& hist_map,
         double variable, double fill_value
     ) -> void {
         for (size_t i = 0; i < bins.size(); ++i) {

@@ -8,7 +8,7 @@
  * at each cut stage. This eliminates the common pattern of defining cuts and
  * histogram stages separately.
  *
- * @see AutoCutflow, ContextCutflow, AtomicHistogramTemplates
+ * @see AutoCutflow, ContextCutflow, ThreadLocalHistogramTemplates
  */
 
 #include <functional>
@@ -63,7 +63,7 @@ namespace clas12::framework {
  *             });
  *
  *         // Define what to fill at each cut stage
- *         m_analysis.set_filler([](AtomicHistogramGroup* h, const ElectronContext& ctx) {
+ *         m_analysis.set_filler([](ThreadLocalHistogramGroup* h, const ElectronContext& ctx) {
  *             h->fill("p", ctx.electron.p());
  *             h->fill("theta", ctx.electron.theta());
  *             h->fill2d("sf_vs_p", ctx.electron.p(), ctx.SF);
@@ -99,7 +99,7 @@ template <typename Context>
 class CutflowHistograms {
 public:
     using Predicate = std::function<bool(const Context&)>;
-    using Filler = std::function<void(AtomicHistogramGroup*, const Context&)>;
+    using Filler = std::function<void(ThreadLocalHistogramGroup*, const Context&)>;
 
     /**
      * @brief Construct a CutflowHistograms with the given name
@@ -144,7 +144,7 @@ public:
     /**
      * @brief Set the function that fills histograms for each cut stage
      *
-     * The filler receives an AtomicHistogramGroup for the current cut stage
+     * The filler receives an ThreadLocalHistogramGroup for the current cut stage
      * and the event context. It should fill all relevant histograms.
      *
      * @param filler Function that fills histograms given a histogram group and context
@@ -165,7 +165,7 @@ public:
      * @param template_factory Factory function that creates histogram groups
      * @return CutflowHistograms& Reference to this for method chaining
      */
-    auto use_template(std::function<std::unique_ptr<AtomicHistogramGroup>(
+    auto use_template(std::function<std::unique_ptr<ThreadLocalHistogramGroup>(
                           HistogramService*, const std::string&)> template_factory) -> CutflowHistograms& {
         m_template_factory = std::move(template_factory);
         return *this;
@@ -203,7 +203,7 @@ public:
                 m_histograms[cut_name] = m_template_factory(svc, path);
             } else {
                 // Use default electron histograms
-                m_histograms[cut_name] = AtomicHistogramTemplates::ElectronHistograms::create(svc, path);
+                m_histograms[cut_name] = ThreadLocalHistogramTemplates::ElectronHistograms::create(svc, path);
             }
         }
 
@@ -274,7 +274,7 @@ public:
     /**
      * @brief Get histogram group for a specific cut stage
      */
-    auto histograms(const std::string& cut_name) -> AtomicHistogramGroup* {
+    auto histograms(const std::string& cut_name) -> ThreadLocalHistogramGroup* {
         auto it = m_histograms.find(cut_name);
         return it != m_histograms.end() ? it->second.get() : nullptr;
     }
@@ -299,8 +299,8 @@ private:
     HistogramService* m_service = nullptr;
     std::string m_base_path;
     Filler m_filler;
-    std::function<std::unique_ptr<AtomicHistogramGroup>(HistogramService*, const std::string&)> m_template_factory;
-    std::map<std::string, std::unique_ptr<AtomicHistogramGroup>> m_histograms;
+    std::function<std::unique_ptr<ThreadLocalHistogramGroup>(HistogramService*, const std::string&)> m_template_factory;
+    std::map<std::string, std::unique_ptr<ThreadLocalHistogramGroup>> m_histograms;
     bool m_initialized = false;
 
     // Store cuts with predicates for individual evaluation
@@ -349,7 +349,7 @@ private:
 class SimpleCutflowHistograms {
 public:
     using Predicate = std::function<bool()>;
-    using Filler = std::function<void(AtomicHistogramGroup*)>;
+    using Filler = std::function<void(ThreadLocalHistogramGroup*)>;
 
     explicit SimpleCutflowHistograms(std::string name)
         : m_cutflow(std::move(name)) {}
@@ -378,7 +378,7 @@ public:
         for (const auto& cut_name : cuts) {
             std::string sanitized = sanitize_name(cut_name);
             std::string path = fmt::format("{}/{}", base_path, sanitized);
-            m_histograms[cut_name] = AtomicHistogramTemplates::ElectronHistograms::create(svc, path);
+            m_histograms[cut_name] = ThreadLocalHistogramTemplates::ElectronHistograms::create(svc, path);
         }
 
         m_initialized = true;
@@ -405,7 +405,7 @@ public:
 
     auto print() const -> void { m_cutflow.print(); }
 
-    auto histograms(const std::string& cut_name) -> AtomicHistogramGroup* {
+    auto histograms(const std::string& cut_name) -> ThreadLocalHistogramGroup* {
         auto it = m_histograms.find(cut_name);
         return it != m_histograms.end() ? it->second.get() : nullptr;
     }
@@ -414,7 +414,7 @@ private:
     AutoCutflow m_cutflow;
     HistogramService* m_service = nullptr;
     Filler m_filler;
-    std::map<std::string, std::unique_ptr<AtomicHistogramGroup>> m_histograms;
+    std::map<std::string, std::unique_ptr<ThreadLocalHistogramGroup>> m_histograms;
     bool m_initialized = false;
 
     static auto sanitize_name(const std::string& name) -> std::string {

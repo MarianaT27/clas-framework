@@ -37,7 +37,7 @@
 // Histograms
 #include <clas12/framework/core/Histogram.hpp>
 #include <clas12/framework/core/HistogramFiller.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 
 // Cutflow
 #include <clas12/framework/core/Cutflow.hpp>

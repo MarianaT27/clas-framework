@@ -6,7 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/core/ServiceManager.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -60,7 +60,7 @@ class HistogramService : public Service {
 
     auto finalize() -> StatusCode override {
         // Convert atomic histograms to ROOT format before writing
-        convert_atomic_histograms();
+        merge_histograms();
 
         if (m_auto_write) {
             write_histograms();
@@ -77,7 +77,7 @@ class HistogramService : public Service {
      * Called automatically during finalize(). Atomic histograms are
      * converted to ROOT format and stored in the regular histogram maps.
      */
-    auto convert_atomic_histograms() -> void;
+    auto merge_histograms() -> void;
 
     /**
      * @brief Set the OutputFileService (REQUIRED)
@@ -124,94 +124,36 @@ class HistogramService : public Service {
     }
 
     // ========================================================================
-    // Histogram Booking API (All Thread-Safe Atomic)
+    // Histogram Booking API (Thread-Local Accumulators)
     // ========================================================================
     //
-    // All histogram booking methods return atomic histograms that are
-    // thread-safe for parallel filling and automatically converted to
-    // ROOT format on finalize.
+    // `book_hist1D` / `book_hist2D` return ThreadLocalHistogram*D handles
+    // that analyses fill during event processing. Each histogram keeps
+    // per-worker bin arrays internally; `merge_histograms()` (called
+    // automatically during finalize()) sums every worker's slot into a
+    // single ROOT TH1D/TH2D that gets written to disk.
+    //
+    // `get_output_hist1D` / `get_output_hist2D` return the post-merge
+    // ROOT histograms - only valid after `merge_histograms()` has run.
 
     /**
-     * @brief Book a 1D histogram (thread-safe atomic)
+     * @brief Look up the merged ROOT TH1D for a previously-booked path.
      *
-     * Returns an atomic histogram that can be safely filled from multiple
-     * threads simultaneously.
-     *
-     * @param path Full path (e.g., "/ElectronKinematics/momentum")
-     * @param title Histogram title with axis labels
-     * @param nbins Number of bins
-     * @param xmin Minimum x value
-     * @param xmax Maximum x value
-     * @return AtomicHistogram1D* Pointer to the atomic histogram
+     * Returns nullptr before merge_histograms() has been called (i.e.
+     * during the event loop). Intended for post-processing / test
+     * assertions that need to inspect the final ROOT histogram.
      */
-    auto book_hist(const std::string& path, const std::string& title,
-                   int nbins, double xmin, double xmax) -> AtomicHistogram1D* {
-        return book_atomic_hist1D(path, title, nbins, xmin, xmax);
-    }
-
-    /**
-     * @brief Book a 1D histogram (thread-safe atomic) - alias for book_hist
-     */
-    auto book_hist1D(const std::string& path, const std::string& title,
-                     int nbins, double xmin, double xmax) -> AtomicHistogram1D* {
-        return book_atomic_hist1D(path, title, nbins, xmin, xmax);
-    }
-
-    /**
-     * @brief Book a 2D histogram (thread-safe atomic)
-     *
-     * Returns an atomic histogram that can be safely filled from multiple
-     * threads simultaneously.
-     *
-     * @param path Full path
-     * @param title Histogram title with axis labels
-     * @param nbinsx Number of x bins
-     * @param xmin Minimum x value
-     * @param xmax Maximum x value
-     * @param nbinsy Number of y bins
-     * @param ymin Minimum y value
-     * @param ymax Maximum y value
-     * @return AtomicHistogram2D* Pointer to the atomic histogram
-     */
-    auto book_hist2d(const std::string& path, const std::string& title,
-                     int nbinsx, double xmin, double xmax,
-                     int nbinsy, double ymin, double ymax) -> AtomicHistogram2D* {
-        return book_atomic_hist2D(path, title, nbinsx, xmin, xmax, nbinsy, ymin, ymax);
-    }
-
-    /**
-     * @brief Book a 2D histogram (thread-safe atomic) - alias for book_hist2d
-     */
-    auto book_hist2D(const std::string& path, const std::string& title,
-                     int nbinsx, double xmin, double xmax,
-                     int nbinsy, double ymin, double ymax) -> AtomicHistogram2D* {
-        return book_atomic_hist2D(path, title, nbinsx, xmin, xmax, nbinsy, ymin, ymax);
-    }
-
-    /**
-     * @brief Get a 1D histogram by path
-     * @param path Histogram path
-     * @return TH1D* Pointer to histogram, or nullptr if not found
-     */
-    auto get_hist1D(const std::string& path) -> TH1D* {
+    auto get_output_hist1D(const std::string& path) -> TH1D* {
         auto it = m_hist1D.find(path);
-        if (it != m_hist1D.end()) {
-            return it->second.get();
-        }
-        return nullptr;
+        return (it != m_hist1D.end()) ? it->second.get() : nullptr;
     }
 
     /**
-     * @brief Get a 2D histogram by path
-     * @param path Histogram path
-     * @return TH2D* Pointer to histogram, or nullptr if not found
+     * @brief Look up the merged ROOT TH2D for a previously-booked path.
      */
-    auto get_hist2D(const std::string& path) -> TH2D* {
+    auto get_output_hist2D(const std::string& path) -> TH2D* {
         auto it = m_hist2D.find(path);
-        if (it != m_hist2D.end()) {
-            return it->second.get();
-        }
-        return nullptr;
+        return (it != m_hist2D.end()) ? it->second.get() : nullptr;
     }
 
     /**
@@ -266,12 +208,12 @@ class HistogramService : public Service {
      * @param nbins Number of bins (default: 100)
      * @param pmin Minimum momentum (default: 0 GeV/c)
      * @param pmax Maximum momentum (default: 11 GeV/c, typical beam energy)
-     * @return AtomicHistogram1D* Pointer to the atomic histogram
+     * @return ThreadLocalHistogram1D* Pointer to the atomic histogram
      */
     auto book_momentum_hist(const std::string& path, const std::string& title,
-                            int nbins = 100, double pmin = 0.0, double pmax = 11.0) -> AtomicHistogram1D* {
+                            int nbins = 100, double pmin = 0.0, double pmax = 11.0) -> ThreadLocalHistogram1D* {
         std::string full_title = title + ";Momentum [GeV/c];Counts";
-        return book_atomic_hist1D(path, full_title, nbins, pmin, pmax);
+        return book_hist1D(path, full_title, nbins, pmin, pmax);
     }
 
     /**
@@ -280,12 +222,12 @@ class HistogramService : public Service {
      * @param path Full path for the histogram
      * @param title Histogram title
      * @param nbins Number of bins (default: 180)
-     * @return AtomicHistogram1D* Pointer to the atomic histogram (0-180 degrees)
+     * @return ThreadLocalHistogram1D* Pointer to the atomic histogram (0-180 degrees)
      */
     auto book_theta_hist(const std::string& path, const std::string& title,
-                         int nbins = 180) -> AtomicHistogram1D* {
+                         int nbins = 180) -> ThreadLocalHistogram1D* {
         std::string full_title = title + ";#theta [deg];Counts";
-        return book_atomic_hist1D(path, full_title, nbins, 0.0, 180.0);
+        return book_hist1D(path, full_title, nbins, 0.0, 180.0);
     }
 
     /**
@@ -294,12 +236,12 @@ class HistogramService : public Service {
      * @param path Full path for the histogram
      * @param title Histogram title
      * @param nbins Number of bins (default: 360)
-     * @return AtomicHistogram1D* Pointer to the atomic histogram (-180 to 180 degrees)
+     * @return ThreadLocalHistogram1D* Pointer to the atomic histogram (-180 to 180 degrees)
      */
     auto book_phi_hist(const std::string& path, const std::string& title,
-                       int nbins = 360) -> AtomicHistogram1D* {
+                       int nbins = 360) -> ThreadLocalHistogram1D* {
         std::string full_title = title + ";#phi [deg];Counts";
-        return book_atomic_hist1D(path, full_title, nbins, -180.0, 180.0);
+        return book_hist1D(path, full_title, nbins, -180.0, 180.0);
     }
 
     /**
@@ -310,12 +252,12 @@ class HistogramService : public Service {
      * @param nbins Number of bins (default: 100)
      * @param emin Minimum energy (default: 0 GeV)
      * @param emax Maximum energy (default: 11 GeV)
-     * @return AtomicHistogram1D* Pointer to the atomic histogram
+     * @return ThreadLocalHistogram1D* Pointer to the atomic histogram
      */
     auto book_energy_hist(const std::string& path, const std::string& title,
-                          int nbins = 100, double emin = 0.0, double emax = 11.0) -> AtomicHistogram1D* {
+                          int nbins = 100, double emin = 0.0, double emax = 11.0) -> ThreadLocalHistogram1D* {
         std::string full_title = title + ";Energy [GeV];Counts";
-        return book_atomic_hist1D(path, full_title, nbins, emin, emax);
+        return book_hist1D(path, full_title, nbins, emin, emax);
     }
 
     /**
@@ -326,12 +268,12 @@ class HistogramService : public Service {
      * @param nbins Number of bins
      * @param mmin Minimum mass [GeV/c²]
      * @param mmax Maximum mass [GeV/c²]
-     * @return AtomicHistogram1D* Pointer to the atomic histogram
+     * @return ThreadLocalHistogram1D* Pointer to the atomic histogram
      */
     auto book_mass_hist(const std::string& path, const std::string& title,
-                        int nbins, double mmin, double mmax) -> AtomicHistogram1D* {
+                        int nbins, double mmin, double mmax) -> ThreadLocalHistogram1D* {
         std::string full_title = title + ";M [GeV/c^{2}];Counts";
-        return book_atomic_hist1D(path, full_title, nbins, mmin, mmax);
+        return book_hist1D(path, full_title, nbins, mmin, mmax);
     }
 
     /**
@@ -342,12 +284,12 @@ class HistogramService : public Service {
      * @param nbins Number of bins (default: 100)
      * @param zmin Minimum Z (default: -40 cm)
      * @param zmax Maximum Z (default: 40 cm)
-     * @return AtomicHistogram1D* Pointer to the atomic histogram
+     * @return ThreadLocalHistogram1D* Pointer to the atomic histogram
      */
     auto book_vertex_z_hist(const std::string& path, const std::string& title,
-                            int nbins = 100, double zmin = -40.0, double zmax = 40.0) -> AtomicHistogram1D* {
+                            int nbins = 100, double zmin = -40.0, double zmax = 40.0) -> ThreadLocalHistogram1D* {
         std::string full_title = title + ";Vertex Z [cm];Counts";
-        return book_atomic_hist1D(path, full_title, nbins, zmin, zmax);
+        return book_hist1D(path, full_title, nbins, zmin, zmax);
     }
 
     /**
@@ -358,12 +300,12 @@ class HistogramService : public Service {
      * @param nbins Number of bins (default: 100)
      * @param q2min Minimum Q² (default: 0 GeV²)
      * @param q2max Maximum Q² (default: 12 GeV²)
-     * @return AtomicHistogram1D* Pointer to the atomic histogram
+     * @return ThreadLocalHistogram1D* Pointer to the atomic histogram
      */
     auto book_q2_hist(const std::string& path, const std::string& title,
-                      int nbins = 100, double q2min = 0.0, double q2max = 12.0) -> AtomicHistogram1D* {
+                      int nbins = 100, double q2min = 0.0, double q2max = 12.0) -> ThreadLocalHistogram1D* {
         std::string full_title = title + ";Q^{2} [GeV^{2}];Counts";
-        return book_atomic_hist1D(path, full_title, nbins, q2min, q2max);
+        return book_hist1D(path, full_title, nbins, q2min, q2max);
     }
 
     /**
@@ -372,12 +314,12 @@ class HistogramService : public Service {
      * @param path Full path for the histogram
      * @param title Histogram title
      * @param nbins Number of bins (default: 100)
-     * @return AtomicHistogram1D* Pointer to the atomic histogram (0 to 1)
+     * @return ThreadLocalHistogram1D* Pointer to the atomic histogram (0 to 1)
      */
     auto book_xb_hist(const std::string& path, const std::string& title,
-                      int nbins = 100) -> AtomicHistogram1D* {
+                      int nbins = 100) -> ThreadLocalHistogram1D* {
         std::string full_title = title + ";x_{B};Counts";
-        return book_atomic_hist1D(path, full_title, nbins, 0.0, 1.0);
+        return book_hist1D(path, full_title, nbins, 0.0, 1.0);
     }
 
     /**
@@ -388,12 +330,12 @@ class HistogramService : public Service {
      * @param nbins Number of bins (default: 100)
      * @param wmin Minimum W (default: 0 GeV)
      * @param wmax Maximum W (default: 5 GeV)
-     * @return AtomicHistogram1D* Pointer to the atomic histogram
+     * @return ThreadLocalHistogram1D* Pointer to the atomic histogram
      */
     auto book_w_hist(const std::string& path, const std::string& title,
-                     int nbins = 100, double wmin = 0.0, double wmax = 5.0) -> AtomicHistogram1D* {
+                     int nbins = 100, double wmin = 0.0, double wmax = 5.0) -> ThreadLocalHistogram1D* {
         std::string full_title = title + ";W [GeV];Counts";
-        return book_atomic_hist1D(path, full_title, nbins, wmin, wmax);
+        return book_hist1D(path, full_title, nbins, wmin, wmax);
     }
 
     /**
@@ -405,13 +347,13 @@ class HistogramService : public Service {
      * @param pmin Minimum momentum (default: 0)
      * @param pmax Maximum momentum (default: 11)
      * @param nbinsth Number of theta bins (default: 90)
-     * @return AtomicHistogram2D* Pointer to the atomic histogram
+     * @return ThreadLocalHistogram2D* Pointer to the atomic histogram
      */
     auto book_theta_vs_p(const std::string& path, const std::string& title,
                          int nbinsp = 50, double pmin = 0.0, double pmax = 11.0,
-                         int nbinsth = 90) -> AtomicHistogram2D* {
+                         int nbinsth = 90) -> ThreadLocalHistogram2D* {
         std::string full_title = title + ";Momentum [GeV/c];#theta [deg];Counts";
-        return book_atomic_hist2D(path, full_title, nbinsp, pmin, pmax, nbinsth, 0.0, 180.0);
+        return book_hist2D(path, full_title, nbinsp, pmin, pmax, nbinsth, 0.0, 180.0);
     }
 
     /**
@@ -421,12 +363,12 @@ class HistogramService : public Service {
      * @param title Histogram title
      * @param nbinsth Number of theta bins (default: 90)
      * @param nbinsphi Number of phi bins (default: 180)
-     * @return AtomicHistogram2D* Pointer to the atomic histogram
+     * @return ThreadLocalHistogram2D* Pointer to the atomic histogram
      */
     auto book_phi_vs_theta(const std::string& path, const std::string& title,
-                           int nbinsth = 90, int nbinsphi = 180) -> AtomicHistogram2D* {
+                           int nbinsth = 90, int nbinsphi = 180) -> ThreadLocalHistogram2D* {
         std::string full_title = title + ";#theta [deg];#phi [deg];Counts";
-        return book_atomic_hist2D(path, full_title, nbinsth, 0.0, 180.0, nbinsphi, -180.0, 180.0);
+        return book_hist2D(path, full_title, nbinsth, 0.0, 180.0, nbinsphi, -180.0, 180.0);
     }
 
     /**
@@ -437,12 +379,12 @@ class HistogramService : public Service {
      * @param nbinsxb Number of x_B bins (default: 50)
      * @param nbinsq2 Number of Q² bins (default: 50)
      * @param q2max Maximum Q² (default: 12)
-     * @return AtomicHistogram2D* Pointer to the atomic histogram
+     * @return ThreadLocalHistogram2D* Pointer to the atomic histogram
      */
     auto book_q2_vs_xb(const std::string& path, const std::string& title,
-                       int nbinsxb = 50, int nbinsq2 = 50, double q2max = 12.0) -> AtomicHistogram2D* {
+                       int nbinsxb = 50, int nbinsq2 = 50, double q2max = 12.0) -> ThreadLocalHistogram2D* {
         std::string full_title = title + ";x_{B};Q^{2} [GeV^{2}];Counts";
-        return book_atomic_hist2D(path, full_title, nbinsxb, 0.0, 1.0, nbinsq2, 0.0, q2max);
+        return book_hist2D(path, full_title, nbinsxb, 0.0, 1.0, nbinsq2, 0.0, q2max);
     }
 
     /**
@@ -481,8 +423,8 @@ class HistogramService : public Service {
      * @return std::array<TH1D*, 6> Array of pointers to sector histograms
      */
     auto book_sector_hist1D(const std::string& base_path, const std::string& title,
-                            int nbins, double xmin, double xmax) -> std::array<AtomicHistogram1D*, 6> {
-        std::array<AtomicHistogram1D*, 6> hists{};
+                            int nbins, double xmin, double xmax) -> std::array<ThreadLocalHistogram1D*, 6> {
+        std::array<ThreadLocalHistogram1D*, 6> hists{};
         for (int sector = 1; sector <= 6; ++sector) {
             std::string path = fmt::format("{}_sector{}", base_path, sector);
             std::string sect_title = fmt::format("{} (Sector {})", title, sector);
@@ -507,10 +449,10 @@ class HistogramService : public Service {
      * @param nbins Number of bins
      * @param xmin Minimum x value
      * @param xmax Maximum x value
-     * @return AtomicHistogram1D* Pointer to the atomic histogram
+     * @return ThreadLocalHistogram1D* Pointer to the atomic histogram
      */
-    auto book_atomic_hist1D(const std::string& path, const std::string& title,
-                            int nbins, double xmin, double xmax) -> AtomicHistogram1D*;
+    auto book_hist1D(const std::string& path, const std::string& title,
+                            int nbins, double xmin, double xmax) -> ThreadLocalHistogram1D*;
 
     /**
      * @brief Book a lock-free 2D atomic histogram
@@ -523,18 +465,18 @@ class HistogramService : public Service {
      * @param nbinsy Number of y bins
      * @param ymin Minimum y value
      * @param ymax Maximum y value
-     * @return AtomicHistogram2D* Pointer to the atomic histogram
+     * @return ThreadLocalHistogram2D* Pointer to the atomic histogram
      */
-    auto book_atomic_hist2D(const std::string& path, const std::string& title,
+    auto book_hist2D(const std::string& path, const std::string& title,
                             int nbinsx, double xmin, double xmax,
-                            int nbinsy, double ymin, double ymax) -> AtomicHistogram2D*;
+                            int nbinsy, double ymin, double ymax) -> ThreadLocalHistogram2D*;
 
     /**
      * @brief Get an atomic 1D histogram by path
      * @param path Histogram path
-     * @return AtomicHistogram1D* Pointer to histogram or nullptr if not found
+     * @return ThreadLocalHistogram1D* Pointer to histogram or nullptr if not found
      */
-    auto get_atomic_hist1D(const std::string& path) -> AtomicHistogram1D* {
+    auto get_hist1D(const std::string& path) -> ThreadLocalHistogram1D* {
         auto it = m_atomic_hist1D.find(path);
         return (it != m_atomic_hist1D.end()) ? it->second.get() : nullptr;
     }
@@ -542,9 +484,9 @@ class HistogramService : public Service {
     /**
      * @brief Get an atomic 2D histogram by path
      * @param path Histogram path
-     * @return AtomicHistogram2D* Pointer to histogram or nullptr if not found
+     * @return ThreadLocalHistogram2D* Pointer to histogram or nullptr if not found
      */
-    auto get_atomic_hist2D(const std::string& path) -> AtomicHistogram2D* {
+    auto get_hist2D(const std::string& path) -> ThreadLocalHistogram2D* {
         auto it = m_atomic_hist2D.find(path);
         return (it != m_atomic_hist2D.end()) ? it->second.get() : nullptr;
     }
@@ -570,8 +512,8 @@ class HistogramService : public Service {
     std::map<std::string, std::unique_ptr<TH2D>> m_hist2D;
     std::map<std::string, std::unique_ptr<TProfile>> m_profiles;
     // Lock-free atomic histograms for parallel accumulation
-    std::map<std::string, std::unique_ptr<AtomicHistogram1D>> m_atomic_hist1D;
-    std::map<std::string, std::unique_ptr<AtomicHistogram2D>> m_atomic_hist2D;
+    std::map<std::string, std::unique_ptr<ThreadLocalHistogram1D>> m_atomic_hist1D;
+    std::map<std::string, std::unique_ptr<ThreadLocalHistogram2D>> m_atomic_hist2D;
     // Metadata for atomic histograms (needed for ROOT conversion)
     struct AtomicHistMeta {
         std::string title;

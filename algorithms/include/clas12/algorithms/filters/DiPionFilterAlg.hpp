@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cmath>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -309,13 +309,13 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm {
     size_t m_events_passed = 0;
 
     // Lock-free atomic histograms
-    clas12::framework::AtomicHistogram1D* h_Q2 = nullptr;
-    clas12::framework::AtomicHistogram1D* h_W = nullptr;
-    clas12::framework::AtomicHistogram1D* h_piplus_p = nullptr;
-    clas12::framework::AtomicHistogram1D* h_piminus_p = nullptr;
-    clas12::framework::AtomicHistogram1D* h_piplus_chi2pid = nullptr;
-    clas12::framework::AtomicHistogram1D* h_piminus_chi2pid = nullptr;
-    clas12::framework::AtomicHistogram2D* h_Q2_vs_W = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_Q2 = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_W = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_piplus_p = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_piminus_p = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_piplus_chi2pid = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_piminus_chi2pid = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_Q2_vs_W = nullptr;
 
     auto book_histograms() -> void {
         if (!m_hist_svc) return;
@@ -330,11 +330,11 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm {
         h_piminus_p = svc->book_momentum_hist("/DiPion/piminus_p", "#pi^{-} Momentum", 100, 0, 6);
 
         // Chi2PID histograms (lock-free atomic)
-        h_piplus_chi2pid = svc->book_atomic_hist1D("/DiPion/piplus_chi2pid", "#pi^{+} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
-        h_piminus_chi2pid = svc->book_atomic_hist1D("/DiPion/piminus_chi2pid", "#pi^{-} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
+        h_piplus_chi2pid = svc->book_hist1D("/DiPion/piplus_chi2pid", "#pi^{+} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
+        h_piminus_chi2pid = svc->book_hist1D("/DiPion/piminus_chi2pid", "#pi^{-} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
 
         // Q2 vs W (lock-free atomic 2D)
-        h_Q2_vs_W = svc->book_atomic_hist2D("/DiPion/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]", 100, 1, 5, 100, 0, 10);
+        h_Q2_vs_W = svc->book_hist2D("/DiPion/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]", 100, 1, 5, 100, 0, 10);
     }
 
     auto fill_histograms([[maybe_unused]] const clas12::Particle& electron,

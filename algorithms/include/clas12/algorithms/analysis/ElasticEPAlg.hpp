@@ -4,7 +4,7 @@
 #include <clas12/Constants.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -248,14 +248,14 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm {
     clas12::framework::NTupleService* m_ntuple = nullptr;
 
     // Histograms (atomic for thread safety)
-    clas12::framework::AtomicHistogram1D* h_Q2 = nullptr;
-    clas12::framework::AtomicHistogram1D* h_Q2_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_W = nullptr;
-    clas12::framework::AtomicHistogram1D* h_W_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_nu = nullptr;
-    clas12::framework::AtomicHistogram2D* h_p_e_vs_theta_e = nullptr;
-    clas12::framework::AtomicHistogram1D* h_Vz_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_Vz = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_Q2 = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_Q2_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_W = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_W_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_nu = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_p_e_vs_theta_e = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_Vz_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_Vz = nullptr;
 
     // N-tuple variables
     double m_nt_e_p = 0, m_nt_e_theta = 0, m_nt_e_phi = 0;
@@ -290,14 +290,14 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm {
 
     void book_histograms() {
         std::string prefix = "/Elastic_" + get_target_name(m_target);
-        h_Q2 = m_hist->book_atomic_hist1D(prefix + "/Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 10);
-        h_Q2_precut = m_hist->book_atomic_hist1D(prefix + "/Q2_precut", "Q^{2} (pre-cut);Q^{2} [GeV^{2}];Events", 100, 0, 10);
-        h_W = m_hist->book_atomic_hist1D(prefix + "/W", "W;W [GeV];Events", 100, m_target_mass - 0.3, m_target_mass + 0.5);
-        h_W_precut = m_hist->book_atomic_hist1D(prefix + "/W_precut", "W (pre-cut);W [GeV];Events", 200, 0, m_target_mass + 2.0);
-        h_nu = m_hist->book_atomic_hist1D(prefix + "/nu", "#nu;#nu [GeV];Events", 100, 0, 11);
-        h_p_e_vs_theta_e = m_hist->book_atomic_hist2D(prefix + "/p_e_vs_theta_e", "p_{e} vs #theta_{e};#theta_{e} [deg];p_{e} [GeV]", 90, 0, 45, 100, 0, 11);
-        h_Vz_precut = m_hist->book_atomic_hist1D(prefix + "/Vz_precut", "Vz (pre-cut);Vz [cm];Events", 200, -50, 30);
-        h_Vz = m_hist->book_atomic_hist1D(prefix + "/Vz", "Vz;Vz [cm];Events", 200, -50, 30);
+        h_Q2 = m_hist->book_hist1D(prefix + "/Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 10);
+        h_Q2_precut = m_hist->book_hist1D(prefix + "/Q2_precut", "Q^{2} (pre-cut);Q^{2} [GeV^{2}];Events", 100, 0, 10);
+        h_W = m_hist->book_hist1D(prefix + "/W", "W;W [GeV];Events", 100, m_target_mass - 0.3, m_target_mass + 0.5);
+        h_W_precut = m_hist->book_hist1D(prefix + "/W_precut", "W (pre-cut);W [GeV];Events", 200, 0, m_target_mass + 2.0);
+        h_nu = m_hist->book_hist1D(prefix + "/nu", "#nu;#nu [GeV];Events", 100, 0, 11);
+        h_p_e_vs_theta_e = m_hist->book_hist2D(prefix + "/p_e_vs_theta_e", "p_{e} vs #theta_{e};#theta_{e} [deg];p_{e} [GeV]", 90, 0, 45, 100, 0, 11);
+        h_Vz_precut = m_hist->book_hist1D(prefix + "/Vz_precut", "Vz (pre-cut);Vz [cm];Events", 200, -50, 30);
+        h_Vz = m_hist->book_hist1D(prefix + "/Vz", "Vz;Vz [cm];Events", 200, -50, 30);
     }
 
     void fill_histograms(const ElasticKinematics& kin) {

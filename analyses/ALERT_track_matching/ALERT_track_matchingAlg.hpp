@@ -524,36 +524,36 @@ private:
     mutable std::mutex m_ntuple_mutex;
 
     // Lock-free atomic histograms (managed by HistogramService)
-    clas12::framework::AtomicHistogram1D* h_p = nullptr;
-    clas12::framework::AtomicHistogram1D* h_phi = nullptr;
-    clas12::framework::AtomicHistogram1D* h_theta = nullptr;
-    clas12::framework::AtomicHistogram1D* h_vz = nullptr;
-    clas12::framework::AtomicHistogram1D* h_vz_Cu = nullptr;
-    clas12::framework::AtomicHistogram1D* h_vz_Sn = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_vz = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_vz_cm = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_phi = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_phi_after_vz_cm_cut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_n_predictions = nullptr;
-    clas12::framework::AtomicHistogram1D* h_best_delta_phi = nullptr;
-    clas12::framework::AtomicHistogram1D* h_n_good_atof_hits = nullptr;
-    clas12::framework::AtomicHistogram1D* h_matched_atof_hit_id = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_p = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_phi = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_theta = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_vz = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_vz_Cu = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_vz_Sn = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_vz = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_cm = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_phi = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_phi_after_vz_cm_cut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_n_predictions = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_best_delta_phi = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_n_good_atof_hits = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_matched_atof_hit_id = nullptr;
 
     // ATOF-electron delta_phi histograms
-    clas12::framework::AtomicHistogram1D* h_atof_electron_delta_phi_all = nullptr;   // all good ATOF hits
-    clas12::framework::AtomicHistogram1D* h_atof_electron_delta_phi_true = nullptr;  // true ATOF hits (passing delta_phi cut)
-    clas12::framework::AtomicHistogram1D* h_atof_electron_delta_phi_best = nullptr;  // best true ATOF hit
-    clas12::framework::AtomicHistogram1D* h_n_true_atof_hits = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_all = nullptr;   // all good ATOF hits
+    clas12::framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_true = nullptr;  // true ATOF hits (passing delta_phi cut)
+    clas12::framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_best = nullptr;  // best true ATOF hit
+    clas12::framework::ThreadLocalHistogram1D* h_n_true_atof_hits = nullptr;
 
     // Debug histograms
-    clas12::framework::AtomicHistogram1D* h_track_atof_dphi = nullptr;          // track-ATOF phi distance for all true hits
-    clas12::framework::AtomicHistogram1D* h_best_track_atof_dphi = nullptr;     // best track-ATOF phi distance (selected truth)
-    clas12::framework::AtomicHistogram1D* h_delta_component = nullptr;          // AI component - true component
-    clas12::framework::AtomicHistogram1D* h_delta_sector = nullptr;             // AI sector - true sector
-    clas12::framework::AtomicHistogram2D* h_ai_vs_true_component = nullptr;     // AI component vs true component
-    clas12::framework::AtomicHistogram2D* h_ai_vs_true_layer = nullptr;         // AI layer vs true layer
-    clas12::framework::AtomicHistogram2D* h_ai_vs_true_sector = nullptr;        // AI sector vs true sector
-    clas12::framework::AtomicHistogram2D* h_track_phi_vs_atof_phi = nullptr;    // track phi vs best true ATOF hit phi
+    clas12::framework::ThreadLocalHistogram1D* h_track_atof_dphi = nullptr;          // track-ATOF phi distance for all true hits
+    clas12::framework::ThreadLocalHistogram1D* h_best_track_atof_dphi = nullptr;     // best track-ATOF phi distance (selected truth)
+    clas12::framework::ThreadLocalHistogram1D* h_delta_component = nullptr;          // AI component - true component
+    clas12::framework::ThreadLocalHistogram1D* h_delta_sector = nullptr;             // AI sector - true sector
+    clas12::framework::ThreadLocalHistogram2D* h_ai_vs_true_component = nullptr;     // AI component vs true component
+    clas12::framework::ThreadLocalHistogram2D* h_ai_vs_true_layer = nullptr;         // AI layer vs true layer
+    clas12::framework::ThreadLocalHistogram2D* h_ai_vs_true_sector = nullptr;        // AI sector vs true sector
+    clas12::framework::ThreadLocalHistogram2D* h_track_phi_vs_atof_phi = nullptr;    // track phi vs best true ATOF hit phi
 
     // NTuple branch variables
     double m_nt_e_p = 0.0, m_nt_e_theta = 0.0, m_nt_e_phi = 0.0, m_nt_e_vz = 0.0;
@@ -648,36 +648,36 @@ private:
     auto book_histograms() -> void {
         // Use lock-free atomic histograms for parallel accumulation
         auto* svc = m_hist_svc;
-        h_p = svc->book_atomic_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
-        h_phi = svc->book_atomic_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
-        h_theta = svc->book_atomic_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
-        h_vz = svc->book_atomic_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -30, 30);
-        h_vz_Cu = svc->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
-        h_vz_Sn = svc->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
-        h_delta_vz = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_vz", "#DeltaVz (electron - track);#DeltaVz [mm];Events", 200, -100, 100);
-        h_delta_vz_cm = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_vz_cm", "#DeltaVz (electron - track);#DeltaVz [cm];Events", 200, -10, 50);
-        h_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 360, 0, 360);
-        h_delta_phi_after_vz_cm_cut = svc->book_atomic_hist1D("/ALERT/TrackMatching/delta_phi_after_vz_cm_cut", "#Delta#phi after #DeltaVz cut;#Delta#phi [deg];Events", 360, 0, 360);
-        h_n_predictions = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", 20, 0, 20);
-        h_best_delta_phi = svc->book_atomic_hist1D("/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi (track-electron);#Delta#phi [deg];Events", 100, 150, 200);
-        h_n_good_atof_hits = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_good_atof_hits", "N good ATOF hits;N hits;Events", 20, 0, 20);
-        h_matched_atof_hit_id = svc->book_atomic_hist1D("/ALERT/TrackMatching/matched_atof_hit_id", "Matched ATOF hit ID;Hit ID;Events", 50, -1, 49);
+        h_p = svc->book_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
+        h_phi = svc->book_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
+        h_theta = svc->book_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
+        h_vz = svc->book_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -30, 30);
+        h_vz_Cu = svc->book_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
+        h_vz_Sn = svc->book_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
+        h_delta_vz = svc->book_hist1D("/ALERT/TrackMatching/delta_vz", "#DeltaVz (electron - track);#DeltaVz [mm];Events", 200, -100, 100);
+        h_delta_vz_cm = svc->book_hist1D("/ALERT/TrackMatching/delta_vz_cm", "#DeltaVz (electron - track);#DeltaVz [cm];Events", 200, -10, 50);
+        h_delta_phi = svc->book_hist1D("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 360, 0, 360);
+        h_delta_phi_after_vz_cm_cut = svc->book_hist1D("/ALERT/TrackMatching/delta_phi_after_vz_cm_cut", "#Delta#phi after #DeltaVz cut;#Delta#phi [deg];Events", 360, 0, 360);
+        h_n_predictions = svc->book_hist1D("/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", 20, 0, 20);
+        h_best_delta_phi = svc->book_hist1D("/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi (track-electron);#Delta#phi [deg];Events", 100, 150, 200);
+        h_n_good_atof_hits = svc->book_hist1D("/ALERT/TrackMatching/n_good_atof_hits", "N good ATOF hits;N hits;Events", 20, 0, 20);
+        h_matched_atof_hit_id = svc->book_hist1D("/ALERT/TrackMatching/matched_atof_hit_id", "Matched ATOF hit ID;Hit ID;Events", 50, -1, 49);
 
         // ATOF-electron delta_phi histograms
-        h_atof_electron_delta_phi_all = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_all", "#Delta#phi(e, ATOF hit) all good;#Delta#phi [deg];Hits", 360, 0, 360);
-        h_atof_electron_delta_phi_true = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_true", "#Delta#phi(e, ATOF hit) true;#Delta#phi [deg];Hits", 100, 150, 200);
-        h_atof_electron_delta_phi_best = svc->book_atomic_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_best", "Best #Delta#phi(e, ATOF hit);#Delta#phi [deg];Hits", 100, 150, 200);
-        h_n_true_atof_hits = svc->book_atomic_hist1D("/ALERT/TrackMatching/n_true_atof_hits", "N true ATOF hits;N hits;Events", 20, 0, 20);
+        h_atof_electron_delta_phi_all = svc->book_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_all", "#Delta#phi(e, ATOF hit) all good;#Delta#phi [deg];Hits", 360, 0, 360);
+        h_atof_electron_delta_phi_true = svc->book_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_true", "#Delta#phi(e, ATOF hit) true;#Delta#phi [deg];Hits", 100, 150, 200);
+        h_atof_electron_delta_phi_best = svc->book_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_best", "Best #Delta#phi(e, ATOF hit);#Delta#phi [deg];Hits", 100, 150, 200);
+        h_n_true_atof_hits = svc->book_hist1D("/ALERT/TrackMatching/n_true_atof_hits", "N true ATOF hits;N hits;Events", 20, 0, 20);
 
         // Debug histograms
-        h_track_atof_dphi = svc->book_atomic_hist1D("/ALERT/Debug/track_atof_dphi", "Track-ATOF #Delta#phi (all true hits);|#Delta#phi| [deg];Hits", 100, 0, 180);
-        h_best_track_atof_dphi = svc->book_atomic_hist1D("/ALERT/Debug/best_track_atof_dphi", "Best track-ATOF #Delta#phi (selected truth);|#Delta#phi| [deg];Events", 100, 0, 60);
-        h_delta_component = svc->book_atomic_hist1D("/ALERT/Debug/delta_component", "AI - true component;#Delta component;Events", 41, -20, 20);
-        h_delta_sector = svc->book_atomic_hist1D("/ALERT/Debug/delta_sector", "AI - true sector;#Delta sector;Events", 31, -15, 15);
-        h_ai_vs_true_component = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_component", "AI vs true component;True component;AI component", 20, 0, 20, 20, 0, 20);
-        h_ai_vs_true_layer = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_layer", "AI vs true layer;True layer;AI layer", 10, 0, 10, 10, 0, 10);
-        h_ai_vs_true_sector = svc->book_atomic_hist2D("/ALERT/Debug/ai_vs_true_sector", "AI vs true sector;True sector;AI sector", 15, 0, 15, 15, 0, 15);
-        h_track_phi_vs_atof_phi = svc->book_atomic_hist2D("/ALERT/Debug/track_phi_vs_atof_phi", "Track #phi vs best true ATOF #phi;True ATOF #phi [deg];Track #phi [deg]", 72, -180, 180, 72, -180, 180);
+        h_track_atof_dphi = svc->book_hist1D("/ALERT/Debug/track_atof_dphi", "Track-ATOF #Delta#phi (all true hits);|#Delta#phi| [deg];Hits", 100, 0, 180);
+        h_best_track_atof_dphi = svc->book_hist1D("/ALERT/Debug/best_track_atof_dphi", "Best track-ATOF #Delta#phi (selected truth);|#Delta#phi| [deg];Events", 100, 0, 60);
+        h_delta_component = svc->book_hist1D("/ALERT/Debug/delta_component", "AI - true component;#Delta component;Events", 41, -20, 20);
+        h_delta_sector = svc->book_hist1D("/ALERT/Debug/delta_sector", "AI - true sector;#Delta sector;Events", 31, -15, 15);
+        h_ai_vs_true_component = svc->book_hist2D("/ALERT/Debug/ai_vs_true_component", "AI vs true component;True component;AI component", 20, 0, 20, 20, 0, 20);
+        h_ai_vs_true_layer = svc->book_hist2D("/ALERT/Debug/ai_vs_true_layer", "AI vs true layer;True layer;AI layer", 10, 0, 10, 10, 0, 10);
+        h_ai_vs_true_sector = svc->book_hist2D("/ALERT/Debug/ai_vs_true_sector", "AI vs true sector;True sector;AI sector", 15, 0, 15, 15, 0, 15);
+        h_track_phi_vs_atof_phi = svc->book_hist2D("/ALERT/Debug/track_phi_vs_atof_phi", "Track #phi vs best true ATOF #phi;True ATOF #phi [deg];Track #phi [deg]", 72, -180, 180, 72, -180, 180);
     }
 
     struct ATOFWedgeH2Data {

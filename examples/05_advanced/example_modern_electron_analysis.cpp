@@ -256,12 +256,12 @@ private:
     TypedEventStore m_event_store;
 
     // Histograms (atomic for thread-safety)
-    AtomicHistogram1D* m_h_p_before = nullptr;
-    AtomicHistogram1D* m_h_p_after = nullptr;
-    AtomicHistogram1D* m_h_theta_before = nullptr;
-    AtomicHistogram1D* m_h_theta_after = nullptr;
-    AtomicHistogram1D* m_h_vz_before = nullptr;
-    AtomicHistogram1D* m_h_vz_after = nullptr;
+    ThreadLocalHistogram1D* m_h_p_before = nullptr;
+    ThreadLocalHistogram1D* m_h_p_after = nullptr;
+    ThreadLocalHistogram1D* m_h_theta_before = nullptr;
+    ThreadLocalHistogram1D* m_h_theta_after = nullptr;
+    ThreadLocalHistogram1D* m_h_vz_before = nullptr;
+    ThreadLocalHistogram1D* m_h_vz_after = nullptr;
 
     // Counters
     int m_selected_events = 0;
@@ -400,12 +400,12 @@ private:
 
     HistogramService* m_hist_svc = nullptr;
 
-    AtomicHistogram1D* m_h_Q2 = nullptr;
-    AtomicHistogram1D* m_h_W = nullptr;
-    AtomicHistogram1D* m_h_xbj = nullptr;
-    AtomicHistogram1D* m_h_y = nullptr;
-    AtomicHistogram2D* m_h_Q2_vs_xbj = nullptr;
-    AtomicHistogram2D* m_h_W_vs_Q2 = nullptr;
+    ThreadLocalHistogram1D* m_h_Q2 = nullptr;
+    ThreadLocalHistogram1D* m_h_W = nullptr;
+    ThreadLocalHistogram1D* m_h_xbj = nullptr;
+    ThreadLocalHistogram1D* m_h_y = nullptr;
+    ThreadLocalHistogram2D* m_h_Q2_vs_xbj = nullptr;
+    ThreadLocalHistogram2D* m_h_W_vs_Q2 = nullptr;
 
     int m_dis_events = 0;
 };
@@ -472,8 +472,8 @@ public:
 
 private:
     HistogramService* m_hist_svc = nullptr;
-    AtomicHistogram1D* m_h_p_theta_ratio = nullptr;
-    AtomicHistogram2D* m_h_phi_vs_sector = nullptr;
+    ThreadLocalHistogram1D* m_h_p_theta_ratio = nullptr;
+    ThreadLocalHistogram2D* m_h_phi_vs_sector = nullptr;
 };
 
 // ============================================================================

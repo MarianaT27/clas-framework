@@ -26,7 +26,7 @@
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/ReadBank.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -157,29 +157,29 @@ class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm {
     clas12::framework::Cutflow m_cutflow;
 
     // Histograms
-    clas12::framework::AtomicHistogram1D* h_n_photons_raw = nullptr;
-    clas12::framework::AtomicHistogram1D* h_energy_raw = nullptr;
-    clas12::framework::AtomicHistogram1D* h_theta_raw = nullptr;
-    clas12::framework::AtomicHistogram1D* h_phi_raw = nullptr;
-    clas12::framework::AtomicHistogram1D* h_n_photons_selected = nullptr;
-    clas12::framework::AtomicHistogram1D* h_energy_selected = nullptr;
-    clas12::framework::AtomicHistogram1D* h_theta_selected = nullptr;
-    clas12::framework::AtomicHistogram1D* h_phi_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_n_photons_raw = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_energy_raw = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_theta_raw = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_phi_raw = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_n_photons_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_energy_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_theta_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_phi_selected = nullptr;
 
     auto book_histograms() -> void {
         if (m_hist) { auto* svc = m_hist;
             const std::string dir = "/PhotonSelection";
 
             // Raw photon distributions
-            h_n_photons_raw = svc->book_atomic_hist1D(dir + "/n_photons_raw", "Number of Photons (raw);N_{#gamma};Events", 20, 0, 20);
-            h_energy_raw = svc->book_atomic_hist1D(dir + "/energy_raw", "Photon Energy (raw);E [GeV];Photons", 100, 0, 5);
-            h_theta_raw = svc->book_atomic_hist1D(dir + "/theta_raw", "Photon #theta (raw);#theta [deg];Photons", 180, 0, 40);
+            h_n_photons_raw = svc->book_hist1D(dir + "/n_photons_raw", "Number of Photons (raw);N_{#gamma};Events", 20, 0, 20);
+            h_energy_raw = svc->book_hist1D(dir + "/energy_raw", "Photon Energy (raw);E [GeV];Photons", 100, 0, 5);
+            h_theta_raw = svc->book_hist1D(dir + "/theta_raw", "Photon #theta (raw);#theta [deg];Photons", 180, 0, 40);
             h_phi_raw = svc->book_phi_hist(dir + "/phi_raw", "Photon #phi (raw)");
 
             // Selected photon distributions
-            h_n_photons_selected = svc->book_atomic_hist1D(dir + "/n_photons_selected", "Number of Photons (selected);N_{#gamma};Events", 20, 0, 20);
-            h_energy_selected = svc->book_atomic_hist1D(dir + "/energy_selected", "Photon Energy (selected);E [GeV];Photons", 100, 0, 5);
-            h_theta_selected = svc->book_atomic_hist1D(dir + "/theta_selected", "Photon #theta (selected);#theta [deg];Photons", 180, 0, 40);
+            h_n_photons_selected = svc->book_hist1D(dir + "/n_photons_selected", "Number of Photons (selected);N_{#gamma};Events", 20, 0, 20);
+            h_energy_selected = svc->book_hist1D(dir + "/energy_selected", "Photon Energy (selected);E [GeV];Photons", 100, 0, 5);
+            h_theta_selected = svc->book_hist1D(dir + "/theta_selected", "Photon #theta (selected);#theta [deg];Photons", 180, 0, 40);
             h_phi_selected = svc->book_phi_hist(dir + "/phi_selected", "Photon #phi (selected)");
         }
     }

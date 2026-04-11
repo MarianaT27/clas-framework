@@ -187,9 +187,9 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm {
     clas12::framework::ParticleSelectorService* m_particle_svc = nullptr;
 
     // Monitoring histograms (atomic for thread-safety)
-    clas12::framework::AtomicHistogram1D* h_particles_per_event = nullptr;
-    clas12::framework::AtomicHistogram1D* h_electrons_per_event = nullptr;
-    clas12::framework::AtomicHistogram1D* h_processing_time = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_particles_per_event = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_electrons_per_event = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_processing_time = nullptr;
 
     // Statistics counters. Atomic because process() is invoked concurrently
     // from many worker threads on the same algorithm instance.

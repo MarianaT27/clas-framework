@@ -355,14 +355,14 @@ private:
     std::map<std::string, std::unique_ptr<clas12::framework::HistogramGroup>> kinematics_groups;
 
     // Fiducial diagnostic histograms
-    clas12::framework::AtomicHistogram2D* h_pcal_lv_lw_before = nullptr;
-    clas12::framework::AtomicHistogram2D* h_pcal_lv_lw_after = nullptr;
-    clas12::framework::AtomicHistogram1D* h_dc_r1_edge_before = nullptr;
-    clas12::framework::AtomicHistogram1D* h_dc_r1_edge_after = nullptr;
-    clas12::framework::AtomicHistogram1D* h_dc_r2_edge_before = nullptr;
-    clas12::framework::AtomicHistogram1D* h_dc_r2_edge_after = nullptr;
-    clas12::framework::AtomicHistogram1D* h_dc_r3_edge_before = nullptr;
-    clas12::framework::AtomicHistogram1D* h_dc_r3_edge_after = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_pcal_lv_lw_before = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_pcal_lv_lw_after = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_dc_r1_edge_before = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_dc_r1_edge_after = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_dc_r2_edge_before = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_dc_r2_edge_after = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_dc_r3_edge_before = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_dc_r3_edge_after = nullptr;
 
     // ========================================================================
     // N-Tuple

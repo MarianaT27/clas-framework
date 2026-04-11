@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -237,35 +237,35 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm {
 
     // Lock-free atomic histograms (managed by HistogramService)
     // Post-cut 1D
-    clas12::framework::AtomicHistogram1D* h_Q2 = nullptr;
-    clas12::framework::AtomicHistogram1D* h_W = nullptr;
-    clas12::framework::AtomicHistogram1D* h_nu = nullptr;
-    clas12::framework::AtomicHistogram1D* h_xB = nullptr;
-    clas12::framework::AtomicHistogram1D* h_y = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_Q2 = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_W = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_nu = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_xB = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_y = nullptr;
 
     // Pre-cut 1D
-    clas12::framework::AtomicHistogram1D* h_Q2_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_W_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_nu_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_xB_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_y_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_e_p_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_e_theta_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_e_phi_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_Q2_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_W_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_nu_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_xB_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_y_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_e_p_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_e_theta_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_e_phi_precut = nullptr;
 
     // Pre-cut 2D correlations
-    clas12::framework::AtomicHistogram2D* h_Q2_vs_W_precut = nullptr;
-    clas12::framework::AtomicHistogram2D* h_Q2_vs_xB_precut = nullptr;
-    clas12::framework::AtomicHistogram2D* h_W_vs_y_precut = nullptr;
-    clas12::framework::AtomicHistogram2D* h_e_theta_vs_p_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_Q2_vs_W_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_Q2_vs_xB_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_W_vs_y_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_e_theta_vs_p_precut = nullptr;
 
     // Post-cut 2D correlations
-    clas12::framework::AtomicHistogram2D* h_Q2_vs_W = nullptr;
-    clas12::framework::AtomicHistogram2D* h_Q2_vs_xB = nullptr;
-    clas12::framework::AtomicHistogram2D* h_W_vs_y = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_Q2_vs_W = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_Q2_vs_xB = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_W_vs_y = nullptr;
 
     // N-1 histograms (indexed by cut, populated in book_histograms)
-    std::vector<clas12::framework::AtomicHistogram1D*> m_nminus1_hists;
+    std::vector<clas12::framework::ThreadLocalHistogram1D*> m_nminus1_hists;
 
     // N-tuple writer (replaces individual variables + manual registration)
     clas12::framework::NTupleWriter<DISNTupleData> m_ntuple;
@@ -275,36 +275,36 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm {
             // Post-cut 1D histograms
             h_Q2 = svc->book_q2_hist("/DIS/Q2", "Q^{2}");
             h_W = svc->book_w_hist("/DIS/W", "W");
-            h_nu = svc->book_hist("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
+            h_nu = svc->book_hist1D("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
             h_xB = svc->book_xb_hist("/DIS/xB", "x_{B}");
-            h_y = svc->book_hist("/DIS/y", "y;y;Events", 200, 0, 1);
+            h_y = svc->book_hist1D("/DIS/y", "y;y;Events", 200, 0, 1);
 
             // Pre-cut 1D histograms
             h_Q2_precut = svc->book_q2_hist("/DIS/PreCut/Q2", "Q^{2} (pre-cut)");
             h_W_precut = svc->book_w_hist("/DIS/PreCut/W", "W (pre-cut)");
-            h_nu_precut = svc->book_hist("/DIS/PreCut/nu", "#nu (pre-cut);#nu;Events", 180, 0, 11);
+            h_nu_precut = svc->book_hist1D("/DIS/PreCut/nu", "#nu (pre-cut);#nu;Events", 180, 0, 11);
             h_xB_precut = svc->book_xb_hist("/DIS/PreCut/xB", "x_{B} (pre-cut)");
-            h_y_precut = svc->book_hist("/DIS/PreCut/y", "y (pre-cut);y;Events", 200, 0, 1);
+            h_y_precut = svc->book_hist1D("/DIS/PreCut/y", "y (pre-cut);y;Events", 200, 0, 1);
             h_e_p_precut = svc->book_momentum_hist("/DIS/PreCut/e_p", "Electron p (pre-cut)");
             h_e_theta_precut = svc->book_theta_hist("/DIS/PreCut/e_theta", "Electron #theta (pre-cut)");
-            h_e_phi_precut = svc->book_hist("/DIS/PreCut/e_phi", "Electron #phi (pre-cut);#phi [deg];Events", 360, -180, 180);
+            h_e_phi_precut = svc->book_hist1D("/DIS/PreCut/e_phi", "Electron #phi (pre-cut);#phi [deg];Events", 360, -180, 180);
 
             // Pre-cut 2D correlation histograms
-            h_Q2_vs_W_precut = svc->book_hist2d("/DIS/PreCut/Q2_vs_W", "Q^{2} vs W (pre-cut);W [GeV];Q^{2} [GeV^{2}]",
+            h_Q2_vs_W_precut = svc->book_hist2D("/DIS/PreCut/Q2_vs_W", "Q^{2} vs W (pre-cut);W [GeV];Q^{2} [GeV^{2}]",
                 200, 0, 5, 200, 0, 12);
-            h_Q2_vs_xB_precut = svc->book_hist2d("/DIS/PreCut/Q2_vs_xB", "Q^{2} vs x_{B} (pre-cut);x_{B};Q^{2} [GeV^{2}]",
+            h_Q2_vs_xB_precut = svc->book_hist2D("/DIS/PreCut/Q2_vs_xB", "Q^{2} vs x_{B} (pre-cut);x_{B};Q^{2} [GeV^{2}]",
                 200, 0, 1, 200, 0, 12);
-            h_W_vs_y_precut = svc->book_hist2d("/DIS/PreCut/W_vs_y", "W vs y (pre-cut);y;W [GeV]",
+            h_W_vs_y_precut = svc->book_hist2D("/DIS/PreCut/W_vs_y", "W vs y (pre-cut);y;W [GeV]",
                 200, 0, 1, 200, 0, 5);
-            h_e_theta_vs_p_precut = svc->book_hist2d("/DIS/PreCut/e_theta_vs_p", "#theta vs p (pre-cut);p [GeV/c];#theta [deg]",
+            h_e_theta_vs_p_precut = svc->book_hist2D("/DIS/PreCut/e_theta_vs_p", "#theta vs p (pre-cut);p [GeV/c];#theta [deg]",
                 200, 0, 11, 200, 0, 45);
 
             // 2D correlation histograms (post-cut)
-            h_Q2_vs_W = svc->book_hist2d("/DIS/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]",
+            h_Q2_vs_W = svc->book_hist2D("/DIS/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]",
                 200, 0, 5, 200, 0, 12);
-            h_Q2_vs_xB = svc->book_hist2d("/DIS/Q2_vs_xB", "Q^{2} vs x_{B};x_{B};Q^{2} [GeV^{2}]",
+            h_Q2_vs_xB = svc->book_hist2D("/DIS/Q2_vs_xB", "Q^{2} vs x_{B};x_{B};Q^{2} [GeV^{2}]",
                 200, 0, 1, 200, 0, 12);
-            h_W_vs_y = svc->book_hist2d("/DIS/W_vs_y", "W vs y;y;W [GeV]",
+            h_W_vs_y = svc->book_hist2D("/DIS/W_vs_y", "W vs y;y;W [GeV]",
                 200, 0, 1, 200, 0, 5);
 
             // N-1 histograms (one per cut, indexed by cut position)
@@ -312,7 +312,7 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm {
             m_nminus1_hists.resize(m_cutflow.num_cuts(), nullptr);
             m_nminus1_hists[2] = svc->book_q2_hist("/DIS/NMinus1/Q2", "Q^{2} (N-1)");
             m_nminus1_hists[3] = svc->book_w_hist("/DIS/NMinus1/W", "W (N-1)");
-            m_nminus1_hists[4] = svc->book_hist("/DIS/NMinus1/y", "y (N-1);y;Events", 200, 0, 1);
+            m_nminus1_hists[4] = svc->book_hist1D("/DIS/NMinus1/y", "y (N-1);y;Events", 200, 0, 1);
         }
     }
 };

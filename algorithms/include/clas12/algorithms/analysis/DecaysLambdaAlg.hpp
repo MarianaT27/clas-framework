@@ -8,7 +8,7 @@
 #include <clas12/Constants.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/bankdefs/DECAYS_Particle.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -350,25 +350,25 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm {
     mutable std::mutex m_ntuple_mutex;
 
     // Histograms (atomic for thread safety)
-    clas12::framework::AtomicHistogram1D* h_n_lambdas = nullptr;
-    clas12::framework::AtomicHistogram1D* h_mass_nocuts = nullptr;
-    clas12::framework::AtomicHistogram1D* h_mass_selected = nullptr;
-    clas12::framework::AtomicHistogram1D* h_umass = nullptr;
-    clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
-    clas12::framework::AtomicHistogram1D* h_theta = nullptr;
-    clas12::framework::AtomicHistogram1D* h_phi = nullptr;
-    clas12::framework::AtomicHistogram1D* h_decay_length = nullptr;
-    clas12::framework::AtomicHistogram1D* h_decay_vz = nullptr;
-    clas12::framework::AtomicHistogram1D* h_origin_vz = nullptr;
-    clas12::framework::AtomicHistogram1D* h_r = nullptr;
-    clas12::framework::AtomicHistogram1D* h_ndau = nullptr;
-    clas12::framework::AtomicHistogram1D* h_proton_p = nullptr;
-    clas12::framework::AtomicHistogram1D* h_pion_p = nullptr;
-    clas12::framework::AtomicHistogram2D* h_mass_vs_p = nullptr;
-    clas12::framework::AtomicHistogram2D* h_decay_vz_vs_origin_vz = nullptr;
-    clas12::framework::AtomicHistogram1D* h_vertex_detach = nullptr;
-    clas12::framework::AtomicHistogram1D* h_vertex_detach_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_vertex_detach_xy = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_n_lambdas = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_mass_nocuts = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_mass_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_umass = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_momentum = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_theta = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_phi = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_decay_length = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_decay_vz = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_origin_vz = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_r = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_ndau = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_proton_p = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_pion_p = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_mass_vs_p = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_decay_vz_vs_origin_vz = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_vertex_detach = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_vertex_detach_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_vertex_detach_xy = nullptr;
 
     // N-tuple variables
     std::vector<double> m_nt_mass;
@@ -384,43 +384,43 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm {
     std::vector<double> m_nt_vertex_detach;
 
     void book_histograms() {
-        h_n_lambdas = m_hist->book_atomic_hist1D("/DecaysLambda/n_lambdas",
+        h_n_lambdas = m_hist->book_hist1D("/DecaysLambda/n_lambdas",
                                               "Number of #Lambda per event;N_{#Lambda};Events", 10, 0, 10);
-        h_mass_nocuts = m_hist->book_atomic_hist1D("/DecaysLambda/mass_nocuts",
+        h_mass_nocuts = m_hist->book_hist1D("/DecaysLambda/mass_nocuts",
                                                 "#Lambda mass (no cuts);M [GeV];Events", 200, 1.0, 1.3);
-        h_mass_selected = m_hist->book_atomic_hist1D("/DecaysLambda/mass_selected",
+        h_mass_selected = m_hist->book_hist1D("/DecaysLambda/mass_selected",
                                                   "#Lambda mass (selected);M [GeV];Events", 200, 1.0, 1.3);
-        h_umass = m_hist->book_atomic_hist1D("/DecaysLambda/umass",
+        h_umass = m_hist->book_hist1D("/DecaysLambda/umass",
                                           "#Lambda unmeasured mass;M [GeV];Events", 200, 1.0, 1.3);
-        h_momentum = m_hist->book_atomic_hist1D("/DecaysLambda/momentum",
+        h_momentum = m_hist->book_hist1D("/DecaysLambda/momentum",
                                              "#Lambda momentum;p [GeV];Events", 100, 0, 10);
-        h_theta = m_hist->book_atomic_hist1D("/DecaysLambda/theta",
+        h_theta = m_hist->book_hist1D("/DecaysLambda/theta",
                                           "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
-        h_phi = m_hist->book_atomic_hist1D("/DecaysLambda/phi",
+        h_phi = m_hist->book_hist1D("/DecaysLambda/phi",
                                         "#Lambda #phi;#phi [deg];Events", 180, -180, 180);
-        h_decay_length = m_hist->book_atomic_hist1D("/DecaysLambda/decay_length",
+        h_decay_length = m_hist->book_hist1D("/DecaysLambda/decay_length",
                                                  "#Lambda decay length;L [cm];Events", 100, 0, 50);
-        h_decay_vz = m_hist->book_atomic_hist1D("/DecaysLambda/decay_vz",
+        h_decay_vz = m_hist->book_hist1D("/DecaysLambda/decay_vz",
                                              "#Lambda decay vertex z;v_{z} [cm];Events", 200, -30, 30);
-        h_origin_vz = m_hist->book_atomic_hist1D("/DecaysLambda/origin_vz",
+        h_origin_vz = m_hist->book_hist1D("/DecaysLambda/origin_vz",
                                               "#Lambda origin vertex z;ov_{z} [cm];Events", 200, -30, 30);
-        h_r = m_hist->book_atomic_hist1D("/DecaysLambda/r",
+        h_r = m_hist->book_hist1D("/DecaysLambda/r",
                                       "#Lambda decay radius;r [cm];Events", 100, 0, 20);
-        h_ndau = m_hist->book_atomic_hist1D("/DecaysLambda/ndau",
+        h_ndau = m_hist->book_hist1D("/DecaysLambda/ndau",
                                          "Number of daughters;N_{dau};Events", 5, 0, 5);
-        h_proton_p = m_hist->book_atomic_hist1D("/DecaysLambda/proton_p",
+        h_proton_p = m_hist->book_hist1D("/DecaysLambda/proton_p",
                                              "Proton momentum;p [GeV];Events", 100, 0, 5);
-        h_pion_p = m_hist->book_atomic_hist1D("/DecaysLambda/pion_p",
+        h_pion_p = m_hist->book_hist1D("/DecaysLambda/pion_p",
                                            "#pi^{-} momentum;p [GeV];Events", 100, 0, 3);
-        h_mass_vs_p = m_hist->book_atomic_hist2D("/DecaysLambda/mass_vs_p",
+        h_mass_vs_p = m_hist->book_hist2D("/DecaysLambda/mass_vs_p",
                                               "#Lambda mass vs momentum;p [GeV];M [GeV]", 100, 0, 10, 100, 1.0, 1.3);
-        h_decay_vz_vs_origin_vz = m_hist->book_atomic_hist2D("/DecaysLambda/decay_vz_vs_origin_vz",
+        h_decay_vz_vs_origin_vz = m_hist->book_hist2D("/DecaysLambda/decay_vz_vs_origin_vz",
                                                           "Decay vs origin vertex z;ov_{z} [cm];v_{z} [cm]", 100, -30, 30, 100, -30, 30);
-        h_vertex_detach = m_hist->book_atomic_hist1D("/DecaysLambda/vertex_detach",
+        h_vertex_detach = m_hist->book_hist1D("/DecaysLambda/vertex_detach",
                                                   "Vertex detachment (v_{z} - ov_{z});#Deltaz [cm];Events", 200, -20, 40);
-        h_vertex_detach_precut = m_hist->book_atomic_hist1D("/DecaysLambda/vertex_detach_precut",
+        h_vertex_detach_precut = m_hist->book_hist1D("/DecaysLambda/vertex_detach_precut",
                                                          "Vertex detachment (pre-cut);#Deltaz [cm];Events", 200, -20, 40);
-        h_vertex_detach_xy = m_hist->book_atomic_hist1D("/DecaysLambda/vertex_detach_xy",
+        h_vertex_detach_xy = m_hist->book_hist1D("/DecaysLambda/vertex_detach_xy",
                                                      "Transverse vertex detachment;#Deltar_{xy} [cm];Events", 100, 0, 20);
     }
 

@@ -176,71 +176,71 @@ private:
     clas12::framework::HistogramService* m_hist = nullptr;
 
         // Lock-free atomic histograms (managed by HistogramService)
-    clas12::framework::AtomicHistogram1D* h_p = nullptr;
-    clas12::framework::AtomicHistogram1D* h_phi = nullptr;
-    clas12::framework::AtomicHistogram1D* h_theta = nullptr;
-    clas12::framework::AtomicHistogram1D* h_vz = nullptr;
-    clas12::framework::AtomicHistogram1D* h_vz_Cu = nullptr;
-    clas12::framework::AtomicHistogram1D* h_vz_Sn = nullptr;
-    clas12::framework::AtomicHistogram1D* h_vz_CuSn = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_p = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_phi = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_theta = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_vz = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_vz_Cu = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_vz_Sn = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_vz_CuSn = nullptr;
 
     // Reconstructed data histograms
-    clas12::framework::AtomicHistogram1D* h_rec_p = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rec_phi = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rec_theta = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rec_vz = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rec_vz_Cu = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rec_vz_Sn = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rec_vz_CuSn = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rec_p = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rec_phi = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rec_theta = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rec_vz = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rec_vz_Cu = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rec_vz_Sn = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rec_vz_CuSn = nullptr;
 
     // Momentum bin edges [GeV/c]
     static constexpr int N_P_BINS = 20;
     static constexpr std::array<double, N_P_BINS + 1> p_bin_edges = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0};
 
     // MC 2D histograms
-    clas12::framework::AtomicHistogram2D* h_vz_vs_theta = nullptr;
-    clas12::framework::AtomicHistogram2D* h_vz_vs_p = nullptr;
-    std::array<clas12::framework::AtomicHistogram2D*, N_P_BINS> h_vz_vs_theta_pbin = {};
+    clas12::framework::ThreadLocalHistogram2D* h_vz_vs_theta = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_vz_vs_p = nullptr;
+    std::array<clas12::framework::ThreadLocalHistogram2D*, N_P_BINS> h_vz_vs_theta_pbin = {};
 
     // Reconstructed 2D histograms
-    clas12::framework::AtomicHistogram2D* h_rec_vz_vs_theta = nullptr;
-    clas12::framework::AtomicHistogram2D* h_rec_vz_vs_p = nullptr;
-    std::array<clas12::framework::AtomicHistogram2D*, N_P_BINS> h_rec_vz_vs_theta_pbin = {};
+    clas12::framework::ThreadLocalHistogram2D* h_rec_vz_vs_theta = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_rec_vz_vs_p = nullptr;
+    std::array<clas12::framework::ThreadLocalHistogram2D*, N_P_BINS> h_rec_vz_vs_theta_pbin = {};
 
     auto book_histograms() -> void {
-        h_p = m_hist->book_atomic_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
-        h_phi = m_hist->book_atomic_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
-        h_theta = m_hist->book_atomic_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
-        h_vz = m_hist->book_atomic_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -13, 0);
-        h_vz_Cu = m_hist->book_atomic_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -13, 0);
-        h_vz_Sn = m_hist->book_atomic_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -13, 0);
-        h_vz_CuSn = m_hist->book_atomic_hist1D("/MC/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", 100, -13, 0);
+        h_p = m_hist->book_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
+        h_phi = m_hist->book_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
+        h_theta = m_hist->book_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
+        h_vz = m_hist->book_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -13, 0);
+        h_vz_Cu = m_hist->book_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -13, 0);
+        h_vz_Sn = m_hist->book_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -13, 0);
+        h_vz_CuSn = m_hist->book_hist1D("/MC/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", 100, -13, 0);
 
         // Reconstructed data histograms
-        h_rec_p = m_hist->book_atomic_hist1D("/Data/Electron/p", "p;p;Events", 100, 0, 10);
-        h_rec_phi = m_hist->book_atomic_hist1D("/Data/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
-        h_rec_theta = m_hist->book_atomic_hist1D("/Data/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
-        h_rec_vz = m_hist->book_atomic_hist1D("/Data/Electron/vz", "vz;vz;Events", 100, -13, 0);
-        h_rec_vz_Cu = m_hist->book_atomic_hist1D("/Data/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -13, 0);
-        h_rec_vz_Sn = m_hist->book_atomic_hist1D("/Data/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -13, 0);
-        h_rec_vz_CuSn = m_hist->book_atomic_hist1D("/Data/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", 100, -13, 0);
+        h_rec_p = m_hist->book_hist1D("/Data/Electron/p", "p;p;Events", 100, 0, 10);
+        h_rec_phi = m_hist->book_hist1D("/Data/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
+        h_rec_theta = m_hist->book_hist1D("/Data/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
+        h_rec_vz = m_hist->book_hist1D("/Data/Electron/vz", "vz;vz;Events", 100, -13, 0);
+        h_rec_vz_Cu = m_hist->book_hist1D("/Data/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -13, 0);
+        h_rec_vz_Sn = m_hist->book_hist1D("/Data/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -13, 0);
+        h_rec_vz_CuSn = m_hist->book_hist1D("/Data/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", 100, -13, 0);
 
         // MC 2D histograms
-        h_vz_vs_theta = m_hist->book_atomic_hist2D("/MC/Electron/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 100, 0, 40, 100, -13, 0);
-        h_vz_vs_p = m_hist->book_atomic_hist2D("/MC/Electron/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 100, 0, 10, 100, -13, 0);
+        h_vz_vs_theta = m_hist->book_hist2D("/MC/Electron/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 100, 0, 40, 100, -13, 0);
+        h_vz_vs_p = m_hist->book_hist2D("/MC/Electron/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 100, 0, 10, 100, -13, 0);
 
         // Reconstructed 2D histograms
-        h_rec_vz_vs_theta = m_hist->book_atomic_hist2D("/Data/Electron/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 100, 0, 40, 100, -13, 0);
-        h_rec_vz_vs_p = m_hist->book_atomic_hist2D("/Data/Electron/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 100, 0, 10, 100, -13, 0);
+        h_rec_vz_vs_theta = m_hist->book_hist2D("/Data/Electron/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 100, 0, 40, 100, -13, 0);
+        h_rec_vz_vs_p = m_hist->book_hist2D("/Data/Electron/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 100, 0, 10, 100, -13, 0);
 
         // vz vs theta in momentum bins
         for (int i = 0; i < N_P_BINS; ++i) {
             auto plo = std::to_string(static_cast<int>(p_bin_edges[i]));
             auto phi = std::to_string(static_cast<int>(p_bin_edges[i + 1]));
             auto title = "vz vs #theta (" + plo + "<p<" + phi + " GeV/c);#theta [deg];vz [cm]";
-            h_vz_vs_theta_pbin[i] = m_hist->book_atomic_hist2D(
+            h_vz_vs_theta_pbin[i] = m_hist->book_hist2D(
                 "/MC/Electron/vz_vs_theta_p" + plo + "_" + phi, title, 100, 0, 40, 100, -13, 0);
-            h_rec_vz_vs_theta_pbin[i] = m_hist->book_atomic_hist2D(
+            h_rec_vz_vs_theta_pbin[i] = m_hist->book_hist2D(
                 "/Data/Electron/vz_vs_theta_p" + plo + "_" + phi, title, 100, 0, 40, 100, -13, 0);
         }
     }

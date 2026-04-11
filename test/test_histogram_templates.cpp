@@ -215,8 +215,8 @@ TEST_F(HistogramTemplatesTest, HistogramRegistryDeclareAndBook) {
     registry["theta"].fill(45.0);
 
     // Verify fills using atomic histograms directly
-    EXPECT_EQ(m_hist_svc.get_atomic_hist1D("/Test/momentum")->entries(), 1);
-    EXPECT_EQ(m_hist_svc.get_atomic_hist1D("/Test/theta")->entries(), 1);
+    EXPECT_EQ(m_hist_svc.get_hist1D("/Test/momentum")->entries(), 1);
+    EXPECT_EQ(m_hist_svc.get_hist1D("/Test/theta")->entries(), 1);
 }
 
 TEST_F(HistogramTemplatesTest, HistogramRegistryWithoutService) {
@@ -331,16 +331,16 @@ TEST_F(HistogramTemplatesTest, VerificationOption) {
     // Verify histograms exist in the service
     for (int s = 1; s <= 6; ++s) {
         std::string path = fmt::format("/Verify/momentum_S{}", s);
-        EXPECT_NE(m_hist_svc.get_hist1D(path), nullptr) << "Histogram " << path << " should exist";
+        EXPECT_NE(m_hist_svc.get_output_hist1D(path), nullptr) << "Histogram " << path << " should exist";
     }
 }
 
 // ============================================================================
-// AtomicHistogramGroup Tests
+// ThreadLocalHistogramGroup Tests
 // ============================================================================
 
 TEST_F(HistogramTemplatesTest, AtomicHistogramGroupCreation) {
-    AtomicHistogramGroup group(&m_hist_svc, "/Atomic");
+    ThreadLocalHistogramGroup group(&m_hist_svc, "/Atomic");
 
     auto* h1 = group.add_hist1D("momentum", "Momentum;p [GeV/c];Events", 100, 0.0, 10.0);
     auto* h2 = group.add_hist1D("theta", "Theta;#theta [deg];Events", 180, 0.0, 180.0);
@@ -350,7 +350,7 @@ TEST_F(HistogramTemplatesTest, AtomicHistogramGroupCreation) {
 }
 
 TEST_F(HistogramTemplatesTest, AtomicHistogramGroupFill) {
-    AtomicHistogramGroup group(&m_hist_svc, "/AtomicFill");
+    ThreadLocalHistogramGroup group(&m_hist_svc, "/AtomicFill");
 
     group.add_hist1D("momentum", "Momentum", 100, 0.0, 10.0);
     group.add_hist2D("p_vs_theta", "p vs theta", 100, 0.0, 10.0, 180, 0.0, 180.0);
@@ -363,7 +363,7 @@ TEST_F(HistogramTemplatesTest, AtomicHistogramGroupFill) {
 }
 
 TEST_F(HistogramTemplatesTest, AtomicHistogramGroupGetHistogram) {
-    AtomicHistogramGroup group(&m_hist_svc, "/AtomicGet");
+    ThreadLocalHistogramGroup group(&m_hist_svc, "/AtomicGet");
 
     group.add_hist1D("momentum", "Momentum", 100, 0.0, 10.0);
 
@@ -375,11 +375,11 @@ TEST_F(HistogramTemplatesTest, AtomicHistogramGroupGetHistogram) {
 }
 
 // ============================================================================
-// AtomicHistogramTemplates Tests
+// ThreadLocalHistogramTemplates Tests
 // ============================================================================
 
 TEST_F(HistogramTemplatesTest, ElectronHistogramsTemplate) {
-    auto group = AtomicHistogramTemplates::ElectronHistograms::create(&m_hist_svc, "/Templates/Electron");
+    auto group = ThreadLocalHistogramTemplates::ElectronHistograms::create(&m_hist_svc, "/Templates/Electron");
 
     EXPECT_NE(group, nullptr);
 
@@ -390,7 +390,7 @@ TEST_F(HistogramTemplatesTest, ElectronHistogramsTemplate) {
 }
 
 TEST_F(HistogramTemplatesTest, HadronHistogramsTemplate) {
-    auto group = AtomicHistogramTemplates::HadronHistograms::create(&m_hist_svc, "/Templates/Hadron");
+    auto group = ThreadLocalHistogramTemplates::HadronHistograms::create(&m_hist_svc, "/Templates/Hadron");
 
     EXPECT_NE(group, nullptr);
 
@@ -399,7 +399,7 @@ TEST_F(HistogramTemplatesTest, HadronHistogramsTemplate) {
 }
 
 TEST_F(HistogramTemplatesTest, DISKinematicsTemplate) {
-    auto group = AtomicHistogramTemplates::DISKinematics::create(&m_hist_svc, "/Templates/DIS");
+    auto group = ThreadLocalHistogramTemplates::DISKinematics::create(&m_hist_svc, "/Templates/DIS");
 
     EXPECT_NE(group, nullptr);
 
@@ -438,7 +438,7 @@ TEST_F(HistogramTemplatesTest, CutflowHistogramsEvaluate) {
         .define("Theta < 35", [](const TestContext& ctx) { return ctx.theta < 35.0; });
 
     // Set up a filler
-    analysis.set_filler([](AtomicHistogramGroup* h, const TestContext& ctx) {
+    analysis.set_filler([](ThreadLocalHistogramGroup* h, const TestContext& ctx) {
         h->fill("p", ctx.momentum);
         h->fill("theta", ctx.theta);
     });

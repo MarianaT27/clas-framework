@@ -12,7 +12,7 @@
  * and scintillator data for AI PID training.
  */
 
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
@@ -510,16 +510,16 @@ public:
 private:
     // --- RICH vs REC PID comparison structs ---
     struct KinematicHistograms {
-        clas12::framework::AtomicHistogram1D* p = nullptr;
-        clas12::framework::AtomicHistogram1D* theta = nullptr;
-        clas12::framework::AtomicHistogram1D* phi = nullptr;
-        clas12::framework::AtomicHistogram1D* beta = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* p = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* beta = nullptr;
     };
 
     struct PidCompareHistograms {
         KinematicHistograms agree;
         KinematicHistograms disagree;
-        clas12::framework::AtomicHistogram1D* rich_pid_dist = nullptr; // RICH PID distribution for this REC species
+        clas12::framework::ThreadLocalHistogram1D* rich_pid_dist = nullptr; // RICH PID distribution for this REC species
     };
 
     struct PidAgreement {
@@ -539,10 +539,10 @@ private:
 
     // Per-particle cut variable histograms (forward declaration for use in methods and structs)
     struct ParticleCutHistograms {
-        clas12::framework::AtomicHistogram1D* chi2pid = nullptr;
-        clas12::framework::AtomicHistogram1D* p = nullptr;
-        clas12::framework::AtomicHistogram1D* vz = nullptr;
-        clas12::framework::AtomicHistogram1D* delta_vz = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* chi2pid = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* p = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* vz = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* delta_vz = nullptr;
     };
 
     // Exclusivity variables computed from four-momentum conservation
@@ -559,17 +559,17 @@ private:
 
     // Per-channel exclusivity histograms
     struct ExclusivityHistograms {
-        clas12::framework::AtomicHistogram1D* missing_energy = nullptr;
-        clas12::framework::AtomicHistogram1D* missing_p = nullptr;
-        clas12::framework::AtomicHistogram1D* missing_pt = nullptr;
-        clas12::framework::AtomicHistogram1D* missing_theta = nullptr;
-        clas12::framework::AtomicHistogram1D* missing_phi = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* missing_energy = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* missing_p = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* missing_pt = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* missing_theta = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* missing_phi = nullptr;
         // Detected neutron (filled only when neutron found)
-        clas12::framework::AtomicHistogram1D* n_detected = nullptr;
-        clas12::framework::AtomicHistogram1D* neutron_opening_angle = nullptr;
-        clas12::framework::AtomicHistogram1D* neutron_p = nullptr;
-        clas12::framework::AtomicHistogram1D* neutron_beta = nullptr;
-        clas12::framework::AtomicHistogram1D* mm_with_neutron = nullptr; // MM(ed→epn+mesons)
+        clas12::framework::ThreadLocalHistogram1D* n_detected = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* neutron_opening_angle = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* neutron_p = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* neutron_beta = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* mm_with_neutron = nullptr; // MM(ed→epn+mesons)
     };
 
     // --- Properties ---
@@ -610,17 +610,17 @@ private:
     std::map<int, PidAgreement> m_pid_agreement;
 
     // RICH vs REC PID comparison histograms (Sector 1 only)
-    clas12::framework::AtomicHistogram2D* h_rich_vs_rec_pid = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_rich_vs_rec_pid = nullptr;
     PidCompareHistograms h_cmp_piplus;
     PidCompareHistograms h_cmp_piminus;
     PidCompareHistograms h_cmp_kplus;
     PidCompareHistograms h_cmp_kminus;
 
     // Per-RICH-species REC PID distribution (Sector 1)
-    clas12::framework::AtomicHistogram1D* h_rec_pid_for_rich_piplus = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rec_pid_for_rich_piminus = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rec_pid_for_rich_kplus = nullptr;
-    clas12::framework::AtomicHistogram1D* h_rec_pid_for_rich_kminus = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_piplus = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_piminus = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_kplus = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_kminus = nullptr;
 
     // --- Exclusive mode members ---
     clas12::framework::Cutflow m_cutflow_exclusive{"Exclusive ed→ep(n)π⁺π⁻"};
@@ -1193,23 +1193,23 @@ private:
     // --- RICH mode histograms ---
     struct HadronHistograms {
         struct {
-            clas12::framework::AtomicHistogram1D* p = nullptr;
-            clas12::framework::AtomicHistogram1D* theta = nullptr;
-            clas12::framework::AtomicHistogram1D* phi = nullptr;
-            clas12::framework::AtomicHistogram1D* vz = nullptr;
-            clas12::framework::AtomicHistogram1D* RQ = nullptr;
-            clas12::framework::AtomicHistogram1D* best_PID = nullptr;
-            clas12::framework::AtomicHistogram1D* best_ntot = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* p = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* vz = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* RQ = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* best_PID = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* best_ntot = nullptr;
         } precut;
 
         struct {
-            clas12::framework::AtomicHistogram1D* p = nullptr;
-            clas12::framework::AtomicHistogram1D* theta = nullptr;
-            clas12::framework::AtomicHistogram1D* phi = nullptr;
-            clas12::framework::AtomicHistogram1D* vz = nullptr;
-            clas12::framework::AtomicHistogram1D* RQ = nullptr;
-            clas12::framework::AtomicHistogram1D* best_PID = nullptr;
-            clas12::framework::AtomicHistogram1D* best_ntot = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* p = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* vz = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* RQ = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* best_PID = nullptr;
+            clas12::framework::ThreadLocalHistogram1D* best_ntot = nullptr;
         } postcut;
     };
 
@@ -1228,14 +1228,14 @@ private:
             5, 0, 5, 5, 0, 5);
 
         auto book_cmp = [&](PidCompareHistograms& h, const std::string& base, const std::string& label) {
-            h.rich_pid_dist = svc->book_atomic_hist1D(base + "/rich_pid_dist",
+            h.rich_pid_dist = svc->book_hist1D(base + "/rich_pid_dist",
                 fmt::format("RICH best_PID for REC {};RICH PID;Events", label), 800, -400, 400);
 
             auto book_kin = [&](KinematicHistograms& kh, const std::string& sub, const std::string& tag) {
-                kh.p     = svc->book_atomic_hist1D(sub + "/p",     fmt::format("{} {} Momentum;p [GeV/c];Events", label, tag),       200, 0, 10);
-                kh.theta = svc->book_atomic_hist1D(sub + "/theta", fmt::format("{} {} #theta;#theta [deg];Events", label, tag),      200, 0, 40);
-                kh.phi   = svc->book_atomic_hist1D(sub + "/phi",   fmt::format("{} {} #phi;#phi [deg];Events", label, tag),          200, -180, 180);
-                kh.beta  = svc->book_atomic_hist1D(sub + "/beta",  fmt::format("{} {} #beta;#beta;Events", label, tag),              200, 0, 1.2);
+                kh.p     = svc->book_hist1D(sub + "/p",     fmt::format("{} {} Momentum;p [GeV/c];Events", label, tag),       200, 0, 10);
+                kh.theta = svc->book_hist1D(sub + "/theta", fmt::format("{} {} #theta;#theta [deg];Events", label, tag),      200, 0, 40);
+                kh.phi   = svc->book_hist1D(sub + "/phi",   fmt::format("{} {} #phi;#phi [deg];Events", label, tag),          200, -180, 180);
+                kh.beta  = svc->book_hist1D(sub + "/beta",  fmt::format("{} {} #beta;#beta;Events", label, tag),              200, 0, 1.2);
             };
             book_kin(h.agree,    base + "/agree",    "(RICH=REC)");
             book_kin(h.disagree, base + "/disagree", "(RICH#neqREC)");
@@ -1248,13 +1248,13 @@ private:
 
         // Per-RICH-species REC PID distribution
         auto rdir = dir + "/ByRICH";
-        h_rec_pid_for_rich_piplus  = svc->book_atomic_hist1D(rdir + "/rec_pid_for_rich_piplus",
+        h_rec_pid_for_rich_piplus  = svc->book_hist1D(rdir + "/rec_pid_for_rich_piplus",
             "REC PID for RICH #pi^{+} S1;REC PID;Events", 800, -400, 400);
-        h_rec_pid_for_rich_piminus = svc->book_atomic_hist1D(rdir + "/rec_pid_for_rich_piminus",
+        h_rec_pid_for_rich_piminus = svc->book_hist1D(rdir + "/rec_pid_for_rich_piminus",
             "REC PID for RICH #pi^{-} S1;REC PID;Events", 800, -400, 400);
-        h_rec_pid_for_rich_kplus   = svc->book_atomic_hist1D(rdir + "/rec_pid_for_rich_kplus",
+        h_rec_pid_for_rich_kplus   = svc->book_hist1D(rdir + "/rec_pid_for_rich_kplus",
             "REC PID for RICH K^{+} S1;REC PID;Events", 800, -400, 400);
-        h_rec_pid_for_rich_kminus  = svc->book_atomic_hist1D(rdir + "/rec_pid_for_rich_kminus",
+        h_rec_pid_for_rich_kminus  = svc->book_hist1D(rdir + "/rec_pid_for_rich_kminus",
             "REC PID for RICH K^{-} S1;REC PID;Events", 800, -400, 400);
     }
 
@@ -1286,22 +1286,22 @@ private:
         auto* svc = m_hist;
 
         auto pre = dir + "/precut";
-        h.precut.p        = svc->book_atomic_hist1D(pre + "/p",        fmt::format("{} Momentum (pre-cut);p [GeV/c];Events", label),    200, 0, 10);
-        h.precut.theta    = svc->book_atomic_hist1D(pre + "/theta",    fmt::format("{} #theta (pre-cut);#theta [deg];Events", label),   200, 0, 40);
-        h.precut.phi      = svc->book_atomic_hist1D(pre + "/phi",      fmt::format("{} #phi (pre-cut);#phi [deg];Events", label),       200, -180, 180);
-        h.precut.vz       = svc->book_atomic_hist1D(pre + "/vz",       fmt::format("{} v_{{z}} (pre-cut);v_{{z}} [cm];Events", label),  200, -30, 30);
-        h.precut.RQ       = svc->book_atomic_hist1D(pre + "/RQ",       fmt::format("{} RICH RQ (pre-cut);RQ;Events", label),            200, 0, 1);
-        h.precut.best_PID = svc->book_atomic_hist1D(pre + "/best_PID", fmt::format("{} RICH best PID (pre-cut);PID;Events", label),     800, -400, 400);
-        h.precut.best_ntot = svc->book_atomic_hist1D(pre + "/best_ntot", fmt::format("{} RICH best ntot (pre-cut);ntot;Events", label),     800, -400, 400);
+        h.precut.p        = svc->book_hist1D(pre + "/p",        fmt::format("{} Momentum (pre-cut);p [GeV/c];Events", label),    200, 0, 10);
+        h.precut.theta    = svc->book_hist1D(pre + "/theta",    fmt::format("{} #theta (pre-cut);#theta [deg];Events", label),   200, 0, 40);
+        h.precut.phi      = svc->book_hist1D(pre + "/phi",      fmt::format("{} #phi (pre-cut);#phi [deg];Events", label),       200, -180, 180);
+        h.precut.vz       = svc->book_hist1D(pre + "/vz",       fmt::format("{} v_{{z}} (pre-cut);v_{{z}} [cm];Events", label),  200, -30, 30);
+        h.precut.RQ       = svc->book_hist1D(pre + "/RQ",       fmt::format("{} RICH RQ (pre-cut);RQ;Events", label),            200, 0, 1);
+        h.precut.best_PID = svc->book_hist1D(pre + "/best_PID", fmt::format("{} RICH best PID (pre-cut);PID;Events", label),     800, -400, 400);
+        h.precut.best_ntot = svc->book_hist1D(pre + "/best_ntot", fmt::format("{} RICH best ntot (pre-cut);ntot;Events", label),     800, -400, 400);
 
         auto post = dir + "/postcut";
-        h.postcut.p        = svc->book_atomic_hist1D(post + "/p",        fmt::format("{} Momentum (post-cut);p [GeV/c];Events", label),    200, 0, 10);
-        h.postcut.theta    = svc->book_atomic_hist1D(post + "/theta",    fmt::format("{} #theta (post-cut);#theta [deg];Events", label),   200, 0, 40);
-        h.postcut.phi      = svc->book_atomic_hist1D(post + "/phi",      fmt::format("{} #phi (post-cut);#phi [deg];Events", label),       200, -180, 180);
-        h.postcut.vz       = svc->book_atomic_hist1D(post + "/vz",       fmt::format("{} v_{{z}} (post-cut);v_{{z}} [cm];Events", label),  200, -30, 30);
-        h.postcut.RQ       = svc->book_atomic_hist1D(post + "/RQ",       fmt::format("{} RICH RQ (post-cut);RQ;Events", label),            200, 0, 1);
-        h.postcut.best_PID = svc->book_atomic_hist1D(post + "/best_PID", fmt::format("{} RICH best PID (post-cut);PID;Events", label),     800, -400, 400);
-        h.postcut.best_ntot = svc->book_atomic_hist1D(post + "/best_ntot", fmt::format("{} RICH best ntot (post-cut);ntot;Events", label),     800, -400, 400);
+        h.postcut.p        = svc->book_hist1D(post + "/p",        fmt::format("{} Momentum (post-cut);p [GeV/c];Events", label),    200, 0, 10);
+        h.postcut.theta    = svc->book_hist1D(post + "/theta",    fmt::format("{} #theta (post-cut);#theta [deg];Events", label),   200, 0, 40);
+        h.postcut.phi      = svc->book_hist1D(post + "/phi",      fmt::format("{} #phi (post-cut);#phi [deg];Events", label),       200, -180, 180);
+        h.postcut.vz       = svc->book_hist1D(post + "/vz",       fmt::format("{} v_{{z}} (post-cut);v_{{z}} [cm];Events", label),  200, -30, 30);
+        h.postcut.RQ       = svc->book_hist1D(post + "/RQ",       fmt::format("{} RICH RQ (post-cut);RQ;Events", label),            200, 0, 1);
+        h.postcut.best_PID = svc->book_hist1D(post + "/best_PID", fmt::format("{} RICH best PID (post-cut);PID;Events", label),     800, -400, 400);
+        h.postcut.best_ntot = svc->book_hist1D(post + "/best_ntot", fmt::format("{} RICH best ntot (post-cut);ntot;Events", label),     800, -400, 400);
     }
 
     void fill_precut_histograms(const clas12::Particle& particle, const clas12::RICHParticleBank& rich, HadronHistograms& h) {
@@ -1327,24 +1327,24 @@ private:
     // --- Exclusive mode histograms ---
     struct ExclusiveHistograms {
         // ed -> ep pi+ pi- (n)
-        clas12::framework::AtomicHistogram1D* mm_all = nullptr;
-        clas12::framework::AtomicHistogram1D* mm_selected = nullptr;
-        clas12::framework::AtomicHistogram1D* mm_squared = nullptr;
-        clas12::framework::AtomicHistogram1D* n_combinations = nullptr;
-        clas12::framework::AtomicHistogram1D* piplus_p = nullptr;
-        clas12::framework::AtomicHistogram1D* piplus_theta = nullptr;
-        clas12::framework::AtomicHistogram1D* piminus_p = nullptr;
-        clas12::framework::AtomicHistogram1D* piminus_theta = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* mm_all = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* mm_selected = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* mm_squared = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* n_combinations = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* piplus_p = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* piplus_theta = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* piminus_p = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* piminus_theta = nullptr;
 
         // ed -> ep K+ K- (n)
-        clas12::framework::AtomicHistogram1D* kaon_mm_all = nullptr;
-        clas12::framework::AtomicHistogram1D* kaon_mm_selected = nullptr;
-        clas12::framework::AtomicHistogram1D* kaon_mm_squared = nullptr;
-        clas12::framework::AtomicHistogram1D* kaon_n_combinations = nullptr;
-        clas12::framework::AtomicHistogram1D* kplus_p = nullptr;
-        clas12::framework::AtomicHistogram1D* kplus_theta = nullptr;
-        clas12::framework::AtomicHistogram1D* kminus_p = nullptr;
-        clas12::framework::AtomicHistogram1D* kminus_theta = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* kaon_mm_all = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* kaon_mm_selected = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* kaon_mm_squared = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* kaon_n_combinations = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* kplus_p = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* kplus_theta = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* kminus_p = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* kminus_theta = nullptr;
 
         // Exclusivity variables per channel
         ExclusivityHistograms pion_excl;
@@ -1364,42 +1364,42 @@ private:
         auto* svc = m_hist;
         auto dir = std::string("/AiPidHadron/Exclusive");
 
-        h_exclusive.mm_all = svc->book_atomic_hist1D(
+        h_exclusive.mm_all = svc->book_hist1D(
             dir + "/missing_mass_all",
             "Missing Mass ed#rightarrowep#pi^{+}#pi^{-}(X) (all combos);MM [GeV/c^{2}];Events",
             300, 0.0, 2.0);
 
-        h_exclusive.mm_selected = svc->book_atomic_hist1D(
+        h_exclusive.mm_selected = svc->book_hist1D(
             dir + "/missing_mass_selected",
             "Missing Mass ed#rightarrowep#pi^{+}#pi^{-}(X) (selected);MM [GeV/c^{2}];Events",
             300, 0.0, 2.0);
 
-        h_exclusive.mm_squared = svc->book_atomic_hist1D(
+        h_exclusive.mm_squared = svc->book_hist1D(
             dir + "/missing_mass_squared",
             "Missing Mass^{2} ed#rightarrowep#pi^{+}#pi^{-}(X);MM^{2} [GeV^{2}/c^{4}];Events",
             300, -1.0, 3.0);
 
-        h_exclusive.n_combinations = svc->book_atomic_hist1D(
+        h_exclusive.n_combinations = svc->book_hist1D(
             dir + "/n_combinations",
             "Number of (p,#pi^{+},#pi^{-}) combinations per event;N_{combos};Events",
             20, 0, 20);
 
-        h_exclusive.piplus_p = svc->book_atomic_hist1D(
+        h_exclusive.piplus_p = svc->book_hist1D(
             dir + "/piplus_momentum",
             "#pi^{+} Momentum (exclusive);p [GeV/c];Events",
             200, 0, 3);
 
-        h_exclusive.piplus_theta = svc->book_atomic_hist1D(
+        h_exclusive.piplus_theta = svc->book_hist1D(
             dir + "/piplus_theta",
             "#pi^{+} #theta (exclusive);#theta [deg];Events",
             200, 0, 180);
 
-        h_exclusive.piminus_p = svc->book_atomic_hist1D(
+        h_exclusive.piminus_p = svc->book_hist1D(
             dir + "/piminus_momentum",
             "#pi^{-} Momentum (exclusive);p [GeV/c];Events",
             200, 0, 3);
 
-        h_exclusive.piminus_theta = svc->book_atomic_hist1D(
+        h_exclusive.piminus_theta = svc->book_hist1D(
             dir + "/piminus_theta",
             "#pi^{-} #theta (exclusive);#theta [deg];Events",
             200, 0, 180);
@@ -1407,69 +1407,69 @@ private:
         // --- ed -> ep K+ K- (n) ---
         auto kdir = std::string("/AiPidHadron/ExclusiveKaon");
 
-        h_exclusive.kaon_mm_all = svc->book_atomic_hist1D(
+        h_exclusive.kaon_mm_all = svc->book_hist1D(
             kdir + "/missing_mass_all",
             "Missing Mass ed#rightarrowepK^{+}K^{-}(X) (all combos);MM [GeV/c^{2}];Events",
             300, 0.0, 2.0);
 
-        h_exclusive.kaon_mm_selected = svc->book_atomic_hist1D(
+        h_exclusive.kaon_mm_selected = svc->book_hist1D(
             kdir + "/missing_mass_selected",
             "Missing Mass ed#rightarrowepK^{+}K^{-}(X) (selected);MM [GeV/c^{2}];Events",
             300, 0.0, 2.0);
 
-        h_exclusive.kaon_mm_squared = svc->book_atomic_hist1D(
+        h_exclusive.kaon_mm_squared = svc->book_hist1D(
             kdir + "/missing_mass_squared",
             "Missing Mass^{2} ed#rightarrowepK^{+}K^{-}(X);MM^{2} [GeV^{2}/c^{4}];Events",
             300, -1.0, 3.0);
 
-        h_exclusive.kaon_n_combinations = svc->book_atomic_hist1D(
+        h_exclusive.kaon_n_combinations = svc->book_hist1D(
             kdir + "/n_combinations",
             "Number of (p,K^{+},K^{-}) combinations per event;N_{combos};Events",
             20, 0, 20);
 
-        h_exclusive.kplus_p = svc->book_atomic_hist1D(
+        h_exclusive.kplus_p = svc->book_hist1D(
             kdir + "/kplus_momentum",
             "K^{+} Momentum (exclusive);p [GeV/c];Events",
             200, 0, 3);
 
-        h_exclusive.kplus_theta = svc->book_atomic_hist1D(
+        h_exclusive.kplus_theta = svc->book_hist1D(
             kdir + "/kplus_theta",
             "K^{+} #theta (exclusive);#theta [deg];Events",
             200, 0, 180);
 
-        h_exclusive.kminus_p = svc->book_atomic_hist1D(
+        h_exclusive.kminus_p = svc->book_hist1D(
             kdir + "/kminus_momentum",
             "K^{-} Momentum (exclusive);p [GeV/c];Events",
             200, 0, 3);
 
-        h_exclusive.kminus_theta = svc->book_atomic_hist1D(
+        h_exclusive.kminus_theta = svc->book_hist1D(
             kdir + "/kminus_theta",
             "K^{-} #theta (exclusive);#theta [deg];Events",
             200, 0, 180);
 
         // --- Exclusivity histograms ---
         auto book_excl_hists = [&](ExclusivityHistograms& eh, const std::string& base, const std::string& label) {
-            eh.missing_energy = svc->book_atomic_hist1D(base + "/missing_energy",
+            eh.missing_energy = svc->book_hist1D(base + "/missing_energy",
                 fmt::format("{} Missing Energy;#DeltaE [GeV];Events", label), 300, -2.0, 4.0);
-            eh.missing_p = svc->book_atomic_hist1D(base + "/missing_momentum",
+            eh.missing_p = svc->book_hist1D(base + "/missing_momentum",
                 fmt::format("{} Missing Momentum;|p_{{miss}}| [GeV/c];Events", label), 300, 0.0, 4.0);
-            eh.missing_pt = svc->book_atomic_hist1D(base + "/missing_pt",
+            eh.missing_pt = svc->book_hist1D(base + "/missing_pt",
                 fmt::format("{} Missing p_{{T}};p_{{T,miss}} [GeV/c];Events", label), 200, 0.0, 2.0);
-            eh.missing_theta = svc->book_atomic_hist1D(base + "/missing_theta",
+            eh.missing_theta = svc->book_hist1D(base + "/missing_theta",
                 fmt::format("{} Missing #theta;#theta_{{miss}} [deg];Events", label), 200, 0, 180);
-            eh.missing_phi = svc->book_atomic_hist1D(base + "/missing_phi",
+            eh.missing_phi = svc->book_hist1D(base + "/missing_phi",
                 fmt::format("{} Missing #phi;#phi_{{miss}} [deg];Events", label), 200, -180, 180);
             // Neutron detection histograms
             auto ndir = base + "/Neutron";
-            eh.n_detected = svc->book_atomic_hist1D(ndir + "/n_detected",
+            eh.n_detected = svc->book_hist1D(ndir + "/n_detected",
                 fmt::format("{} Number of detected neutrons;N_{{n}};Events", label), 10, 0, 10);
-            eh.neutron_opening_angle = svc->book_atomic_hist1D(ndir + "/opening_angle",
+            eh.neutron_opening_angle = svc->book_hist1D(ndir + "/opening_angle",
                 fmt::format("{} Neutron-Missing opening angle;#Delta#alpha [deg];Events", label), 200, 0, 180);
-            eh.neutron_p = svc->book_atomic_hist1D(ndir + "/neutron_p",
+            eh.neutron_p = svc->book_hist1D(ndir + "/neutron_p",
                 fmt::format("{} Detected neutron momentum;p_{{n}} [GeV/c];Events", label), 200, 0, 4);
-            eh.neutron_beta = svc->book_atomic_hist1D(ndir + "/neutron_beta",
+            eh.neutron_beta = svc->book_hist1D(ndir + "/neutron_beta",
                 fmt::format("{} Detected neutron #beta;#beta_{{n}};Events", label), 200, 0, 1.2);
-            eh.mm_with_neutron = svc->book_atomic_hist1D(ndir + "/mm_with_neutron",
+            eh.mm_with_neutron = svc->book_hist1D(ndir + "/mm_with_neutron",
                 fmt::format("{} MM (with detected n);MM [GeV/c^{{2}}];Events", label), 300, -1.0, 2.0);
         };
 
@@ -1478,10 +1478,10 @@ private:
 
         // --- Hadron cut variable histograms ---
         auto book_cut_hists = [&](ParticleCutHistograms& h, const std::string& base, const std::string& label) {
-            h.chi2pid  = svc->book_atomic_hist1D(base + "/chi2pid",  fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), 200, -10, 10);
-            h.p        = svc->book_atomic_hist1D(base + "/p",        fmt::format("{} Momentum;p [GeV/c];Events", label),                    200, 0, 10);
-            h.vz       = svc->book_atomic_hist1D(base + "/vz",       fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label),                  200, -30, 15);
-            h.delta_vz = svc->book_atomic_hist1D(base + "/delta_vz", fmt::format("{} #Deltav_{{z}};#Deltav_{{z}} [cm];Events", label),      200, -10, 10);
+            h.chi2pid  = svc->book_hist1D(base + "/chi2pid",  fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), 200, -10, 10);
+            h.p        = svc->book_hist1D(base + "/p",        fmt::format("{} Momentum;p [GeV/c];Events", label),                    200, 0, 10);
+            h.vz       = svc->book_hist1D(base + "/vz",       fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label),                  200, -30, 15);
+            h.delta_vz = svc->book_hist1D(base + "/delta_vz", fmt::format("{} #Deltav_{{z}};#Deltav_{{z}} [cm];Events", label),      200, -10, 10);
         };
 
         auto cuts_dir = std::string("/AiPidHadron/HadronCuts");

@@ -153,9 +153,9 @@ class SectorHistograms {
     /**
      * @brief Get histogram for a specific sector
      * @param sector Sector number (1-based indexing)
-     * @return Pointer to AtomicHistogram1D, or nullptr if sector is invalid
+     * @return Pointer to ThreadLocalHistogram1D, or nullptr if sector is invalid
      */
-    auto operator[](int sector) -> AtomicHistogram1D* {
+    auto operator[](int sector) -> ThreadLocalHistogram1D* {
         if (auto it = m_histograms.find(sector); it != m_histograms.end()) {
             return it->second.get();
         }
@@ -204,7 +204,7 @@ class SectorHistograms {
         for (int s = 1; s <= NSectors; ++s) {
             std::string path = fmt::format("{}_S{}", m_base_path, s);
             std::string title = fmt::format("{} (Sector {})", m_title, s);
-            AtomicHistogram1D* hist = svc.book_hist1D(path, title, nbins, xmin, xmax);
+            ThreadLocalHistogram1D* hist = svc.book_hist1D(path, title, nbins, xmin, xmax);
             m_histograms[s] = Hist1D(hist);
         }
     }
@@ -265,7 +265,7 @@ class SectorHistograms2D {
     /**
      * @brief Get histogram for a specific sector
      */
-    auto operator[](int sector) -> AtomicHistogram2D* {
+    auto operator[](int sector) -> ThreadLocalHistogram2D* {
         if (auto it = m_histograms.find(sector); it != m_histograms.end()) {
             return it->second.get();
         }
@@ -297,7 +297,7 @@ class SectorHistograms2D {
         for (int s = 1; s <= NSectors; ++s) {
             std::string path = fmt::format("{}_S{}", m_base_path, s);
             std::string title = fmt::format("{} (Sector {})", m_title, s);
-            AtomicHistogram2D* hist = svc.book_hist2D(path, title, nbinsx, xmin, xmax, nbinsy, ymin, ymax);
+            ThreadLocalHistogram2D* hist = svc.book_hist2D(path, title, nbinsx, xmin, xmax, nbinsy, ymin, ymax);
             m_histograms[s] = Hist2D(hist);
         }
     }
@@ -392,9 +392,9 @@ class CutStageHistograms {
     /**
      * @brief Get histogram for a specific cut stage
      * @param cut_name Name of the cut stage
-     * @return Pointer to AtomicHistogram1D, or nullptr if cut_name is not found
+     * @return Pointer to ThreadLocalHistogram1D, or nullptr if cut_name is not found
      */
-    auto operator[](const std::string& cut_name) -> AtomicHistogram1D* {
+    auto operator[](const std::string& cut_name) -> ThreadLocalHistogram1D* {
         if (auto it = m_histograms.find(cut_name); it != m_histograms.end()) {
             return it->second.get();
         }
@@ -452,7 +452,7 @@ class CutStageHistograms {
             std::string sanitized = sanitize_name(cut_name);
             std::string path = fmt::format("{}_{}", m_base_path, sanitized);
             std::string title = fmt::format("{} (after {})", m_title, cut_name);
-            AtomicHistogram1D* hist = svc.book_hist1D(path, title, nbins, xmin, xmax);
+            ThreadLocalHistogram1D* hist = svc.book_hist1D(path, title, nbins, xmin, xmax);
             m_histograms[cut_name] = Hist1D(hist);
         }
     }
@@ -542,7 +542,7 @@ class HistogramRegistry {
         }
 
         for (const auto& spec : m_specs_1d) {
-            AtomicHistogram1D* hist = m_service->book_hist1D(spec.path, spec.title,
+            ThreadLocalHistogram1D* hist = m_service->book_hist1D(spec.path, spec.title,
                                                               spec.nbins, spec.xmin, spec.xmax);
             if (hist) {
                 std::string name = extract_name(spec.path);
@@ -551,7 +551,7 @@ class HistogramRegistry {
         }
 
         for (const auto& spec : m_specs_2d) {
-            AtomicHistogram2D* hist = m_service->book_hist2D(spec.path, spec.title,
+            ThreadLocalHistogram2D* hist = m_service->book_hist2D(spec.path, spec.title,
                                                               spec.nbins, spec.xmin, spec.xmax,
                                                               *spec.nbinsy, *spec.ymin, *spec.ymax);
             if (hist) {
@@ -965,12 +965,12 @@ struct MissingKinematics {
 /**
  * @brief Collection of atomic histograms for thread-safe parallel filling
  *
- * Similar to HistogramGroup but stores AtomicHistogram1D and AtomicHistogram2D
+ * Similar to HistogramGroup but stores ThreadLocalHistogram1D and ThreadLocalHistogram2D
  * for lock-free filling from multiple threads.
  *
  * Example usage:
  * @code
- * AtomicHistogramGroup electron_hists(hist_svc, "/Electron");
+ * ThreadLocalHistogramGroup electron_hists(hist_svc, "/Electron");
  * electron_hists.add_hist1D("momentum", "p;p [GeV/c];Events", 100, 0, 10);
  * electron_hists.add_hist2D("p_vs_theta", "p vs theta", 90, 0, 45, 100, 0, 10);
  *
@@ -979,19 +979,19 @@ struct MissingKinematics {
  * electron_hists.hist2d("p_vs_theta").fill(electron.theta(), electron.p());
  * @endcode
  */
-class AtomicHistogramGroup {
+class ThreadLocalHistogramGroup {
 public:
-    AtomicHistogramGroup(HistogramService* service, std::string path_prefix)
+    ThreadLocalHistogramGroup(HistogramService* service, std::string path_prefix)
         : m_service(service), m_path_prefix(std::move(path_prefix)) {}
 
     /**
      * @brief Add and book an atomic 1D histogram
      */
     auto add_hist1D(const std::string& name, const std::string& title,
-                    int nbins, double xmin, double xmax) -> AtomicHistogram1D* {
+                    int nbins, double xmin, double xmax) -> ThreadLocalHistogram1D* {
         if (!m_service) return nullptr;
         std::string path = m_path_prefix + "/" + name;
-        auto* hist = m_service->book_atomic_hist1D(path, title, nbins, xmin, xmax);
+        auto* hist = m_service->book_hist1D(path, title, nbins, xmin, xmax);
         if (hist) {
             m_hist1d[name] = hist;
         }
@@ -1003,10 +1003,10 @@ public:
      */
     auto add_hist2D(const std::string& name, const std::string& title,
                     int nbinsx, double xmin, double xmax,
-                    int nbinsy, double ymin, double ymax) -> AtomicHistogram2D* {
+                    int nbinsy, double ymin, double ymax) -> ThreadLocalHistogram2D* {
         if (!m_service) return nullptr;
         std::string path = m_path_prefix + "/" + name;
-        auto* hist = m_service->book_atomic_hist2D(path, title, nbinsx, xmin, xmax,
+        auto* hist = m_service->book_hist2D(path, title, nbinsx, xmin, xmax,
                                                     nbinsy, ymin, ymax);
         if (hist) {
             m_hist2d[name] = hist;
@@ -1017,7 +1017,7 @@ public:
     /**
      * @brief Get 1D histogram by name (returns reference to pointer for null-safe access)
      */
-    [[nodiscard]] auto hist1d(const std::string& name) -> AtomicHistogram1D* {
+    [[nodiscard]] auto hist1d(const std::string& name) -> ThreadLocalHistogram1D* {
         auto it = m_hist1d.find(name);
         return it != m_hist1d.end() ? it->second : nullptr;
     }
@@ -1025,7 +1025,7 @@ public:
     /**
      * @brief Get 2D histogram by name
      */
-    [[nodiscard]] auto hist2d(const std::string& name) -> AtomicHistogram2D* {
+    [[nodiscard]] auto hist2d(const std::string& name) -> ThreadLocalHistogram2D* {
         auto it = m_hist2d.find(name);
         return it != m_hist2d.end() ? it->second : nullptr;
     }
@@ -1075,22 +1075,22 @@ public:
 private:
     HistogramService* m_service;
     std::string m_path_prefix;
-    std::map<std::string, AtomicHistogram1D*> m_hist1d;
-    std::map<std::string, AtomicHistogram2D*> m_hist2d;
+    std::map<std::string, ThreadLocalHistogram1D*> m_hist1d;
+    std::map<std::string, ThreadLocalHistogram2D*> m_hist2d;
 };
 
 
-namespace AtomicHistogramTemplates {
+namespace ThreadLocalHistogramTemplates {
 
 /**
  * @brief Thread-safe electron histograms using atomic operations
  *
  * Creates the same histograms as HistogramTemplates::ElectronHistograms
- * but uses AtomicHistogram1D/2D for lock-free parallel filling.
+ * but uses ThreadLocalHistogram1D/2D for lock-free parallel filling.
  *
  * Example:
  * @code
- * auto h = AtomicHistogramTemplates::ElectronHistograms::create(hist_svc, "/Electron");
+ * auto h = ThreadLocalHistogramTemplates::ElectronHistograms::create(hist_svc, "/Electron");
  *
  * // Fill from multiple threads (no locking needed)
  * h->fill("p", electron.p());
@@ -1100,8 +1100,8 @@ namespace AtomicHistogramTemplates {
  */
 struct ElectronHistograms {
     static auto create(HistogramService* svc, const std::string& base_path)
-        -> std::unique_ptr<AtomicHistogramGroup> {
-        auto group = std::make_unique<AtomicHistogramGroup>(svc, base_path);
+        -> std::unique_ptr<ThreadLocalHistogramGroup> {
+        auto group = std::make_unique<ThreadLocalHistogramGroup>(svc, base_path);
 
         // Basic Kinematics
         group->add_hist1D("p", "Electron Momentum;p [GeV/c];Events", 100, 0.0, 12.0);
@@ -1151,8 +1151,8 @@ struct ElectronHistograms {
      */
     static auto create_with_stages(HistogramService* svc, const std::string& base_path,
                                    const std::vector<std::string>& stages)
-        -> std::map<std::string, std::unique_ptr<AtomicHistogramGroup>> {
-        std::map<std::string, std::unique_ptr<AtomicHistogramGroup>> groups;
+        -> std::map<std::string, std::unique_ptr<ThreadLocalHistogramGroup>> {
+        std::map<std::string, std::unique_ptr<ThreadLocalHistogramGroup>> groups;
         for (const auto& stage : stages) {
             std::string path = fmt::format("{}/{}", base_path, stage);
             groups[stage] = create(svc, path);
@@ -1167,8 +1167,8 @@ struct ElectronHistograms {
  */
 struct HadronHistograms {
     static auto create(HistogramService* svc, const std::string& base_path)
-        -> std::unique_ptr<AtomicHistogramGroup> {
-        auto group = std::make_unique<AtomicHistogramGroup>(svc, base_path);
+        -> std::unique_ptr<ThreadLocalHistogramGroup> {
+        auto group = std::make_unique<ThreadLocalHistogramGroup>(svc, base_path);
 
         // Kinematics
         group->add_hist1D("p", "Momentum;p [GeV/c];Events", 100, 0.0, 8.0);
@@ -1207,8 +1207,8 @@ struct HadronHistograms {
 struct PionDiagnostics {
     static auto create(HistogramService* svc, const std::string& base_path,
                        const std::string& label = "#pi")
-        -> std::unique_ptr<AtomicHistogramGroup> {
-        auto group = std::make_unique<AtomicHistogramGroup>(svc, base_path);
+        -> std::unique_ptr<ThreadLocalHistogramGroup> {
+        auto group = std::make_unique<ThreadLocalHistogramGroup>(svc, base_path);
 
         // ============================================================
         // Basic Kinematics (same as HadronHistograms)
@@ -1285,8 +1285,8 @@ struct PionDiagnostics {
  */
 struct DISKinematics {
     static auto create(HistogramService* svc, const std::string& base_path)
-        -> std::unique_ptr<AtomicHistogramGroup> {
-        auto group = std::make_unique<AtomicHistogramGroup>(svc, base_path);
+        -> std::unique_ptr<ThreadLocalHistogramGroup> {
+        auto group = std::make_unique<ThreadLocalHistogramGroup>(svc, base_path);
 
         // 1D DIS variables
         group->add_hist1D("Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0.0, 12.0);
@@ -1305,6 +1305,6 @@ struct DISKinematics {
     }
 };
 
-}  // namespace AtomicHistogramTemplates
+}  // namespace ThreadLocalHistogramTemplates
 
 }  // namespace clas12::framework

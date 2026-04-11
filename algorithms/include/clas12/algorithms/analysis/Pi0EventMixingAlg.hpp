@@ -36,7 +36,7 @@
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/algorithms/reconstruction/Pi0ReconstructionAlg.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -323,14 +323,14 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm {
     static constexpr int N_MULT_BINS = 4;  // photon multiplicity bins: 1, 2, 3, 4+
 
     // Histograms: per 4D bin
-    std::map<int, clas12::framework::AtomicHistogram1D*> h_mgg_same;
-    std::map<int, clas12::framework::AtomicHistogram1D*> h_mgg_mixed;
-    std::map<int, clas12::framework::AtomicHistogram1D*> h_mgg_rotated;
+    std::map<int, clas12::framework::ThreadLocalHistogram1D*> h_mgg_same;
+    std::map<int, clas12::framework::ThreadLocalHistogram1D*> h_mgg_mixed;
+    std::map<int, clas12::framework::ThreadLocalHistogram1D*> h_mgg_rotated;
 
     // Histograms: inclusive
-    clas12::framework::AtomicHistogram1D* h_mgg_same_all = nullptr;
-    clas12::framework::AtomicHistogram1D* h_mgg_mixed_all = nullptr;
-    clas12::framework::AtomicHistogram1D* h_mgg_rotated_all = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_mgg_same_all = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_mgg_mixed_all = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_mgg_rotated_all = nullptr;
 
     // =========================================================================
     // Photon pair validation cuts (matching reference implementation)
@@ -480,15 +480,15 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm {
             const std::string dir = "/Pi0EventMixing";
 
             // Inclusive histograms
-            h_mgg_same_all = svc->book_atomic_hist1D(
+            h_mgg_same_all = svc->book_hist1D(
                 dir + "/mgg_same_all",
                 "Same-event M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts",
                 200, 0.0, 0.3);
-            h_mgg_mixed_all = svc->book_atomic_hist1D(
+            h_mgg_mixed_all = svc->book_hist1D(
                 dir + "/mgg_mixed_all",
                 "Mixed-event M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts",
                 200, 0.0, 0.3);
-            h_mgg_rotated_all = svc->book_atomic_hist1D(
+            h_mgg_rotated_all = svc->book_hist1D(
                 dir + "/mgg_rotated_all",
                 "Rotated-bg M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts",
                 200, 0.0, 0.3);
@@ -527,11 +527,11 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm {
                     m_z_edges[iz], m_z_edges[iz + 1],
                     m_pT_edges[ip], m_pT_edges[ip + 1]);
 
-                h_mgg_same[idx] = svc->book_atomic_hist1D(
+                h_mgg_same[idx] = svc->book_hist1D(
                     fmt::format("{}/same/mgg_same_bin{}", dir, idx),
                     title_same, 200, 0.0, 0.3);
 
-                h_mgg_mixed[idx] = svc->book_atomic_hist1D(
+                h_mgg_mixed[idx] = svc->book_hist1D(
                     fmt::format("{}/mixed/mgg_mixed_bin{}", dir, idx),
                     title_mixed, 200, 0.0, 0.3);
 
@@ -547,7 +547,7 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm {
                     m_z_edges[iz], m_z_edges[iz + 1],
                     m_pT_edges[ip], m_pT_edges[ip + 1]);
 
-                h_mgg_rotated[idx] = svc->book_atomic_hist1D(
+                h_mgg_rotated[idx] = svc->book_hist1D(
                     fmt::format("{}/rotated/mgg_rotated_bin{}", dir, idx),
                     title_rotated, 200, 0.0, 0.3);
             }

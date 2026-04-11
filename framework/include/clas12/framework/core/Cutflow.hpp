@@ -86,6 +86,30 @@ class Cutflow {
     /// Get cutflow name
     [[nodiscard]] auto name() const -> const std::string& { return m_name; }
 
+    /// Fold another cutflow into this one (Accumulator<Cutflow>).
+    ///
+    /// Both cutflows must share the same list of cut names; mismatched
+    /// entries in `other` are silently skipped. Intended for the
+    /// per-worker accumulator pattern where the partial cutflow from a
+    /// local processor is merged into the master cutflow at finalize.
+    auto merge(const Cutflow& other) -> void {
+        for (const auto& cut : other.m_cuts) {
+            auto it = m_counters.find(cut);
+            auto oit = other.m_counters.find(cut);
+            if (it != m_counters.end() && oit != other.m_counters.end()) {
+                it->second.fetch_add(oit->second.load(std::memory_order_relaxed),
+                                     std::memory_order_relaxed);
+            }
+        }
+    }
+
+    /// Zero every counter (Accumulator<Cutflow>).
+    auto reset() -> void {
+        for (auto& [name, counter] : m_counters) {
+            counter.store(0, std::memory_order_relaxed);
+        }
+    }
+
     /// Print cutflow table (uses Log singleton if available, otherwise fmt::print)
     auto print() const -> void {
         if (m_cuts.empty()) return;

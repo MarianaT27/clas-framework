@@ -136,7 +136,7 @@ test_bankdefs_compile = executable(
 test('BankDefs Compile Tests', test_bankdefs_compile)
 
 # Unit tests for column-oriented vectorised fill (Event::column<T> +
-# AtomicHistogram::fill_span).
+# ThreadLocalHistogram::fill_span).
 test_column_fill = executable(
   'test_column_fill',
   'test_column_fill.cpp',
@@ -144,3 +144,13 @@ test_column_fill = executable(
 )
 
 test('Column Fill Tests', test_column_fill)
+
+# Concurrency + Accumulator concept tests for the per-worker
+# ThreadLocalHistogram.
+test_thread_local_histogram = executable(
+  'test_thread_local_histogram',
+  'test_thread_local_histogram.cpp',
+  dependencies: test_deps,
+)
+
+test('ThreadLocalHistogram Tests', test_thread_local_histogram)

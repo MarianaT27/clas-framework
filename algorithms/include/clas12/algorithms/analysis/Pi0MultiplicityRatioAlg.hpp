@@ -21,7 +21,7 @@
 #include <clas12/Particle.hpp>
 #include <clas12/physics/CompositeParticle.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -232,34 +232,34 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
     // --- Histograms ---
 
     // DIS normalization
-    clas12::framework::AtomicHistogram1D* h_n_DIS_events = nullptr;
-    clas12::framework::AtomicHistogram1D* h_n_DIS_vs_Q2 = nullptr;
-    clas12::framework::AtomicHistogram1D* h_n_DIS_vs_xB = nullptr;
-    std::vector<clas12::framework::AtomicHistogram1D*> h_n_DIS_Q2bin;
-    std::vector<clas12::framework::AtomicHistogram1D*> h_n_DIS_xBbin;
+    clas12::framework::ThreadLocalHistogram1D* h_n_DIS_events = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_n_DIS_vs_Q2 = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_n_DIS_vs_xB = nullptr;
+    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_n_DIS_Q2bin;
+    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_n_DIS_xBbin;
 
     // 1D distributions
-    clas12::framework::AtomicHistogram1D* h_z = nullptr;
-    clas12::framework::AtomicHistogram1D* h_pT2 = nullptr;
-    clas12::framework::AtomicHistogram1D* h_phi_h = nullptr;
-    clas12::framework::AtomicHistogram1D* h_pi0_mass = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_z = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_pT2 = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_phi_h = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_pi0_mass = nullptr;
 
     // 2D distributions
-    clas12::framework::AtomicHistogram2D* h_z_vs_Q2 = nullptr;
-    clas12::framework::AtomicHistogram2D* h_z_vs_pT2 = nullptr;
-    clas12::framework::AtomicHistogram2D* h_pT2_vs_Q2 = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_z_vs_Q2 = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_z_vs_pT2 = nullptr;
+    clas12::framework::ThreadLocalHistogram2D* h_pT2_vs_Q2 = nullptr;
 
     // Multiplicity per kinematic bin
-    std::vector<clas12::framework::AtomicHistogram1D*> h_z_Q2bin;
-    std::vector<clas12::framework::AtomicHistogram1D*> h_pT2_Q2bin;
-    std::vector<clas12::framework::AtomicHistogram1D*> h_z_xBbin;
-    std::vector<clas12::framework::AtomicHistogram1D*> h_pT2_zbin;
+    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_z_Q2bin;
+    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_pT2_Q2bin;
+    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_z_xBbin;
+    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_pT2_zbin;
 
     // pT broadening and azimuthal moments in 4D bins (Q2, xB, z, pT2)
-    clas12::framework::AtomicHistogram1D* h_counts_4D = nullptr;
-    clas12::framework::AtomicHistogram1D* h_sum_pT2_4D = nullptr;
-    clas12::framework::AtomicHistogram1D* h_sum_cosphi_4D = nullptr;
-    clas12::framework::AtomicHistogram1D* h_sum_sinphi_4D = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_counts_4D = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_sum_pT2_4D = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_sum_cosphi_4D = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_sum_sinphi_4D = nullptr;
 
     [[nodiscard]] auto flat_4D_index(int iQ2, int ixB, int iz, int ipT2) const -> int {
         int N_xB = static_cast<int>(m_xB_edges.size()) - 1;
@@ -277,14 +277,14 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
             const std::string dir = "/Pi0Multiplicity";
 
             // DIS normalization
-            h_n_DIS_events = svc->book_atomic_hist1D(dir + "/n_DIS_events", "DIS Event Count;count;Events", 1, 0, 1);
-            h_n_DIS_vs_Q2 = svc->book_atomic_hist1D(dir + "/n_DIS_vs_Q2", "DIS Events vs Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 12);
-            h_n_DIS_vs_xB = svc->book_atomic_hist1D(dir + "/n_DIS_vs_xB", "DIS Events vs x_{B};x_{B};Events", 100, 0, 0.8);
+            h_n_DIS_events = svc->book_hist1D(dir + "/n_DIS_events", "DIS Event Count;count;Events", 1, 0, 1);
+            h_n_DIS_vs_Q2 = svc->book_hist1D(dir + "/n_DIS_vs_Q2", "DIS Events vs Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 12);
+            h_n_DIS_vs_xB = svc->book_hist1D(dir + "/n_DIS_vs_xB", "DIS Events vs x_{B};x_{B};Events", 100, 0, 0.8);
 
             // Per-Q2-bin DIS normalization
             h_n_DIS_Q2bin.resize(m_Q2_edges.size() - 1);
             for (size_t i = 0; i < m_Q2_edges.size() - 1; ++i) {
-                h_n_DIS_Q2bin[i] = svc->book_atomic_hist1D(
+                h_n_DIS_Q2bin[i] = svc->book_hist1D(
                     fmt::format("{}/norm/n_DIS_Q2bin{}", dir, i),
                     fmt::format("DIS Events Q^{{2}} [{:.1f}, {:.1f}];count;Events", m_Q2_edges[i], m_Q2_edges[i + 1]),
                     1, 0, 1);
@@ -293,32 +293,32 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
             // Per-xB-bin DIS normalization
             h_n_DIS_xBbin.resize(m_xB_edges.size() - 1);
             for (size_t i = 0; i < m_xB_edges.size() - 1; ++i) {
-                h_n_DIS_xBbin[i] = svc->book_atomic_hist1D(
+                h_n_DIS_xBbin[i] = svc->book_hist1D(
                     fmt::format("{}/norm/n_DIS_xBbin{}", dir, i),
                     fmt::format("DIS Events x_{{B}} [{:.2f}, {:.2f}];count;Events", m_xB_edges[i], m_xB_edges[i + 1]),
                     1, 0, 1);
             }
 
             // 1D pi0 distributions
-            h_z = svc->book_atomic_hist1D(dir + "/z", "#pi^{0} z = E_{#pi^{0}}/#nu;z;Counts", 100, 0, 1);
-            h_pT2 = svc->book_atomic_hist1D(dir + "/pT2", "#pi^{0} p_{T}^{2};p_{T}^{2} [GeV^{2}];Counts", 100, 0, 2);
-            h_phi_h = svc->book_atomic_hist1D(dir + "/phi_h", "#pi^{0} #phi_{h};#phi_{h} [deg];Counts", 72, -180, 180);
-            h_pi0_mass = svc->book_atomic_hist1D(dir + "/pi0_mass", "#pi^{0} Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Counts", 200, 0, 0.5);
+            h_z = svc->book_hist1D(dir + "/z", "#pi^{0} z = E_{#pi^{0}}/#nu;z;Counts", 100, 0, 1);
+            h_pT2 = svc->book_hist1D(dir + "/pT2", "#pi^{0} p_{T}^{2};p_{T}^{2} [GeV^{2}];Counts", 100, 0, 2);
+            h_phi_h = svc->book_hist1D(dir + "/phi_h", "#pi^{0} #phi_{h};#phi_{h} [deg];Counts", 72, -180, 180);
+            h_pi0_mass = svc->book_hist1D(dir + "/pi0_mass", "#pi^{0} Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Counts", 200, 0, 0.5);
 
             // 2D distributions
-            h_z_vs_Q2 = svc->book_atomic_hist2D(dir + "/z_vs_Q2", "z vs Q^{2};Q^{2} [GeV^{2}];z", 100, 0, 12, 100, 0, 1);
-            h_z_vs_pT2 = svc->book_atomic_hist2D(dir + "/z_vs_pT2", "z vs p_{T}^{2};p_{T}^{2} [GeV^{2}];z", 100, 0, 2, 100, 0, 1);
-            h_pT2_vs_Q2 = svc->book_atomic_hist2D(dir + "/pT2_vs_Q2", "p_{T}^{2} vs Q^{2};Q^{2} [GeV^{2}];p_{T}^{2} [GeV^{2}]", 100, 0, 12, 100, 0, 2);
+            h_z_vs_Q2 = svc->book_hist2D(dir + "/z_vs_Q2", "z vs Q^{2};Q^{2} [GeV^{2}];z", 100, 0, 12, 100, 0, 1);
+            h_z_vs_pT2 = svc->book_hist2D(dir + "/z_vs_pT2", "z vs p_{T}^{2};p_{T}^{2} [GeV^{2}];z", 100, 0, 2, 100, 0, 1);
+            h_pT2_vs_Q2 = svc->book_hist2D(dir + "/pT2_vs_Q2", "p_{T}^{2} vs Q^{2};Q^{2} [GeV^{2}];p_{T}^{2} [GeV^{2}]", 100, 0, 12, 100, 0, 2);
 
             // Multiplicity: z per Q2 bin
             h_z_Q2bin.resize(m_Q2_edges.size() - 1);
             h_pT2_Q2bin.resize(m_Q2_edges.size() - 1);
             for (size_t i = 0; i < m_Q2_edges.size() - 1; ++i) {
-                h_z_Q2bin[i] = svc->book_atomic_hist1D(
+                h_z_Q2bin[i] = svc->book_hist1D(
                     fmt::format("{}/z_Q2bin/z_Q2bin{}", dir, i),
                     fmt::format("#pi^{{0}} z, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};z;Counts", m_Q2_edges[i], m_Q2_edges[i + 1]),
                     100, 0, 1);
-                h_pT2_Q2bin[i] = svc->book_atomic_hist1D(
+                h_pT2_Q2bin[i] = svc->book_hist1D(
                     fmt::format("{}/pT2_Q2bin/pT2_Q2bin{}", dir, i),
                     fmt::format("#pi^{{0}} p_{{T}}^{{2}}, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_Q2_edges[i], m_Q2_edges[i + 1]),
                     100, 0, 2);
@@ -327,7 +327,7 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
             // Multiplicity: z per xB bin
             h_z_xBbin.resize(m_xB_edges.size() - 1);
             for (size_t i = 0; i < m_xB_edges.size() - 1; ++i) {
-                h_z_xBbin[i] = svc->book_atomic_hist1D(
+                h_z_xBbin[i] = svc->book_hist1D(
                     fmt::format("{}/z_xBbin/z_xBbin{}", dir, i),
                     fmt::format("#pi^{{0}} z, x_{{B}} #in [{:.2f}, {:.2f}];z;Counts", m_xB_edges[i], m_xB_edges[i + 1]),
                     100, 0, 1);
@@ -336,7 +336,7 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
             // Multiplicity: pT2 per z bin
             h_pT2_zbin.resize(m_z_edges.size() - 1);
             for (size_t i = 0; i < m_z_edges.size() - 1; ++i) {
-                h_pT2_zbin[i] = svc->book_atomic_hist1D(
+                h_pT2_zbin[i] = svc->book_hist1D(
                     fmt::format("{}/pT2_zbin/pT2_zbin{}", dir, i),
                     fmt::format("#pi^{{0}} p_{{T}}^{{2}}, z #in [{:.1f}, {:.1f}];p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_z_edges[i], m_z_edges[i + 1]),
                     100, 0, 2);
@@ -344,13 +344,13 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
 
             // 4D flat-indexed histograms for pT broadening and azimuthal moments
             int n4D = total_4D_bins();
-            h_counts_4D = svc->book_atomic_hist1D(dir + "/4D/counts",
+            h_counts_4D = svc->book_hist1D(dir + "/4D/counts",
                 "4D bin counts (Q^{2}, x_{B}, z, p_{T}^{2});flat bin;Counts", n4D, 0, n4D);
-            h_sum_pT2_4D = svc->book_atomic_hist1D(dir + "/4D/sum_pT2",
+            h_sum_pT2_4D = svc->book_hist1D(dir + "/4D/sum_pT2",
                 "#Sigma p_{T}^{2} per 4D bin;flat bin;#Sigma p_{T}^{2}", n4D, 0, n4D);
-            h_sum_cosphi_4D = svc->book_atomic_hist1D(dir + "/4D/sum_cosphi",
+            h_sum_cosphi_4D = svc->book_hist1D(dir + "/4D/sum_cosphi",
                 "#Sigma cos(#phi_{h}) per 4D bin;flat bin;#Sigma cos#phi_{h}", n4D, 0, n4D);
-            h_sum_sinphi_4D = svc->book_atomic_hist1D(dir + "/4D/sum_sinphi",
+            h_sum_sinphi_4D = svc->book_hist1D(dir + "/4D/sum_sinphi",
                 "#Sigma sin(#phi_{h}) per 4D bin;flat bin;#Sigma sin#phi_{h}", n4D, 0, n4D);
         }
     }

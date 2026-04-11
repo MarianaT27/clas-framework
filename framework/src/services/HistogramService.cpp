@@ -21,7 +21,7 @@
 
 namespace clas12::framework {
 
-auto HistogramService::convert_atomic_histograms() -> void {
+auto HistogramService::merge_histograms() -> void {
     for (const auto& [path, atomic_hist] : m_atomic_hist1D) {
         if (m_hist1D.find(path) != m_hist1D.end()) {
             atomic_hist->merge_into(m_hist1D[path].get());
@@ -108,7 +108,7 @@ auto HistogramService::write_histograms() -> void {
 
 auto HistogramService::clone_hist1D_with_suffix(const std::string& base_path,
                                                 const std::string& suffix) -> TH1D* {
-    auto* base = get_hist1D(base_path);
+    auto* base = get_output_hist1D(base_path);
     if (!base) {
         Log::warning(name(), "Cannot clone: histogram '{}' not found", base_path);
         return nullptr;
@@ -132,7 +132,7 @@ auto HistogramService::clone_hist1D_with_suffix(const std::string& base_path,
 
 auto HistogramService::clone_hist2D_with_suffix(const std::string& base_path,
                                                 const std::string& suffix) -> TH2D* {
-    auto* base = get_hist2D(base_path);
+    auto* base = get_output_hist2D(base_path);
     if (!base) {
         Log::warning(name(), "Cannot clone: histogram '{}' not found", base_path);
         return nullptr;
@@ -154,30 +154,30 @@ auto HistogramService::clone_hist2D_with_suffix(const std::string& base_path,
     return ptr;
 }
 
-auto HistogramService::book_atomic_hist1D(const std::string& path, const std::string& title,
-                                          int nbins, double xmin, double xmax) -> AtomicHistogram1D* {
+auto HistogramService::book_hist1D(const std::string& path, const std::string& title,
+                                          int nbins, double xmin, double xmax) -> ThreadLocalHistogram1D* {
     if (m_atomic_hist1D.find(path) != m_atomic_hist1D.end()) {
         Log::warning(name(), "Atomic histogram '{}' already exists", path);
         return m_atomic_hist1D[path].get();
     }
 
-    auto hist = std::make_unique<AtomicHistogram1D>(nbins, xmin, xmax);
-    AtomicHistogram1D* ptr = hist.get();
+    auto hist = std::make_unique<ThreadLocalHistogram1D>(nbins, xmin, xmax);
+    ThreadLocalHistogram1D* ptr = hist.get();
     m_atomic_hist1D[path] = std::move(hist);
     m_atomic_hist1D_meta[path] = {title};
     return ptr;
 }
 
-auto HistogramService::book_atomic_hist2D(const std::string& path, const std::string& title,
+auto HistogramService::book_hist2D(const std::string& path, const std::string& title,
                                           int nbinsx, double xmin, double xmax,
-                                          int nbinsy, double ymin, double ymax) -> AtomicHistogram2D* {
+                                          int nbinsy, double ymin, double ymax) -> ThreadLocalHistogram2D* {
     if (m_atomic_hist2D.find(path) != m_atomic_hist2D.end()) {
         Log::warning(name(), "Atomic histogram '{}' already exists", path);
         return m_atomic_hist2D[path].get();
     }
 
-    auto hist = std::make_unique<AtomicHistogram2D>(nbinsx, xmin, xmax, nbinsy, ymin, ymax);
-    AtomicHistogram2D* ptr = hist.get();
+    auto hist = std::make_unique<ThreadLocalHistogram2D>(nbinsx, xmin, xmax, nbinsy, ymin, ymax);
+    ThreadLocalHistogram2D* ptr = hist.get();
     m_atomic_hist2D[path] = std::move(hist);
     m_atomic_hist2D_meta[path] = {title};
     return ptr;

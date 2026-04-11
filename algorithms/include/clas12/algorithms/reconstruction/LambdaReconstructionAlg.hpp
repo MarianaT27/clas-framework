@@ -18,7 +18,7 @@
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/physics/ParticleUtils.hpp>
 
 namespace clas12::algorithms {
@@ -480,24 +480,24 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm {
     mutable std::mutex m_ntuple_mutex;
 
     // Lock-free atomic histograms
-    clas12::framework::AtomicHistogram1D* h_n_protons = nullptr;
-    clas12::framework::AtomicHistogram1D* h_n_pions = nullptr;
-    clas12::framework::AtomicHistogram1D* h_proton_momentum = nullptr;
-    clas12::framework::AtomicHistogram1D* h_pion_momentum = nullptr;
-    clas12::framework::AtomicHistogram1D* h_ppim_mass_nocuts = nullptr;
-    clas12::framework::AtomicHistogram1D* h_ppim_mass_all = nullptr;
-    clas12::framework::AtomicHistogram1D* h_ppim_mass_selected = nullptr;
-    clas12::framework::AtomicHistogram1D* h_lambda_momentum = nullptr;
-    clas12::framework::AtomicHistogram1D* h_lambda_theta = nullptr;
-    clas12::framework::AtomicHistogram1D* h_coplanarity = nullptr;
-    clas12::framework::AtomicHistogram1D* h_coplanarity_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_vz = nullptr;
-    clas12::framework::AtomicHistogram1D* h_delta_vz_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_opening_angle = nullptr;
-    clas12::framework::AtomicHistogram1D* h_missing_mass = nullptr;
-    clas12::framework::AtomicHistogram1D* h_displaced_vz = nullptr;
-    clas12::framework::AtomicHistogram1D* h_displaced_vz_precut = nullptr;
-    clas12::framework::AtomicHistogram1D* h_decay_length = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_n_protons = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_n_pions = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_proton_momentum = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_pion_momentum = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_ppim_mass_nocuts = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_ppim_mass_all = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_ppim_mass_selected = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_lambda_momentum = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_lambda_theta = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_coplanarity = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_coplanarity_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_vz = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_opening_angle = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_missing_mass = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_displaced_vz = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_displaced_vz_precut = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_decay_length = nullptr;
 
     // N-tuple data struct
     struct LambdaNTupleData {
@@ -529,24 +529,24 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm {
     clas12::framework::NTupleWriter<LambdaNTupleData> m_ntuple;
 
     void book_histograms() {
-        h_n_protons = m_hist_svc->book_atomic_hist1D("/Lambda/n_protons", "Number of protons;N_{p};Events", 10, 0, 10);
-        h_n_pions = m_hist_svc->book_atomic_hist1D("/Lambda/n_pions", "Number of #pi^{-};N_{#pi^{-}};Events", 10, 0, 10);
-        h_proton_momentum = m_hist_svc->book_atomic_hist1D("/Lambda/proton_p", "Proton momentum;p [GeV];Events", 100, 0, 5);
-        h_pion_momentum = m_hist_svc->book_atomic_hist1D("/Lambda/pion_p", "#pi^{-} momentum;p [GeV];Events", 100, 0, 3);
-        h_ppim_mass_nocuts = m_hist_svc->book_atomic_hist1D("/Lambda/ppim_mass_nocuts", "p#pi^{-} invariant mass (no cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_ppim_mass_all = m_hist_svc->book_atomic_hist1D("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (FD+p cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_ppim_mass_selected = m_hist_svc->book_atomic_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_lambda_momentum = m_hist_svc->book_atomic_hist1D("/Lambda/lambda_p", "#Lambda momentum;p [GeV];Events", 100, 0, 6);
-        h_lambda_theta = m_hist_svc->book_atomic_hist1D("/Lambda/lambda_theta", "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
-        h_coplanarity = m_hist_svc->book_atomic_hist1D("/Lambda/coplanarity", "Coplanarity;#Delta#phi [deg];Events", 90, 0, 90);
-        h_coplanarity_precut = m_hist_svc->book_atomic_hist1D("/Lambda/coplanarity_precut", "Coplanarity (pre-cut);#Delta#phi [deg];Events", 180, 0, 180);
-        h_delta_vz = m_hist_svc->book_atomic_hist1D("/Lambda/delta_vz", "Vertex #Deltaz;#Deltaz [cm];Events", 100, 0, 5);
-        h_delta_vz_precut = m_hist_svc->book_atomic_hist1D("/Lambda/delta_vz_precut", "Vertex #Deltaz (pre-cut);#Deltaz [cm];Events", 100, 0, 20);
-        h_opening_angle = m_hist_svc->book_atomic_hist1D("/Lambda/opening_angle", "Opening angle p-#pi^{-};#theta_{open} [deg];Events", 90, 0, 90);
-        h_missing_mass = m_hist_svc->book_atomic_hist1D("/Lambda/missing_mass", "Missing mass M(e,e'#Lambda)X;M_{X} [GeV];Events", 200, -1, 3);
-        h_displaced_vz = m_hist_svc->book_atomic_hist1D("/Lambda/displaced_vz", "Displaced vertex z (decay - primary);#Deltaz [cm];Events", 200, -20, 40);
-        h_displaced_vz_precut = m_hist_svc->book_atomic_hist1D("/Lambda/displaced_vz_precut", "Displaced vertex z (pre-cut);#Deltaz [cm];Events", 200, -20, 40);
-        h_decay_length = m_hist_svc->book_atomic_hist1D("/Lambda/decay_length", "Decay length;L [cm];Events", 200, -20, 60);
+        h_n_protons = m_hist_svc->book_hist1D("/Lambda/n_protons", "Number of protons;N_{p};Events", 10, 0, 10);
+        h_n_pions = m_hist_svc->book_hist1D("/Lambda/n_pions", "Number of #pi^{-};N_{#pi^{-}};Events", 10, 0, 10);
+        h_proton_momentum = m_hist_svc->book_hist1D("/Lambda/proton_p", "Proton momentum;p [GeV];Events", 100, 0, 5);
+        h_pion_momentum = m_hist_svc->book_hist1D("/Lambda/pion_p", "#pi^{-} momentum;p [GeV];Events", 100, 0, 3);
+        h_ppim_mass_nocuts = m_hist_svc->book_hist1D("/Lambda/ppim_mass_nocuts", "p#pi^{-} invariant mass (no cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
+        h_ppim_mass_all = m_hist_svc->book_hist1D("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (FD+p cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
+        h_ppim_mass_selected = m_hist_svc->book_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
+        h_lambda_momentum = m_hist_svc->book_hist1D("/Lambda/lambda_p", "#Lambda momentum;p [GeV];Events", 100, 0, 6);
+        h_lambda_theta = m_hist_svc->book_hist1D("/Lambda/lambda_theta", "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
+        h_coplanarity = m_hist_svc->book_hist1D("/Lambda/coplanarity", "Coplanarity;#Delta#phi [deg];Events", 90, 0, 90);
+        h_coplanarity_precut = m_hist_svc->book_hist1D("/Lambda/coplanarity_precut", "Coplanarity (pre-cut);#Delta#phi [deg];Events", 180, 0, 180);
+        h_delta_vz = m_hist_svc->book_hist1D("/Lambda/delta_vz", "Vertex #Deltaz;#Deltaz [cm];Events", 100, 0, 5);
+        h_delta_vz_precut = m_hist_svc->book_hist1D("/Lambda/delta_vz_precut", "Vertex #Deltaz (pre-cut);#Deltaz [cm];Events", 100, 0, 20);
+        h_opening_angle = m_hist_svc->book_hist1D("/Lambda/opening_angle", "Opening angle p-#pi^{-};#theta_{open} [deg];Events", 90, 0, 90);
+        h_missing_mass = m_hist_svc->book_hist1D("/Lambda/missing_mass", "Missing mass M(e,e'#Lambda)X;M_{X} [GeV];Events", 200, -1, 3);
+        h_displaced_vz = m_hist_svc->book_hist1D("/Lambda/displaced_vz", "Displaced vertex z (decay - primary);#Deltaz [cm];Events", 200, -20, 40);
+        h_displaced_vz_precut = m_hist_svc->book_hist1D("/Lambda/displaced_vz_precut", "Displaced vertex z (pre-cut);#Deltaz [cm];Events", 200, -20, 40);
+        h_decay_length = m_hist_svc->book_hist1D("/Lambda/decay_length", "Decay length;L [cm];Events", 200, -20, 60);
     }
 
     void setup_ntuple() {

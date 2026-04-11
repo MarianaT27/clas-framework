@@ -5,7 +5,7 @@
 #include <optional>
 #include <string>
 #include <vector>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include "TEfficiency.h"
 #include "TH1D.h"
 #include "TH2D.h"
@@ -16,7 +16,7 @@ namespace clas12::framework {
 /**
  * @brief Type-safe histogram wrapper for 1D histograms (thread-safe atomic)
  *
- * Provides a cleaner interface for AtomicHistogram1D with:
+ * Provides a cleaner interface for ThreadLocalHistogram1D with:
  * - Automatic null-pointer checking
  * - Fluent API for filling
  * - Weight support
@@ -25,7 +25,7 @@ namespace clas12::framework {
  */
 class Hist1D {
    public:
-    explicit Hist1D(AtomicHistogram1D* hist = nullptr) : m_hist(hist) {}
+    explicit Hist1D(ThreadLocalHistogram1D* hist = nullptr) : m_hist(hist) {}
 
     /**
      * @brief Fill histogram with value
@@ -62,9 +62,9 @@ class Hist1D {
     /**
      * @brief Get underlying atomic histogram
      */
-    auto get() -> AtomicHistogram1D* { return m_hist; }
+    auto get() -> ThreadLocalHistogram1D* { return m_hist; }
 
-    auto get() const -> const AtomicHistogram1D* { return m_hist; }
+    auto get() const -> const ThreadLocalHistogram1D* { return m_hist; }
 
     /**
      * @brief Check if histogram is valid
@@ -79,12 +79,12 @@ class Hist1D {
     /**
      * @brief Allow direct access to atomic histogram methods via ->
      */
-    auto operator->() -> AtomicHistogram1D* { return m_hist; }
+    auto operator->() -> ThreadLocalHistogram1D* { return m_hist; }
 
-    auto operator->() const -> const AtomicHistogram1D* { return m_hist; }
+    auto operator->() const -> const ThreadLocalHistogram1D* { return m_hist; }
 
    private:
-    AtomicHistogram1D* m_hist;
+    ThreadLocalHistogram1D* m_hist;
 };
 
 /**
@@ -92,7 +92,7 @@ class Hist1D {
  */
 class Hist2D {
    public:
-    explicit Hist2D(AtomicHistogram2D* hist = nullptr) : m_hist(hist) {}
+    explicit Hist2D(ThreadLocalHistogram2D* hist = nullptr) : m_hist(hist) {}
 
     auto fill(double x, double y) -> Hist2D& {
         if (m_hist) m_hist->fill(x, y);
@@ -114,20 +114,20 @@ class Hist2D {
         return *this;
     }
 
-    auto get() -> AtomicHistogram2D* { return m_hist; }
+    auto get() -> ThreadLocalHistogram2D* { return m_hist; }
 
-    auto get() const -> const AtomicHistogram2D* { return m_hist; }
+    auto get() const -> const ThreadLocalHistogram2D* { return m_hist; }
 
     auto is_valid() const -> bool { return m_hist != nullptr; }
 
     explicit operator bool() const { return is_valid(); }
 
-    auto operator->() -> AtomicHistogram2D* { return m_hist; }
+    auto operator->() -> ThreadLocalHistogram2D* { return m_hist; }
 
-    auto operator->() const -> const AtomicHistogram2D* { return m_hist; }
+    auto operator->() const -> const ThreadLocalHistogram2D* { return m_hist; }
 
    private:
-    AtomicHistogram2D* m_hist;
+    ThreadLocalHistogram2D* m_hist;
 };
 
 /**

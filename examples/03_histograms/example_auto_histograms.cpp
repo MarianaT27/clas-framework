@@ -54,7 +54,7 @@ public:
 
         // Method 1: Book individual histograms with type-safe wrappers
         fmt::print("    Booking individual histograms...\n");
-        clas12::framework::AtomicHistogram1D* h_n_part = m_hist_svc->book_hist1D(
+        clas12::framework::ThreadLocalHistogram1D* h_n_part = m_hist_svc->book_hist1D(
             "/Event/n_particles",
             "Particles per Event;N_{particles};Events",
             50, 0, 50
