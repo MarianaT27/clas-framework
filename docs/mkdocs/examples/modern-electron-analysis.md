@@ -205,7 +205,7 @@ class ElectronAnalysis : public Framework::Algorithm {
         }
         
         // Manual cut application
-        if (!CLAS::ElectronCuts::pass_electron_momentum_cut(trigger->p()))
+        if (!m_electron_cuts->pass_momentum_cut(trigger->p()))
             return StatusCode::SUCCESS();
         m_cutflow.pass("Momentum");
         

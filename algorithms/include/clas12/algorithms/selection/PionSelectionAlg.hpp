@@ -4,7 +4,6 @@
 #include <atomic>
 #include <cmath>
 #include <clas12/Constants.hpp>
-#include <clas12/ElectronCuts.hpp>
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/framework/core/AtomicHistogram.hpp>

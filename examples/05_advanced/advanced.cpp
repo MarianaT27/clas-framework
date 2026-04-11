@@ -18,6 +18,7 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
 #include <clas12/framework/services/ConditionsService.hpp>
+#include <clas12/framework/services/ElectronCutsService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/framework/services/SamplingFractionService.hpp>
 #include <clas12/algorithms/filters/TriggerElectronFilter.hpp>
@@ -65,6 +66,7 @@ int main(int argc, char** argv) {
         .with_output("advanced_analysis.root")
         .with_threads(num_threads)
         .with_standard_services()
+        .add_service<clas12::framework::ElectronCutsService>()
         .add_service<clas12::framework::SamplingFractionService>()
         .build();
 

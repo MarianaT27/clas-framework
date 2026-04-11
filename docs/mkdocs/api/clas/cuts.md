@@ -1,45 +1,8 @@
 # Cuts
 
-Physics cuts for particle selection.
-
-## ElectronCuts
-
-```cpp
-namespace CLAS {
-
-class ElectronCuts {
-public:
-    // Basic cuts
-    static auto pass_chi2pid_cut(double chi2pid) -> bool;
-    static auto pass_electron_momentum_cut(double p) -> bool;
-    static auto pass_electron_vz_cut(double vz, Target target) -> bool;
-    
-    // Calorimeter cuts
-    static auto pass_pcal_fiducial_cut(double lv, double lw) -> bool;
-    static auto pass_sampling_fraction_cut(
-        double sf, double p, int sector,
-        Target target, Polarity polarity) -> bool;
-    
-    // DC cuts
-    static auto pass_chi2ndf_cut(
-        double edge1, double edge2, double edge3) -> bool;
-    
-    // Combined cuts
-    static auto apply_basic_cuts(
-        const Particle& electron,
-        const Calorimeter& cal,
-        const Trajectory& traj,
-        Target target) -> CutResults;
-    
-    static auto apply_all_cuts(
-        const Particle& electron,
-        const Calorimeter& cal,
-        const Trajectory& traj,
-        Target target) -> CutResults;
-};
-
-}
-```
+Physics cuts for particle selection. For electron identification, use
+[`ElectronCutsService`](../framework/services.md) — all electron cut
+functionality lives on the framework service side.
 
 ## CutResults
 

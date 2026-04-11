@@ -1,83 +1,98 @@
 # Physics Cuts
 
 The framework provides reusable, composable cuts for particle selection.
+All electron identification cuts live on `ElectronCutsService`; the
+obsolete static `clas12::ElectronCuts` helper was removed.
 
 ## Electron Cuts
 
-Complete electron identification cuts using services:
+Register `ElectronCutsService` in the application builder, then look it
+up from your algorithm:
 
 ```cpp
-#include <CLAS/ElectronCuts.hpp>
-#include <Framework/Services/SamplingFractionService.hpp>
+#include <clas12/framework/services/ElectronCutsService.hpp>
+#include <clas12/framework/services/SamplingFractionService.hpp>
 
-// Get the SamplingFractionService
-auto sf_svc = service<Framework::SamplingFractionService>("SamplingFractionService");
+auto app = clas12::framework::make_application("MyAnalysis")
+    .with_standard_services()
+    .add_service<clas12::framework::ElectronCutsService>()
+    .add_service<clas12::framework::SamplingFractionService>()
+    .build();
+```
 
-// Apply basic cuts (excluding sampling fraction)
-auto results = CLAS::ElectronCuts::apply_basic_cuts(
-    electron, calorimeter, trajectory, CLAS::Target::LD2
-);
+Inside an algorithm:
 
-// Apply sampling fraction cut using the service
-bool pass_sf = sf_svc->passes_cut(SF, momentum, sector, CLAS::Target::LD2, CLAS::Polarity::Outbending);
+```cpp
+auto on_initialize() -> clas12::framework::StatusCode override {
+    m_electron_cuts = svc<clas12::framework::ElectronCutsService>();
+    if (!m_electron_cuts) {
+        return clas12::framework::StatusCode::FAILURE();
+    }
+
+    // Optional: override defaults
+    clas12::framework::ElectronCutsService::Config config;
+    config.target = clas12::Target::LD2;
+    config.polarity = clas12::Polarity::Outbending;
+    config.pcal_level = clas12::framework::ElectronCutsService::PCALFiducialLevel::Medium;
+    m_electron_cuts->set_config(config);
+
+    return clas12::framework::StatusCode::SUCCESS();
+}
 ```
 
 ### Individual Cuts
 
 ```cpp
-#include <CLAS/ElectronCuts.hpp>
+// Chi2 PID cut (uses configured [min_chi2pid, max_chi2pid])
+bool pass_chi2 = m_electron_cuts->pass_chi2pid_cut(electron.chi2pid());
 
-// Chi2 PID cut
-bool pass_chi2 = CLAS::ElectronCuts::pass_chi2pid_cut(electron.chi2pid());
+// Momentum cut (uses configured min_electron_momentum)
+bool pass_p = m_electron_cuts->pass_momentum_cut(electron.p());
 
-// Momentum cut
-bool pass_p = CLAS::ElectronCuts::pass_electron_momentum_cut(electron.p());
+// Vertex Z cut (target-specific; uses the configured target)
+bool pass_vz = m_electron_cuts->pass_vz_cut(electron.vz());
 
-// Vertex Z cut (target-specific)
-bool pass_vz = CLAS::ElectronCuts::pass_electron_vz_cut(
-    electron.vz(),
-    CLAS::Target::LD2
-);
+// Or override target per call:
+bool pass_vz2 = m_electron_cuts->pass_vz_cut(electron.vz(), clas12::Target::LD2);
 
-// PCAL fiducial cut
-bool pass_pcal = CLAS::ElectronCuts::pass_pcal_fiducial_cut(
+// PCAL fiducial cut (uses the configured PCALFiducialLevel)
+bool pass_pcal = m_electron_cuts->pass_pcal_fiducial_cut(
     calorimeter.pcal.lv,
-    calorimeter.pcal.lw
-);
+    calorimeter.pcal.lw);
 
-// Sampling fraction cut (using service)
-auto sf_svc = service<Framework::SamplingFractionService>("SamplingFractionService");
-bool pass_sf = sf_svc->passes_cut(SF, momentum, sector, CLAS::Target::LD2, CLAS::Polarity::Outbending);
-
-// DC chi2/ndf cut
-bool pass_dc = CLAS::ElectronCuts::pass_chi2ndf_cut(
+// Drift chamber edge cut (static)
+bool pass_dc = clas12::framework::ElectronCutsService::pass_dc_edge_cut(
     traj.region1.edge,
     traj.region2.edge,
-    traj.region3.edge
-);
+    traj.region3.edge);
+```
+
+### Sampling Fraction
+
+The sampling fraction cut needs `SamplingFractionService` — wire it into
+`ElectronCutsService` during initialization:
+
+```cpp
+auto* sf_svc = svc<clas12::framework::SamplingFractionService>();
+m_electron_cuts->set_sf_service(sf_svc);
+
+bool pass_sf = m_electron_cuts->pass_sampling_fraction_cut(
+    SF, momentum, sector);
 ```
 
 ### Detailed Cut Results
 
 ```cpp
-auto results = CLAS::ElectronCuts::apply_all_cuts(
-    electron,
-    calorimeter,
-    trajectory,
-    CLAS::Target::LD2
-);
+auto results = m_electron_cuts->apply_basic_cuts(electron, calorimeter, traj);
 
-// Check individual cuts
-if (results.chi2pid) { /* passed */ }
-if (results.momentum) { /* passed */ }
-if (results.vz) { /* passed */ }
-if (results.sampling_fraction) { /* passed */ }
-if (results.pcal_fiducial) { /* passed */ }
-if (results.dc_chi2ndf) { /* passed */ }
+if (results.chi2pid)        { /* passed */ }
+if (results.momentum)       { /* passed */ }
+if (results.vz)             { /* passed */ }
+if (results.pcal_fiducial)  { /* passed */ }
+if (results.dc_chi2ndf)     { /* passed */ }
 
-// Check combined
-if (results.passes_all_required()) {
-    // Passed all cuts
+if (m_electron_cuts->passes_basic_cuts(electron, calorimeter, traj)) {
+    // Electron passed everything except sampling fraction
 }
 ```
 
@@ -85,44 +100,15 @@ if (results.passes_all_required()) {
 
 | Target | Vertex Z Range (cm) |
 |--------|---------------------|
-| `CLAS::Target::LD2` | (-15.0, 5.0) |
-| `CLAS::Target::CxC` | (-10.6, 5.0) |
-| `CLAS::Target::Cu` | (-10.6, -6.5) |
-| `CLAS::Target::Sn` | (-5.5, 5.0) |
-| `CLAS::Target::CuSn` | (-10.6, 5.0) |
+| `clas12::Target::LD2`  | (-15.0, 5.0) |
+| `clas12::Target::CxC`  | (-10.6, 5.0) |
+| `clas12::Target::Cu`   | (-10.6, -6.5) |
+| `clas12::Target::Sn`   | (-5.5, 5.0) |
+| `clas12::Target::CuSn` | (-10.6, 5.0) |
 
 ## Polarity
 
 ```cpp
-CLAS::Polarity::Inbending    // "IB"
-CLAS::Polarity::Outbending   // "OB"
-```
-
-## Cut Services
-
-### ElectronCutsService
-
-```cpp
-#include <Framework/Services/ElectronCutsService.hpp>
-
-auto electron_cuts = service<Framework::ElectronCutsService>("ElectronCutsService");
-electron_cuts->set_target(CLAS::Target::LD2);
-electron_cuts->set_polarity(CLAS::Polarity::Outbending);
-
-if (electron_cuts->pass_chi2pid_cut(electron.chi2pid()) &&
-    electron_cuts->pass_momentum_cut(electron.p()) &&
-    electron_cuts->pass_vz_cut(electron.vz())) {
-    // Electron passes basic cuts
-}
-```
-
-### SamplingFractionService
-
-```cpp
-#include <Framework/Services/SamplingFractionService.hpp>
-
-auto sf_svc = service<Framework::SamplingFractionService>("SamplingFractionService");
-
-bool passes = sf_svc->passes_cut(SF, momentum, sector, 
-    CLAS::Target::LD2, CLAS::Polarity::Outbending);
+clas12::Polarity::Inbending    // "IB"
+clas12::Polarity::Outbending   // "OB"
 ```

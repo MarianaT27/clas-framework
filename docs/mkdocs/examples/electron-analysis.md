@@ -10,7 +10,7 @@ Complete example of electron selection and DIS analysis.
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
-#include <clas12/ElectronCuts.hpp>
+#include <clas12/framework/services/ElectronCutsService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
@@ -27,6 +27,8 @@ public:
     auto initialize() -> clas12::framework::StatusCode override {
         m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
         if (!m_hist_svc) return clas12::framework::StatusCode::FAILURE();
+        m_electron_cuts = service<clas12::framework::ElectronCutsService>("ElectronCutsService");
+        if (!m_electron_cuts) return clas12::framework::StatusCode::FAILURE();
 
         // Book histograms - returns AtomicHistogram1D* (thread-safe)
         h_p = m_hist_svc->book_hist1D("/Electron/p", "p;p [GeV/c];Events", 100, 0, 10);
@@ -69,15 +71,15 @@ public:
         m_cutflow.pass("Forward Detector");
 
         // Apply cuts
-        if (!clas12::ElectronCuts::pass_electron_momentum_cut(trigger->p()))
+        if (!m_electron_cuts->pass_momentum_cut(trigger->p()))
             return clas12::framework::StatusCode::SUCCESS();
         m_cutflow.pass("Momentum");
 
-        if (!clas12::ElectronCuts::pass_electron_vz_cut(trigger->vz(), m_target))
+        if (!m_electron_cuts->pass_vz_cut(trigger->vz(), m_target))
             return clas12::framework::StatusCode::SUCCESS();
         m_cutflow.pass("Vertex Z");
 
-        if (!clas12::ElectronCuts::pass_chi2pid_cut(trigger->chi2pid()))
+        if (!m_electron_cuts->pass_chi2pid_cut(trigger->chi2pid()))
             return clas12::framework::StatusCode::SUCCESS();
         m_cutflow.pass("Chi2 PID");
 
@@ -112,6 +114,7 @@ private:
     clas12::Polarity m_polarity;
     clas12::framework::Cutflow m_cutflow;
     clas12::framework::HistogramService* m_hist_svc = nullptr;
+    clas12::framework::ElectronCutsService* m_electron_cuts = nullptr;
     // Atomic histograms are thread-safe for parallel processing
     clas12::framework::AtomicHistogram1D *h_p, *h_theta, *h_phi, *h_vz, *h_q2, *h_w, *h_xb;
 };
@@ -127,6 +130,8 @@ int main(int argc, char** argv) {
     auto hist_svc = std::make_unique<clas12::framework::HistogramService>();
     hist_svc->set_output_file("electron_analysis.root");
     app.service_manager().add_service(std::move(hist_svc));
+    app.service_manager().add_service(
+        std::make_unique<clas12::framework::ElectronCutsService>());
 
     app.add_algorithm(std::make_unique<ElectronAnalysis>(
         clas12::Target::LD2, clas12::Polarity::Outbending));
@@ -177,7 +182,7 @@ W > 2                                   28453     28.5%     79.9%
 | AtomicHistogram | `<clas12/framework/core/AtomicHistogram.hpp>` |
 | HistogramService | `<clas12/framework/services/HistogramService.hpp>` |
 | Cutflow | `<clas12/framework/core/Cutflow.hpp>` |
-| ElectronCuts | `<clas12/ElectronCuts.hpp>` |
+| ElectronCutsService | `<clas12/framework/services/ElectronCutsService.hpp>` |
 | DISAnalysis | `<clas12/physics/DISAnalysis.hpp>` |
 | PIDs | `<clas12/PIDs.hpp>` |
 | Particle | `<clas12/Particle.hpp>` |
