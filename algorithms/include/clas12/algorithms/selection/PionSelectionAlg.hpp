@@ -235,13 +235,12 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
             return clas12::framework::StatusCode::FILTERED();
         }
 
-        // Get banks individually
+        // Bind REC::Event for start time. Detector banks are accessed
+        // through the per-event generated-wrapper cache via the read_*_bank
+        // helpers below; no need for local bank-view handles.
         clas12::bankdefs::REC_Event rec_event;
         rec_event.bind(event.get_bank("REC::Event"));
         const auto& REC_Particle = event.get_bank("REC::Particle");
-        const auto& REC_Scintillator = event.get_bank("REC::Scintillator");
-        const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
-        const auto& REC_Traj = event.get_bank("REC::Traj");
 
         if (rec_event.rows() == 0) return clas12::framework::StatusCode::SUCCESS();
 
@@ -254,7 +253,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
 
         // Build π⁺ candidates with all kinematics computed once
         const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
-        auto piplus_candidates = build_pion_candidates(pions_plus, REC_Scintillator, REC_Calorimeter, REC_Traj, start_time, true);
+        auto piplus_candidates = build_pion_candidates(event, pions_plus, start_time, true);
 
         // Evaluate cutflow per-candidate (sets passes_all_cuts), then fill histograms
         for (auto& cand : piplus_candidates) {
@@ -270,7 +269,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
 
         // Build π⁻ candidates with all kinematics computed once
         const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
-        auto piminus_candidates = build_pion_candidates(pions_minus, REC_Scintillator, REC_Calorimeter, REC_Traj, start_time, false);
+        auto piminus_candidates = build_pion_candidates(event, pions_minus, start_time, false);
 
         // Evaluate cutflow per-candidate (sets passes_all_cuts), then fill histograms
         for (auto& cand : piminus_candidates) {
@@ -658,10 +657,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
      * in the candidate struct to avoid redundant calculations downstream.
      */
     auto build_pion_candidates(
+        clas12::framework::Event& event,
         const std::vector<clas12::Particle>& pions,
-        const hipo::bank_view& REC_Scintillator,
-        const hipo::bank_view& REC_Calorimeter,
-        const hipo::bank_view& REC_Traj,
         double start_time,
         bool is_piplus
     ) -> std::vector<PionCandidate> {
@@ -701,7 +698,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
 
             // Get scintillator info (FTOF for forward pions only)
             if (cand.is_forward_detector) {
-                clas12::ScintillatorBank scintillator = clas12::read_Scintillator_bank(REC_Scintillator, pion.index());
+                clas12::ScintillatorBank scintillator = clas12::read_Scintillator_bank(event, pion.index());
                 cand.sector = scintillator.sector;
                 cand.tof_time = scintillator.time;
                 cand.tof_path = scintillator.path;
@@ -717,8 +714,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
             cand.beta_diff = timing.beta_diff;
 
             // Read calorimeter and trajectory banks for fiducial cuts
-            auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, pion.index());
-            auto traj = clas12::read_Traj_bank(REC_Traj, pion.index());
+            auto calo = clas12::read_Calorimeter_bank(event, pion.index());
+            auto traj = clas12::read_Traj_bank(event, pion.index());
 
             // Store PCAL fiducial variables and count NaN
             cand.pcal_lv = calo.pcal.lv;

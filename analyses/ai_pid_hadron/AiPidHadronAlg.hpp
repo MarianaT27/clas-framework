@@ -633,14 +633,11 @@ private:
 
     auto process_rich(clas12::framework::Event& event) -> clas12::framework::StatusCode {
         const auto& REC_Particle = event.get_bank("REC::Particle");
-        const auto& RICH_Particle = event.get_bank("RICH::Particle");
-        const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
-        const auto& REC_CaloExtras = event.get_bank("REC::CaloExtras");
-        const auto& REC_Cherenkov = event.get_bank("REC::Cherenkov");
-        const auto& REC_Scintillator = event.get_bank("REC::Scintillator");
-        const auto& REC_ScintExtras = event.get_bank("REC::ScintExtras");
+        // Every detector bank below is accessed via the per-event
+        // generated-wrapper cache through the read_*_bank helpers; no
+        // local hipo::bank_view handles are needed here.
 
-        if (RICH_Particle.rows() == 0) {
+        if (event.get_bank("RICH::Particle").rows() == 0) {
             return clas12::framework::StatusCode::FILTERED();
         }
 
@@ -662,7 +659,7 @@ private:
 
                 if (cf) cf->pass("RICH hadrons");
 
-                auto rich = clas12::read_RICHParticle_bank(RICH_Particle, particle.index());
+                auto rich = clas12::read_RICHParticle_bank(event, particle.index());
 
                 // Determine histogram set based on RICH best_PID
                 int best_pid = rich.best_PID;
@@ -686,7 +683,7 @@ private:
                 }
 
                 // Determine particle sector from scintillator
-                auto ftof = clas12::read_Scintillator_bank(REC_Scintillator, REC_ScintExtras, particle.index());
+                auto ftof = clas12::read_Scintillator_bank_with_extras(event, particle.index());
                 int sector = ftof.sector;
 
                 // Sector 1: track agreement and fill comparison histograms
@@ -722,9 +719,9 @@ private:
 
                 // Fill TTree
                 if (m_ntuple) {
-                    auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, REC_CaloExtras, particle.index());
-                    auto htcc = clas12::read_Cherenkov_bank(REC_Cherenkov, particle.index());
-                    auto ftof = clas12::read_Scintillator_bank(REC_Scintillator, REC_ScintExtras, particle.index());
+                    auto calo = clas12::read_Calorimeter_bank_with_extras(event, particle.index());
+                    auto htcc = clas12::read_Cherenkov_bank(event, particle.index());
+                    auto ftof = clas12::read_Scintillator_bank_with_extras(event, particle.index());
 
                     populate_particle_data(particle, rich);
                     populate_calorimeter_data(calo);
@@ -752,13 +749,11 @@ private:
         m_cutflow_exclusive.pass("Has good electron");
         m_cutflow_exclusive.pass("Passes DIS cuts");
 
-        // 2. Extract hadrons from REC::Particle
+        // 2. Extract hadrons from REC::Particle. Detector banks are read
+        // through the per-event generated-wrapper cache inside the
+        // fill_exclusive_ntuple helper, so no local bank-view handles
+        // are needed here.
         const auto& REC_Particle = event.get_bank("REC::Particle");
-        const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
-        const auto& REC_CaloExtras = event.get_bank("REC::CaloExtras");
-        const auto& REC_Cherenkov = event.get_bank("REC::Cherenkov");
-        const auto& REC_Scintillator = event.get_bank("REC::Scintillator");
-        const auto& REC_ScintExtras = event.get_bank("REC::ScintExtras");
 
         auto particles = m_particle->extract_particles(
             REC_Particle,
@@ -866,12 +861,8 @@ private:
 
                     // Fill NTuple for pi+ (true PID = 211) and pi- (true PID = -211)
                     if (m_ntuple) {
-                        fill_exclusive_ntuple(pip, static_cast<int>(clas12::PIDs::PIPLUS), excl,
-                                              REC_Calorimeter, REC_CaloExtras,
-                                              REC_Cherenkov, REC_Scintillator, REC_ScintExtras);
-                        fill_exclusive_ntuple(pim, static_cast<int>(clas12::PIDs::PIMINUS), excl,
-                                              REC_Calorimeter, REC_CaloExtras,
-                                              REC_Cherenkov, REC_Scintillator, REC_ScintExtras);
+                        fill_exclusive_ntuple(event, pip, static_cast<int>(clas12::PIDs::PIPLUS), excl);
+                        fill_exclusive_ntuple(event, pim, static_cast<int>(clas12::PIDs::PIMINUS), excl);
                     }
 
                     // Count exclusive PIDs
@@ -941,12 +932,8 @@ private:
                     if (h_exclusive.kminus_theta) h_exclusive.kminus_theta->fill(km.theta());
 
                     if (m_ntuple) {
-                        fill_exclusive_ntuple(kp, static_cast<int>(clas12::PIDs::KPLUS), excl,
-                                              REC_Calorimeter, REC_CaloExtras,
-                                              REC_Cherenkov, REC_Scintillator, REC_ScintExtras);
-                        fill_exclusive_ntuple(km, static_cast<int>(clas12::PIDs::KMINUS), excl,
-                                              REC_Calorimeter, REC_CaloExtras,
-                                              REC_Cherenkov, REC_Scintillator, REC_ScintExtras);
+                        fill_exclusive_ntuple(event, kp, static_cast<int>(clas12::PIDs::KPLUS), excl);
+                        fill_exclusive_ntuple(event, km, static_cast<int>(clas12::PIDs::KMINUS), excl);
                     }
 
                     {
@@ -1039,14 +1026,12 @@ private:
         d.charge       = particle.charge();
     }
 
-    void fill_exclusive_ntuple(const clas12::Particle& hadron, int true_pid,
-                               const ExclusivityVars& excl,
-                               const hipo::bank_view& REC_Calorimeter, const hipo::bank_view& REC_CaloExtras,
-                               const hipo::bank_view& REC_Cherenkov, const hipo::bank_view& REC_Scintillator,
-                               const hipo::bank_view& REC_ScintExtras) {
-        auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, REC_CaloExtras, hadron.index());
-        auto htcc = clas12::read_Cherenkov_bank(REC_Cherenkov, hadron.index());
-        auto ftof = clas12::read_Scintillator_bank(REC_Scintillator, REC_ScintExtras, hadron.index());
+    void fill_exclusive_ntuple(clas12::framework::Event& event,
+                               const clas12::Particle& hadron, int true_pid,
+                               const ExclusivityVars& excl) {
+        auto calo = clas12::read_Calorimeter_bank_with_extras(event, hadron.index());
+        auto htcc = clas12::read_Cherenkov_bank(event, hadron.index());
+        auto ftof = clas12::read_Scintillator_bank_with_extras(event, hadron.index());
 
         auto& d = m_ntuple.data();
         d.rich_pid       = 0;

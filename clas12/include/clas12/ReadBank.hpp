@@ -4,25 +4,24 @@
  * @file ReadBank.hpp
  * @brief Physics-view bank readers for CLAS12 detector data.
  *
- * This header keeps the denormalized physics-view struct types
- * (CalorimeterBank with pcal/inner/outer, DCTrajBank with
- * region1/region2/region3, etc.) as a thin ergonomic layer on top of the
- * generated bank wrappers in clas12::bankdefs.
+ * Every read_*_bank function takes a clas12::framework::Event& and goes
+ * through the per-event generated-wrapper cache:
  *
- * Every read_*_bank function runs through:
+ *   event.bank<clas12::bankdefs::REC_Calorimeter>()     // bind + cache
+ *   event.rows_for_pindex<clas12::bankdefs::REC_Calorimeter>(pindex)
  *
- *   1. A generated wrapper that resolves all field handles in a single
- *      call to bind(), so per-field access is zero-string-lookup.
- *   2. framework::PindexLinker for the pindex -> rows lookup, which uses a
- *      flat prefix-sum reverse index built in one typed-span pass over
- *      the link column (no per-row dispatch, no std::map allocation).
+ * The first call per bank per event binds the generated wrapper and
+ * builds a PindexLinker; subsequent calls on the same bank type reuse
+ * both. For a selection pipeline that reads the same calorimeter bank
+ * N times per event, N-1 of those reads cost nothing beyond a hash
+ * lookup.
  *
- * Call sites do not need to change: the CalorimeterBank /
- * DCTrajBank / ScintillatorBank / TrackBank / CherenkovBank /
- * RICHParticleBank structs are unchanged.
+ * The denormalized physics-view struct types (CalorimeterBank with
+ * pcal/inner/outer, DCTrajBank with region1/region2/region3, etc.) are
+ * preserved unchanged as return values - consumer algorithms depend on
+ * that layout.
  */
 
-#include <bank_view.h>
 #include <clas12/Banks.hpp>
 #include <clas12/Detectors.hpp>
 
@@ -37,62 +36,12 @@
 #include <clas12/bankdefs/MC_GenMatch.hpp>
 #include <clas12/bankdefs/MC_RecMatch.hpp>
 
-#include <clas12/framework/core/PindexLinker.hpp>
+#include <clas12/framework/core/Event.hpp>
 
 #include <cstdint>
-#include <map>
 #include <span>
-#include <string>
-#include <vector>
 
 namespace clas12 {
-
-// =============================================================================
-// Index Mapping Utility (legacy shape)
-// =============================================================================
-
-/**
- * @brief Build a map from link-column value to bank row indices.
- *
- * Compatibility shim: returns the legacy std::map<int, std::vector<int>>
- * shape but internally delegates to framework::PindexLinker so the column
- * read still goes through visit_column in a single typed pass.
- *
- * For new code, prefer PindexLinker directly - it avoids the per-lookup
- * std::vector allocation.
- */
-inline auto build_index_map(const hipo::bank_view& bank, const char* index_column)
-    -> std::map<int, std::vector<int>> {
-    std::map<int, std::vector<int>> result;
-    if (!bank.valid() || bank.rows() == 0) return result;
-
-    auto h = bank.get_schema().get_handle(index_column);
-    if (!h) return result;
-
-    clas12::framework::PindexLinker linker;
-    linker.build(bank, *h);
-
-    // Mirror the linker's dense buckets back into the map-shaped legacy
-    // output. Callers that actually walk rows_for(key) via the linker
-    // path should use PindexLinker directly instead of this shim.
-    bank.visit_column(*h, [&](auto col) {
-        const int n_rows = bank.rows();
-        for (int row = 0; row < n_rows; ++row) {
-            const int key = static_cast<int>(col[row]);
-            auto& vec = result[key];
-            if (vec.empty()) vec.reserve(8);
-            vec.push_back(row);
-        }
-    });
-
-    return result;
-}
-
-/// @deprecated Use build_index_map or PindexLinker instead.
-inline auto load_bank_by_index(const hipo::bank_view& bank, const std::string& idx)
-    -> std::map<int, std::vector<int>> {
-    return build_index_map(bank, idx.c_str());
-}
 
 // =============================================================================
 // Cherenkov Bank Reader
@@ -103,15 +52,12 @@ inline auto load_bank_by_index(const hipo::bank_view& bank, const std::string& i
  *
  * Prioritizes the HTCC detector response.
  */
-inline auto read_Cherenkov_bank(const hipo::bank_view& bank, int pindex) -> CherenkovBank {
+inline auto read_Cherenkov_bank(clas12::framework::Event& event, int pindex) -> CherenkovBank {
     CherenkovBank result;
-    if (!bank.valid() || bank.rows() == 0) return result;
+    auto& cher = event.bank<clas12::bankdefs::REC_Cherenkov>();
+    if (!cher.valid()) return result;
 
-    clas12::bankdefs::REC_Cherenkov cher;
-    if (!cher.bind(bank)) return result;
-
-    auto link = clas12::framework::link_by_pindex(cher);
-    for (int row : link.rows_for(pindex)) {
+    for (int row : event.rows_for_pindex<clas12::bankdefs::REC_Cherenkov>(pindex)) {
         if (cher.detector(row) != HTCC) continue;
 
         result.sector = cher.sector(row);
@@ -201,15 +147,12 @@ inline auto calo_target(CalorimeterBank& result, int layer)
 /**
  * @brief Extract calorimeter data for a particle (PCAL / ECin / ECout).
  */
-inline auto read_Calorimeter_bank(const hipo::bank_view& bank, int pindex) -> CalorimeterBank {
+inline auto read_Calorimeter_bank(clas12::framework::Event& event, int pindex) -> CalorimeterBank {
     CalorimeterBank result;
-    if (!bank.valid() || bank.rows() == 0) return result;
+    auto& calo = event.bank<clas12::bankdefs::REC_Calorimeter>();
+    if (!calo.valid()) return result;
 
-    clas12::bankdefs::REC_Calorimeter calo;
-    if (!calo.bind(bank)) return result;
-
-    auto link = clas12::framework::link_by_pindex(calo);
-    for (int row : link.rows_for(pindex)) {
+    for (int row : event.rows_for_pindex<clas12::bankdefs::REC_Calorimeter>(pindex)) {
         if (calo.detector(row) != ECAL) continue;
 
         auto* target = detail::calo_target(result, calo.layer(row));
@@ -222,21 +165,18 @@ inline auto read_Calorimeter_bank(const hipo::bank_view& bank, int pindex) -> Ca
 
 /**
  * @brief Extract calorimeter data with extended fields from REC::CaloExtras.
+ *
+ * The REC::CaloExtras bank has a 1:1 row mapping with REC::Calorimeter so
+ * the same row index from the linker is used for both.
  */
-inline auto read_Calorimeter_bank(const hipo::bank_view& bank,
-                                  const hipo::bank_view& extra_bank,
-                                  int pindex) -> CalorimeterBank {
+inline auto read_Calorimeter_bank_with_extras(clas12::framework::Event& event, int pindex) -> CalorimeterBank {
     CalorimeterBank result;
-    if (!bank.valid() || bank.rows() == 0) return result;
+    auto& calo   = event.bank<clas12::bankdefs::REC_Calorimeter>();
+    auto& extras = event.bank<clas12::bankdefs::REC_CaloExtras>();
+    if (!calo.valid()) return result;
+    const bool has_extras = extras.valid();
 
-    clas12::bankdefs::REC_Calorimeter calo;
-    if (!calo.bind(bank)) return result;
-
-    clas12::bankdefs::REC_CaloExtras extras;
-    const bool has_extras = extra_bank.valid() && extras.bind(extra_bank);
-
-    auto link = clas12::framework::link_by_pindex(calo);
-    for (int row : link.rows_for(pindex)) {
+    for (int row : event.rows_for_pindex<clas12::bankdefs::REC_Calorimeter>(pindex)) {
         if (calo.detector(row) != ECAL) continue;
 
         auto* target = detail::calo_target(result, calo.layer(row));
@@ -258,15 +198,12 @@ inline auto read_Calorimeter_bank(const hipo::bank_view& bank,
 /**
  * @brief Extract drift chamber track data for a particle (first DC match).
  */
-inline auto read_Track_bank(const hipo::bank_view& bank, int pindex) -> TrackBank {
+inline auto read_Track_bank(clas12::framework::Event& event, int pindex) -> TrackBank {
     TrackBank result;
-    if (!bank.valid() || bank.rows() == 0) return result;
+    auto& track = event.bank<clas12::bankdefs::REC_Track>();
+    if (!track.valid()) return result;
 
-    clas12::bankdefs::REC_Track track;
-    if (!track.bind(bank)) return result;
-
-    auto link = clas12::framework::link_by_pindex(track);
-    for (int row : link.rows_for(pindex)) {
+    for (int row : event.rows_for_pindex<clas12::bankdefs::REC_Track>(pindex)) {
         if (track.detector(row) != DC) continue;
 
         result.index    = track.index(row);
@@ -310,15 +247,12 @@ inline auto fill_traj(TrajBank& out, const clas12::bankdefs::REC_Traj& traj, int
 /**
  * @brief Extract DC trajectory data for a particle (region1/region2/region3).
  */
-inline auto read_Traj_bank(const hipo::bank_view& bank, int pindex) -> DCTrajBank {
+inline auto read_Traj_bank(clas12::framework::Event& event, int pindex) -> DCTrajBank {
     DCTrajBank result;
-    if (!bank.valid() || bank.rows() == 0) return result;
+    auto& traj = event.bank<clas12::bankdefs::REC_Traj>();
+    if (!traj.valid()) return result;
 
-    clas12::bankdefs::REC_Traj traj;
-    if (!traj.bind(bank)) return result;
-
-    auto link = clas12::framework::link_by_pindex(traj);
-    for (int row : link.rows_for(pindex)) {
+    for (int row : event.rows_for_pindex<clas12::bankdefs::REC_Traj>(pindex)) {
         if (traj.detector(row) != DC) continue;
 
         switch (traj.layer(row)) {
@@ -386,15 +320,13 @@ inline auto select_best_ftof(const clas12::bankdefs::REC_Scintillator& scint,
  *
  * Prioritizes FTOF layers in order: FTOF1B > FTOF1A > FTOF2.
  */
-inline auto read_Scintillator_bank(const hipo::bank_view& bank, int pindex) -> ScintillatorBank {
+inline auto read_Scintillator_bank(clas12::framework::Event& event, int pindex) -> ScintillatorBank {
     ScintillatorBank result;
-    if (!bank.valid() || bank.rows() == 0) return result;
+    auto& scint = event.bank<clas12::bankdefs::REC_Scintillator>();
+    if (!scint.valid()) return result;
 
-    clas12::bankdefs::REC_Scintillator scint;
-    if (!scint.bind(bank)) return result;
-
-    auto link = clas12::framework::link_by_pindex(scint);
-    const int best_row = detail::select_best_ftof(scint, link.rows_for(pindex));
+    const int best_row = detail::select_best_ftof(
+        scint, event.rows_for_pindex<clas12::bankdefs::REC_Scintillator>(pindex));
     if (best_row < 0) return result;
 
     detail::fill_scint_base(result, scint, best_row);
@@ -404,20 +336,15 @@ inline auto read_Scintillator_bank(const hipo::bank_view& bank, int pindex) -> S
 /**
  * @brief Extract FTOF scintillator data with extended fields from REC::ScintExtras.
  */
-inline auto read_Scintillator_bank(const hipo::bank_view& bank,
-                                   const hipo::bank_view& extra_bank,
-                                   int pindex) -> ScintillatorBank {
+inline auto read_Scintillator_bank_with_extras(clas12::framework::Event& event, int pindex) -> ScintillatorBank {
     ScintillatorBank result;
-    if (!bank.valid() || bank.rows() == 0) return result;
+    auto& scint  = event.bank<clas12::bankdefs::REC_Scintillator>();
+    auto& extras = event.bank<clas12::bankdefs::REC_ScintExtras>();
+    if (!scint.valid()) return result;
+    const bool has_extras = extras.valid();
 
-    clas12::bankdefs::REC_Scintillator scint;
-    if (!scint.bind(bank)) return result;
-
-    clas12::bankdefs::REC_ScintExtras extras;
-    const bool has_extras = extra_bank.valid() && extras.bind(extra_bank);
-
-    auto link = clas12::framework::link_by_pindex(scint);
-    const int best_row = detail::select_best_ftof(scint, link.rows_for(pindex));
+    const int best_row = detail::select_best_ftof(
+        scint, event.rows_for_pindex<clas12::bankdefs::REC_Scintillator>(pindex));
     if (best_row < 0) return result;
 
     detail::fill_scint_base(result, scint, best_row);
@@ -437,19 +364,14 @@ inline auto read_Scintillator_bank(const hipo::bank_view& bank,
 /**
  * @brief Extract RICH particle data for a given REC::Particle index.
  */
-inline auto read_RICHParticle_bank(const hipo::bank_view& bank, int pindex) -> RICHParticleBank {
+inline auto read_RICHParticle_bank(clas12::framework::Event& event, int pindex) -> RICHParticleBank {
     RICHParticleBank result;
-    if (!bank.valid() || bank.rows() == 0) return result;
+    auto& rich = event.bank<clas12::bankdefs::RICH_Particle>();
+    if (!rich.valid()) return result;
 
-    clas12::bankdefs::RICH_Particle rich;
-    if (!rich.bind(bank)) return result;
-
-    // RICH::Particle is small (one row per matched particle) and rows are
-    // sorted by pindex, so a linear scan is faster than building a linker.
-    const int n_rows = rich.rows();
-    for (int row = 0; row < n_rows; ++row) {
-        if (rich.pindex(row) != pindex) continue;
-
+    // RICH::Particle exposes a pindex handle; use the cached linker to
+    // skip straight to the matched rows instead of a linear scan.
+    for (int row : event.rows_for_pindex<clas12::bankdefs::RICH_Particle>(pindex)) {
         result.id       = rich.id(row);
         result.hindex   = rich.hindex(row);
         result.pindex   = pindex;
@@ -487,20 +409,14 @@ inline auto read_RICHParticle_bank(const hipo::bank_view& bank, int pindex) -> R
 /**
  * @brief Find MC particle index matching a reconstructed particle.
  */
-inline auto get_mc_particle_index(const hipo::bank_view& bank, int rec_pindex,
+inline auto get_mc_particle_index(clas12::framework::Event& event, int rec_pindex,
                                   float min_quality = 0.92f) -> int {
-    if (!bank.valid() || bank.rows() == 0) return -1;
+    auto& match = event.bank<clas12::bankdefs::MC_RecMatch>();
+    if (!match.valid()) return -1;
 
-    clas12::bankdefs::MC_RecMatch match;
-    if (!match.bind(bank)) return -1;
-
-    const int n_rows = match.rows();
-    for (int row = 0; row < n_rows; ++row) {
-        if (match.pindex(row) != rec_pindex) continue;
-
+    for (int row : event.rows_for_pindex<clas12::bankdefs::MC_RecMatch>(rec_pindex)) {
         const int mc_index = match.mcindex(row);
         const float quality = match.quality(row);
-
         if (quality >= min_quality && mc_index >= 0) return mc_index;
         break;  // pindex is unique.
     }
@@ -510,13 +426,15 @@ inline auto get_mc_particle_index(const hipo::bank_view& bank, int rec_pindex,
 
 /**
  * @brief Find reconstructed particle index matching an MC particle.
+ *
+ * Note: MC::GenMatch is keyed by mcindex rather than pindex, so we cannot
+ * use the Event::rows_for_pindex<T> cache here. A linear scan is used
+ * instead; the bank is small (one row per matched particle).
  */
-inline auto get_rec_particle_index(const hipo::bank_view& bank, int mc_index,
+inline auto get_rec_particle_index(clas12::framework::Event& event, int mc_index,
                                    float min_quality = 0.92f) -> int {
-    if (!bank.valid() || bank.rows() == 0) return -1;
-
-    clas12::bankdefs::MC_GenMatch match;
-    if (!match.bind(bank)) return -1;
+    auto& match = event.bank<clas12::bankdefs::MC_GenMatch>();
+    if (!match.valid()) return -1;
 
     const int n_rows = match.rows();
     for (int row = 0; row < n_rows; ++row) {
@@ -524,7 +442,6 @@ inline auto get_rec_particle_index(const hipo::bank_view& bank, int mc_index,
 
         const int pindex = match.pindex(row);
         const float quality = match.quality(row);
-
         if (quality >= min_quality && pindex >= 0) return pindex;
         break;  // mcindex is unique.
     }

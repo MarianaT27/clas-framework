@@ -102,10 +102,6 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         clas12::bankdefs::REC_Event rec_event;
         rec_event.bind(event.get_bank("REC::Event"));
         const auto& REC_Particle = event.get_bank("REC::Particle");
-        const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
-        const auto& REC_Traj = event.get_bank("REC::Traj");
-        const auto& REC_Track = event.get_bank("REC::Track");
-        const auto& REC_Scintillator = event.get_bank("REC::Scintillator");
 
         if (rec_event.rows() == 0) {
             return clas12::framework::StatusCode::FILTERED();
@@ -120,12 +116,12 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
 
         // Process π⁺
         for (const auto& pion : m_particle->get_pions_plus(particles)) {
-            process_pion(pion, REC_Calorimeter, REC_Traj, REC_Track, REC_Scintillator, start_time, electron_vz, true);
+            process_pion(event, pion, start_time, electron_vz, true);
         }
 
         // Process π⁻
         for (const auto& pion : m_particle->get_pions_minus(particles)) {
-            process_pion(pion, REC_Calorimeter, REC_Traj, REC_Track, REC_Scintillator, start_time, electron_vz, false);
+            process_pion(event, pion, start_time, electron_vz, false);
         }
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -329,15 +325,16 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         h.sector_histograms.booked = true;
     }
 
-    void process_pion(const clas12::Particle& pion, const hipo::bank_view& REC_Calorimeter, const hipo::bank_view& REC_Traj, const hipo::bank_view& REC_Track,
-                      const hipo::bank_view& REC_Scintillator, double start_time, double electron_vz, bool is_piplus) {
+    void process_pion(clas12::framework::Event& event, const clas12::Particle& pion,
+                      double start_time, double electron_vz, bool is_piplus) {
         auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
         auto& h = is_piplus ? h_piplus : h_piminus;
 
-        // Read bank data needed for cuts and pre-cut histograms
-        auto track = clas12::read_Track_bank(REC_Track, pion.index());
-        auto traj = clas12::read_Traj_bank(REC_Traj, pion.index());
-        auto calo = clas12::read_Calorimeter_bank(REC_Calorimeter, pion.index());
+        // Read bank data needed for cuts and pre-cut histograms. Every
+        // read_*_bank call reuses the per-event generated-wrapper cache.
+        auto track = clas12::read_Track_bank(event, pion.index());
+        auto traj  = clas12::read_Traj_bank(event, pion.index());
+        auto calo  = clas12::read_Calorimeter_bank(event, pion.index());
 
         double chi2ndf = (track.ndf > 0) ? track.chi2 / track.ndf : 0.0;
         double edge_r1 = traj.region1.edge;
@@ -367,11 +364,11 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         double lw = calo.pcal.lw;
 
         // Cherenkov nphe (if available)
-        auto cherenkov = clas12::read_Cherenkov_bank(REC_Calorimeter, pion.index());
+        auto cherenkov = clas12::read_Cherenkov_bank(event, pion.index());
         double nphe = cherenkov.nphe;
 
         // Read scintillator info for timing
-        auto scintillator = clas12::read_Scintillator_bank(REC_Scintillator, pion.index());
+        auto scintillator = clas12::read_Scintillator_bank(event, pion.index());
         int sector = scintillator.sector;
         double tof_time = scintillator.time;
         double tof_path = scintillator.path;

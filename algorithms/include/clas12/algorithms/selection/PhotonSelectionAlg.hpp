@@ -109,7 +109,7 @@ class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm {
         // Step 2: PCAL fiducial + beta cuts
         std::vector<clas12::Particle> selected;
         for (const auto& photon : candidates) {
-            clas12::CalorimeterBank calo = clas12::read_Calorimeter_bank(REC_Calorimeter, photon.index());
+            clas12::CalorimeterBank calo = clas12::read_Calorimeter_bank(event, photon.index());
             if (!clas12::framework::PhotonCutsService::pass_pcal_fiducial_cut(calo.pcal.lv, calo.pcal.lw)) continue;
             m_cutflow.pass("PCAL Fiducial");
 

@@ -4,17 +4,12 @@
 #include <clas12/Banks.hpp>
 #include <clas12/Detectors.hpp>
 #include <clas12/Particle.hpp>
+#include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
-#include <clas12/bankdefs/REC_Calorimeter.hpp>
-#include <clas12/bankdefs/REC_Cherenkov.hpp>
 #include <clas12/bankdefs/REC_Event.hpp>
-#include <clas12/bankdefs/REC_Scintillator.hpp>
-#include <clas12/bankdefs/REC_Track.hpp>
-#include <clas12/bankdefs/REC_Traj.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/PindexLinker.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/ConditionsService.hpp>
@@ -155,17 +150,6 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
 
         const double event_start_time = rec_event.startTime(0);
 
-        // Bind every detector bank once and build the pindex linkers in a
-        // single pass. All subsequent reads inside process_tracks() and
-        // build_candidate() reuse these bindings; there is no rebinding or
-        // index-map rebuild per particle.
-        BanksCtx ctx;
-        ctx.bind(event.get_bank("REC::Calorimeter"),
-                 event.get_bank("REC::Cherenkov"),
-                 event.get_bank("REC::Scintillator"),
-                 event.get_bank("REC::Traj"),
-                 event.get_bank("REC::Track"));
-
         // Extract particles
         clas12::framework::ParticleMap particles = m_particle->extract_particles(REC_Particle, {clas12::PIDs::ELECTRON});
 
@@ -173,7 +157,7 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         std::vector<clas12::Particle> neg_tracks = charged_tracks[-1];
 
         // Process tracks and fill histograms
-        process_tracks(neg_tracks, h_neg_tracks, ctx, event_start_time);
+        process_tracks(neg_tracks, h_neg_tracks, event, event_start_time);
 
         const auto& electrons = m_particle->get_electrons(particles);
         if (electrons.empty()) return clas12::framework::StatusCode::SUCCESS();
@@ -184,9 +168,9 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         m_cutflow.pass("Trigger Electron");
 
         // Build electron candidate with all detector information
-        auto candidate = build_candidate(trigger_e.value(), ctx);
+        auto candidate = build_candidate(trigger_e.value(), event);
 
-        process_tracks({candidate.particle}, h_electron_tracks, ctx, event_start_time);
+        process_tracks({candidate.particle}, h_electron_tracks, event, event_start_time);
 
         // Apply cuts using the candidate
         const auto& electron = candidate.particle;
@@ -291,198 +275,17 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         }
     };
 
-    /**
-     * @brief Per-event bundle of bound bank wrappers and pindex linkers.
-     *
-     * Binding a generated wrapper resolves every field handle in one pass,
-     * and building a PindexLinker reads the pindex column once into a flat
-     * prefix-sum reverse index. Doing both once per event (rather than once
-     * per particle, as read_*_bank did) is the whole point of this struct.
-     */
-    struct BanksCtx {
-        clas12::bankdefs::REC_Calorimeter calo;
-        clas12::bankdefs::REC_Cherenkov   cher;
-        clas12::bankdefs::REC_Scintillator scint;
-        clas12::bankdefs::REC_Traj        traj;
-        clas12::bankdefs::REC_Track       track;
-
-        clas12::framework::PindexLinker calo_by_p;
-        clas12::framework::PindexLinker cher_by_p;
-        clas12::framework::PindexLinker scint_by_p;
-        clas12::framework::PindexLinker traj_by_p;
-        clas12::framework::PindexLinker track_by_p;
-
-        auto bind(const hipo::bank_view& rc, const hipo::bank_view& rch,
-                  const hipo::bank_view& rs, const hipo::bank_view& rt,
-                  const hipo::bank_view& rtrk) -> void {
-            calo.bind(rc);
-            cher.bind(rch);
-            scint.bind(rs);
-            traj.bind(rt);
-            track.bind(rtrk);
-            if (calo.valid())  calo_by_p  = clas12::framework::link_by_pindex(calo);
-            if (cher.valid())  cher_by_p  = clas12::framework::link_by_pindex(cher);
-            if (scint.valid()) scint_by_p = clas12::framework::link_by_pindex(scint);
-            if (traj.valid())  traj_by_p  = clas12::framework::link_by_pindex(traj);
-            if (track.valid()) track_by_p = clas12::framework::link_by_pindex(track);
-        }
-    };
-
-    /// Fill the base fields of a calorimeter sub-structure from a REC_Calorimeter row.
-    static auto fill_calo_row(clas12::CalorimeterBank::CalorimeterStruct& out,
-                              const clas12::bankdefs::REC_Calorimeter& calo, int row) -> void {
-        out.sector = calo.sector(row);
-        out.layer  = calo.layer(row);
-        out.energy = calo.energy(row);
-        out.time   = calo.time(row);
-        out.path   = calo.path(row);
-        out.chi2   = calo.chi2(row);
-        out.x      = calo.x(row);
-        out.y      = calo.y(row);
-        out.z      = calo.z(row);
-        out.lu     = calo.lu(row);
-        out.lv     = calo.lv(row);
-        out.lw     = calo.lw(row);
-    }
-
-    /// Assemble a CalorimeterBank (pcal/inner/outer) for one pindex.
-    [[nodiscard]] static auto read_calorimeter(const BanksCtx& ctx, int pindex) -> clas12::CalorimeterBank {
-        clas12::CalorimeterBank result;
-        if (!ctx.calo.valid()) return result;
-        for (int row : ctx.calo_by_p.rows_for(pindex)) {
-            if (ctx.calo.detector(row) != clas12::ECAL) continue;
-            switch (ctx.calo.layer(row)) {
-                case clas12::PCAL:  fill_calo_row(result.pcal,  ctx.calo, row); break;
-                case clas12::ECIN:  fill_calo_row(result.inner, ctx.calo, row); break;
-                case clas12::ECOUT: fill_calo_row(result.outer, ctx.calo, row); break;
-            }
-        }
-        return result;
-    }
-
-    /// Assemble a CherenkovBank (first HTCC hit) for one pindex.
-    [[nodiscard]] static auto read_cherenkov(const BanksCtx& ctx, int pindex) -> clas12::CherenkovBank {
-        clas12::CherenkovBank result;
-        if (!ctx.cher.valid()) return result;
-        for (int row : ctx.cher_by_p.rows_for(pindex)) {
-            if (ctx.cher.detector(row) != clas12::HTCC) continue;
-            result.sector = ctx.cher.sector(row);
-            result.nphe   = ctx.cher.nphe(row);
-            result.time   = ctx.cher.time(row);
-            result.path   = ctx.cher.path(row);
-            result.chi2   = ctx.cher.chi2(row);
-            result.x      = ctx.cher.x(row);
-            result.y      = ctx.cher.y(row);
-            result.z      = ctx.cher.z(row);
-            result.dtheta = ctx.cher.dtheta(row);
-            result.dphi   = ctx.cher.dphi(row);
-            result.status = ctx.cher.status(row);
-            break;
-        }
-        return result;
-    }
-
-    /// Assemble a ScintillatorBank by picking the best FTOF layer (1B > 1A > 2).
-    [[nodiscard]] static auto read_scintillator(const BanksCtx& ctx, int pindex) -> clas12::ScintillatorBank {
-        clas12::ScintillatorBank result;
-        if (!ctx.scint.valid()) return result;
-
-        int best_row = -1;
-        int best_layer = -1;
-        for (int row : ctx.scint_by_p.rows_for(pindex)) {
-            if (ctx.scint.detector(row) != clas12::FTOF) continue;
-            const int layer = ctx.scint.layer(row);
-            const bool is_better =
-                (layer == clas12::FTOF1B && best_layer != clas12::FTOF1B) ||
-                (layer == clas12::FTOF1A && best_layer != clas12::FTOF1B && best_layer != clas12::FTOF1A) ||
-                (layer == clas12::FTOF2  && best_row == -1);
-            if (is_better) {
-                best_row = row;
-                best_layer = layer;
-            }
-        }
-        if (best_row < 0) return result;
-
-        result.index     = ctx.scint.index(best_row);
-        result.pindex    = ctx.scint.pindex(best_row);
-        result.detector  = ctx.scint.detector(best_row);
-        result.sector    = ctx.scint.sector(best_row);
-        result.layer     = ctx.scint.layer(best_row);
-        result.component = ctx.scint.component(best_row);
-        result.energy    = ctx.scint.energy(best_row);
-        result.time      = ctx.scint.time(best_row);
-        result.path      = ctx.scint.path(best_row);
-        result.chi2      = ctx.scint.chi2(best_row);
-        result.x         = ctx.scint.x(best_row);
-        result.y         = ctx.scint.y(best_row);
-        result.z         = ctx.scint.z(best_row);
-        result.hx        = ctx.scint.hx(best_row);
-        result.hy        = ctx.scint.hy(best_row);
-        result.hz        = ctx.scint.hz(best_row);
-        result.status    = ctx.scint.status(best_row);
-        return result;
-    }
-
-    /// Fill a single TrajBank region from a REC_Traj row.
-    static auto fill_traj_row(clas12::TrajBank& out,
-                              const clas12::bankdefs::REC_Traj& traj, int row) -> void {
-        out.pindex   = traj.pindex(row);
-        out.index    = traj.index(row);
-        out.detector = traj.detector(row);
-        out.layer    = traj.layer(row);
-        out.x  = traj.x(row);
-        out.y  = traj.y(row);
-        out.z  = traj.z(row);
-        out.cx = traj.cx(row);
-        out.cy = traj.cy(row);
-        out.cz = traj.cz(row);
-        out.path = traj.path(row);
-        out.edge = traj.edge(row);
-    }
-
-    /// Assemble a DCTrajBank (region1/region2/region3) for one pindex.
-    [[nodiscard]] static auto read_traj(const BanksCtx& ctx, int pindex) -> clas12::DCTrajBank {
-        clas12::DCTrajBank result;
-        if (!ctx.traj.valid()) return result;
-        for (int row : ctx.traj_by_p.rows_for(pindex)) {
-            if (ctx.traj.detector(row) != clas12::DC) continue;
-            switch (ctx.traj.layer(row)) {
-                case clas12::DC1: fill_traj_row(result.region1, ctx.traj, row); break;
-                case clas12::DC3: fill_traj_row(result.region2, ctx.traj, row); break;
-                case clas12::DC6: fill_traj_row(result.region3, ctx.traj, row); break;
-            }
-        }
-        return result;
-    }
-
-    /// Assemble a TrackBank (first DC row) for one pindex.
-    [[nodiscard]] static auto read_track(const BanksCtx& ctx, int pindex) -> clas12::TrackBank {
-        clas12::TrackBank result;
-        if (!ctx.track.valid()) return result;
-        for (int row : ctx.track_by_p.rows_for(pindex)) {
-            if (ctx.track.detector(row) != clas12::DC) continue;
-            result.index    = ctx.track.index(row);
-            result.pindex   = ctx.track.pindex(row);
-            result.detector = ctx.track.detector(row);
-            result.sector   = ctx.track.sector(row);
-            result.status   = ctx.track.status(row);
-            result.q        = ctx.track.q(row);
-            result.chi2     = ctx.track.chi2(row);
-            result.ndf      = ctx.track.NDF(row);
-            result.hbindex  = ctx.track.hbindex(row);
-            break;
-        }
-        return result;
-    }
-
-    /// Build electron candidate with all detector information
+    /// Build electron candidate with all detector information. Every
+    /// read_*_bank call below reuses the per-event generated-wrapper
+    /// cache owned by Event, so binding and linker construction happen
+    /// exactly once per event, not per call.
     [[nodiscard]] auto build_candidate(const clas12::Particle& electron,
-                                        const BanksCtx& ctx) const -> ElectronCandidate {
+                                       clas12::framework::Event& event) const -> ElectronCandidate {
         ElectronCandidate candidate;
         candidate.particle    = electron;
-        candidate.calorimeter = read_calorimeter(ctx, electron.index());
-        candidate.trajectory  = read_traj(ctx, electron.index());
-        candidate.track       = read_track(ctx, electron.index());
+        candidate.calorimeter = clas12::read_Calorimeter_bank(event, electron.index());
+        candidate.trajectory  = clas12::read_Traj_bank(event, electron.index());
+        candidate.track       = clas12::read_Track_bank(event, electron.index());
         candidate.total_energy = candidate.calorimeter.pcal.energy +
                                  candidate.calorimeter.inner.energy +
                                  candidate.calorimeter.outer.energy;
@@ -946,15 +749,15 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
      * information and fills the corresponding per-sector histograms.
      */
     auto process_tracks(const std::vector<clas12::Particle>& tracks, TrackHistograms& histograms,
-                        const BanksCtx& ctx, [[maybe_unused]] double event_start_time) -> void {
+                        clas12::framework::Event& event, [[maybe_unused]] double event_start_time) -> void {
         for (const auto& track : tracks) {
-            clas12::CalorimeterBank calo      = read_calorimeter(ctx, track.index());
-            clas12::CherenkovBank   cherenkov = read_cherenkov(ctx, track.index());
-            [[maybe_unused]] clas12::ScintillatorBank scint = read_scintillator(ctx, track.index());
-            clas12::DCTrajBank      traj      = read_traj(ctx, track.index());
-            clas12::TrackBank       trk_r1    = read_track(ctx, traj.region1.index);
-            clas12::TrackBank       trk_r2    = read_track(ctx, traj.region2.index);
-            clas12::TrackBank       trk_r3    = read_track(ctx, traj.region3.index);
+            clas12::CalorimeterBank calo      = clas12::read_Calorimeter_bank(event, track.index());
+            clas12::CherenkovBank   cherenkov = clas12::read_Cherenkov_bank(event, track.index());
+            [[maybe_unused]] clas12::ScintillatorBank scint = clas12::read_Scintillator_bank(event, track.index());
+            clas12::DCTrajBank      traj      = clas12::read_Traj_bank(event, track.index());
+            clas12::TrackBank       trk_r1    = clas12::read_Track_bank(event, traj.region1.index);
+            clas12::TrackBank       trk_r2    = clas12::read_Track_bank(event, traj.region2.index);
+            clas12::TrackBank       trk_r3    = clas12::read_Track_bank(event, traj.region3.index);
 
             const int sector = calo.pcal.sector;
             if (sector < 1 || sector > 6) continue;

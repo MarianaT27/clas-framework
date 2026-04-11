@@ -214,11 +214,6 @@ public:
             return clas12::framework::StatusCode::FILTERED();
         }
 
-        // Get HIPO banks
-        const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
-        const auto& REC_Traj = event.get_bank("REC::Traj");
-        const auto& REC_Track = event.get_bank("REC::Track");
-
         // Select trigger electron (highest momentum in FD)
         const auto possible_electron =
             clas12::physics::ParticleUtils::find_trigger_electron(electrons, {clas12::FD, clas12::BD});
@@ -229,12 +224,14 @@ public:
         }
         const clas12::Particle& electron = possible_electron.value();
 
-        // Read detector bank data
-        const auto calorimeter = clas12::read_Calorimeter_bank(REC_Calorimeter, electron.index());
-        const auto traj = clas12::read_Traj_bank(REC_Traj, electron.index());
-        const auto trk_r1 = clas12::read_Track_bank(REC_Track, traj.region1.index);
-        const auto trk_r2 = clas12::read_Track_bank(REC_Track, traj.region2.index);
-        const auto trk_r3 = clas12::read_Track_bank(REC_Track, traj.region3.index);
+        // Read detector bank data. Every read_*_bank call below reuses the
+        // per-event generated-wrapper cache owned by Event, so the three
+        // read_Track_bank calls below share a single binding + linker.
+        const auto calorimeter = clas12::read_Calorimeter_bank(event, electron.index());
+        const auto traj = clas12::read_Traj_bank(event, electron.index());
+        const auto trk_r1 = clas12::read_Track_bank(event, traj.region1.index);
+        const auto trk_r2 = clas12::read_Track_bank(event, traj.region2.index);
+        const auto trk_r3 = clas12::read_Track_bank(event, traj.region3.index);
 
         // Calculate derived quantities
         const double E_total = calorimeter.pcal.energy + calorimeter.inner.energy + calorimeter.outer.energy;

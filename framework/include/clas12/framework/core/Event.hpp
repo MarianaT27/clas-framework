@@ -4,16 +4,21 @@
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/physics/ParticleUtils.hpp>
+#include <clas12/framework/core/PindexLinker.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 
+#include <any>
 #include <array>
 #include <functional>
 #include <map>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <typeindex>
+#include <unordered_map>
 #include <vector>
 
 namespace clas12::framework {
@@ -360,6 +365,68 @@ class Event {
         return m_typed_store;
     }
 
+    // ========================================================================
+    // Generated Bank Wrapper Cache
+    // ========================================================================
+    //
+    // bank<T>() and rows_for_pindex<T>() provide a per-event cache of
+    // bound generated wrappers (clas12::bankdefs::REC_Calorimeter, etc.)
+    // and their associated PindexLinker instances. The first call for a
+    // given bank type binds the wrapper from m_banks and builds the
+    // linker; subsequent calls reuse both.
+    //
+    // Event is freshly stack-constructed per HIPO record in Application,
+    // so the cache is implicitly per-event and never shared across
+    // worker threads. There is no invalidation logic because there is
+    // no state to carry over.
+
+    /**
+     * @brief Get a bound generated bank wrapper, caching on first use.
+     *
+     * The wrapper type T must be one of the classes generated under
+     * clas12::bankdefs (e.g. REC_Calorimeter). bind() is called with the
+     * hipo::bank_view looked up by T::bank_name on the first access, and
+     * the bound wrapper is stashed for subsequent calls.
+     *
+     * @tparam T Generated bank wrapper type.
+     * @return Reference to the bound wrapper.
+     */
+    template <typename T>
+    auto bank() -> T& {
+        auto& slot = m_bank_cache[std::type_index(typeid(T))];
+        if (!slot.wrapper.has_value()) {
+            T bound;
+            bound.bind(m_banks[std::string(T::bank_name)]);
+            slot.wrapper = std::move(bound);
+        }
+        return std::any_cast<T&>(slot.wrapper);
+    }
+
+    /**
+     * @brief Return the row indices of bank T whose pindex column matches
+     *        the given particle index.
+     *
+     * On the first call for a given bank type, binds the wrapper via
+     * bank<T>() and builds a PindexLinker from T::pindex_handle(). The
+     * linker is stashed alongside the wrapper and reused for subsequent
+     * calls - the whole pindex column is read via visit_column exactly
+     * once per event per bank.
+     *
+     * @tparam T Generated bank wrapper type with a pindex_handle() member.
+     * @param pindex Particle index to look up.
+     * @return Span over the row indices linked to that pindex (empty if none).
+     */
+    template <typename T>
+    auto rows_for_pindex(int pindex) -> std::span<const int> {
+        auto& bound = bank<T>();  // ensures wrapper is bound and cached
+        auto& slot = m_bank_cache[std::type_index(typeid(T))];
+        if (!slot.linker_built) {
+            slot.linker.build(bound.view(), bound.pindex_handle());
+            slot.linker_built = true;
+        }
+        return slot.linker.rows_for(pindex);
+    }
+
    private:
     hipo::bank_view_set& m_banks;
     ParticleMap m_particles;
@@ -368,6 +435,15 @@ class Event {
     long m_event_number = -1;
     int m_file_index = -1;
     TypedEventStore m_typed_store;
+
+    /// Per-event cache of bound generated wrappers and their pindex linkers.
+    /// The key is a std::type_index(typeid(T)) for the wrapper class.
+    struct BankCacheEntry {
+        std::any wrapper;              ///< Holds a concrete T by value.
+        PindexLinker linker;           ///< Lazily built on first rows_for_pindex<T>.
+        bool linker_built = false;
+    };
+    std::unordered_map<std::type_index, BankCacheEntry> m_bank_cache;
 
     /**
      * @brief Load particles from REC::Particle bank
