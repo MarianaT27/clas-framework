@@ -129,6 +129,17 @@ class IAlgorithm {
      * @return std::vector<std::string> Bank names (e.g., "REC::Particle")
      */
     [[nodiscard]] virtual auto required_banks() const -> std::vector<std::string> { return {}; }
+
+    /**
+     * @brief Get the list of HIPO bank names this algorithm would like if available
+     *
+     * Optional banks are included in event processing only if the file dictionary
+     * contains the schema. If a file does not expose the schema, the algorithm's
+     * has_bank() / get_bank() calls for that name fall through to empty results.
+     *
+     * @return std::vector<std::string> Bank names
+     */
+    [[nodiscard]] virtual auto optional_banks() const -> std::vector<std::string> { return {}; }
 };
 
 /**

@@ -224,11 +224,33 @@ protected:
     }
 
     /**
+     * @brief Declare a HIPO bank that this algorithm reads only if present
+     *
+     * Optional banks are included in event processing only if the input file's
+     * schema dictionary contains them. On files that do not, Event::has_bank()
+     * returns false and Event::get_bank() returns an empty view, so algorithms
+     * can share one source tree between MC and real-data runs.
+     *
+     * @param bank_name HIPO bank name (e.g., "MC::Particle")
+     */
+    void declare_optional_bank(std::string_view bank_name) {
+        m_optional_banks.emplace_back(bank_name);
+    }
+
+    /**
      * @brief Get the list of required HIPO banks
      * @return std::vector<std::string> Bank names declared via declare_bank()
      */
     [[nodiscard]] auto required_banks() const -> std::vector<std::string> override {
         return m_required_banks;
+    }
+
+    /**
+     * @brief Get the list of optional HIPO banks
+     * @return std::vector<std::string> Bank names declared via declare_optional_bank()
+     */
+    [[nodiscard]] auto optional_banks() const -> std::vector<std::string> override {
+        return m_optional_banks;
     }
 
     // ========================================================================
@@ -331,6 +353,7 @@ protected:
 
 private:
     std::vector<std::string> m_required_banks;
+    std::vector<std::string> m_optional_banks;
     std::vector<std::string> m_consumed_keys;
     std::vector<std::string> m_produced_keys;
 };

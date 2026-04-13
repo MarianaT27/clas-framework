@@ -144,11 +144,17 @@ class Event {
 
     /**
      * @brief Get a HIPO bank view by name
+     *
+     * Returns an empty bank_view (0 rows) if the bank was not declared by any
+     * algorithm — so optional banks remain safe to access unconditionally.
+     *
      * @param bank_name Name of the bank (e.g., "REC::Particle")
      * @return const hipo::bank_view& Reference to the bank view
      */
     auto get_bank(const std::string& bank_name) -> const hipo::bank_view& {
-        return m_banks[bank_name];
+        static const hipo::bank_view empty{};
+        auto r = m_banks.get(bank_name);
+        return r.has_value() ? r->get() : empty;
     }
 
     /**
@@ -184,7 +190,8 @@ class Event {
      * @return true if bank exists and has rows
      */
     auto has_bank(const std::string& bank_name) -> bool {
-        return m_banks[bank_name].rows() > 0;
+        auto r = m_banks.get(bank_name);
+        return r.has_value() && r->get().rows() > 0;
     }
 
     /**

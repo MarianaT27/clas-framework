@@ -168,11 +168,30 @@ class Application {
             return StatusCode::FAILURE();
         }
 
-        // Collect only the banks that algorithms actually need
+        // Collect only the banks that algorithms actually need, probing the
+        // chain's schema dictionary so we catch missing banks up-front instead
+        // of letting hipo::bank_view_set::bind() silently kill worker threads.
         std::set<std::string> unique_banks;
         for (auto& alg : m_algorithms) {
             for (auto& bank : alg->required_banks()) {
+                if (!chain.dict().contains(bank)) {
+                    Log::error("Application",
+                        "Required bank '{}' (algorithm '{}') not found in input dictionary",
+                        bank, alg->name());
+                    return StatusCode::FAILURE();
+                }
                 unique_banks.insert(bank);
+            }
+        }
+        for (auto& alg : m_algorithms) {
+            for (auto& bank : alg->optional_banks()) {
+                if (chain.dict().contains(bank)) {
+                    unique_banks.insert(bank);
+                } else {
+                    Log::warning("Application",
+                        "Optional bank '{}' not in input dictionary; algorithm '{}' will see 0 rows",
+                        bank, alg->name());
+                }
             }
         }
         // Always include REC::Particle as it's needed by the Event class
