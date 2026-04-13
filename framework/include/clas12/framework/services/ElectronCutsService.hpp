@@ -266,7 +266,7 @@ class ElectronCutsService : public Service {
              {clas12::Target::Cu, {-10.6, -6.5}},
              {clas12::Target::Sn, {-5.5, 5.0}},
              {clas12::Target::CuSn, {-10.6, 5.0}},
-            {clas12::Target::Custom, {-12.0, 50.0}}}};  // Custom target uses wide default cuts
+            {clas12::Target::Custom, {-12.0, 5.0}}}};  // Custom target uses wide default cuts
 
         // For now, all run groups use RG-D cuts
         // This can be extended when cuts for other run groups are defined
