@@ -260,12 +260,13 @@ class ElectronCutsService : public Service {
     [[nodiscard]] static auto get_vz_range(clas12::RunGroup /*run_group*/, clas12::Target target) -> VzRange {
         // RG-D cuts (default for now - other run groups use same cuts)
         // TODO: Add specific cuts for RG-A, RG-B, RG-C if they differ
-        static constexpr std::array<std::pair<clas12::Target, VzRange>, 5> RG_D_VZ_RANGES = {
+        static constexpr std::array<std::pair<clas12::Target, VzRange>, 6> RG_D_VZ_RANGES = {
             {{clas12::Target::LD2, {-15.0, 5.0}},
              {clas12::Target::CxC, {-10.6, 5.0}},
              {clas12::Target::Cu, {-10.6, -6.5}},
              {clas12::Target::Sn, {-5.5, 5.0}},
-             {clas12::Target::CuSn, {-10.6, 5.0}}}};
+             {clas12::Target::CuSn, {-10.6, 5.0}},
+            {clas12::Target::Custom, {-12.0, 50.0}}}};  // Custom target uses wide default cuts
 
         // For now, all run groups use RG-D cuts
         // This can be extended when cuts for other run groups are defined

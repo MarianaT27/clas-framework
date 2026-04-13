@@ -11,6 +11,7 @@ enum class Target {
     CuSn,
     Cu,
     Sn,
+    Custom,  // For user-defined targets not in the standard list
 };
 
 inline auto to_string(Target target) -> std::string {
@@ -27,6 +28,8 @@ inline auto to_string(Target target) -> std::string {
             return "Cu";
         case Target::Sn:
             return "Sn";
+        case Target::Custom:
+            return "Custom";
     }
     return "Unknown";
 }
@@ -37,6 +40,7 @@ inline auto string_to_target(const std::string& str) -> Target {
     if (str == "CuSn") return Target::CuSn;
     if (str == "Cu") return Target::Cu;
     if (str == "Sn") return Target::Sn;
+    if (str == "Custom") return Target::Custom;
     return Target::Undefined;
 }
 

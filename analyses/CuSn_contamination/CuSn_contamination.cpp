@@ -17,7 +17,7 @@ auto main(int argc, char* argv[]) -> int {
             builder
                 .template add_service<clas12::framework::ElectronCutsService>()
                 .template add_service<clas12::framework::FiducialService>()
-                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::Target::LD2, config.polarity)
+                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::Target::Custom, config.polarity)
                 .template add_algorithm<CuSnContamination::CuSnContaminationAlg>("CuSnContaminationAlg");
         });
 }
