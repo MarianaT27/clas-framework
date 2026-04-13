@@ -181,7 +181,7 @@ class Event {
      */
     template <typename... Names>
     auto banks(Names&&... names) {
-        return std::make_tuple(std::cref(m_banks[std::forward<Names>(names)])...);
+        return std::make_tuple(std::cref(get_bank(std::forward<Names>(names)))...);
     }
 
     /**
@@ -402,7 +402,13 @@ class Event {
         auto& slot = m_bank_cache[std::type_index(typeid(T))];
         if (!slot.wrapper.has_value()) {
             T bound;
-            bound.bind(m_banks[std::string(T::bank_name)]);
+            // Generated readers (e.g. read_Calorimeter_bank) call bank<T>()
+            // for sibling banks that the algorithm did not declare. Use the
+            // checked accessor and fall back to an empty bank_view so the
+            // wrapper's valid()/rows() return false instead of asserting.
+            static const hipo::bank_view empty{};
+            auto r = m_banks.get(std::string(T::bank_name));
+            bound.bind(r.has_value() ? r->get() : empty);
             slot.wrapper = std::move(bound);
         }
         return std::any_cast<T&>(slot.wrapper);
