@@ -149,7 +149,7 @@ public:
                 const double rec_vz = electron_opt->vz();
                 if (-10.6 < rec_vz && rec_vz < -6.5) h_rec_vz_Cu->fill(rec_vz);
                 if ( -5.5 < rec_vz && rec_vz <  5.0) h_rec_vz_Sn->fill(rec_vz);
-                if (-10.6 < rec_vz && rec_vz <  5.0) h_rec_vz_CuSn->fill(rec_vz);
+                h_rec_vz_CuSn->fill(rec_vz);
             })
             // MC-gated target selection - only when MC truth is present.
             .tap([&] {
@@ -157,7 +157,7 @@ public:
                 const double rec_vz = electron_opt->vz();
                 if (-10.6 < mc_vz && mc_vz < -6.5) h_vz_Cu->fill(rec_vz);
                 if ( -5.5 < mc_vz && mc_vz <  5.0) h_vz_Sn->fill(rec_vz);
-                if (-10.6 < mc_vz && mc_vz <  5.0) h_vz_CuSn->fill(rec_vz);
+                h_vz_CuSn->fill(rec_vz);
             })
             .status();
     }
