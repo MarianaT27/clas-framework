@@ -881,6 +881,22 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
             rec_track_row = r.row_index();
             break;
         }
+
+        static std::atomic<int> debug_count{0};
+        const int dbg = debug_count.fetch_add(1, std::memory_order_relaxed);
+        if (dbg < 10) {
+            const auto& fmt_view = event.get_bank("FMT::Tracks");
+            auto& fmt_bank = event.bank<clas12::bankdefs::FMT_Tracks>();
+            Log::info(name(),
+                      "FMT debug ev={} fmt_view_rows={} fmt_wrapper_rows={} rec_track_row={} track.index={}",
+                      dbg, fmt_view.rows(), fmt_bank.rows(), rec_track_row, track.index);
+            for (int i = 0; i < fmt_bank.rows() && i < 5; ++i) {
+                Log::info(name(), "  FMT row {}: index={} sector={} p0=({:.2f},{:.2f},{:.2f}) vz={:.2f}",
+                          i, fmt_bank.index(i), fmt_bank.sector(i),
+                          fmt_bank.p0_x(i), fmt_bank.p0_y(i), fmt_bank.p0_z(i), fmt_bank.Vtx0_z(i));
+            }
+        }
+
         if (rec_track_row >= 0) {
             for (auto fmt : event.rows_for_index<clas12::bankdefs::FMT_Tracks>(rec_track_row)) {
                 const double fmt_px = fmt.p0_x();
