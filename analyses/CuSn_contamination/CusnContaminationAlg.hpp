@@ -123,26 +123,6 @@ public:
             // Require a reconstructed trigger electron; subsequent stages
             // need its kinematics.
             .filter("has electron", electron_opt.has_value())
-            // Reconstructed-data histograms (work for both MC and real data).
-            .tap([&] {
-                if (!m_enable_histograms || !h_rec_p) return;
-                const auto& rec = *electron_opt;
-                const double rec_vz    = rec.vz();
-                const double rec_theta = rec.theta();
-                const double rec_p     = rec.p();
-                h_rec_p->fill(rec_p);
-                h_rec_phi->fill(rec.phi());
-                h_rec_theta->fill(rec_theta);
-                h_rec_vz->fill(rec_vz);
-                h_rec_vz_vs_theta->fill(rec_theta, rec_vz);
-                h_rec_vz_vs_p->fill(rec_p, rec_vz);
-                for (int i = 0; i < N_P_BINS; ++i) {
-                    if (rec_p >= p_bin_edges[i] && rec_p < p_bin_edges[i + 1]) {
-                        h_rec_vz_vs_theta_pbin[i]->fill(rec_theta, rec_vz);
-                        break;
-                    }
-                }
-            })
             // RG-D target gating on rec_vz: Cu [-10.6, -6.5],
             // Sn [-5.5, 5.0], CuSn [-10.6, 5.0].
             .tap([&] {
@@ -194,11 +174,7 @@ private:
     clas12::framework::ThreadLocalHistogram1D* h_vz_Sn = nullptr;
     clas12::framework::ThreadLocalHistogram1D* h_vz_CuSn = nullptr;
 
-    // Reconstructed data histograms
-    clas12::framework::ThreadLocalHistogram1D* h_rec_p = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_rec_phi = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_rec_theta = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_rec_vz = nullptr;
+    // Reconstructed target-gated vz histograms
     clas12::framework::ThreadLocalHistogram1D* h_rec_vz_Cu = nullptr;
     clas12::framework::ThreadLocalHistogram1D* h_rec_vz_Sn = nullptr;
     clas12::framework::ThreadLocalHistogram1D* h_rec_vz_CuSn = nullptr;
@@ -212,11 +188,6 @@ private:
     clas12::framework::ThreadLocalHistogram2D* h_vz_vs_p = nullptr;
     std::array<clas12::framework::ThreadLocalHistogram2D*, N_P_BINS> h_vz_vs_theta_pbin = {};
 
-    // Reconstructed 2D histograms
-    clas12::framework::ThreadLocalHistogram2D* h_rec_vz_vs_theta = nullptr;
-    clas12::framework::ThreadLocalHistogram2D* h_rec_vz_vs_p = nullptr;
-    std::array<clas12::framework::ThreadLocalHistogram2D*, N_P_BINS> h_rec_vz_vs_theta_pbin = {};
-
     auto book_histograms() -> void {
         h_p = m_hist->book_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
         h_phi = m_hist->book_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
@@ -226,11 +197,7 @@ private:
         h_vz_Sn = m_hist->book_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -13, 0);
         h_vz_CuSn = m_hist->book_hist1D("/MC/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", 100, -13, 0);
 
-        // Reconstructed data histograms
-        h_rec_p = m_hist->book_hist1D("/Data/Electron/p", "p;p;Events", 100, 0, 10);
-        h_rec_phi = m_hist->book_hist1D("/Data/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
-        h_rec_theta = m_hist->book_hist1D("/Data/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
-        h_rec_vz = m_hist->book_hist1D("/Data/Electron/vz", "vz;vz;Events", 100, -13, 0);
+        // Reconstructed target-gated vz histograms
         h_rec_vz_Cu = m_hist->book_hist1D("/Data/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -13, 0);
         h_rec_vz_Sn = m_hist->book_hist1D("/Data/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -13, 0);
         h_rec_vz_CuSn = m_hist->book_hist1D("/Data/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", 100, -13, 0);
@@ -239,10 +206,6 @@ private:
         h_vz_vs_theta = m_hist->book_hist2D("/MC/Electron/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 100, 0, 40, 100, -13, 0);
         h_vz_vs_p = m_hist->book_hist2D("/MC/Electron/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 100, 0, 10, 100, -13, 0);
 
-        // Reconstructed 2D histograms
-        h_rec_vz_vs_theta = m_hist->book_hist2D("/Data/Electron/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 100, 0, 40, 100, -13, 0);
-        h_rec_vz_vs_p = m_hist->book_hist2D("/Data/Electron/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 100, 0, 10, 100, -13, 0);
-
         // vz vs theta in momentum bins
         for (int i = 0; i < N_P_BINS; ++i) {
             auto plo = std::to_string(static_cast<int>(p_bin_edges[i]));
@@ -250,8 +213,6 @@ private:
             auto title = "vz vs #theta (" + plo + "<p<" + phi + " GeV/c);#theta [deg];vz [cm]";
             h_vz_vs_theta_pbin[i] = m_hist->book_hist2D(
                 "/MC/Electron/vz_vs_theta_p" + plo + "_" + phi, title, 100, 0, 40, 100, -13, 0);
-            h_rec_vz_vs_theta_pbin[i] = m_hist->book_hist2D(
-                "/Data/Electron/vz_vs_theta_p" + plo + "_" + phi, title, 100, 0, 40, 100, -13, 0);
         }
     }
 };
