@@ -82,6 +82,7 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         declare_bank("REC::Scintillator");
         declare_bank("REC::Traj");
         declare_bank("REC::Track");
+        declare_optional_bank("FMT::Tracks");
     }
 
 
@@ -234,7 +235,7 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
                                          candidate.particle, candidate.calorimeter,
                                          candidate.trajectory, candidate.track); })
             .tap([&] {
-                fill_final_histograms(candidate.particle, candidate.calorimeter,
+                fill_final_histograms(event, candidate.particle, candidate.calorimeter,
                                       candidate.trajectory, candidate.track);
                 if (m_ntuple && m_config.enable_ntuple) {
                     m_nt_e_p               = candidate.particle.p();
@@ -418,11 +419,17 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0
     };
 
-    struct {
+    static constexpr int N_SECTORS = 6;
+
+    struct VzHistograms {
         clas12::framework::ThreadLocalHistogram2D* vz_vs_theta = nullptr;
         clas12::framework::ThreadLocalHistogram2D* vz_vs_p = nullptr;
         std::array<clas12::framework::ThreadLocalHistogram2D*, N_VZ_P_BINS> vz_vs_theta_pbin = {};
-    } h_electron_vz;
+        std::array<std::array<clas12::framework::ThreadLocalHistogram2D*, N_VZ_P_BINS>, N_SECTORS> vz_vs_theta_pbin_sector = {};
+    };
+
+    VzHistograms h_electron_vz;
+    VzHistograms h_electron_vz_fmt;
 
     // Track histograms structure (for neg/pos tracks, pions, etc.)
     // Each histogram is stored per sector (1-6) - using lock-free atomic histograms
@@ -499,23 +506,8 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
             "/Electron/phi_vs_theta", "#phi vs #theta;#theta [deg];#phi [deg]",
             180, 0, 180, 180, -180, 180);
 
-        h_electron_vz.vz_vs_theta = m_hist->book_hist2D(
-            "/Electron/vz_vs_theta",
-            "Electron v_{z} vs #theta;#theta [deg];v_{z} [cm]",
-            100, 0, 40, 100, -13, 0);
-        h_electron_vz.vz_vs_p = m_hist->book_hist2D(
-            "/Electron/vz_vs_p",
-            "Electron v_{z} vs p;p [GeV/c];v_{z} [cm]",
-            100, 0, 10, 100, -13, 0);
-        for (int i = 0; i < N_VZ_P_BINS; ++i) {
-            const auto plo = std::to_string(static_cast<int>(vz_p_bin_edges[i]));
-            const auto phi = std::to_string(static_cast<int>(vz_p_bin_edges[i + 1]));
-            const auto title = "Electron v_{z} vs #theta (" + plo + "<p<" + phi
-                             + " GeV/c);#theta [deg];v_{z} [cm]";
-            h_electron_vz.vz_vs_theta_pbin[i] = m_hist->book_hist2D(
-                "/Electron/vz_vs_theta_p" + plo + "_" + phi,
-                title, 100, 0, 40, 100, -13, 0);
-        }
+        book_vz_histograms(h_electron_vz, "/Electron", "Electron");
+        book_vz_histograms(h_electron_vz_fmt, "/Electron/FMT", "Electron (FMT)");
 
         // Calorimeter - PCAL (lock-free atomic)
         h_calorimeter.lu_vs_lv_pcal = m_hist->book_hist2D(
@@ -871,7 +863,7 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         }
     }
 
-    auto fill_final_histograms(const clas12::Particle& electron, const clas12::CalorimeterBank& calo, const clas12::DCTrajBank& traj, const clas12::TrackBank& track) -> void {
+    auto fill_final_histograms(clas12::framework::Event& event, const clas12::Particle& electron, const clas12::CalorimeterBank& calo, const clas12::DCTrajBank& traj, const clas12::TrackBank& track) -> void {
         // Fill thread-safe electron kinematics histograms
         h_electron.momentum->fill(electron.p());
         h_electron.theta->fill(electron.theta());
@@ -881,16 +873,18 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         h_electron.p_vs_theta->fill(electron.theta(), electron.p());
         h_electron.phi_vs_theta->fill(electron.theta(), electron.phi());
 
-        const double e_vz    = electron.vz();
-        const double e_theta = electron.theta();
-        const double e_p     = electron.p();
-        h_electron_vz.vz_vs_theta->fill(e_theta, e_vz);
-        h_electron_vz.vz_vs_p->fill(e_p, e_vz);
-        for (int i = 0; i < N_VZ_P_BINS; ++i) {
-            if (e_p >= vz_p_bin_edges[i] && e_p < vz_p_bin_edges[i + 1]) {
-                h_electron_vz.vz_vs_theta_pbin[i]->fill(e_theta, e_vz);
-                break;
-            }
+        fill_vz_histograms(h_electron_vz, electron.theta(), electron.p(), electron.vz(), calo.pcal_sector);
+
+        for (auto fmt : event.rows_for_index<clas12::bankdefs::FMT_Tracks>(track.index)) {
+            const double fmt_px = fmt.p0_x();
+            const double fmt_py = fmt.p0_y();
+            const double fmt_pz = fmt.p0_z();
+            const double fmt_p  = std::sqrt(fmt_px * fmt_px + fmt_py * fmt_py + fmt_pz * fmt_pz);
+            if (fmt_p <= 0.0) break;
+            const double fmt_theta = std::acos(fmt_pz / fmt_p) * 180.0 / M_PI;
+            const double fmt_vz    = fmt.Vtx0_z();
+            fill_vz_histograms(h_electron_vz_fmt, fmt_theta, fmt_p, fmt_vz, fmt.sector());
+            break;
         }
 
         // Fill calorimeter - PCAL
@@ -909,6 +903,49 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         fill_dc_momentum_binned(electron.p(), traj, track);
         // Fill DC histograms by theta bin
         fill_dc_theta_binned(electron.theta(), traj, track);
+    }
+
+    auto book_vz_histograms(VzHistograms& h, const std::string& path_prefix, const std::string& title_prefix) -> void {
+        h.vz_vs_theta = m_hist->book_hist2D(
+            path_prefix + "/vz_vs_theta",
+            title_prefix + " v_{z} vs #theta;#theta [deg];v_{z} [cm]",
+            100, 0, 40, 100, -13, 0);
+        h.vz_vs_p = m_hist->book_hist2D(
+            path_prefix + "/vz_vs_p",
+            title_prefix + " v_{z} vs p;p [GeV/c];v_{z} [cm]",
+            100, 0, 10, 100, -13, 0);
+        for (int i = 0; i < N_VZ_P_BINS; ++i) {
+            const auto plo = std::to_string(static_cast<int>(vz_p_bin_edges[i]));
+            const auto phi = std::to_string(static_cast<int>(vz_p_bin_edges[i + 1]));
+            const auto title = title_prefix + " v_{z} vs #theta (" + plo + "<p<" + phi
+                             + " GeV/c);#theta [deg];v_{z} [cm]";
+            h.vz_vs_theta_pbin[i] = m_hist->book_hist2D(
+                path_prefix + "/vz_vs_theta_p" + plo + "_" + phi,
+                title, 100, 0, 40, 100, -13, 0);
+            for (int s = 0; s < N_SECTORS; ++s) {
+                const auto sec = std::to_string(s + 1);
+                const auto sec_title = title_prefix + " v_{z} vs #theta (sector " + sec
+                                     + ", " + plo + "<p<" + phi
+                                     + " GeV/c);#theta [deg];v_{z} [cm]";
+                h.vz_vs_theta_pbin_sector[s][i] = m_hist->book_hist2D(
+                    path_prefix + "/Sector" + sec + "/vz_vs_theta_p" + plo + "_" + phi,
+                    sec_title, 100, 0, 40, 100, -13, 0);
+            }
+        }
+    }
+
+    auto fill_vz_histograms(VzHistograms& h, double e_theta, double e_p, double e_vz, int e_sector) -> void {
+        h.vz_vs_theta->fill(e_theta, e_vz);
+        h.vz_vs_p->fill(e_p, e_vz);
+        for (int i = 0; i < N_VZ_P_BINS; ++i) {
+            if (e_p >= vz_p_bin_edges[i] && e_p < vz_p_bin_edges[i + 1]) {
+                h.vz_vs_theta_pbin[i]->fill(e_theta, e_vz);
+                if (e_sector >= 1 && e_sector <= N_SECTORS) {
+                    h.vz_vs_theta_pbin_sector[e_sector - 1][i]->fill(e_theta, e_vz);
+                }
+                break;
+            }
+        }
     }
 
     /// Fill DC histograms in the appropriate momentum bin
