@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <vector>
 #include <clas12/Banks.hpp>
 #include <clas12/Detectors.hpp>
@@ -258,6 +259,9 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
             auto final_count = m_cutflow.get_count("DC Chi2/NDF");
             Log::info(name(), "Events passing all cuts: {}", final_count);
 
+            Log::info(name(), "FMT::Tracks events: {} total, {} with rows > 0",
+                      m_fmt_events_total.load(), m_fmt_events_nonempty.load());
+
             if (m_ntuple && m_config.enable_ntuple) {
                 auto entries = m_ntuple->get_entries("electron_analysis");
                 Log::info(name(), "N-tuple has {} entries", entries);
@@ -361,6 +365,9 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
     clas12::Target m_target;
     clas12::Polarity m_polarity;
     clas12::framework::Cutflow m_cutflow;
+
+    mutable std::atomic<long> m_fmt_events_total{0};
+    mutable std::atomic<long> m_fmt_events_nonempty{0};
 
     // Cut toggle properties
     clas12::framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable Chi2 PID cut"};
@@ -882,18 +889,22 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
             break;
         }
 
-        static std::atomic<int> debug_count{0};
-        const int dbg = debug_count.fetch_add(1, std::memory_order_relaxed);
-        if (dbg < 10) {
-            const auto& fmt_view = event.get_bank("FMT::Tracks");
+        {
             auto& fmt_bank = event.bank<clas12::bankdefs::FMT_Tracks>();
-            Log::info(name(),
-                      "FMT debug ev={} fmt_view_rows={} fmt_wrapper_rows={} rec_track_row={} track.index={}",
-                      dbg, fmt_view.rows(), fmt_bank.rows(), rec_track_row, track.index);
-            for (int i = 0; i < fmt_bank.rows() && i < 5; ++i) {
-                Log::info(name(), "  FMT row {}: index={} sector={} p0=({:.2f},{:.2f},{:.2f}) vz={:.2f}",
-                          i, fmt_bank.index(i), fmt_bank.sector(i),
-                          fmt_bank.p0_x(i), fmt_bank.p0_y(i), fmt_bank.p0_z(i), fmt_bank.Vtx0_z(i));
+            const int fmt_rows = fmt_bank.rows();
+            m_fmt_events_total.fetch_add(1, std::memory_order_relaxed);
+            if (fmt_rows > 0) {
+                const int nonempty = m_fmt_events_nonempty.fetch_add(1, std::memory_order_relaxed);
+                if (nonempty < 5) {
+                    Log::info(name(),
+                              "FMT has data: rows={} rec_track_row={} track.index={}",
+                              fmt_rows, rec_track_row, track.index);
+                    for (int i = 0; i < fmt_rows && i < 5; ++i) {
+                        Log::info(name(), "  FMT row {}: index={} sector={} p0=({:.2f},{:.2f},{:.2f}) vz={:.2f}",
+                                  i, fmt_bank.index(i), fmt_bank.sector(i),
+                                  fmt_bank.p0_x(i), fmt_bank.p0_y(i), fmt_bank.p0_z(i), fmt_bank.Vtx0_z(i));
+                    }
+                }
             }
         }
 
