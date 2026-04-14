@@ -875,16 +875,24 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
 
         fill_vz_histograms(h_electron_vz, electron.theta(), electron.p(), electron.vz(), calo.pcal_sector);
 
-        for (auto fmt : event.rows_for_index<clas12::bankdefs::FMT_Tracks>(track.index)) {
-            const double fmt_px = fmt.p0_x();
-            const double fmt_py = fmt.p0_y();
-            const double fmt_pz = fmt.p0_z();
-            const double fmt_p  = std::sqrt(fmt_px * fmt_px + fmt_py * fmt_py + fmt_pz * fmt_pz);
-            if (fmt_p <= 0.0) break;
-            const double fmt_theta = std::acos(fmt_pz / fmt_p) * 180.0 / M_PI;
-            const double fmt_vz    = fmt.Vtx0_z();
-            fill_vz_histograms(h_electron_vz_fmt, fmt_theta, fmt_p, fmt_vz, fmt.sector());
+        int rec_track_row = -1;
+        for (auto r : event.rows_for_pindex<clas12::bankdefs::REC_Track>(electron.index())) {
+            if (r.detector() != clas12::DC) continue;
+            rec_track_row = r.row_index();
             break;
+        }
+        if (rec_track_row >= 0) {
+            for (auto fmt : event.rows_for_index<clas12::bankdefs::FMT_Tracks>(rec_track_row)) {
+                const double fmt_px = fmt.p0_x();
+                const double fmt_py = fmt.p0_y();
+                const double fmt_pz = fmt.p0_z();
+                const double fmt_p  = std::sqrt(fmt_px * fmt_px + fmt_py * fmt_py + fmt_pz * fmt_pz);
+                if (fmt_p <= 0.0) break;
+                const double fmt_theta = std::acos(fmt_pz / fmt_p) * 180.0 / M_PI;
+                const double fmt_vz    = fmt.Vtx0_z();
+                fill_vz_histograms(h_electron_vz_fmt, fmt_theta, fmt_p, fmt_vz, fmt.sector());
+                break;
+            }
         }
 
         // Fill calorimeter - PCAL
