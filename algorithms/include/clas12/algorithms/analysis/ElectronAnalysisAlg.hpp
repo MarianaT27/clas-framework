@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <atomic>
 #include <vector>
 #include <clas12/Banks.hpp>
 #include <clas12/Detectors.hpp>
@@ -83,7 +82,6 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         declare_bank("REC::Scintillator");
         declare_bank("REC::Traj");
         declare_bank("REC::Track");
-        declare_optional_bank("FMT::Tracks");
     }
 
 
@@ -236,7 +234,7 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
                                          candidate.particle, candidate.calorimeter,
                                          candidate.trajectory, candidate.track); })
             .tap([&] {
-                fill_final_histograms(event, candidate.particle, candidate.calorimeter,
+                fill_final_histograms(candidate.particle, candidate.calorimeter,
                                       candidate.trajectory, candidate.track);
                 if (m_ntuple && m_config.enable_ntuple) {
                     m_nt_e_p               = candidate.particle.p();
@@ -258,9 +256,6 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
             Log::info(name(), "Finalizing algorithm");
             auto final_count = m_cutflow.get_count("DC Chi2/NDF");
             Log::info(name(), "Events passing all cuts: {}", final_count);
-
-            Log::info(name(), "FMT::Tracks events: {} total, {} with rows > 0",
-                      m_fmt_events_total.load(), m_fmt_events_nonempty.load());
 
             if (m_ntuple && m_config.enable_ntuple) {
                 auto entries = m_ntuple->get_entries("electron_analysis");
@@ -366,9 +361,6 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
     clas12::Polarity m_polarity;
     clas12::framework::Cutflow m_cutflow;
 
-    mutable std::atomic<long> m_fmt_events_total{0};
-    mutable std::atomic<long> m_fmt_events_nonempty{0};
-
     // Cut toggle properties
     clas12::framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable Chi2 PID cut"};
     clas12::framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
@@ -436,7 +428,6 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
     };
 
     VzHistograms h_electron_vz;
-    VzHistograms h_electron_vz_fmt;
 
     // Track histograms structure (for neg/pos tracks, pions, etc.)
     // Each histogram is stored per sector (1-6) - using lock-free atomic histograms
@@ -514,7 +505,6 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
             180, 0, 180, 180, -180, 180);
 
         book_vz_histograms(h_electron_vz, "/Electron", "Electron");
-        book_vz_histograms(h_electron_vz_fmt, "/Electron/FMT", "Electron (FMT)");
 
         // Calorimeter - PCAL (lock-free atomic)
         h_calorimeter.lu_vs_lv_pcal = m_hist->book_hist2D(
@@ -870,7 +860,7 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         }
     }
 
-    auto fill_final_histograms(clas12::framework::Event& event, const clas12::Particle& electron, const clas12::CalorimeterBank& calo, const clas12::DCTrajBank& traj, const clas12::TrackBank& track) -> void {
+    auto fill_final_histograms(const clas12::Particle& electron, const clas12::CalorimeterBank& calo, const clas12::DCTrajBank& traj, const clas12::TrackBank& track) -> void {
         // Fill thread-safe electron kinematics histograms
         h_electron.momentum->fill(electron.p());
         h_electron.theta->fill(electron.theta());
@@ -881,46 +871,6 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         h_electron.phi_vs_theta->fill(electron.theta(), electron.phi());
 
         fill_vz_histograms(h_electron_vz, electron.theta(), electron.p(), electron.vz(), calo.pcal_sector);
-
-        int rec_track_row = -1;
-        for (auto r : event.rows_for_pindex<clas12::bankdefs::REC_Track>(electron.index())) {
-            if (r.detector() != clas12::DC) continue;
-            rec_track_row = r.row_index();
-            break;
-        }
-
-        {
-            auto& fmt_bank = event.bank<clas12::bankdefs::FMT_Tracks>();
-            const int fmt_rows = fmt_bank.rows();
-            m_fmt_events_total.fetch_add(1, std::memory_order_relaxed);
-            if (fmt_rows > 0) {
-                const int nonempty = m_fmt_events_nonempty.fetch_add(1, std::memory_order_relaxed);
-                if (nonempty < 5) {
-                    Log::info(name(),
-                              "FMT has data: rows={} rec_track_row={} track.index={}",
-                              fmt_rows, rec_track_row, track.index);
-                    for (int i = 0; i < fmt_rows && i < 5; ++i) {
-                        Log::info(name(), "  FMT row {}: index={} sector={} p0=({:.2f},{:.2f},{:.2f}) vz={:.2f}",
-                                  i, fmt_bank.index(i), fmt_bank.sector(i),
-                                  fmt_bank.p0_x(i), fmt_bank.p0_y(i), fmt_bank.p0_z(i), fmt_bank.Vtx0_z(i));
-                    }
-                }
-            }
-        }
-
-        if (rec_track_row >= 0) {
-            for (auto fmt : event.rows_for_index<clas12::bankdefs::FMT_Tracks>(rec_track_row)) {
-                const double fmt_px = fmt.p0_x();
-                const double fmt_py = fmt.p0_y();
-                const double fmt_pz = fmt.p0_z();
-                const double fmt_p  = std::sqrt(fmt_px * fmt_px + fmt_py * fmt_py + fmt_pz * fmt_pz);
-                if (fmt_p <= 0.0) break;
-                const double fmt_theta = std::acos(fmt_pz / fmt_p) * 180.0 / M_PI;
-                const double fmt_vz    = fmt.Vtx0_z();
-                fill_vz_histograms(h_electron_vz_fmt, fmt_theta, fmt_p, fmt_vz, fmt.sector());
-                break;
-            }
-        }
 
         // Fill calorimeter - PCAL
         h_calorimeter.lu_vs_lv_pcal->fill(calo.pcal_lv, calo.pcal_lu);
