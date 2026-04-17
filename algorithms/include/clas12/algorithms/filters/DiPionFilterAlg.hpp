@@ -1,13 +1,12 @@
 #pragma once
 
 #include <cmath>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/services/HipoFileService.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/PIDs.hpp>
@@ -138,74 +137,136 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm {
      * @brief Process a single event
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        using namespace clas12::framework;
+        m_cutflow.pass("All Events");
 
-        // Pick the trigger electron and compute DIS kinematics up front.
+        // ================================================================
+        // Step 1: Find trigger electron
+        // ================================================================
         const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
-        clas12::Particle electron{};
-        clas12::physics::DISAnalysis::DISKinematics kin{};
-        if (!electrons.empty()) {
-            electron = *std::max_element(electrons.begin(), electrons.end(),
-                [](const clas12::Particle& a, const clas12::Particle& b) { return a.p() < b.p(); });
-            kin = clas12::physics::DISAnalysis::calculate_kinematics(electron);
+        if (electrons.empty()) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("Has Electron");
+
+        // Use the highest momentum electron as trigger
+        const auto& electron = *std::max_element(electrons.begin(), electrons.end(),
+            [](const clas12::Particle& a, const clas12::Particle& b) {
+                return a.p() < b.p();
+            });
+
+        // ================================================================
+        // Step 2: Apply DIS kinematic cuts (Q2, W)
+        // ================================================================
+        clas12::physics::DISAnalysis::DISKinematics kin =
+            clas12::physics::DISAnalysis::calculate_kinematics(electron);
+
+        if (m_enable_q2_cut.get() && kin.q2 < m_q2_min.get()) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("Q2 Cut");
+
+        if (m_enable_w_cut.get() && kin.w < m_w_min.get()) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("W Cut");
+
+        // ================================================================
+        // Step 3: Find pi+ passing cuts
+        // ================================================================
+        const auto& pions_plus = event.particles(clas12::PIDs::PIPLUS);
+        if (pions_plus.empty()) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("Has pi+");
+
+        // Find pi+ candidates passing momentum and chi2pid cuts
+        std::vector<const clas12::Particle*> good_piplus;
+        for (const auto& pi : pions_plus) {
+            if (m_enable_piplus_momentum_cut.get() && pi.p() < m_pion_p_min.get()) continue;
+            if (m_enable_piplus_chi2pid_cut.get() && std::abs(pi.chi2pid()) >= m_pion_chi2pid_max.get()) continue;
+            good_piplus.push_back(&pi);
         }
 
-        // Per-charge ParticlePipeline runs both cuts and collects the
-        // survivors. The momentum cut runs before chi2pid so the
-        // cutflow counts match the old body's "momentum then chi2pid"
-        // bookkeeping.
-        const auto& pions_plus  = event.particles(clas12::PIDs::PIPLUS);
-        const auto& pions_minus = event.particles(clas12::PIDs::PIMINUS);
-
-        auto good_piplus = particles(pions_plus, m_cutflow)
-            .filter("pi+ Momentum", [this](const clas12::Particle& pi) {
-                return !m_enable_piplus_momentum_cut.get() || pi.p() >= m_pion_p_min.get();
-            })
-            .filter("pi+ Chi2PID", [this](const clas12::Particle& pi) {
-                return !m_enable_piplus_chi2pid_cut.get()
-                    || std::abs(pi.chi2pid()) < m_pion_chi2pid_max.get();
-            })
-            .collect();
-
-        auto good_piminus = particles(pions_minus, m_cutflow)
-            .filter("pi- Momentum", [this](const clas12::Particle& pi) {
-                return !m_enable_piminus_momentum_cut.get() || pi.p() >= m_pion_p_min.get();
-            })
-            .filter("pi- Chi2PID", [this](const clas12::Particle& pi) {
-                return !m_enable_piminus_chi2pid_cut.get()
-                    || std::abs(pi.chi2pid()) < m_pion_chi2pid_max.get();
-            })
-            .collect();
-
-        // Enumerate the (pi+, pi-) Cartesian product through PairPipeline.
-        // The pair terminal only runs if there's at least one survivor
-        // from each per-charge pipeline above, so the Cartesian product
-        // is empty whenever either side was filtered out.
-        auto good_pairs = particle_pairs(good_piplus, good_piminus, m_cutflow)
-            .count("di-pion pairs")
-            .collect_pairs();
-
-        return pipeline(event, m_cutflow)
-            .count("All Events")
-            .filter("Has Electron", !electrons.empty())
-            .filter("Q2 Cut", !m_enable_q2_cut.get() || kin.q2 >= m_q2_min.get())
-            .filter("W Cut",  !m_enable_w_cut.get()  || kin.w  >= m_w_min.get())
-            .filter("Has pi+", !pions_plus.empty())
-            .filter("Has pi-", !pions_minus.empty())
-            .filter("passes pi+ cuts", !good_piplus.empty())
-            .filter("passes pi- cuts", !good_piminus.empty())
-            .filter("di-pion pair", !good_pairs.empty())
-            .tap([&] {
-                ++m_events_passed;
-                if (m_enable_histograms.get()) {
-                    fill_histograms(electron, kin, good_pairs.front().first, good_pairs.front().second);
+        if (good_piplus.empty()) {
+            // Check which cut failed for cutflow
+            bool any_pass_momentum = !m_enable_piplus_momentum_cut.get();
+            if (!any_pass_momentum) {
+                for (const auto& pi : pions_plus) {
+                    if (pi.p() >= m_pion_p_min.get()) {
+                        any_pass_momentum = true;
+                        break;
+                    }
                 }
-                // TODO: event writing needs migration to new hipo4 API.
-            })
-            .set_decision(Decisions::HasDiPionEvent, true)
-            .publish(Keys::DiPionQ2, kin.q2)
-            .publish(Keys::DiPionW,  kin.w)
-            .status();
+            }
+            if (!any_pass_momentum) {
+                return clas12::framework::StatusCode::FILTERED();
+            }
+            m_cutflow.pass("pi+ Momentum");
+            return clas12::framework::StatusCode::FILTERED();  // Failed chi2pid
+        }
+        m_cutflow.pass("pi+ Momentum");
+        m_cutflow.pass("pi+ Chi2PID");
+
+        // ================================================================
+        // Step 4: Find pi- passing cuts
+        // ================================================================
+        const auto& pions_minus = event.particles(clas12::PIDs::PIMINUS);
+        if (pions_minus.empty()) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("Has pi-");
+
+        // Find pi- candidates passing momentum and chi2pid cuts
+        std::vector<const clas12::Particle*> good_piminus;
+        for (const auto& pi : pions_minus) {
+            if (m_enable_piminus_momentum_cut.get() && pi.p() < m_pion_p_min.get()) continue;
+            if (m_enable_piminus_chi2pid_cut.get() && std::abs(pi.chi2pid()) >= m_pion_chi2pid_max.get()) continue;
+            good_piminus.push_back(&pi);
+        }
+
+        if (good_piminus.empty()) {
+            // Check which cut failed for cutflow
+            bool any_pass_momentum = !m_enable_piminus_momentum_cut.get();
+            if (!any_pass_momentum) {
+                for (const auto& pi : pions_minus) {
+                    if (pi.p() >= m_pion_p_min.get()) {
+                        any_pass_momentum = true;
+                        break;
+                    }
+                }
+            }
+            if (!any_pass_momentum) {
+                return clas12::framework::StatusCode::FILTERED();
+            }
+            m_cutflow.pass("pi- Momentum");
+            return clas12::framework::StatusCode::FILTERED();  // Failed chi2pid
+        }
+        m_cutflow.pass("pi- Momentum");
+        m_cutflow.pass("pi- Chi2PID");
+
+        // ================================================================
+        // Event passed all cuts - fill histograms and write to output
+        // ================================================================
+        m_events_passed++;
+
+        // Fill histograms
+        if (m_enable_histograms.get()) {
+            fill_histograms(electron, kin, *good_piplus.front(), *good_piminus.front());
+        }
+
+        // Write event to output HIPO file
+        if (m_hipo_svc && m_hipo_svc->is_output_enabled()) {
+            // TODO: event writing needs migration to new hipo4 API
+            // The old API used: event.hipo_event().raw_event()
+            // m_hipo_svc->get()->write_event(raw_event);
+        }
+
+        // Store selected particles for downstream algorithms
+        event.set_decision_typed(clas12::framework::Decisions::HasDiPionEvent, true);
+        event.store_typed(clas12::framework::Keys::DiPionQ2, kin.q2);
+        event.store_typed(clas12::framework::Keys::DiPionW, kin.w);
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
     /**

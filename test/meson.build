@@ -165,21 +165,3 @@ test_rntuple_service = executable(
 )
 
 test('RNTuple Service Tests', test_rntuple_service)
-
-# Unit tests for the declarative EventPipeline / ParticlePipeline.
-test_pipeline = executable(
-  'test_pipeline',
-  'test_pipeline.cpp',
-  dependencies: test_deps,
-)
-
-test('Pipeline Tests', test_pipeline)
-
-# Unit tests for the PairPipeline combinatoric-pair variant.
-test_pair_pipeline = executable(
-  'test_pair_pipeline',
-  'test_pair_pipeline.cpp',
-  dependencies: test_deps,
-)
-
-test('PairPipeline Tests', test_pair_pipeline)

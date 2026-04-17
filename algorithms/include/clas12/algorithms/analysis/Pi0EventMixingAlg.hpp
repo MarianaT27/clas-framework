@@ -36,14 +36,13 @@
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/algorithms/reconstruction/Pi0ReconstructionAlg.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 
@@ -88,157 +87,175 @@ class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        using namespace clas12::framework;
+        m_cutflow.pass("All Events");
 
-        auto dis          = EventHelpers::get_dis_kinematics(event);
-        auto electron_opt = EventHelpers::get_selected_electron(event);
-        auto photons_opt  = event.retrieve_typed(Keys::SelectedPhotons_Pi0);
+        // Retrieve DIS kinematics
+        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return clas12::framework::StatusCode::FILTERED();
+        m_cutflow.pass("Has DIS Electron");
 
-        const bool have_photons = photons_opt && !photons_opt->empty();
+        auto dis = clas12::framework::EventHelpers::get_dis_kinematics(event);
+        if (!dis) return clas12::framework::StatusCode::FILTERED();
 
-        // Pre-compute virtual photon direction + pool bin. These are
-        // cheap but depend on dis + electron, so only do it when both
-        // are present. The pipeline below filters on the same.
+        const double Q2 = dis->Q2;
+        const double xB = dis->xB;
+        const double nu = dis->nu;
+        const double W  = dis->W;
+
+        // Retrieve selected photons (need >= 1 for pool, >= 2 for same-event pairs)
+        auto photons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedPhotons_Pi0);
+        if (!photons_opt || photons_opt->empty()) return clas12::framework::StatusCode::SUCCESS();
+        m_cutflow.pass("Has Photons");
+
+        const auto& photons = *photons_opt;
+
+        // Get electron for virtual photon direction and pair validation
+        auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
+        if (!electron_opt) return clas12::framework::StatusCode::SUCCESS();
+
+        // Compute virtual photon
         ROOT::Math::PxPyPzEVector beam_4v(0.0, 0.0, m_beam_energy.get(), m_beam_energy.get());
-        ROOT::Math::PxPyPzEVector electron_4v = electron_opt
-            ? electron_opt->PxPyPzEVector()
-            : ROOT::Math::PxPyPzEVector{};
+        ROOT::Math::PxPyPzEVector electron_4v = electron_opt->PxPyPzEVector();
         ROOT::Math::PxPyPzEVector q_4v = beam_4v - electron_4v;
         auto q_3v = q_4v.Vect();
-        const double q_mag = std::sqrt(q_3v.Mag2());
-        ROOT::Math::XYZVector q_hat = q_mag > 0
-            ? ROOT::Math::XYZVector{q_3v / q_mag}
-            : ROOT::Math::XYZVector{};
+        double q_mag = std::sqrt(q_3v.Mag2());
+        ROOT::Math::XYZVector q_hat = q_3v / q_mag;
 
-        const double Q2 = dis ? dis->Q2 : 0.0;
-        const double xB = dis ? dis->xB : 0.0;
-        const double nu = dis ? dis->nu : 0.0;
-        const double W  = dis ? dis->W  : 0.0;
-        const int pool_bin = (dis && have_photons)
-            ? find_pool_bin(Q2, xB, W, photons_opt->size(), nu)
-            : -1;
+        // Find pool bin for mixing organization (Q2, xB, W, photon multiplicity, nu)
+        int pool_bin = find_pool_bin(Q2, xB, W, photons.size(), nu);
 
-        return pipeline(event, m_cutflow)
-            .count("All Events")
-            .require(Decisions::HasGoodDISElectron)
-            .count("Has DIS Electron")
-            .filter("has DIS kinematics",  dis.has_value())
-            .filter("Has Photons",          have_photons)
-            .count("Has Photons")
-            .filter("has electron",         electron_opt.has_value())
-            // Same-event pairs: PairPipeline over unique photon pairs
-            // from this event. No pool access, fully parallel.
-            .tap([&] {
-                if (photons_opt->size() < 2) return;
-                unique_pairs(*photons_opt, m_cutflow)
-                    .filter("Same-event pairs", [&](const clas12::Particle& g1, const clas12::Particle& g2) {
-                        return validate_photon_pair(
-                            electron_4v, g1.PxPyPzEVector(), g2.PxPyPzEVector());
-                    })
-                    .tap([&](const clas12::Particle& g1, const clas12::Particle& g2) {
-                        auto pi0_4v = g1.PxPyPzEVector() + g2.PxPyPzEVector();
-                        const double mgg = pi0_4v.M();
-                        const double z   = pi0_4v.E() / nu;
-                        ROOT::Math::XYZVector pi0_3v(pi0_4v.Px(), pi0_4v.Py(), pi0_4v.Pz());
-                        const double p_parallel = pi0_3v.Dot(q_hat);
-                        ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
-                        const double pT = std::sqrt(p_perp.Mag2());
-                        if (h_mgg_same_all) h_mgg_same_all->fill(mgg);
-                        const int bin_4d = find_4d_bin(Q2, xB, z, pT);
-                        if (bin_4d >= 0 && h_mgg_same.count(bin_4d)) {
-                            h_mgg_same[bin_4d]->fill(mgg);
-                        }
-                    })
-                    .run();
-            })
-            // Rotated-background pairs: rotate one photon's phi by 180
-            // degrees and pair with the unrotated other. PairPipeline
-            // filter rejects pairs that fail the validation cut.
-            .tap([&] {
-                if (photons_opt->size() < 2) return;
-                unique_pairs(*photons_opt, m_cutflow)
-                    .filter("Rotated-bg pairs", [&](const clas12::Particle& g1, const clas12::Particle& g2) {
-                        auto g1_4v = g1.PxPyPzEVector();
-                        auto g2_rot = rotate_phi_180(g2.PxPyPzEVector());
-                        return validate_photon_pair(electron_4v, g1_4v, g2_rot);
-                    })
-                    .tap([&](const clas12::Particle& g1, const clas12::Particle& g2) {
-                        auto g1_4v = g1.PxPyPzEVector();
-                        auto g2_rot = rotate_phi_180(g2.PxPyPzEVector());
-                        auto pi0_4v = g1_4v + g2_rot;
-                        const double mgg = pi0_4v.M();
-                        const double z   = pi0_4v.E() / nu;
-                        ROOT::Math::XYZVector pi0_3v(pi0_4v.Px(), pi0_4v.Py(), pi0_4v.Pz());
-                        const double p_parallel = pi0_3v.Dot(q_hat);
-                        ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
-                        const double pT = std::sqrt(p_perp.Mag2());
-                        if (h_mgg_rotated_all) h_mgg_rotated_all->fill(mgg);
-                        const int bin_4d = find_4d_bin(Q2, xB, z, pT);
-                        if (bin_4d >= 0 && h_mgg_rotated.count(bin_4d)) {
-                            h_mgg_rotated[bin_4d]->fill(mgg);
-                        }
-                    })
-                    .run();
-            })
-            // Mixed-event pairs: current photons x stored pool photons.
-            // PairPipeline walks the full Cartesian product; the pool
-            // snapshot is taken once under a shared_lock and fed to
-            // particle_pairs as the rhs collection.
-            .tap([&] {
-                if (pool_bin < 0) return;
-                std::vector<clas12::Particle> pool_photons_snapshot;
-                {
-                    std::shared_lock lock(m_pool_mutex);
-                    auto pool_it = m_photon_pools.find(pool_bin);
-                    if (pool_it == m_photon_pools.end() || pool_it->second.photons.empty()) return;
-                    pool_photons_snapshot = pool_it->second.photons;
+        // =====================================================================
+        // 1. Fill same-event histograms (no pool access, fully parallel)
+        // =====================================================================
+        if (photons.size() >= 2) {
+            for (size_t i = 0; i < photons.size(); ++i) {
+                for (size_t j = i + 1; j < photons.size(); ++j) {
+                    auto g1_4v = photons[i].PxPyPzEVector();
+                    auto g2_4v = photons[j].PxPyPzEVector();
+
+                    // Apply photon pair validation cuts
+                    if (!validate_photon_pair(electron_4v, g1_4v, g2_4v)) continue;
+
+                    // Compute pi0 kinematics for this same-event pair
+                    auto pi0_4v = g1_4v + g2_4v;
+                    double mgg = pi0_4v.M();
+                    double z = pi0_4v.E() / nu;
+                    ROOT::Math::XYZVector pi0_3v(pi0_4v.Px(), pi0_4v.Py(), pi0_4v.Pz());
+                    double p_parallel = pi0_3v.Dot(q_hat);
+                    ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
+                    double pT = std::sqrt(p_perp.Mag2());
+
+                    // Fill inclusive same-event histogram
+                    if (h_mgg_same_all) h_mgg_same_all->fill(mgg);
+
+                    // Find 4D bin and fill binned histogram
+                    int bin_4d = find_4d_bin(Q2, xB, z, pT);
+                    if (bin_4d >= 0 && h_mgg_same.count(bin_4d)) {
+                        h_mgg_same[bin_4d]->fill(mgg);
+                    }
+
+                    m_cutflow.pass("Same-event pairs");
                 }
-                const std::size_t n_before = m_cutflow.count("Mixed-event pairs");
-                particle_pairs(*photons_opt, pool_photons_snapshot, m_cutflow)
-                    .filter("Mixed-event pairs", [&](const clas12::Particle& g1, const clas12::Particle& g2) {
-                        return validate_photon_pair(
-                            electron_4v, g1.PxPyPzEVector(), g2.PxPyPzEVector(), true);
-                    })
-                    .tap([&](const clas12::Particle& g1, const clas12::Particle& g2) {
-                        auto pi0_4v = g1.PxPyPzEVector() + g2.PxPyPzEVector();
-                        const double mgg = pi0_4v.M();
-                        const double z   = pi0_4v.E() / nu;
+            }
+        }
+
+        // =====================================================================
+        // 2. Fill rotated-background histograms (no pool access, fully parallel)
+        //    Rotate one photon's φ by 180° around the beam axis, pair with
+        //    the other unmodified photon. Preserves event-level correlations.
+        // =====================================================================
+        if (photons.size() >= 2) {
+            for (size_t i = 0; i < photons.size(); ++i) {
+                for (size_t j = i + 1; j < photons.size(); ++j) {
+                    auto g1_4v = photons[i].PxPyPzEVector();
+                    auto g2_4v = photons[j].PxPyPzEVector();
+
+                    // Rotate g2 azimuthal angle by 180° around beam axis
+                    auto g2_rot = rotate_phi_180(g2_4v);
+
+                    // Apply same validation cuts as same-event pairs
+                    if (!validate_photon_pair(electron_4v, g1_4v, g2_rot)) continue;
+
+                    auto pi0_4v = g1_4v + g2_rot;
+                    double mgg = pi0_4v.M();
+                    double z = pi0_4v.E() / nu;
+                    ROOT::Math::XYZVector pi0_3v(pi0_4v.Px(), pi0_4v.Py(), pi0_4v.Pz());
+                    double p_parallel = pi0_3v.Dot(q_hat);
+                    ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
+                    double pT = std::sqrt(p_perp.Mag2());
+
+                    if (h_mgg_rotated_all) h_mgg_rotated_all->fill(mgg);
+
+                    int bin_4d = find_4d_bin(Q2, xB, z, pT);
+                    if (bin_4d >= 0 && h_mgg_rotated.count(bin_4d)) {
+                        h_mgg_rotated[bin_4d]->fill(mgg);
+                    }
+
+                    m_cutflow.pass("Rotated-bg pairs");
+                }
+            }
+        }
+
+        // =====================================================================
+        // 3. Fill mixed-event histograms (shared lock — concurrent reads)
+        //    Each mixed pair is independently binned using its own z and pT
+        //    computed from the mixed pi0 4-vector.
+        // =====================================================================
+        if (pool_bin >= 0 && !photons.empty()) {
+            std::shared_lock lock(m_pool_mutex);
+
+            auto pool_it = m_photon_pools.find(pool_bin);
+            if (pool_it != m_photon_pools.end() && !pool_it->second.photons.empty()) {
+                const auto& pool_photons = pool_it->second.photons;
+                for (size_t i = 0; i < photons.size(); ++i) {
+                    for (size_t j = 0; j < pool_photons.size(); ++j) {
+                        auto g1_4v = photons[i].PxPyPzEVector();
+                        auto g2_4v = pool_photons[j].PxPyPzEVector();
+
+                        // Apply pair validation cuts (g1=current photon, g2=stored photon)
+                        if (!validate_photon_pair(electron_4v, g1_4v, g2_4v, true)) continue;
+
+                        // Compute mixed pi0 kinematics independently
+                        auto pi0_4v = g1_4v + g2_4v;
+                        double mgg = pi0_4v.M();
+                        double z = pi0_4v.E() / nu;
                         ROOT::Math::XYZVector pi0_3v(pi0_4v.Px(), pi0_4v.Py(), pi0_4v.Pz());
-                        const double p_parallel = pi0_3v.Dot(q_hat);
+                        double p_parallel = pi0_3v.Dot(q_hat);
                         ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
-                        const double pT = std::sqrt(p_perp.Mag2());
+                        double pT = std::sqrt(p_perp.Mag2());
+
+                        // Fill inclusive mixed histogram
                         if (h_mgg_mixed_all) h_mgg_mixed_all->fill(mgg);
-                        const int bin_4d = find_4d_bin(Q2, xB, z, pT);
+
+                        // Find 4D bin for THIS mixed pair and fill
+                        int bin_4d = find_4d_bin(Q2, xB, z, pT);
                         if (bin_4d >= 0 && h_mgg_mixed.count(bin_4d)) {
                             h_mgg_mixed[bin_4d]->fill(mgg);
                         }
-                    })
-                    .run();
-                // The old body incremented "Mixed-event pairs" once per
-                // event that had a non-empty pool; the PairPipeline
-                // filter above increments once per surviving pair.
-                // Post-process to match the original one-per-event
-                // semantics: if no pair survived but the pool was
-                // non-empty, bump once for the event marker.
-                if (m_cutflow.count("Mixed-event pairs") == n_before) {
-                    m_cutflow.pass("Mixed-event pairs");
+                    }
                 }
-            })
-            // Pool update: brief exclusive lock, O(1) per event.
-            .tap([&] {
-                if (pool_bin < 0) return;
-                std::unique_lock lock(m_pool_mutex);
-                auto& pool = m_photon_pools[pool_bin];
-                pool.photons.insert(pool.photons.end(), photons_opt->begin(), photons_opt->end());
-                pool.event_sizes.push_back(photons_opt->size());
-                while (static_cast<int>(pool.event_sizes.size()) > m_max_pool_events.get()) {
-                    const size_t n = pool.event_sizes.front();
-                    pool.photons.erase(pool.photons.begin(),
-                                       pool.photons.begin() + static_cast<ptrdiff_t>(n));
-                    pool.event_sizes.pop_front();
-                }
-            })
-            .status();
+                m_cutflow.pass("Mixed-event pairs");
+            }
+        }
+
+        // =====================================================================
+        // 4. Add current photons to pool (>= 1 photon sufficient)
+        //    Exclusive lock — brief O(1) operation
+        // =====================================================================
+        if (pool_bin >= 0 && !photons.empty()) {
+            std::unique_lock lock(m_pool_mutex);
+
+            auto& pool = m_photon_pools[pool_bin];
+            pool.photons.insert(pool.photons.end(), photons.begin(), photons.end());
+            pool.event_sizes.push_back(photons.size());
+            // Evict oldest events when exceeding pool capacity
+            while (static_cast<int>(pool.event_sizes.size()) > m_max_pool_events.get()) {
+                size_t n = pool.event_sizes.front();
+                pool.photons.erase(pool.photons.begin(), pool.photons.begin() + static_cast<ptrdiff_t>(n));
+                pool.event_sizes.pop_front();
+            }
+        }
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
     auto on_finalize() -> clas12::framework::StatusCode override {

@@ -30,7 +30,6 @@
 #include <clas12/framework/core/HistogramFiller.hpp>
 #include <clas12/framework/core/HistogramTemplates.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
@@ -95,48 +94,37 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
      * @brief Process a single event
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        using namespace clas12::framework;
-
-        auto electron_opt = EventHelpers::get_selected_electron(event);
-        const double electron_vz = electron_opt ? electron_opt->vz() : 0.0;
+        // Require selected electron
+        auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
+        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
+        double electron_vz = electron_opt->vz();
 
         clas12::bankdefs::REC_Event rec_event;
         rec_event.bind(event.get_bank("REC::Event"));
         const auto& REC_Particle = event.get_bank("REC::Particle");
-        const bool have_event  = rec_event.rows() > 0;
-        const double start_time = have_event
-            ? static_cast<double>(rec_event.startTime(0))
-            : 0.0;
 
-        ParticleMap particle_map = have_event
-            ? m_particle->extract_particles(REC_Particle, {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS})
-            : ParticleMap{};
+        if (rec_event.rows() == 0) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
 
-        static const std::vector<clas12::Particle> kEmpty;
-        const auto& pions_plus  = have_event ? m_particle->get_pions_plus(particle_map)  : kEmpty;
-        const auto& pions_minus = have_event ? m_particle->get_pions_minus(particle_map) : kEmpty;
+        // Get start time for timing calculations
+        const double start_time = static_cast<double>(rec_event.startTime(0));
 
-        return pipeline(event)
-            .filter("has electron", electron_opt.has_value())
-            .filter("has event data", have_event)
-            // π⁺ per-particle pipeline - each pion runs through
-            // process_pion() which fills per-sector, pre-cut, and
-            // post-cut histograms (and internal cutflow updates).
-            .tap([&] {
-                clas12::framework::particles(pions_plus)
-                    .tap([&](const clas12::Particle& pion) {
-                        process_pion(event, pion, start_time, electron_vz, true);
-                    })
-                    .run();
-            })
-            .tap([&] {
-                clas12::framework::particles(pions_minus)
-                    .tap([&](const clas12::Particle& pion) {
-                        process_pion(event, pion, start_time, electron_vz, false);
-                    })
-                    .run();
-            })
-            .status();
+        // Extract pions
+        auto particles = m_particle->extract_particles(
+            REC_Particle, {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
+
+        // Process π⁺
+        for (const auto& pion : m_particle->get_pions_plus(particles)) {
+            process_pion(event, pion, start_time, electron_vz, true);
+        }
+
+        // Process π⁻
+        for (const auto& pion : m_particle->get_pions_minus(particles)) {
+            process_pion(event, pion, start_time, electron_vz, false);
+        }
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
     /**
