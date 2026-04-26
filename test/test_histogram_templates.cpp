@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <clas12/framework/core/HistogramTemplates.hpp>
+#include <clas12/framework/core/SectorHistograms.hpp>
 #include <clas12/framework/core/CutflowHistograms.hpp>
 #include <clas12/framework/core/NTupleWriter.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
@@ -372,6 +373,96 @@ TEST_F(HistogramTemplatesTest, AtomicHistogramGroupGetHistogram) {
 
     EXPECT_NE(h, nullptr);
     EXPECT_EQ(h_missing, nullptr);
+}
+
+// ============================================================================
+// SectorHistogramGroup Tests
+// ============================================================================
+
+TEST_F(HistogramTemplatesTest, SectorHistogramGroupBookingAndFill) {
+    SectorHistogramGroup<6> g(&m_hist_svc, "/Tracks/Electrons");
+
+    auto h_p  = g.add_hist1D("p", "p;p [GeV/c];Tracks", 100, 0, 10);
+    auto h_pt = g.add_hist2D("p_vs_theta", "p vs theta;p [GeV/c];theta [deg]",
+                             100, 0, 10, 90, 0, 45);
+
+    // Fill only into sectors 1 and 3.
+    h_p.fill(1, 5.0);
+    h_p.fill(1, 5.5);
+    h_p.fill(3, 3.0);
+
+    h_pt.fill(1, 5.0, 20.0);
+    h_pt.fill(3, 3.0, 15.0);
+
+    // Out-of-range sector is a silent no-op (no crash, no exception).
+    h_p.fill(0, 1.0);
+    h_p.fill(7, 1.0);
+    h_pt.fill(-1, 0.0, 0.0);
+
+    // fill_if gates correctly.
+    h_p.fill_if(false, 2, 9.9);
+    EXPECT_EQ(h_p[2]->entries(), 0u);
+
+    // Per-sector entry counts reflect only the sectors we filled.
+    EXPECT_EQ(h_p[1]->entries(), 2u);
+    EXPECT_EQ(h_p[2]->entries(), 0u);
+    EXPECT_EQ(h_p[3]->entries(), 1u);
+    EXPECT_EQ(h_p[4]->entries(), 0u);
+
+    EXPECT_EQ(h_pt[1]->entries(), 1u);
+    EXPECT_EQ(h_pt[3]->entries(), 1u);
+    EXPECT_EQ(h_pt[4]->entries(), 0u);
+
+    // Late-lookup returns the same handle.
+    auto h_p_again = g.hist1d("p");
+    EXPECT_EQ(h_p_again[1], h_p[1]);
+    EXPECT_EQ(h_p_again[6], h_p[6]);
+
+    auto missing = g.hist1d("does_not_exist");
+    EXPECT_EQ(missing[1], nullptr);
+
+    // After merge, each sector's TH1D lives at the expected path.
+    m_hist_svc.merge_histograms();
+    EXPECT_NE(m_hist_svc.get_output_hist1D("/Tracks/Electrons/p_S1"), nullptr);
+    EXPECT_NE(m_hist_svc.get_output_hist1D("/Tracks/Electrons/p_S6"), nullptr);
+    EXPECT_NE(m_hist_svc.get_output_hist2D("/Tracks/Electrons/p_vs_theta_S3"), nullptr);
+}
+
+TEST_F(HistogramTemplatesTest, Book3DHistogramAndRoundTrip) {
+    auto* h = m_hist_svc.book_hist3D(
+        "/Test/th3",
+        "TH3 test;x;y;z",
+        5, 0.0, 5.0,
+        4, 0.0, 4.0,
+        3, 0.0, 3.0);
+    ASSERT_NE(h, nullptr);
+
+    // Fill a few known bins.
+    h->fill(0.5, 0.5, 0.5);
+    h->fill(2.5, 1.5, 2.5);
+    h->fill(2.5, 1.5, 2.5);
+
+    // Pre-merge: no TH3D yet.
+    EXPECT_EQ(m_hist_svc.get_output_hist3D("/Test/th3"), nullptr);
+
+    m_hist_svc.merge_histograms();
+    auto* th3 = m_hist_svc.get_output_hist3D("/Test/th3");
+    ASSERT_NE(th3, nullptr);
+    EXPECT_EQ(th3->GetEntries(), 3.0);
+    EXPECT_DOUBLE_EQ(th3->GetBinContent(
+        th3->GetXaxis()->FindBin(2.5),
+        th3->GetYaxis()->FindBin(1.5),
+        th3->GetZaxis()->FindBin(2.5)), 2.0);
+}
+
+TEST_F(HistogramTemplatesTest, SectorHistogramGroupNullService) {
+    // Construction with a null service must not crash; handles are all null.
+    SectorHistogramGroup<6> g(nullptr, "/X");
+    auto h = g.add_hist1D("p", "p", 10, 0, 1);
+    for (int s = 1; s <= 6; ++s) EXPECT_EQ(h[s], nullptr);
+    // Fill into null slots is a silent no-op.
+    h.fill(1, 0.5);
+    h.fill(6, 0.5);
 }
 
 // ============================================================================

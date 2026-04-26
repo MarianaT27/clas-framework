@@ -7,6 +7,7 @@ framework_inc = include_directories('include')
 framework_sources = files(
   'src/ApplicationBuilder.cpp',
   'src/Histogram.cpp',
+  'src/Service.cpp',
   'src/services/DecayTreeFitterService.cpp',
   'src/services/HistogramService.cpp',
   'src/services/LoggingService.cpp',

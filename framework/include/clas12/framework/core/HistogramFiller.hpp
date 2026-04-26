@@ -139,7 +139,8 @@ public:
     /**
      * @brief Fill all standard hadron histograms
      *
-     * Fills all histograms defined in HistogramTemplates::HadronHistograms:
+     * Matching histogram set (same names and binning as
+     * ThreadLocalHistogramTemplates::HadronHistograms):
      * - Basic kinematics: p, theta, phi, vz, vx, vy, chi2pid, beta
      * - Delta quantities: delta_beta (calculated from expected beta)
      * - 2D correlations: beta_vs_p, chi2pid_vs_p, delta_beta_vs_p, theta_vs_phi, p_vs_theta, vz_vs_phi
@@ -193,7 +194,7 @@ public:
     /**
      * @brief Fill all standard photon histograms
      *
-     * Fills all histograms defined in HistogramTemplates::PhotonID:
+     * Expected histogram names (photon diagnostic set):
      * - Basic: beta, energy, theta, phi
      * - 2D: beta_vs_p, E_vs_theta
      *
@@ -216,7 +217,8 @@ public:
     /**
      * @brief Fill DIS kinematics histograms
      *
-     * Fills all histograms defined in HistogramTemplates::DISKinematics:
+     * Matching histogram set (same names and binning as
+     * ThreadLocalHistogramTemplates::DISKinematics):
      * - 1D: Q2, W, xB, y, nu
      * - 2D: Q2_vs_W, Q2_vs_xB, y_vs_xB, W_vs_xB
      *

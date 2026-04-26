@@ -41,6 +41,7 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
+#include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/framework/services/SamplingFractionService.hpp>
 
 namespace clas12::algorithms {
@@ -216,7 +217,7 @@ public:
 
         // Select trigger electron (highest momentum in FD)
         const auto possible_electron =
-            clas12::physics::ParticleUtils::find_trigger_electron(electrons, {clas12::FD, clas12::BD});
+            clas12::framework::find_trigger_electron(electrons, {clas12::FD, clas12::BD});
 
         if (!possible_electron.has_value()) {
             event.set_decision_typed(clas12::framework::Decisions::HasGoodElectron, false);
@@ -380,9 +381,6 @@ private:
     void configure_electron_cuts_service() {
         m_electron_cuts->set_target(m_target);
         m_electron_cuts->set_polarity(m_polarity);
-        if (m_sf) {
-            m_electron_cuts->set_sf_service(m_sf);
-        }
     }
 
     /**

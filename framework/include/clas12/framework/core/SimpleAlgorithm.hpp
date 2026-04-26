@@ -18,10 +18,13 @@
 
 #include <clas12/framework/core/Concepts.hpp>
 #include <clas12/framework/core/IAlgorithm.hpp>
+#include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/ServiceManager.hpp>
+#include <clas12/framework/core/ServiceRef.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
+#include <clas12/framework/services/LoggingService.hpp>
 
 namespace clas12::framework {
 
@@ -140,7 +143,23 @@ public:
         // Step 1: Call configure() to let derived class declare banks
         this->configure();
 
-        // Step 2: Call on_initialize() for custom initialization
+        // Step 2: Retrieve and validate required services declared via
+        // require_service()/required_services(). Fail fast if any are
+        // missing — on_initialize() can then assume every required service
+        // pointer is non-null.
+        for (auto& retrieve : m_required_services) {
+            if (!retrieve()) {
+                return StatusCode::FAILURE();
+            }
+        }
+
+        // Step 3: Run declare_ntuple() hooks — soft init of any NTupleWriter
+        // members that were declared in the derived-class constructor.
+        for (auto& hook : m_ntuple_init_hooks) {
+            hook();
+        }
+
+        // Step 4: Call on_initialize() for custom initialization
         auto result = this->on_initialize();
 
         // Update state on success
@@ -221,6 +240,12 @@ protected:
      */
     void declare_bank(std::string_view bank_name) {
         m_required_banks.emplace_back(bank_name);
+    }
+
+    /// @brief Declare multiple required HIPO banks at once
+    template<typename... Args>
+    void declare_banks(Args&&... bank_names) {
+        (declare_bank(std::forward<Args>(bank_names)), ...);
     }
 
     /**
@@ -308,6 +333,94 @@ protected:
         }
     }
 
+    /**
+     * @brief Declare a required service dependency for auto-retrieval
+     *
+     * Call this in the derived-class constructor. During initialize(), the
+     * base class retrieves the service via svc<T>() and assigns it to the
+     * member reference passed here. If any required service is missing,
+     * initialize() logs an error and returns FAILURE before on_initialize()
+     * runs.
+     */
+    template <ServiceConcept T>
+    void require_service(T*& member_ref) {
+        m_required_services.push_back([this, target = &member_ref]() -> bool {
+            auto* s = this->svc<T>();
+            *target = s;
+            if (!s) {
+                if constexpr (requires { T::service_name(); }) {
+                    Log::error(this->name(),
+                               "Required service not available: {}",
+                               T::service_name());
+                } else {
+                    Log::error(this->name(), "Required service not available");
+                }
+                return false;
+            }
+            return true;
+        });
+    }
+
+    /// Overload for ServiceRef<T> members.
+    template <ServiceConcept T>
+    void require_service(ServiceRef<T>& member_ref) {
+        m_required_services.push_back([this, target = &member_ref]() -> bool {
+            auto* s = this->svc<T>();
+            *target = s;
+            if (!s) {
+                if constexpr (requires { T::service_name(); }) {
+                    Log::error(this->name(),
+                               "Required service not available: {}",
+                               T::service_name());
+                } else {
+                    Log::error(this->name(), "Required service not available");
+                }
+                return false;
+            }
+            return true;
+        });
+    }
+
+    /// Variadic: declare multiple required services at once. Accepts any mix
+    /// of raw `T*` members and `ServiceRef<T>` members.
+    template <typename... Args>
+    void required_services(Args&... member_refs) {
+        (require_service(member_refs), ...);
+    }
+
+    /**
+     * @brief Declare an NTupleWriter<T> member for automatic initialization.
+     *
+     * During initialize(), after required services are resolved and before
+     * on_initialize() runs, the base class retrieves NTupleService (if
+     * registered) and calls writer.init(svc, tree_name). Missing
+     * NTupleService is a soft failure: the writer stays uninitialized.
+     */
+    template <typename T>
+    void declare_ntuple(NTupleWriter<T>& writer, std::string tree_name, bool enabled) {
+        if (!enabled) {
+            return;
+        }
+        m_ntuple_init_hooks.push_back(
+            [this, &writer, tree_name = std::move(tree_name)]() {
+                if (auto* svc = this->svc<NTupleService>()) writer.init(svc, tree_name);
+            });
+    }
+
+    /// Gated overload: the gate is evaluated lazily at initialize() time.
+    template <typename T>
+    void declare_ntuple(NTupleWriter<T>& writer,
+                        std::string tree_name,
+                        const Property<bool>& enabled) {
+        m_ntuple_init_hooks.push_back(
+            [this, &writer, tree_name = std::move(tree_name), &enabled]() {
+                if (!enabled.get()) return;
+                if (auto* svc = this->svc<NTupleService>()) {
+                    writer.init(svc, tree_name);
+                }
+            });
+    }
+
     // ========================================================================
     // Data Contract (consumes/produces declarations)
     // ========================================================================
@@ -356,6 +469,8 @@ private:
     std::vector<std::string> m_optional_banks;
     std::vector<std::string> m_consumed_keys;
     std::vector<std::string> m_produced_keys;
+    std::vector<std::function<bool()>> m_required_services;
+    std::vector<std::function<void()>> m_ntuple_init_hooks;
 };
 
 }  // namespace clas12::framework

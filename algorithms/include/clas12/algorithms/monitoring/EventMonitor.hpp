@@ -4,6 +4,7 @@
 #include <chrono>
 #include <vector>
 #include <clas12/PIDs.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
@@ -111,23 +112,19 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm {
      * @brief Process and record particle statistics for the event
      */
     void process_particle_statistics(clas12::framework::Event& event) {
-        const auto& REC_Particle = event.get_bank("REC::Particle");
+        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
 
-        const int n_particles = REC_Particle.rows();
+        const int n_particles = rec_particle.rows();
         m_total_particles.fetch_add(static_cast<size_t>(n_particles), std::memory_order_relaxed);
 
         if (h_particles_per_event) {
             h_particles_per_event->fill(n_particles);
         }
 
-        // Extract particles for detailed monitoring using ParticleSelectorService
-        const clas12::framework::ParticleMap particles = m_particle_svc->extract_particles(
-            REC_Particle, m_monitored_pids);
-
-        const int n_electrons = m_particle_svc->get_electrons(particles).size();
+        auto particles = m_particle_svc->extract_particles(rec_particle, m_monitored_pids);
 
         if (h_electrons_per_event) {
-            h_electrons_per_event->fill(n_electrons);
+            h_electrons_per_event->fill(static_cast<int>(particles.electrons().size()));
         }
     }
 

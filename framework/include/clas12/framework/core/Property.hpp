@@ -460,6 +460,12 @@ public:
         return property;
     }
 
+    /// @brief Variadic version to declare multiple properties at once
+    template<typename... Args>
+    auto declare_properties(Property<Args>&... properties) -> void {
+        (declare_property(properties), ...);
+    }
+
     /**
      * @brief Configure all registered properties from a TOML table
      *

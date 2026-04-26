@@ -1,7 +1,10 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 #include <clas12/framework/core/StatusCode.hpp>
 
 namespace clas12::framework {
@@ -107,6 +110,30 @@ class IService {
      * @return StatusCode SUCCESS or FAILURE
      */
     virtual auto on_stop() -> StatusCode { return StatusCode::SUCCESS(); }
+
+    /**
+     * @brief Names of other services this service requires.
+     *
+     * Default: empty (no dependencies). The Service base class overrides this
+     * to return the names recorded by Service::require_service<T>() so that
+     * ServiceManager can use them for topological ordering without the caller
+     * having to pass a dependency vector explicitly.
+     */
+    [[nodiscard]] virtual auto required_dependencies() const -> std::vector<std::string> {
+        return {};
+    }
+
+    /**
+     * @brief HIPO banks this service needs to function.
+     *
+     * Default: empty. Override in services that always need certain banks
+     * (e.g. ParticleSelectorService needs "REC::Particle"). Application
+     * collects the union of algorithm-declared AND service-declared banks
+     * and passes it to the HIPO chain.
+     */
+    [[nodiscard]] virtual auto required_banks() const -> std::vector<std::string> {
+        return {};
+    }
 };
 
 /**
@@ -144,6 +171,16 @@ class Service : public IService {
         }
 
         m_state = ServiceState::Initializing;
+
+        // Auto-resolve services declared via require_service() before the
+        // derived class's on_initialize() runs, so on_initialize() can assume
+        // every declared dependency pointer is non-null.
+        auto resolve = resolve_required_services();
+        if (resolve.is_failure()) {
+            m_state = ServiceState::Error;
+            return resolve;
+        }
+
         auto result = on_initialize();
 
         if (result.is_success()) {
@@ -153,6 +190,16 @@ class Service : public IService {
         }
 
         return result;
+    }
+
+    /**
+     * @brief Names of other services this service requires.
+     *
+     * Populated by calls to require_service<T>() in derived-class constructors.
+     * Consumed by ServiceManager::add_service() to feed topological ordering.
+     */
+    [[nodiscard]] auto required_dependencies() const -> std::vector<std::string> override {
+        return m_required_dependency_names;
     }
 
     /**
@@ -205,6 +252,54 @@ class Service : public IService {
     }
 
     /**
+     * @brief Declare a required service dependency for auto-retrieval
+     *
+     * Call this in the derived service's constructor to declare that this
+     * service cannot function without another service. The framework will:
+     *   1. Publish the dependency to ServiceManager for topological ordering
+     *      (so the required service is initialized first).
+     *   2. Automatically retrieve the dependency via locate_service<T>() and
+     *      assign it to @p member_ref before on_initialize() runs.
+     *   3. Fail initialize() with a clear error log if the dependency is
+     *      missing at resolution time.
+     *
+     * Usage:
+     * @code
+     * ElectronCutsService() : Service("ElectronCutsService") {
+     *     require_service(m_sf_service);
+     * }
+     * @endcode
+     *
+     * @tparam T Service type (must have static service_name())
+     * @param member_ref Reference to the member pointer to populate
+     */
+    template <typename T>
+    void require_service(T*& member_ref) {
+        auto svc_name = std::string(T::service_name());
+        m_required_dependency_names.push_back(svc_name);
+        m_required_service_retrievers.push_back(
+            [this, target = &member_ref, svc_name]() -> bool {
+                auto* s = this->locate_service<T>(svc_name);
+                *target = s;
+                return s != nullptr;
+            });
+    }
+
+    /**
+     * @brief Resolve every service declared via require_service<T>().
+     *
+     * Called automatically by Service::initialize() before on_initialize().
+     * Derived classes that override initialize() directly (instead of
+     * on_initialize()) can call this manually to opt into auto-resolution.
+     *
+     * On the first missing dependency, logs an error and returns FAILURE.
+     * Implemented out-of-line in framework/src/Service.cpp so the header does
+     * not have to include LoggingService.hpp (which would create a circular
+     * dependency — LoggingService derives from Service).
+     */
+    [[nodiscard]] auto resolve_required_services() -> StatusCode;
+
+    /**
      * @brief Set the service state
      *
      * Called by derived classes to update state.
@@ -216,6 +311,9 @@ class Service : public IService {
     }
 
    private:
+    std::vector<std::string> m_required_dependency_names;
+    std::vector<std::function<bool()>> m_required_service_retrievers;
+
     template <typename T>
     auto locate_service_impl(const std::string& name) -> T*;
 

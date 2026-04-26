@@ -32,12 +32,16 @@ class LoggingService;
 class ServiceManager {
    public:
     /**
-     * @brief Add a service to the manager (backward compatible)
-     * @param service Unique pointer to the service
-     * @return StatusCode indicating success or failure
+     * @brief Add a service to the manager
+     *
+     * Dependencies are pulled from the service itself via
+     * IService::required_dependencies() — services that call
+     * Service::require_service<T>() in their constructor participate in the
+     * topological sort automatically, with no additional call-site changes.
      */
     auto add_service(std::unique_ptr<IService> service) -> StatusCode {
-        return add_service(std::move(service), {});
+        auto deps = service->required_dependencies();
+        return add_service(std::move(service), std::move(deps));
     }
 
     /**
@@ -264,6 +268,17 @@ class ServiceManager {
      *
      * Used by introspection tools (service-graph emitter, etc.).
      */
+    /// Collect the union of required_banks() from every registered service.
+    [[nodiscard]] auto collect_service_banks() const -> std::vector<std::string> {
+        std::vector<std::string> banks;
+        for (const auto& [name, svc] : m_services) {
+            for (auto& bank : svc->required_banks()) {
+                banks.push_back(std::move(bank));
+            }
+        }
+        return banks;
+    }
+
     [[nodiscard]] auto service_names() const -> std::vector<std::string> {
         std::vector<std::string> names;
         names.reserve(m_services.size());

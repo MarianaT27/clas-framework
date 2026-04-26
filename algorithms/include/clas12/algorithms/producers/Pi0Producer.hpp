@@ -5,6 +5,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/physics/CompositeParticle.hpp>
 
@@ -63,13 +64,9 @@ class Pi0Producer : public clas12::framework::SimpleAlgorithm {
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_events_processed++;
 
-        const auto& REC_Particle = event.get_bank("REC::Particle");
-
-        // Extract photons using ParticleSelectorService
-        clas12::framework::ParticleMap particles = m_particle_svc->extract_particles(
-            REC_Particle, {clas12::PIDs::PHOTON});
-
-        const auto& photons = m_particle_svc->get_photons(particles);
+        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
+        auto particles = m_particle_svc->extract_particles(rec_particle, {clas12::PIDs::PHOTON});
+        const auto& photons = particles.photons();
 
         // Reconstruct π⁰ candidates
         auto pi0_candidates = clas12::physics::CompositeParticleBuilder::reconstruct_pi0(photons);

@@ -21,6 +21,7 @@
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/bankdefs/REC_Event.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/CandidateUtils.hpp>
@@ -101,7 +102,7 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
 
         clas12::bankdefs::REC_Event rec_event;
         rec_event.bind(event.get_bank("REC::Event"));
-        const auto& REC_Particle = event.get_bank("REC::Particle");
+        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
 
         if (rec_event.rows() == 0) {
             return clas12::framework::StatusCode::FILTERED();
@@ -112,15 +113,15 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
 
         // Extract pions
         auto particles = m_particle->extract_particles(
-            REC_Particle, {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
+            rec_particle, {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
 
         // Process π⁺
-        for (const auto& pion : m_particle->get_pions_plus(particles)) {
+        for (const auto& pion : particles.pions_plus()) {
             process_pion(event, pion, start_time, electron_vz, true);
         }
 
         // Process π⁻
-        for (const auto& pion : m_particle->get_pions_minus(particles)) {
+        for (const auto& pion : particles.pions_minus()) {
             process_pion(event, pion, start_time, electron_vz, false);
         }
 

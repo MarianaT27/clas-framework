@@ -7,6 +7,7 @@
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/bankdefs/REC_Event.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/CandidateUtils.hpp>
@@ -189,7 +190,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
         // Cache service pointers
         m_hist = svc<clas12::framework::HistogramService>();
         m_particle = svc<clas12::framework::ParticleSelectorService>();
-        m_log = svc<clas12::framework::LoggingService>();
         m_ntuple = svc<clas12::framework::NTupleService>();
 
         Log::info(name(), "Initializing pion selection algorithm");
@@ -238,21 +238,20 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
         // Bind REC::Event for start time. Detector banks are accessed
         // through the per-event generated-wrapper cache via the read_*_bank
         // helpers below; no need for local bank-view handles.
-        clas12::bankdefs::REC_Event rec_event;
-        rec_event.bind(event.get_bank("REC::Event"));
-        const auto& REC_Particle = event.get_bank("REC::Particle");
+        auto& rec_event    = event.bank<clas12::bankdefs::REC_Event>();
+        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
 
         if (rec_event.rows() == 0) return clas12::framework::StatusCode::SUCCESS();
 
         const double start_time = static_cast<double>(rec_event.startTime(0));
 
         // Extract pions using ParticleSelectorService
-        clas12::framework::ParticleMap particles = m_particle->extract_particles(
-            REC_Particle,
+        auto particles = m_particle->extract_particles(
+            rec_particle,
             {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
 
         // Build π⁺ candidates with all kinematics computed once
-        const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
+        const auto& pions_plus = particles.pions_plus();
         auto piplus_candidates = build_pion_candidates(event, pions_plus, start_time, true);
 
         // Evaluate cutflow per-candidate (sets passes_all_cuts), then fill histograms
@@ -268,7 +267,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
         auto selected_piplus = collect_passing_particles(piplus_candidates);
 
         // Build π⁻ candidates with all kinematics computed once
-        const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
+        const auto& pions_minus = particles.pions_minus();
         auto piminus_candidates = build_pion_candidates(event, pions_minus, start_time, false);
 
         // Evaluate cutflow per-candidate (sets passes_all_cuts), then fill histograms
@@ -431,7 +430,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
     // Service pointers (cached in on_initialize via svc<T>())
     clas12::framework::HistogramService* m_hist = nullptr;
     clas12::framework::ParticleSelectorService* m_particle = nullptr;
-    clas12::framework::LoggingService* m_log = nullptr;
     clas12::framework::NTupleService* m_ntuple = nullptr;
 
     // N-tuple writers (replace individual variables + manual registration)

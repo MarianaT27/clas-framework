@@ -24,6 +24,7 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
@@ -632,7 +633,7 @@ private:
     // ========================================================================
 
     auto process_rich(clas12::framework::Event& event) -> clas12::framework::StatusCode {
-        const auto& REC_Particle = event.get_bank("REC::Particle");
+        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
         // Every detector bank below is accessed via the per-event
         // generated-wrapper cache through the read_*_bank helpers; no
         // local hipo::bank_view handles are needed here.
@@ -643,12 +644,12 @@ private:
 
         // Extract all charged hadrons from REC::Particle
         auto particles = m_particle->extract_particles(
-            REC_Particle,
+            rec_particle,
             {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
              clas12::PIDs::KPLUS, clas12::PIDs::KMINUS});
 
         // Loop over all hadron candidates and look up their RICH info
-        for (const auto& [pid_type, particle_vec] : particles) {
+        for (const auto& [pid_type, particle_vec] : particles.pid_groups()) {
             for (const auto& particle : particle_vec) {
                 // Determine cutflow based on REC PID
                 clas12::framework::Cutflow* cf = nullptr;
@@ -753,24 +754,19 @@ private:
         // through the per-event generated-wrapper cache inside the
         // fill_exclusive_ntuple helper, so no local bank-view handles
         // are needed here.
-        const auto& REC_Particle = event.get_bank("REC::Particle");
+        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
 
         auto particles = m_particle->extract_particles(
-            REC_Particle,
+            rec_particle,
             {clas12::PIDs::PROTON, clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
              clas12::PIDs::KPLUS, clas12::PIDs::KMINUS, clas12::PIDs::NEUTRON});
 
-        const auto& protons = m_particle->get_protons(particles);
-        const auto& pions_plus = clas12::framework::ParticleSelectorService::get_pions_plus(particles);
-        const auto& pions_minus = clas12::framework::ParticleSelectorService::get_pions_minus(particles);
-
-        static const std::vector<clas12::Particle> empty;
-        auto kp_it = particles.find(clas12::PIDs::KPLUS);
-        auto km_it = particles.find(clas12::PIDs::KMINUS);
-        auto n_it  = particles.find(clas12::PIDs::NEUTRON);
-        const auto& kaons_plus  = (kp_it != particles.end()) ? kp_it->second : empty;
-        const auto& kaons_minus = (km_it != particles.end()) ? km_it->second : empty;
-        const auto& neutrons    = (n_it  != particles.end()) ? n_it->second  : empty;
+        const auto& protons     = particles.protons();
+        const auto& pions_plus  = particles.pions_plus();
+        const auto& pions_minus = particles.pions_minus();
+        const auto& kaons_plus  = particles.by_pid(clas12::PIDs::KPLUS);
+        const auto& kaons_minus = particles.by_pid(clas12::PIDs::KMINUS);
+        const auto& neutrons    = particles.by_pid(clas12::PIDs::NEUTRON);
 
         // 3. Topology check: require proton + (pi+pi- or K+K-)
         if (protons.empty()) return clas12::framework::StatusCode::FILTERED();

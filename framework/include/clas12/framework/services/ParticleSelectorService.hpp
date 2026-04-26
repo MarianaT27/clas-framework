@@ -1,254 +1,221 @@
 #pragma once
 
-#include <bank_view.h>
+#include <clas12/Detectors.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/physics/ParticleUtils.hpp>
 
+#include <cmath>
 #include <functional>
-#include <map>
+#include <optional>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace clas12::framework {
 
 /**
- * @brief Type alias for storing particles grouped by their PID type
+ * @brief Find the first trigger electron from a vector of electrons.
+ *
+ * Picks the first electron with negative status whose |status| falls in
+ * @p status_range and whose momentum is non-zero. Default range covers the
+ * forward detector band. Free-function form so callers that already have a
+ * `std::vector<Particle>` (e.g. via `Event::particles()`) can reuse the same
+ * implementation as EventParticles::find_trigger_electron().
  */
-using ParticleMap = std::map<clas12::PIDs, std::vector<clas12::Particle>>;
+[[nodiscard]] inline auto find_trigger_electron(
+    const std::vector<clas12::Particle>& electrons,
+    std::pair<double, double> status_range = {clas12::FD, clas12::CD}
+) -> std::optional<clas12::Particle> {
+    for (const auto& e : electrons) {
+        const double abs_status = std::abs(e.status());
+        if (e.status() < 0.0 && e.p() != 0.0 &&
+            status_range.first <= abs_status && abs_status < status_range.second) {
+            return e;
+        }
+    }
+    return std::nullopt;
+}
 
 /**
- * @brief Service for selecting and filtering particles from HIPO banks
+ * @brief Per-event particle view: one REC::Particle read, indexed by pid and charge.
  *
- * This service provides particle extraction and filtering functionality
- * that can be shared across multiple algorithms. It supports:
- * - Extracting particles from REC::Particle bank
- * - Filtering by various criteria (momentum, charge, vertex, etc.)
- * - Configurable default particle types
- * - Caching of particle maps per event (optional)
+ * Returned by ParticleSelectorService::extract_particles(). Owns the particle
+ * vector and two lookup maps (pid -> particles, charge -> particles), all
+ * populated in the same single-pass loop over the bank. Post-read lookups
+ * are O(1).
  *
- * Usage in algorithms:
- * @code
- * auto particle_svc = service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
- * auto particles = particle_svc->extract_particles(bank);
- * auto electrons = particle_svc->get_electrons(particles);
- * auto filtered = particle_svc->with_momentum_range(electrons, 1.0, 10.0);
- * @endcode
+ * Missing keys return a reference to a static empty vector — safe to bind
+ * with `const auto&` without worrying about lifetime.
+ */
+class EventParticles {
+   public:
+    /// Every extracted particle in bank-row order.
+    [[nodiscard]] auto all() const -> const std::vector<clas12::Particle>& { return m_all; }
+
+    /// Particles with the given PDG id. Empty vector if none matched.
+    [[nodiscard]] auto by_pid(int pid) const -> const std::vector<clas12::Particle>& {
+        auto it = m_by_pid.find(pid);
+        return (it != m_by_pid.end()) ? it->second : empty();
+    }
+
+    [[nodiscard]] auto by_pid(clas12::PIDs pid) const -> const std::vector<clas12::Particle>& {
+        return by_pid(static_cast<int>(pid));
+    }
+
+    /// Particles with the given charge. Empty vector if none matched.
+    [[nodiscard]] auto by_charge(int charge) const -> const std::vector<clas12::Particle>& {
+        auto it = m_by_charge.find(charge);
+        return (it != m_by_charge.end()) ? it->second : empty();
+    }
+
+    /// All pid → particles groupings, for range-for iteration over types.
+    [[nodiscard]] auto pid_groups() const -> const std::unordered_map<int, std::vector<clas12::Particle>>& {
+        return m_by_pid;
+    }
+
+    /// All charge → particles groupings.
+    [[nodiscard]] auto charge_groups() const -> const std::unordered_map<int, std::vector<clas12::Particle>>& {
+        return m_by_charge;
+    }
+
+    [[nodiscard]] auto electrons()   const -> const std::vector<clas12::Particle>& { return by_pid(clas12::PIDs::ELECTRON); }
+    [[nodiscard]] auto photons()     const -> const std::vector<clas12::Particle>& { return by_pid(clas12::PIDs::PHOTON); }
+    [[nodiscard]] auto protons()     const -> const std::vector<clas12::Particle>& { return by_pid(clas12::PIDs::PROTON); }
+    [[nodiscard]] auto pions_plus()  const -> const std::vector<clas12::Particle>& { return by_pid(clas12::PIDs::PIPLUS); }
+    [[nodiscard]] auto pions_minus() const -> const std::vector<clas12::Particle>& { return by_pid(clas12::PIDs::PIMINUS); }
+
+    /**
+     * @brief Find the first trigger electron in this event's electrons vector.
+     *
+     * Thin wrapper around the free-function `find_trigger_electron` so
+     * `particles.find_trigger_electron()` matches the old ParticleUtils idiom.
+     */
+    [[nodiscard]] auto find_trigger_electron(
+        std::pair<double, double> status_range = {clas12::FD, clas12::CD}
+    ) const -> std::optional<clas12::Particle> {
+        return clas12::framework::find_trigger_electron(electrons(), status_range);
+    }
+
+   private:
+    friend class ParticleSelectorService;
+
+    static auto empty() -> const std::vector<clas12::Particle>& {
+        static const std::vector<clas12::Particle> s_empty;
+        return s_empty;
+    }
+
+    std::vector<clas12::Particle> m_all;
+    std::unordered_map<int, std::vector<clas12::Particle>> m_by_pid;
+    std::unordered_map<int, std::vector<clas12::Particle>> m_by_charge;
+};
+
+/**
+ * @brief Service that reads REC::Particle once and serves up particles by pid/charge.
+ *
+ * Call extract_particles() at the top of process() to read the bank. The
+ * returned EventParticles owns the data for the rest of the event — every
+ * downstream access is O(1).
+ *
+ * Stateless filter helpers (with_momentum_range, with_charge, etc.) operate
+ * on already-extracted std::vector<Particle> values and perform zero bank
+ * reads.
  */
 class ParticleSelectorService : public Service {
    public:
-    /// Static service name for compile-time access
     static constexpr std::string_view service_name() { return "ParticleSelectorService"; }
 
     explicit ParticleSelectorService(std::string name = "ParticleSelectorService")
         : Service(std::move(name)) {}
 
-    auto initialize() -> StatusCode override {
-        return StatusCode::SUCCESS();
-    }
-
-    auto finalize() -> StatusCode override {
-        return StatusCode::SUCCESS();
-    }
+    auto finalize() -> StatusCode override { return StatusCode::SUCCESS(); }
 
     // =========================================================================
-    // Configuration
+    // Particle extraction (one bank read, indexed by pid and charge)
     // =========================================================================
 
     /**
-     * @brief Set the default particle types to extract
-     */
-    void set_default_types(const std::vector<clas12::PIDs>& types) {
-        m_default_types = types;
-    }
-
-    /**
-     * @brief Get the default particle types
-     */
-    auto get_default_types() const -> const std::vector<clas12::PIDs>& {
-        return m_default_types;
-    }
-
-    // =========================================================================
-    // Particle Extraction
-    // =========================================================================
-
-    /**
-     * @brief Check if a particle matches a specific PID type
-     */
-    static auto is_type(int pid, clas12::PIDs type) -> bool {
-        return pid == static_cast<int>(type);
-    }
-
-    /**
-     * @brief Extract all particles from a bank and group them by type
+     * @brief Read REC::Particle once and build pid- and charge-indexed views.
      *
-     * @param REC_Particle The HIPO particle bank
-     * @param types Vector of particle types to extract (empty = use defaults)
-     * @return ParticleMap containing particles grouped by their PID
+     * @param rec_particle Bound REC_Particle bankdef wrapper.
+     * @param types        Optional PID whitelist. Empty = keep every row.
+     * @return EventParticles view: `by_pid`, `by_charge`, and convenience
+     *         accessors are served from the single pass done here.
      */
-    auto extract_particles(const hipo::bank_view& REC_Particle, const std::vector<clas12::PIDs>& types = {}) const -> ParticleMap {
-        ParticleMap particle_map;
+    [[nodiscard]] auto extract_particles(
+        const clas12::bankdefs::REC_Particle& rec_particle,
+        const std::vector<clas12::PIDs>& types = {}
+    ) const -> EventParticles {
+        EventParticles result;
+        if (!rec_particle.valid()) return result;
 
-        const auto& target_types = types.empty() ? m_default_types : types;
+        const int n_rows = rec_particle.rows();
+        result.m_all.reserve(n_rows);
 
-        for (const auto& type : target_types) {
-            particle_map[type] = std::vector<clas12::Particle>();
-        }
+        for (int i = 0; i < n_rows; ++i) {
+            const int pid = rec_particle.pid(i);
 
-        for (int i = 0; i < REC_Particle.rows(); i++) {
-            const int pid = REC_Particle.get<int32_t>("pid", i);
-
-            clas12::PIDs particle_type;
-            bool found = false;
-            for (const auto& type : target_types) {
-                if (is_type(pid, type)) {
-                    particle_type = type;
-                    found = true;
-                    break;
+            if (!types.empty()) {
+                bool keep = false;
+                for (auto t : types) {
+                    if (pid == static_cast<int>(t)) { keep = true; break; }
                 }
+                if (!keep) continue;
             }
 
-            if (!found) continue;
-
-            const int status = static_cast<int>(REC_Particle.get<int16_t>("status", i));
-            const int charge = static_cast<int>(REC_Particle.get<int8_t>("charge", i));
-            const double px = static_cast<double>(REC_Particle.get<float>("px", i));
-            const double py = static_cast<double>(REC_Particle.get<float>("py", i));
-            const double pz = static_cast<double>(REC_Particle.get<float>("pz", i));
-            const double vx = static_cast<double>(REC_Particle.get<float>("vx", i));
-            const double vy = static_cast<double>(REC_Particle.get<float>("vy", i));
-            const double vz = static_cast<double>(REC_Particle.get<float>("vz", i));
-            const double vt = static_cast<double>(REC_Particle.get<float>("vt", i));
-            const double beta = static_cast<double>(REC_Particle.get<float>("beta", i));
-            const double chi2pid = static_cast<double>(REC_Particle.get<float>("chi2pid", i));
+            const int status    = rec_particle.status(i);
+            const int charge    = rec_particle.charge(i);
+            const double px     = rec_particle.px(i);
+            const double py     = rec_particle.py(i);
+            const double pz     = rec_particle.pz(i);
+            const double vx     = rec_particle.vx(i);
+            const double vy     = rec_particle.vy(i);
+            const double vz     = rec_particle.vz(i);
+            const double vt     = rec_particle.vt(i);
+            const double beta   = rec_particle.beta(i);
+            const double chi2pid = rec_particle.chi2pid(i);
 
             const double mass = clas12::physics::ParticleUtils::get_mass(pid);
-            const double E = clas12::physics::ParticleUtils::compute_energy(px, py, pz, pid);
+            const double E    = clas12::physics::ParticleUtils::compute_energy(px, py, pz, pid);
 
-            particle_map[particle_type].emplace_back(
+            result.m_all.emplace_back(
                 pid, status, i, charge, mass,
                 px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
+
+            const auto& p = result.m_all.back();
+            result.m_by_pid[pid].push_back(p);
+            result.m_by_charge[charge].push_back(p);
         }
 
-        return particle_map;
+        return result;
     }
 
     // =========================================================================
-    // Convenience Accessors
+    // Stateless filters (operate on already-extracted vectors, zero bank reads)
     // =========================================================================
 
-    /**
-     * @brief Get electrons from a particle map
-     */
-    auto get_electrons(const ParticleMap& particles) const -> const std::vector<clas12::Particle>& {
-        static const std::vector<clas12::Particle> empty;
-        auto it = particles.find(clas12::PIDs::ELECTRON);
-        return (it != particles.end()) ? it->second : empty;
-    }
-
-    /**
-     * @brief Get photons from a particle map
-     */
-    auto get_photons(const ParticleMap& particles) const -> const std::vector<clas12::Particle>& {
-        static const std::vector<clas12::Particle> empty;
-        auto it = particles.find(clas12::PIDs::PHOTON);
-        return (it != particles.end()) ? it->second : empty;
-    }
-
-    /**
-     * @brief Get protons from a particle map
-     */
-    auto get_protons(const ParticleMap& particles) const -> const std::vector<clas12::Particle>& {
-        static const std::vector<clas12::Particle> empty;
-        auto it = particles.find(clas12::PIDs::PROTON);
-        return (it != particles.end()) ? it->second : empty;
-    }
-
-    /**
-     * @brief Get π+ from a particle map
-     */
-    static auto get_pions_plus(const ParticleMap& particles) -> const std::vector<clas12::Particle>& {
-        static const std::vector<clas12::Particle> empty;
-        auto it = particles.find(clas12::PIDs::PIPLUS);
-        return (it != particles.end()) ? it->second : empty;
-    }
-
-
-    /**
-     * @brief Get π- from a particle map
-     */
-    static auto get_pions_minus(const ParticleMap& particles) -> const std::vector<clas12::Particle>& {
-        static const std::vector<clas12::Particle> empty;
-        auto it = particles.find(clas12::PIDs::PIMINUS);
-        return (it != particles.end()) ? it->second : empty;
-    }
-
-    auto get_particles_by_charge(const hipo::bank_view& REC_Particle) const -> std::map<int, std::vector<clas12::Particle>> {
-        std::map<int, std::vector<clas12::Particle>> charge_map;
-
-        for (int i = 0; i < REC_Particle.rows(); i++) {
-            const int charge = static_cast<int>(REC_Particle.get<int8_t>("charge", i));
-            const int pid = REC_Particle.get<int32_t>("pid", i);
-            const int status = static_cast<int>(REC_Particle.get<int16_t>("status", i));
-            const double px = static_cast<double>(REC_Particle.get<float>("px", i));
-            const double py = static_cast<double>(REC_Particle.get<float>("py", i));
-            const double pz = static_cast<double>(REC_Particle.get<float>("pz", i));
-            const double vx = static_cast<double>(REC_Particle.get<float>("vx", i));
-            const double vy = static_cast<double>(REC_Particle.get<float>("vy", i));
-            const double vz = static_cast<double>(REC_Particle.get<float>("vz", i));
-            const double vt = static_cast<double>(REC_Particle.get<float>("vt", i));
-            const double beta = static_cast<double>(REC_Particle.get<float>("beta", i));
-            const double chi2pid = static_cast<double>(REC_Particle.get<float>("chi2pid", i));
-
-            const double mass = clas12::physics::ParticleUtils::get_mass(pid);
-            const double E = clas12::physics::ParticleUtils::compute_energy(px, py, pz, pid);
-
-            clas12::Particle particle(pid, status, i, charge, mass, px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
-
-            charge_map[charge].emplace_back(particle);
-        }
-
-        return charge_map;
-    }
-
-    // =========================================================================
-    // Filtering Methods
-    // =========================================================================
-
-    /**
-     * @brief Filter particles based on a custom predicate
-     */
     auto filter(const std::vector<clas12::Particle>& particles,
                 std::function<bool(const clas12::Particle&)> predicate) const
         -> std::vector<clas12::Particle> {
         std::vector<clas12::Particle> filtered;
         filtered.reserve(particles.size());
-
-        for (const auto& particle : particles) {
-            if (predicate(particle)) {
-                filtered.push_back(particle);
-            }
+        for (const auto& p : particles) {
+            if (predicate(p)) filtered.push_back(p);
         }
-
         return filtered;
     }
 
-    /**
-     * @brief Get particles with momentum in a specific range
-     */
     auto with_momentum_range(const std::vector<clas12::Particle>& particles,
                              double min_p, double max_p) const -> std::vector<clas12::Particle> {
         return filter(particles, [min_p, max_p](const clas12::Particle& p) {
-            double momentum = p.p();
-            return momentum >= min_p && momentum <= max_p;
+            const double m = p.p();
+            return m >= min_p && m <= max_p;
         });
     }
 
-    /**
-     * @brief Get particles with specific charge
-     */
     auto with_charge(const std::vector<clas12::Particle>& particles,
                      int charge) const -> std::vector<clas12::Particle> {
         return filter(particles, [charge](const clas12::Particle& p) {
@@ -256,80 +223,52 @@ class ParticleSelectorService : public Service {
         });
     }
 
-    /**
-     * @brief Get particles with chi2pid quality in a specific range
-     */
     auto with_chi2pid_range(const std::vector<clas12::Particle>& particles,
                             double min_chi2, double max_chi2) const -> std::vector<clas12::Particle> {
         return filter(particles, [min_chi2, max_chi2](const clas12::Particle& p) {
-            double chi2 = p.chi2pid();
-            return chi2 >= min_chi2 && chi2 <= max_chi2;
+            const double c = p.chi2pid();
+            return c >= min_chi2 && c <= max_chi2;
         });
     }
 
-    /**
-     * @brief Get particles with vertex z-position in a specific range
-     */
     auto with_vz_range(const std::vector<clas12::Particle>& particles,
                        double min_vz, double max_vz) const -> std::vector<clas12::Particle> {
         return filter(particles, [min_vz, max_vz](const clas12::Particle& p) {
-            double vz = p.vz();
-            return vz >= min_vz && vz <= max_vz;
+            const double v = p.vz();
+            return v >= min_vz && v <= max_vz;
         });
     }
 
-    /**
-     * @brief Get particles with theta angle in a specific range (degrees)
-     */
     auto with_theta_range(const std::vector<clas12::Particle>& particles,
                           double min_theta, double max_theta) const -> std::vector<clas12::Particle> {
         return filter(particles, [min_theta, max_theta](const clas12::Particle& p) {
-            double theta = p.theta();
-            return theta >= min_theta && theta <= max_theta;
+            const double t = p.theta();
+            return t >= min_theta && t <= max_theta;
         });
     }
 
-    /**
-     * @brief Get trigger particles (negative status in specified range)
-     */
     auto get_trigger_particles(const std::vector<clas12::Particle>& particles,
                                std::pair<double, double> status_range = {2000, 4000}) const
         -> std::vector<clas12::Particle> {
         return filter(particles, [status_range](const clas12::Particle& p) {
-            const double absStatus = std::abs(p.status());
-            return p.status() < 0.0 &&
-                   p.p() != 0.0 &&
-                   status_range.first <= absStatus &&
-                   absStatus < status_range.second;
+            const double abs_status = std::abs(p.status());
+            return p.status() < 0.0 && p.p() != 0.0 &&
+                   status_range.first <= abs_status && abs_status < status_range.second;
         });
     }
 
-    /**
-     * @brief Get forward detector particles (status 2000-4000)
-     */
     auto get_forward_detector(const std::vector<clas12::Particle>& particles) const
         -> std::vector<clas12::Particle> {
         return get_trigger_particles(particles, {2000, 4000});
     }
 
-    /**
-     * @brief Get central detector particles (status 4000-6000)
-     */
     auto get_central_detector(const std::vector<clas12::Particle>& particles) const
         -> std::vector<clas12::Particle> {
         return filter(particles, [](const clas12::Particle& p) {
-            const double absStatus = std::abs(p.status());
-            return absStatus >= 4000 && absStatus < 6000;
+            const double abs_status = std::abs(p.status());
+            return abs_status >= 4000 && abs_status < 6000;
         });
     }
-
-   private:
-    std::vector<clas12::PIDs> m_default_types = {
-        clas12::PIDs::ELECTRON, clas12::PIDs::POSITRON,
-        clas12::PIDs::PHOTON,
-        clas12::PIDs::PROTON, clas12::PIDs::NEUTRON,
-        clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
-        clas12::PIDs::KPLUS, clas12::PIDs::KMINUS};
 };
 
 }  // namespace clas12::framework

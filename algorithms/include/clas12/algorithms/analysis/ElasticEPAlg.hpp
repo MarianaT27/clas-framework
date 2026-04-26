@@ -13,6 +13,7 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
+#include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/physics/ParticleUtils.hpp>
 #include <clas12/Detectors.hpp>
 
@@ -124,7 +125,6 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        m_log = svc<clas12::framework::LoggingService>();
         m_hist = svc<clas12::framework::HistogramService>();
         m_ntuple = svc<clas12::framework::NTupleService>();
 
@@ -158,7 +158,7 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm {
         }
         // Select trigger electron (highest momentum in FD)
         const auto possible_electron =
-            clas12::physics::ParticleUtils::find_trigger_electron(electrons, {clas12::FD, clas12::BD});
+            clas12::framework::find_trigger_electron(electrons, {clas12::FD, clas12::BD});
 
         if (!possible_electron.has_value()) {
             return clas12::framework::StatusCode::FILTERED();
@@ -243,7 +243,6 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm {
     clas12::framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
 
     // Services (pointers set in on_initialize via svc<T>())
-    clas12::framework::LoggingService* m_log = nullptr;
     clas12::framework::HistogramService* m_hist = nullptr;
     clas12::framework::NTupleService* m_ntuple = nullptr;
 

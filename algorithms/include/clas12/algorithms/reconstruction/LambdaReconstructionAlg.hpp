@@ -125,7 +125,6 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        m_log_svc = svc<clas12::framework::LoggingService>();
         m_hist_svc = svc<clas12::framework::HistogramService>();
         m_ntuple_svc = svc<clas12::framework::NTupleService>();
 
@@ -473,7 +472,6 @@ class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm {
     clas12::framework::Cutflow m_cutflow;
 
     // Service pointers (cached in on_initialize via svc<T>())
-    clas12::framework::LoggingService* m_log_svc = nullptr;
     clas12::framework::HistogramService* m_hist_svc = nullptr;
     clas12::framework::NTupleService* m_ntuple_svc = nullptr;
 

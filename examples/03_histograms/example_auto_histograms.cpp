@@ -13,6 +13,7 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/framework/core/Histogram.hpp>
 #include <clas12/Particle.hpp>
@@ -103,23 +104,23 @@ public:
     auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_events_processed++;
 
-        const auto& REC_Particle = event.get_bank("REC::Particle");
+        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
 
-        int n_particles = REC_Particle.rows();
+        int n_particles = rec_particle.rows();
 
         // Fill individual histogram
         h_n_particles.fill(n_particles);
 
         // Extract particles using ParticleSelectorService
-        clas12::framework::ParticleMap particles = m_particle_svc->extract_particles(
-            REC_Particle,
+        auto particles = m_particle_svc->extract_particles(
+            rec_particle,
             {clas12::PIDs::ELECTRON, clas12::PIDs::POSITRON,
              clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
              clas12::PIDs::PHOTON}
         );
 
         // Fill histogram group
-        for (const auto& [pid, particle_list] : particles) {
+        for (const auto& [pid, particle_list] : particles.pid_groups()) {
             for (const auto& p : particle_list) {
                 double momentum = p.p();
                 double theta = p.theta() * TMath::RadToDeg();

@@ -48,10 +48,9 @@ class SamplingFractionService;
  * Usage:
  * @code
  * auto electron_cuts = service<clas12::framework::ElectronCutsService>("ElectronCutsService");
- * auto sf_service = service<clas12::framework::SamplingFractionService>("SamplingFractionService");
- *
- * // Connect the sampling fraction service
- * electron_cuts->set_sf_service(sf_service);
+ * // ElectronCutsService auto-resolves SamplingFractionService via the
+ * // framework — no manual wiring required as long as SamplingFractionService
+ * // is registered in the ApplicationBuilder.
  *
  * // Configure via struct (preferred)
  * ElectronCutsService::Config config;
@@ -171,27 +170,18 @@ class ElectronCutsService : public Service {
     // ============================================================================
 
     explicit ElectronCutsService(std::string name = "ElectronCutsService")
-        : Service(std::move(name)) {}
-
-    auto initialize() -> StatusCode override {
-        return StatusCode::SUCCESS();
+        : Service(std::move(name)) {
+        // Declare the SamplingFractionService dependency up-front. The
+        // framework retrieves it (and enforces topological ordering) before
+        // Service::initialize() hands control to on_initialize().
+        require_service(m_sf_service);
     }
 
     auto finalize() -> StatusCode override {
         return StatusCode::SUCCESS();
     }
 
-    /// Set the sampling fraction service (call this during algorithm initialization)
-    auto set_sf_service(SamplingFractionService* sf_service) -> void {
-        m_sf_service = sf_service;
-    }
-
-    /// Check if sampling fraction service is available
-    [[nodiscard]] auto has_sf_service() const -> bool {
-        return m_sf_service != nullptr;
-    }
-
-    /// Get the sampling fraction service (may be nullptr)
+    /// Get the sampling fraction service (populated automatically at init time)
     [[nodiscard]] auto sf_service() const -> SamplingFractionService* {
         return m_sf_service;
     }
@@ -356,12 +346,9 @@ class ElectronCutsService : public Service {
      * @param sector Sector number (1-6)
      * @return true if SF passes the cut
      *
-     * @note Requires SamplingFractionService to be set via set_sf_service()
      * @note Uses polarity and n_sigma from config
      */
     [[nodiscard]] auto pass_sampling_fraction_cut(double SF, double p, int sector) const -> bool {
-        if (!m_sf_service) return false;
-
         return m_sf_service->passes_cut(SF, p, sector,
                                          m_config.polarity,
                                          m_config.n_sigma);
@@ -374,12 +361,9 @@ class ElectronCutsService : public Service {
      * @param sector Sector number (1-6)
      * @return std::pair<double, double> (mean, sigma) or (0, 0) if service unavailable
      *
-     * @note Requires SamplingFractionService to be set via set_sf_service()
      * @note Uses polarity from config
      */
     [[nodiscard]] auto get_sampling_fraction_params(double p, int sector) const -> std::pair<double, double> {
-        if (!m_sf_service) return {0.0, 0.0};
-
         return m_sf_service->get_mean_sigma(p, sector,
                                              m_config.polarity);
     }

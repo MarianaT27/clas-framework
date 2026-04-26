@@ -10,6 +10,7 @@
 
 using clas12::framework::ThreadLocalHistogram1D;
 using clas12::framework::ThreadLocalHistogram2D;
+using clas12::framework::ThreadLocalHistogram3D;
 
 // =============================================================================
 // Correctness under contention
@@ -174,4 +175,83 @@ TEST(ThreadLocalHistogram, ThroughputSmoke) {
     ::testing::Test::RecordProperty("elapsed_ms", std::to_string(ms));
 
     EXPECT_EQ(h.entries(), static_cast<std::size_t>(total_fills));
+}
+
+// =============================================================================
+// ThreadLocalHistogram3D — basic fill + serialization to TH3D
+// =============================================================================
+
+TEST(ThreadLocalHistogram, Hist3DSingleThreadFill) {
+    ThreadLocalHistogram3D h(10, 0.0, 10.0,   // x: 1-wide bins
+                             20, 0.0, 2.0,    // y: 0.1-wide bins
+                             4,  -2.0, 2.0);  // z: 1-wide bins
+
+    // Fill bin (x∈[5,6), y∈[1.0,1.1), z∈[0,1)) five times.
+    for (int i = 0; i < 5; ++i) h.fill(5.5, 1.05, 0.5);
+    // And a single fill into bin (x∈[1,2), y∈[0,0.1), z∈[-1,0)).
+    h.fill(1.5, 0.05, -0.5);
+    // Underflow on z should be routed to bin 0, not dropped.
+    h.fill(5.5, 1.05, -10.0);
+
+    EXPECT_EQ(h.entries(), 7u);
+
+    auto root_hist = h.to_root("h3_test", "h3;x;y;z");
+    ASSERT_NE(root_hist, nullptr);
+    EXPECT_EQ(root_hist->GetEntries(), 7.0);
+
+    // The 5-fold-filled bin should have content 5.
+    const int bx = root_hist->GetXaxis()->FindBin(5.5);
+    const int by = root_hist->GetYaxis()->FindBin(1.05);
+    const int bz = root_hist->GetZaxis()->FindBin(0.5);
+    EXPECT_DOUBLE_EQ(root_hist->GetBinContent(bx, by, bz), 5.0);
+
+    // The single-fill bin.
+    const int bx2 = root_hist->GetXaxis()->FindBin(1.5);
+    const int by2 = root_hist->GetYaxis()->FindBin(0.05);
+    const int bz2 = root_hist->GetZaxis()->FindBin(-0.5);
+    EXPECT_DOUBLE_EQ(root_hist->GetBinContent(bx2, by2, bz2), 1.0);
+
+    // Z-underflow bin (z index 0) with the same x/y as the 5-count bin.
+    EXPECT_DOUBLE_EQ(root_hist->GetBinContent(bx, by, 0), 1.0);
+}
+
+TEST(ThreadLocalHistogram, Hist3DContendedFillsMatchSerialReference) {
+    constexpr int kNWorkers         = 8;
+    constexpr int kNFillsPerWorker  = 20'000;
+
+    auto fill_stream = [](auto& hist, int worker_seed) {
+        std::mt19937 rng(static_cast<unsigned>(worker_seed) * 6619U);
+        std::uniform_real_distribution<double> xd(0.0, 10.0);
+        std::uniform_real_distribution<double> yd(0.0, 5.0);
+        std::uniform_real_distribution<double> zd(-2.0, 2.0);
+        for (int i = 0; i < kNFillsPerWorker; ++i) {
+            hist.fill(xd(rng), yd(rng), zd(rng));
+        }
+    };
+
+    ThreadLocalHistogram3D ref(10, 0, 10, 10, 0, 5, 8, -2, 2);
+    for (int w = 0; w < kNWorkers; ++w) fill_stream(ref, w);
+
+    ThreadLocalHistogram3D par(10, 0, 10, 10, 0, 5, 8, -2, 2);
+    std::vector<std::thread> workers;
+    workers.reserve(kNWorkers);
+    for (int w = 0; w < kNWorkers; ++w) {
+        workers.emplace_back([&par, w, &fill_stream]() { fill_stream(par, w); });
+    }
+    for (auto& t : workers) t.join();
+
+    EXPECT_EQ(ref.entries(), par.entries());
+
+    // The merge path into TH3D should preserve bin contents under contention.
+    auto ref_th3 = ref.to_root("ref", "");
+    auto par_th3 = par.to_root("par", "");
+    for (int ix = 1; ix <= 10; ++ix) {
+        for (int iy = 1; iy <= 10; ++iy) {
+            for (int iz = 1; iz <= 8; ++iz) {
+                EXPECT_DOUBLE_EQ(ref_th3->GetBinContent(ix, iy, iz),
+                                 par_th3->GetBinContent(ix, iy, iz))
+                    << "bin (" << ix << "," << iy << "," << iz << ")";
+            }
+        }
+    }
 }

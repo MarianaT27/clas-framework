@@ -34,12 +34,66 @@
 
 #include <mutex>
 #include <string>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
 #include <functional>
 #include <vector>
 
 #include <clas12/framework/services/NTupleService.hpp>
 
 namespace clas12::framework {
+
+// =============================================================================
+// Modern template-based field registration (preferred, no macros)
+// =============================================================================
+//
+// A struct lists its N-tuple branches via a static constexpr member:
+//
+//     struct ElectronNTupleData {
+//         double e_p = 0.0;
+//         double e_theta = 0.0;
+//         int    sector = 0;
+//
+//         static constexpr auto ntuple_fields() {
+//             using T = ElectronNTupleData;
+//             return std::make_tuple(
+//                 clas12::framework::field("e_p",     &T::e_p),
+//                 clas12::framework::field("e_theta", &T::e_theta),
+//                 clas12::framework::field("sector",  &T::sector));
+//         }
+//     };
+//
+// NTupleWriter<T> picks up that static and wires each field into the
+// service at `init()` time via a single fold-expression call.  No
+// preprocessor, full type-checking, no 20-field limit.
+
+/// One binding between an N-tuple branch name and a struct member.
+template <typename T, typename Member>
+struct Field {
+    std::string_view name;
+    Member T::*      ptr;
+};
+
+/// Deduction helper so users write `field("e_p", &T::e_p)` without
+/// spelling the template arguments.
+template <typename T, typename Member>
+constexpr auto field(std::string_view name, Member T::* ptr) -> Field<T, Member> {
+    return Field<T, Member>{name, ptr};
+}
+
+/// Register every field listed in `fields` onto `svc` for `tree`, taking
+/// each branch's address from `data`.  Replaces NTUPLE_FIELDS expansion.
+template <typename T, typename Svc, typename... Fs>
+auto register_fields(Svc* svc, const std::string& tree, T& data,
+                     const std::tuple<Fs...>& fields) -> void {
+    if (!svc) return;
+    std::apply(
+        [&](const auto&... f) {
+            (svc->register_branch(tree, std::string{f.name}, &(data.*f.ptr)), ...);
+        },
+        fields);
+}
 
 /**
  * @brief Macro to declare N-Tuple fields with automatic registration
@@ -110,19 +164,22 @@ namespace clas12::framework {
 #define NTUPLE_REGISTER_20(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20) NTUPLE_REGISTER_19(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19) NTUPLE_REG(svc, tree, f20)
 
 
-/**
- * @brief Type trait to check if a type has NTUPLE_FIELDS macro
- */
-template <typename T, typename = void>
-struct has_ntuple_fields : std::false_type {};
+/// C++20 `requires`-expression detectors.  Unlike `std::void_t`-based
+/// SFINAE on `decltype(T::ntuple_fields())`, these do not try to deduce
+/// the return type of an `auto`-returning function during substitution,
+/// which is the path where clang silently drops the detection.
+template <typename T>
+concept HasStaticNTupleFields = requires { T::ntuple_fields(); };
 
 template <typename T>
-struct has_ntuple_fields<T, std::void_t<decltype(std::declval<T>().register_branches(
-                                std::declval<NTupleService*>(), std::declval<std::string>()))>>
-    : std::true_type {};
+concept HasMemberRegisterBranches = requires(T& t, NTupleService* svc, std::string s) {
+    t.register_branches(svc, s);
+};
 
+/// True if `T` supports either registration path (modern or legacy).
 template <typename T>
-inline constexpr bool has_ntuple_fields_v = has_ntuple_fields<T>::value;
+inline constexpr bool has_ntuple_fields_v =
+    HasStaticNTupleFields<T> || HasMemberRegisterBranches<T>;
 
 
 /**
@@ -167,8 +224,13 @@ inline constexpr bool has_ntuple_fields_v = has_ntuple_fields<T>::value;
  */
 template <typename T>
 class NTupleWriter {
-    static_assert(has_ntuple_fields_v<T>,
-                  "NTupleWriter requires a struct with NTUPLE_FIELDS macro");
+    // NOTE: no class-level `static_assert(has_ntuple_fields_v<T>)` here.
+    // When `NTupleWriter<T>` is declared as a member of T's enclosing
+    // class (e.g. `ElectronAnalysisAlg`), C++'s deferred-body-parsing
+    // rule means `T::ntuple_fields()` hasn't been analysed yet and the
+    // concept check silently reports `false`.  Detection is done
+    // inside `init()` instead — that function is only parsed after the
+    // enclosing class is complete, so the check works reliably there.
 
 public:
     NTupleWriter() = default;
@@ -195,7 +257,23 @@ public:
         m_svc = svc;
         m_tree_name = tree_name;
         if (svc) {
-            m_data.register_branches(svc, tree_name);
+            // Prefer the modern `static T::ntuple_fields()` path; fall
+            // back to the legacy NTUPLE_FIELDS-generated
+            // `register_branches(svc, tree)` method if present.  Both
+            // checks use inline requires-expressions, which are
+            // evaluated at init() instantiation time — after the
+            // enclosing class has finished parsing, so deferred
+            // method bodies are fully analysable.
+            if constexpr (requires { T::ntuple_fields(); }) {
+                register_fields(svc, tree_name, m_data, T::ntuple_fields());
+            } else if constexpr (requires { m_data.register_branches(svc, tree_name); }) {
+                m_data.register_branches(svc, tree_name);
+            } else {
+                static_assert(sizeof(T) == 0,
+                              "NTupleWriter<T>: T must expose either a "
+                              "static ntuple_fields() or a member "
+                              "register_branches(svc, tree)");
+            }
             m_initialized = true;
         }
     }

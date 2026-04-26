@@ -129,7 +129,6 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        m_log = svc<clas12::framework::LoggingService>();
         m_hist = svc<clas12::framework::HistogramService>();
         m_ntuple = svc<clas12::framework::NTupleService>();
 
@@ -343,7 +342,6 @@ class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm {
     clas12::framework::Cutflow m_cutflow;
 
     // Services (pointers set in on_initialize via svc<T>())
-    clas12::framework::LoggingService* m_log = nullptr;
     clas12::framework::HistogramService* m_hist = nullptr;
     clas12::framework::NTupleService* m_ntuple = nullptr;
 

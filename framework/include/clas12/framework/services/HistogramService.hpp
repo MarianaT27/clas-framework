@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <fmt/format.h>
 #include <map>
 #include <memory>
@@ -14,6 +13,7 @@
 #include "TFile.h"
 #include "TH1D.h"
 #include "TH2D.h"
+#include "TH3D.h"
 #include "TProfile.h"
 
 namespace clas12::framework {
@@ -154,6 +154,14 @@ class HistogramService : public Service {
     auto get_output_hist2D(const std::string& path) -> TH2D* {
         auto it = m_hist2D.find(path);
         return (it != m_hist2D.end()) ? it->second.get() : nullptr;
+    }
+
+    /**
+     * @brief Look up the merged ROOT TH3D for a previously-booked path.
+     */
+    auto get_output_hist3D(const std::string& path) -> TH3D* {
+        auto it = m_hist3D.find(path);
+        return (it != m_hist3D.end()) ? it->second.get() : nullptr;
     }
 
     /**
@@ -410,29 +418,6 @@ class HistogramService : public Service {
     auto clone_hist2D_with_suffix(const std::string& base_path,
                                    const std::string& suffix) -> TH2D*;
 
-    /**
-     * @brief Book histograms for all 6 sectors
-     *
-     * Creates 6 copies of a histogram template, one for each CLAS12 sector.
-     *
-     * @param base_path Base path (e.g., "/Electrons/momentum")
-     * @param title Base title
-     * @param nbins Number of bins
-     * @param xmin Minimum x value
-     * @param xmax Maximum x value
-     * @return std::array<TH1D*, 6> Array of pointers to sector histograms
-     */
-    auto book_sector_hist1D(const std::string& base_path, const std::string& title,
-                            int nbins, double xmin, double xmax) -> std::array<ThreadLocalHistogram1D*, 6> {
-        std::array<ThreadLocalHistogram1D*, 6> hists{};
-        for (int sector = 1; sector <= 6; ++sector) {
-            std::string path = fmt::format("{}_sector{}", base_path, sector);
-            std::string sect_title = fmt::format("{} (Sector {})", title, sector);
-            hists[sector - 1] = book_hist1D(path, sect_title, nbins, xmin, xmax);
-        }
-        return hists;
-    }
-
     // ========================================================================
     // Lock-Free Atomic Histogram Booking (for true parallel accumulation)
     // ========================================================================
@@ -472,6 +457,19 @@ class HistogramService : public Service {
                             int nbinsy, double ymin, double ymax) -> ThreadLocalHistogram2D*;
 
     /**
+     * @brief Book a lock-free 3D atomic histogram.
+     *
+     * Use when the analysis would otherwise keep a stack of per-slice 2D
+     * histograms keyed by some binned variable (momentum, theta, etc.).
+     * Put the slicing variable on the X axis and project at analysis time
+     * via `TH3::ProjectionYZ(..., binlo, binhi)`.
+     */
+    auto book_hist3D(const std::string& path, const std::string& title,
+                     int nbinsx, double xmin, double xmax,
+                     int nbinsy, double ymin, double ymax,
+                     int nbinsz, double zmin, double zmax) -> ThreadLocalHistogram3D*;
+
+    /**
      * @brief Get an atomic 1D histogram by path
      * @param path Histogram path
      * @return ThreadLocalHistogram1D* Pointer to histogram or nullptr if not found
@@ -492,6 +490,14 @@ class HistogramService : public Service {
     }
 
     /**
+     * @brief Get an atomic 3D histogram by path
+     */
+    auto get_hist3D(const std::string& path) -> ThreadLocalHistogram3D* {
+        auto it = m_atomic_hist3D.find(path);
+        return (it != m_atomic_hist3D.end()) ? it->second.get() : nullptr;
+    }
+
+    /**
      * @brief Get number of booked atomic 1D histograms
      */
     auto num_atomic_hist1D() const -> size_t {
@@ -505,21 +511,38 @@ class HistogramService : public Service {
         return m_atomic_hist2D.size();
     }
 
+    /**
+     * @brief Get number of booked atomic 3D histograms
+     */
+    auto num_atomic_hist3D() const -> size_t {
+        return m_atomic_hist3D.size();
+    }
+
+    /**
+     * @brief Get number of booked 3D histograms (post-merge)
+     */
+    auto num_hist3D() const -> size_t {
+        return m_hist3D.size();
+    }
+
    private:
     bool m_auto_write = true;     // Automatically write histograms on finalize
     bool m_verify_output = false; // Verify histograms after writing (disabled by default)
     std::map<std::string, std::unique_ptr<TH1D>> m_hist1D;
     std::map<std::string, std::unique_ptr<TH2D>> m_hist2D;
+    std::map<std::string, std::unique_ptr<TH3D>> m_hist3D;
     std::map<std::string, std::unique_ptr<TProfile>> m_profiles;
     // Lock-free atomic histograms for parallel accumulation
     std::map<std::string, std::unique_ptr<ThreadLocalHistogram1D>> m_atomic_hist1D;
     std::map<std::string, std::unique_ptr<ThreadLocalHistogram2D>> m_atomic_hist2D;
+    std::map<std::string, std::unique_ptr<ThreadLocalHistogram3D>> m_atomic_hist3D;
     // Metadata for atomic histograms (needed for ROOT conversion)
     struct AtomicHistMeta {
         std::string title;
     };
     std::map<std::string, AtomicHistMeta> m_atomic_hist1D_meta;
     std::map<std::string, AtomicHistMeta> m_atomic_hist2D_meta;
+    std::map<std::string, AtomicHistMeta> m_atomic_hist3D_meta;
     OutputFileService* m_output_svc = nullptr;
 
     auto extract_name(const std::string& path) -> std::string;
