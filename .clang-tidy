@@ -1,0 +1,46 @@
+# Static analysis configuration for clas12-analysis.
+#
+# Run locally on changed files only:
+#   git diff --name-only origin/main... | grep -E '\.(cpp|hpp)$' \
+#     | xargs -r clang-tidy -p build
+#
+# CI runs the same against the merge base.
+
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-exception-escape,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-narrowing-conversions,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-special-member-functions,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  -modernize-pass-by-value,
+  performance-*,
+  -performance-avoid-endl,
+  readability-*,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-uppercase-literal-suffix,
+  -readability-function-cognitive-complexity,
+  -readability-named-parameter,
+
+WarningsAsErrors: ''
+
+HeaderFilterRegex: '^(framework|algorithms|clas12|analyses)/.*\.hpp$'
+
+CheckOptions:
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.FunctionCase: lower_case
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.PrivateMemberPrefix: m_
+  readability-identifier-naming.ConstantCase: UPPER_CASE
+  modernize-use-default-member-init.UseAssignment: true
+  modernize-use-override.IgnoreDestructors: true

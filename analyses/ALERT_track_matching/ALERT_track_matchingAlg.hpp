@@ -12,7 +12,6 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
-#include <clas12/framework/core/ServiceHelpers.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/Particle.hpp>

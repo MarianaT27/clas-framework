@@ -23,9 +23,8 @@
  *
  * Ownership: the service lives in `ServiceManager`. A `ServiceRef<T>` is
  * a non-owning observer, trivially copyable, safe to live in algorithm
- * members. This is NOT `ServiceHandle<T>` — that class is the legacy
- * name-based `initialize(ServiceManager&)` pattern; this one is a plain
- * observer that integrates with the require_service/declare_* helpers.
+ * members. It integrates with the require_service/declare_* helpers on
+ * SimpleAlgorithm.
  */
 
 namespace clas12::framework {

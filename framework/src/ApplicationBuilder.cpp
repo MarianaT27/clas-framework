@@ -23,7 +23,6 @@
 #include <clas12/framework/services/OutputFileService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/framework/services/ProfilingService.hpp>
-#include <clas12/framework/services/RootFileService.hpp>
 #include <clas12/framework/services/SamplingFractionService.hpp>
 
 namespace clas12::framework {
@@ -68,7 +67,6 @@ auto ApplicationBuilder::add_standard_services_to(Application& app) -> void {
 
     // File services
     auto hipo_svc = std::make_unique<HipoFileService>();
-    auto root_svc = std::make_unique<RootFileService>();
     auto metadata_svc = std::make_unique<MetadataService>();
     auto profiling_svc = std::make_unique<ProfilingService>();
 
@@ -78,7 +76,6 @@ auto ApplicationBuilder::add_standard_services_to(Application& app) -> void {
     output_svc->set_output_file(m_output_file);
 
     // Configure other file services
-    root_svc->set_default_output(m_output_file);
     metadata_svc->set_output_file(m_output_file);
     hipo_svc->set_input_files(m_input_files);
 
@@ -98,7 +95,6 @@ auto ApplicationBuilder::add_standard_services_to(Application& app) -> void {
     mgr.add_service(std::move(log_svc));
     mgr.add_service(std::move(output_svc));
     mgr.add_service(std::move(hipo_svc));
-    mgr.add_service(std::move(root_svc));
     mgr.add_service(std::move(conditions_svc));
     mgr.add_service(std::move(hist_svc),     {"OutputFileService"});
     mgr.add_service(std::move(particle_svc));

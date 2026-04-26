@@ -298,7 +298,6 @@ class ServiceManager {
 
 // Include IAlgorithm.hpp for the Algorithm::service template implementation
 #include <clas12/framework/core/IAlgorithm.hpp>
-#include <clas12/framework/core/ServiceHandle.hpp>
 
 // Template implementation for Algorithm::service
 namespace clas12::framework {
@@ -309,22 +308,6 @@ auto Algorithm::service(const std::string& service_name) -> T* {
         return nullptr;
     }
     return m_svc_mgr->get_service<T>(service_name);
-}
-
-template <ServiceConcept T>
-auto Algorithm::initialize_handle(ServiceHandle<T>& handle) -> StatusCode {
-    if (!m_svc_mgr) {
-        return StatusCode::failure(
-            fmt::format("Algorithm '{}': ServiceManager not set", m_name));
-    }
-
-    auto sc = handle.initialize(*m_svc_mgr);
-    if (sc.is_failure()) {
-        return StatusCode::failure(
-            fmt::format("Algorithm '{}': {}", m_name, sc.message()));
-    }
-
-    return StatusCode::SUCCESS();
 }
 
 // Service::locate_service_impl - deferred until ServiceManager is complete

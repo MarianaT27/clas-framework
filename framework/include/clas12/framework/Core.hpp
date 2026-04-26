@@ -23,7 +23,6 @@
 // Services
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/core/ServiceManager.hpp>
-#include <clas12/framework/core/ServiceHandle.hpp>
 
 // Configuration
 #include <clas12/framework/core/Property.hpp>

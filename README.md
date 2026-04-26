@@ -15,9 +15,11 @@
 ## Quick Start
 
 ### Prerequisites
-- C++20 compiler
-- ROOT 6.x
-- Meson build system
+- C++20 compiler — GCC 12+ or Clang 14+ (coroutine support required)
+- [ROOT](https://root.cern/install/) 6.x with `root-config` on `PATH`
+- [Meson](https://mesonbuild.com/) ≥ 1.0 and Ninja
+- Eigen3 (`apt install libeigen3-dev` / `brew install eigen`)
+- Other deps (fmt, lz4, tomlplusplus, gtest) are vendored as Meson subprojects
 
 ### Installation
 
@@ -30,8 +32,23 @@ cd clas-framework
 meson setup build
 
 # Compile
-meson compile
+meson compile -C build
+
+# Run the test suite
+meson test -C build
 ```
+
+### Troubleshooting
+
+- **`root-config: command not found`** — ROOT is not on your PATH. Source
+  ROOT's `thisroot.sh` (Linux/macOS) or activate the appropriate
+  environment module before `meson setup`.
+- **`error: 'co_yield' was not declared in this scope`** — your compiler
+  is too old. GCC 12+ or Clang 14+ is required for C++20 coroutines.
+- **HIPO link errors** — make sure the in-tree HIPO4 build under
+  `extern/hipo4` was built (it builds as a meson subdir; a stale
+  `build/` directory can hold an old version — `rm -rf build && meson
+  setup build` to reset).
 
 ### Your First Analysis
 
@@ -112,7 +129,9 @@ int main() {
 **Algorithm Framework**
 - Base `Algorithm` class with initialize/execute/finalize lifecycle
 - Specialized types: `MonitoringAlgorithm`, `FilterAlgorithm`
-- `ServiceHandle` for type-safe service access with validation
+- `ServiceRef<T>` for type-safe service access — declared via
+  `required_services(...)` in the constructor and auto-injected by the
+  framework before `on_initialize()` runs
 - Clean separation between framework and physics code
 
 **Built-in Algorithms**
@@ -162,11 +181,14 @@ Chi2 PID                                42108    42.11%    93.10%
 
 | File | Description |
 |------|-------------|
-| `src/pi0.cpp` | Pi0 reconstruction using ApplicationBuilder |
-| `src/example_builder.cpp` | ApplicationBuilder pattern demo |
-| `src/improved.cpp` | Full framework example with all services |
-| `src/electron_analysis.cpp` | Electron analysis |
-| `src/lambda.cpp` | Lambda reconstruction |
+| [analyses/pi0/pi0.cpp](analyses/pi0/pi0.cpp) | Pi0 reconstruction using ApplicationBuilder |
+| [examples/02_application_builder/example_builder.cpp](examples/02_application_builder/example_builder.cpp) | ApplicationBuilder pattern demo |
+| [examples/04_framework/example_framework.cpp](examples/04_framework/example_framework.cpp) | Full framework example with all services |
+| [analyses/electron/electron_analysis.cpp](analyses/electron/electron_analysis.cpp) | Electron analysis |
+| [analyses/lambda/lambda.cpp](analyses/lambda/lambda.cpp) | Lambda reconstruction |
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for coding style, DI conventions,
+and the PR checklist.
 
 ## References
 

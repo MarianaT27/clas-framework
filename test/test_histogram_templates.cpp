@@ -340,8 +340,8 @@ TEST_F(HistogramTemplatesTest, VerificationOption) {
 // ThreadLocalHistogramGroup Tests
 // ============================================================================
 
-TEST_F(HistogramTemplatesTest, AtomicHistogramGroupCreation) {
-    ThreadLocalHistogramGroup group(&m_hist_svc, "/Atomic");
+TEST_F(HistogramTemplatesTest, ThreadLocalHistogramGroupCreation) {
+    ThreadLocalHistogramGroup group(&m_hist_svc, "/ThreadLocal");
 
     auto* h1 = group.add_hist1D("momentum", "Momentum;p [GeV/c];Events", 100, 0.0, 10.0);
     auto* h2 = group.add_hist1D("theta", "Theta;#theta [deg];Events", 180, 0.0, 180.0);
@@ -350,8 +350,8 @@ TEST_F(HistogramTemplatesTest, AtomicHistogramGroupCreation) {
     EXPECT_NE(h2, nullptr);
 }
 
-TEST_F(HistogramTemplatesTest, AtomicHistogramGroupFill) {
-    ThreadLocalHistogramGroup group(&m_hist_svc, "/AtomicFill");
+TEST_F(HistogramTemplatesTest, ThreadLocalHistogramGroupFill) {
+    ThreadLocalHistogramGroup group(&m_hist_svc, "/ThreadLocalFill");
 
     group.add_hist1D("momentum", "Momentum", 100, 0.0, 10.0);
     group.add_hist2D("p_vs_theta", "p vs theta", 100, 0.0, 10.0, 180, 0.0, 180.0);
@@ -363,8 +363,8 @@ TEST_F(HistogramTemplatesTest, AtomicHistogramGroupFill) {
     group.fill("nonexistent", 1.0);
 }
 
-TEST_F(HistogramTemplatesTest, AtomicHistogramGroupGetHistogram) {
-    ThreadLocalHistogramGroup group(&m_hist_svc, "/AtomicGet");
+TEST_F(HistogramTemplatesTest, ThreadLocalHistogramGroupGetHistogram) {
+    ThreadLocalHistogramGroup group(&m_hist_svc, "/ThreadLocalGet");
 
     group.add_hist1D("momentum", "Momentum", 100, 0.0, 10.0);
 

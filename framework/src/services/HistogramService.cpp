@@ -101,28 +101,28 @@ auto HistogramService::write_histograms() -> void {
     TFile* file = m_output_svc->get_file();
     if (!file) return;
 
-    for (auto& [path, hist] : m_hist1D) {
+    // TObject::Write returns the number of bytes written (0 on failure,
+    // e.g. closed file or disk full). Track failures so we can surface
+    // them instead of silently dropping output.
+    std::size_t failed = 0;
+    auto write_one = [&](TObject* obj, const std::string& path) {
         create_directories(file, path);
-        hist->Write("", TObject::kOverwrite);
-    }
+        if (obj->Write("", TObject::kOverwrite) <= 0) {
+            ++failed;
+            Log::error(name(), "Failed to write histogram '{}'", path);
+        }
+    };
 
-    for (auto& [path, hist] : m_hist2D) {
-        create_directories(file, path);
-        hist->Write("", TObject::kOverwrite);
-    }
-
-    for (auto& [path, hist] : m_hist3D) {
-        create_directories(file, path);
-        hist->Write("", TObject::kOverwrite);
-    }
-
-    for (auto& [path, prof] : m_profiles) {
-        create_directories(file, path);
-        prof->Write("", TObject::kOverwrite);
-    }
+    for (auto& [path, hist] : m_hist1D)   write_one(hist.get(), path);
+    for (auto& [path, hist] : m_hist2D)   write_one(hist.get(), path);
+    for (auto& [path, hist] : m_hist3D)   write_one(hist.get(), path);
+    for (auto& [path, prof] : m_profiles) write_one(prof.get(), path);
 
     Log::info(name(), "Wrote {} 1D, {} 2D, {} 3D histograms, and {} profiles",
               m_hist1D.size(), m_hist2D.size(), m_hist3D.size(), m_profiles.size());
+    if (failed > 0) {
+        Log::error(name(), "{} histogram(s) failed to write", failed);
+    }
 }
 
 auto HistogramService::clone_hist1D_with_suffix(const std::string& base_path,

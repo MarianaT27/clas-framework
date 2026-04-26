@@ -222,12 +222,14 @@ class DTFFitter {
     }
 
     /**
-     * @brief Add mass constraint for intermediate resonance
+     * @brief Add a mass constraint tagged for an intermediate resonance role.
+     *
+     * The current solver treats this as a plain final-state mass constraint;
+     * the resonance label is stored for downstream tooling but not used by
+     * the fit itself.
      */
     auto constrain_mass(const std::string& resonance_role, double mass)
         -> DTFFitter& {
-        // TODO: Handle intermediate resonances
-        // For now, treat as final state mass constraint
         auto constraint = DTFConstraint(DTFConstraint::Type::Mass);
         constraint.value = mass;
         constraint.resonance_role = resonance_role;

@@ -225,7 +225,7 @@ protected:
      *
      * @tparam T Service type (must satisfy ServiceConcept)
      * @param service_name Name of the service to retrieve
-     * @return ServiceHandle<T>& Reference to the service handle
+     * @return ServiceRef<T>& Reference to the service handle
      *
      * @see Requirement 4.2
      */

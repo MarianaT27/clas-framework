@@ -458,17 +458,30 @@ int main(int argc, char* argv[]) {
         fmt::print("\nOr re-run with --submit to submit automatically.\n");
     } else {
         fmt::print("\nSubmitting jobs...\n");
-        // TODO: Actually submit jobs using system() calls
-        fmt::print("Jobs submitted! Monitor with:\n");
 
+        std::string glob;
+        std::string monitor;
         switch (*batch_system) {
             case clas12::framework::BatchSystem::System::SLURM:
-                fmt::print("  squeue -u $USER\n");
+                glob = "batch_scripts/*.slurm";
+                monitor = "squeue -u $USER";
                 break;
             case clas12::framework::BatchSystem::System::Local:
-                fmt::print("  ps aux | grep {}\n", cfg.job_name);
+                glob = "batch_scripts/*.sh";
+                monitor = fmt::format("ps aux | grep {}", cfg.job_name);
                 break;
         }
+
+        const std::string cmd = (*batch_system == clas12::framework::BatchSystem::System::SLURM)
+            ? fmt::format("for script in {}; do sbatch \"$script\"; done", glob)
+            : fmt::format("for script in {}; do bash \"$script\" & done", glob);
+
+        const int rc = std::system(cmd.c_str());
+        if (rc != 0) {
+            clas12::framework::Log::error("Batch", "Submission command exited with status {}", rc);
+            return EXIT_FAILURE;
+        }
+        fmt::print("Submitted. Monitor with:\n  {}\n", monitor);
     }
 
     fmt::print("\nTo merge output ROOT files after jobs complete:\n");

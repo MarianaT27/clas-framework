@@ -1,23 +1,28 @@
-# Example Framework Configuration
-# This TOML file configures the CLAS12 analysis framework
+# Example framework configuration for the CLAS12 analysis framework.
+#
+# Keys are tagged below as REQUIRED or OPTIONAL. Optional keys use the
+# default shown if omitted from your TOML file.
 
 [application]
-name = "CLAS12 Example Analysis"
-max_events = 10000
-num_threads = 4
+name        = "CLAS12 Example Analysis"  # OPTIONAL, default: executable name
+max_events  = 10000                      # OPTIONAL, default: process all events (-1)
+num_threads = 4                          # OPTIONAL, default: hardware_concurrency()
 
 [input]
-# Directory to search for input files
+# REQUIRED: directory the framework scans for input HIPO files. Relative
+# paths are resolved from the working directory the analysis runs in.
 data_directory = "data/"
 
 [output]
+# REQUIRED: ROOT file the HistogramService writes to. Created/overwritten
+# (RECREATE) at startup.
 histogram_file = "framework_example.root"
 
 [electron_selection]
-target = "LD2"
-polarity = "Outbending"
-momentum_cut = 0.8
-chi2pid_cut = 3.0
+target        = "LD2"        # REQUIRED. One of: LD2, CxC, Cu, Sn, CuSn, Custom
+polarity      = "Outbending" # REQUIRED. One of: Inbending, Outbending
+momentum_cut  = 0.8          # OPTIONAL, default: 0.8 (GeV)
+chi2pid_cut   = 3.0          # OPTIONAL, default: 5.0  (cut applies to |chi2pid|)
 
 [conditions]
-run_number = 5032
+run_number = 5032            # OPTIONAL, default: 0. Used for IOV-bound conditions.

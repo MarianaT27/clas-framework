@@ -380,7 +380,7 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
             tof_time, tof_path, start_time);
 
         // Fill base diagnostics (kinematics + vertex + timing + PID + phase space) in one call
-        clas12::framework::AtomicHistogramFiller::fill_pion_diagnostics(
+        clas12::framework::ThreadLocalHistogramFiller::fill_pion_diagnostics(
             h.base.get(), pion, timing, electron_vz, tof_path, sector);
 
         // Calorimeter histograms

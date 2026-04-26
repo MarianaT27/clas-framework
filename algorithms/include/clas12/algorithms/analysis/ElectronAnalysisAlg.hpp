@@ -151,8 +151,8 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         fill_final_histograms(electron, can.calorimeter, can.traj, can.track);
 
         // Fill N-tuple if service is available
-        if (m_ntuple && m_config.enable_ntuple) {
-            m_ntuple_electron.data().from(electron, can);
+        if (m_ntuple) {
+            m_ntuple_electron.data().from(can);
             m_ntuple_electron.fill();
         }
 
@@ -168,7 +168,7 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
             auto final_count = m_cutflow.get_count("DC Chi2/NDF");
             Log::info(name(), "Events passing all cuts: {}", final_count);
 
-            if (m_ntuple && m_config.enable_ntuple) {
+            if (m_ntuple) {
                 auto entries = m_ntuple->get_entries("electron_analysis");
                 Log::info(name(), "N-tuple has {} entries", entries);
             }
@@ -403,7 +403,7 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
             book_cut_stage_histograms("DCChi2");
             Log::info(name(), "Cut-stage histograms enabled");
         }
-        Log::info(name(), "Book all histograms")
+        Log::info(name(), "Book all histograms");
     }
 
     /**

@@ -317,7 +317,7 @@ private:
  * Provides one-call filling of all histograms in PionDiagnostics and other
  * ThreadLocalHistogramTemplates, reducing ~30 manual fill lines to a single call.
  */
-class AtomicHistogramFiller {
+class ThreadLocalHistogramFiller {
 public:
     /**
      * @brief Fill all pion diagnostic histograms from PionDiagnostics template

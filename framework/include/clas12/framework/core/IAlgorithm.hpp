@@ -15,8 +15,6 @@ namespace clas12::framework {
 // Forward declarations
 class Event;
 class ServiceManager;
-template <ServiceConcept T>
-class ServiceHandle;
 
 /**
  * @brief Algorithm lifecycle states
@@ -52,10 +50,11 @@ enum class AlgorithmState : std::uint8_t {
  * same algorithm instance (see Application::run -> hipo::chain::process).
  * Derived classes MUST ensure all mutable member state accessed from
  * execute()/process() is either:
- *   1. atomic (std::atomic<T>, AtomicHistogram, atomic Cutflow counters)
+ *   1. atomic (std::atomic<T>, atomic Cutflow counters)
  *   2. mutex-guarded
- *   3. thread-local (one instance per worker via thread_local storage)
- *   4. append-only after initialize() (e.g. configuration, ServiceHandle)
+ *   3. thread-local (one instance per worker via ThreadLocalHistogram or
+ *      thread_local storage)
+ *   4. append-only after initialize() (e.g. configuration, ServiceRef)
  * initialize() and finalize() are serial; execute()/process() is concurrent.
  */
 class IAlgorithm {
@@ -238,19 +237,6 @@ class Algorithm : public IAlgorithm {
     template <ServiceConcept T>
     auto service(const std::string& service_name) -> T*;
 
-    /**
-     * @brief Initialize a service handle
-     *
-     * Helper method to initialize a ServiceHandle during algorithm initialization.
-     * Reports errors with the algorithm name for better diagnostics.
-     *
-     * @tparam T Service type (must satisfy ServiceConcept)
-     * @param handle The service handle to initialize
-     * @return StatusCode SUCCESS if handle was initialized, FAILURE with message otherwise
-     * @see ServiceConcept
-     */
-    template <ServiceConcept T>
-    auto initialize_handle(ServiceHandle<T>& handle) -> StatusCode;
 };
 
 }  // namespace clas12::framework

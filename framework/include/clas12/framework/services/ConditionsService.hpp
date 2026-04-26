@@ -149,18 +149,6 @@ class ConditionsService : public Service {
         }
     }
 
-    /**
-     * @brief Load conditions from a database file
-     * @param db_path Path to SQLite database
-     * @return StatusCode Success or failure
-     */
-    auto load_from_database(const std::string& db_path) -> StatusCode {
-        Log::info(name(), "Loading from database: {}", db_path);
-        // TODO: Implement SQLite reading
-        // For now, just return success
-        return StatusCode::SUCCESS();
-    }
-
    private:
     struct ConditionData {
         std::any value;

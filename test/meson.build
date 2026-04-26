@@ -27,13 +27,6 @@ test_result = executable(
   dependencies: test_deps,
 )
 
-# Unit tests for ServiceHandle
-test_service_handle = executable(
-  'test_service_handle',
-  'test_service_handle.cpp',
-  dependencies: test_deps,
-)
-
 # Unit tests for Event store
 test_event_store = executable(
   'test_event_store',
@@ -66,7 +59,6 @@ test_ranges = executable(
 test('Cutflow Tests', test_cutflow)
 test('Service Tests', test_services)
 test('Result Type Tests', test_result)
-test('ServiceHandle Tests', test_service_handle)
 test('Event Store Tests', test_event_store)
 test('Logging Service Tests', test_logging_service)
 test('Application Exception Tests', test_application_exception)
@@ -165,3 +157,12 @@ test_rntuple_service = executable(
 )
 
 test('RNTuple Service Tests', test_rntuple_service)
+
+# Boundary tests for ElectronCutsService cut predicates.
+test_electron_cuts_service = executable(
+  'test_electron_cuts_service',
+  'test_electron_cuts_service.cpp',
+  dependencies: test_deps,
+)
+
+test('ElectronCutsService Tests', test_electron_cuts_service)

@@ -34,7 +34,6 @@
 #include <clas12/framework/core/HistogramTemplates.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ServiceHelpers.hpp>
 #include <clas12/framework/core/SimpleAlgorithm.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
 #include <clas12/framework/services/FiducialService.hpp>

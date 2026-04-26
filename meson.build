@@ -56,6 +56,25 @@ endif
 # Add global C++20 arguments
 add_project_arguments(cpp20_args, language: 'cpp')
 
+# Optional strict-warning profile, opt in via -Dstrict_warnings=true.
+# CI turns this on; local dev keeps the lax default.
+if get_option('strict_warnings')
+  strict_args = [
+    '-Wextra',
+    '-Wconversion',
+    '-Wshadow',
+    '-Wnon-virtual-dtor',
+    '-Wold-style-cast',
+    '-Wcast-align',
+    '-Wpedantic',
+    '-Werror',
+  ]
+  # Filter to flags the compiler actually accepts.
+  strict_args = cpp.get_supported_arguments(strict_args)
+  add_project_arguments(strict_args, language: 'cpp')
+  message('Strict warnings enabled: ' + ' '.join(strict_args))
+endif
+
 message('Compiler: ' + compiler_id + ' ' + compiler_version)
 message('C++20 coroutine support: enabled')
 

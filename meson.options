@@ -1,0 +1,6 @@
+option(
+  'strict_warnings',
+  type: 'boolean',
+  value: false,
+  description: 'Enable extra warnings (-Wextra -Wconversion -Wshadow ...) and treat them as errors. Used by CI.',
+)

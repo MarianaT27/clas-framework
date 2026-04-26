@@ -254,13 +254,6 @@ class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm {
             fill_histograms(electron, kin, *good_piplus.front(), *good_piminus.front());
         }
 
-        // Write event to output HIPO file
-        if (m_hipo_svc && m_hipo_svc->is_output_enabled()) {
-            // TODO: event writing needs migration to new hipo4 API
-            // The old API used: event.hipo_event().raw_event()
-            // m_hipo_svc->get()->write_event(raw_event);
-        }
-
         // Store selected particles for downstream algorithms
         event.set_decision_typed(clas12::framework::Decisions::HasDiPionEvent, true);
         event.store_typed(clas12::framework::Keys::DiPionQ2, kin.q2);
