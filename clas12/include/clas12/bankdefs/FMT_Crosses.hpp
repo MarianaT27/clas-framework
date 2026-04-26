@@ -42,42 +42,82 @@ class FMT_Crosses {
 
     FMT_Crosses() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("index"); h) h_index = *h;
-        else h_index = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("region"); h) h_region = *h;
-        else h_region = {};
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
-        if (auto h = schema.get_handle("err_x"); h) h_err_x = *h;
-        else h_err_x = {};
-        if (auto h = schema.get_handle("err_y"); h) h_err_y = *h;
-        else h_err_y = {};
-        if (auto h = schema.get_handle("err_z"); h) h_err_z = *h;
-        else h_err_z = {};
-        if (auto h = schema.get_handle("ux"); h) h_ux = *h;
-        else h_ux = {};
-        if (auto h = schema.get_handle("uy"); h) h_uy = *h;
-        else h_uy = {};
-        if (auto h = schema.get_handle("uz"); h) h_uz = *h;
-        else h_uz = {};
-        if (auto h = schema.get_handle("cluster1Index"); h) h_cluster1Index = *h;
-        else h_cluster1Index = {};
-        if (auto h = schema.get_handle("cluster2Index"); h) h_cluster2Index = *h;
-        else h_cluster2Index = {};
-        if (auto h = schema.get_handle("trkID"); h) h_trkID = *h;
-        else h_trkID = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_index;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_region;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+            hipo::column_handle h_err_x;
+            hipo::column_handle h_err_y;
+            hipo::column_handle h_err_z;
+            hipo::column_handle h_ux;
+            hipo::column_handle h_uy;
+            hipo::column_handle h_uz;
+            hipo::column_handle h_cluster1Index;
+            hipo::column_handle h_cluster2Index;
+            hipo::column_handle h_trkID;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("index"); h) cache.h_index = *h;
+            else cache.h_index = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("region"); h) cache.h_region = *h;
+            else cache.h_region = {};
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+            if (auto h = schema.get_handle("err_x"); h) cache.h_err_x = *h;
+            else cache.h_err_x = {};
+            if (auto h = schema.get_handle("err_y"); h) cache.h_err_y = *h;
+            else cache.h_err_y = {};
+            if (auto h = schema.get_handle("err_z"); h) cache.h_err_z = *h;
+            else cache.h_err_z = {};
+            if (auto h = schema.get_handle("ux"); h) cache.h_ux = *h;
+            else cache.h_ux = {};
+            if (auto h = schema.get_handle("uy"); h) cache.h_uy = *h;
+            else cache.h_uy = {};
+            if (auto h = schema.get_handle("uz"); h) cache.h_uz = *h;
+            else cache.h_uz = {};
+            if (auto h = schema.get_handle("cluster1Index"); h) cache.h_cluster1Index = *h;
+            else cache.h_cluster1Index = {};
+            if (auto h = schema.get_handle("cluster2Index"); h) cache.h_cluster2Index = *h;
+            else cache.h_cluster2Index = {};
+            if (auto h = schema.get_handle("trkID"); h) cache.h_trkID = *h;
+            else cache.h_trkID = {};
+        }
+        h_index = cache.h_index;
+        h_sector = cache.h_sector;
+        h_region = cache.h_region;
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
+        h_err_x = cache.h_err_x;
+        h_err_y = cache.h_err_y;
+        h_err_z = cache.h_err_z;
+        h_ux = cache.h_ux;
+        h_uy = cache.h_uy;
+        h_uz = cache.h_uz;
+        h_cluster1Index = cache.h_cluster1Index;
+        h_cluster2Index = cache.h_cluster2Index;
+        h_trkID = cache.h_trkID;
         return true;
     }
 

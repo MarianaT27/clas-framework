@@ -42,40 +42,78 @@ class FT_particles {
 
     FT_particles() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("charge"); h) h_charge = *h;
-        else h_charge = {};
-        if (auto h = schema.get_handle("energy"); h) h_energy = *h;
-        else h_energy = {};
-        if (auto h = schema.get_handle("cx"); h) h_cx = *h;
-        else h_cx = {};
-        if (auto h = schema.get_handle("cy"); h) h_cy = *h;
-        else h_cy = {};
-        if (auto h = schema.get_handle("cz"); h) h_cz = *h;
-        else h_cz = {};
-        if (auto h = schema.get_handle("vx"); h) h_vx = *h;
-        else h_vx = {};
-        if (auto h = schema.get_handle("vy"); h) h_vy = *h;
-        else h_vy = {};
-        if (auto h = schema.get_handle("vz"); h) h_vz = *h;
-        else h_vz = {};
-        if (auto h = schema.get_handle("time"); h) h_time = *h;
-        else h_time = {};
-        if (auto h = schema.get_handle("calID"); h) h_calID = *h;
-        else h_calID = {};
-        if (auto h = schema.get_handle("hodoID"); h) h_hodoID = *h;
-        else h_hodoID = {};
-        if (auto h = schema.get_handle("trk0ID"); h) h_trk0ID = *h;
-        else h_trk0ID = {};
-        if (auto h = schema.get_handle("trk1ID"); h) h_trk1ID = *h;
-        else h_trk1ID = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_charge;
+            hipo::column_handle h_energy;
+            hipo::column_handle h_cx;
+            hipo::column_handle h_cy;
+            hipo::column_handle h_cz;
+            hipo::column_handle h_vx;
+            hipo::column_handle h_vy;
+            hipo::column_handle h_vz;
+            hipo::column_handle h_time;
+            hipo::column_handle h_calID;
+            hipo::column_handle h_hodoID;
+            hipo::column_handle h_trk0ID;
+            hipo::column_handle h_trk1ID;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("charge"); h) cache.h_charge = *h;
+            else cache.h_charge = {};
+            if (auto h = schema.get_handle("energy"); h) cache.h_energy = *h;
+            else cache.h_energy = {};
+            if (auto h = schema.get_handle("cx"); h) cache.h_cx = *h;
+            else cache.h_cx = {};
+            if (auto h = schema.get_handle("cy"); h) cache.h_cy = *h;
+            else cache.h_cy = {};
+            if (auto h = schema.get_handle("cz"); h) cache.h_cz = *h;
+            else cache.h_cz = {};
+            if (auto h = schema.get_handle("vx"); h) cache.h_vx = *h;
+            else cache.h_vx = {};
+            if (auto h = schema.get_handle("vy"); h) cache.h_vy = *h;
+            else cache.h_vy = {};
+            if (auto h = schema.get_handle("vz"); h) cache.h_vz = *h;
+            else cache.h_vz = {};
+            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
+            else cache.h_time = {};
+            if (auto h = schema.get_handle("calID"); h) cache.h_calID = *h;
+            else cache.h_calID = {};
+            if (auto h = schema.get_handle("hodoID"); h) cache.h_hodoID = *h;
+            else cache.h_hodoID = {};
+            if (auto h = schema.get_handle("trk0ID"); h) cache.h_trk0ID = *h;
+            else cache.h_trk0ID = {};
+            if (auto h = schema.get_handle("trk1ID"); h) cache.h_trk1ID = *h;
+            else cache.h_trk1ID = {};
+        }
+        h_id = cache.h_id;
+        h_charge = cache.h_charge;
+        h_energy = cache.h_energy;
+        h_cx = cache.h_cx;
+        h_cy = cache.h_cy;
+        h_cz = cache.h_cz;
+        h_vx = cache.h_vx;
+        h_vy = cache.h_vy;
+        h_vz = cache.h_vz;
+        h_time = cache.h_time;
+        h_calID = cache.h_calID;
+        h_hodoID = cache.h_hodoID;
+        h_trk0ID = cache.h_trk0ID;
+        h_trk1ID = cache.h_trk1ID;
         return true;
     }
 

@@ -42,16 +42,30 @@ class RAW_vtp {
 
     RAW_vtp() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("crate"); h) h_crate = *h;
-        else h_crate = {};
-        if (auto h = schema.get_handle("word"); h) h_word = *h;
-        else h_word = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_crate;
+            hipo::column_handle h_word;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("crate"); h) cache.h_crate = *h;
+            else cache.h_crate = {};
+            if (auto h = schema.get_handle("word"); h) cache.h_word = *h;
+            else cache.h_word = {};
+        }
+        h_crate = cache.h_crate;
+        h_word = cache.h_word;
         return true;
     }
 

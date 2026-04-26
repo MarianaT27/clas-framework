@@ -42,40 +42,78 @@ class RICH_Ring {
 
     RICH_Ring() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("hindex"); h) h_hindex = *h;
-        else h_hindex = {};
-        if (auto h = schema.get_handle("pindex"); h) h_pindex = *h;
-        else h_pindex = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("pmt"); h) h_pmt = *h;
-        else h_pmt = {};
-        if (auto h = schema.get_handle("anode"); h) h_anode = *h;
-        else h_anode = {};
-        if (auto h = schema.get_handle("hypo"); h) h_hypo = *h;
-        else h_hypo = {};
-        if (auto h = schema.get_handle("dtime"); h) h_dtime = *h;
-        else h_dtime = {};
-        if (auto h = schema.get_handle("etaC"); h) h_etaC = *h;
-        else h_etaC = {};
-        if (auto h = schema.get_handle("prob"); h) h_prob = *h;
-        else h_prob = {};
-        if (auto h = schema.get_handle("use"); h) h_use = *h;
-        else h_use = {};
-        if (auto h = schema.get_handle("dangle"); h) h_dangle = *h;
-        else h_dangle = {};
-        if (auto h = schema.get_handle("layers"); h) h_layers = *h;
-        else h_layers = {};
-        if (auto h = schema.get_handle("compos"); h) h_compos = *h;
-        else h_compos = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_hindex;
+            hipo::column_handle h_pindex;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_pmt;
+            hipo::column_handle h_anode;
+            hipo::column_handle h_hypo;
+            hipo::column_handle h_dtime;
+            hipo::column_handle h_etaC;
+            hipo::column_handle h_prob;
+            hipo::column_handle h_use;
+            hipo::column_handle h_dangle;
+            hipo::column_handle h_layers;
+            hipo::column_handle h_compos;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("hindex"); h) cache.h_hindex = *h;
+            else cache.h_hindex = {};
+            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
+            else cache.h_pindex = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("pmt"); h) cache.h_pmt = *h;
+            else cache.h_pmt = {};
+            if (auto h = schema.get_handle("anode"); h) cache.h_anode = *h;
+            else cache.h_anode = {};
+            if (auto h = schema.get_handle("hypo"); h) cache.h_hypo = *h;
+            else cache.h_hypo = {};
+            if (auto h = schema.get_handle("dtime"); h) cache.h_dtime = *h;
+            else cache.h_dtime = {};
+            if (auto h = schema.get_handle("etaC"); h) cache.h_etaC = *h;
+            else cache.h_etaC = {};
+            if (auto h = schema.get_handle("prob"); h) cache.h_prob = *h;
+            else cache.h_prob = {};
+            if (auto h = schema.get_handle("use"); h) cache.h_use = *h;
+            else cache.h_use = {};
+            if (auto h = schema.get_handle("dangle"); h) cache.h_dangle = *h;
+            else cache.h_dangle = {};
+            if (auto h = schema.get_handle("layers"); h) cache.h_layers = *h;
+            else cache.h_layers = {};
+            if (auto h = schema.get_handle("compos"); h) cache.h_compos = *h;
+            else cache.h_compos = {};
+        }
+        h_id = cache.h_id;
+        h_hindex = cache.h_hindex;
+        h_pindex = cache.h_pindex;
+        h_sector = cache.h_sector;
+        h_pmt = cache.h_pmt;
+        h_anode = cache.h_anode;
+        h_hypo = cache.h_hypo;
+        h_dtime = cache.h_dtime;
+        h_etaC = cache.h_etaC;
+        h_prob = cache.h_prob;
+        h_use = cache.h_use;
+        h_dangle = cache.h_dangle;
+        h_layers = cache.h_layers;
+        h_compos = cache.h_compos;
         return true;
     }
 

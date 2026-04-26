@@ -21,21 +21,21 @@ app.service_manager().add_service(std::move(hist_svc));
 ### Usage
 
 ```cpp
-// Member variables - use AtomicHistogram types
-clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
-clas12::framework::AtomicHistogram2D* h_p_vs_theta = nullptr;
+// Member variables - use ThreadLocalHistogram types
+clas12::framework::ThreadLocalHistogram1D* h_momentum = nullptr;
+clas12::framework::ThreadLocalHistogram2D* h_p_vs_theta = nullptr;
 
 auto initialize() -> clas12::framework::StatusCode override {
     m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
 
-    // Book 1D histogram (returns AtomicHistogram1D*)
+    // Book 1D histogram (returns ThreadLocalHistogram1D*)
     h_momentum = m_hist_svc->book_hist1D(
         "/Electron/momentum",           // Path in ROOT file
         "Electron Momentum;p [GeV/c];Events",
         100, 0, 10                      // bins, min, max
     );
 
-    // Book 2D histogram (returns AtomicHistogram2D*)
+    // Book 2D histogram (returns ThreadLocalHistogram2D*)
     h_p_vs_theta = m_hist_svc->book_hist2D(
         "/Electron/p_vs_theta",
         "p vs #theta;#theta [deg];p [GeV/c]",
@@ -74,7 +74,7 @@ h_vz = m_hist_svc->book_vz_hist("/Electron/vz", "Electron v_{z}");
 h_theta_vs_p = m_hist_svc->book_theta_vs_p("/Electron/theta_vs_p", "Electron #theta vs p");
 ```
 
-### AtomicHistogram API
+### ThreadLocalHistogram API
 
 | Method | Description |
 |--------|-------------|
@@ -428,20 +428,19 @@ app.service_manager().add_service(std::move(metadata_svc));
 | Service | Description |
 |---------|-------------|
 | `ProfilingService` | Performance profiling and timing |
-| `ConfigService` | Configuration file parsing |
 | `WorkflowVisualizationService` | Generate workflow diagrams |
 
 ---
 
-## ServiceHandle Pattern
+## ServiceRef Pattern
 
 Type-safe service access with validation at initialization:
 
 ```cpp
 class MyAlgorithm : public clas12::framework::Algorithm {
 private:
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService> m_hist_svc{"HistogramService"};
-    clas12::framework::ServiceHandle<clas12::framework::LoggingService> m_log_svc{"LoggingService"};
+    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist_svc{"HistogramService"};
+    clas12::framework::ServiceRef<clas12::framework::LoggingService> m_log_svc{"LoggingService"};
 
     auto initialize() -> clas12::framework::StatusCode override {
         // Initialize handles - validates service availability

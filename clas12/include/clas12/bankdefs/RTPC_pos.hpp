@@ -42,28 +42,54 @@ class RTPC_pos {
 
     RTPC_pos() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("step"); h) h_step = *h;
-        else h_step = {};
-        if (auto h = schema.get_handle("time"); h) h_time = *h;
-        else h_time = {};
-        if (auto h = schema.get_handle("energy"); h) h_energy = *h;
-        else h_energy = {};
-        if (auto h = schema.get_handle("posx"); h) h_posx = *h;
-        else h_posx = {};
-        if (auto h = schema.get_handle("posy"); h) h_posy = *h;
-        else h_posy = {};
-        if (auto h = schema.get_handle("posz"); h) h_posz = *h;
-        else h_posz = {};
-        if (auto h = schema.get_handle("phi"); h) h_phi = *h;
-        else h_phi = {};
-        if (auto h = schema.get_handle("tid"); h) h_tid = *h;
-        else h_tid = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_step;
+            hipo::column_handle h_time;
+            hipo::column_handle h_energy;
+            hipo::column_handle h_posx;
+            hipo::column_handle h_posy;
+            hipo::column_handle h_posz;
+            hipo::column_handle h_phi;
+            hipo::column_handle h_tid;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("step"); h) cache.h_step = *h;
+            else cache.h_step = {};
+            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
+            else cache.h_time = {};
+            if (auto h = schema.get_handle("energy"); h) cache.h_energy = *h;
+            else cache.h_energy = {};
+            if (auto h = schema.get_handle("posx"); h) cache.h_posx = *h;
+            else cache.h_posx = {};
+            if (auto h = schema.get_handle("posy"); h) cache.h_posy = *h;
+            else cache.h_posy = {};
+            if (auto h = schema.get_handle("posz"); h) cache.h_posz = *h;
+            else cache.h_posz = {};
+            if (auto h = schema.get_handle("phi"); h) cache.h_phi = *h;
+            else cache.h_phi = {};
+            if (auto h = schema.get_handle("tid"); h) cache.h_tid = *h;
+            else cache.h_tid = {};
+        }
+        h_step = cache.h_step;
+        h_time = cache.h_time;
+        h_energy = cache.h_energy;
+        h_posx = cache.h_posx;
+        h_posy = cache.h_posy;
+        h_posz = cache.h_posz;
+        h_phi = cache.h_phi;
+        h_tid = cache.h_tid;
         return true;
     }
 

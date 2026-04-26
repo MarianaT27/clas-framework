@@ -42,30 +42,58 @@ class RUN_config {
 
     RUN_config() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("run"); h) h_run = *h;
-        else h_run = {};
-        if (auto h = schema.get_handle("event"); h) h_event = *h;
-        else h_event = {};
-        if (auto h = schema.get_handle("unixtime"); h) h_unixtime = *h;
-        else h_unixtime = {};
-        if (auto h = schema.get_handle("trigger"); h) h_trigger = *h;
-        else h_trigger = {};
-        if (auto h = schema.get_handle("timestamp"); h) h_timestamp = *h;
-        else h_timestamp = {};
-        if (auto h = schema.get_handle("type"); h) h_type = *h;
-        else h_type = {};
-        if (auto h = schema.get_handle("mode"); h) h_mode = *h;
-        else h_mode = {};
-        if (auto h = schema.get_handle("torus"); h) h_torus = *h;
-        else h_torus = {};
-        if (auto h = schema.get_handle("solenoid"); h) h_solenoid = *h;
-        else h_solenoid = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_run;
+            hipo::column_handle h_event;
+            hipo::column_handle h_unixtime;
+            hipo::column_handle h_trigger;
+            hipo::column_handle h_timestamp;
+            hipo::column_handle h_type;
+            hipo::column_handle h_mode;
+            hipo::column_handle h_torus;
+            hipo::column_handle h_solenoid;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("run"); h) cache.h_run = *h;
+            else cache.h_run = {};
+            if (auto h = schema.get_handle("event"); h) cache.h_event = *h;
+            else cache.h_event = {};
+            if (auto h = schema.get_handle("unixtime"); h) cache.h_unixtime = *h;
+            else cache.h_unixtime = {};
+            if (auto h = schema.get_handle("trigger"); h) cache.h_trigger = *h;
+            else cache.h_trigger = {};
+            if (auto h = schema.get_handle("timestamp"); h) cache.h_timestamp = *h;
+            else cache.h_timestamp = {};
+            if (auto h = schema.get_handle("type"); h) cache.h_type = *h;
+            else cache.h_type = {};
+            if (auto h = schema.get_handle("mode"); h) cache.h_mode = *h;
+            else cache.h_mode = {};
+            if (auto h = schema.get_handle("torus"); h) cache.h_torus = *h;
+            else cache.h_torus = {};
+            if (auto h = schema.get_handle("solenoid"); h) cache.h_solenoid = *h;
+            else cache.h_solenoid = {};
+        }
+        h_run = cache.h_run;
+        h_event = cache.h_event;
+        h_unixtime = cache.h_unixtime;
+        h_trigger = cache.h_trigger;
+        h_timestamp = cache.h_timestamp;
+        h_type = cache.h_type;
+        h_mode = cache.h_mode;
+        h_torus = cache.h_torus;
+        h_solenoid = cache.h_solenoid;
         return true;
     }
 

@@ -34,6 +34,9 @@
 
 #include <mutex>
 #include <string>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
 #include <functional>
 #include <vector>
 
@@ -41,88 +44,63 @@
 
 namespace clas12::framework {
 
-/**
- * @brief Macro to declare N-Tuple fields with automatic registration
- *
- * Use this macro at the end of your struct to enable automatic branch registration.
- * The macro generates a register_branches() method that registers all listed fields.
- *
- * @param ... List of field names to register as branches
- *
- * Example:
- * @code
- * struct MyNTuple {
- *     double var1 = 0;
- *     double var2 = 0;
- *     int var3 = 0;
- *
- *     NTUPLE_FIELDS(var1, var2, var3)
- * };
- * @endcode
- */
-#define NTUPLE_FIELDS(...)                                                              \
-    template <typename NTupleSvc>                                                       \
-    void register_branches(NTupleSvc* svc, const std::string& tree_name) {              \
-        if (!svc) return;                                                               \
-        NTUPLE_REGISTER_EACH(svc, tree_name, __VA_ARGS__)                                \
-    }
+// =============================================================================
+// Modern template-based field registration (preferred, no macros)
+// =============================================================================
+//
+// A struct lists its N-tuple branches via a static constexpr member:
+//
+//     struct ElectronNTupleData {
+//         double e_p = 0.0;
+//         double e_theta = 0.0;
+//         int    sector = 0;
+//
+//         static constexpr auto ntuple_fields() {
+//             using T = ElectronNTupleData;
+//             return std::make_tuple(
+//                 clas12::framework::field("e_p",     &T::e_p),
+//                 clas12::framework::field("e_theta", &T::e_theta),
+//                 clas12::framework::field("sector",  &T::sector));
+//         }
+//     };
+//
+// NTupleWriter<T> picks up that static and wires each field into the
+// service at `init()` time via a single fold-expression call.  No
+// preprocessor, full type-checking, no 20-field limit.
 
-// Helper macros for variadic expansion
-#define NTUPLE_REGISTER_EACH(svc, tree, ...) \
-    NTUPLE_EXPAND(NTUPLE_REGISTER_IMPL(svc, tree, __VA_ARGS__))
+/// One binding between an N-tuple branch name and a struct member.
+template <typename T, typename Member>
+struct Field {
+    std::string_view name;
+    Member T::*      ptr;
+};
 
-#define NTUPLE_EXPAND(x) x
+/// Deduction helper so users write `field("e_p", &T::e_p)` without
+/// spelling the template arguments.
+template <typename T, typename Member>
+constexpr auto field(std::string_view name, Member T::* ptr) -> Field<T, Member> {
+    return Field<T, Member>{name, ptr};
+}
 
-// Count arguments (up to 20)
-#define NTUPLE_NARGS(...) NTUPLE_NARGS_IMPL(__VA_ARGS__, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
-#define NTUPLE_NARGS_IMPL(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _20, N, ...) N
+/// Register every field listed in `fields` onto `svc` for `tree`, taking
+/// each branch's address from `data`.
+template <typename T, typename Svc, typename... Fs>
+auto register_fields(Svc* svc, const std::string& tree, T& data,
+                     const std::tuple<Fs...>& fields) -> void {
+    if (!svc) return;
+    std::apply(
+        [&](const auto&... f) {
+            (svc->register_branch(tree, std::string{f.name}, &(data.*f.ptr)), ...);
+        },
+        fields);
+}
 
-// Dispatch to correct implementation based on argument count
-#define NTUPLE_REGISTER_IMPL(svc, tree, ...) \
-    NTUPLE_CAT(NTUPLE_REGISTER_, NTUPLE_NARGS(__VA_ARGS__))(svc, tree, __VA_ARGS__)
-
-#define NTUPLE_CAT(a, b) NTUPLE_CAT_IMPL(a, b)
-#define NTUPLE_CAT_IMPL(a, b) a##b
-
-// Single field registration
-#define NTUPLE_REG(svc, tree, field) svc->register_branch(tree, #field, &field);
-
-// Implementations for 1-20 fields
-#define NTUPLE_REGISTER_1(svc, tree, f1) NTUPLE_REG(svc, tree, f1)
-#define NTUPLE_REGISTER_2(svc, tree, f1, f2) NTUPLE_REG(svc, tree, f1) NTUPLE_REG(svc, tree, f2)
-#define NTUPLE_REGISTER_3(svc, tree, f1, f2, f3) NTUPLE_REGISTER_2(svc, tree, f1, f2) NTUPLE_REG(svc, tree, f3)
-#define NTUPLE_REGISTER_4(svc, tree, f1, f2, f3, f4) NTUPLE_REGISTER_3(svc, tree, f1, f2, f3) NTUPLE_REG(svc, tree, f4)
-#define NTUPLE_REGISTER_5(svc, tree, f1, f2, f3, f4, f5) NTUPLE_REGISTER_4(svc, tree, f1, f2, f3, f4) NTUPLE_REG(svc, tree, f5)
-#define NTUPLE_REGISTER_6(svc, tree, f1, f2, f3, f4, f5, f6) NTUPLE_REGISTER_5(svc, tree, f1, f2, f3, f4, f5) NTUPLE_REG(svc, tree, f6)
-#define NTUPLE_REGISTER_7(svc, tree, f1, f2, f3, f4, f5, f6, f7) NTUPLE_REGISTER_6(svc, tree, f1, f2, f3, f4, f5, f6) NTUPLE_REG(svc, tree, f7)
-#define NTUPLE_REGISTER_8(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8) NTUPLE_REGISTER_7(svc, tree, f1, f2, f3, f4, f5, f6, f7) NTUPLE_REG(svc, tree, f8)
-#define NTUPLE_REGISTER_9(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9) NTUPLE_REGISTER_8(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8) NTUPLE_REG(svc, tree, f9)
-#define NTUPLE_REGISTER_10(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10) NTUPLE_REGISTER_9(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9) NTUPLE_REG(svc, tree, f10)
-#define NTUPLE_REGISTER_11(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11) NTUPLE_REGISTER_10(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10) NTUPLE_REG(svc, tree, f11)
-#define NTUPLE_REGISTER_12(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12) NTUPLE_REGISTER_11(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11) NTUPLE_REG(svc, tree, f12)
-#define NTUPLE_REGISTER_13(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13) NTUPLE_REGISTER_12(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12) NTUPLE_REG(svc, tree, f13)
-#define NTUPLE_REGISTER_14(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14) NTUPLE_REGISTER_13(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13) NTUPLE_REG(svc, tree, f14)
-#define NTUPLE_REGISTER_15(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15) NTUPLE_REGISTER_14(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14) NTUPLE_REG(svc, tree, f15)
-#define NTUPLE_REGISTER_16(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16) NTUPLE_REGISTER_15(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15) NTUPLE_REG(svc, tree, f16)
-#define NTUPLE_REGISTER_17(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17) NTUPLE_REGISTER_16(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16) NTUPLE_REG(svc, tree, f17)
-#define NTUPLE_REGISTER_18(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18) NTUPLE_REGISTER_17(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17) NTUPLE_REG(svc, tree, f18)
-#define NTUPLE_REGISTER_19(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19) NTUPLE_REGISTER_18(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18) NTUPLE_REG(svc, tree, f19)
-#define NTUPLE_REGISTER_20(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20) NTUPLE_REGISTER_19(svc, tree, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19) NTUPLE_REG(svc, tree, f20)
-
-
-/**
- * @brief Type trait to check if a type has NTUPLE_FIELDS macro
- */
-template <typename T, typename = void>
-struct has_ntuple_fields : std::false_type {};
-
+/// C++20 `requires`-expression detector.  Unlike `std::void_t`-based
+/// SFINAE on `decltype(T::ntuple_fields())`, this does not try to deduce
+/// the return type of an `auto`-returning function during substitution,
+/// which is the path where clang silently drops the detection.
 template <typename T>
-struct has_ntuple_fields<T, std::void_t<decltype(std::declval<T>().register_branches(
-                                std::declval<NTupleService*>(), std::declval<std::string>()))>>
-    : std::true_type {};
-
-template <typename T>
-inline constexpr bool has_ntuple_fields_v = has_ntuple_fields<T>::value;
+concept HasStaticNTupleFields = requires { T::ntuple_fields(); };
 
 
 /**
@@ -133,7 +111,9 @@ inline constexpr bool has_ntuple_fields_v = has_ntuple_fields<T>::value;
  * - Thread-safe filling
  * - Clean data() accessor for modification
  *
- * The template parameter T must be a struct with the NTUPLE_FIELDS macro.
+ * The template parameter T must expose a `static constexpr auto
+ * ntuple_fields()` returning a `std::tuple` of `field("name", &T::member)`
+ * entries.
  *
  * Example:
  * @code
@@ -142,7 +122,13 @@ inline constexpr bool has_ntuple_fields_v = has_ntuple_fields<T>::value;
  *     double theta = 0;
  *     double phi = 0;
  *
- *     NTUPLE_FIELDS(p, theta, phi)
+ *     static constexpr auto ntuple_fields() {
+ *         using T = ElectronData;
+ *         return std::make_tuple(
+ *             clas12::framework::field("p",     &T::p),
+ *             clas12::framework::field("theta", &T::theta),
+ *             clas12::framework::field("phi",   &T::phi));
+ *     }
  * };
  *
  * class MyAlgorithm {
@@ -163,12 +149,16 @@ inline constexpr bool has_ntuple_fields_v = has_ntuple_fields<T>::value;
  * };
  * @endcode
  *
- * @tparam T Struct type with NTUPLE_FIELDS macro
+ * @tparam T Struct exposing `static constexpr auto ntuple_fields()`.
  */
 template <typename T>
 class NTupleWriter {
-    static_assert(has_ntuple_fields_v<T>,
-                  "NTupleWriter requires a struct with NTUPLE_FIELDS macro");
+    // NOTE: no class-level `static_assert(HasStaticNTupleFields<T>)` here.
+    // When `NTupleWriter<T>` is declared as a member of T's enclosing
+    // class, C++'s deferred-body-parsing rule means `T::ntuple_fields()`
+    // hasn't been analysed yet and the concept check silently reports
+    // `false`.  The static_assert inside `init()` runs after the enclosing
+    // class is complete, so detection works reliably there.
 
 public:
     NTupleWriter() = default;
@@ -195,7 +185,10 @@ public:
         m_svc = svc;
         m_tree_name = tree_name;
         if (svc) {
-            m_data.register_branches(svc, tree_name);
+            static_assert(HasStaticNTupleFields<T>,
+                          "NTupleWriter<T>: T must expose a "
+                          "static constexpr auto ntuple_fields()");
+            register_fields(svc, tree_name, m_data, T::ntuple_fields());
             m_initialized = true;
         }
     }
@@ -263,7 +256,7 @@ private:
 /**
  * @brief Helper function to create an NTupleWriter
  *
- * @tparam T Struct type with NTUPLE_FIELDS macro
+ * @tparam T Struct exposing `static constexpr auto ntuple_fields()`.
  * @param svc N-Tuple service pointer
  * @param tree_name Name of the TTree
  * @return NTupleWriter<T> Initialized writer

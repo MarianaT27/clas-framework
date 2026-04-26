@@ -42,48 +42,94 @@ class ECAL_clusters {
 
     ECAL_clusters() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
-        if (auto h = schema.get_handle("energy"); h) h_energy = *h;
-        else h_energy = {};
-        if (auto h = schema.get_handle("time"); h) h_time = *h;
-        else h_time = {};
-        if (auto h = schema.get_handle("widthU"); h) h_widthU = *h;
-        else h_widthU = {};
-        if (auto h = schema.get_handle("widthV"); h) h_widthV = *h;
-        else h_widthV = {};
-        if (auto h = schema.get_handle("widthW"); h) h_widthW = *h;
-        else h_widthW = {};
-        if (auto h = schema.get_handle("idU"); h) h_idU = *h;
-        else h_idU = {};
-        if (auto h = schema.get_handle("idV"); h) h_idV = *h;
-        else h_idV = {};
-        if (auto h = schema.get_handle("idW"); h) h_idW = *h;
-        else h_idW = {};
-        if (auto h = schema.get_handle("coordU"); h) h_coordU = *h;
-        else h_coordU = {};
-        if (auto h = schema.get_handle("coordV"); h) h_coordV = *h;
-        else h_coordV = {};
-        if (auto h = schema.get_handle("coordW"); h) h_coordW = *h;
-        else h_coordW = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_status;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+            hipo::column_handle h_energy;
+            hipo::column_handle h_time;
+            hipo::column_handle h_widthU;
+            hipo::column_handle h_widthV;
+            hipo::column_handle h_widthW;
+            hipo::column_handle h_idU;
+            hipo::column_handle h_idV;
+            hipo::column_handle h_idW;
+            hipo::column_handle h_coordU;
+            hipo::column_handle h_coordV;
+            hipo::column_handle h_coordW;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+            if (auto h = schema.get_handle("energy"); h) cache.h_energy = *h;
+            else cache.h_energy = {};
+            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
+            else cache.h_time = {};
+            if (auto h = schema.get_handle("widthU"); h) cache.h_widthU = *h;
+            else cache.h_widthU = {};
+            if (auto h = schema.get_handle("widthV"); h) cache.h_widthV = *h;
+            else cache.h_widthV = {};
+            if (auto h = schema.get_handle("widthW"); h) cache.h_widthW = *h;
+            else cache.h_widthW = {};
+            if (auto h = schema.get_handle("idU"); h) cache.h_idU = *h;
+            else cache.h_idU = {};
+            if (auto h = schema.get_handle("idV"); h) cache.h_idV = *h;
+            else cache.h_idV = {};
+            if (auto h = schema.get_handle("idW"); h) cache.h_idW = *h;
+            else cache.h_idW = {};
+            if (auto h = schema.get_handle("coordU"); h) cache.h_coordU = *h;
+            else cache.h_coordU = {};
+            if (auto h = schema.get_handle("coordV"); h) cache.h_coordV = *h;
+            else cache.h_coordV = {};
+            if (auto h = schema.get_handle("coordW"); h) cache.h_coordW = *h;
+            else cache.h_coordW = {};
+        }
+        h_id = cache.h_id;
+        h_status = cache.h_status;
+        h_sector = cache.h_sector;
+        h_layer = cache.h_layer;
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
+        h_energy = cache.h_energy;
+        h_time = cache.h_time;
+        h_widthU = cache.h_widthU;
+        h_widthV = cache.h_widthV;
+        h_widthW = cache.h_widthW;
+        h_idU = cache.h_idU;
+        h_idV = cache.h_idV;
+        h_idW = cache.h_idW;
+        h_coordU = cache.h_coordU;
+        h_coordV = cache.h_coordV;
+        h_coordW = cache.h_coordW;
         return true;
     }
 

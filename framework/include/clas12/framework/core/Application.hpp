@@ -6,8 +6,9 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <toml++/toml.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/IAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/ServiceManager.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
@@ -36,6 +37,7 @@ class Application {
         , m_svc_mgr(std::move(other.m_svc_mgr))
         , m_algorithms(std::move(other.m_algorithms))
         , m_input_files(std::move(other.m_input_files))
+        , m_config(std::move(other.m_config))
         , m_percentage(other.m_percentage)
         , m_num_threads(other.m_num_threads)
         , m_exception_count(other.m_exception_count.load()) {}
@@ -47,7 +49,7 @@ class Application {
      * @brief Add an algorithm to the processing sequence
      * @param algorithm Unique pointer to the algorithm
      */
-    auto add_algorithm(std::unique_ptr<IAlgorithm> algorithm) -> void {
+    auto add_algorithm(std::unique_ptr<Algorithm> algorithm) -> void {
         m_algorithms.push_back(std::move(algorithm));
     }
 
@@ -66,7 +68,7 @@ class Application {
      * Do not mutate the algorithms through this reference.
      */
     [[nodiscard]] auto algorithms() const
-        -> const std::vector<std::unique_ptr<IAlgorithm>>& {
+        -> const std::vector<std::unique_ptr<Algorithm>>& {
         return m_algorithms;
     }
 
@@ -103,6 +105,18 @@ class Application {
     }
 
     /**
+     * @brief Attach the parsed TOML config table.
+     *
+     * The framework will look up `[<algorithm.name()>]` for every
+     * registered algorithm during `initialize()` and apply matching
+     * `Property` values via `PropertyMixin::configure_from_toml`.
+     * Pass nullptr (or skip the call) for property defaults.
+     */
+    auto set_config(std::shared_ptr<const toml::table> config) -> void {
+        m_config = std::move(config);
+    }
+
+    /**
      * @brief Initialize the application
      * @return StatusCode Success or failure
      */
@@ -130,14 +144,45 @@ class Application {
         Log::info("Application", "");
         Log::info("Application", "Initializing Algorithms:");
 
-        // Initialize algorithms
+        // Initialize algorithms. Apply per-algorithm TOML config (if
+        // any) BEFORE the algorithm's initialize() runs so on_initialize()
+        // sees the configured Property values when it books histograms,
+        // sets cuts, etc.
         for (auto& alg : m_algorithms) {
             alg->set_service_manager(&m_svc_mgr);
             Log::info("Application", "  - {}", alg->name());
+
+            if (m_config) {
+                if (auto sub = (*m_config)[alg->name()].as_table()) {
+                    auto cfg_sc = alg->configure_from_toml(*sub);
+                    if (cfg_sc.is_failure()) {
+                        Log::error("Application",
+                            "Algorithm '{}' rejected TOML config: {}",
+                            alg->name(), cfg_sc.message());
+                        return cfg_sc;
+                    }
+                }
+            }
+
             sc = alg->initialize();
             if (sc.is_failure()) {
                 Log::error("Application", "Failed to initialize algorithm '{}'", alg->name());
                 return sc;
+            }
+        }
+
+        // Warn about top-level TOML sections that don't map to any
+        // registered algorithm or to the framework's reserved keys —
+        // catches typos like `[ElectronAnaylsis]` early.
+        if (m_config) {
+            std::set<std::string> known{"run", "analysis"};
+            for (auto& alg : m_algorithms) known.insert(alg->name());
+            for (auto&& [k, v] : *m_config) {
+                if (!known.contains(std::string(k.str()))) {
+                    Log::warning("Application",
+                        "TOML section '[{}]' does not match any registered "
+                        "algorithm; check for typos.", k.str());
+                }
             }
         }
 
@@ -287,8 +332,11 @@ class Application {
    private:
     std::string m_name;
     ServiceManager m_svc_mgr;
-    std::vector<std::unique_ptr<IAlgorithm>> m_algorithms;
+    std::vector<std::unique_ptr<Algorithm>> m_algorithms;
     std::vector<std::string> m_input_files;
+    /// Optional parsed TOML config; consulted once per algorithm at
+    /// initialize() time. Null = use Property C++ defaults.
+    std::shared_ptr<const toml::table> m_config;
     double m_percentage = 100;
     int m_num_threads = 1;
     mutable std::atomic<long> m_exception_count{0};

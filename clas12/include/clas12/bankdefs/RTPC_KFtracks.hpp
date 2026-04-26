@@ -42,26 +42,50 @@ class RTPC_KFtracks {
 
     RTPC_KFtracks() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("trkID"); h) h_trkID = *h;
-        else h_trkID = {};
-        if (auto h = schema.get_handle("px"); h) h_px = *h;
-        else h_px = {};
-        if (auto h = schema.get_handle("py"); h) h_py = *h;
-        else h_py = {};
-        if (auto h = schema.get_handle("pz"); h) h_pz = *h;
-        else h_pz = {};
-        if (auto h = schema.get_handle("vz"); h) h_vz = *h;
-        else h_vz = {};
-        if (auto h = schema.get_handle("dEdx"); h) h_dEdx = *h;
-        else h_dEdx = {};
-        if (auto h = schema.get_handle("p_drift"); h) h_p_drift = *h;
-        else h_p_drift = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_trkID;
+            hipo::column_handle h_px;
+            hipo::column_handle h_py;
+            hipo::column_handle h_pz;
+            hipo::column_handle h_vz;
+            hipo::column_handle h_dEdx;
+            hipo::column_handle h_p_drift;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("trkID"); h) cache.h_trkID = *h;
+            else cache.h_trkID = {};
+            if (auto h = schema.get_handle("px"); h) cache.h_px = *h;
+            else cache.h_px = {};
+            if (auto h = schema.get_handle("py"); h) cache.h_py = *h;
+            else cache.h_py = {};
+            if (auto h = schema.get_handle("pz"); h) cache.h_pz = *h;
+            else cache.h_pz = {};
+            if (auto h = schema.get_handle("vz"); h) cache.h_vz = *h;
+            else cache.h_vz = {};
+            if (auto h = schema.get_handle("dEdx"); h) cache.h_dEdx = *h;
+            else cache.h_dEdx = {};
+            if (auto h = schema.get_handle("p_drift"); h) cache.h_p_drift = *h;
+            else cache.h_p_drift = {};
+        }
+        h_trkID = cache.h_trkID;
+        h_px = cache.h_px;
+        h_py = cache.h_py;
+        h_pz = cache.h_pz;
+        h_vz = cache.h_vz;
+        h_dEdx = cache.h_dEdx;
+        h_p_drift = cache.h_p_drift;
         return true;
     }
 

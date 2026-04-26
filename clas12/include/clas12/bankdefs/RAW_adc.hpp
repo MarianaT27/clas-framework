@@ -42,26 +42,50 @@ class RAW_adc {
 
     RAW_adc() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("crate"); h) h_crate = *h;
-        else h_crate = {};
-        if (auto h = schema.get_handle("slot"); h) h_slot = *h;
-        else h_slot = {};
-        if (auto h = schema.get_handle("channel"); h) h_channel = *h;
-        else h_channel = {};
-        if (auto h = schema.get_handle("order"); h) h_order = *h;
-        else h_order = {};
-        if (auto h = schema.get_handle("ADC"); h) h_ADC = *h;
-        else h_ADC = {};
-        if (auto h = schema.get_handle("time"); h) h_time = *h;
-        else h_time = {};
-        if (auto h = schema.get_handle("ped"); h) h_ped = *h;
-        else h_ped = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_crate;
+            hipo::column_handle h_slot;
+            hipo::column_handle h_channel;
+            hipo::column_handle h_order;
+            hipo::column_handle h_ADC;
+            hipo::column_handle h_time;
+            hipo::column_handle h_ped;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("crate"); h) cache.h_crate = *h;
+            else cache.h_crate = {};
+            if (auto h = schema.get_handle("slot"); h) cache.h_slot = *h;
+            else cache.h_slot = {};
+            if (auto h = schema.get_handle("channel"); h) cache.h_channel = *h;
+            else cache.h_channel = {};
+            if (auto h = schema.get_handle("order"); h) cache.h_order = *h;
+            else cache.h_order = {};
+            if (auto h = schema.get_handle("ADC"); h) cache.h_ADC = *h;
+            else cache.h_ADC = {};
+            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
+            else cache.h_time = {};
+            if (auto h = schema.get_handle("ped"); h) cache.h_ped = *h;
+            else cache.h_ped = {};
+        }
+        h_crate = cache.h_crate;
+        h_slot = cache.h_slot;
+        h_channel = cache.h_channel;
+        h_order = cache.h_order;
+        h_ADC = cache.h_ADC;
+        h_time = cache.h_time;
+        h_ped = cache.h_ped;
         return true;
     }
 

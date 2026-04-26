@@ -32,12 +32,16 @@ class LoggingService;
 class ServiceManager {
    public:
     /**
-     * @brief Add a service to the manager (backward compatible)
-     * @param service Unique pointer to the service
-     * @return StatusCode indicating success or failure
+     * @brief Add a service to the manager
+     *
+     * Dependencies are pulled from the service itself via
+     * IService::required_dependencies() — services that call
+     * Service::require_service<T>() in their constructor participate in the
+     * topological sort automatically, with no additional call-site changes.
      */
     auto add_service(std::unique_ptr<IService> service) -> StatusCode {
-        return add_service(std::move(service), {});
+        auto deps = service->required_dependencies();
+        return add_service(std::move(service), std::move(deps));
     }
 
     /**
@@ -264,6 +268,17 @@ class ServiceManager {
      *
      * Used by introspection tools (service-graph emitter, etc.).
      */
+    /// Collect the union of required_banks() from every registered service.
+    [[nodiscard]] auto collect_service_banks() const -> std::vector<std::string> {
+        std::vector<std::string> banks;
+        for (const auto& [name, svc] : m_services) {
+            for (auto& bank : svc->required_banks()) {
+                banks.push_back(std::move(bank));
+            }
+        }
+        return banks;
+    }
+
     [[nodiscard]] auto service_names() const -> std::vector<std::string> {
         std::vector<std::string> names;
         names.reserve(m_services.size());
@@ -281,36 +296,7 @@ class ServiceManager {
 
 }  // namespace clas12::framework
 
-// Include IAlgorithm.hpp for the Algorithm::service template implementation
-#include <clas12/framework/core/IAlgorithm.hpp>
-#include <clas12/framework/core/ServiceHandle.hpp>
-
-// Template implementation for Algorithm::service
 namespace clas12::framework {
-template <ServiceConcept T>
-auto Algorithm::service(const std::string& service_name) -> T* {
-    if (!m_svc_mgr) {
-        clas12::framework::Log::error("Algorithm", "ServiceManager not set for algorithm '{}'", m_name);
-        return nullptr;
-    }
-    return m_svc_mgr->get_service<T>(service_name);
-}
-
-template <ServiceConcept T>
-auto Algorithm::initialize_handle(ServiceHandle<T>& handle) -> StatusCode {
-    if (!m_svc_mgr) {
-        return StatusCode::failure(
-            fmt::format("Algorithm '{}': ServiceManager not set", m_name));
-    }
-
-    auto sc = handle.initialize(*m_svc_mgr);
-    if (sc.is_failure()) {
-        return StatusCode::failure(
-            fmt::format("Algorithm '{}': {}", m_name, sc.message()));
-    }
-
-    return StatusCode::SUCCESS();
-}
 
 // Service::locate_service_impl - deferred until ServiceManager is complete
 template <typename T>

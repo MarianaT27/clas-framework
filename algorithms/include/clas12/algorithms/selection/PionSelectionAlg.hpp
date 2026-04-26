@@ -7,6 +7,7 @@
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/bankdefs/REC_Event.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/CandidateUtils.hpp>
@@ -14,12 +15,10 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
 
 namespace clas12::algorithms {
 
@@ -60,8 +59,28 @@ struct PionNTupleData {
         pcal_lv = c.pcal_lv; pcal_lw = c.pcal_lw;
     }
 
-    NTUPLE_FIELDS(p, theta, phi, vz, vx, vy, chi2pid, beta, delta_t, tof_mass2, tof_path, sector,
-                  beta_expected, beta_diff, is_forward, pcal_lv, pcal_lw)
+    static constexpr auto ntuple_fields() {
+        using T = PionNTupleData;
+        return std::make_tuple(
+            clas12::framework::field("p", &T::p),
+            clas12::framework::field("theta", &T::theta),
+            clas12::framework::field("phi", &T::phi),
+            clas12::framework::field("vz", &T::vz),
+            clas12::framework::field("vx", &T::vx),
+            clas12::framework::field("vy", &T::vy),
+            clas12::framework::field("chi2pid", &T::chi2pid),
+            clas12::framework::field("beta", &T::beta),
+            clas12::framework::field("delta_t", &T::delta_t),
+            clas12::framework::field("tof_mass2", &T::tof_mass2),
+            clas12::framework::field("tof_path", &T::tof_path),
+            clas12::framework::field("sector", &T::sector),
+            clas12::framework::field("beta_expected", &T::beta_expected),
+            clas12::framework::field("beta_diff", &T::beta_diff),
+            clas12::framework::field("is_forward", &T::is_forward),
+            clas12::framework::field("pcal_lv", &T::pcal_lv),
+            clas12::framework::field("pcal_lw", &T::pcal_lw)
+        );
+    }
 };
 
 /**
@@ -131,11 +150,11 @@ struct PionCandidate {
 /**
  * @brief Pion (π⁺/π⁻) selection and analysis algorithm
  *
- * Modernized using SimpleAlgorithm CRTP pattern with:
+ * Modernized using Algorithm hook pattern with:
  * - Automatic service injection via require_service<T>() and optional_service<T>()
  * - Property system for configuration
  * - New histogram templates for physics quantities
- * - Reduced boilerplate through CRTP
+ * - Reduced boilerplate via base-class hooks
  *
  * This algorithm demonstrates pion identification using:
  * - Chi2 PID cuts
@@ -145,13 +164,13 @@ struct PionCandidate {
  * - Beta cuts
  * - Cutflow tracking for efficiency
  */
-class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
+class PionSelectionAlg : public clas12::framework::Algorithm {
    public:
     explicit PionSelectionAlg(std::string name = "PionSelection",
                               clas12::Target target = clas12::Target::LD2,
                               bool separate_charges = true,
                               std::vector<double> sigma_scan = {})
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_target(target)
         , m_separate_charges(separate_charges)
         , m_cutflow_piplus("π⁺ Selection")
@@ -189,8 +208,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
     auto on_initialize() -> clas12::framework::StatusCode override {
         // Cache service pointers
         m_hist = svc<clas12::framework::HistogramService>();
-        m_particle = svc<clas12::framework::ParticleSelectorService>();
-        m_log = svc<clas12::framework::LoggingService>();
         m_ntuple = svc<clas12::framework::NTupleService>();
 
         Log::info(name(), "Initializing pion selection algorithm");
@@ -231,101 +248,82 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
      * @brief Process a single event
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        using namespace clas12::framework;
+        // Only process pions if a good electron was found
+        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
 
-        // Bind REC::Event for start time.
-        clas12::bankdefs::REC_Event rec_event;
-        rec_event.bind(event.get_bank("REC::Event"));
-        const auto& REC_Particle = event.get_bank("REC::Particle");
-        const bool have_event = rec_event.rows() > 0;
-        const double start_time = have_event
-            ? static_cast<double>(rec_event.startTime(0))
-            : 0.0;
+        // Bind REC::Event for start time. Per-particle detector reads on
+        // Particle route through the per-event generated-wrapper cache.
+        auto& rec_event = event.bank<clas12::bankdefs::REC_Event>();
 
-        // Extract pions and build candidates up front - ContextCutflow
-        // drives per-candidate evaluation outside the pipeline, and the
-        // pipeline body below only does sequencing + tap-for-side-effects.
-        ParticleMap particles = have_event
-            ? m_particle->extract_particles(REC_Particle, {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS})
-            : ParticleMap{};
+        if (rec_event.rows() == 0) return clas12::framework::StatusCode::SUCCESS();
 
-        static const std::vector<clas12::Particle> kEmpty;
-        const auto& pions_plus  = have_event
-            ? ParticleSelectorService::get_pions_plus(particles)
-            : kEmpty;
-        const auto& pions_minus = have_event
-            ? ParticleSelectorService::get_pions_minus(particles)
-            : kEmpty;
+        const double start_time = static_cast<double>(rec_event.startTime(0));
 
-        auto piplus_candidates  = have_event
-            ? build_pion_candidates(event, pions_plus,  start_time, true)
-            : std::vector<PionCandidate>{};
-        auto piminus_candidates = have_event
-            ? build_pion_candidates(event, pions_minus, start_time, false)
-            : std::vector<PionCandidate>{};
+        // Build π⁺ candidates with all kinematics computed once
+        auto piplus_candidates = build_pion_candidates(event.pions_plus(), start_time, true);
 
+        // Evaluate cutflow per-candidate (sets passes_all_cuts), then fill histograms
         for (auto& cand : piplus_candidates) {
             cand.passes_all_cuts = m_cutflow_piplus.evaluate(cand);
         }
+        fill_pre_cut_histograms(piplus_candidates, true);
+        fill_nminus1_histograms(piplus_candidates, true);
+        fill_post_cut_histograms(piplus_candidates, true);
+        fill_ntuple(piplus_candidates, true);
+
+        // Collect passing particles
+        auto selected_piplus = collect_passing_particles(piplus_candidates);
+
+        // Build π⁻ candidates with all kinematics computed once
+        auto piminus_candidates = build_pion_candidates(event.pions_minus(), start_time, false);
+
+        // Evaluate cutflow per-candidate (sets passes_all_cuts), then fill histograms
         for (auto& cand : piminus_candidates) {
             cand.passes_all_cuts = m_cutflow_piminus.evaluate(cand);
         }
+        fill_pre_cut_histograms(piminus_candidates, false);
+        fill_nminus1_histograms(piminus_candidates, false);
+        fill_post_cut_histograms(piminus_candidates, false);
+        fill_ntuple(piminus_candidates, false);
 
-        auto selected_piplus  = have_event ? collect_passing_particles(piplus_candidates)  : std::vector<clas12::Particle>{};
-        auto selected_piminus = have_event ? collect_passing_particles(piminus_candidates) : std::vector<clas12::Particle>{};
+        // Collect passing particles
+        auto selected_piminus = collect_passing_particles(piminus_candidates);
 
-        return pipeline(event)
-            .require(Decisions::HasGoodDISElectron)
-            .filter("has event data", have_event)
-            // π⁺ pre/N-1/post histograms + ntuple in one tap.
-            .tap([&] {
-                fill_pre_cut_histograms (piplus_candidates, true);
-                fill_nminus1_histograms (piplus_candidates, true);
-                fill_post_cut_histograms(piplus_candidates, true);
-                fill_ntuple             (piplus_candidates, true);
-            })
-            // π⁻ pre/N-1/post histograms + ntuple in one tap.
-            .tap([&] {
-                fill_pre_cut_histograms (piminus_candidates, false);
-                fill_nminus1_histograms (piminus_candidates, false);
-                fill_post_cut_histograms(piminus_candidates, false);
-                fill_ntuple             (piminus_candidates, false);
-            })
-            .publish(Keys::SelectedPiPlus,  selected_piplus)
-            .publish(Keys::SelectedPiMinus, selected_piminus)
-            .set_decision(Decisions::HasGoodPiPlus,  !selected_piplus.empty())
-            .set_decision(Decisions::HasGoodPiMinus, !selected_piminus.empty())
-            // Sigma scan: one tap that iterates every scan value and
-            // publishes the re-cut selections under sigma-tagged keys.
-            .tap([&] {
-                if (m_sigma_scan_values.get().empty()) return;
-                for (double scan_sigma : m_sigma_scan_values.get()) {
-                    auto scan_piplus  = collect_passing_with_sigma(piplus_candidates,  true,  scan_sigma);
-                    auto scan_piminus = collect_passing_with_sigma(piminus_candidates, false, scan_sigma);
-                    event.store_typed(
-                        TypedKey<std::vector<clas12::Particle>>(format_sigma_key("SelectedPiPlus", scan_sigma)),
-                        std::move(scan_piplus));
-                    event.store_typed(
-                        TypedKey<std::vector<clas12::Particle>>(format_sigma_key("SelectedPiMinus", scan_sigma)),
-                        std::move(scan_piminus));
-                }
-            })
-            // Cumulative cut-step collections for downstream variant studies.
-            .tap([&] {
-                static constexpr std::array<std::pair<int, const char*>, 5> CUMULATIVE_STEPS = {{
-                    {0, "noPionCuts"}, {1, "plusDCFiducial"}, {2, "plusChi2PID"},
-                    {3, "plusMomentum"}, {4, "plusVertexZ"}
-                }};
-                for (const auto& [step, label] : CUMULATIVE_STEPS) {
-                    event.store_typed(
-                        TypedKey<std::vector<clas12::Particle>>(fmt::format("PiPlus_{}",  label)),
-                        collect_passing_cumulative(piplus_candidates,  step));
-                    event.store_typed(
-                        TypedKey<std::vector<clas12::Particle>>(fmt::format("PiMinus_{}", label)),
-                        collect_passing_cumulative(piminus_candidates, step));
-                }
-            })
-            .status();
+        // Store selected pions in event for downstream algorithms
+        event.store_typed(clas12::framework::Keys::SelectedPiPlus, selected_piplus);
+        event.store_typed(clas12::framework::Keys::SelectedPiMinus, selected_piminus);
+
+        // Set decision based on whether we have good pions
+        event.set_decision_typed(clas12::framework::Decisions::HasGoodPiMinus, !selected_piminus.empty());
+        event.set_decision_typed(clas12::framework::Decisions::HasGoodPiPlus, !selected_piplus.empty());
+
+        // Sigma scan: for each scan sigma, re-evaluate delta_t cut and store under string keys
+        if (!m_sigma_scan_values.get().empty()) {
+            for (double scan_sigma : m_sigma_scan_values.get()) {
+                auto scan_piplus = collect_passing_with_sigma(piplus_candidates, true, scan_sigma);
+                event.store_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(format_sigma_key("SelectedPiPlus", scan_sigma)), std::move(scan_piplus));
+
+                auto scan_piminus = collect_passing_with_sigma(piminus_candidates, false, scan_sigma);
+                event.store_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(format_sigma_key("SelectedPiMinus", scan_sigma)), std::move(scan_piminus));
+            }
+        }
+
+        // Cumulative pion cut variations: store pion collections at each cut step
+        // Steps 0-4 stored here; step 5 (all cuts) = existing SelectedPiPlus/Minus
+        static constexpr std::array<std::pair<int, const char*>, 5> CUMULATIVE_STEPS = {{
+            {0, "noPionCuts"}, {1, "plusDCFiducial"}, {2, "plusChi2PID"},
+            {3, "plusMomentum"}, {4, "plusVertexZ"}
+        }};
+        for (const auto& [step, label] : CUMULATIVE_STEPS) {
+            event.store_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(fmt::format("PiPlus_{}", label)),
+                collect_passing_cumulative(piplus_candidates, step));
+            event.store_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(fmt::format("PiMinus_{}", label)),
+                collect_passing_cumulative(piminus_candidates, step));
+        }
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
     /**
@@ -440,8 +438,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
 
     // Service pointers (cached in on_initialize via svc<T>())
     clas12::framework::HistogramService* m_hist = nullptr;
-    clas12::framework::ParticleSelectorService* m_particle = nullptr;
-    clas12::framework::LoggingService* m_log = nullptr;
     clas12::framework::NTupleService* m_ntuple = nullptr;
 
     // N-tuple writers (replace individual variables + manual registration)
@@ -667,7 +663,6 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
      * in the candidate struct to avoid redundant calculations downstream.
      */
     auto build_pion_candidates(
-        clas12::framework::Event& event,
         const std::vector<clas12::Particle>& pions,
         double start_time,
         bool is_piplus
@@ -708,7 +703,7 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
 
             // Get scintillator info (FTOF for forward pions only)
             if (cand.is_forward_detector) {
-                clas12::ScintillatorBank scintillator = clas12::read_Scintillator_bank(event, pion.index());
+                clas12::ScintillatorBank scintillator = pion.scintillator();
                 cand.sector = scintillator.sector;
                 cand.tof_time = scintillator.time;
                 cand.tof_path = scintillator.path;
@@ -724,8 +719,8 @@ class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
             cand.beta_diff = timing.beta_diff;
 
             // Read calorimeter and trajectory banks for fiducial cuts
-            auto calo = clas12::read_Calorimeter_bank(event, pion.index());
-            auto traj = clas12::read_Traj_bank(event, pion.index());
+            auto calo = pion.calo();
+            auto traj = pion.traj();
 
             // Store PCAL fiducial variables and count NaN
             cand.pcal_lv = calo.pcal_lv;

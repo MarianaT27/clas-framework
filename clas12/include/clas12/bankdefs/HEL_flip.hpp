@@ -42,28 +42,54 @@ class HEL_flip {
 
     HEL_flip() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("run"); h) h_run = *h;
-        else h_run = {};
-        if (auto h = schema.get_handle("event"); h) h_event = *h;
-        else h_event = {};
-        if (auto h = schema.get_handle("timestamp"); h) h_timestamp = *h;
-        else h_timestamp = {};
-        if (auto h = schema.get_handle("helicity"); h) h_helicity = *h;
-        else h_helicity = {};
-        if (auto h = schema.get_handle("helicityRaw"); h) h_helicityRaw = *h;
-        else h_helicityRaw = {};
-        if (auto h = schema.get_handle("pair"); h) h_pair = *h;
-        else h_pair = {};
-        if (auto h = schema.get_handle("pattern"); h) h_pattern = *h;
-        else h_pattern = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_run;
+            hipo::column_handle h_event;
+            hipo::column_handle h_timestamp;
+            hipo::column_handle h_helicity;
+            hipo::column_handle h_helicityRaw;
+            hipo::column_handle h_pair;
+            hipo::column_handle h_pattern;
+            hipo::column_handle h_status;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("run"); h) cache.h_run = *h;
+            else cache.h_run = {};
+            if (auto h = schema.get_handle("event"); h) cache.h_event = *h;
+            else cache.h_event = {};
+            if (auto h = schema.get_handle("timestamp"); h) cache.h_timestamp = *h;
+            else cache.h_timestamp = {};
+            if (auto h = schema.get_handle("helicity"); h) cache.h_helicity = *h;
+            else cache.h_helicity = {};
+            if (auto h = schema.get_handle("helicityRaw"); h) cache.h_helicityRaw = *h;
+            else cache.h_helicityRaw = {};
+            if (auto h = schema.get_handle("pair"); h) cache.h_pair = *h;
+            else cache.h_pair = {};
+            if (auto h = schema.get_handle("pattern"); h) cache.h_pattern = *h;
+            else cache.h_pattern = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+        }
+        h_run = cache.h_run;
+        h_event = cache.h_event;
+        h_timestamp = cache.h_timestamp;
+        h_helicity = cache.h_helicity;
+        h_helicityRaw = cache.h_helicityRaw;
+        h_pair = cache.h_pair;
+        h_pattern = cache.h_pattern;
+        h_status = cache.h_status;
         return true;
     }
 

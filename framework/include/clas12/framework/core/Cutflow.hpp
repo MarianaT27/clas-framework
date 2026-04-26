@@ -3,10 +3,11 @@
 #include <fmt/format.h>
 #include <atomic>
 #include <cstddef>
-#include <map>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #include <clas12/framework/services/LoggingService.hpp>
@@ -15,15 +16,28 @@ namespace clas12::framework {
 
 /**
  * @brief Cutflow manager for tracking event selection efficiency
+ *
+ * The hot path is `pass(name)` — called several times per event from
+ * every worker thread. Counters are stored in a flat
+ * `vector<atomic<size_t>>` (one slot per cut, indexed by insertion order)
+ * and an `unordered_map<string, size_t>` resolves the name to that index.
+ * Compared to the previous `map<string, atomic<size_t>>`:
+ *   - O(1) hashed lookup instead of O(log N) tree walk with string compares
+ *   - No per-cut heap node; the counters live in one contiguous buffer
+ *   - Heterogeneous lookup lets `pass(string_view)` and `pass(const char*)`
+ *     skip the std::string allocation that the old `map` overloads forced
  */
 class Cutflow {
    public:
     explicit Cutflow(std::string name) : m_name(std::move(name)) {}
 
-    /// Add a cut to the cutflow
+    /// Add a cut to the cutflow. Cuts must be added before any `pass()` calls
+    /// from worker threads — the underlying vector reserves the slot.
     auto add_cut(const std::string& cut_name) -> void {
+        if (m_index.find(cut_name) != m_index.end()) return;  // duplicate add
+        m_index.emplace(cut_name, m_cuts.size());
         m_cuts.push_back(cut_name);
-        m_counters[cut_name] = 0;
+        m_counters.push_back(std::make_unique<std::atomic<std::size_t>>(0));
     }
 
     /// Number of cuts
@@ -36,33 +50,33 @@ class Cutflow {
 
     [[nodiscard]] auto get_cut_names() const -> const std::vector<std::string>& { return m_cuts; }
 
-    /// Increment counter for a cut (thread-safe)
+    /// Increment counter for a cut (thread-safe). Hot path; resolves
+    /// `cut_name` to an index via the heterogeneous unordered_map and
+    /// performs a single relaxed atomic increment.
+    auto pass(std::string_view cut_name) -> void {
+        if (auto it = m_index.find(cut_name); it != m_index.end()) {
+            m_counters[it->second]->fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
     auto pass(const std::string& cut_name) -> void {
-        if (auto it = m_counters.find(cut_name); it != m_counters.end()) {
-            ++it->second;
-        }
+        pass(std::string_view{cut_name});
     }
 
-    /// Increment counter for a cut (thread-safe)
-    auto pass(const std::string_view cut_name) -> void {
-        if (auto it = m_counters.find(cut_name.data()); it != m_counters.end()) {
-            ++it->second;
-        }
-    }
-
-    /// Increment counter for a cut (thread-safe) - overload for string literals
     auto pass(const char* cut_name) -> void {
-        if (auto it = m_counters.find(cut_name); it != m_counters.end()) {
-            ++it->second;
-        }
+        pass(std::string_view{cut_name});
     }
 
     /// Get count for a specific cut
-    [[nodiscard]] auto count(const std::string& cut_name) const -> std::size_t {
-        if (auto it = m_counters.find(cut_name); it != m_counters.end()) {
-            return it->second.load();
+    [[nodiscard]] auto count(std::string_view cut_name) const -> std::size_t {
+        if (auto it = m_index.find(cut_name); it != m_index.end()) {
+            return m_counters[it->second]->load(std::memory_order_relaxed);
         }
         return 0;
+    }
+
+    [[nodiscard]] auto count(const std::string& cut_name) const -> std::size_t {
+        return count(std::string_view{cut_name});
     }
 
     [[nodiscard]] auto get_count(const std::string& cut_name) const -> std::size_t {
@@ -93,20 +107,18 @@ class Cutflow {
     /// per-worker accumulator pattern where the partial cutflow from a
     /// local processor is merged into the master cutflow at finalize.
     auto merge(const Cutflow& other) -> void {
-        for (const auto& cut : other.m_cuts) {
-            auto it = m_counters.find(cut);
-            auto oit = other.m_counters.find(cut);
-            if (it != m_counters.end() && oit != other.m_counters.end()) {
-                it->second.fetch_add(oit->second.load(std::memory_order_relaxed),
-                                     std::memory_order_relaxed);
-            }
+        for (std::size_t oi = 0; oi < other.m_cuts.size(); ++oi) {
+            auto it = m_index.find(other.m_cuts[oi]);
+            if (it == m_index.end()) continue;
+            const auto delta = other.m_counters[oi]->load(std::memory_order_relaxed);
+            m_counters[it->second]->fetch_add(delta, std::memory_order_relaxed);
         }
     }
 
     /// Zero every counter (Accumulator<Cutflow>).
     auto reset() -> void {
-        for (auto& [name, counter] : m_counters) {
-            counter.store(0, std::memory_order_relaxed);
+        for (auto& counter : m_counters) {
+            counter->store(0, std::memory_order_relaxed);
         }
     }
 
@@ -154,9 +166,34 @@ class Cutflow {
     }
 
    private:
+    // Heterogeneous lookup: pass(string_view) and pass(const char*) hit
+    // the unordered_map without allocating a temporary std::string. Requires
+    // C++20 (transparent hashing for unordered associative containers).
+    struct StringHash {
+        using is_transparent = void;
+        std::size_t operator()(std::string_view s) const noexcept {
+            return std::hash<std::string_view>{}(s);
+        }
+        std::size_t operator()(const std::string& s) const noexcept {
+            return std::hash<std::string_view>{}(s);
+        }
+        std::size_t operator()(const char* s) const noexcept {
+            return std::hash<std::string_view>{}(std::string_view{s});
+        }
+    };
+    struct StringEq {
+        using is_transparent = void;
+        bool operator()(std::string_view a, std::string_view b) const noexcept { return a == b; }
+    };
+
     std::string m_name;
     std::vector<std::string> m_cuts;
-    std::map<std::string, std::atomic<std::size_t>> m_counters;
+    // unique_ptr because std::atomic is neither copyable nor movable, so a
+    // bare std::vector<std::atomic<...>> cannot be reallocated when push_back
+    // grows it. The double-indirection cost is paid once per `pass()` call,
+    // dominated by the atomic RMW that follows.
+    std::vector<std::unique_ptr<std::atomic<std::size_t>>> m_counters;
+    std::unordered_map<std::string, std::size_t, StringHash, StringEq> m_index;
 };
 
 }  // namespace clas12::framework

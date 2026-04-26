@@ -1,9 +1,9 @@
 /**
  * @file example_simple_algorithm.cpp
- * @brief Example demonstrating SimpleAlgorithm usage
+ * @brief Example demonstrating Algorithm usage
  *
  * This example verifies the algorithm infrastructure by demonstrating:
- * - SimpleAlgorithm CRTP base class with automatic service injection
+ * - Algorithm base class with automatic service injection
  * - Property system integration
  * - Service access via svc<T>()
  *
@@ -14,7 +14,7 @@
 
 #include <clas12/framework/core/Application.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
@@ -26,21 +26,21 @@
 using namespace clas12::framework;
 
 // ============================================================================
-// Example 1: SimpleAlgorithm with service injection and properties
+// Example 1: Algorithm with service injection and properties
 // ============================================================================
 
 /**
- * @brief Example algorithm demonstrating SimpleAlgorithm features
+ * @brief Example algorithm demonstrating Algorithm features
  *
  * This algorithm shows:
- * - Inheriting from SimpleAlgorithm<Derived> (CRTP pattern)
+ * - Inheriting from Algorithm (hook-based base class)
  * - Declaring properties with validation
  * - Automatic service injection via require_service<T>()
  * - Using on_initialize() and on_finalize() hooks
  */
-class ElectronCounterAlg : public SimpleAlgorithm {
+class ElectronCounterAlg : public Algorithm {
 public:
-    ElectronCounterAlg() : SimpleAlgorithm("ElectronCounter") {
+    ElectronCounterAlg() : Algorithm("ElectronCounter") {
         // Declare properties in constructor
         declare_property(m_min_momentum);
         declare_property(m_max_momentum);
@@ -137,15 +137,15 @@ private:
 };
 
 // ============================================================================
-// Example 2: Another SimpleAlgorithm demonstrating multiple services
+// Example 2: Another Algorithm demonstrating multiple services
 // ============================================================================
 
 /**
  * @brief Algorithm demonstrating multiple service injection
  */
-class PhotonAnalysisAlg : public SimpleAlgorithm {
+class PhotonAnalysisAlg : public Algorithm {
 public:
-    PhotonAnalysisAlg() : SimpleAlgorithm("PhotonAnalysis") {
+    PhotonAnalysisAlg() : Algorithm("PhotonAnalysis") {
         declare_property(m_energy_threshold);
     }
 
@@ -192,11 +192,11 @@ private:
 };
 
 // ============================================================================
-// Main: Demonstrate both SimpleAlgorithm and LambdaAlgorithm
+// Main: Demonstrate both Algorithm and LambdaAlgorithm
 // ============================================================================
 
 int main(int argc, char* argv[]) {
-    fmt::print("=== SimpleAlgorithm Example ===\n\n");
+    fmt::print("=== Algorithm Example ===\n\n");
 
     // Determine data directory
     std::string data_dir = "data/";
@@ -222,9 +222,9 @@ int main(int argc, char* argv[]) {
         .build();
 
     fmt::print("  ✓ Services configured via with_standard_services()\n");
-    fmt::print("  ✓ SimpleAlgorithm instances added\n");
+    fmt::print("  ✓ Algorithm instances added\n");
 
-    fmt::print("\n  ✓ SimpleAlgorithm instances configured\n");
+    fmt::print("\n  ✓ Algorithm instances configured\n");
 
     // ========================================================================
     // Run application
@@ -248,7 +248,7 @@ int main(int argc, char* argv[]) {
         }
 
         fmt::print("\n=== Summary ===\n");
-        fmt::print("  SimpleAlgorithm: ElectronCounter, PhotonAnalysis\n");
+        fmt::print("  Algorithm: ElectronCounter, PhotonAnalysis\n");
         fmt::print("  Service injection: VERIFIED\n");
         fmt::print("\n✓ Algorithm infrastructure checkpoint complete!\n");
 

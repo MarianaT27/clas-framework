@@ -2,14 +2,13 @@
 
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
-#include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
+#include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
 
 namespace clas12::algorithms {
 
@@ -26,13 +25,13 @@ namespace clas12::algorithms {
  * // Decision "TriggerFilter" is set (true/false)
  * @endcode
  */
-class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm {
+class TriggerElectronFilter : public clas12::framework::Algorithm {
    public:
     explicit TriggerElectronFilter(
         std::string name = "TriggerElectronFilter",
         clas12::Target target = clas12::Target::LD2,
         clas12::Polarity /*polarity*/ = clas12::Polarity::Outbending)
-        : SimpleAlgorithm(std::move(name)), m_target(target), m_cutflow("Trigger Electron Filter") {
+        : Algorithm(std::move(name)), m_target(target), m_cutflow("Trigger Electron Filter") {
         declare_property(m_enable_trigger_status_cut);
         declare_property(m_enable_chi2pid_cut);
         declare_property(m_enable_momentum_cut);
@@ -41,7 +40,6 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm {
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        m_particle = svc<clas12::framework::ParticleSelectorService>();
         m_electron_cuts = svc<clas12::framework::ElectronCutsService>();
         if (!m_electron_cuts) {
             clas12::framework::Log::error(name(), "ElectronCutsService not registered");
@@ -70,55 +68,59 @@ class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm {
     }
 
     /**
-     * @brief Filter logic - check if event has good trigger electron.
-     *
-     * Uses the declarative `EventPipeline` builder: every filter step
-     * short-circuits the chain on failure and `.status()` returns the
-     * right StatusCode. The "set decision = false on any failure"
-     * behaviour is handled by a single `.set_decision(..., false)` up
-     * front that is overridden later on success.
+     * @brief Filter logic - check if event has good trigger electron
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        using namespace clas12::framework;
+        m_cutflow.pass("All Events");
 
-        // Default decision: filtered out. Overwritten to `true` below
-        // if every filter stage passes.
-        event.set_decision_typed(Decisions::HasTriggerElectron, false);
+        const auto& electrons = event.electrons();
+        if (electrons.empty()) {
+            event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("Has Electron");
 
-        const auto& REC_Particle = event.get_bank("REC::Particle");
-        auto particles_map = m_particle->extract_particles(REC_Particle, {clas12::PIDs::ELECTRON});
-        const auto& electrons = m_particle->get_electrons(particles_map);
+        // Find trigger electron
+        auto trigger_e = event.find_trigger_electron({2000, 4000});
+        if (m_enable_trigger_status_cut.get() && !trigger_e.has_value()) {
+            event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("Trigger Status");
 
-        auto trigger_e = !electrons.empty()
-            ? clas12::physics::ParticleUtils::find_trigger_electron(electrons, {2000, 4000})
-            : std::optional<clas12::Particle>{};
+        // Use trigger electron if found, otherwise use first electron
+        auto electron = trigger_e.has_value() ? trigger_e.value() : electrons.front();
 
-        // When trigger-status cut is disabled we fall back to the first
-        // electron; otherwise the filter below drops the event if the
-        // trigger electron isn't found.
-        clas12::Particle electron = (trigger_e.has_value())
-            ? *trigger_e
-            : (electrons.empty() ? clas12::Particle{} : electrons.front());
+        // Apply basic cuts via ElectronCutsService
+        if (m_enable_chi2pid_cut.get() && !m_electron_cuts->pass_chi2pid_cut(electron.chi2pid())) {
+            event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("Chi2 PID");
 
-        return pipeline(event, m_cutflow)
-            .count("All Events")
-            .filter("Has Electron",    !electrons.empty())
-            .filter("Trigger Status",  !m_enable_trigger_status_cut.get() || trigger_e.has_value())
-            .filter("Chi2 PID",        !m_enable_chi2pid_cut.get()
-                                          || m_electron_cuts->pass_chi2pid_cut(electron.chi2pid()))
-            .filter("Momentum",        !m_enable_momentum_cut.get()
-                                          || m_electron_cuts->pass_momentum_cut(electron.p()))
-            .filter("Vertex Z",        !m_enable_vz_cut.get()
-                                          || m_electron_cuts->pass_vz_cut(electron.vz(), m_target))
-            .publish(Keys::TriggerElectron, electron)
-            .set_decision(Decisions::HasTriggerElectron, true)
-            .status();
+        if (m_enable_momentum_cut.get() && !m_electron_cuts->pass_momentum_cut(electron.p())) {
+            event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("Momentum");
+
+        if (m_enable_vz_cut.get() && !m_electron_cuts->pass_vz_cut(electron.vz(), m_target)) {
+            event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("Vertex Z");
+
+        // Store the trigger electron for downstream use
+        event.store_typed(clas12::framework::Keys::TriggerElectron, electron);
+
+        // Event passes filter
+        event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, true);
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
    private:
     clas12::Target m_target;
     clas12::framework::Cutflow m_cutflow;
-    clas12::framework::ParticleSelectorService* m_particle = nullptr;
     clas12::framework::ElectronCutsService* m_electron_cuts = nullptr;
 
     // Cut toggle properties

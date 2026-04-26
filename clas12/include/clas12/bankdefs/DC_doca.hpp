@@ -42,22 +42,42 @@ class DC_doca {
 
     DC_doca() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("LR"); h) h_LR = *h;
-        else h_LR = {};
-        if (auto h = schema.get_handle("doca"); h) h_doca = *h;
-        else h_doca = {};
-        if (auto h = schema.get_handle("sdoca"); h) h_sdoca = *h;
-        else h_sdoca = {};
-        if (auto h = schema.get_handle("time"); h) h_time = *h;
-        else h_time = {};
-        if (auto h = schema.get_handle("stime"); h) h_stime = *h;
-        else h_stime = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_LR;
+            hipo::column_handle h_doca;
+            hipo::column_handle h_sdoca;
+            hipo::column_handle h_time;
+            hipo::column_handle h_stime;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("LR"); h) cache.h_LR = *h;
+            else cache.h_LR = {};
+            if (auto h = schema.get_handle("doca"); h) cache.h_doca = *h;
+            else cache.h_doca = {};
+            if (auto h = schema.get_handle("sdoca"); h) cache.h_sdoca = *h;
+            else cache.h_sdoca = {};
+            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
+            else cache.h_time = {};
+            if (auto h = schema.get_handle("stime"); h) cache.h_stime = *h;
+            else cache.h_stime = {};
+        }
+        h_LR = cache.h_LR;
+        h_doca = cache.h_doca;
+        h_sdoca = cache.h_sdoca;
+        h_time = cache.h_time;
+        h_stime = cache.h_stime;
         return true;
     }
 

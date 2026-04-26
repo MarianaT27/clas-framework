@@ -4,12 +4,11 @@
 #include <chrono>
 #include <vector>
 #include <clas12/PIDs.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
 
 namespace clas12::algorithms {
 
@@ -26,10 +25,10 @@ namespace clas12::algorithms {
  * app.add_algorithm(std::move(monitor));
  * @endcode
  */
-class EventMonitor : public clas12::framework::SimpleAlgorithm {
+class EventMonitor : public clas12::framework::Algorithm {
    public:
     explicit EventMonitor(std::string name = "EventMonitor")
-        : SimpleAlgorithm(std::move(name)), m_monitored_pids(initialize_default_pids()) {
+        : Algorithm(std::move(name)), m_monitored_pids(initialize_default_pids()) {
         declare_bank("REC::Particle");
     }
 
@@ -40,7 +39,6 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm {
 
     auto on_initialize() -> clas12::framework::StatusCode override {
         m_hist_svc = svc<clas12::framework::HistogramService>();
-        m_particle_svc = svc<clas12::framework::ParticleSelectorService>();
 
         clas12::framework::Log::info("Event Monitor", "  {} - Initializing", name());
 
@@ -59,22 +57,15 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm {
     }
 
     /**
-     * @brief Monitor event characteristics.
-     *
-     * No filtering - this is a pure monitoring pipeline that always
-     * passes through. The event start timestamp is captured before
-     * the pipeline runs so the processing-time histogram sees the
-     * full body duration.
+     * @brief Monitor event characteristics
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         const auto event_start = std::chrono::high_resolution_clock::now();
-        return clas12::framework::pipeline(event)
-            .tap([&] {
-                m_events_processed.fetch_add(1, std::memory_order_relaxed);
-                process_particle_statistics(event);
-                record_processing_time(event_start);
-            })
-            .status();
+        m_events_processed.fetch_add(1, std::memory_order_relaxed);
+        process_particle_statistics(event);
+        record_processing_time(event_start);
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
    private:
@@ -119,23 +110,17 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm {
      * @brief Process and record particle statistics for the event
      */
     void process_particle_statistics(clas12::framework::Event& event) {
-        const auto& REC_Particle = event.get_bank("REC::Particle");
+        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
 
-        const int n_particles = REC_Particle.rows();
+        const int n_particles = rec_particle.rows();
         m_total_particles.fetch_add(static_cast<size_t>(n_particles), std::memory_order_relaxed);
 
         if (h_particles_per_event) {
             h_particles_per_event->fill(n_particles);
         }
 
-        // Extract particles for detailed monitoring using ParticleSelectorService
-        const clas12::framework::ParticleMap particles = m_particle_svc->extract_particles(
-            REC_Particle, m_monitored_pids);
-
-        const int n_electrons = m_particle_svc->get_electrons(particles).size();
-
         if (h_electrons_per_event) {
-            h_electrons_per_event->fill(n_electrons);
+            h_electrons_per_event->fill(static_cast<int>(event.electrons().size()));
         }
     }
 
@@ -192,7 +177,6 @@ class EventMonitor : public clas12::framework::SimpleAlgorithm {
 
     // Services
     clas12::framework::HistogramService* m_hist_svc = nullptr;
-    clas12::framework::ParticleSelectorService* m_particle_svc = nullptr;
 
     // Monitoring histograms (atomic for thread-safety)
     clas12::framework::ThreadLocalHistogram1D* h_particles_per_event = nullptr;

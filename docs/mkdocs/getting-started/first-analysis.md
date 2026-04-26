@@ -32,25 +32,25 @@ This creates a complete analysis directory with:
 
 ### Step 1: Create Your Algorithm
 
-Create a new header file in your analysis directory using `SimpleAlgorithm<T>`:
+Create a new header file in your analysis directory using `Algorithm`:
 
 ```cpp
 #pragma once
 
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/PIDs.hpp>
 
 namespace my_analysis {
 
-class MyAnalysisAlg : public clas12::framework::SimpleAlgorithm<MyAnalysisAlg> {
+class MyAnalysisAlg : public clas12::framework::Algorithm {
 public:
     explicit MyAnalysisAlg(std::string name = "MyAnalysis")
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_cutflow("My Cutflow") {}
 
     auto configure() -> void override {
@@ -59,7 +59,7 @@ public:
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        // Book histograms - returns AtomicHistogram1D* (thread-safe)
+        // Book histograms - returns ThreadLocalHistogram1D* (thread-safe)
         h_momentum = m_hist_svc->get()->book_hist1D(
             "/MyAnalysis/momentum",
             "Electron Momentum;p [GeV/c];Events",
@@ -115,10 +115,10 @@ public:
 
 private:
     clas12::framework::Cutflow m_cutflow;
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::HistogramService>* m_hist_svc = nullptr;
     // Atomic histograms are thread-safe for parallel processing
-    clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
-    clas12::framework::AtomicHistogram1D* h_theta = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_momentum = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_theta = nullptr;
 };
 
 }  // namespace my_analysis

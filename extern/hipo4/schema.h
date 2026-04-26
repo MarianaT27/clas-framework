@@ -7,6 +7,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "constants.h"
@@ -302,11 +303,35 @@ public:
     }
 
 private:
+    // Heterogeneous hash so column_index(string_view) hits the table without
+    // allocating a temporary std::string.
+    struct StringHash {
+        using is_transparent = void;
+        std::size_t operator()(std::string_view s) const noexcept {
+            return std::hash<std::string_view>{}(s);
+        }
+        std::size_t operator()(const std::string& s) const noexcept {
+            return std::hash<std::string_view>{}(s);
+        }
+    };
+    struct StringEq {
+        using is_transparent = void;
+        bool operator()(std::string_view a, std::string_view b) const noexcept { return a == b; }
+    };
+
     schema(std::string name, int group, int item,
            std::vector<schema_entry> entries,
            std::vector<std::pair<std::string, int>> lookup)
         : m_name(std::move(name)), m_group(group), m_item(item),
-          m_entries(std::move(entries)), m_lookup(std::move(lookup)) {}
+          m_entries(std::move(entries)), m_lookup(std::move(lookup)) {
+        // Build the O(1) name->index map once. Schemas are immutable after
+        // construction, so generated bind() functions hit a hash lookup
+        // instead of doing log(N) string compares per column.
+        m_index_map.reserve(m_lookup.size() * 2);
+        for (auto const& [name, idx] : m_lookup) {
+            m_index_map.emplace(name, idx);
+        }
+    }
 
     /** @brief Human-readable schema name (e.g. "event::particle"). */
     std::string                            m_name;
@@ -318,6 +343,8 @@ private:
     std::vector<schema_entry>              m_entries;
     /** @brief Sorted (name, index) pairs for O(log N) column lookup by name. */
     std::vector<std::pair<std::string,int>> m_lookup; // sorted by name for binary search
+    /** @brief O(1) name->index map used by column_index() in the hot path. */
+    std::unordered_map<std::string, int, StringHash, StringEq> m_index_map;
 };
 
 } // namespace hipo

@@ -42,18 +42,34 @@ class RUN_scaler {
 
     RUN_scaler() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("fcupgated"); h) h_fcupgated = *h;
-        else h_fcupgated = {};
-        if (auto h = schema.get_handle("fcup"); h) h_fcup = *h;
-        else h_fcup = {};
-        if (auto h = schema.get_handle("livetime"); h) h_livetime = *h;
-        else h_livetime = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_fcupgated;
+            hipo::column_handle h_fcup;
+            hipo::column_handle h_livetime;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("fcupgated"); h) cache.h_fcupgated = *h;
+            else cache.h_fcupgated = {};
+            if (auto h = schema.get_handle("fcup"); h) cache.h_fcup = *h;
+            else cache.h_fcup = {};
+            if (auto h = schema.get_handle("livetime"); h) cache.h_livetime = *h;
+            else cache.h_livetime = {};
+        }
+        h_fcupgated = cache.h_fcupgated;
+        h_fcup = cache.h_fcup;
+        h_livetime = cache.h_livetime;
         return true;
     }
 

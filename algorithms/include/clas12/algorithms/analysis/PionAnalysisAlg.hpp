@@ -4,10 +4,10 @@
  * @file PionAnalysisAlg.hpp
  * @brief Pion analysis algorithm with calorimeter and DC quality histograms
  *
- * Modernized using SimpleAlgorithm CRTP pattern with:
+ * Modernized using Algorithm hook pattern with:
  * - Automatic service injection via svc<T>()
  * - Property system for configuration
- * - Reduced boilerplate through CRTP
+ * - Reduced boilerplate via base-class hooks
  *
  * Produces histograms for:
  * - lv vs Sampling Fraction
@@ -21,23 +21,22 @@
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/bankdefs/REC_Event.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/CandidateUtils.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/EventHelpers.hpp>
-#include <clas12/framework/core/HistogramFiller.hpp>
-#include <clas12/framework/core/HistogramTemplates.hpp>
+#include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
-#include <clas12/framework/services/HistogramService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
+#include <clas12/framework/core/SectorHistograms.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
+#include <clas12/framework/services/HistogramService.hpp>
+#include <clas12/framework/services/NTupleService.hpp>
 
-#include <cmath>
 #include <array>
+#include <cmath>
 #include <string>
 
 namespace clas12::algorithms {
@@ -47,16 +46,9 @@ using clas12::framework::Log;
 /**
  * @brief Pion analysis with calorimeter SF and DC quality histograms
  */
-class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
+class PionAnalysisAlg : public clas12::framework::Algorithm {
    public:
-    explicit PionAnalysisAlg(std::string name = "PionAnalysis",
-                              clas12::Target target = clas12::Target::LD2,
-                              clas12::Polarity polarity = clas12::Polarity::Outbending)
-        : SimpleAlgorithm(std::move(name))
-        , m_target(target)
-        , m_polarity(polarity)
-        , m_cutflow_piplus("π⁺ Analysis")
-        , m_cutflow_piminus("π⁻ Analysis") {
+    explicit PionAnalysisAlg(std::string name = "PionAnalysis", clas12::Target target = clas12::Target::LD2, clas12::Polarity polarity = clas12::Polarity::Outbending) : Algorithm(std::move(name)), m_target(target), m_polarity(polarity), m_cutflow_piplus("π⁺ Analysis"), m_cutflow_piminus("π⁻ Analysis") {
         // Declare properties
         declare_property(m_min_momentum);
         declare_property(m_min_calo_energy);
@@ -78,15 +70,22 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
      */
     auto on_initialize() -> clas12::framework::StatusCode override {
         m_hist = svc<clas12::framework::HistogramService>();
-        m_particle = svc<clas12::framework::ParticleSelectorService>();
+        m_ntuple = svc<clas12::framework::NTupleService>();
 
         Log::info(name(), "Initializing pion analysis");
         Log::info(name(), "Target: {}, Polarity: {}", clas12::to_string(m_target), clas12::to_string(m_polarity));
-        Log::info(name(), "Min momentum: {} GeV, Min calo energy: {} GeV",
-                  m_min_momentum.get(), m_min_calo_energy.get());
+        Log::info(name(), "Min momentum: {} GeV, Min calo energy: {} GeV", m_min_momentum.get(), m_min_calo_energy.get());
 
         setup_cutflows();
         book_histograms();
+
+        // One TTree per charge. Multiple pions per event each become their
+        // own row, paired with the trigger electron's kinematics.
+        if (m_ntuple) {
+            m_ntuple_piplus.init(m_ntuple, "pion_plus_analysis");
+            m_ntuple_piminus.init(m_ntuple, "pion_minus_analysis");
+            Log::info(name(), "N-tuple branches registered for pi+ and pi-");
+        }
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -95,48 +94,38 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
      * @brief Process a single event
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        using namespace clas12::framework;
-
-        auto electron_opt = EventHelpers::get_selected_electron(event);
-        const double electron_vz = electron_opt ? electron_opt->vz() : 0.0;
+        // Gate on the upstream electron decision. ElectronAnalysisAlg sets
+        // `HasGoodElectron` and stores the trigger particle under
+        // `Keys::TriggerElectron`; we filter the event out if either is
+        // missing.
+        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodElectron)) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        auto electron_opt = event.retrieve_typed(clas12::framework::Keys::TriggerElectron);
+        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
+        const clas12::Particle& electron = *electron_opt;
 
         clas12::bankdefs::REC_Event rec_event;
         rec_event.bind(event.get_bank("REC::Event"));
-        const auto& REC_Particle = event.get_bank("REC::Particle");
-        const bool have_event  = rec_event.rows() > 0;
-        const double start_time = have_event
-            ? static_cast<double>(rec_event.startTime(0))
-            : 0.0;
 
-        ParticleMap particle_map = have_event
-            ? m_particle->extract_particles(REC_Particle, {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS})
-            : ParticleMap{};
+        if (rec_event.rows() == 0) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
 
-        static const std::vector<clas12::Particle> kEmpty;
-        const auto& pions_plus  = have_event ? m_particle->get_pions_plus(particle_map)  : kEmpty;
-        const auto& pions_minus = have_event ? m_particle->get_pions_minus(particle_map) : kEmpty;
+        // Get start time for timing calculations
+        const double start_time = static_cast<double>(rec_event.startTime(0));
 
-        return pipeline(event)
-            .filter("has electron", electron_opt.has_value())
-            .filter("has event data", have_event)
-            // π⁺ per-particle pipeline - each pion runs through
-            // process_pion() which fills per-sector, pre-cut, and
-            // post-cut histograms (and internal cutflow updates).
-            .tap([&] {
-                clas12::framework::particles(pions_plus)
-                    .tap([&](const clas12::Particle& pion) {
-                        process_pion(event, pion, start_time, electron_vz, true);
-                    })
-                    .run();
-            })
-            .tap([&] {
-                clas12::framework::particles(pions_minus)
-                    .tap([&](const clas12::Particle& pion) {
-                        process_pion(event, pion, start_time, electron_vz, false);
-                    })
-                    .run();
-            })
-            .status();
+        // Process π⁺ (one ntuple row per pion paired with the trigger electron)
+        for (const auto& pion : event.pions_plus()) {
+            process_pion(pion, electron, start_time, true);
+        }
+
+        // Process π⁻
+        for (const auto& pion : event.pions_minus()) {
+            process_pion(pion, electron, start_time, false);
+        }
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
     /**
@@ -151,6 +140,11 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         Log::info(name(), "Pion Analysis Summary:");
         Log::info(name(), "     - π⁺ with calorimeter info: {}", m_cutflow_piplus.count("Has Calorimeter"));
         Log::info(name(), "     - π⁻ with calorimeter info: {}", m_cutflow_piminus.count("Has Calorimeter"));
+
+        if (m_ntuple) {
+            Log::info(name(), "     - π⁺ N-tuple entries: {}", m_ntuple->get_entries("pion_plus_analysis"));
+            Log::info(name(), "     - π⁻ N-tuple entries: {}", m_ntuple->get_entries("pion_minus_analysis"));
+        }
 
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -181,12 +175,120 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
 
     // Services (cached pointers from svc<T>())
     clas12::framework::HistogramService* m_hist = nullptr;
-    clas12::framework::ParticleSelectorService* m_particle = nullptr;
+    clas12::framework::NTupleService* m_ntuple = nullptr;
+
+    /// One-pion record (kinematics + cached bank reads + derived
+    /// quantities). Populated in `process_pion` and copied into the
+    /// appropriate NTuple row.
+    struct PionCandidate {
+        clas12::Particle pion;
+        clas12::CalorimeterBank calorimeter;
+        clas12::DCTrajBank traj;
+        clas12::TrackBank track;
+        double E_tot = 0.0;
+        double sampling_fraction = 0.0;
+        double chi2ndf = 0.0;
+        double delta_t = 0.0;
+        double tof_path = 0.0;
+        int sector = 0;
+    };
+
+    /// N-Tuple row written once per pion that survives all cuts. Pion-only
+    /// columns (`pi_*`); the trigger electron lives in the electron
+    /// algorithm's own ntuple.
+    struct PionNTupleData {
+        // Pion kinematics
+        double pi_p = 0.0;
+        double pi_theta = 0.0;
+        double pi_phi = 0.0;
+        double pi_vz = 0.0;
+        double pi_chi2pid = 0.0;
+        double pi_beta = 0.0;
+        // Calorimeter
+        double pi_sampling_fraction = 0.0;
+        int pi_sector = 0;
+        // DC trajectory
+        double pi_chi2ndf = 0.0;
+        double pi_edge_r1 = 0.0;
+        double pi_edge_r2 = 0.0;
+        double pi_edge_r3 = 0.0;
+        double pi_x_r1 = 0.0;
+        double pi_y_r1 = 0.0;
+        double pi_z_r1 = 0.0;
+        double pi_x_r2 = 0.0;
+        double pi_y_r2 = 0.0;
+        double pi_z_r2 = 0.0;
+        // Timing
+        double pi_delta_t = 0.0;
+        double pi_tof_path = 0.0;
+
+        auto from(const PionCandidate& c) -> void {
+            pi_p = c.pion.p();
+            pi_theta = c.pion.theta();
+            pi_phi = c.pion.phi();
+            pi_vz = c.pion.vz();
+            pi_chi2pid = c.pion.chi2pid();
+            pi_beta = c.pion.beta();
+
+            pi_sampling_fraction = c.sampling_fraction;
+            pi_sector = c.sector;
+
+            pi_chi2ndf = c.chi2ndf;
+            pi_edge_r1 = c.traj.region1_edge;
+            pi_edge_r2 = c.traj.region2_edge;
+            pi_edge_r3 = c.traj.region3_edge;
+
+            pi_delta_t = c.delta_t;
+            pi_tof_path = c.tof_path;
+        }
+
+        static constexpr auto ntuple_fields() {
+            using T = PionNTupleData;
+            return std::make_tuple(clas12::framework::field("pi_p", &T::pi_p), clas12::framework::field("pi_theta", &T::pi_theta), clas12::framework::field("pi_phi", &T::pi_phi), clas12::framework::field("pi_vz", &T::pi_vz), clas12::framework::field("pi_chi2pid", &T::pi_chi2pid), clas12::framework::field("pi_beta", &T::pi_beta),
+                                   clas12::framework::field("pi_sampling_fraction", &T::pi_sampling_fraction), clas12::framework::field("pi_sector", &T::pi_sector), clas12::framework::field("pi_chi2ndf", &T::pi_chi2ndf), clas12::framework::field("pi_edge_r1", &T::pi_edge_r1), clas12::framework::field("pi_edge_r2", &T::pi_edge_r2), clas12::framework::field("pi_edge_r3", &T::pi_edge_r3),
+                                   clas12::framework::field("pi_x_r1", &T::pi_x_r1), clas12::framework::field("pi_y_r1", &T::pi_y_r1), clas12::framework::field("pi_z_r1", &T::pi_z_r1), clas12::framework::field("pi_x_r2", &T::pi_x_r2), clas12::framework::field("pi_y_r2", &T::pi_y_r2), clas12::framework::field("pi_z_r2", &T::pi_z_r2), clas12::framework::field("pi_delta_t", &T::pi_delta_t),
+                                   clas12::framework::field("pi_tof_path", &T::pi_tof_path));
+        }
+    };
+
+    clas12::framework::NTupleWriter<PionNTupleData> m_ntuple_piplus;
+    clas12::framework::NTupleWriter<PionNTupleData> m_ntuple_piminus;
 
     // Lock-free atomic histogram set for each pion charge
     struct PionHistograms {
-        // Base diagnostics: kinematics + vertex + timing + PID + phase space (from PionDiagnostics template)
-        std::unique_ptr<clas12::framework::ThreadLocalHistogramGroup> base;
+        // Base diagnostics: kinematics + vertex + timing + PID + phase space.
+        // Booked in book_pion_histograms() and filled in process_pion().
+        clas12::framework::ThreadLocalHistogram1D* p = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* vz = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* chi2pid = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* beta = nullptr;
+
+        clas12::framework::ThreadLocalHistogram2D* vz_vs_phi = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* vz_vs_sector = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* vz_vs_p_2d = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* vx_vs_vy = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* delta_vz = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* delta_vz_vs_p = nullptr;
+
+        clas12::framework::ThreadLocalHistogram1D* delta_t = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* delta_t_vs_p_diag = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* tof_mass2 = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* tof_mass2_vs_p = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* tof_path = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* tof_path_vs_p = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* beta_vs_p = nullptr;
+        clas12::framework::ThreadLocalHistogram1D* beta_diff = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* beta_diff_vs_p = nullptr;
+
+        clas12::framework::ThreadLocalHistogram2D* chi2pid_vs_p = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* chi2pid_vs_theta = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* chi2pid_vs_sector = nullptr;
+
+        clas12::framework::ThreadLocalHistogram2D* phi_vs_theta = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* p_vs_phi = nullptr;
+        clas12::framework::ThreadLocalHistogram2D* p_vs_theta_diag = nullptr;
 
         // Calorimeter-specific (post-cut)
         clas12::framework::ThreadLocalHistogram1D* sf = nullptr;
@@ -212,25 +314,22 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         clas12::framework::ThreadLocalHistogram2D* chi2ndf_vs_edge_r2_precut = nullptr;
         clas12::framework::ThreadLocalHistogram2D* chi2ndf_vs_edge_r3_precut = nullptr;
 
-        // Per-sector arrays
-        std::array<clas12::framework::ThreadLocalHistogram2D*, 6> delta_t_vs_p_sector = {};
-        std::array<clas12::framework::ThreadLocalHistogram2D*, 6> p_vs_theta_sector = {};
+        // Per-sector handles. The `<6>` is required syntactically at the
+        // member-declaration site; the default in PerSectorHist{1,2}D
+        // can't be relied on inside a class body.
+        clas12::framework::PerSectorHist2D<6> delta_t_vs_p_sector;
+        clas12::framework::PerSectorHist2D<6> p_vs_theta_sector;
 
-        // Sector-level histograms
-        struct SectorHistograms {
-            bool booked = false;
-            std::map<int, clas12::framework::ThreadLocalHistogram1D*> nphe;
-            std::map<int, clas12::framework::ThreadLocalHistogram2D*> EPCal_vs_ECal;
-            std::map<int, clas12::framework::ThreadLocalHistogram1D*> EPCal;
-            std::map<int, clas12::framework::ThreadLocalHistogram2D*> p_vs_SF;
-            std::map<int, clas12::framework::ThreadLocalHistogram2D*> lv_vs_SF;
-            std::map<int, clas12::framework::ThreadLocalHistogram2D*> lw_vs_SF;
-            std::map<int, clas12::framework::ThreadLocalHistogram2D*> edge_vs_chi2ndf_r1;
-            std::map<int, clas12::framework::ThreadLocalHistogram2D*> edge_vs_chi2ndf_r2;
-            std::map<int, clas12::framework::ThreadLocalHistogram2D*> edge_vs_chi2ndf_r3;
-            std::map<int, clas12::framework::ThreadLocalHistogram2D*> p_vs_theta;
-        };
-        SectorHistograms sector_histograms;
+        clas12::framework::PerSectorHist1D<6> nphe;
+        clas12::framework::PerSectorHist2D<6> EPCal_vs_ECal;
+        clas12::framework::PerSectorHist1D<6> EPCal;
+        clas12::framework::PerSectorHist2D<6> p_vs_SF;
+        clas12::framework::PerSectorHist2D<6> lv_vs_SF;
+        clas12::framework::PerSectorHist2D<6> lw_vs_SF;
+        clas12::framework::PerSectorHist2D<6> edge_vs_chi2ndf_r1;
+        clas12::framework::PerSectorHist2D<6> edge_vs_chi2ndf_r2;
+        clas12::framework::PerSectorHist2D<6> edge_vs_chi2ndf_r3;
+        clas12::framework::PerSectorHist2D<6> p_vs_theta;
     };
 
     PionHistograms h_piplus;
@@ -239,18 +338,10 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
     void setup_cutflows() {
         auto define = [this](clas12::framework::ContextCutflow<PionCutContext>& cf) {
             cf.define_always("All Pions")
-              .define("In the forward detector", [this](const PionCutContext& c) {
-                  return !m_enable_forward_detector_cut.get() || c.in_forward_detector;
-              })
-              .define("Momentum > 0.3 GeV", [this](const PionCutContext& c) {
-                  return !m_enable_momentum_cut.get() || c.p >= m_min_momentum.get();
-              })
-              .define("Has Calorimeter", [this](const PionCutContext& c) {
-                  return !m_enable_calorimeter_cut.get() || c.E_tot > m_min_calo_energy.get();
-              })
-              .define("Has DC Track", [this](const PionCutContext& c) {
-                  return !m_enable_dc_track_cut.get() || c.has_dc;
-              });
+                .define("In the forward detector", [this](const PionCutContext& c) { return !m_enable_forward_detector_cut.get() || c.in_forward_detector; })
+                .define("Momentum > 0.3 GeV", [this](const PionCutContext& c) { return !m_enable_momentum_cut.get() || c.p >= m_min_momentum.get(); })
+                .define("Has Calorimeter", [this](const PionCutContext& c) { return !m_enable_calorimeter_cut.get() || c.E_tot > m_min_calo_energy.get(); })
+                .define("Has DC Track", [this](const PionCutContext& c) { return !m_enable_dc_track_cut.get() || c.has_dc; });
         };
         define(m_cutflow_piplus);
         define(m_cutflow_piminus);
@@ -265,8 +356,38 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
     void book_pion_histograms(const std::string& dir, PionHistograms& h, const std::string& label) {
         auto* svc = m_hist;
 
-        // Base diagnostics: kinematics + vertex + timing + PID + phase space (27 histograms)
-        h.base = clas12::framework::ThreadLocalHistogramTemplates::PionDiagnostics::create(svc, dir, label);
+        // Base diagnostics: kinematics + vertex + timing + PID + phase space.
+        h.p = svc->book_hist1D(dir + "/p", fmt::format("{} Momentum;p [GeV/c];Events", label), 100, 0.0, 10.0);
+        h.theta = svc->book_hist1D(dir + "/theta", fmt::format("{} #theta;#theta [deg];Events", label), 180, 0.0, 40.0);
+        h.phi = svc->book_hist1D(dir + "/phi", fmt::format("{} #phi;#phi [deg];Events", label), 360, -180.0, 180.0);
+        h.vz = svc->book_hist1D(dir + "/vz", fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label), 200, -40.0, 40.0);
+        h.chi2pid = svc->book_hist1D(dir + "/chi2pid", fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), 200, -10.0, 10.0);
+        h.beta = svc->book_hist1D(dir + "/beta", fmt::format("{} #beta;#beta;Events", label), 100, 0.5, 1.1);
+
+        h.vz_vs_phi = svc->book_hist2D(dir + "/vz_vs_phi", fmt::format("{} v_{{z}} vs #phi;#phi [deg];v_{{z}} [cm]", label), 180, -180, 180, 100, -40, 40);
+        h.vz_vs_sector = svc->book_hist2D(dir + "/vz_vs_sector", fmt::format("{} v_{{z}} vs Sector;Sector;v_{{z}} [cm]", label), 6, 0.5, 6.5, 100, -40, 40);
+        h.vz_vs_p_2d = svc->book_hist2D(dir + "/vz_vs_p", fmt::format("{} v_{{z}} vs p;p [GeV/c];v_{{z}} [cm]", label), 100, 0, 10, 100, -40, 40);
+        h.vx_vs_vy = svc->book_hist2D(dir + "/vx_vs_vy", fmt::format("{} v_{{x}} vs v_{{y}};v_{{x}} [cm];v_{{y}} [cm]", label), 100, -2, 2, 100, -2, 2);
+        h.delta_vz = svc->book_hist1D(dir + "/delta_vz", fmt::format("{} #Deltav_{{z}} (#pi - e);#Deltav_{{z}} [cm];Events", label), 200, -20, 20);
+        h.delta_vz_vs_p = svc->book_hist2D(dir + "/delta_vz_vs_p", fmt::format("{} #Deltav_{{z}} vs p;p [GeV/c];#Deltav_{{z}} [cm]", label), 100, 0, 10, 200, -20, 20);
+
+        h.delta_t = svc->book_hist1D(dir + "/delta_t", fmt::format("{} #Deltat;#Deltat [ns];Events", label), 200, -2, 2);
+        h.delta_t_vs_p_diag = svc->book_hist2D(dir + "/delta_t_vs_p_diag", fmt::format("{} #Deltat vs p;p [GeV/c];#Deltat [ns]", label), 100, 0, 10, 200, -2, 2);
+        h.tof_mass2 = svc->book_hist1D(dir + "/tof_mass2", fmt::format("{} m^{{2}}_{{TOF}};m^{{2}} [GeV^{{2}}];Events", label), 200, -0.2, 0.5);
+        h.tof_mass2_vs_p = svc->book_hist2D(dir + "/tof_mass2_vs_p", fmt::format("{} m^{{2}}_{{TOF}} vs p;p [GeV/c];m^{{2}} [GeV^{{2}}]", label), 100, 0, 10, 200, -0.2, 0.5);
+        h.tof_path = svc->book_hist1D(dir + "/tof_path", fmt::format("{} TOF Path Length;Path [cm];Events", label), 100, 0, 800);
+        h.tof_path_vs_p = svc->book_hist2D(dir + "/tof_path_vs_p", fmt::format("{} TOF Path vs p;p [GeV/c];Path [cm]", label), 100, 0, 10, 100, 0, 800);
+        h.beta_vs_p = svc->book_hist2D(dir + "/beta_vs_p", fmt::format("{} #beta vs p;p [GeV/c];#beta", label), 100, 0, 10, 100, 0.5, 1.1);
+        h.beta_diff = svc->book_hist1D(dir + "/beta_diff", fmt::format("{} #Delta#beta;#Delta#beta;Events", label), 200, -0.1, 0.1);
+        h.beta_diff_vs_p = svc->book_hist2D(dir + "/beta_diff_vs_p", fmt::format("{} #Delta#beta vs p;p [GeV/c];#Delta#beta", label), 100, 0, 10, 200, -0.1, 0.1);
+
+        h.chi2pid_vs_p = svc->book_hist2D(dir + "/chi2pid_vs_p", fmt::format("{} #chi^{{2}}_{{PID}} vs p;p [GeV/c];#chi^{{2}}_{{PID}}", label), 100, 0, 10, 100, -10, 10);
+        h.chi2pid_vs_theta = svc->book_hist2D(dir + "/chi2pid_vs_theta", fmt::format("{} #chi^{{2}}_{{PID}} vs #theta;#theta [deg];#chi^{{2}}_{{PID}}", label), 90, 0, 45, 100, -10, 10);
+        h.chi2pid_vs_sector = svc->book_hist2D(dir + "/chi2pid_vs_sector", fmt::format("{} #chi^{{2}}_{{PID}} vs Sector;Sector;#chi^{{2}}_{{PID}}", label), 6, 0.5, 6.5, 100, -10, 10);
+
+        h.phi_vs_theta = svc->book_hist2D(dir + "/phi_vs_theta", fmt::format("{} #phi vs #theta;#theta [deg];#phi [deg]", label), 90, 0, 45, 180, -180, 180);
+        h.p_vs_phi = svc->book_hist2D(dir + "/p_vs_phi", fmt::format("{} p vs #phi;#phi [deg];p [GeV/c]", label), 180, -180, 180, 100, 0, 10);
+        h.p_vs_theta_diag = svc->book_hist2D(dir + "/p_vs_theta_diag", fmt::format("{} p vs #theta;#theta [deg];p [GeV/c]", label), 90, 0, 45, 100, 0, 10);
 
         // Calorimeter-specific (post-cut)
         h.sf = svc->book_hist1D(dir + "/sf", fmt::format("{} Sampling Fraction;SF;Events", label), 100, 0, 0.4);
@@ -292,61 +413,34 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         h.chi2ndf_vs_edge_r2_precut = svc->book_hist2D(dir + "/chi2ndf_vs_edge_r2_precut", fmt::format("{} #chi^{{2}}/NDF vs Edge R2 (pre-cut);Edge R2 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
         h.chi2ndf_vs_edge_r3_precut = svc->book_hist2D(dir + "/chi2ndf_vs_edge_r3_precut", fmt::format("{} #chi^{{2}}/NDF vs Edge R3 (pre-cut);Edge R3 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
 
-        // Per-sector histograms
-        for (int sector = 1; sector <= 6; ++sector) {
-            std::string sec_suffix = fmt::format("_S{}", sector);
-
-            h.sector_histograms.nphe[sector] = svc->book_hist1D(
-                dir + "/nphe" + sec_suffix,
-                fmt::format("Cherenkov nphe (Sector {});nphe;Tracks", sector), 51, 0, 50);
-            h.sector_histograms.EPCal_vs_ECal[sector] = svc->book_hist2D(
-                dir + "/EPCal_vs_ECal" + sec_suffix,
-                fmt::format("E_{{PCal}} vs E_{{Cal}} (Sector {});E_{{PCal}} [GeV];E_{{Cal}} [GeV]", sector), 200, 0, 0.6, 200, 0, 0.6);
-            h.sector_histograms.EPCal[sector] = svc->book_hist1D(
-                dir + "/EPCal" + sec_suffix,
-                fmt::format("E_{{PCal}} (Sector {});E_{{PCal}} [GeV];Tracks", sector), 200, 0, 1);
-            h.sector_histograms.p_vs_SF[sector] = svc->book_hist2D(
-                dir + "/p_vs_SF" + sec_suffix,
-                fmt::format("p vs SF (Sector {});p [GeV];E/p", sector), 200, 0, 11, 200, 0, 0.4);
-            h.sector_histograms.edge_vs_chi2ndf_r1[sector] = svc->book_hist2D(
-                dir + "/edge_vs_chi2ndf_r1" + sec_suffix,
-                fmt::format("Edge vs #chi^{{2}}/ndf (R1, Sector {});edge [cm];#chi^{{2}}/ndf", sector), 200, 0, 50, 200, 0, 10);
-            h.sector_histograms.edge_vs_chi2ndf_r2[sector] = svc->book_hist2D(
-                dir + "/edge_vs_chi2ndf_r2" + sec_suffix,
-                fmt::format("Edge vs #chi^{{2}}/ndf (R2, Sector {});edge [cm];#chi^{{2}}/ndf", sector), 200, 0, 50, 200, 0, 10);
-            h.sector_histograms.edge_vs_chi2ndf_r3[sector] = svc->book_hist2D(
-                dir + "/edge_vs_chi2ndf_r3" + sec_suffix,
-                fmt::format("Edge vs #chi^{{2}}/ndf (R3, Sector {});edge [cm];#chi^{{2}}/ndf", sector), 200, 0, 50, 200, 0, 10);
-            h.sector_histograms.lv_vs_SF[sector] = svc->book_hist2D(
-                dir + "/lv_vs_SF" + sec_suffix,
-                fmt::format("lv vs SF (Sector {});lv;E/p", sector), 200, 0, 70, 200, 0, 0.5);
-            h.sector_histograms.lw_vs_SF[sector] = svc->book_hist2D(
-                dir + "/lw_vs_SF" + sec_suffix,
-                fmt::format("lw vs SF (Sector {});lw;E/p", sector), 200, 0, 70, 200, 0, 0.5);
-            h.sector_histograms.p_vs_theta[sector] = svc->book_hist2D(
-                dir + "/p_vs_theta" + sec_suffix,
-                fmt::format("{} p vs #theta (Sector {});#theta [deg];p [GeV/c]", label, sector), 90, 0, 45, 100, 0, 10);
-            h.delta_t_vs_p_sector[sector - 1] = svc->book_hist2D(
-                dir + "/delta_t_vs_p" + sec_suffix,
-                fmt::format("{} #Deltat vs p (Sector {});p [GeV/c];#Deltat [ns]", label, sector), 100, 0, 10, 200, -2, 2);
-            h.p_vs_theta_sector[sector - 1] = svc->book_hist2D(
-                dir + "/p_vs_theta_acceptance" + sec_suffix,
-                fmt::format("{} p vs #theta Acceptance (Sector {});#theta [deg];p [GeV/c]", label, sector), 90, 0, 45, 100, 0, 10);
-        }
-
-        h.sector_histograms.booked = true;
+        // Per-sector histograms — one SectorHistogramGroup books all six
+        // suffixed copies and hands back PerSectorHist{1,2}D handles for
+        // O(1) fills on the hot path.
+        clas12::framework::SectorHistogramGroup<6> g(svc, dir);
+        h.nphe = g.add_hist1D("nphe", "Cherenkov nphe;nphe;Tracks", 51, 0, 50);
+        h.EPCal_vs_ECal = g.add_hist2D("EPCal_vs_ECal", "E_{PCal} vs E_{Cal};E_{PCal} [GeV];E_{Cal} [GeV]", 200, 0, 0.6, 200, 0, 0.6);
+        h.EPCal = g.add_hist1D("EPCal", "E_{PCal};E_{PCal} [GeV];Tracks", 200, 0, 1);
+        h.p_vs_SF = g.add_hist2D("p_vs_SF", "p vs SF;p [GeV];E/p", 200, 0, 11, 200, 0, 0.4);
+        h.edge_vs_chi2ndf_r1 = g.add_hist2D("edge_vs_chi2ndf_r1", "Edge vs #chi^{2}/ndf (R1);edge [cm];#chi^{2}/ndf", 200, 0, 50, 200, 0, 10);
+        h.edge_vs_chi2ndf_r2 = g.add_hist2D("edge_vs_chi2ndf_r2", "Edge vs #chi^{2}/ndf (R2);edge [cm];#chi^{2}/ndf", 200, 0, 50, 200, 0, 10);
+        h.edge_vs_chi2ndf_r3 = g.add_hist2D("edge_vs_chi2ndf_r3", "Edge vs #chi^{2}/ndf (R3);edge [cm];#chi^{2}/ndf", 200, 0, 50, 200, 0, 10);
+        h.lv_vs_SF = g.add_hist2D("lv_vs_SF", "lv vs SF;lv;E/p", 200, 0, 70, 200, 0, 0.5);
+        h.lw_vs_SF = g.add_hist2D("lw_vs_SF", "lw vs SF;lw;E/p", 200, 0, 70, 200, 0, 0.5);
+        h.p_vs_theta = g.add_hist2D("p_vs_theta", fmt::format("{} p vs #theta;#theta [deg];p [GeV/c]", label), 90, 0, 45, 100, 0, 10);
+        h.delta_t_vs_p_sector = g.add_hist2D("delta_t_vs_p", fmt::format("{} #Deltat vs p;p [GeV/c];#Deltat [ns]", label), 100, 0, 10, 200, -2, 2);
+        h.p_vs_theta_sector = g.add_hist2D("p_vs_theta_acceptance", fmt::format("{} p vs #theta Acceptance;#theta [deg];p [GeV/c]", label), 90, 0, 45, 100, 0, 10);
     }
 
-    void process_pion(clas12::framework::Event& event, const clas12::Particle& pion,
-                      double start_time, double electron_vz, bool is_piplus) {
+    void process_pion(const clas12::Particle& pion, const clas12::Particle& electron, double start_time, bool is_piplus) {
         auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
         auto& h = is_piplus ? h_piplus : h_piminus;
+        auto& ntuple = is_piplus ? m_ntuple_piplus : m_ntuple_piminus;
 
-        // Read bank data needed for cuts and pre-cut histograms. Every
-        // read_*_bank call reuses the per-event generated-wrapper cache.
-        auto track = clas12::read_Track_bank(event, pion.index());
-        auto traj  = clas12::read_Traj_bank(event, pion.index());
-        auto calo  = clas12::read_Calorimeter_bank(event, pion.index());
+        // Read bank data needed for cuts and pre-cut histograms. Each
+        // accessor reuses the per-event generated-wrapper cache on Event.
+        auto track = pion.track();
+        auto traj = pion.traj();
+        auto calo = pion.calo();
 
         double chi2ndf = (track.NDF > 0) ? track.chi2 / track.NDF : 0.0;
         double edge_r1 = traj.region1_edge;
@@ -376,23 +470,60 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         double lw = calo.pcal_lw;
 
         // Cherenkov nphe (if available)
-        auto cherenkov = clas12::read_Cherenkov_bank(event, pion.index());
+        auto cherenkov = pion.cherenkov();
         double nphe = cherenkov.nphe;
 
         // Read scintillator info for timing
-        auto scintillator = clas12::read_Scintillator_bank(event, pion.index());
+        auto scintillator = pion.scintillator();
         int sector = scintillator.sector;
         double tof_time = scintillator.time;
         double tof_path = scintillator.path;
 
         // Calculate timing quantities
-        auto timing = clas12::framework::CandidateUtils::compute_timing(
-            p, clas12::Constants::PIMASS, pion.beta(),
-            tof_time, tof_path, start_time);
+        auto timing = clas12::framework::CandidateUtils::compute_timing(p, clas12::Constants::PIMASS, pion.beta(), tof_time, tof_path, start_time);
 
-        // Fill base diagnostics (kinematics + vertex + timing + PID + phase space) in one call
-        clas12::framework::AtomicHistogramFiller::fill_pion_diagnostics(
-            h.base.get(), pion, timing, electron_vz, tof_path, sector);
+        // Base diagnostics (kinematics + vertex + timing + PID + phase space).
+        const double dvz = pion.vz() - electron.vz();
+        h.p->fill(p);
+        h.theta->fill(pion.theta());
+        h.phi->fill(pion.phi());
+        h.vz->fill(pion.vz());
+        h.chi2pid->fill(pion.chi2pid());
+        h.beta->fill(pion.beta());
+
+        h.vz_vs_phi->fill(pion.phi(), pion.vz());
+        h.vz_vs_p_2d->fill(p, pion.vz());
+        h.vx_vs_vy->fill(pion.vx(), pion.vy());
+        h.delta_vz->fill(dvz);
+        h.delta_vz_vs_p->fill(p, dvz);
+
+        h.delta_t->fill(timing.delta_t);
+        h.delta_t_vs_p_diag->fill(p, timing.delta_t);
+        h.tof_mass2->fill(timing.tof_mass2);
+        h.tof_mass2_vs_p->fill(p, timing.tof_mass2);
+        h.tof_path->fill(tof_path);
+        h.tof_path_vs_p->fill(p, tof_path);
+        h.beta_vs_p->fill(p, pion.beta());
+        h.beta_diff->fill(timing.beta_diff);
+        h.beta_diff_vs_p->fill(p, timing.beta_diff);
+
+        h.chi2pid_vs_p->fill(p, pion.chi2pid());
+        h.chi2pid_vs_theta->fill(pion.theta(), pion.chi2pid());
+
+        h.phi_vs_theta->fill(pion.theta(), pion.phi());
+        h.p_vs_phi->fill(pion.phi(), p);
+        h.p_vs_theta_diag->fill(pion.theta(), p);
+
+        if (sector >= 1 && sector <= 6) {
+            h.vz_vs_sector->fill(static_cast<double>(sector), pion.vz());
+            h.chi2pid_vs_sector->fill(static_cast<double>(sector), pion.chi2pid());
+        }
+
+        if (m_ntuple) {
+            PionCandidate cand{pion, calo, traj, track, E_tot, SF, chi2ndf, timing.delta_t, tof_path, sector};
+            ntuple.data().from(cand);
+            ntuple.fill();
+        }
 
         // Calorimeter histograms
         h.sf->fill(SF);
@@ -410,35 +541,28 @@ class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         h.chi2ndf_vs_edge_r2->fill(edge_r2, chi2ndf);
         h.chi2ndf_vs_edge_r3->fill(edge_r3, chi2ndf);
 
-        // Per-sector histograms
-        if (sector >= 1 && sector <= 6) {
-            int idx = sector - 1;
-            if (h.delta_t_vs_p_sector[idx]) h.delta_t_vs_p_sector[idx]->fill(p, timing.delta_t);
-            if (h.p_vs_theta_sector[idx]) h.p_vs_theta_sector[idx]->fill(pion.theta(), p);
-        }
+        // Per-sector histograms keyed off the FTOF sector. The PerSectorHist
+        // helpers no-op silently for out-of-range sectors, so no manual
+        // bounds check needed.
+        h.delta_t_vs_p_sector.fill(sector, p, timing.delta_t);
+        h.p_vs_theta_sector.fill(sector, pion.theta(), p);
 
-        // Sector-level calorimeter histograms
-        if (h.sector_histograms.booked) {
-            int calo_sector = calo.pcal_sector;
-            if (calo_sector < 1 || calo_sector > 6) return;
-            h.sector_histograms.edge_vs_chi2ndf_r1[calo_sector]->fill(edge_r1, chi2ndf);
-            h.sector_histograms.edge_vs_chi2ndf_r2[calo_sector]->fill(edge_r2, chi2ndf);
-            h.sector_histograms.edge_vs_chi2ndf_r3[calo_sector]->fill(edge_r3, chi2ndf);
+        // Per-sector calorimeter / DC histograms keyed off the PCAL sector.
+        const int calo_sector = calo.pcal_sector;
+        h.edge_vs_chi2ndf_r1.fill(calo_sector, edge_r1, chi2ndf);
+        h.edge_vs_chi2ndf_r2.fill(calo_sector, edge_r2, chi2ndf);
+        h.edge_vs_chi2ndf_r3.fill(calo_sector, edge_r3, chi2ndf);
 
-            double E_cal = calo.inner_energy + calo.outer_energy;
-            double E_pcal = calo.pcal_energy;
-            if (E_pcal == 0) return;
-            h.sector_histograms.lv_vs_SF[calo_sector]->fill(lv, SF);
-            h.sector_histograms.lw_vs_SF[calo_sector]->fill(lw, SF);
-            h.sector_histograms.nphe[calo_sector]->fill(nphe);
-            h.sector_histograms.EPCal_vs_ECal[calo_sector]->fill(E_pcal, E_cal);
-            h.sector_histograms.EPCal[calo_sector]->fill(E_pcal);
-            h.sector_histograms.p_vs_SF[calo_sector]->fill(p, SF);
-
-            if (h.sector_histograms.p_vs_theta.count(calo_sector)) {
-                h.sector_histograms.p_vs_theta[calo_sector]->fill(pion.theta(), p);
-            }
-        }
+        const double E_cal = calo.inner_energy + calo.outer_energy;
+        const double E_pcal = calo.pcal_energy;
+        if (E_pcal == 0) return;
+        h.lv_vs_SF.fill(calo_sector, lv, SF);
+        h.lw_vs_SF.fill(calo_sector, lw, SF);
+        h.nphe.fill(calo_sector, nphe);
+        h.EPCal_vs_ECal.fill(calo_sector, E_pcal, E_cal);
+        h.EPCal.fill(calo_sector, E_pcal);
+        h.p_vs_SF.fill(calo_sector, p, SF);
+        h.p_vs_theta.fill(calo_sector, pion.theta(), p);
     }
 };
 

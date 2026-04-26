@@ -114,9 +114,12 @@ result<void> schema::validate() const noexcept {
 }
 
 result<int> schema::column_index(std::string_view col_name) const noexcept {
-    auto it = std::lower_bound(m_lookup.begin(), m_lookup.end(), col_name,
-        [](auto const& pair, std::string_view sv) { return pair.first < sv; });
-    if (it != m_lookup.end() && it->first == col_name)
+    // Hot path: hash lookup against the precomputed name->index map. The
+    // generated bind() routines call this once per column per (event, bank
+    // type) pair, which used to dominate single-thread profiles via
+    // std::lower_bound + per-character memcmp.
+    auto it = m_index_map.find(col_name);
+    if (it != m_index_map.end())
         return it->second;
     return unexpected(error_code::schema_column_not_found);
 }

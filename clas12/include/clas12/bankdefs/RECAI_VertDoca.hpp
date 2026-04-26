@@ -42,48 +42,94 @@ class RECAI_VertDoca {
 
     RECAI_VertDoca() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("index1"); h) h_index1 = *h;
-        else h_index1 = {};
-        if (auto h = schema.get_handle("index2"); h) h_index2 = *h;
-        else h_index2 = {};
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
-        if (auto h = schema.get_handle("x1"); h) h_x1 = *h;
-        else h_x1 = {};
-        if (auto h = schema.get_handle("y1"); h) h_y1 = *h;
-        else h_y1 = {};
-        if (auto h = schema.get_handle("z1"); h) h_z1 = *h;
-        else h_z1 = {};
-        if (auto h = schema.get_handle("cx1"); h) h_cx1 = *h;
-        else h_cx1 = {};
-        if (auto h = schema.get_handle("cy1"); h) h_cy1 = *h;
-        else h_cy1 = {};
-        if (auto h = schema.get_handle("cz1"); h) h_cz1 = *h;
-        else h_cz1 = {};
-        if (auto h = schema.get_handle("x2"); h) h_x2 = *h;
-        else h_x2 = {};
-        if (auto h = schema.get_handle("y2"); h) h_y2 = *h;
-        else h_y2 = {};
-        if (auto h = schema.get_handle("z2"); h) h_z2 = *h;
-        else h_z2 = {};
-        if (auto h = schema.get_handle("cx2"); h) h_cx2 = *h;
-        else h_cx2 = {};
-        if (auto h = schema.get_handle("cy2"); h) h_cy2 = *h;
-        else h_cy2 = {};
-        if (auto h = schema.get_handle("cz2"); h) h_cz2 = *h;
-        else h_cz2 = {};
-        if (auto h = schema.get_handle("r"); h) h_r = *h;
-        else h_r = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_index1;
+            hipo::column_handle h_index2;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+            hipo::column_handle h_x1;
+            hipo::column_handle h_y1;
+            hipo::column_handle h_z1;
+            hipo::column_handle h_cx1;
+            hipo::column_handle h_cy1;
+            hipo::column_handle h_cz1;
+            hipo::column_handle h_x2;
+            hipo::column_handle h_y2;
+            hipo::column_handle h_z2;
+            hipo::column_handle h_cx2;
+            hipo::column_handle h_cy2;
+            hipo::column_handle h_cz2;
+            hipo::column_handle h_r;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("index1"); h) cache.h_index1 = *h;
+            else cache.h_index1 = {};
+            if (auto h = schema.get_handle("index2"); h) cache.h_index2 = *h;
+            else cache.h_index2 = {};
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+            if (auto h = schema.get_handle("x1"); h) cache.h_x1 = *h;
+            else cache.h_x1 = {};
+            if (auto h = schema.get_handle("y1"); h) cache.h_y1 = *h;
+            else cache.h_y1 = {};
+            if (auto h = schema.get_handle("z1"); h) cache.h_z1 = *h;
+            else cache.h_z1 = {};
+            if (auto h = schema.get_handle("cx1"); h) cache.h_cx1 = *h;
+            else cache.h_cx1 = {};
+            if (auto h = schema.get_handle("cy1"); h) cache.h_cy1 = *h;
+            else cache.h_cy1 = {};
+            if (auto h = schema.get_handle("cz1"); h) cache.h_cz1 = *h;
+            else cache.h_cz1 = {};
+            if (auto h = schema.get_handle("x2"); h) cache.h_x2 = *h;
+            else cache.h_x2 = {};
+            if (auto h = schema.get_handle("y2"); h) cache.h_y2 = *h;
+            else cache.h_y2 = {};
+            if (auto h = schema.get_handle("z2"); h) cache.h_z2 = *h;
+            else cache.h_z2 = {};
+            if (auto h = schema.get_handle("cx2"); h) cache.h_cx2 = *h;
+            else cache.h_cx2 = {};
+            if (auto h = schema.get_handle("cy2"); h) cache.h_cy2 = *h;
+            else cache.h_cy2 = {};
+            if (auto h = schema.get_handle("cz2"); h) cache.h_cz2 = *h;
+            else cache.h_cz2 = {};
+            if (auto h = schema.get_handle("r"); h) cache.h_r = *h;
+            else cache.h_r = {};
+        }
+        h_index1 = cache.h_index1;
+        h_index2 = cache.h_index2;
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
+        h_x1 = cache.h_x1;
+        h_y1 = cache.h_y1;
+        h_z1 = cache.h_z1;
+        h_cx1 = cache.h_cx1;
+        h_cy1 = cache.h_cy1;
+        h_cz1 = cache.h_cz1;
+        h_x2 = cache.h_x2;
+        h_y2 = cache.h_y2;
+        h_z2 = cache.h_z2;
+        h_cx2 = cache.h_cx2;
+        h_cy2 = cache.h_cy2;
+        h_cz2 = cache.h_cz2;
+        h_r = cache.h_r;
         return true;
     }
 

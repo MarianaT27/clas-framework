@@ -27,8 +27,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 
@@ -36,10 +35,10 @@ namespace clas12::algorithms {
 
 using clas12::framework::Log;
 
-class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
+class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
    public:
     explicit Pi0MultiplicityRatioAlg(std::string name = "Pi0MultiplicityRatio")
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_cutflow("Pi0 Multiplicity") {
         declare_property(m_beam_energy);
     }
@@ -66,98 +65,101 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        using namespace clas12::framework;
+        m_cutflow.pass("All Events");
 
-        auto dis          = EventHelpers::get_dis_kinematics(event);
-        auto pi0_opt      = event.retrieve_typed(Keys::Pi0Candidates);
-        auto electron_opt = EventHelpers::get_selected_electron(event);
-        const bool has_pi0 = event.passes_decision_typed(Decisions::HasPi0)
-                          && pi0_opt && !pi0_opt->empty()
-                          && electron_opt.has_value();
+        // Retrieve DIS kinematics from event store
+        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return clas12::framework::StatusCode::FILTERED();
+        m_cutflow.pass("Has DIS Electron");
 
-        return pipeline(event, m_cutflow)
-            .count("All Events")
-            .require(Decisions::HasGoodDISElectron)
-            .count("Has DIS Electron")
-            .filter("DIS kinematics present", dis.has_value())
-            .tap([&] { fill_dis_normalisation(dis->Q2, dis->xB); })
-            .filter("Has Pi0", has_pi0)
-            .count("Has Pi0")
-            .tap([&] { fill_pi0_histograms(*dis, *electron_opt, *pi0_opt); })
-            .status();
-    }
+        auto dis = clas12::framework::EventHelpers::get_dis_kinematics(event);
+        if (!dis) return clas12::framework::StatusCode::FILTERED();
 
-   private:
-    /// DIS-normalisation histograms: one entry per DIS event plus the
-    /// per-Q2 and per-xB bin counts.
-    auto fill_dis_normalisation(double Q2, double xB) -> void {
+        const double Q2 = dis->Q2;
+        const double xB = dis->xB;
+        const double nu = dis->nu;
+
+        // Fill DIS normalization histograms (one entry per DIS event)
         if (h_n_DIS_events) h_n_DIS_events->fill(0.5);
-        if (h_n_DIS_vs_Q2)  h_n_DIS_vs_Q2->fill(Q2);
-        if (h_n_DIS_vs_xB)  h_n_DIS_vs_xB->fill(xB);
+        if (h_n_DIS_vs_Q2) h_n_DIS_vs_Q2->fill(Q2);
+        if (h_n_DIS_vs_xB) h_n_DIS_vs_xB->fill(xB);
 
+        // Fill per-Q2-bin normalization
         for (size_t i = 0; i < m_Q2_edges.size() - 1; ++i) {
             if (Q2 >= m_Q2_edges[i] && Q2 < m_Q2_edges[i + 1]) {
                 if (h_n_DIS_Q2bin[i]) h_n_DIS_Q2bin[i]->fill(0.5);
                 break;
             }
         }
+
+        // Fill per-xB-bin normalization
         for (size_t i = 0; i < m_xB_edges.size() - 1; ++i) {
             if (xB >= m_xB_edges[i] && xB < m_xB_edges[i + 1]) {
                 if (h_n_DIS_xBbin[i]) h_n_DIS_xBbin[i]->fill(0.5);
                 break;
             }
         }
-    }
 
-    /// Per-candidate pi0 fills: computes virtual-photon direction once,
-    /// then loops through the candidates filling 1D / 2D / per-bin /
-    /// 4D-flat histograms. `z in range` cutflow is bumped per
-    /// surviving candidate.
-    auto fill_pi0_histograms(const clas12::framework::EventHelpers::DISVars& dis,
-                             const clas12::Particle& electron,
-                             const std::vector<clas12::physics::CompositeParticle>& pi0s) -> void {
-        const double Q2 = dis.Q2;
-        const double xB = dis.xB;
-        const double nu = dis.nu;
+        // Retrieve pi0 candidates
+        if (!event.passes_decision_typed(clas12::framework::Decisions::HasPi0)) return clas12::framework::StatusCode::SUCCESS();
+        auto pi0_opt = event.retrieve_typed(clas12::framework::Keys::Pi0Candidates);
+        if (!pi0_opt || pi0_opt->empty()) return clas12::framework::StatusCode::SUCCESS();
+        m_cutflow.pass("Has Pi0");
 
-        // Virtual-photon frame.
+        // Get electron for virtual photon direction
+        auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
+        if (!electron_opt) return clas12::framework::StatusCode::SUCCESS();
+
+        // Virtual photon 4-vector: q = beam - scattered_electron
         ROOT::Math::PxPyPzEVector beam_4v(0.0, 0.0, m_beam_energy.get(), m_beam_energy.get());
-        ROOT::Math::PxPyPzEVector electron_4v = electron.PxPyPzEVector();
+        ROOT::Math::PxPyPzEVector electron_4v = electron_opt->PxPyPzEVector();
         ROOT::Math::PxPyPzEVector q_4v = beam_4v - electron_4v;
 
+        // Virtual photon 3-direction (for pT calculation)
         auto q_3v = q_4v.Vect();
-        const double q_mag = std::sqrt(q_3v.Mag2());
+        double q_mag = std::sqrt(q_3v.Mag2());
         ROOT::Math::XYZVector q_hat = q_3v / q_mag;
 
-        ROOT::Math::XYZVector beam_3v(0.0, 0.0, m_beam_energy.get());
-        ROOT::Math::XYZVector y_hat = q_3v.Cross(beam_3v);
-        const double y_mag = std::sqrt(y_hat.Mag2());
-        if (y_mag > 0) y_hat = y_hat / y_mag;
-        ROOT::Math::XYZVector x_hat = y_hat.Cross(q_hat);
+        // Process each pi0 candidate
+        for (const auto& pi0 : *pi0_opt) {
+            double E_pi0 = pi0.energy();
+            double z = E_pi0 / nu;
 
-        for (const auto& pi0 : pi0s) {
-            const double E_pi0 = pi0.energy();
-            const double z     = E_pi0 / nu;
-
+            // Pi0 3-momentum
             ROOT::Math::XYZVector pi0_3v(pi0.px(), pi0.py(), pi0.pz());
-            const double p_parallel = pi0_3v.Dot(q_hat);
-            ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
-            const double pT2 = p_perp.Mag2();
-            const double phi_h = std::atan2(p_perp.Dot(y_hat), p_perp.Dot(x_hat)) * 180.0 / M_PI;
 
+            // pT2: transverse momentum squared relative to virtual photon direction
+            double p_parallel = pi0_3v.Dot(q_hat);
+            ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
+            double pT2 = p_perp.Mag2();
+
+            // phi_h: azimuthal angle in virtual photon frame
+            // Define coordinate system: z along q, y along q x beam (lepton plane normal)
+            ROOT::Math::XYZVector beam_3v(0.0, 0.0, m_beam_energy.get());
+            ROOT::Math::XYZVector y_hat = q_3v.Cross(beam_3v);
+            double y_mag = std::sqrt(y_hat.Mag2());
+            if (y_mag > 0) y_hat = y_hat / y_mag;
+            ROOT::Math::XYZVector x_hat = y_hat.Cross(q_hat);
+
+            double phi_h = std::atan2(p_perp.Dot(y_hat), p_perp.Dot(x_hat)) * 180.0 / M_PI;
+
+            // Quality cut: z should be physical
             if (z <= 0.0 || z >= 1.0) continue;
             m_cutflow.pass("z in range");
 
-            const double pi0_mass = pi0.mass();
-            if (h_z)       h_z->fill(z);
-            if (h_pT2)     h_pT2->fill(pT2);
-            if (h_phi_h)   h_phi_h->fill(phi_h);
+            double pi0_mass = pi0.mass();
+
+            // Fill 1D distributions
+            if (h_z) h_z->fill(z);
+            if (h_pT2) h_pT2->fill(pT2);
+            if (h_phi_h) h_phi_h->fill(phi_h);
             if (h_pi0_mass) h_pi0_mass->fill(pi0_mass);
 
-            if (h_z_vs_Q2)   h_z_vs_Q2->fill(Q2, z);
-            if (h_z_vs_pT2)  h_z_vs_pT2->fill(pT2, z);
+            // Fill 2D distributions
+            if (h_z_vs_Q2) h_z_vs_Q2->fill(Q2, z);
+            if (h_z_vs_pT2) h_z_vs_pT2->fill(pT2, z);
             if (h_pT2_vs_Q2) h_pT2_vs_Q2->fill(Q2, pT2);
 
+            // Find bin indices once for all binned fills
             int iQ2 = -1, ixB = -1, iz = -1, ipT2 = -1;
             for (size_t i = 0; i < m_Q2_edges.size() - 1; ++i) {
                 if (Q2 >= m_Q2_edges[i] && Q2 < m_Q2_edges[i + 1]) { iQ2 = static_cast<int>(i); break; }
@@ -172,25 +174,35 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
                 if (pT2 >= m_pT2_edges[i] && pT2 < m_pT2_edges[i + 1]) { ipT2 = static_cast<int>(i); break; }
             }
 
+            // Fill multiplicity histograms per Q2 bin
             if (iQ2 >= 0) {
-                if (h_z_Q2bin[iQ2])   h_z_Q2bin[iQ2]->fill(z);
+                if (h_z_Q2bin[iQ2]) h_z_Q2bin[iQ2]->fill(z);
                 if (h_pT2_Q2bin[iQ2]) h_pT2_Q2bin[iQ2]->fill(pT2);
             }
-            if (ixB >= 0 && h_z_xBbin[ixB])   h_z_xBbin[ixB]->fill(z);
-            if (iz  >= 0 && h_pT2_zbin[iz])   h_pT2_zbin[iz]->fill(pT2);
 
+            // Fill multiplicity histograms per xB bin
+            if (ixB >= 0) {
+                if (h_z_xBbin[ixB]) h_z_xBbin[ixB]->fill(z);
+            }
+
+            // Fill multiplicity histograms per z bin
+            if (iz >= 0) {
+                if (h_pT2_zbin[iz]) h_pT2_zbin[iz]->fill(pT2);
+            }
+
+            // Fill 4D flat-indexed histograms for pT broadening and azimuthal moments
             if (iQ2 >= 0 && ixB >= 0 && iz >= 0 && ipT2 >= 0) {
-                const double phi_h_rad = phi_h * M_PI / 180.0;
-                const double idx = static_cast<double>(flat_4D_index(iQ2, ixB, iz, ipT2)) + 0.5;
-                if (h_counts_4D)    h_counts_4D->fill(idx);
-                if (h_sum_pT2_4D)   h_sum_pT2_4D->fill(idx, pT2);
+                double phi_h_rad = phi_h * M_PI / 180.0;
+                double idx = static_cast<double>(flat_4D_index(iQ2, ixB, iz, ipT2)) + 0.5;
+                if (h_counts_4D) h_counts_4D->fill(idx);
+                if (h_sum_pT2_4D) h_sum_pT2_4D->fill(idx, pT2);
                 if (h_sum_cosphi_4D) h_sum_cosphi_4D->fill(idx, std::cos(phi_h_rad));
                 if (h_sum_sinphi_4D) h_sum_sinphi_4D->fill(idx, std::sin(phi_h_rad));
             }
         }
-    }
 
-   public:
+        return clas12::framework::StatusCode::SUCCESS();
+    }
 
     auto on_finalize() -> clas12::framework::StatusCode override {
         Log::subsection(fmt::format("{} Summary", name()));

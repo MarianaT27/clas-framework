@@ -42,40 +42,78 @@ class CVT_SeedClusters {
 
     CVT_SeedClusters() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("Clus1_ID"); h) h_Clus1_ID = *h;
-        else h_Clus1_ID = {};
-        if (auto h = schema.get_handle("Clus2_ID"); h) h_Clus2_ID = *h;
-        else h_Clus2_ID = {};
-        if (auto h = schema.get_handle("Clus3_ID"); h) h_Clus3_ID = *h;
-        else h_Clus3_ID = {};
-        if (auto h = schema.get_handle("Clus4_ID"); h) h_Clus4_ID = *h;
-        else h_Clus4_ID = {};
-        if (auto h = schema.get_handle("Clus5_ID"); h) h_Clus5_ID = *h;
-        else h_Clus5_ID = {};
-        if (auto h = schema.get_handle("Clus6_ID"); h) h_Clus6_ID = *h;
-        else h_Clus6_ID = {};
-        if (auto h = schema.get_handle("Clus7_ID"); h) h_Clus7_ID = *h;
-        else h_Clus7_ID = {};
-        if (auto h = schema.get_handle("Clus8_ID"); h) h_Clus8_ID = *h;
-        else h_Clus8_ID = {};
-        if (auto h = schema.get_handle("Clus9_ID"); h) h_Clus9_ID = *h;
-        else h_Clus9_ID = {};
-        if (auto h = schema.get_handle("Clus10_ID"); h) h_Clus10_ID = *h;
-        else h_Clus10_ID = {};
-        if (auto h = schema.get_handle("Clus11_ID"); h) h_Clus11_ID = *h;
-        else h_Clus11_ID = {};
-        if (auto h = schema.get_handle("Clus12_ID"); h) h_Clus12_ID = *h;
-        else h_Clus12_ID = {};
-        if (auto h = schema.get_handle("prob"); h) h_prob = *h;
-        else h_prob = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_Clus1_ID;
+            hipo::column_handle h_Clus2_ID;
+            hipo::column_handle h_Clus3_ID;
+            hipo::column_handle h_Clus4_ID;
+            hipo::column_handle h_Clus5_ID;
+            hipo::column_handle h_Clus6_ID;
+            hipo::column_handle h_Clus7_ID;
+            hipo::column_handle h_Clus8_ID;
+            hipo::column_handle h_Clus9_ID;
+            hipo::column_handle h_Clus10_ID;
+            hipo::column_handle h_Clus11_ID;
+            hipo::column_handle h_Clus12_ID;
+            hipo::column_handle h_prob;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("Clus1_ID"); h) cache.h_Clus1_ID = *h;
+            else cache.h_Clus1_ID = {};
+            if (auto h = schema.get_handle("Clus2_ID"); h) cache.h_Clus2_ID = *h;
+            else cache.h_Clus2_ID = {};
+            if (auto h = schema.get_handle("Clus3_ID"); h) cache.h_Clus3_ID = *h;
+            else cache.h_Clus3_ID = {};
+            if (auto h = schema.get_handle("Clus4_ID"); h) cache.h_Clus4_ID = *h;
+            else cache.h_Clus4_ID = {};
+            if (auto h = schema.get_handle("Clus5_ID"); h) cache.h_Clus5_ID = *h;
+            else cache.h_Clus5_ID = {};
+            if (auto h = schema.get_handle("Clus6_ID"); h) cache.h_Clus6_ID = *h;
+            else cache.h_Clus6_ID = {};
+            if (auto h = schema.get_handle("Clus7_ID"); h) cache.h_Clus7_ID = *h;
+            else cache.h_Clus7_ID = {};
+            if (auto h = schema.get_handle("Clus8_ID"); h) cache.h_Clus8_ID = *h;
+            else cache.h_Clus8_ID = {};
+            if (auto h = schema.get_handle("Clus9_ID"); h) cache.h_Clus9_ID = *h;
+            else cache.h_Clus9_ID = {};
+            if (auto h = schema.get_handle("Clus10_ID"); h) cache.h_Clus10_ID = *h;
+            else cache.h_Clus10_ID = {};
+            if (auto h = schema.get_handle("Clus11_ID"); h) cache.h_Clus11_ID = *h;
+            else cache.h_Clus11_ID = {};
+            if (auto h = schema.get_handle("Clus12_ID"); h) cache.h_Clus12_ID = *h;
+            else cache.h_Clus12_ID = {};
+            if (auto h = schema.get_handle("prob"); h) cache.h_prob = *h;
+            else cache.h_prob = {};
+        }
+        h_id = cache.h_id;
+        h_Clus1_ID = cache.h_Clus1_ID;
+        h_Clus2_ID = cache.h_Clus2_ID;
+        h_Clus3_ID = cache.h_Clus3_ID;
+        h_Clus4_ID = cache.h_Clus4_ID;
+        h_Clus5_ID = cache.h_Clus5_ID;
+        h_Clus6_ID = cache.h_Clus6_ID;
+        h_Clus7_ID = cache.h_Clus7_ID;
+        h_Clus8_ID = cache.h_Clus8_ID;
+        h_Clus9_ID = cache.h_Clus9_ID;
+        h_Clus10_ID = cache.h_Clus10_ID;
+        h_Clus11_ID = cache.h_Clus11_ID;
+        h_Clus12_ID = cache.h_Clus12_ID;
+        h_prob = cache.h_prob;
         return true;
     }
 

@@ -42,54 +42,106 @@ class HEL_decoder {
 
     HEL_decoder() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("helicity"); h) h_helicity = *h;
-        else h_helicity = {};
-        if (auto h = schema.get_handle("pair"); h) h_pair = *h;
-        else h_pair = {};
-        if (auto h = schema.get_handle("pattern"); h) h_pattern = *h;
-        else h_pattern = {};
-        if (auto h = schema.get_handle("tSettle"); h) h_tSettle = *h;
-        else h_tSettle = {};
-        if (auto h = schema.get_handle("helicityPattern"); h) h_helicityPattern = *h;
-        else h_helicityPattern = {};
-        if (auto h = schema.get_handle("polarity"); h) h_polarity = *h;
-        else h_polarity = {};
-        if (auto h = schema.get_handle("phase"); h) h_phase = *h;
-        else h_phase = {};
-        if (auto h = schema.get_handle("timestamp"); h) h_timestamp = *h;
-        else h_timestamp = {};
-        if (auto h = schema.get_handle("helicitySeed"); h) h_helicitySeed = *h;
-        else h_helicitySeed = {};
-        if (auto h = schema.get_handle("nTStableRE"); h) h_nTStableRE = *h;
-        else h_nTStableRE = {};
-        if (auto h = schema.get_handle("nTStableFE"); h) h_nTStableFE = *h;
-        else h_nTStableFE = {};
-        if (auto h = schema.get_handle("nPattern"); h) h_nPattern = *h;
-        else h_nPattern = {};
-        if (auto h = schema.get_handle("nPair"); h) h_nPair = *h;
-        else h_nPair = {};
-        if (auto h = schema.get_handle("tStableStart"); h) h_tStableStart = *h;
-        else h_tStableStart = {};
-        if (auto h = schema.get_handle("tStableEnd"); h) h_tStableEnd = *h;
-        else h_tStableEnd = {};
-        if (auto h = schema.get_handle("tStableTime"); h) h_tStableTime = *h;
-        else h_tStableTime = {};
-        if (auto h = schema.get_handle("tSettleTime"); h) h_tSettleTime = *h;
-        else h_tSettleTime = {};
-        if (auto h = schema.get_handle("patternArray"); h) h_patternArray = *h;
-        else h_patternArray = {};
-        if (auto h = schema.get_handle("pairArray"); h) h_pairArray = *h;
-        else h_pairArray = {};
-        if (auto h = schema.get_handle("helicityArray"); h) h_helicityArray = *h;
-        else h_helicityArray = {};
-        if (auto h = schema.get_handle("helicityPArray"); h) h_helicityPArray = *h;
-        else h_helicityPArray = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_helicity;
+            hipo::column_handle h_pair;
+            hipo::column_handle h_pattern;
+            hipo::column_handle h_tSettle;
+            hipo::column_handle h_helicityPattern;
+            hipo::column_handle h_polarity;
+            hipo::column_handle h_phase;
+            hipo::column_handle h_timestamp;
+            hipo::column_handle h_helicitySeed;
+            hipo::column_handle h_nTStableRE;
+            hipo::column_handle h_nTStableFE;
+            hipo::column_handle h_nPattern;
+            hipo::column_handle h_nPair;
+            hipo::column_handle h_tStableStart;
+            hipo::column_handle h_tStableEnd;
+            hipo::column_handle h_tStableTime;
+            hipo::column_handle h_tSettleTime;
+            hipo::column_handle h_patternArray;
+            hipo::column_handle h_pairArray;
+            hipo::column_handle h_helicityArray;
+            hipo::column_handle h_helicityPArray;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("helicity"); h) cache.h_helicity = *h;
+            else cache.h_helicity = {};
+            if (auto h = schema.get_handle("pair"); h) cache.h_pair = *h;
+            else cache.h_pair = {};
+            if (auto h = schema.get_handle("pattern"); h) cache.h_pattern = *h;
+            else cache.h_pattern = {};
+            if (auto h = schema.get_handle("tSettle"); h) cache.h_tSettle = *h;
+            else cache.h_tSettle = {};
+            if (auto h = schema.get_handle("helicityPattern"); h) cache.h_helicityPattern = *h;
+            else cache.h_helicityPattern = {};
+            if (auto h = schema.get_handle("polarity"); h) cache.h_polarity = *h;
+            else cache.h_polarity = {};
+            if (auto h = schema.get_handle("phase"); h) cache.h_phase = *h;
+            else cache.h_phase = {};
+            if (auto h = schema.get_handle("timestamp"); h) cache.h_timestamp = *h;
+            else cache.h_timestamp = {};
+            if (auto h = schema.get_handle("helicitySeed"); h) cache.h_helicitySeed = *h;
+            else cache.h_helicitySeed = {};
+            if (auto h = schema.get_handle("nTStableRE"); h) cache.h_nTStableRE = *h;
+            else cache.h_nTStableRE = {};
+            if (auto h = schema.get_handle("nTStableFE"); h) cache.h_nTStableFE = *h;
+            else cache.h_nTStableFE = {};
+            if (auto h = schema.get_handle("nPattern"); h) cache.h_nPattern = *h;
+            else cache.h_nPattern = {};
+            if (auto h = schema.get_handle("nPair"); h) cache.h_nPair = *h;
+            else cache.h_nPair = {};
+            if (auto h = schema.get_handle("tStableStart"); h) cache.h_tStableStart = *h;
+            else cache.h_tStableStart = {};
+            if (auto h = schema.get_handle("tStableEnd"); h) cache.h_tStableEnd = *h;
+            else cache.h_tStableEnd = {};
+            if (auto h = schema.get_handle("tStableTime"); h) cache.h_tStableTime = *h;
+            else cache.h_tStableTime = {};
+            if (auto h = schema.get_handle("tSettleTime"); h) cache.h_tSettleTime = *h;
+            else cache.h_tSettleTime = {};
+            if (auto h = schema.get_handle("patternArray"); h) cache.h_patternArray = *h;
+            else cache.h_patternArray = {};
+            if (auto h = schema.get_handle("pairArray"); h) cache.h_pairArray = *h;
+            else cache.h_pairArray = {};
+            if (auto h = schema.get_handle("helicityArray"); h) cache.h_helicityArray = *h;
+            else cache.h_helicityArray = {};
+            if (auto h = schema.get_handle("helicityPArray"); h) cache.h_helicityPArray = *h;
+            else cache.h_helicityPArray = {};
+        }
+        h_helicity = cache.h_helicity;
+        h_pair = cache.h_pair;
+        h_pattern = cache.h_pattern;
+        h_tSettle = cache.h_tSettle;
+        h_helicityPattern = cache.h_helicityPattern;
+        h_polarity = cache.h_polarity;
+        h_phase = cache.h_phase;
+        h_timestamp = cache.h_timestamp;
+        h_helicitySeed = cache.h_helicitySeed;
+        h_nTStableRE = cache.h_nTStableRE;
+        h_nTStableFE = cache.h_nTStableFE;
+        h_nPattern = cache.h_nPattern;
+        h_nPair = cache.h_nPair;
+        h_tStableStart = cache.h_tStableStart;
+        h_tStableEnd = cache.h_tStableEnd;
+        h_tStableTime = cache.h_tStableTime;
+        h_tSettleTime = cache.h_tSettleTime;
+        h_patternArray = cache.h_patternArray;
+        h_pairArray = cache.h_pairArray;
+        h_helicityArray = cache.h_helicityArray;
+        h_helicityPArray = cache.h_helicityPArray;
         return true;
     }
 

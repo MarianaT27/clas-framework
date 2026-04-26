@@ -2,15 +2,14 @@
 
 #include <cmath>
 
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
@@ -36,23 +35,39 @@ struct DISNTupleData {
     double epsilon = 0.0;
     double gamma_flux = 0.0;
 
-    NTUPLE_FIELDS(e_p, e_theta, e_phi, e_vz, e_chi2pid, Q2, W, nu, xB, y, epsilon, gamma_flux)
+    static constexpr auto ntuple_fields() {
+        using T = DISNTupleData;
+        return std::make_tuple(
+            clas12::framework::field("e_p", &T::e_p),
+            clas12::framework::field("e_theta", &T::e_theta),
+            clas12::framework::field("e_phi", &T::e_phi),
+            clas12::framework::field("e_vz", &T::e_vz),
+            clas12::framework::field("e_chi2pid", &T::e_chi2pid),
+            clas12::framework::field("Q2", &T::Q2),
+            clas12::framework::field("W", &T::W),
+            clas12::framework::field("nu", &T::nu),
+            clas12::framework::field("xB", &T::xB),
+            clas12::framework::field("y", &T::y),
+            clas12::framework::field("epsilon", &T::epsilon),
+            clas12::framework::field("gamma_flux", &T::gamma_flux)
+        );
+    }
 };
 
 /**
  * @brief Algorithm for DIS event selection
  *
- * Modernized using SimpleAlgorithm CRTP pattern with:
+ * Modernized using Algorithm hook pattern with:
  * - Automatic service injection via svc<T>()
  * - Property system for configuration
  * - CutBuilder for fluent cut definitions
  * - NTupleWriter for simplified N-tuple management
  */
-class DISSelectionAlg : public clas12::framework::SimpleAlgorithm {
+class DISSelectionAlg : public clas12::framework::Algorithm {
    public:
     explicit DISSelectionAlg(std::string name = "DISSelectionAlg",
                               clas12::physics::DISAnalysis::KinematicRegion dis_region = clas12::physics::DISAnalysis::full_phase_space())
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_cutflow("DIS Selection")
         , m_dis_region(std::move(dis_region)) {
         // Declare properties
@@ -114,101 +129,91 @@ class DISSelectionAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     /**
-     * @brief Process a single event.
-     *
-     * ContextCutflow keeps its `evaluate_all()` + N-1 bookkeeping
-     * outside the pipeline because the pipeline DSL has no first-class
-     * N-1 support (see Pipeline.hpp notes). We compute kinematics + N-1
-     * results up front, then feed `results.all_passed` into a single
-     * `filter("DIS cuts", ...)` stage. The N-1 histogram fills happen
-     * in a `.tap()` that runs regardless of `all_passed`, matching the
-     * pre-migration behaviour where N-1 fills bump before the event is
-     * filtered out.
+     * @brief Process a single event
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        using namespace clas12::framework;
-
-        auto electron_opt = EventHelpers::get_selected_electron(event);
-
-        // Compute kinematics only when we have an electron; a default
-        // DISKinematics stays {0, 0, ...} so fills below become no-ops
-        // inside the filtered branch.
-        clas12::physics::DISAnalysis::DISKinematics kin{};
-        if (electron_opt) {
-            kin = clas12::physics::DISAnalysis::calculate_kinematics(*electron_opt);
+        // Check for good electron decision from upstream algorithm
+        auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
+        if (!electron_opt) {
+            return clas12::framework::StatusCode::FILTERED();
         }
+        const auto& electron = *electron_opt;
 
-        // N-1 evaluation is only meaningful when we actually have an
-        // electron + kinematics; otherwise skip to keep bookkeeping
-        // sane.
-        decltype(m_cutflow.evaluate_all(kin)) results{};
-        if (electron_opt) {
-            results = m_cutflow.evaluate_all(kin);
-        }
+        clas12::physics::DISAnalysis::DISKinematics kin =
+            clas12::physics::DISAnalysis::calculate_kinematics(electron);
 
-        return pipeline(event)
-            .filter("has electron", electron_opt.has_value())
-            // Pre-cut histograms + N-1 fills before the filter gate.
-            .tap([&] {
-                const auto& electron = *electron_opt;
-                if (h_Q2_precut)            h_Q2_precut->fill(kin.q2);
-                if (h_W_precut)             h_W_precut->fill(kin.w);
-                if (h_nu_precut)            h_nu_precut->fill(kin.nu);
-                if (h_xB_precut)            h_xB_precut->fill(kin.xb);
-                if (h_y_precut)             h_y_precut->fill(kin.y);
-                if (h_e_p_precut)           h_e_p_precut->fill(electron.p());
-                if (h_e_theta_precut)       h_e_theta_precut->fill(electron.theta());
-                if (h_e_phi_precut)         h_e_phi_precut->fill(electron.phi());
-                if (h_Q2_vs_W_precut)       h_Q2_vs_W_precut->fill(kin.w, kin.q2);
-                if (h_Q2_vs_xB_precut)      h_Q2_vs_xB_precut->fill(kin.xb, kin.q2);
-                if (h_W_vs_y_precut)        h_W_vs_y_precut->fill(kin.y, kin.w);
-                if (h_e_theta_vs_p_precut)  h_e_theta_vs_p_precut->fill(electron.p(), electron.theta());
+        // Fill pre-cut histograms (after electron selection, before DIS cuts)
+        if (h_Q2_precut) h_Q2_precut->fill(kin.q2);
+        if (h_W_precut) h_W_precut->fill(kin.w);
+        if (h_nu_precut) h_nu_precut->fill(kin.nu);
+        if (h_xB_precut) h_xB_precut->fill(kin.xb);
+        if (h_y_precut) h_y_precut->fill(kin.y);
+        if (h_e_p_precut) h_e_p_precut->fill(electron.p());
+        if (h_e_theta_precut) h_e_theta_precut->fill(electron.theta());
+        if (h_e_phi_precut) h_e_phi_precut->fill(electron.phi());
+        if (h_Q2_vs_W_precut) h_Q2_vs_W_precut->fill(kin.w, kin.q2);
+        if (h_Q2_vs_xB_precut) h_Q2_vs_xB_precut->fill(kin.xb, kin.q2);
+        if (h_W_vs_y_precut) h_W_vs_y_precut->fill(kin.y, kin.w);
+        if (h_e_theta_vs_p_precut) h_e_theta_vs_p_precut->fill(electron.p(), electron.theta());
 
-                for (std::size_t i = 0; i < m_cutflow.num_cuts(); ++i) {
-                    if (results.passes_all_except(i)) {
-                        const double val = m_cutflow.variable(i, kin);
-                        if (!std::isnan(val) && i < m_nminus1_hists.size() && m_nminus1_hists[i]) {
-                            m_nminus1_hists[i]->fill(val);
-                        }
+        // Evaluate all cuts (no short-circuit) for N-1 histograms
+        auto results = m_cutflow.evaluate_all(kin);
+
+        // Fill N-1 histograms using framework support
+        for (std::size_t i = 0; i < m_cutflow.num_cuts(); ++i) {
+            if (results.passes_all_except(i)) {
+                double val = m_cutflow.variable(i, kin);
+                if (!std::isnan(val)) {
+                    if (i < m_nminus1_hists.size() && m_nminus1_hists[i]) {
+                        m_nminus1_hists[i]->fill(val);
                     }
                 }
-            })
-            .filter("DIS cuts", results.all_passed)
-            .set_decision(Decisions::HasGoodDISElectron, true)
-            .publish(Keys::SelectedDISElectron, std::vector<clas12::Particle>{*electron_opt})
-            .publish(Keys::DIS_Q2, kin.q2)
-            .publish(Keys::DIS_W,  kin.w)
-            .publish(Keys::DIS_xB, kin.xb)
-            .publish(Keys::DIS_y,  kin.y)
-            .publish(Keys::DIS_nu, kin.nu)
-            .tap([&] {
-                if (h_Q2)       h_Q2->fill(kin.q2);
-                if (h_W)        h_W->fill(kin.w);
-                if (h_nu)       h_nu->fill(kin.nu);
-                if (h_xB)       h_xB->fill(kin.xb);
-                if (h_y)        h_y->fill(kin.y);
-                if (h_Q2_vs_W)  h_Q2_vs_W->fill(kin.w, kin.q2);
-                if (h_Q2_vs_xB) h_Q2_vs_xB->fill(kin.xb, kin.q2);
-                if (h_W_vs_y)   h_W_vs_y->fill(kin.y, kin.w);
+            }
+        }
 
-                if (m_ntuple && m_enable_ntuple.get()) {
-                    const auto& electron = *electron_opt;
-                    m_ntuple.data().e_p        = electron.p();
-                    m_ntuple.data().e_theta    = electron.theta();
-                    m_ntuple.data().e_phi      = electron.phi();
-                    m_ntuple.data().e_vz       = electron.vz();
-                    m_ntuple.data().e_chi2pid  = electron.chi2pid();
-                    m_ntuple.data().Q2         = kin.q2;
-                    m_ntuple.data().W          = kin.w;
-                    m_ntuple.data().nu         = kin.nu;
-                    m_ntuple.data().xB         = kin.xb;
-                    m_ntuple.data().y          = kin.y;
-                    m_ntuple.data().epsilon    = kin.epsilon;
-                    m_ntuple.data().gamma_flux = kin.gamma;
-                    m_ntuple.fill();
-                }
-            })
-            .status();
+        if (!results.all_passed) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+
+        // Electron passed all cuts - set decision and store for downstream algorithms
+        event.set_decision_typed(clas12::framework::Decisions::HasGoodDISElectron, true);
+        event.store_typed(clas12::framework::Keys::SelectedDISElectron, std::vector<clas12::Particle>{electron});
+        event.store_typed(clas12::framework::Keys::DIS_Q2, kin.q2);
+        event.store_typed(clas12::framework::Keys::DIS_W, kin.w);
+        event.store_typed(clas12::framework::Keys::DIS_xB, kin.xb);
+        event.store_typed(clas12::framework::Keys::DIS_y, kin.y);
+        event.store_typed(clas12::framework::Keys::DIS_nu, kin.nu);
+
+        // Fill post-cut 1D histograms
+        if (h_Q2) h_Q2->fill(kin.q2);
+        if (h_W) h_W->fill(kin.w);
+        if (h_nu) h_nu->fill(kin.nu);
+        if (h_xB) h_xB->fill(kin.xb);
+        if (h_y) h_y->fill(kin.y);
+
+        // Fill post-cut 2D correlation histograms
+        if (h_Q2_vs_W) h_Q2_vs_W->fill(kin.w, kin.q2);
+        if (h_Q2_vs_xB) h_Q2_vs_xB->fill(kin.xb, kin.q2);
+        if (h_W_vs_y) h_W_vs_y->fill(kin.y, kin.w);
+
+        // Fill N-tuple using NTupleWriter
+        if (m_ntuple && m_enable_ntuple.get()) {
+            m_ntuple.data().e_p = electron.p();
+            m_ntuple.data().e_theta = electron.theta();
+            m_ntuple.data().e_phi = electron.phi();
+            m_ntuple.data().e_vz = electron.vz();
+            m_ntuple.data().e_chi2pid = electron.chi2pid();
+            m_ntuple.data().Q2 = kin.q2;
+            m_ntuple.data().W = kin.w;
+            m_ntuple.data().nu = kin.nu;
+            m_ntuple.data().xB = kin.xb;
+            m_ntuple.data().y = kin.y;
+            m_ntuple.data().epsilon = kin.epsilon;
+            m_ntuple.data().gamma_flux = kin.gamma;
+            m_ntuple.fill();
+        }
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
     /**

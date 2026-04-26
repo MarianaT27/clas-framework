@@ -42,28 +42,54 @@ class ALERT_ai_pid {
 
     ALERT_ai_pid() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("trackid"); h) h_trackid = *h;
-        else h_trackid = {};
-        if (auto h = schema.get_handle("clusterid"); h) h_clusterid = *h;
-        else h_clusterid = {};
-        if (auto h = schema.get_handle("pid"); h) h_pid = *h;
-        else h_pid = {};
-        if (auto h = schema.get_handle("prob_2212"); h) h_prob_2212 = *h;
-        else h_prob_2212 = {};
-        if (auto h = schema.get_handle("prob_45"); h) h_prob_45 = *h;
-        else h_prob_45 = {};
-        if (auto h = schema.get_handle("prob_46"); h) h_prob_46 = *h;
-        else h_prob_46 = {};
-        if (auto h = schema.get_handle("prob_47"); h) h_prob_47 = *h;
-        else h_prob_47 = {};
-        if (auto h = schema.get_handle("prob_49"); h) h_prob_49 = *h;
-        else h_prob_49 = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_trackid;
+            hipo::column_handle h_clusterid;
+            hipo::column_handle h_pid;
+            hipo::column_handle h_prob_2212;
+            hipo::column_handle h_prob_45;
+            hipo::column_handle h_prob_46;
+            hipo::column_handle h_prob_47;
+            hipo::column_handle h_prob_49;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("trackid"); h) cache.h_trackid = *h;
+            else cache.h_trackid = {};
+            if (auto h = schema.get_handle("clusterid"); h) cache.h_clusterid = *h;
+            else cache.h_clusterid = {};
+            if (auto h = schema.get_handle("pid"); h) cache.h_pid = *h;
+            else cache.h_pid = {};
+            if (auto h = schema.get_handle("prob_2212"); h) cache.h_prob_2212 = *h;
+            else cache.h_prob_2212 = {};
+            if (auto h = schema.get_handle("prob_45"); h) cache.h_prob_45 = *h;
+            else cache.h_prob_45 = {};
+            if (auto h = schema.get_handle("prob_46"); h) cache.h_prob_46 = *h;
+            else cache.h_prob_46 = {};
+            if (auto h = schema.get_handle("prob_47"); h) cache.h_prob_47 = *h;
+            else cache.h_prob_47 = {};
+            if (auto h = schema.get_handle("prob_49"); h) cache.h_prob_49 = *h;
+            else cache.h_prob_49 = {};
+        }
+        h_trackid = cache.h_trackid;
+        h_clusterid = cache.h_clusterid;
+        h_pid = cache.h_pid;
+        h_prob_2212 = cache.h_prob_2212;
+        h_prob_45 = cache.h_prob_45;
+        h_prob_46 = cache.h_prob_46;
+        h_prob_47 = cache.h_prob_47;
+        h_prob_49 = cache.h_prob_49;
         return true;
     }
 

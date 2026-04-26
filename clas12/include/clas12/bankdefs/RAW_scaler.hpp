@@ -42,24 +42,46 @@ class RAW_scaler {
 
     RAW_scaler() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("crate"); h) h_crate = *h;
-        else h_crate = {};
-        if (auto h = schema.get_handle("slot"); h) h_slot = *h;
-        else h_slot = {};
-        if (auto h = schema.get_handle("channel"); h) h_channel = *h;
-        else h_channel = {};
-        if (auto h = schema.get_handle("helicity"); h) h_helicity = *h;
-        else h_helicity = {};
-        if (auto h = schema.get_handle("quartet"); h) h_quartet = *h;
-        else h_quartet = {};
-        if (auto h = schema.get_handle("value"); h) h_value = *h;
-        else h_value = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_crate;
+            hipo::column_handle h_slot;
+            hipo::column_handle h_channel;
+            hipo::column_handle h_helicity;
+            hipo::column_handle h_quartet;
+            hipo::column_handle h_value;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("crate"); h) cache.h_crate = *h;
+            else cache.h_crate = {};
+            if (auto h = schema.get_handle("slot"); h) cache.h_slot = *h;
+            else cache.h_slot = {};
+            if (auto h = schema.get_handle("channel"); h) cache.h_channel = *h;
+            else cache.h_channel = {};
+            if (auto h = schema.get_handle("helicity"); h) cache.h_helicity = *h;
+            else cache.h_helicity = {};
+            if (auto h = schema.get_handle("quartet"); h) cache.h_quartet = *h;
+            else cache.h_quartet = {};
+            if (auto h = schema.get_handle("value"); h) cache.h_value = *h;
+            else cache.h_value = {};
+        }
+        h_crate = cache.h_crate;
+        h_slot = cache.h_slot;
+        h_channel = cache.h_channel;
+        h_helicity = cache.h_helicity;
+        h_quartet = cache.h_quartet;
+        h_value = cache.h_value;
         return true;
     }
 

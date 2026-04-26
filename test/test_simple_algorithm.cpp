@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/core/ServiceManager.hpp>
 
@@ -59,12 +59,12 @@ private:
 };
 
 // ============================================================================
-// Test SimpleAlgorithm Implementation
+// Test Algorithm Implementation
 // ============================================================================
 
-class TestSimpleAlgorithm : public SimpleAlgorithm {
+class TestAlgorithm : public Algorithm {
 public:
-    TestSimpleAlgorithm() : SimpleAlgorithm("TestSimpleAlgorithm") {
+    TestAlgorithm() : Algorithm("TestAlgorithm") {
         declare_property(m_threshold);
     }
 
@@ -103,9 +103,9 @@ private:
 };
 
 // Algorithm with multiple services
-class MultiServiceAlgorithm : public SimpleAlgorithm {
+class MultiServiceAlgorithm : public Algorithm {
 public:
-    MultiServiceAlgorithm() : SimpleAlgorithm("MultiServiceAlgorithm") {}
+    MultiServiceAlgorithm() : Algorithm("MultiServiceAlgorithm") {}
 
     auto on_initialize() -> StatusCode override {
         m_hist_svc = svc<MockHistogramService>();
@@ -131,9 +131,9 @@ private:
 };
 
 // Algorithm that returns FILTERED
-class FilteringAlgorithm : public SimpleAlgorithm {
+class FilteringAlgorithm : public Algorithm {
 public:
-    FilteringAlgorithm() : SimpleAlgorithm("FilteringAlgorithm") {}
+    FilteringAlgorithm() : Algorithm("FilteringAlgorithm") {}
 
     auto process([[maybe_unused]] Event& event) -> StatusCode override {
         m_process_count++;
@@ -153,7 +153,7 @@ private:
 // Test Fixture
 // ============================================================================
 
-class SimpleAlgorithmTest : public ::testing::Test {
+class AlgorithmTest : public ::testing::Test {
 protected:
     void SetUp() override {
         svc_mgr = std::make_unique<ServiceManager>();
@@ -168,16 +168,16 @@ protected:
 };
 
 // ============================================================================
-// SimpleAlgorithm Tests
+// Algorithm Tests
 // ============================================================================
 
-TEST_F(SimpleAlgorithmTest, NameIsSet) {
-    TestSimpleAlgorithm alg;
-    EXPECT_EQ(alg.name(), "TestSimpleAlgorithm");
+TEST_F(AlgorithmTest, NameIsSet) {
+    TestAlgorithm alg;
+    EXPECT_EQ(alg.name(), "TestAlgorithm");
 }
 
-TEST_F(SimpleAlgorithmTest, InitializeSucceeds) {
-    TestSimpleAlgorithm alg;
+TEST_F(AlgorithmTest, InitializeSucceeds) {
+    TestAlgorithm alg;
     alg.set_service_manager(svc_mgr.get());
 
     auto sc = alg.initialize();
@@ -185,8 +185,8 @@ TEST_F(SimpleAlgorithmTest, InitializeSucceeds) {
     EXPECT_TRUE(sc.is_success());
 }
 
-TEST_F(SimpleAlgorithmTest, InitializeCallsOnInitialize) {
-    TestSimpleAlgorithm alg;
+TEST_F(AlgorithmTest, InitializeCallsOnInitialize) {
+    TestAlgorithm alg;
     alg.set_service_manager(svc_mgr.get());
     
     EXPECT_FALSE(alg.on_initialize_called());
@@ -197,8 +197,8 @@ TEST_F(SimpleAlgorithmTest, InitializeCallsOnInitialize) {
     EXPECT_TRUE(alg.on_initialize_called());
 }
 
-TEST_F(SimpleAlgorithmTest, InitializeInjectsServices) {
-    TestSimpleAlgorithm alg;
+TEST_F(AlgorithmTest, InitializeInjectsServices) {
+    TestAlgorithm alg;
     alg.set_service_manager(svc_mgr.get());
 
     auto sc = alg.initialize();
@@ -208,8 +208,8 @@ TEST_F(SimpleAlgorithmTest, InitializeInjectsServices) {
     EXPECT_NE(alg.hist_svc(), nullptr);
 }
 
-TEST_F(SimpleAlgorithmTest, InitializeWithoutServiceManagerReturnsNullServices) {
-    TestSimpleAlgorithm alg;
+TEST_F(AlgorithmTest, InitializeWithoutServiceManagerReturnsNullServices) {
+    TestAlgorithm alg;
     // Don't set service manager — svc<T>() returns nullptr
 
     auto sc = alg.initialize();
@@ -218,8 +218,8 @@ TEST_F(SimpleAlgorithmTest, InitializeWithoutServiceManagerReturnsNullServices) 
     EXPECT_EQ(alg.hist_svc(), nullptr);
 }
 
-TEST_F(SimpleAlgorithmTest, FinalizeCallsOnFinalize) {
-    TestSimpleAlgorithm alg;
+TEST_F(AlgorithmTest, FinalizeCallsOnFinalize) {
+    TestAlgorithm alg;
     alg.set_service_manager(svc_mgr.get());
     (void)alg.initialize();
     
@@ -231,7 +231,7 @@ TEST_F(SimpleAlgorithmTest, FinalizeCallsOnFinalize) {
     EXPECT_TRUE(alg.on_finalize_called());
 }
 
-TEST_F(SimpleAlgorithmTest, MultipleServicesInjected) {
+TEST_F(AlgorithmTest, MultipleServicesInjected) {
     MultiServiceAlgorithm alg;
     alg.set_service_manager(svc_mgr.get());
     
@@ -242,8 +242,8 @@ TEST_F(SimpleAlgorithmTest, MultipleServicesInjected) {
     EXPECT_TRUE(alg.log_service_valid());
 }
 
-TEST_F(SimpleAlgorithmTest, PropertyIntegration) {
-    TestSimpleAlgorithm alg;
+TEST_F(AlgorithmTest, PropertyIntegration) {
+    TestAlgorithm alg;
     
     // Check default value
     EXPECT_DOUBLE_EQ(alg.threshold(), 2.0);
@@ -253,7 +253,7 @@ TEST_F(SimpleAlgorithmTest, PropertyIntegration) {
     EXPECT_EQ(alg.property_count(), 1);
 }
 
-TEST_F(SimpleAlgorithmTest, FilteringStatusCode) {
+TEST_F(AlgorithmTest, FilteringStatusCode) {
     FilteringAlgorithm alg;
     alg.set_service_manager(svc_mgr.get());
     (void)alg.initialize();

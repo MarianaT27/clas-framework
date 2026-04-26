@@ -14,7 +14,7 @@ This example demonstrates:
 
 ```cpp
 #include <clas12/framework/core/Application.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
@@ -28,13 +28,13 @@ public:
         m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
         m_ntuple_svc = service<clas12::framework::NTupleService>("NTupleService");
 
-        // 1D histograms - returns AtomicHistogram1D* (thread-safe)
+        // 1D histograms - returns ThreadLocalHistogram1D* (thread-safe)
         h_q2 = m_hist_svc->book_hist1D("/DIS/Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 10);
         h_w = m_hist_svc->book_hist1D("/DIS/W", "W;W [GeV];Events", 100, 0, 5);
         h_xb = m_hist_svc->book_hist1D("/DIS/xB", "x_{B};x_{B};Events", 100, 0, 1);
         h_y = m_hist_svc->book_hist1D("/DIS/y", "y;y;Events", 100, 0, 1);
 
-        // 2D correlations - returns AtomicHistogram2D* (thread-safe)
+        // 2D correlations - returns ThreadLocalHistogram2D* (thread-safe)
         h_q2_vs_xb = m_hist_svc->book_hist2D("/DIS/Q2_vs_xB",
             "Q^{2} vs x_{B};x_{B};Q^{2} [GeV^{2}]", 100, 0, 1, 100, 0, 10);
         h_w_vs_q2 = m_hist_svc->book_hist2D("/DIS/W_vs_Q2",
@@ -92,8 +92,8 @@ private:
     clas12::framework::HistogramService* m_hist_svc = nullptr;
     clas12::framework::NTupleService* m_ntuple_svc = nullptr;
     // Atomic histograms are thread-safe for parallel processing
-    clas12::framework::AtomicHistogram1D *h_q2, *h_w, *h_xb, *h_y;
-    clas12::framework::AtomicHistogram2D *h_q2_vs_xb, *h_w_vs_q2;
+    clas12::framework::ThreadLocalHistogram1D *h_q2, *h_w, *h_xb, *h_y;
+    clas12::framework::ThreadLocalHistogram2D *h_q2_vs_xb, *h_w_vs_q2;
     double m_q2, m_w, m_xb, m_y, m_e_p, m_e_theta;
 };
 ```

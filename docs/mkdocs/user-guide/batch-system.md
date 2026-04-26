@@ -1,6 +1,9 @@
 # Batch System
 
-Generic batch job submission for any CLAS12 analysis executable.
+Generic batch job submission for any CLAS12 analysis executable. Each
+analysis takes a single `--config <path.toml>` flag, so the batch tool
+just needs to know which executable to run, which TOML config to pass
+to each job, and how to slice the input across jobs.
 
 ## Quick Start
 
@@ -8,14 +11,14 @@ Generic batch job submission for any CLAS12 analysis executable.
 # Build the batch tool
 meson compile -C builddir
 
-# Submit any analysis to SLURM (dry-run by default)
-./builddir/batch ./builddir/pi0 --target=LD2 --polarity=Outbending
+# Submit a TOML-driven analysis to SLURM (dry-run by default)
+./builddir/batch ./builddir/pi0 --config config/pi0.toml
 
 # Actually submit
-./builddir/batch ./builddir/pi0 --target=LD2 --polarity=Outbending --submit
+./builddir/batch ./builddir/pi0 --config config/pi0.toml --submit
 
-# Use a config file
-./builddir/batch --config=config/batch_job_example.json
+# Use a JSON batch config (separate from the analysis TOML)
+./builddir/batch --config-json=config/batch_job_example.json
 ```
 
 ## Usage
@@ -25,10 +28,11 @@ meson compile -C builddir
 
 Options:
   --executable      Path to analysis executable (required)
-  --config          JSON configuration file
-  --data-dir        Data directory with .hipo files
-  --target          Target type (LD2, CxC, CuSn)
-  --polarity        Magnetic field polarity (Inbending, Outbending)
+  --config          Per-job analysis TOML config (required for analyses
+                    using AnalysisRunner)
+  --config-json     Optional JSON file with batch-tool defaults
+  --data-dir        Data directory with .hipo files (overrides
+                    [run].input in the analysis TOML)
   --job-name        Job name prefix
   --system          Batch system: slurm, local (default: slurm)
   --files-per-job   Input files per job (default: 10)
@@ -40,26 +44,27 @@ Options:
   --log-dir         Log directory (default: ./logs)
   --email           Email for notifications
   --submit          Actually submit jobs (default: dry-run)
-  --extra-args      Extra arguments for executable (comma-separated)
 ```
+
+Per-analysis tuning (cuts, enables, mass windows, scan parameters)
+lives entirely in the analysis TOML — see the analysis's own example
+config under `config/`. The batch tool does not pass per-algorithm
+flags through to the executable.
 
 ## Supported Systems
 
 | System | Flag | Submit Command | Monitor |
 |--------|------|----------------|---------|
-| SLURM | `--system=slurm` | `sbatch` | `squeue -u $USER` |
-| Local | `--system=local` | `bash` | `ps aux` |
+| SLURM  | `--system=slurm` | `sbatch` | `squeue -u $USER` |
+| Local  | `--system=local` | `bash`   | `ps aux` |
 
 ## Examples
 
 ### Pi0 Analysis on SLURM
 
-The `pi0` executable uses the ApplicationBuilder pattern for π⁰ reconstruction:
-
 ```bash
 ./builddir/batch ./builddir/pi0 \
-  --target=LD2 \
-  --polarity=Outbending \
+  --config config/pi0.toml \
   --files-per-job=10 \
   --num-threads=8 \
   --memory=16 \
@@ -67,15 +72,21 @@ The `pi0` executable uses the ApplicationBuilder pattern for π⁰ reconstructio
   --submit
 ```
 
-Pi0-specific options (passed via `--extra-args`):
+Edit `config/pi0.toml` for analysis-specific knobs:
 
-- `--mass_window=0.2` - Pi0 mass window in GeV (default: 0.2)
-- `--min_energy=0.3` - Minimum photon energy in GeV (default: 0.3)
+```toml
+[Pi0Reconstruction]
+mass_window = 0.2
+
+[PhotonSelection]
+min_energy = 0.3
+```
 
 ### Electron Analysis with Custom Data
 
 ```bash
 ./builddir/batch ./builddir/electron_analysis \
+  --config config/electron_analysis.toml \
   --data-dir=/volatile/clas12/users/myname/data \
   --output-dir=/volatile/clas12/users/myname/output \
   --email=myname@jlab.org \
@@ -85,90 +96,23 @@ Pi0-specific options (passed via `--extra-args`):
 ### Local Testing
 
 ```bash
-./builddir/batch ./builddir/improved \
+./builddir/batch ./builddir/electron_analysis \
+  --config config/electron_analysis.toml \
   --system=local \
   --data-dir=./data \
   --files-per-job=1 \
   --submit
 ```
 
-## Configuration Files
-
-### Example: `config/batch_job_example.json`
-
-```json
-{
-  "job_name": "clas12_analysis",
-  "executable": "./builddir/improved",
-  "system": "slurm",
-  "data_dir": "/work/clas12/data/RG-A/",
-  "output_dir": "./batch_output",
-  "log_dir": "./batch_logs",
-  "files_per_job": 10,
-  "n_cores": 4,
-  "memory_gb": 8,
-  "time_limit": "12:00:00",
-  "partition": "production",
-  "email": "user@university.edu"
-}
-```
-
-Command-line arguments override config file values.
-
 ## Workflow
 
-1. **Build your analysis**
-   ```bash
-   meson compile -C builddir
-   ```
-
-2. **Test locally first**
-   ```bash
-   ./builddir/pi0 data/test.hipo
-   ```
-
-3. **Dry run** (generates scripts without submitting)
-   ```bash
-   ./builddir/batch ./builddir/pi0 --target=LD2 --polarity=Outbending
-   ls batch_scripts/
-   ```
-
-4. **Submit jobs**
-   ```bash
-   ./builddir/batch ./builddir/pi0 --target=LD2 --polarity=Outbending --submit
-   ```
-
-5. **Monitor progress**
-   ```bash
-   squeue -u $USER
-   tail -f logs/*.out
-   ```
-
-6. **Merge results**
-   ```bash
-   hadd -f merged.root output/*/*.root
-   ```
-
-## Output Structure
-
-```
-batch_scripts/
-├── job_0.slurm
-├── job_1.slurm
-└── ...
-
-output/
-├── job_0/
-│   └── analysis.root
-├── job_1/
-│   └── analysis.root
-└── ...
-
-logs/
-├── job_0_12345.out
-├── job_0_12345.err
-└── ...
-```
+1. **Build your analysis** — `meson compile -C builddir`.
+2. **Write a TOML config** under `config/<name>.toml`. See `config/electron_analysis.toml` for the schema.
+3. **Test locally** — `./builddir/<name> --config config/<name>.toml`.
+4. **Dry-run with batch** — `./builddir/batch ./builddir/<name> --config config/<name>.toml`.
+5. **Submit** — add `--submit`.
+6. **Monitor** — `squeue -u $USER` ; `tail -f logs/*.out`.
+7. **Merge** — `hadd -f merged.root output/*/*.root`.
 
 ## Tips
 
@@ -182,7 +126,6 @@ logs/
     Add 20% buffer to estimated runtime.
 
 !!! warning "Always test locally"
-    Test your analysis locally before submitting batch jobs.
-
-!!! tip "Check output"
-    Check one job's output before merging all results.
+    Test your analysis locally with the same TOML config before
+    submitting batch jobs. Mistakes in `[run]` paths or per-algorithm
+    sections won't show up until the job runs.

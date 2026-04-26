@@ -42,40 +42,78 @@ class AHDC_track {
 
     AHDC_track() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("trackid"); h) h_trackid = *h;
-        else h_trackid = {};
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
-        if (auto h = schema.get_handle("px"); h) h_px = *h;
-        else h_px = {};
-        if (auto h = schema.get_handle("py"); h) h_py = *h;
-        else h_py = {};
-        if (auto h = schema.get_handle("pz"); h) h_pz = *h;
-        else h_pz = {};
-        if (auto h = schema.get_handle("n_hits"); h) h_n_hits = *h;
-        else h_n_hits = {};
-        if (auto h = schema.get_handle("sum_adc"); h) h_sum_adc = *h;
-        else h_sum_adc = {};
-        if (auto h = schema.get_handle("path"); h) h_path = *h;
-        else h_path = {};
-        if (auto h = schema.get_handle("dEdx"); h) h_dEdx = *h;
-        else h_dEdx = {};
-        if (auto h = schema.get_handle("p_drift"); h) h_p_drift = *h;
-        else h_p_drift = {};
-        if (auto h = schema.get_handle("chi2"); h) h_chi2 = *h;
-        else h_chi2 = {};
-        if (auto h = schema.get_handle("sum_residuals"); h) h_sum_residuals = *h;
-        else h_sum_residuals = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_trackid;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+            hipo::column_handle h_px;
+            hipo::column_handle h_py;
+            hipo::column_handle h_pz;
+            hipo::column_handle h_n_hits;
+            hipo::column_handle h_sum_adc;
+            hipo::column_handle h_path;
+            hipo::column_handle h_dEdx;
+            hipo::column_handle h_p_drift;
+            hipo::column_handle h_chi2;
+            hipo::column_handle h_sum_residuals;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("trackid"); h) cache.h_trackid = *h;
+            else cache.h_trackid = {};
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+            if (auto h = schema.get_handle("px"); h) cache.h_px = *h;
+            else cache.h_px = {};
+            if (auto h = schema.get_handle("py"); h) cache.h_py = *h;
+            else cache.h_py = {};
+            if (auto h = schema.get_handle("pz"); h) cache.h_pz = *h;
+            else cache.h_pz = {};
+            if (auto h = schema.get_handle("n_hits"); h) cache.h_n_hits = *h;
+            else cache.h_n_hits = {};
+            if (auto h = schema.get_handle("sum_adc"); h) cache.h_sum_adc = *h;
+            else cache.h_sum_adc = {};
+            if (auto h = schema.get_handle("path"); h) cache.h_path = *h;
+            else cache.h_path = {};
+            if (auto h = schema.get_handle("dEdx"); h) cache.h_dEdx = *h;
+            else cache.h_dEdx = {};
+            if (auto h = schema.get_handle("p_drift"); h) cache.h_p_drift = *h;
+            else cache.h_p_drift = {};
+            if (auto h = schema.get_handle("chi2"); h) cache.h_chi2 = *h;
+            else cache.h_chi2 = {};
+            if (auto h = schema.get_handle("sum_residuals"); h) cache.h_sum_residuals = *h;
+            else cache.h_sum_residuals = {};
+        }
+        h_trackid = cache.h_trackid;
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
+        h_px = cache.h_px;
+        h_py = cache.h_py;
+        h_pz = cache.h_pz;
+        h_n_hits = cache.h_n_hits;
+        h_sum_adc = cache.h_sum_adc;
+        h_path = cache.h_path;
+        h_dEdx = cache.h_dEdx;
+        h_p_drift = cache.h_p_drift;
+        h_chi2 = cache.h_chi2;
+        h_sum_residuals = cache.h_sum_residuals;
         return true;
     }
 

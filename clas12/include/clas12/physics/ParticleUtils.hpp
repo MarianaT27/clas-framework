@@ -1,12 +1,9 @@
 #pragma once
 
 #include <clas12/Constants.hpp>
-#include <clas12/Particle.hpp>
-#include <algorithm>
 #include <cmath>
 #include <iterator>
 #include <limits>
-#include <optional>
 #include <vector>
 
 namespace clas12::physics {
@@ -65,47 +62,6 @@ inline auto get_mass(const int pid) -> double {
 inline auto compute_energy(double px, double py, double pz, int pid) -> double {
     double mass = get_mass(pid);
     return std::hypot(std::hypot(px, py, pz), mass);
-}
-
-/**
- * @brief Finds the first trigger electron from a list of electrons.
- *
- * Searches for an electron with negative status within the specified status range.
- *
- * @param electrons A vector of clas12::Particle objects representing electrons
- * @param status_range Pair of (min, max) absolute status values
- * @return The first trigger electron if found, or std::nullopt otherwise
- */
-inline auto find_trigger_electron(const std::vector<clas12::Particle>& electrons,
-                                  std::pair<double, double> status_range) -> std::optional<clas12::Particle> {
-    auto it = std::find_if(electrons.begin(), electrons.end(),
-                           [&status_range](const clas12::Particle& electron) {
-                               const double absStatus = std::abs(electron.status());
-                               return electron.status() < 0.0 &&
-                                      electron.p() != 0.0 &&
-                                      status_range.first <= absStatus &&
-                                      absStatus < status_range.second;
-                           });
-
-    return (it != electrons.end()) ? std::optional<clas12::Particle>(*it) : std::nullopt;
-}
-
-/**
- * @brief Finds the most energetic electron from a list of electrons.
- *
- * @param electrons A vector of clas12::Particle objects representing electrons
- * @return The most energetic electron if found, or std::nullopt if empty/invalid
- */
-inline auto find_most_energetic_electron(const std::vector<clas12::Particle>& electrons) -> std::optional<clas12::Particle> {
-    if (electrons.empty()) return std::nullopt;
-
-    auto result = std::max_element(electrons.begin(), electrons.end(),
-                                   [](const clas12::Particle& a, const clas12::Particle& b) { return a.E() < b.E(); });
-
-    if (result != electrons.end() && result->p() != 0.0) {
-        return *result;
-    }
-    return std::nullopt;
 }
 
 /**

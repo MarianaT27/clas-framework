@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bank_view.h>
+#include <clas12/Detectors.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/physics/ParticleUtils.hpp>
@@ -9,6 +10,8 @@
 
 #include <any>
 #include <array>
+#include <atomic>
+#include <cmath>
 #include <functional>
 #include <map>
 #include <optional>
@@ -16,8 +19,7 @@
 #include <string>
 #include <string_view>
 #include <tuple>
-#include <typeindex>
-#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace clas12::framework {
@@ -26,6 +28,31 @@ namespace clas12::framework {
  * @brief Type alias for storing particles grouped by their PID type
  */
 using ParticleMap = std::map<clas12::PIDs, std::vector<clas12::Particle>>;
+
+namespace detail {
+
+/// Compile-time-stable, unique index per generated bankdef wrapper type.
+/// First access from any thread assigns the next id from a global counter,
+/// so the value of `bank_type_id<T>()` is identical across all threads /
+/// Event instances within a single process.
+inline std::atomic<int>& bank_type_counter() {
+    static std::atomic<int> counter{0};
+    return counter;
+}
+
+template <typename T>
+inline int bank_type_id() {
+    static const int id = bank_type_counter().fetch_add(1, std::memory_order_relaxed);
+    return id;
+}
+
+/// Cap on distinct bankdef wrapper types observed in one process. The
+/// project ships 273 generated bankdefs but a typical analysis only
+/// touches ~10. The fixed cap keeps Event::m_bank_cache stack-friendly
+/// (one slot per index, ~80 bytes each).
+inline constexpr int kMaxBankTypes = 64;
+
+}  // namespace detail
 
 /**
  * @brief Event Data Model for CLAS12 analysis
@@ -70,8 +97,63 @@ class Event {
         if (it != m_particles.end()) {
             return it->second;
         }
-        static const std::vector<clas12::Particle> empty;
-        return empty;
+        return empty_particles();
+    }
+
+    // ========================================================================
+    // Per-PID convenience accessors. Every one is a zero-cost forward to the
+    // already-cached `m_particles` map built by `load_particles()`.
+    // ========================================================================
+    auto electrons()    -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::ELECTRON); }
+    auto positrons()    -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::POSITRON); }
+    auto photons()      -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PHOTON); }
+    auto protons()      -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PROTON); }
+    auto neutrons()     -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::NEUTRON); }
+    auto pions_plus()   -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PIPLUS); }
+    auto pions_minus()  -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PIMINUS); }
+    auto kaons_plus()   -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::KPLUS); }
+    auto kaons_minus()  -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::KMINUS); }
+
+    /**
+     * @brief Particles by integer PDG id (parallel to `particles(PIDs)`).
+     */
+    auto by_pid(int pid) -> const std::vector<clas12::Particle>& {
+        return particles(static_cast<clas12::PIDs>(pid));
+    }
+
+    /**
+     * @brief Particles with the given charge (-1, 0, or +1).
+     *
+     * Served from a flat 3-slot vector of vectors built in the same single
+     * pass over REC::Particle as `m_particles`. No second scan, no map.
+     * Anything outside [-1, +1] returns an empty vector.
+     */
+    auto by_charge(int charge) -> const std::vector<clas12::Particle>& {
+        if (!m_particles_loaded) {
+            load_particles();
+        }
+        if (charge < -1 || charge > 1) return empty_particles();
+        return m_by_charge[charge + 1];
+    }
+
+    /**
+     * @brief First electron whose |status| falls in @p status_range and
+     *        whose status is negative with non-zero momentum.
+     *
+     * Default range covers the forward detector band. Single O(N) scan over
+     * the cached `electrons()` vector — same cost as the old free function.
+     */
+    auto find_trigger_electron(
+        std::pair<double, double> status_range = {clas12::FD, clas12::CD}
+    ) -> std::optional<clas12::Particle> {
+        for (const auto& e : electrons()) {
+            const double abs_status = std::abs(e.status());
+            if (e.status() < 0.0 && e.p() != 0.0 &&
+                status_range.first <= abs_status && abs_status < status_range.second) {
+                return e;
+            }
+        }
+        return std::nullopt;
     }
 
     /**
@@ -399,19 +481,22 @@ class Event {
      */
     template <typename T>
     auto bank() -> T& {
-        auto& slot = m_bank_cache[std::type_index(typeid(T))];
-        if (!slot.wrapper.has_value()) {
+        auto& slot = m_bank_cache[detail::bank_type_id<T>()];
+        if (!slot.has_value()) {
+            slot.emplace();
             T bound;
             // Generated readers (e.g. read_Calorimeter_bank) call bank<T>()
             // for sibling banks that the algorithm did not declare. Use the
             // checked accessor and fall back to an empty bank_view so the
             // wrapper's valid()/rows() return false instead of asserting.
+            // T::bank_name is a constexpr string_view; bank_view_set::get
+            // already accepts string_view, so no temporary std::string.
             static const hipo::bank_view empty{};
-            auto r = m_banks.get(std::string(T::bank_name));
+            auto r = m_banks.get(T::bank_name);
             bound.bind(r.has_value() ? r->get() : empty);
-            slot.wrapper = std::move(bound);
+            slot->wrapper = std::move(bound);
         }
-        return std::any_cast<T&>(slot.wrapper);
+        return std::any_cast<T&>(slot->wrapper);
     }
 
     /**
@@ -467,7 +552,7 @@ class Event {
     template <typename T>
     auto rows_for_pindex(int pindex) -> PindexRowView<T> {
         auto& bound = bank<T>();  // ensures wrapper is bound and cached
-        auto& slot = m_bank_cache[std::type_index(typeid(T))];
+        auto& slot = *m_bank_cache[detail::bank_type_id<T>()];
         if (!slot.pindex_linker_built) {
             slot.pindex_linker.build(bound.view(), bound.pindex_handle());
             slot.pindex_linker_built = true;
@@ -493,7 +578,7 @@ class Event {
     template <typename T>
     auto rows_for_index(int key) -> PindexRowView<T> {
         auto& bound = bank<T>();
-        auto& slot = m_bank_cache[std::type_index(typeid(T))];
+        auto& slot = *m_bank_cache[detail::bank_type_id<T>()];
         if (!slot.index_linker_built) {
             slot.index_linker.build(bound.view(), bound.index_handle());
             slot.index_linker_built = true;
@@ -502,20 +587,27 @@ class Event {
     }
 
    private:
+    static auto empty_particles() -> const std::vector<clas12::Particle>& {
+        static const std::vector<clas12::Particle> s_empty;
+        return s_empty;
+    }
+
     hipo::bank_view_set& m_banks;
     ParticleMap m_particles;
+    /// Charge-indexed view of REC::Particle, slot index = charge + 1 so
+    /// charges -1/0/+1 map to slots 0/1/2. Built in the same single pass
+    /// as `m_particles` to avoid a second scan or map allocation.
+    std::array<std::vector<clas12::Particle>, 3> m_by_charge;
     bool m_particles_loaded = false;
     std::optional<double> m_start_time;
     long m_event_number = -1;
     int m_file_index = -1;
     TypedEventStore m_typed_store;
 
-    /// Per-event cache of bound generated wrappers and their reverse indexes.
-    /// The key is a std::type_index(typeid(T)) for the wrapper class. Two
-    /// independent linker slots are held: one keyed by `pindex_handle()`
-    /// (for the usual particle -> hit lookup) and one keyed by
-    /// `index_handle()` (for sibling-row links like FMT::Tracks.index ->
-    /// REC::Track row). Each is built lazily on first use.
+    /// Per-event cache of bound generated wrappers and their reverse indexes,
+    /// addressed by `detail::bank_type_id<T>()`. Each slot is wrapped in
+    /// `std::optional` so the array's destructor only does cheap bool
+    /// checks for unpopulated slots.
     struct BankCacheEntry {
         std::any wrapper;                  ///< Holds a concrete T by value.
         PindexLinker pindex_linker;        ///< Built on first rows_for_pindex<T>.
@@ -523,7 +615,7 @@ class Event {
         bool pindex_linker_built = false;
         bool index_linker_built  = false;
     };
-    std::unordered_map<std::type_index, BankCacheEntry> m_bank_cache;
+    std::array<std::optional<BankCacheEntry>, detail::kMaxBankTypes> m_bank_cache;
 
     /**
      * @brief Load particles from REC::Particle bank
@@ -613,9 +705,18 @@ class Event {
             const double mass = clas12::physics::ParticleUtils::get_mass(pid);
             const double E = clas12::physics::ParticleUtils::compute_energy(px, py, pz, pid);
 
-            m_particles[particle_type].emplace_back(
+            auto& p = m_particles[particle_type].emplace_back(
                 pid, status, i, charge, mass,
                 px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
+            p.set_event(this);
+
+            // Charge index, populated in the same pass. Slot 0 = -1, 1 = 0,
+            // 2 = +1. Anything outside that range is dropped (matches the
+            // sign-of-charge model REC::Particle uses). The pushed copy
+            // inherits `m_event` from `p`, no separate set_event needed.
+            if (charge >= -1 && charge <= 1) {
+                m_by_charge[charge + 1].push_back(p);
+            }
         }
 
         m_particles_loaded = true;

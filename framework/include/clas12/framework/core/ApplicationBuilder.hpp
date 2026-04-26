@@ -16,8 +16,10 @@
 #include <tuple>
 #include <vector>
 
+#include <toml++/toml.hpp>
+
 #include <clas12/framework/core/Application.hpp>
-#include <clas12/framework/core/IAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 // Concrete service headers used to be included here so
 // add_standard_services_to() could instantiate them inline. That function
 // now lives in ApplicationBuilder.cpp; the eleven service headers only
@@ -84,6 +86,15 @@ public:
         return *this;
     }
 
+    /// Attach the parsed TOML config table. The Application will look
+    /// up `[<algorithm.name()>]` for every registered algorithm and
+    /// apply matching `Property` values via
+    /// `PropertyMixin::configure_from_toml`.
+    auto with_config(std::shared_ptr<const toml::table> config) -> ApplicationBuilder& {
+        m_config = std::move(config);
+        return *this;
+    }
+
     // ========================================================================
     // Service Configuration
     // ========================================================================
@@ -132,10 +143,10 @@ public:
     }
 
     /// Add a pre-constructed algorithm
-    auto add_algorithm(std::unique_ptr<IAlgorithm> alg) -> ApplicationBuilder& {
+    auto add_algorithm(std::unique_ptr<Algorithm> alg) -> ApplicationBuilder& {
         auto ptr = alg.release();
         m_algorithm_factories.push_back([ptr]() {
-            return std::unique_ptr<IAlgorithm>(ptr);
+            return std::unique_ptr<Algorithm>(ptr);
         });
         return *this;
     }
@@ -176,6 +187,7 @@ private:
     double m_percentage = 100.0;
     int m_num_threads = 1;
     bool m_add_standard_services = false;
+    std::shared_ptr<const toml::table> m_config;
 
     // Metadata
     std::string m_version = "1.0";
@@ -185,7 +197,7 @@ private:
     // Deferred service/algorithm creation
     std::vector<std::function<void(ServiceManager&)>> m_service_factories;
     std::vector<std::function<void(ServiceManager&)>> m_service_configurators;
-    std::vector<std::function<std::unique_ptr<IAlgorithm>()>> m_algorithm_factories;
+    std::vector<std::function<std::unique_ptr<Algorithm>()>> m_algorithm_factories;
 
     auto add_standard_services_to(Application& app) -> void;
 };

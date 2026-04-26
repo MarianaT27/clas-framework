@@ -42,46 +42,90 @@ class HTCC_rec {
 
     HTCC_rec() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("nhits"); h) h_nhits = *h;
-        else h_nhits = {};
-        if (auto h = schema.get_handle("nphe"); h) h_nphe = *h;
-        else h_nphe = {};
-        if (auto h = schema.get_handle("ntheta"); h) h_ntheta = *h;
-        else h_ntheta = {};
-        if (auto h = schema.get_handle("nphi"); h) h_nphi = *h;
-        else h_nphi = {};
-        if (auto h = schema.get_handle("mintheta"); h) h_mintheta = *h;
-        else h_mintheta = {};
-        if (auto h = schema.get_handle("maxtheta"); h) h_maxtheta = *h;
-        else h_maxtheta = {};
-        if (auto h = schema.get_handle("minphi"); h) h_minphi = *h;
-        else h_minphi = {};
-        if (auto h = schema.get_handle("maxphi"); h) h_maxphi = *h;
-        else h_maxphi = {};
-        if (auto h = schema.get_handle("time"); h) h_time = *h;
-        else h_time = {};
-        if (auto h = schema.get_handle("theta"); h) h_theta = *h;
-        else h_theta = {};
-        if (auto h = schema.get_handle("dtheta"); h) h_dtheta = *h;
-        else h_dtheta = {};
-        if (auto h = schema.get_handle("phi"); h) h_phi = *h;
-        else h_phi = {};
-        if (auto h = schema.get_handle("dphi"); h) h_dphi = *h;
-        else h_dphi = {};
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_nhits;
+            hipo::column_handle h_nphe;
+            hipo::column_handle h_ntheta;
+            hipo::column_handle h_nphi;
+            hipo::column_handle h_mintheta;
+            hipo::column_handle h_maxtheta;
+            hipo::column_handle h_minphi;
+            hipo::column_handle h_maxphi;
+            hipo::column_handle h_time;
+            hipo::column_handle h_theta;
+            hipo::column_handle h_dtheta;
+            hipo::column_handle h_phi;
+            hipo::column_handle h_dphi;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("nhits"); h) cache.h_nhits = *h;
+            else cache.h_nhits = {};
+            if (auto h = schema.get_handle("nphe"); h) cache.h_nphe = *h;
+            else cache.h_nphe = {};
+            if (auto h = schema.get_handle("ntheta"); h) cache.h_ntheta = *h;
+            else cache.h_ntheta = {};
+            if (auto h = schema.get_handle("nphi"); h) cache.h_nphi = *h;
+            else cache.h_nphi = {};
+            if (auto h = schema.get_handle("mintheta"); h) cache.h_mintheta = *h;
+            else cache.h_mintheta = {};
+            if (auto h = schema.get_handle("maxtheta"); h) cache.h_maxtheta = *h;
+            else cache.h_maxtheta = {};
+            if (auto h = schema.get_handle("minphi"); h) cache.h_minphi = *h;
+            else cache.h_minphi = {};
+            if (auto h = schema.get_handle("maxphi"); h) cache.h_maxphi = *h;
+            else cache.h_maxphi = {};
+            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
+            else cache.h_time = {};
+            if (auto h = schema.get_handle("theta"); h) cache.h_theta = *h;
+            else cache.h_theta = {};
+            if (auto h = schema.get_handle("dtheta"); h) cache.h_dtheta = *h;
+            else cache.h_dtheta = {};
+            if (auto h = schema.get_handle("phi"); h) cache.h_phi = *h;
+            else cache.h_phi = {};
+            if (auto h = schema.get_handle("dphi"); h) cache.h_dphi = *h;
+            else cache.h_dphi = {};
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+        }
+        h_id = cache.h_id;
+        h_nhits = cache.h_nhits;
+        h_nphe = cache.h_nphe;
+        h_ntheta = cache.h_ntheta;
+        h_nphi = cache.h_nphi;
+        h_mintheta = cache.h_mintheta;
+        h_maxtheta = cache.h_maxtheta;
+        h_minphi = cache.h_minphi;
+        h_maxphi = cache.h_maxphi;
+        h_time = cache.h_time;
+        h_theta = cache.h_theta;
+        h_dtheta = cache.h_dtheta;
+        h_phi = cache.h_phi;
+        h_dphi = cache.h_dphi;
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
         return true;
     }
 

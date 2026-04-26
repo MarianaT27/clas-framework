@@ -42,16 +42,30 @@ class ALERT_ai_projections {
 
     ALERT_ai_projections() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("trackid"); h) h_trackid = *h;
-        else h_trackid = {};
-        if (auto h = schema.get_handle("matched_atof_hit_id"); h) h_matched_atof_hit_id = *h;
-        else h_matched_atof_hit_id = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_trackid;
+            hipo::column_handle h_matched_atof_hit_id;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("trackid"); h) cache.h_trackid = *h;
+            else cache.h_trackid = {};
+            if (auto h = schema.get_handle("matched_atof_hit_id"); h) cache.h_matched_atof_hit_id = *h;
+            else cache.h_matched_atof_hit_id = {};
+        }
+        h_trackid = cache.h_trackid;
+        h_matched_atof_hit_id = cache.h_matched_atof_hit_id;
         return true;
     }
 

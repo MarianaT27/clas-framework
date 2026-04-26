@@ -9,11 +9,11 @@
 
 #include <clas12/framework/core/Application.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
-#include <clas12/framework/core/IAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/core/Histogram.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/FileUtils.hpp>
@@ -33,24 +33,12 @@
 class HistogramDemo : public clas12::framework::Algorithm {
 public:
     explicit HistogramDemo(std::string name = "HistogramDemo")
-        : Algorithm(std::move(name)) {}
+        : Algorithm(std::move(name)) {
+        required_services(m_hist_svc);
+    }
 
-    auto initialize() -> clas12::framework::StatusCode override {
+    auto on_initialize() -> clas12::framework::StatusCode override {
         fmt::print("  {} - Initializing\n", name());
-
-        // Get histogram service
-        m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
-        if (!m_hist_svc) {
-            clas12::framework::Log::error("HistogramDemo", "Failed to get HistogramService");
-            return clas12::framework::StatusCode::FAILURE();
-        }
-
-        // Get particle selector service
-        m_particle_svc = service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
-        if (!m_particle_svc) {
-            clas12::framework::Log::error("HistogramDemo", "Failed to get ParticleSelectorService");
-            return clas12::framework::StatusCode::FAILURE();
-        }
 
         // Method 1: Book individual histograms with type-safe wrappers
         fmt::print("    Booking individual histograms...\n");
@@ -100,26 +88,18 @@ public:
         return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_events_processed++;
 
-        const auto& REC_Particle = event.get_bank("REC::Particle");
+        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
 
-        int n_particles = REC_Particle.rows();
+        int n_particles = rec_particle.rows();
 
         // Fill individual histogram
         h_n_particles.fill(n_particles);
 
-        // Extract particles using ParticleSelectorService
-        clas12::framework::ParticleMap particles = m_particle_svc->extract_particles(
-            REC_Particle,
-            {clas12::PIDs::ELECTRON, clas12::PIDs::POSITRON,
-             clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
-             clas12::PIDs::PHOTON}
-        );
-
         // Fill histogram group
-        for (const auto& [pid, particle_list] : particles) {
+        for (const auto& [pid, particle_list] : event.particles()) {
             for (const auto& p : particle_list) {
                 double momentum = p.p();
                 double theta = p.theta() * TMath::RadToDeg();
@@ -152,7 +132,7 @@ public:
         return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto finalize() -> clas12::framework::StatusCode override {
+    auto on_finalize() -> clas12::framework::StatusCode override {
         fmt::print("\n{} Statistics:\n", name());
         fmt::print("  Events processed: {}\n", m_events_processed);
         fmt::print("  Histograms created: {} 1D, {} 2D, {} profiles\n",
@@ -167,7 +147,6 @@ public:
 
 private:
     clas12::framework::HistogramService* m_hist_svc = nullptr;
-    clas12::framework::ParticleSelectorService* m_particle_svc = nullptr;
     size_t m_events_processed = 0;
 
     // Individual histogram
@@ -215,7 +194,6 @@ int main(int argc, char** argv) {
         .add_algorithm<HistogramDemo>("HistogramDemo")
         .build();
 
-    fmt::print("  ✓ ParticleSelectorService (via with_standard_services)\n");
     fmt::print("  ✓ OutputFileService (via with_standard_services)\n");
     fmt::print("  ✓ HistogramService → auto-write enabled (via with_standard_services)\n");
     fmt::print("  ✓ HistogramDemo algorithm\n");

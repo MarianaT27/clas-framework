@@ -5,7 +5,6 @@
 #include <vector>
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
 
 
 namespace clas12::algorithms {
@@ -13,7 +12,7 @@ namespace clas12::algorithms {
 using clas12::framework::Log;
 
 Pi0ReconstructionAlg::Pi0ReconstructionAlg(std::string name, double pi0_mass_window)
-    : SimpleAlgorithm(std::move(name))
+    : Algorithm(std::move(name))
     , m_pi0_mass_window{"pi0_mass_window", pi0_mass_window, "Pi0 mass window [GeV]"}
     , m_cutflow("Pi0 Reconstruction") {
     // Declare properties
@@ -120,42 +119,37 @@ auto Pi0ReconstructionAlg::on_initialize() -> clas12::framework::StatusCode {
 }
 
 auto Pi0ReconstructionAlg::process(clas12::framework::Event& event) -> clas12::framework::StatusCode {
-    using namespace clas12::framework;
+    m_cutflow.pass("All Events");
 
-    // Read selected photons from the event store; enforce >= 2 for
-    // a pair to exist before the pipeline even reaches the pair stage.
-    auto photons_opt = event.retrieve_typed(Keys::SelectedPhotons_Pi0);
-    const bool has_enough_photons = photons_opt && photons_opt->size() >= 2;
+    // Check for good DIS electron decision from upstream algorithm
+    if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return clas12::framework::StatusCode::FILTERED();
+    m_cutflow.pass("Has Electron");
 
-    // Eagerly run the upper-triangle pair enumeration that
-    // `find_all_unique_pi0_candidates` used to contain, now expressed as
-    // a PairPipeline over the photon collection. The filter bumps
-    // "Pi0 Found" exactly once per surviving pair and `build<>` returns
-    // the full CompositeParticle list for the publish stage.
+    // Read selected photons from event store (placed by PhotonSelectionAlg)
+    auto photons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedPhotons_Pi0);
+    if (!photons_opt || photons_opt->size() < 2) return clas12::framework::StatusCode::FILTERED();
+    m_cutflow.pass("Has >= 2 Photons");
+
+    const auto& selected_photons = *photons_opt;
+
+    // Find all unique pi0 candidates
+    auto candidates_opt = find_all_unique_pi0_candidates(selected_photons);
+    if (!candidates_opt.has_value()) return clas12::framework::StatusCode::FILTERED();
+
+    auto& tuple_candidates = candidates_opt.value();
+    m_cutflow.pass("Pi0 Found");
+
+    // Convert to CompositeParticle and store in event store
     std::vector<clas12::physics::CompositeParticle> pi0_candidates;
-    if (has_enough_photons) {
-        pi0_candidates = unique_pairs(*photons_opt, m_cutflow)
-            .filter("Pi0 Found",
-                    [this](const clas12::Particle& g1, const clas12::Particle& g2) {
-                        const double mass      = calculate_invariant_mass(g1, g2);
-                        const double mass_diff = std::abs(mass - PI0_MASS);
-                        return mass_diff < m_pi0_mass_window.get();
-                    })
-            .build([](const clas12::Particle& g1, const clas12::Particle& g2) {
-                return clas12::physics::CompositeParticle{
-                    std::vector<clas12::Particle>{g1, g2}, 111};
-            });
+    pi0_candidates.reserve(tuple_candidates.size());
+    for (const auto& [g1, g2, mass] : tuple_candidates) {
+        pi0_candidates.emplace_back(std::vector<clas12::Particle>{g1, g2}, 111);
     }
 
-    return pipeline(event, m_cutflow)
-        .count("All Events")
-        .require(Decisions::HasGoodDISElectron)
-        .count("Has Electron")
-        .filter("Has >= 2 Photons", has_enough_photons)
-        .filter("has pi0 candidate", !pi0_candidates.empty())
-        .publish(Keys::Pi0Candidates, pi0_candidates)
-        .set_decision(Decisions::HasPi0, true)
-        .status();
+    event.store_typed(clas12::framework::Keys::Pi0Candidates, pi0_candidates);
+    event.set_decision_typed(clas12::framework::Decisions::HasPi0, true);
+
+    return clas12::framework::StatusCode::SUCCESS();
 }
 
 auto Pi0ReconstructionAlg::on_finalize() -> clas12::framework::StatusCode {

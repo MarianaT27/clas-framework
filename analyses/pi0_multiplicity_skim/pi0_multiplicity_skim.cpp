@@ -31,10 +31,10 @@ namespace {
  * Placed last in the algorithm chain. Events that reach this algorithm have
  * passed all upstream cuts (electron + DIS + photon selection).
  */
-class HipoEventWriterAlg : public clas12::framework::SimpleAlgorithm {
+class HipoEventWriterAlg : public clas12::framework::Algorithm {
 public:
     explicit HipoEventWriterAlg(std::string name = "HipoEventWriterAlg")
-        : SimpleAlgorithm(std::move(name)) {}
+        : Algorithm(std::move(name)) {}
 
     auto on_initialize() -> clas12::framework::StatusCode override {
         m_hipo_svc = svc<clas12::framework::HipoFileService>();
@@ -77,8 +77,14 @@ auto main(int argc, char* argv[]) -> int {
     return clas12::framework::AnalysisRunner::run(
         argc, argv, "Pi0 Multiplicity Skim", "pi0_multiplicity_skim",
         [](auto& builder, const auto& config) {
-            const std::string hipo_output =
-                config.custom["hipo-output"].template value<std::string>().value_or(std::string{});
+            // Optional HIPO output file path lives in the TOML at
+            // [skim].hipo_output (top-level so it isn't tied to a
+            // specific algorithm). Empty / missing = no output.
+            std::string hipo_output;
+            if (config.config_table) {
+                if (auto v = (*config.config_table)["skim"]["hipo_output"].template value<std::string>())
+                    hipo_output = *v;
+            }
 
             builder
                 .template add_service<clas12::framework::ElectronCutsService>()
@@ -89,7 +95,6 @@ auto main(int argc, char* argv[]) -> int {
                 .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::physics::DISAnalysis::standard_dis_region())
                 .template add_algorithm<clas12::algorithms::PhotonSelectionAlg>("PhotonSelection");
 
-            // If HIPO output requested, configure the service and add the writer algorithm
             if (!hipo_output.empty()) {
                 builder.template configure_service<clas12::framework::HipoFileService>(
                     [hipo_output](clas12::framework::HipoFileService& svc) {
@@ -97,15 +102,5 @@ auto main(int argc, char* argv[]) -> int {
                     });
                 builder.template add_algorithm<HipoEventWriterAlg>("HipoEventWriter");
             }
-        },
-        // Extra CLI options
-        [](cxxopts::Options& opts) {
-            opts.add_options()
-                ("hipo-output", "Write passing events to a single merged HIPO output file",
-                    cxxopts::value<std::string>()->default_value(""));
-        },
-        // Parse extra options
-        [](const cxxopts::ParseResult& args, clas12::framework::AnalysisConfig& config) {
-            config.custom.insert_or_assign("hipo-output", args["hipo-output"].as<std::string>());
         });
 }

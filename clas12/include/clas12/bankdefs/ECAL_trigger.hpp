@@ -42,16 +42,30 @@ class ECAL_trigger {
 
     ECAL_trigger() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("bit"); h) h_bit = *h;
-        else h_bit = {};
-        if (auto h = schema.get_handle("counts"); h) h_counts = *h;
-        else h_counts = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_bit;
+            hipo::column_handle h_counts;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("bit"); h) cache.h_bit = *h;
+            else cache.h_bit = {};
+            if (auto h = schema.get_handle("counts"); h) cache.h_counts = *h;
+            else cache.h_counts = {};
+        }
+        h_bit = cache.h_bit;
+        h_counts = cache.h_counts;
         return true;
     }
 

@@ -14,6 +14,7 @@
 
 #include "bank_view.h"
 #include "dictionary.h"
+#include "prefetch.h"
 #include "reader.h"
 #include "record.h"
 #include "result.h"
@@ -362,20 +363,47 @@ void chain::process(F&& func, G&& filter, std::vector<std::string> required_bank
         }
     }
 
-    // Prefetch: tell kernel to start loading all record data into page cache
-    for (auto const& item : global_queue) {
-        auto const& work = work_list[item.work_idx];
-        auto const& file = m_files[work.file_idx];
-        if (!file.shared_source) continue;
-        int64_t pos = file.event_index.record_position(item.record_idx);
-        int bytes = file.event_index.record_bytes(item.record_idx);
-        if (bytes > 0) {
-            file.shared_source->prefetch(pos, bytes);
-        }
-    }
-
     std::atomic<int> next_global{0};
     int global_size = static_cast<int>(global_queue.size());
+
+    // Async record prefetcher: a producer thread does pread + LZ4
+    // decompress ahead of the workers; workers consume pre-decompressed
+    // records and only do parse + algorithm. Sized at 2x worker count
+    // (capped) so the producer can build a small backlog without
+    // pinning excessive decompressed memory. Replaces the previous
+    // bulk posix_fadvise(WILLNEED) loop, which was hostile to files
+    // larger than RAM and to network storage.
+    // capacity = workers + small backlog so a worker rarely waits.
+    // Producers = workers so decompression keeps the same parallelism
+    // the old synchronous loop had — without that the single-threaded
+    // producer becomes the wall-clock bottleneck for compute-bound
+    // jobs.
+    const int prefetch_capacity = std::min(32, std::max(4, m_num_threads * 2));
+    record_prefetcher prefetcher(prefetch_capacity, m_num_threads,
+        [&](record_prefetcher::slot& out) -> bool {
+            while (true) {
+                int idx = next_global.fetch_add(1);
+                if (idx >= global_size) return false;
+
+                auto [work_idx, rec_idx] = global_queue[idx];
+                auto const& work = work_list[work_idx];
+                auto const& file = m_files[work.file_idx];
+
+                if (events_per_file[work_idx].load(std::memory_order_relaxed) >= work.max_events)
+                    continue;
+                if (!file.shared_source) continue;
+
+                out.work_idx = work_idx;
+                out.rec_idx  = rec_idx;
+                out.file_idx = file.index;
+                auto load_res = reader::load_record_from(
+                    *file.shared_source, file.event_index, out.rec, rec_idx,
+                    static_cast<int64_t>(file.file_size));
+                out.ok = static_cast<bool>(load_res);
+                return true;
+            }
+        });
+    prefetcher.start();
 
     std::vector<std::future<void>> futures;
     for (int t = 0; t < m_num_threads; ++t) {
@@ -386,51 +414,40 @@ void chain::process(F&& func, G&& filter, std::vector<std::string> required_bank
             auto bind_res = banks.bind(m_dict);
             if (!bind_res) return;
 
-            record rec;
-
             while (true) {
-                int idx = next_global.fetch_add(1);
-                if (idx >= global_size) break;
+                auto* s = prefetcher.pop();
+                if (!s) break;
+                if (!s->ok) { prefetcher.release(s); continue; }
 
-                auto [work_idx, rec_idx] = global_queue[idx];
-                auto const& work = work_list[work_idx];
-                auto const& file = m_files[work.file_idx];
-
-                if (events_per_file[work_idx].load(std::memory_order_relaxed) >= work.max_events)
-                    continue;
-
-                if (!file.shared_source) continue;
-
-                auto load_res = reader::load_record_from(
-                    *file.shared_source, file.event_index, rec, rec_idx,
-                    static_cast<int64_t>(file.file_size));
-                if (!load_res) continue;
-
-                int events_in_record = rec.event_count();
+                auto const& work = work_list[s->work_idx];
+                int events_in_record = s->rec.event_count();
                 for (int e = 0; e < events_in_record; ++e) {
-                    int64_t count = events_per_file[work_idx].fetch_add(1);
+                    int64_t count = events_per_file[s->work_idx].fetch_add(1);
                     if (count >= work.max_events) {
-                        events_per_file[work_idx].fetch_sub(1);
+                        events_per_file[s->work_idx].fetch_sub(1);
                         break;
                     }
 
-                    (void)banks.update_from_record(rec, e);
+                    (void)banks.update_from_record(s->rec, e);
 
-                    if (!filter(banks, file.index, count)) {
+                    if (!filter(banks, s->file_idx, count)) {
                         if (progress) progress->increment();
                         m_stats.events_processed++;
                         continue;
                     }
 
-                    func(banks, file.index, count);
+                    func(banks, s->file_idx, count);
                     m_stats.events_processed++;
                     if (progress) progress->increment();
                 }
+
+                prefetcher.release(s);
             }
         }));
     }
 
     for (auto& f : futures) f.get();
+    prefetcher.stop();
 
     // Release shared sources
     for (auto& work : work_list) {
@@ -530,20 +547,41 @@ R chain::process_to(F&& func, G&& filter, Reducer&& reducer, R init,
         }
     }
 
-    // Prefetch all records
-    for (auto const& item : global_queue) {
-        auto const& work = work_list[item.work_idx];
-        auto const& file = m_files[work.file_idx];
-        if (!file.shared_source) continue;
-        int64_t pos = file.event_index.record_position(item.record_idx);
-        int bytes = file.event_index.record_bytes(item.record_idx);
-        if (bytes > 0) {
-            file.shared_source->prefetch(pos, bytes);
-        }
-    }
-
     std::atomic<int> next_global{0};
     int global_size = static_cast<int>(global_queue.size());
+
+    // Async record prefetcher (see process() for rationale).
+    // capacity = workers + small backlog so a worker rarely waits.
+    // Producers = workers so decompression keeps the same parallelism
+    // the old synchronous loop had — without that the single-threaded
+    // producer becomes the wall-clock bottleneck for compute-bound
+    // jobs.
+    const int prefetch_capacity = std::min(32, std::max(4, m_num_threads * 2));
+    record_prefetcher prefetcher(prefetch_capacity, m_num_threads,
+        [&](record_prefetcher::slot& out) -> bool {
+            while (true) {
+                int idx = next_global.fetch_add(1);
+                if (idx >= global_size) return false;
+
+                auto [work_idx, rec_idx] = global_queue[idx];
+                auto const& work = work_list[work_idx];
+                auto const& file = m_files[work.file_idx];
+
+                if (events_per_file[work_idx].load(std::memory_order_relaxed) >= work.max_events)
+                    continue;
+                if (!file.shared_source) continue;
+
+                out.work_idx = work_idx;
+                out.rec_idx  = rec_idx;
+                out.file_idx = file.index;
+                auto load_res = reader::load_record_from(
+                    *file.shared_source, file.event_index, out.rec, rec_idx,
+                    static_cast<int64_t>(file.file_size));
+                out.ok = static_cast<bool>(load_res);
+                return true;
+            }
+        });
+    prefetcher.start();
 
     std::vector<std::future<R>> futures;
     for (int t = 0; t < m_num_threads; ++t) {
@@ -556,47 +594,35 @@ R chain::process_to(F&& func, G&& filter, Reducer&& reducer, R init,
             auto bind_res = banks.bind(m_dict);
             if (!bind_res) return local;
 
-            record rec;
-
             while (true) {
-                int idx = next_global.fetch_add(1);
-                if (idx >= global_size) break;
+                auto* s = prefetcher.pop();
+                if (!s) break;
+                if (!s->ok) { prefetcher.release(s); continue; }
 
-                auto [work_idx, rec_idx] = global_queue[idx];
-                auto const& work = work_list[work_idx];
-                auto const& file = m_files[work.file_idx];
-
-                if (events_per_file[work_idx].load(std::memory_order_relaxed) >= work.max_events)
-                    continue;
-
-                if (!file.shared_source) continue;
-
-                auto load_res = reader::load_record_from(
-                    *file.shared_source, file.event_index, rec, rec_idx,
-                    static_cast<int64_t>(file.file_size));
-                if (!load_res) continue;
-
-                int events_in_record = rec.event_count();
+                auto const& work = work_list[s->work_idx];
+                int events_in_record = s->rec.event_count();
                 for (int e = 0; e < events_in_record; ++e) {
-                    int64_t count = events_per_file[work_idx].fetch_add(1);
+                    int64_t count = events_per_file[s->work_idx].fetch_add(1);
                     if (count >= work.max_events) {
-                        events_per_file[work_idx].fetch_sub(1);
+                        events_per_file[s->work_idx].fetch_sub(1);
                         break;
                     }
 
-                    (void)banks.update_from_record(rec, e);
+                    (void)banks.update_from_record(s->rec, e);
 
-                    if (!filter(banks, file.index, count)) {
+                    if (!filter(banks, s->file_idx, count)) {
                         if (progress) progress->increment();
                         m_stats.events_processed++;
                         continue;
                     }
 
                     local = reducer(std::move(local),
-                                    static_cast<R>(func(banks, file.index, count)));
+                                    static_cast<R>(func(banks, s->file_idx, count)));
                     m_stats.events_processed++;
                     if (progress) progress->increment();
                 }
+
+                prefetcher.release(s);
             }
             return local;
         }));
@@ -607,6 +633,7 @@ R chain::process_to(F&& func, G&& filter, Reducer&& reducer, R init,
         std::lock_guard lock(result_mutex);
         global_result = reducer(std::move(global_result), std::move(thread_result));
     }
+    prefetcher.stop();
 
     // Release shared sources
     for (auto& work : work_list) {

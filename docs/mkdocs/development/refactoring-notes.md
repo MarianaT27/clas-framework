@@ -33,14 +33,14 @@ auto app = Framework::make_application("My Analysis")
 - `MetadataService` - Analysis metadata storage
 - `ProfilingService` - Performance profiling
 - `HipoFileService` - HIPO file management
-- `RootFileService` - ROOT file management
+- `OutputFileService` - ROOT file management
 
-**ServiceHandle Pattern**
+**ServiceRef Pattern**
 
 Type-safe service access with validation:
 
 ```cpp
-Framework::ServiceHandle<Framework::HistogramService> m_hist_svc{"HistogramService"};
+Framework::ServiceRef<Framework::HistogramService> m_hist_svc{"HistogramService"};
 
 auto initialize() -> Framework::StatusCode override {
     auto sc = initialize_handle(m_hist_svc);
@@ -61,7 +61,7 @@ Migrated from monolithic design to service-based architecture:
 
 ### Algorithm Framework
 
-Introduced `IAlgorithm` interface with lifecycle:
+Introduced `Algorithm` interface with lifecycle:
 
 - `initialize()` - Setup phase
 - `execute(event)` - Per-event processing
@@ -120,7 +120,7 @@ After:
 class MyAlg : public clas12::framework::Algorithm {
     auto initialize() -> clas12::framework::StatusCode override {
         m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
-        // Returns AtomicHistogram1D* (thread-safe)
+        // Returns ThreadLocalHistogram1D* (thread-safe)
         h = m_hist_svc->book_hist1D("/path/h", "h", 100, 0, 10);
         return clas12::framework::StatusCode::SUCCESS();
     }
@@ -132,6 +132,6 @@ class MyAlg : public clas12::framework::Algorithm {
 
 private:
     clas12::framework::HistogramService* m_hist_svc = nullptr;
-    clas12::framework::AtomicHistogram1D* h = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h = nullptr;
 };
 ```

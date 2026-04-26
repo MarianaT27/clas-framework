@@ -123,14 +123,25 @@ result<void> record::decompress_data(const char* compressed, int compressed_len,
 
 void record::convert_index() {
     // Convert event lengths in index array to cumulative offsets
-    // (from RecordInputStream.java)
+    // (from RecordInputStream.java).
+    // The byte-swap decision is constant for the whole record; hoist it
+    // out of the loop so the hot path has no per-iteration branch.
     int event_pos = 0;
     char* base = m_decompressed_buf.data();
-    bool s = m_header.byte_swapped;
-    for (int i = 0; i < m_header.event_count; ++i) {
-        int32_t size = maybe_swap32(read_value<int32_t>(base + i * 4), s);
-        event_pos += size;
-        write_value(base + i * 4, event_pos);
+    const int n = m_header.event_count;
+    if (m_header.byte_swapped) {
+        for (int i = 0; i < n; ++i) {
+            int32_t size = static_cast<int32_t>(__builtin_bswap32(
+                static_cast<uint32_t>(read_value<int32_t>(base + i * 4))));
+            event_pos += size;
+            write_value(base + i * 4, event_pos);
+        }
+    } else {
+        for (int i = 0; i < n; ++i) {
+            int32_t size = read_value<int32_t>(base + i * 4);
+            event_pos += size;
+            write_value(base + i * 4, event_pos);
+        }
     }
 }
 

@@ -15,6 +15,19 @@
 
 namespace clas12 {
 
+// Forward declarations for the detector-bank structs and the Event the
+// per-particle helpers route through. Full definitions live in
+// `clas12/bankdefs/generated_readers.hpp` (the bank structs) and
+// `clas12/framework/core/Event.hpp` (Event); both are pulled in
+// transitively by `clas12/ReadBank.hpp`, which is what callers should
+// include if they want `electron.calo()`-style access.
+struct CalorimeterBank;
+struct DCTrajBank;
+struct TrackBank;
+struct CherenkovBank;
+struct ScintillatorBank;
+namespace framework { class Event; }
+
 class Particle {
 
    private:
@@ -35,6 +48,11 @@ class Particle {
     double m_vt{std::numeric_limits<double>::quiet_NaN()};
     double m_beta{std::numeric_limits<double>::quiet_NaN()};
     double m_chi2pid{std::numeric_limits<double>::quiet_NaN()};
+
+    // Non-owning back-pointer to the Event this Particle was vended
+    // from. nullptr for default-constructed / test-built Particles —
+    // calling the detector accessors below on those is undefined.
+    clas12::framework::Event* m_event{nullptr};
 
     // ****** private methods
 
@@ -82,6 +100,36 @@ class Particle {
     auto is_valid() const -> bool {
         return !std::isnan(m_px) && !std::isnan(m_py) && !std::isnan(m_pz) && !std::isnan(m_E) && !std::isnan(m_vx) && !std::isnan(m_vy) && !std::isnan(m_vz) && !std::isnan(m_vt);
     }
+
+    /// Set the back-pointer to the Event that vended this Particle.
+    /// Called by `Event::load_particles` after construction; not
+    /// useful from user code. nullptr is allowed (and is the default
+    /// for default-constructed Particles).
+    auto set_event(clas12::framework::Event* event) noexcept -> void { m_event = event; }
+
+    /// Non-owning Event pointer; nullptr if this Particle was not
+    /// vended from an Event (e.g. test fixtures). Detector accessors
+    /// below assume non-null.
+    auto event() const noexcept -> clas12::framework::Event* { return m_event; }
+
+    // ============================================================
+    // Detector data attached to this particle's pindex.
+    // Each forwards once to the matching `read_X_bank(event, index)`
+    // free function generated under clas12/bankdefs/. The PindexLinker
+    // for the bank is built once per event by the first caller and
+    // cached on the Event, so subsequent calls hit the cache.
+    //
+    // No internal caching: calling `calo()` twice does the work twice.
+    // Capture in a local if you need to read multiple times.
+    //
+    // Defined out-of-line in Particle.cpp, which pulls in the bank
+    // structs and Event so this header stays light.
+    // ============================================================
+    auto calo()         const -> CalorimeterBank;
+    auto traj()         const -> DCTrajBank;
+    auto track()        const -> TrackBank;
+    auto cherenkov()    const -> CherenkovBank;
+    auto scintillator() const -> ScintillatorBank;
 
     // ****** operators
     auto operator==(const Particle& other) const -> bool { return m_index == other.m_index; }

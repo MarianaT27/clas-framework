@@ -12,7 +12,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 
 namespace clas12::algorithms {
@@ -31,14 +31,14 @@ namespace clas12::algorithms {
  * - Keys::Pi0Candidates: vector of CompositeParticle (π⁰ candidates)
  * - Decisions::HasPi0: true if at least one candidate found
  */
-class Pi0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
+class Pi0ReconstructionAlg : public clas12::framework::Algorithm {
    public:
     explicit Pi0ReconstructionAlg(
         std::string name = "Pi0ReconstructionAlg",
         double pi0_mass_window = 0.03    // GeV (±30 MeV around 135 MeV)
     );
 
-    // SimpleAlgorithm interface
+    // Algorithm interface
     auto configure() -> void override;
     auto on_initialize() -> clas12::framework::StatusCode override;
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override;

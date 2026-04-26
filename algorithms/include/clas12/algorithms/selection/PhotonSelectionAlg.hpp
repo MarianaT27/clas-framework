@@ -26,13 +26,12 @@
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/ReadBank.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/PhotonCutsService.hpp>
@@ -42,11 +41,11 @@ namespace clas12::algorithms {
 
 using clas12::framework::Log;
 
-class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm {
+class PhotonSelectionAlg : public clas12::framework::Algorithm {
    public:
     explicit PhotonSelectionAlg(std::string name = "PhotonSelection",
                                  bool use_ai = true)
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_use_ai{"use_ai", use_ai, "Use AI-based photon selection"}
         , m_cutflow("Photon Selection") {
         declare_property(m_min_energy);
@@ -78,32 +77,25 @@ class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        using namespace clas12::framework;
+        // Require upstream DIS electron (typed decision set by DISSelectionAlg)
+        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return clas12::framework::StatusCode::FILTERED();
 
-        // Require upstream DIS electron (typed decision set by DISSelectionAlg).
-        if (!event.passes_decision_typed(Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
-
-        const auto& RUN_config      = event.get_bank("RUN::config");
-        const auto& REC_Particle    = event.get_bank("REC::Particle");
+        const auto& RUN_config = event.get_bank("RUN::config");
+        const auto& REC_Particle = event.get_bank("REC::Particle");
         const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
-        const auto& all_photons     = event.particles(clas12::PIDs::PHOTON);
 
+        const auto& all_photons = event.particles(clas12::PIDs::PHOTON);
+
+        // Fill raw photon histograms
         if (h_n_photons_raw) h_n_photons_raw->fill(static_cast<double>(all_photons.size()));
+        for (const auto& photon : all_photons) {
+            m_cutflow.pass("All Photons");
+            if (h_energy_raw) h_energy_raw->fill(photon.E());
+            if (h_theta_raw) h_theta_raw->fill(photon.theta());
+            if (h_phi_raw) h_phi_raw->fill(photon.phi());
+        }
 
-        // Raw kinematics distributions for every input photon. The
-        // pipeline walks once, bumps "All Photons" per particle, and
-        // runs the tap on every survivor (= every particle, since
-        // there are no filters in this chain).
-        particles(all_photons, m_cutflow)
-            .count("All Photons")
-            .tap([&](const clas12::Particle& photon) {
-                if (h_energy_raw) h_energy_raw->fill(photon.E());
-                if (h_theta_raw)  h_theta_raw->fill(photon.theta());
-                if (h_phi_raw)    h_phi_raw->fill(photon.phi());
-            })
-            .run();
-
-        // Step 1: pick candidate photons (AI or energy-threshold).
+        // Step 1: AI-based or energy-threshold selection
         std::vector<clas12::Particle> candidates;
         if (m_use_ai.get()) {
             candidates = m_photon_cuts->select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
@@ -112,33 +104,34 @@ class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm {
                 if (photon.E() >= m_min_energy.get()) candidates.push_back(photon);
             }
         }
+        for (size_t i = 0; i < candidates.size(); ++i) m_cutflow.pass("AI / Energy Cut");
 
-        // Step 2: fiducial + beta cuts with cutflow-tracked filters.
-        // `count("AI / Energy Cut")` counts every candidate that makes
-        // it into the pipeline (= the candidate-set size), matching
-        // the old imperative loop's behaviour.
-        auto selected = particles(candidates, m_cutflow)
-            .count("AI / Energy Cut")
-            .filter("PCAL Fiducial", [&](const clas12::Particle& photon) {
-                auto calo = clas12::read_Calorimeter_bank(event, photon.index());
-                return PhotonCutsService::pass_pcal_fiducial_cut(calo.pcal_lv, calo.pcal_lw);
-            })
-            .filter("Beta Cut", [this](const clas12::Particle& photon) {
-                return photon.beta() > m_min_beta.get()
-                    && photon.beta() < m_max_beta.get();
-            })
-            .tap([&](const clas12::Particle& photon) {
-                if (h_energy_selected) h_energy_selected->fill(photon.E());
-                if (h_theta_selected)  h_theta_selected->fill(photon.theta());
-                if (h_phi_selected)    h_phi_selected->fill(photon.phi());
-            })
-            .collect();
+        // Step 2: PCAL fiducial + beta cuts
+        std::vector<clas12::Particle> selected;
+        for (const auto& photon : candidates) {
+            clas12::CalorimeterBank calo = clas12::read_Calorimeter_bank(event, photon.index());
+            if (!clas12::framework::PhotonCutsService::pass_pcal_fiducial_cut(calo.pcal_lv, calo.pcal_lw)) continue;
+            m_cutflow.pass("PCAL Fiducial");
 
+            if (photon.beta() <= m_min_beta.get() || photon.beta() >= m_max_beta.get()) continue;
+            m_cutflow.pass("Beta Cut");
+
+            selected.push_back(photon);
+        }
+
+        // Fill selected photon histograms
         if (h_n_photons_selected) h_n_photons_selected->fill(static_cast<double>(selected.size()));
+        for (const auto& photon : selected) {
+            if (h_energy_selected) h_energy_selected->fill(photon.E());
+            if (h_theta_selected) h_theta_selected->fill(photon.theta());
+            if (h_phi_selected) h_phi_selected->fill(photon.phi());
+        }
 
-        event.store_typed(Keys::SelectedPhotons_Pi0, selected);
-        event.set_decision_typed(Decisions::HasGoodPhoton, !selected.empty());
-        return StatusCode::SUCCESS();
+        // Store in event store
+        event.store_typed(clas12::framework::Keys::SelectedPhotons_Pi0, selected);
+        event.set_decision_typed(clas12::framework::Decisions::HasGoodPhoton, !selected.empty());
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
     auto on_finalize() -> clas12::framework::StatusCode override {

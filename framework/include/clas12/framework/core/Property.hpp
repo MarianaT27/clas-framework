@@ -419,7 +419,7 @@ private:
 };
 
 /**
- * @brief CRTP mixin for property declaration in algorithms
+ * @brief Mixin for property declaration in algorithms
  *
  * PropertyMixin provides automatic property registration and TOML
  * configuration support for algorithms. Algorithms inherit from this
@@ -458,6 +458,12 @@ public:
     auto declare_property(Property<T>& property) -> Property<T>& {
         m_properties[property.name()] = std::make_unique<PropertyWrapper<T>>(property);
         return property;
+    }
+
+    /// @brief Variadic version to declare multiple properties at once
+    template<typename... Args>
+    auto declare_properties(Property<Args>&... properties) -> void {
+        (declare_property(properties), ...);
     }
 
     /**

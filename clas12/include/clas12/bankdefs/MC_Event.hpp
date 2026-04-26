@@ -42,32 +42,62 @@ class MC_Event {
 
     MC_Event() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("npart"); h) h_npart = *h;
-        else h_npart = {};
-        if (auto h = schema.get_handle("atarget"); h) h_atarget = *h;
-        else h_atarget = {};
-        if (auto h = schema.get_handle("ztarget"); h) h_ztarget = *h;
-        else h_ztarget = {};
-        if (auto h = schema.get_handle("ptarget"); h) h_ptarget = *h;
-        else h_ptarget = {};
-        if (auto h = schema.get_handle("pbeam"); h) h_pbeam = *h;
-        else h_pbeam = {};
-        if (auto h = schema.get_handle("btype"); h) h_btype = *h;
-        else h_btype = {};
-        if (auto h = schema.get_handle("ebeam"); h) h_ebeam = *h;
-        else h_ebeam = {};
-        if (auto h = schema.get_handle("targetid"); h) h_targetid = *h;
-        else h_targetid = {};
-        if (auto h = schema.get_handle("processid"); h) h_processid = *h;
-        else h_processid = {};
-        if (auto h = schema.get_handle("weight"); h) h_weight = *h;
-        else h_weight = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_npart;
+            hipo::column_handle h_atarget;
+            hipo::column_handle h_ztarget;
+            hipo::column_handle h_ptarget;
+            hipo::column_handle h_pbeam;
+            hipo::column_handle h_btype;
+            hipo::column_handle h_ebeam;
+            hipo::column_handle h_targetid;
+            hipo::column_handle h_processid;
+            hipo::column_handle h_weight;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("npart"); h) cache.h_npart = *h;
+            else cache.h_npart = {};
+            if (auto h = schema.get_handle("atarget"); h) cache.h_atarget = *h;
+            else cache.h_atarget = {};
+            if (auto h = schema.get_handle("ztarget"); h) cache.h_ztarget = *h;
+            else cache.h_ztarget = {};
+            if (auto h = schema.get_handle("ptarget"); h) cache.h_ptarget = *h;
+            else cache.h_ptarget = {};
+            if (auto h = schema.get_handle("pbeam"); h) cache.h_pbeam = *h;
+            else cache.h_pbeam = {};
+            if (auto h = schema.get_handle("btype"); h) cache.h_btype = *h;
+            else cache.h_btype = {};
+            if (auto h = schema.get_handle("ebeam"); h) cache.h_ebeam = *h;
+            else cache.h_ebeam = {};
+            if (auto h = schema.get_handle("targetid"); h) cache.h_targetid = *h;
+            else cache.h_targetid = {};
+            if (auto h = schema.get_handle("processid"); h) cache.h_processid = *h;
+            else cache.h_processid = {};
+            if (auto h = schema.get_handle("weight"); h) cache.h_weight = *h;
+            else cache.h_weight = {};
+        }
+        h_npart = cache.h_npart;
+        h_atarget = cache.h_atarget;
+        h_ztarget = cache.h_ztarget;
+        h_ptarget = cache.h_ptarget;
+        h_pbeam = cache.h_pbeam;
+        h_btype = cache.h_btype;
+        h_ebeam = cache.h_ebeam;
+        h_targetid = cache.h_targetid;
+        h_processid = cache.h_processid;
+        h_weight = cache.h_weight;
         return true;
     }
 

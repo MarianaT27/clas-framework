@@ -42,28 +42,54 @@ class RECAI_Track {
 
     RECAI_Track() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("index"); h) h_index = *h;
-        else h_index = {};
-        if (auto h = schema.get_handle("pindex"); h) h_pindex = *h;
-        else h_pindex = {};
-        if (auto h = schema.get_handle("detector"); h) h_detector = *h;
-        else h_detector = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
-        if (auto h = schema.get_handle("q"); h) h_q = *h;
-        else h_q = {};
-        if (auto h = schema.get_handle("chi2"); h) h_chi2 = *h;
-        else h_chi2 = {};
-        if (auto h = schema.get_handle("NDF"); h) h_NDF = *h;
-        else h_NDF = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_index;
+            hipo::column_handle h_pindex;
+            hipo::column_handle h_detector;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_status;
+            hipo::column_handle h_q;
+            hipo::column_handle h_chi2;
+            hipo::column_handle h_NDF;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("index"); h) cache.h_index = *h;
+            else cache.h_index = {};
+            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
+            else cache.h_pindex = {};
+            if (auto h = schema.get_handle("detector"); h) cache.h_detector = *h;
+            else cache.h_detector = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+            if (auto h = schema.get_handle("q"); h) cache.h_q = *h;
+            else cache.h_q = {};
+            if (auto h = schema.get_handle("chi2"); h) cache.h_chi2 = *h;
+            else cache.h_chi2 = {};
+            if (auto h = schema.get_handle("NDF"); h) cache.h_NDF = *h;
+            else cache.h_NDF = {};
+        }
+        h_index = cache.h_index;
+        h_pindex = cache.h_pindex;
+        h_detector = cache.h_detector;
+        h_sector = cache.h_sector;
+        h_status = cache.h_status;
+        h_q = cache.h_q;
+        h_chi2 = cache.h_chi2;
+        h_NDF = cache.h_NDF;
         return true;
     }
 

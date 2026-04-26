@@ -42,48 +42,94 @@ class BAND_hits {
 
     BAND_hits() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("component"); h) h_component = *h;
-        else h_component = {};
-        if (auto h = schema.get_handle("energy"); h) h_energy = *h;
-        else h_energy = {};
-        if (auto h = schema.get_handle("time"); h) h_time = *h;
-        else h_time = {};
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
-        if (auto h = schema.get_handle("ex"); h) h_ex = *h;
-        else h_ex = {};
-        if (auto h = schema.get_handle("ey"); h) h_ey = *h;
-        else h_ey = {};
-        if (auto h = schema.get_handle("ez"); h) h_ez = *h;
-        else h_ez = {};
-        if (auto h = schema.get_handle("timeFadc"); h) h_timeFadc = *h;
-        else h_timeFadc = {};
-        if (auto h = schema.get_handle("difftime"); h) h_difftime = *h;
-        else h_difftime = {};
-        if (auto h = schema.get_handle("difftimeFadc"); h) h_difftimeFadc = *h;
-        else h_difftimeFadc = {};
-        if (auto h = schema.get_handle("indexLpmt"); h) h_indexLpmt = *h;
-        else h_indexLpmt = {};
-        if (auto h = schema.get_handle("indexRpmt"); h) h_indexRpmt = *h;
-        else h_indexRpmt = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_component;
+            hipo::column_handle h_energy;
+            hipo::column_handle h_time;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+            hipo::column_handle h_ex;
+            hipo::column_handle h_ey;
+            hipo::column_handle h_ez;
+            hipo::column_handle h_timeFadc;
+            hipo::column_handle h_difftime;
+            hipo::column_handle h_difftimeFadc;
+            hipo::column_handle h_indexLpmt;
+            hipo::column_handle h_indexRpmt;
+            hipo::column_handle h_status;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("component"); h) cache.h_component = *h;
+            else cache.h_component = {};
+            if (auto h = schema.get_handle("energy"); h) cache.h_energy = *h;
+            else cache.h_energy = {};
+            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
+            else cache.h_time = {};
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+            if (auto h = schema.get_handle("ex"); h) cache.h_ex = *h;
+            else cache.h_ex = {};
+            if (auto h = schema.get_handle("ey"); h) cache.h_ey = *h;
+            else cache.h_ey = {};
+            if (auto h = schema.get_handle("ez"); h) cache.h_ez = *h;
+            else cache.h_ez = {};
+            if (auto h = schema.get_handle("timeFadc"); h) cache.h_timeFadc = *h;
+            else cache.h_timeFadc = {};
+            if (auto h = schema.get_handle("difftime"); h) cache.h_difftime = *h;
+            else cache.h_difftime = {};
+            if (auto h = schema.get_handle("difftimeFadc"); h) cache.h_difftimeFadc = *h;
+            else cache.h_difftimeFadc = {};
+            if (auto h = schema.get_handle("indexLpmt"); h) cache.h_indexLpmt = *h;
+            else cache.h_indexLpmt = {};
+            if (auto h = schema.get_handle("indexRpmt"); h) cache.h_indexRpmt = *h;
+            else cache.h_indexRpmt = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+        }
+        h_id = cache.h_id;
+        h_sector = cache.h_sector;
+        h_layer = cache.h_layer;
+        h_component = cache.h_component;
+        h_energy = cache.h_energy;
+        h_time = cache.h_time;
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
+        h_ex = cache.h_ex;
+        h_ey = cache.h_ey;
+        h_ez = cache.h_ez;
+        h_timeFadc = cache.h_timeFadc;
+        h_difftime = cache.h_difftime;
+        h_difftimeFadc = cache.h_difftimeFadc;
+        h_indexLpmt = cache.h_indexLpmt;
+        h_indexRpmt = cache.h_indexRpmt;
+        h_status = cache.h_status;
         return true;
     }
 

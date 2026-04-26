@@ -42,28 +42,54 @@ class FTTRK_clusters {
 
     FTTRK_clusters() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("size"); h) h_size = *h;
-        else h_size = {};
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("energy"); h) h_energy = *h;
-        else h_energy = {};
-        if (auto h = schema.get_handle("maxEnergy"); h) h_maxEnergy = *h;
-        else h_maxEnergy = {};
-        if (auto h = schema.get_handle("seed"); h) h_seed = *h;
-        else h_seed = {};
-        if (auto h = schema.get_handle("centroid"); h) h_centroid = *h;
-        else h_centroid = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_size;
+            hipo::column_handle h_id;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_energy;
+            hipo::column_handle h_maxEnergy;
+            hipo::column_handle h_seed;
+            hipo::column_handle h_centroid;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("size"); h) cache.h_size = *h;
+            else cache.h_size = {};
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("energy"); h) cache.h_energy = *h;
+            else cache.h_energy = {};
+            if (auto h = schema.get_handle("maxEnergy"); h) cache.h_maxEnergy = *h;
+            else cache.h_maxEnergy = {};
+            if (auto h = schema.get_handle("seed"); h) cache.h_seed = *h;
+            else cache.h_seed = {};
+            if (auto h = schema.get_handle("centroid"); h) cache.h_centroid = *h;
+            else cache.h_centroid = {};
+        }
+        h_size = cache.h_size;
+        h_id = cache.h_id;
+        h_sector = cache.h_sector;
+        h_layer = cache.h_layer;
+        h_energy = cache.h_energy;
+        h_maxEnergy = cache.h_maxEnergy;
+        h_seed = cache.h_seed;
+        h_centroid = cache.h_centroid;
         return true;
     }
 

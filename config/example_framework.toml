@@ -1,23 +1,37 @@
-# Example Framework Configuration
-# This TOML file configures the CLAS12 analysis framework
+# Example framework configuration for the CLAS12 analysis framework.
+#
+# Pass with:  --config config/example_framework.toml
+#
+# The framework reads three kinds of section:
+#   [run]      run-control: input files, output, threads, percentage
+#   [analysis] target, polarity, beam_energy, version
+#   [<Name>]   one section per algorithm (key = the string passed to
+#              add_algorithm<...>("<Name>", ...)). Keys inside match
+#              `Property<T>` declarations on the algorithm. Missing
+#              keys keep the C++ defaults; unknown keys log a warning.
 
-[application]
-name = "CLAS12 Example Analysis"
-max_events = 10000
-num_threads = 4
+[run]
+input       = ["data/run_5032.hipo"]    # single string OR array of strings;
+                                        # directories are recursively expanded
+output      = "framework_example.root"  # must end in .root or .hipo
+num_threads = 4                         # OPTIONAL, default 1
+percentage  = 100.0                     # OPTIONAL, default 100
 
-[input]
-# Directory to search for input files
-data_directory = "data/"
+[analysis]
+target      = "LD2"          # one of LD2, CxC, Cu, Sn, CuSn, Custom
+polarity    = "Outbending"   # Outbending or Inbending
+beam_energy = 10.53          # OPTIONAL, default 10.53
+version     = "2.0"          # OPTIONAL, default "2.0"
 
-[output]
-histogram_file = "framework_example.root"
+# Per-algorithm sections — one for each algorithm the analysis registers.
+# Empty sections are fine; missing sections keep all C++ defaults.
 
-[electron_selection]
-target = "LD2"
-polarity = "Outbending"
-momentum_cut = 0.8
-chi2pid_cut = 3.0
+[EventMonitor]
 
-[conditions]
-run_number = 5032
+[ElectronAnalysis]
+enable_chi2pid_cut       = true
+enable_momentum_cut      = true
+enable_vz_cut            = true
+enable_sf_cut            = true
+enable_pcal_fiducial_cut = true
+enable_dc_chi2ndf_cut    = true

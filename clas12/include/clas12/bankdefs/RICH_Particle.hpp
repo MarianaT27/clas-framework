@@ -42,54 +42,106 @@ class RICH_Particle {
 
     RICH_Particle() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("hindex"); h) h_hindex = *h;
-        else h_hindex = {};
-        if (auto h = schema.get_handle("pindex"); h) h_pindex = *h;
-        else h_pindex = {};
-        if (auto h = schema.get_handle("emilay"); h) h_emilay = *h;
-        else h_emilay = {};
-        if (auto h = schema.get_handle("emico"); h) h_emico = *h;
-        else h_emico = {};
-        if (auto h = schema.get_handle("enico"); h) h_enico = *h;
-        else h_enico = {};
-        if (auto h = schema.get_handle("emqua"); h) h_emqua = *h;
-        else h_emqua = {};
-        if (auto h = schema.get_handle("mchi2"); h) h_mchi2 = *h;
-        else h_mchi2 = {};
-        if (auto h = schema.get_handle("mass"); h) h_mass = *h;
-        else h_mass = {};
-        if (auto h = schema.get_handle("best_PID"); h) h_best_PID = *h;
-        else h_best_PID = {};
-        if (auto h = schema.get_handle("RQ"); h) h_RQ = *h;
-        else h_RQ = {};
-        if (auto h = schema.get_handle("ReQ"); h) h_ReQ = *h;
-        else h_ReQ = {};
-        if (auto h = schema.get_handle("el_logl"); h) h_el_logl = *h;
-        else h_el_logl = {};
-        if (auto h = schema.get_handle("pi_logl"); h) h_pi_logl = *h;
-        else h_pi_logl = {};
-        if (auto h = schema.get_handle("k_logl"); h) h_k_logl = *h;
-        else h_k_logl = {};
-        if (auto h = schema.get_handle("pr_logl"); h) h_pr_logl = *h;
-        else h_pr_logl = {};
-        if (auto h = schema.get_handle("best_ch"); h) h_best_ch = *h;
-        else h_best_ch = {};
-        if (auto h = schema.get_handle("best_c2"); h) h_best_c2 = *h;
-        else h_best_c2 = {};
-        if (auto h = schema.get_handle("best_RL"); h) h_best_RL = *h;
-        else h_best_RL = {};
-        if (auto h = schema.get_handle("best_ntot"); h) h_best_ntot = *h;
-        else h_best_ntot = {};
-        if (auto h = schema.get_handle("best_mass"); h) h_best_mass = *h;
-        else h_best_mass = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_hindex;
+            hipo::column_handle h_pindex;
+            hipo::column_handle h_emilay;
+            hipo::column_handle h_emico;
+            hipo::column_handle h_enico;
+            hipo::column_handle h_emqua;
+            hipo::column_handle h_mchi2;
+            hipo::column_handle h_mass;
+            hipo::column_handle h_best_PID;
+            hipo::column_handle h_RQ;
+            hipo::column_handle h_ReQ;
+            hipo::column_handle h_el_logl;
+            hipo::column_handle h_pi_logl;
+            hipo::column_handle h_k_logl;
+            hipo::column_handle h_pr_logl;
+            hipo::column_handle h_best_ch;
+            hipo::column_handle h_best_c2;
+            hipo::column_handle h_best_RL;
+            hipo::column_handle h_best_ntot;
+            hipo::column_handle h_best_mass;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("hindex"); h) cache.h_hindex = *h;
+            else cache.h_hindex = {};
+            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
+            else cache.h_pindex = {};
+            if (auto h = schema.get_handle("emilay"); h) cache.h_emilay = *h;
+            else cache.h_emilay = {};
+            if (auto h = schema.get_handle("emico"); h) cache.h_emico = *h;
+            else cache.h_emico = {};
+            if (auto h = schema.get_handle("enico"); h) cache.h_enico = *h;
+            else cache.h_enico = {};
+            if (auto h = schema.get_handle("emqua"); h) cache.h_emqua = *h;
+            else cache.h_emqua = {};
+            if (auto h = schema.get_handle("mchi2"); h) cache.h_mchi2 = *h;
+            else cache.h_mchi2 = {};
+            if (auto h = schema.get_handle("mass"); h) cache.h_mass = *h;
+            else cache.h_mass = {};
+            if (auto h = schema.get_handle("best_PID"); h) cache.h_best_PID = *h;
+            else cache.h_best_PID = {};
+            if (auto h = schema.get_handle("RQ"); h) cache.h_RQ = *h;
+            else cache.h_RQ = {};
+            if (auto h = schema.get_handle("ReQ"); h) cache.h_ReQ = *h;
+            else cache.h_ReQ = {};
+            if (auto h = schema.get_handle("el_logl"); h) cache.h_el_logl = *h;
+            else cache.h_el_logl = {};
+            if (auto h = schema.get_handle("pi_logl"); h) cache.h_pi_logl = *h;
+            else cache.h_pi_logl = {};
+            if (auto h = schema.get_handle("k_logl"); h) cache.h_k_logl = *h;
+            else cache.h_k_logl = {};
+            if (auto h = schema.get_handle("pr_logl"); h) cache.h_pr_logl = *h;
+            else cache.h_pr_logl = {};
+            if (auto h = schema.get_handle("best_ch"); h) cache.h_best_ch = *h;
+            else cache.h_best_ch = {};
+            if (auto h = schema.get_handle("best_c2"); h) cache.h_best_c2 = *h;
+            else cache.h_best_c2 = {};
+            if (auto h = schema.get_handle("best_RL"); h) cache.h_best_RL = *h;
+            else cache.h_best_RL = {};
+            if (auto h = schema.get_handle("best_ntot"); h) cache.h_best_ntot = *h;
+            else cache.h_best_ntot = {};
+            if (auto h = schema.get_handle("best_mass"); h) cache.h_best_mass = *h;
+            else cache.h_best_mass = {};
+        }
+        h_id = cache.h_id;
+        h_hindex = cache.h_hindex;
+        h_pindex = cache.h_pindex;
+        h_emilay = cache.h_emilay;
+        h_emico = cache.h_emico;
+        h_enico = cache.h_enico;
+        h_emqua = cache.h_emqua;
+        h_mchi2 = cache.h_mchi2;
+        h_mass = cache.h_mass;
+        h_best_PID = cache.h_best_PID;
+        h_RQ = cache.h_RQ;
+        h_ReQ = cache.h_ReQ;
+        h_el_logl = cache.h_el_logl;
+        h_pi_logl = cache.h_pi_logl;
+        h_k_logl = cache.h_k_logl;
+        h_pr_logl = cache.h_pr_logl;
+        h_best_ch = cache.h_best_ch;
+        h_best_c2 = cache.h_best_c2;
+        h_best_RL = cache.h_best_RL;
+        h_best_ntot = cache.h_best_ntot;
+        h_best_mass = cache.h_best_mass;
         return true;
     }
 

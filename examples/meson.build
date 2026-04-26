@@ -34,12 +34,6 @@ executable(
 
 # 05: Advanced features
 executable(
-  'advanced',
-  files('05_advanced/advanced.cpp'),
-  dependencies: example_deps,
-)
-
-executable(
   'example_modern_electron_analysis',
   files('05_advanced/example_modern_electron_analysis.cpp'),
   dependencies: example_deps,

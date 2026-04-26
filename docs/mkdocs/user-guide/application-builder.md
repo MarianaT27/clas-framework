@@ -101,7 +101,7 @@ When you call `with_standard_services()`, the following services are automatical
 - `ParticleSelectorService` - Particle extraction
 - `SamplingFractionService` - Sampling fraction cuts
 - `HipoFileService` - HIPO file management
-- `RootFileService` - ROOT file management
+- `OutputFileService` - ROOT file management
 - `MetadataService` - Analysis metadata
 - `ProfilingService` - Performance profiling
 

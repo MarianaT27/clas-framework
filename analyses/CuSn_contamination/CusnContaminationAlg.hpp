@@ -10,10 +10,8 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ServiceHelpers.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -30,17 +28,17 @@ namespace CuSnContamination {
 /**
  * @brief Algorithm for Cusn Contamination analysis
  *
- * This algorithm demonstrates the SimpleAlgorithm CRTP pattern.
+ * This algorithm demonstrates the Algorithm hook pattern.
  * Customize the process() method to implement your analysis logic.
  */
-class CuSnContaminationAlg : public clas12::framework::SimpleAlgorithm {
+class CuSnContaminationAlg : public clas12::framework::Algorithm {
 public:
     /**
      * @brief Construct the algorithm
      * @param name Algorithm name (defaults to class name)
      */
     explicit CuSnContaminationAlg(std::string name = "CuSnContaminationAlg")
-        : SimpleAlgorithm(std::move(name)) {
+        : Algorithm(std::move(name)) {
         // Declare configurable properties
         declare_property(m_example_cut);
         declare_property(m_enable_histograms);
@@ -72,45 +70,34 @@ public:
      * @return StatusCode SUCCESS to continue, FILTERED to skip, FAILURE to stop
      */
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        using namespace clas12::framework;
-
-        // MC truth block (conditional - only available in simulation data).
-        // Computed up-front because the subsequent pipeline stages read mc_vz.
-        double mc_vz  = 0.0;
-        const bool has_mc = event.has_bank("MC::Particle");
-        ROOT::Math::PxPyPzE4D electron4VecP;
-        ROOT::Math::XYZVector electron3VecV;
+        double mc_vz = 0;
+        bool has_mc = event.has_bank("MC::Particle");
         if (has_mc) {
             const auto& MC_particles = event.get_bank("MC::Particle");
+            ROOT::Math::PxPyPzE4D electron4VecP;
+            ROOT::Math::XYZVector electron3VecV;
             for (int i = 0; i < MC_particles.rows(); ++i) {
-                if (MC_particles.get<int32_t>("pid", i) != 11) continue;
-                const double px = static_cast<double>(MC_particles.get<float>("px", i));
-                const double py = static_cast<double>(MC_particles.get<float>("py", i));
-                const double pz = static_cast<double>(MC_particles.get<float>("pz", i));
-                const double vx = static_cast<double>(MC_particles.get<float>("vx", i));
-                const double vy = static_cast<double>(MC_particles.get<float>("vy", i));
-                const double vz = static_cast<double>(MC_particles.get<float>("vz", i));
-                const double E  = std::sqrt(px*px + py*py + pz*pz + 0.000511*0.000511);
-                electron4VecP = ROOT::Math::PxPyPzE4D(px, py, pz, E);
-                electron3VecV = ROOT::Math::XYZVector(vx, vy, vz);
+                int pid = MC_particles.get<int32_t>("pid", i);
+                if (pid == 11) {
+                    double px = static_cast<double>(MC_particles.get<float>("px", i));
+                    double py = static_cast<double>(MC_particles.get<float>("py", i));
+                    double pz = static_cast<double>(MC_particles.get<float>("pz", i));
+                    double vx = static_cast<double>(MC_particles.get<float>("vx", i));
+                    double vy = static_cast<double>(MC_particles.get<float>("vy", i));
+                    double vz = static_cast<double>(MC_particles.get<float>("vz", i));
+                    double E = std::sqrt(px * px + py * py + pz * pz + 0.000511 * 0.000511);
+                    electron4VecP = ROOT::Math::PxPyPzE4D(px, py, pz, E);
+                    electron3VecV = ROOT::Math::XYZVector(vx, vy, vz);
+                }
             }
-            mc_vz = electron3VecV.Z();
-        }
 
-        auto electron_opt = EventHelpers::get_selected_electron(event);
-
-        return pipeline(event)
-            // Fill MC-truth histograms (only when MC is present). Guarded
-            // by a tap so the "has_mc" branch fires before the electron
-            // filter gates the rest of the pipeline.
-            .tap([&] {
-                if (!has_mc || !m_enable_histograms || !h_p) return;
-                const double mc_theta_deg = electron4VecP.Theta() * 180.0 / M_PI;
-                const double mc_p         = electron4VecP.P();
-                h_p->fill(mc_p);
+            if (m_enable_histograms && h_p && h_phi && h_theta && h_vz) {
+                h_p->fill(electron4VecP.P());
                 h_phi->fill(electron4VecP.Phi() * 180.0 / M_PI);
-                h_theta->fill(mc_theta_deg);
+                h_theta->fill(electron4VecP.Theta() * 180.0 / M_PI);
                 h_vz->fill(electron3VecV.Z());
+                double mc_theta_deg = electron4VecP.Theta() * 180.0 / M_PI;
+                double mc_p = electron4VecP.P();
                 h_vz_vs_theta->fill(mc_theta_deg, electron3VecV.Z());
                 h_vz_vs_p->fill(mc_p, electron3VecV.Z());
                 for (int i = 0; i < N_P_BINS; ++i) {
@@ -119,27 +106,30 @@ public:
                         break;
                     }
                 }
-            })
-            // Require a reconstructed trigger electron; subsequent stages
-            // need its kinematics.
-            .filter("has electron", electron_opt.has_value())
-            // RG-D target gating on rec_vz: Cu [-10.6, -6.5],
-            // Sn [-5.5, 5.0], CuSn [-10.6, 5.0].
-            .tap([&] {
-                const double rec_vz = electron_opt->vz();
-                if (-10.6 < rec_vz && rec_vz < -6.5) h_rec_vz_Cu->fill(rec_vz);
-                if ( -5.5 < rec_vz && rec_vz <  5.0) h_rec_vz_Sn->fill(rec_vz);
-                h_rec_vz_CuSn->fill(rec_vz);
-            })
-            // MC-gated target selection - only when MC truth is present.
-            .tap([&] {
-                if (!has_mc) return;
-                const double rec_vz = electron_opt->vz();
-                if (-10.6 < mc_vz && mc_vz < -6.5) h_vz_Cu->fill(rec_vz);
-                if ( -5.5 < mc_vz && mc_vz <  5.0) h_vz_Sn->fill(rec_vz);
-                h_vz_CuSn->fill(rec_vz);
-            })
-            .status();
+            }
+            mc_vz = electron3VecV.Z();
+        }
+
+        // Get the reconstructed electron from the ElectronSelectionAlg
+        auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
+        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
+        auto recon_electron = *electron_opt;
+        double rec_vz = recon_electron.vz();
+
+        // Reconstructed-only target selection (for real data comparison)
+        // RG-D vz ranges: Cu [-10.6, -6.5], Sn [-5.5, 5.0], CuSn [-10.6, 5.0]
+        if (-10.6 < rec_vz && rec_vz < -6.5) h_rec_vz_Cu->fill(rec_vz);
+        if (-5.5 < rec_vz && rec_vz < 5.0) h_rec_vz_Sn->fill(rec_vz);
+        h_rec_vz_CuSn->fill(rec_vz);
+
+        // MC-gated target selection (only when MC truth is available)
+        if (has_mc) {
+            if (-10.6 < mc_vz && mc_vz < -6.5) h_vz_Cu->fill(rec_vz);
+            if (-5.5 < mc_vz && mc_vz < 5.0) h_vz_Sn->fill(rec_vz);
+            h_vz_CuSn->fill(rec_vz);
+        }
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
     /**

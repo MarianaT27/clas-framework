@@ -42,36 +42,70 @@ class ALERT_projections {
 
     ALERT_projections() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("trackid"); h) h_trackid = *h;
-        else h_trackid = {};
-        if (auto h = schema.get_handle("x_at_bar"); h) h_x_at_bar = *h;
-        else h_x_at_bar = {};
-        if (auto h = schema.get_handle("y_at_bar"); h) h_y_at_bar = *h;
-        else h_y_at_bar = {};
-        if (auto h = schema.get_handle("z_at_bar"); h) h_z_at_bar = *h;
-        else h_z_at_bar = {};
-        if (auto h = schema.get_handle("l_at_bar"); h) h_l_at_bar = *h;
-        else h_l_at_bar = {};
-        if (auto h = schema.get_handle("l_in_bar"); h) h_l_in_bar = *h;
-        else h_l_in_bar = {};
-        if (auto h = schema.get_handle("x_at_wedge"); h) h_x_at_wedge = *h;
-        else h_x_at_wedge = {};
-        if (auto h = schema.get_handle("y_at_wedge"); h) h_y_at_wedge = *h;
-        else h_y_at_wedge = {};
-        if (auto h = schema.get_handle("z_at_wedge"); h) h_z_at_wedge = *h;
-        else h_z_at_wedge = {};
-        if (auto h = schema.get_handle("l_at_wedge"); h) h_l_at_wedge = *h;
-        else h_l_at_wedge = {};
-        if (auto h = schema.get_handle("l_in_wedge"); h) h_l_in_wedge = *h;
-        else h_l_in_wedge = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_trackid;
+            hipo::column_handle h_x_at_bar;
+            hipo::column_handle h_y_at_bar;
+            hipo::column_handle h_z_at_bar;
+            hipo::column_handle h_l_at_bar;
+            hipo::column_handle h_l_in_bar;
+            hipo::column_handle h_x_at_wedge;
+            hipo::column_handle h_y_at_wedge;
+            hipo::column_handle h_z_at_wedge;
+            hipo::column_handle h_l_at_wedge;
+            hipo::column_handle h_l_in_wedge;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("trackid"); h) cache.h_trackid = *h;
+            else cache.h_trackid = {};
+            if (auto h = schema.get_handle("x_at_bar"); h) cache.h_x_at_bar = *h;
+            else cache.h_x_at_bar = {};
+            if (auto h = schema.get_handle("y_at_bar"); h) cache.h_y_at_bar = *h;
+            else cache.h_y_at_bar = {};
+            if (auto h = schema.get_handle("z_at_bar"); h) cache.h_z_at_bar = *h;
+            else cache.h_z_at_bar = {};
+            if (auto h = schema.get_handle("l_at_bar"); h) cache.h_l_at_bar = *h;
+            else cache.h_l_at_bar = {};
+            if (auto h = schema.get_handle("l_in_bar"); h) cache.h_l_in_bar = *h;
+            else cache.h_l_in_bar = {};
+            if (auto h = schema.get_handle("x_at_wedge"); h) cache.h_x_at_wedge = *h;
+            else cache.h_x_at_wedge = {};
+            if (auto h = schema.get_handle("y_at_wedge"); h) cache.h_y_at_wedge = *h;
+            else cache.h_y_at_wedge = {};
+            if (auto h = schema.get_handle("z_at_wedge"); h) cache.h_z_at_wedge = *h;
+            else cache.h_z_at_wedge = {};
+            if (auto h = schema.get_handle("l_at_wedge"); h) cache.h_l_at_wedge = *h;
+            else cache.h_l_at_wedge = {};
+            if (auto h = schema.get_handle("l_in_wedge"); h) cache.h_l_in_wedge = *h;
+            else cache.h_l_in_wedge = {};
+        }
+        h_id = cache.h_id;
+        h_trackid = cache.h_trackid;
+        h_x_at_bar = cache.h_x_at_bar;
+        h_y_at_bar = cache.h_y_at_bar;
+        h_z_at_bar = cache.h_z_at_bar;
+        h_l_at_bar = cache.h_l_at_bar;
+        h_l_in_bar = cache.h_l_in_bar;
+        h_x_at_wedge = cache.h_x_at_wedge;
+        h_y_at_wedge = cache.h_y_at_wedge;
+        h_z_at_wedge = cache.h_z_at_wedge;
+        h_l_at_wedge = cache.h_l_at_wedge;
+        h_l_in_wedge = cache.h_l_in_wedge;
         return true;
     }
 

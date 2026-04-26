@@ -42,24 +42,46 @@ class AHDC_mc {
 
     AHDC_mc() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
-        if (auto h = schema.get_handle("px"); h) h_px = *h;
-        else h_px = {};
-        if (auto h = schema.get_handle("py"); h) h_py = *h;
-        else h_py = {};
-        if (auto h = schema.get_handle("pz"); h) h_pz = *h;
-        else h_pz = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+            hipo::column_handle h_px;
+            hipo::column_handle h_py;
+            hipo::column_handle h_pz;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+            if (auto h = schema.get_handle("px"); h) cache.h_px = *h;
+            else cache.h_px = {};
+            if (auto h = schema.get_handle("py"); h) cache.h_py = *h;
+            else cache.h_py = {};
+            if (auto h = schema.get_handle("pz"); h) cache.h_pz = *h;
+            else cache.h_pz = {};
+        }
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
+        h_px = cache.h_px;
+        h_py = cache.h_py;
+        h_pz = cache.h_pz;
         return true;
     }
 

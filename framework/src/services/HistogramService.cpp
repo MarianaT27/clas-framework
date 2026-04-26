@@ -16,6 +16,7 @@
 #include "TFile.h"
 #include "TH1D.h"
 #include "TH2D.h"
+#include "TH3D.h"
 #include "TObject.h"
 #include "TProfile.h"
 
@@ -46,9 +47,22 @@ auto HistogramService::merge_histograms() -> void {
         }
     }
 
-    if (!m_atomic_hist1D.empty() || !m_atomic_hist2D.empty()) {
-        Log::info(name(), "Converted {} atomic 1D and {} atomic 2D histograms to ROOT format",
-                  m_atomic_hist1D.size(), m_atomic_hist2D.size());
+    for (const auto& [path, atomic_hist] : m_atomic_hist3D) {
+        if (m_hist3D.find(path) != m_hist3D.end()) {
+            atomic_hist->merge_into(m_hist3D[path].get());
+        } else {
+            std::string hist_name = extract_name(path);
+            const auto& meta = m_atomic_hist3D_meta[path];
+            auto root_hist = atomic_hist->to_root(hist_name, meta.title);
+            root_hist->SetDirectory(nullptr);
+            m_hist3D[path] = std::move(root_hist);
+        }
+    }
+
+    if (!m_atomic_hist1D.empty() || !m_atomic_hist2D.empty() || !m_atomic_hist3D.empty()) {
+        Log::info(name(),
+                  "Converted {} atomic 1D, {} atomic 2D, {} atomic 3D histograms to ROOT format",
+                  m_atomic_hist1D.size(), m_atomic_hist2D.size(), m_atomic_hist3D.size());
     }
 }
 
@@ -75,7 +89,7 @@ auto HistogramService::write_histograms() -> void {
         return;
     }
 
-    size_t total = m_hist1D.size() + m_hist2D.size() + m_profiles.size();
+    size_t total = m_hist1D.size() + m_hist2D.size() + m_hist3D.size() + m_profiles.size();
     if (total == 0) {
         Log::info(name(), "No histograms to write");
         return;
@@ -87,23 +101,28 @@ auto HistogramService::write_histograms() -> void {
     TFile* file = m_output_svc->get_file();
     if (!file) return;
 
-    for (auto& [path, hist] : m_hist1D) {
+    // TObject::Write returns the number of bytes written (0 on failure,
+    // e.g. closed file or disk full). Track failures so we can surface
+    // them instead of silently dropping output.
+    std::size_t failed = 0;
+    auto write_one = [&](TObject* obj, const std::string& path) {
         create_directories(file, path);
-        hist->Write("", TObject::kOverwrite);
-    }
+        if (obj->Write("", TObject::kOverwrite) <= 0) {
+            ++failed;
+            Log::error(name(), "Failed to write histogram '{}'", path);
+        }
+    };
 
-    for (auto& [path, hist] : m_hist2D) {
-        create_directories(file, path);
-        hist->Write("", TObject::kOverwrite);
-    }
+    for (auto& [path, hist] : m_hist1D)   write_one(hist.get(), path);
+    for (auto& [path, hist] : m_hist2D)   write_one(hist.get(), path);
+    for (auto& [path, hist] : m_hist3D)   write_one(hist.get(), path);
+    for (auto& [path, prof] : m_profiles) write_one(prof.get(), path);
 
-    for (auto& [path, prof] : m_profiles) {
-        create_directories(file, path);
-        prof->Write("", TObject::kOverwrite);
+    Log::info(name(), "Wrote {} 1D, {} 2D, {} 3D histograms, and {} profiles",
+              m_hist1D.size(), m_hist2D.size(), m_hist3D.size(), m_profiles.size());
+    if (failed > 0) {
+        Log::error(name(), "{} histogram(s) failed to write", failed);
     }
-
-    Log::info(name(), "Wrote {} 1D, {} 2D histograms, and {} profiles",
-              m_hist1D.size(), m_hist2D.size(), m_profiles.size());
 }
 
 auto HistogramService::clone_hist1D_with_suffix(const std::string& base_path,
@@ -180,6 +199,24 @@ auto HistogramService::book_hist2D(const std::string& path, const std::string& t
     ThreadLocalHistogram2D* ptr = hist.get();
     m_atomic_hist2D[path] = std::move(hist);
     m_atomic_hist2D_meta[path] = {title};
+    return ptr;
+}
+
+auto HistogramService::book_hist3D(const std::string& path, const std::string& title,
+                                   int nbinsx, double xmin, double xmax,
+                                   int nbinsy, double ymin, double ymax,
+                                   int nbinsz, double zmin, double zmax) -> ThreadLocalHistogram3D* {
+    if (m_atomic_hist3D.find(path) != m_atomic_hist3D.end()) {
+        Log::warning(name(), "Atomic histogram '{}' already exists", path);
+        return m_atomic_hist3D[path].get();
+    }
+
+    auto hist = std::make_unique<ThreadLocalHistogram3D>(nbinsx, xmin, xmax,
+                                                         nbinsy, ymin, ymax,
+                                                         nbinsz, zmin, zmax);
+    ThreadLocalHistogram3D* ptr = hist.get();
+    m_atomic_hist3D[path] = std::move(hist);
+    m_atomic_hist3D_meta[path] = {title};
     return ptr;
 }
 

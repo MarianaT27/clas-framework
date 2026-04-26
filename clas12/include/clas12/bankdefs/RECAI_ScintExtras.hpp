@@ -42,18 +42,34 @@ class RECAI_ScintExtras {
 
     RECAI_ScintExtras() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("dedx"); h) h_dedx = *h;
-        else h_dedx = {};
-        if (auto h = schema.get_handle("size"); h) h_size = *h;
-        else h_size = {};
-        if (auto h = schema.get_handle("layermult"); h) h_layermult = *h;
-        else h_layermult = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_dedx;
+            hipo::column_handle h_size;
+            hipo::column_handle h_layermult;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("dedx"); h) cache.h_dedx = *h;
+            else cache.h_dedx = {};
+            if (auto h = schema.get_handle("size"); h) cache.h_size = *h;
+            else cache.h_size = {};
+            if (auto h = schema.get_handle("layermult"); h) cache.h_layermult = *h;
+            else cache.h_layermult = {};
+        }
+        h_dedx = cache.h_dedx;
+        h_size = cache.h_size;
+        h_layermult = cache.h_layermult;
         return true;
     }
 

@@ -119,7 +119,6 @@ nav:
     - Physics Cuts: user-guide/cuts.md
     - Kinematics: user-guide/kinematics.md
     - Batch System: user-guide/batch-system.md
-    - Migration Guide: user-guide/migration-guide.md
   - Examples:
     - Basic Electron Analysis: examples/electron-analysis.md
     - Modern Electron Analysis: examples/modern-electron-analysis.md
@@ -134,7 +133,6 @@ nav:
       - Algorithm: api/framework/algorithm.md
       - Event: api/framework/event.md
       - Services: api/framework/services.md
-      - ServiceHandle: api/framework/service-handle.md
       - Cutflow: api/framework/cutflow.md
     - CLAS:
       - Particle: api/clas/particle.md

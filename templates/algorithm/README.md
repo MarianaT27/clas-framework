@@ -1,6 +1,6 @@
 # Algorithm Template
 
-This template provides a starting point for creating new physics algorithms using the CRTP-based `SimpleAlgorithm` pattern.
+This template provides a starting point for creating new physics algorithms using the `Algorithm` base class.
 
 ## Features
 
@@ -38,13 +38,13 @@ python templates/create_analysis.py --name my_analysis --with-algorithm
 ## Example
 
 ```cpp
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 
 namespace myanalysis {
 
-class ElectronSelectionAlg : public clas12::framework::SimpleAlgorithm<ElectronSelectionAlg> {
+class ElectronSelectionAlg : public clas12::framework::Algorithm<ElectronSelectionAlg> {
 public:
-    ElectronSelectionAlg() : SimpleAlgorithm("ElectronSelectionAlg") {
+    ElectronSelectionAlg() : Algorithm("ElectronSelectionAlg") {
         declare_property(m_momentum_cut);
     }
 

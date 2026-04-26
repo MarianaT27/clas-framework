@@ -42,58 +42,114 @@ class REC_CovMat {
 
     REC_CovMat() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("index"); h) h_index = *h;
-        else h_index = {};
-        if (auto h = schema.get_handle("pindex"); h) h_pindex = *h;
-        else h_pindex = {};
-        if (auto h = schema.get_handle("C11"); h) h_C11 = *h;
-        else h_C11 = {};
-        if (auto h = schema.get_handle("C12"); h) h_C12 = *h;
-        else h_C12 = {};
-        if (auto h = schema.get_handle("C13"); h) h_C13 = *h;
-        else h_C13 = {};
-        if (auto h = schema.get_handle("C14"); h) h_C14 = *h;
-        else h_C14 = {};
-        if (auto h = schema.get_handle("C15"); h) h_C15 = *h;
-        else h_C15 = {};
-        if (auto h = schema.get_handle("C16"); h) h_C16 = *h;
-        else h_C16 = {};
-        if (auto h = schema.get_handle("C22"); h) h_C22 = *h;
-        else h_C22 = {};
-        if (auto h = schema.get_handle("C23"); h) h_C23 = *h;
-        else h_C23 = {};
-        if (auto h = schema.get_handle("C24"); h) h_C24 = *h;
-        else h_C24 = {};
-        if (auto h = schema.get_handle("C25"); h) h_C25 = *h;
-        else h_C25 = {};
-        if (auto h = schema.get_handle("C26"); h) h_C26 = *h;
-        else h_C26 = {};
-        if (auto h = schema.get_handle("C33"); h) h_C33 = *h;
-        else h_C33 = {};
-        if (auto h = schema.get_handle("C34"); h) h_C34 = *h;
-        else h_C34 = {};
-        if (auto h = schema.get_handle("C35"); h) h_C35 = *h;
-        else h_C35 = {};
-        if (auto h = schema.get_handle("C36"); h) h_C36 = *h;
-        else h_C36 = {};
-        if (auto h = schema.get_handle("C44"); h) h_C44 = *h;
-        else h_C44 = {};
-        if (auto h = schema.get_handle("C45"); h) h_C45 = *h;
-        else h_C45 = {};
-        if (auto h = schema.get_handle("C46"); h) h_C46 = *h;
-        else h_C46 = {};
-        if (auto h = schema.get_handle("C55"); h) h_C55 = *h;
-        else h_C55 = {};
-        if (auto h = schema.get_handle("C56"); h) h_C56 = *h;
-        else h_C56 = {};
-        if (auto h = schema.get_handle("C66"); h) h_C66 = *h;
-        else h_C66 = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_index;
+            hipo::column_handle h_pindex;
+            hipo::column_handle h_C11;
+            hipo::column_handle h_C12;
+            hipo::column_handle h_C13;
+            hipo::column_handle h_C14;
+            hipo::column_handle h_C15;
+            hipo::column_handle h_C16;
+            hipo::column_handle h_C22;
+            hipo::column_handle h_C23;
+            hipo::column_handle h_C24;
+            hipo::column_handle h_C25;
+            hipo::column_handle h_C26;
+            hipo::column_handle h_C33;
+            hipo::column_handle h_C34;
+            hipo::column_handle h_C35;
+            hipo::column_handle h_C36;
+            hipo::column_handle h_C44;
+            hipo::column_handle h_C45;
+            hipo::column_handle h_C46;
+            hipo::column_handle h_C55;
+            hipo::column_handle h_C56;
+            hipo::column_handle h_C66;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("index"); h) cache.h_index = *h;
+            else cache.h_index = {};
+            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
+            else cache.h_pindex = {};
+            if (auto h = schema.get_handle("C11"); h) cache.h_C11 = *h;
+            else cache.h_C11 = {};
+            if (auto h = schema.get_handle("C12"); h) cache.h_C12 = *h;
+            else cache.h_C12 = {};
+            if (auto h = schema.get_handle("C13"); h) cache.h_C13 = *h;
+            else cache.h_C13 = {};
+            if (auto h = schema.get_handle("C14"); h) cache.h_C14 = *h;
+            else cache.h_C14 = {};
+            if (auto h = schema.get_handle("C15"); h) cache.h_C15 = *h;
+            else cache.h_C15 = {};
+            if (auto h = schema.get_handle("C16"); h) cache.h_C16 = *h;
+            else cache.h_C16 = {};
+            if (auto h = schema.get_handle("C22"); h) cache.h_C22 = *h;
+            else cache.h_C22 = {};
+            if (auto h = schema.get_handle("C23"); h) cache.h_C23 = *h;
+            else cache.h_C23 = {};
+            if (auto h = schema.get_handle("C24"); h) cache.h_C24 = *h;
+            else cache.h_C24 = {};
+            if (auto h = schema.get_handle("C25"); h) cache.h_C25 = *h;
+            else cache.h_C25 = {};
+            if (auto h = schema.get_handle("C26"); h) cache.h_C26 = *h;
+            else cache.h_C26 = {};
+            if (auto h = schema.get_handle("C33"); h) cache.h_C33 = *h;
+            else cache.h_C33 = {};
+            if (auto h = schema.get_handle("C34"); h) cache.h_C34 = *h;
+            else cache.h_C34 = {};
+            if (auto h = schema.get_handle("C35"); h) cache.h_C35 = *h;
+            else cache.h_C35 = {};
+            if (auto h = schema.get_handle("C36"); h) cache.h_C36 = *h;
+            else cache.h_C36 = {};
+            if (auto h = schema.get_handle("C44"); h) cache.h_C44 = *h;
+            else cache.h_C44 = {};
+            if (auto h = schema.get_handle("C45"); h) cache.h_C45 = *h;
+            else cache.h_C45 = {};
+            if (auto h = schema.get_handle("C46"); h) cache.h_C46 = *h;
+            else cache.h_C46 = {};
+            if (auto h = schema.get_handle("C55"); h) cache.h_C55 = *h;
+            else cache.h_C55 = {};
+            if (auto h = schema.get_handle("C56"); h) cache.h_C56 = *h;
+            else cache.h_C56 = {};
+            if (auto h = schema.get_handle("C66"); h) cache.h_C66 = *h;
+            else cache.h_C66 = {};
+        }
+        h_index = cache.h_index;
+        h_pindex = cache.h_pindex;
+        h_C11 = cache.h_C11;
+        h_C12 = cache.h_C12;
+        h_C13 = cache.h_C13;
+        h_C14 = cache.h_C14;
+        h_C15 = cache.h_C15;
+        h_C16 = cache.h_C16;
+        h_C22 = cache.h_C22;
+        h_C23 = cache.h_C23;
+        h_C24 = cache.h_C24;
+        h_C25 = cache.h_C25;
+        h_C26 = cache.h_C26;
+        h_C33 = cache.h_C33;
+        h_C34 = cache.h_C34;
+        h_C35 = cache.h_C35;
+        h_C36 = cache.h_C36;
+        h_C44 = cache.h_C44;
+        h_C45 = cache.h_C45;
+        h_C46 = cache.h_C46;
+        h_C55 = cache.h_C55;
+        h_C56 = cache.h_C56;
+        h_C66 = cache.h_C66;
         return true;
     }
 

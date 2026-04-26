@@ -44,13 +44,13 @@ class IService;
  * Example usage:
  * @code
  * template <ServiceConcept T>
- * class ServiceHandle { ... };
+ * class ServiceRef { ... };
  *
  * // This will compile:
- * ServiceHandle<HistogramService> hist_svc;
+ * ServiceRef<HistogramService> hist_svc;
  *
  * // This will produce a clear compile error:
- * ServiceHandle<int> invalid;  // error: int does not satisfy ServiceConcept
+ * ServiceRef<int> invalid;  // error: int does not satisfy ServiceConcept
  * @endcode
  *
  * @see Requirement 1.1
@@ -142,18 +142,5 @@ concept ConfigProvider = ServiceConcept<T> &&
     requires(T svc, const std::string& key) {
         { svc.contains(key) } -> std::convertible_to<bool>;
     };
-
-/**
- * @brief Helper concept to check if a type is a valid service handle target
- *
- * This is a convenience concept that combines ServiceConcept with
- * additional requirements for use with ServiceHandle.
- *
- * @tparam T The type to check
- */
-template <typename T>
-concept ServiceHandleTarget = ServiceConcept<T> &&
-    std::is_class_v<T> &&
-    !std::is_abstract_v<T>;
 
 }  // namespace clas12::framework

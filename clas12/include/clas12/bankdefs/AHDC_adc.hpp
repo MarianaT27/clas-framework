@@ -42,38 +42,74 @@ class AHDC_adc {
 
     AHDC_adc() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("component"); h) h_component = *h;
-        else h_component = {};
-        if (auto h = schema.get_handle("order"); h) h_order = *h;
-        else h_order = {};
-        if (auto h = schema.get_handle("ADC"); h) h_ADC = *h;
-        else h_ADC = {};
-        if (auto h = schema.get_handle("time"); h) h_time = *h;
-        else h_time = {};
-        if (auto h = schema.get_handle("ped"); h) h_ped = *h;
-        else h_ped = {};
-        if (auto h = schema.get_handle("windex"); h) h_windex = *h;
-        else h_windex = {};
-        if (auto h = schema.get_handle("integral"); h) h_integral = *h;
-        else h_integral = {};
-        if (auto h = schema.get_handle("leadingEdgeTime"); h) h_leadingEdgeTime = *h;
-        else h_leadingEdgeTime = {};
-        if (auto h = schema.get_handle("timeOverThreshold"); h) h_timeOverThreshold = *h;
-        else h_timeOverThreshold = {};
-        if (auto h = schema.get_handle("constantFractionTime"); h) h_constantFractionTime = *h;
-        else h_constantFractionTime = {};
-        if (auto h = schema.get_handle("wfType"); h) h_wfType = *h;
-        else h_wfType = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_component;
+            hipo::column_handle h_order;
+            hipo::column_handle h_ADC;
+            hipo::column_handle h_time;
+            hipo::column_handle h_ped;
+            hipo::column_handle h_windex;
+            hipo::column_handle h_integral;
+            hipo::column_handle h_leadingEdgeTime;
+            hipo::column_handle h_timeOverThreshold;
+            hipo::column_handle h_constantFractionTime;
+            hipo::column_handle h_wfType;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("component"); h) cache.h_component = *h;
+            else cache.h_component = {};
+            if (auto h = schema.get_handle("order"); h) cache.h_order = *h;
+            else cache.h_order = {};
+            if (auto h = schema.get_handle("ADC"); h) cache.h_ADC = *h;
+            else cache.h_ADC = {};
+            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
+            else cache.h_time = {};
+            if (auto h = schema.get_handle("ped"); h) cache.h_ped = *h;
+            else cache.h_ped = {};
+            if (auto h = schema.get_handle("windex"); h) cache.h_windex = *h;
+            else cache.h_windex = {};
+            if (auto h = schema.get_handle("integral"); h) cache.h_integral = *h;
+            else cache.h_integral = {};
+            if (auto h = schema.get_handle("leadingEdgeTime"); h) cache.h_leadingEdgeTime = *h;
+            else cache.h_leadingEdgeTime = {};
+            if (auto h = schema.get_handle("timeOverThreshold"); h) cache.h_timeOverThreshold = *h;
+            else cache.h_timeOverThreshold = {};
+            if (auto h = schema.get_handle("constantFractionTime"); h) cache.h_constantFractionTime = *h;
+            else cache.h_constantFractionTime = {};
+            if (auto h = schema.get_handle("wfType"); h) cache.h_wfType = *h;
+            else cache.h_wfType = {};
+        }
+        h_sector = cache.h_sector;
+        h_layer = cache.h_layer;
+        h_component = cache.h_component;
+        h_order = cache.h_order;
+        h_ADC = cache.h_ADC;
+        h_time = cache.h_time;
+        h_ped = cache.h_ped;
+        h_windex = cache.h_windex;
+        h_integral = cache.h_integral;
+        h_leadingEdgeTime = cache.h_leadingEdgeTime;
+        h_timeOverThreshold = cache.h_timeOverThreshold;
+        h_constantFractionTime = cache.h_constantFractionTime;
+        h_wfType = cache.h_wfType;
         return true;
     }
 

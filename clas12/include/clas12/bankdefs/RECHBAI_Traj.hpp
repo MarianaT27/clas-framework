@@ -42,36 +42,70 @@ class RECHBAI_Traj {
 
     RECHBAI_Traj() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("pindex"); h) h_pindex = *h;
-        else h_pindex = {};
-        if (auto h = schema.get_handle("index"); h) h_index = *h;
-        else h_index = {};
-        if (auto h = schema.get_handle("detector"); h) h_detector = *h;
-        else h_detector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
-        if (auto h = schema.get_handle("cx"); h) h_cx = *h;
-        else h_cx = {};
-        if (auto h = schema.get_handle("cy"); h) h_cy = *h;
-        else h_cy = {};
-        if (auto h = schema.get_handle("cz"); h) h_cz = *h;
-        else h_cz = {};
-        if (auto h = schema.get_handle("path"); h) h_path = *h;
-        else h_path = {};
-        if (auto h = schema.get_handle("edge"); h) h_edge = *h;
-        else h_edge = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_pindex;
+            hipo::column_handle h_index;
+            hipo::column_handle h_detector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+            hipo::column_handle h_cx;
+            hipo::column_handle h_cy;
+            hipo::column_handle h_cz;
+            hipo::column_handle h_path;
+            hipo::column_handle h_edge;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
+            else cache.h_pindex = {};
+            if (auto h = schema.get_handle("index"); h) cache.h_index = *h;
+            else cache.h_index = {};
+            if (auto h = schema.get_handle("detector"); h) cache.h_detector = *h;
+            else cache.h_detector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+            if (auto h = schema.get_handle("cx"); h) cache.h_cx = *h;
+            else cache.h_cx = {};
+            if (auto h = schema.get_handle("cy"); h) cache.h_cy = *h;
+            else cache.h_cy = {};
+            if (auto h = schema.get_handle("cz"); h) cache.h_cz = *h;
+            else cache.h_cz = {};
+            if (auto h = schema.get_handle("path"); h) cache.h_path = *h;
+            else cache.h_path = {};
+            if (auto h = schema.get_handle("edge"); h) cache.h_edge = *h;
+            else cache.h_edge = {};
+        }
+        h_pindex = cache.h_pindex;
+        h_index = cache.h_index;
+        h_detector = cache.h_detector;
+        h_layer = cache.h_layer;
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
+        h_cx = cache.h_cx;
+        h_cy = cache.h_cy;
+        h_cz = cache.h_cz;
+        h_path = cache.h_path;
+        h_edge = cache.h_edge;
         return true;
     }
 

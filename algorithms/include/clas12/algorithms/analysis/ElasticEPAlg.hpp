@@ -4,13 +4,12 @@
 #include <clas12/Constants.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/Pipeline.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -110,10 +109,10 @@ struct ElasticKinematics {
  *
  * Note: This algorithm does NOT require recoil particle detection.
  */
-class ElasticEPAlg : public clas12::framework::SimpleAlgorithm {
+class ElasticEPAlg : public clas12::framework::Algorithm {
    public:
     explicit ElasticEPAlg(std::string name = "ElasticEPAlg", NuclearTarget target = NuclearTarget::Proton, double beam_energy = 10.6)
-        : SimpleAlgorithm(std::move(name)), m_target(target), m_target_mass(get_target_mass(target)), m_cutflow("Elastic e-" + get_target_name(target) + " Selection (W-only)") {
+        : Algorithm(std::move(name)), m_target(target), m_target_mass(get_target_mass(target)), m_cutflow("Elastic e-" + get_target_name(target) + " Selection (W-only)") {
         m_beam_energy.set(beam_energy);
         declare_property(m_beam_energy);
         declare_property(m_W_min);
@@ -125,7 +124,6 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        m_log = svc<clas12::framework::LoggingService>();
         m_hist = svc<clas12::framework::HistogramService>();
         m_ntuple = svc<clas12::framework::NTupleService>();
 
@@ -150,52 +148,72 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm {
     }
 
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        using namespace clas12::framework;
+        m_cutflow.pass("All Events");
 
-        // Pre-compute what each pipeline stage needs. `find_trigger_electron`
-        // returns an optional; `calculate_kinematics` can run on a default
-        // Particle without harming anything because the filter right after
-        // gates on the optional.
-        const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
-        auto trigger_e = !electrons.empty()
-            ? clas12::physics::ParticleUtils::find_trigger_electron(
-                  electrons, {clas12::FD, clas12::BD})
-            : std::optional<clas12::Particle>{};
+        // Get electrons directly from REC::Particle bank
+        if (event.electrons().empty()) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        // Select trigger electron (highest momentum in FD)
+        const auto possible_electron =
+            event.find_trigger_electron({clas12::FD, clas12::BD});
 
-        clas12::Particle electron = trigger_e.value_or(clas12::Particle{});
-        const bool kinematics_ok = trigger_e.has_value()
-            && electron.vz() != -3.0
-            && electron.p() > 0.00001
-            && electron.theta() > 0.00001;
+        if (!possible_electron.has_value()) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        const clas12::Particle& electron = possible_electron.value();
 
-        ElasticKinematics kin = kinematics_ok ? calculate_kinematics(electron)
-                                              : ElasticKinematics{};
-        const bool kin_valid = kin.W > 0.00001 && kin.Q2 > 0.000001;
-        const double vz = electron.vz();
+        if (electron.vz() == -3.0 || electron.p() <= 0.00001 || electron.theta() <= 0.00001) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
 
-        return pipeline(event, m_cutflow)
-            .count("All Events")
-            .filter("Has Electron", kinematics_ok && kin_valid)
-            .tap([&] { if (h_Vz_precut) h_Vz_precut->fill(vz); })
-            .filter("Vz Cut", !m_enable_vz_cut.get()
-                              || (vz >= m_Vz_min.get() && vz <= m_Vz_max.get()))
-            .tap([&] {
-                if (h_W_precut)  h_W_precut->fill(kin.W);
-                if (h_Q2_precut) h_Q2_precut->fill(kin.Q2);
-            })
-            .filter("W Cut", !m_enable_w_cut.get()
-                             || (kin.W >= m_W_min.get() && kin.W <= m_W_max.get()))
-            .set_decision(Decisions::HasElasticElectron, true)
-            .publish(Keys::ElasticElectron, electron)
-            .publish(Keys::ElasticQ2, kin.Q2)
-            .publish(Keys::ElasticW,  kin.W)
-            .publish(Keys::ElasticNu, kin.nu)
-            .tap([&] {
-                fill_histograms(kin);
-                if (h_Vz) h_Vz->fill(vz);
-                if (m_ntuple) fill_ntuple(electron, kin);
-            })
-            .status();
+        // Calculate kinematics from electron only
+        ElasticKinematics kin = calculate_kinematics(electron);
+
+        if (kin.W <= 0.00001 || kin.Q2 <= 0.000001) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+
+        m_cutflow.pass("Has Electron");
+
+        // Get vertex z and fill pre-cut histogram
+        double vz = electron.vz();
+        if (h_Vz_precut) h_Vz_precut->fill(vz);
+
+        // Apply Vz cut
+        if (m_enable_vz_cut.get() && (vz < m_Vz_min.get() || vz > m_Vz_max.get())) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("Vz Cut");
+
+
+        // Fill pre-cut histograms
+        if (h_W_precut) h_W_precut->fill(kin.W);
+        if (h_Q2_precut) h_Q2_precut->fill(kin.Q2);
+
+        // Apply W cut
+        if (m_enable_w_cut.get() && (kin.W < m_W_min.get() || kin.W > m_W_max.get())) {
+            return clas12::framework::StatusCode::FILTERED();
+        }
+        m_cutflow.pass("W Cut");
+
+        // Store results
+        event.set_decision_typed(clas12::framework::Decisions::HasElasticElectron, true);
+        event.store_typed(clas12::framework::Keys::ElasticElectron, electron);
+        event.store_typed(clas12::framework::Keys::ElasticQ2, kin.Q2);
+        event.store_typed(clas12::framework::Keys::ElasticW, kin.W);
+        event.store_typed(clas12::framework::Keys::ElasticNu, kin.nu);
+
+        // Fill histograms
+        fill_histograms(kin);
+        if (h_Vz) h_Vz->fill(vz);
+
+        // Fill N-tuple
+        if (m_ntuple) {
+            fill_ntuple(electron, kin);
+        }
+
+        return clas12::framework::StatusCode::SUCCESS();
     }
 
     auto on_finalize() -> clas12::framework::StatusCode override {
@@ -223,7 +241,6 @@ class ElasticEPAlg : public clas12::framework::SimpleAlgorithm {
     clas12::framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
 
     // Services (pointers set in on_initialize via svc<T>())
-    clas12::framework::LoggingService* m_log = nullptr;
     clas12::framework::HistogramService* m_hist = nullptr;
     clas12::framework::NTupleService* m_ntuple = nullptr;
 

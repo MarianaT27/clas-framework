@@ -27,13 +27,6 @@ test_result = executable(
   dependencies: test_deps,
 )
 
-# Unit tests for ServiceHandle
-test_service_handle = executable(
-  'test_service_handle',
-  'test_service_handle.cpp',
-  dependencies: test_deps,
-)
-
 # Unit tests for Event store
 test_event_store = executable(
   'test_event_store',
@@ -66,20 +59,19 @@ test_ranges = executable(
 test('Cutflow Tests', test_cutflow)
 test('Service Tests', test_services)
 test('Result Type Tests', test_result)
-test('ServiceHandle Tests', test_service_handle)
 test('Event Store Tests', test_event_store)
 test('Logging Service Tests', test_logging_service)
 test('Application Exception Tests', test_application_exception)
 test('Range Adaptors Tests', test_ranges)
 
-# Unit tests for SimpleAlgorithm
+# Unit tests for the Algorithm base class (hooks, properties, DI)
 test_simple_algorithm = executable(
   'test_simple_algorithm',
   'test_simple_algorithm.cpp',
   dependencies: test_deps + [toml_dep],
 )
 
-test('SimpleAlgorithm Tests', test_simple_algorithm)
+test('Algorithm Tests', test_simple_algorithm)
 
 # Unit tests for Generator coroutine type
 test_generator = executable(
@@ -98,33 +90,6 @@ test_event_processing_integration = executable(
 )
 
 test('Event Processing Integration Tests', test_event_processing_integration)
-
-# Unit tests for Histogram Templates
-test_histogram_templates = executable(
-  'test_histogram_templates',
-  'test_histogram_templates.cpp',
-  dependencies: test_deps,
-)
-
-test('Histogram Templates Tests', test_histogram_templates)
-
-# Unit tests for ConfigSchema
-test_config_schema = executable(
-  'test_config_schema',
-  'test_config_schema.cpp',
-  dependencies: test_deps + [toml_dep],
-)
-
-test('ConfigSchema Tests', test_config_schema)
-
-# Concurrency regression test for IAlgorithm state and counters
-test_algorithm_concurrency = executable(
-  'test_algorithm_concurrency',
-  'test_algorithm_concurrency.cpp',
-  dependencies: test_deps,
-)
-
-test('Algorithm Concurrency Tests', test_algorithm_concurrency)
 
 # Smoke test for generated bank wrappers + PindexLinker
 test_bankdefs_compile = executable(
@@ -166,20 +131,11 @@ test_rntuple_service = executable(
 
 test('RNTuple Service Tests', test_rntuple_service)
 
-# Unit tests for the declarative EventPipeline / ParticlePipeline.
-test_pipeline = executable(
-  'test_pipeline',
-  'test_pipeline.cpp',
+# Boundary tests for ElectronCutsService cut predicates.
+test_electron_cuts_service = executable(
+  'test_electron_cuts_service',
+  'test_electron_cuts_service.cpp',
   dependencies: test_deps,
 )
 
-test('Pipeline Tests', test_pipeline)
-
-# Unit tests for the PairPipeline combinatoric-pair variant.
-test_pair_pipeline = executable(
-  'test_pair_pipeline',
-  'test_pair_pipeline.cpp',
-  dependencies: test_deps,
-)
-
-test('PairPipeline Tests', test_pair_pipeline)
+test('ElectronCutsService Tests', test_electron_cuts_service)

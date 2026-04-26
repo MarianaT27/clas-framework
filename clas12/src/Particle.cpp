@@ -1,5 +1,10 @@
 #include <clas12/Particle.hpp>
 
+// Pulled in for the detector-data accessor implementations at the bottom
+// of this file. ReadBank.hpp transitively brings the bank structs and
+// Event so the forward declarations in Particle.hpp resolve here.
+#include <clas12/ReadBank.hpp>
+
 namespace clas12 {
 
 Particle::Particle(int pdg, int status, int index, int charge, double mass, double px, double py, double pz, double E, double vx, double vy, double vz, double vt, double beta, double chi2pid)
@@ -111,6 +116,34 @@ auto Particle::pz() const -> double {
 
 auto Particle::mass() const -> double {
     return m_mass;
+}
+
+// ----------------------------------------------------------------------
+// Detector accessors. Each forwards to the matching `read_X_bank` free
+// function generated in `clas12/bankdefs/generated_readers.hpp`. The
+// underlying read uses Event's per-event PindexLinker cache, so the
+// first call for a given (event, bank) builds the linker and subsequent
+// calls hit the cache.
+// ----------------------------------------------------------------------
+
+auto Particle::calo() const -> CalorimeterBank {
+    return clas12::read_Calorimeter_bank(*m_event, m_index);
+}
+
+auto Particle::traj() const -> DCTrajBank {
+    return clas12::read_Traj_bank(*m_event, m_index);
+}
+
+auto Particle::track() const -> TrackBank {
+    return clas12::read_Track_bank(*m_event, m_index);
+}
+
+auto Particle::cherenkov() const -> CherenkovBank {
+    return clas12::read_Cherenkov_bank(*m_event, m_index);
+}
+
+auto Particle::scintillator() const -> ScintillatorBank {
+    return clas12::read_Scintillator_bank(*m_event, m_index);
 }
 
 }  // namespace clas12

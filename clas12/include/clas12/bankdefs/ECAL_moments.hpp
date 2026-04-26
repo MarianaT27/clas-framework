@@ -42,36 +42,70 @@ class ECAL_moments {
 
     ECAL_moments() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("distU"); h) h_distU = *h;
-        else h_distU = {};
-        if (auto h = schema.get_handle("distV"); h) h_distV = *h;
-        else h_distV = {};
-        if (auto h = schema.get_handle("distW"); h) h_distW = *h;
-        else h_distW = {};
-        if (auto h = schema.get_handle("m1u"); h) h_m1u = *h;
-        else h_m1u = {};
-        if (auto h = schema.get_handle("m1v"); h) h_m1v = *h;
-        else h_m1v = {};
-        if (auto h = schema.get_handle("m1w"); h) h_m1w = *h;
-        else h_m1w = {};
-        if (auto h = schema.get_handle("m2u"); h) h_m2u = *h;
-        else h_m2u = {};
-        if (auto h = schema.get_handle("m2v"); h) h_m2v = *h;
-        else h_m2v = {};
-        if (auto h = schema.get_handle("m2w"); h) h_m2w = *h;
-        else h_m2w = {};
-        if (auto h = schema.get_handle("m3u"); h) h_m3u = *h;
-        else h_m3u = {};
-        if (auto h = schema.get_handle("m3v"); h) h_m3v = *h;
-        else h_m3v = {};
-        if (auto h = schema.get_handle("m3w"); h) h_m3w = *h;
-        else h_m3w = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_distU;
+            hipo::column_handle h_distV;
+            hipo::column_handle h_distW;
+            hipo::column_handle h_m1u;
+            hipo::column_handle h_m1v;
+            hipo::column_handle h_m1w;
+            hipo::column_handle h_m2u;
+            hipo::column_handle h_m2v;
+            hipo::column_handle h_m2w;
+            hipo::column_handle h_m3u;
+            hipo::column_handle h_m3v;
+            hipo::column_handle h_m3w;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("distU"); h) cache.h_distU = *h;
+            else cache.h_distU = {};
+            if (auto h = schema.get_handle("distV"); h) cache.h_distV = *h;
+            else cache.h_distV = {};
+            if (auto h = schema.get_handle("distW"); h) cache.h_distW = *h;
+            else cache.h_distW = {};
+            if (auto h = schema.get_handle("m1u"); h) cache.h_m1u = *h;
+            else cache.h_m1u = {};
+            if (auto h = schema.get_handle("m1v"); h) cache.h_m1v = *h;
+            else cache.h_m1v = {};
+            if (auto h = schema.get_handle("m1w"); h) cache.h_m1w = *h;
+            else cache.h_m1w = {};
+            if (auto h = schema.get_handle("m2u"); h) cache.h_m2u = *h;
+            else cache.h_m2u = {};
+            if (auto h = schema.get_handle("m2v"); h) cache.h_m2v = *h;
+            else cache.h_m2v = {};
+            if (auto h = schema.get_handle("m2w"); h) cache.h_m2w = *h;
+            else cache.h_m2w = {};
+            if (auto h = schema.get_handle("m3u"); h) cache.h_m3u = *h;
+            else cache.h_m3u = {};
+            if (auto h = schema.get_handle("m3v"); h) cache.h_m3v = *h;
+            else cache.h_m3v = {};
+            if (auto h = schema.get_handle("m3w"); h) cache.h_m3w = *h;
+            else cache.h_m3w = {};
+        }
+        h_distU = cache.h_distU;
+        h_distV = cache.h_distV;
+        h_distW = cache.h_distW;
+        h_m1u = cache.h_m1u;
+        h_m1v = cache.h_m1v;
+        h_m1w = cache.h_m1w;
+        h_m2u = cache.h_m2u;
+        h_m2v = cache.h_m2v;
+        h_m2w = cache.h_m2w;
+        h_m3u = cache.h_m3u;
+        h_m3v = cache.h_m3v;
+        h_m3w = cache.h_m3w;
         return true;
     }
 
