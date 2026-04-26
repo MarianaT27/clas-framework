@@ -173,7 +173,7 @@ auto initialize_handle(ServiceHandle<T>& handle) -> StatusCode {
 ## Complete Example
 
 ```cpp
-#include <clas12/framework/core/IAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/ServiceHandle.hpp>
 #include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>

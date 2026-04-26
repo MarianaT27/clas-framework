@@ -17,7 +17,7 @@
 #include <vector>
 
 #include <clas12/framework/core/Application.hpp>
-#include <clas12/framework/core/IAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 // Concrete service headers used to be included here so
 // add_standard_services_to() could instantiate them inline. That function
 // now lives in ApplicationBuilder.cpp; the eleven service headers only
@@ -132,10 +132,10 @@ public:
     }
 
     /// Add a pre-constructed algorithm
-    auto add_algorithm(std::unique_ptr<IAlgorithm> alg) -> ApplicationBuilder& {
+    auto add_algorithm(std::unique_ptr<Algorithm> alg) -> ApplicationBuilder& {
         auto ptr = alg.release();
         m_algorithm_factories.push_back([ptr]() {
-            return std::unique_ptr<IAlgorithm>(ptr);
+            return std::unique_ptr<Algorithm>(ptr);
         });
         return *this;
     }
@@ -185,7 +185,7 @@ private:
     // Deferred service/algorithm creation
     std::vector<std::function<void(ServiceManager&)>> m_service_factories;
     std::vector<std::function<void(ServiceManager&)>> m_service_configurators;
-    std::vector<std::function<std::unique_ptr<IAlgorithm>()>> m_algorithm_factories;
+    std::vector<std::function<std::unique_ptr<Algorithm>()>> m_algorithm_factories;
 
     auto add_standard_services_to(Application& app) -> void;
 };

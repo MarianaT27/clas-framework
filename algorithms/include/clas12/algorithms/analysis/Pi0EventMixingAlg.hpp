@@ -42,7 +42,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 
@@ -50,11 +50,11 @@ namespace clas12::algorithms {
 
 using clas12::framework::Log;
 
-class Pi0EventMixingAlg : public clas12::framework::SimpleAlgorithm {
+class Pi0EventMixingAlg : public clas12::framework::Algorithm {
    public:
     explicit Pi0EventMixingAlg(std::string name = "Pi0EventMixing",
                                 int max_pool_events = 50)
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_max_pool_events{"max_pool_events", max_pool_events, "Max events per DIS bin in mixing pool"}
         , m_cutflow("Pi0 Event Mixing") {
         declare_property(m_max_pool_events);

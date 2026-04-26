@@ -36,7 +36,7 @@ public:
     // Algorithms
     template <typename AlgT, typename... Args>
     auto add_algorithm(Args&&... args) -> ApplicationBuilder&;
-    auto add_algorithm(std::unique_ptr<IAlgorithm> alg) -> ApplicationBuilder&;
+    auto add_algorithm(std::unique_ptr<Algorithm> alg) -> ApplicationBuilder&;
 
     // Metadata
     auto with_version(std::string version) -> ApplicationBuilder&;

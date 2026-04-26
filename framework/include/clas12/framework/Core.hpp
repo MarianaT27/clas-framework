@@ -8,9 +8,7 @@
  */
 
 // Core algorithm infrastructure
-#include <clas12/framework/core/IAlgorithm.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
-#include <clas12/framework/core/AlgorithmTypes.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 
 // Application
 #include <clas12/framework/core/Application.hpp>

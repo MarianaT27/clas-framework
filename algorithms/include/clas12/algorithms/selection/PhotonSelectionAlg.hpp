@@ -31,7 +31,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/PhotonCutsService.hpp>
@@ -41,11 +41,11 @@ namespace clas12::algorithms {
 
 using clas12::framework::Log;
 
-class PhotonSelectionAlg : public clas12::framework::SimpleAlgorithm {
+class PhotonSelectionAlg : public clas12::framework::Algorithm {
    public:
     explicit PhotonSelectionAlg(std::string name = "PhotonSelection",
                                  bool use_ai = true)
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_use_ai{"use_ai", use_ai, "Use AI-based photon selection"}
         , m_cutflow("Photon Selection") {
         declare_property(m_min_energy);

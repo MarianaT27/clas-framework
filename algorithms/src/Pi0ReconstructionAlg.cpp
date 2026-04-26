@@ -12,7 +12,7 @@ namespace clas12::algorithms {
 using clas12::framework::Log;
 
 Pi0ReconstructionAlg::Pi0ReconstructionAlg(std::string name, double pi0_mass_window)
-    : SimpleAlgorithm(std::move(name))
+    : Algorithm(std::move(name))
     , m_pi0_mass_window{"pi0_mass_window", pi0_mass_window, "Pi0 mass window [GeV]"}
     , m_cutflow("Pi0 Reconstruction") {
     // Declare properties

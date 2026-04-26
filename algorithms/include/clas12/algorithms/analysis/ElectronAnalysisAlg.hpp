@@ -13,7 +13,7 @@
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SectorHistograms.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/services/ConditionsService.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
@@ -57,12 +57,12 @@ struct ElectronAnalysisConfig {
     double theta_bin_width = 5.0;
 };
 
-class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
+class ElectronAnalysisAlg : public clas12::framework::Algorithm {
    public:
     using Config = ElectronAnalysisConfig;
     using StatusCode = clas12::framework::StatusCode;
 
-    explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis", const Config& config = Config{}) : SimpleAlgorithm(std::move(name)), m_config(config), m_target(m_config.target), m_polarity(m_config.polarity), m_cutflow("Electron Selection") {
+    explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis", const Config& config = Config{}) : Algorithm(std::move(name)), m_config(config), m_target(m_config.target), m_polarity(m_config.polarity), m_cutflow("Electron Selection") {
         required_services(m_hist, m_ntuple, m_particle, m_electron_cuts);
         declare_banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Cherenkov", "REC::Scintillator", "REC::Traj", "REC::Track");
         declare_properties(m_enable_chi2pid_cut, m_enable_momentum_cut, m_enable_vz_cut, m_enable_sf_cut, m_enable_pcal_fiducial_cut, m_enable_dc_chi2ndf_cut);

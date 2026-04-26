@@ -43,10 +43,10 @@ Use `ServiceRef<T>` for service members. Example: `ElectronAnalysisAlg`
 is the canonical pattern.
 
 ```cpp
-class MyAlgorithm : public clas12::framework::SimpleAlgorithm {
+class MyAlgorithm : public clas12::framework::Algorithm {
 public:
     explicit MyAlgorithm(std::string name = "MyAlgorithm")
-        : SimpleAlgorithm(std::move(name)) {
+        : Algorithm(std::move(name)) {
         required_services(m_hist, m_electron_cuts);
     }
 

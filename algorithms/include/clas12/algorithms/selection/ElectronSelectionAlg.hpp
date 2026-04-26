@@ -34,7 +34,7 @@
 #include <clas12/framework/core/HistogramTemplates.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
 #include <clas12/framework/services/FiducialService.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
@@ -119,7 +119,7 @@ struct ElectronCutContext {
  * @see FiducialService for fiducial cut configuration
  * @see ElectronCutsService for PID and kinematic cut configuration
  */
-class ElectronSelectionAlg : public clas12::framework::SimpleAlgorithm {
+class ElectronSelectionAlg : public clas12::framework::Algorithm {
 public:
     // ========================================================================
     // Construction
@@ -136,7 +136,7 @@ public:
         std::string name = "ElectronSelectionAlg",
         clas12::Target target = clas12::Target::LD2,
         clas12::Polarity polarity = clas12::Polarity::Outbending)
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_target(target)
         , m_polarity(polarity)
         , m_cutflow("Electron Selection") {

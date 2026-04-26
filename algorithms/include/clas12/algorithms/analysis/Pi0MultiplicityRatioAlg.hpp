@@ -27,7 +27,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 
@@ -35,10 +35,10 @@ namespace clas12::algorithms {
 
 using clas12::framework::Log;
 
-class Pi0MultiplicityRatioAlg : public clas12::framework::SimpleAlgorithm {
+class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
    public:
     explicit Pi0MultiplicityRatioAlg(std::string name = "Pi0MultiplicityRatio")
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_cutflow("Pi0 Multiplicity") {
         declare_property(m_beam_energy);
     }

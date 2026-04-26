@@ -9,7 +9,7 @@
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
@@ -41,17 +41,17 @@ struct DISNTupleData {
 /**
  * @brief Algorithm for DIS event selection
  *
- * Modernized using SimpleAlgorithm CRTP pattern with:
+ * Modernized using Algorithm CRTP pattern with:
  * - Automatic service injection via svc<T>()
  * - Property system for configuration
  * - CutBuilder for fluent cut definitions
  * - NTupleWriter for simplified N-tuple management
  */
-class DISSelectionAlg : public clas12::framework::SimpleAlgorithm {
+class DISSelectionAlg : public clas12::framework::Algorithm {
    public:
     explicit DISSelectionAlg(std::string name = "DISSelectionAlg",
                               clas12::physics::DISAnalysis::KinematicRegion dis_region = clas12::physics::DISAnalysis::full_phase_space())
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_cutflow("DIS Selection")
         , m_dis_region(std::move(dis_region)) {
         // Declare properties

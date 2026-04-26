@@ -4,7 +4,7 @@
  * @file PionAnalysisAlg.hpp
  * @brief Pion analysis algorithm with calorimeter and DC quality histograms
  *
- * Modernized using SimpleAlgorithm CRTP pattern with:
+ * Modernized using Algorithm CRTP pattern with:
  * - Automatic service injection via svc<T>()
  * - Property system for configuration
  * - Reduced boilerplate through CRTP
@@ -31,7 +31,7 @@
 #include <clas12/framework/core/HistogramFiller.hpp>
 #include <clas12/framework/core/HistogramTemplates.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
@@ -47,12 +47,12 @@ using clas12::framework::Log;
 /**
  * @brief Pion analysis with calorimeter SF and DC quality histograms
  */
-class PionAnalysisAlg : public clas12::framework::SimpleAlgorithm {
+class PionAnalysisAlg : public clas12::framework::Algorithm {
    public:
     explicit PionAnalysisAlg(std::string name = "PionAnalysis",
                               clas12::Target target = clas12::Target::LD2,
                               clas12::Polarity polarity = clas12::Polarity::Outbending)
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_target(target)
         , m_polarity(polarity)
         , m_cutflow_piplus("π⁺ Analysis")

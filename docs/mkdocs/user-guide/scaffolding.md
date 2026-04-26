@@ -96,22 +96,22 @@ analyses/my_analysis/
 
 ### Generated Algorithm
 
-The generated algorithm follows the CRTP-based `SimpleAlgorithm` pattern:
+The generated algorithm follows the CRTP-based `Algorithm` pattern:
 
 ```cpp
 #pragma once
 
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/PIDs.hpp>
 
 namespace my_analysis {
 
-class MyAnalysisAlg : public clas12::framework::SimpleAlgorithm<MyAnalysisAlg> {
+class MyAnalysisAlg : public clas12::framework::Algorithm<MyAnalysisAlg> {
 public:
     explicit MyAnalysisAlg(std::string name = "MyAnalysisAlg")
-        : SimpleAlgorithm(std::move(name)) {}
+        : Algorithm(std::move(name)) {}
 
     auto do_initialize() -> clas12::framework::StatusCode {
         // Get histogram service - returns AtomicHistogram1D* (thread-safe)
@@ -219,7 +219,7 @@ After scaffolding, you can customize:
 ### Example: Adding Cutflow
 
 ```cpp
-class MyAnalysisAlg : public clas12::framework::SimpleAlgorithm<MyAnalysisAlg> {
+class MyAnalysisAlg : public clas12::framework::Algorithm<MyAnalysisAlg> {
 private:
     clas12::framework::Cutflow m_cutflow{"My Selection"};
 

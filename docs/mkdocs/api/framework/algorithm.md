@@ -2,17 +2,17 @@
 
 Base interface and classes for all algorithms.
 
-## SimpleAlgorithm (Recommended)
+## Algorithm (Recommended)
 
-The `SimpleAlgorithm<T>` CRTP base class is the unified algorithm type for all analyses:
+The `Algorithm` CRTP base class is the unified algorithm type for all analyses:
 
 ```cpp
 namespace clas12::framework {
 
 template<typename Derived>
-class SimpleAlgorithm : public Algorithm {
+class Algorithm : public Algorithm {
 public:
-    explicit SimpleAlgorithm(std::string name);
+    explicit Algorithm(std::string name);
 
     // Override these in your derived class
     virtual auto configure() -> void {}
@@ -40,15 +40,15 @@ protected:
 ## Example Implementation
 
 ```cpp
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/AtomicHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
 
-class MyAlgorithm : public clas12::framework::SimpleAlgorithm<MyAlgorithm> {
+class MyAlgorithm : public clas12::framework::Algorithm<MyAlgorithm> {
 public:
     explicit MyAlgorithm(std::string name = "MyAlgorithm")
-        : SimpleAlgorithm(std::move(name)) {
+        : Algorithm(std::move(name)) {
         declare_bank("REC::Particle");
     }
 
@@ -104,16 +104,16 @@ private:
 | `StatusCode::FAILURE()` | Fatal error, stop processing |
 | `StatusCode::FILTERED()` | Event filtered out (continue to next event) |
 
-## IAlgorithm Interface
+## Algorithm Interface
 
 The underlying interface that all algorithms implement:
 
 ```cpp
 namespace clas12::framework {
 
-class IAlgorithm {
+class Algorithm {
 public:
-    virtual ~IAlgorithm() = default;
+    virtual ~Algorithm() = default;
 
     virtual auto initialize() -> StatusCode = 0;
     virtual auto execute(Event& event) -> StatusCode = 0;

@@ -15,7 +15,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -131,7 +131,7 @@ struct PionCandidate {
 /**
  * @brief Pion (π⁺/π⁻) selection and analysis algorithm
  *
- * Modernized using SimpleAlgorithm CRTP pattern with:
+ * Modernized using Algorithm CRTP pattern with:
  * - Automatic service injection via require_service<T>() and optional_service<T>()
  * - Property system for configuration
  * - New histogram templates for physics quantities
@@ -145,13 +145,13 @@ struct PionCandidate {
  * - Beta cuts
  * - Cutflow tracking for efficiency
  */
-class PionSelectionAlg : public clas12::framework::SimpleAlgorithm {
+class PionSelectionAlg : public clas12::framework::Algorithm {
    public:
     explicit PionSelectionAlg(std::string name = "PionSelection",
                               clas12::Target target = clas12::Target::LD2,
                               bool separate_charges = true,
                               std::vector<double> sigma_scan = {})
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_target(target)
         , m_separate_charges(separate_charges)
         , m_cutflow_piplus("π⁺ Selection")

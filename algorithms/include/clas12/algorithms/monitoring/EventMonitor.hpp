@@ -6,7 +6,7 @@
 #include <clas12/PIDs.hpp>
 #include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
@@ -26,10 +26,10 @@ namespace clas12::algorithms {
  * app.add_algorithm(std::move(monitor));
  * @endcode
  */
-class EventMonitor : public clas12::framework::SimpleAlgorithm {
+class EventMonitor : public clas12::framework::Algorithm {
    public:
     explicit EventMonitor(std::string name = "EventMonitor")
-        : SimpleAlgorithm(std::move(name)), m_monitored_pids(initialize_default_pids()) {
+        : Algorithm(std::move(name)), m_monitored_pids(initialize_default_pids()) {
         declare_bank("REC::Particle");
     }
 

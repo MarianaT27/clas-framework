@@ -3,7 +3,7 @@
  * @brief Modern electron analysis example using C++20/23 framework features
  *
  * This example demonstrates the modernized CLAS12 analysis framework with:
- * - SimpleAlgorithm CRTP base class for reduced boilerplate
+ * - Algorithm CRTP base class for reduced boilerplate
  * - Range adaptors for composable particle filtering
  * - CutBuilder for fluent, chainable cut definitions
  * - TypedEventStore for type-safe inter-algorithm communication
@@ -37,7 +37,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/Ranges.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 
 // Service headers
@@ -64,16 +64,16 @@ using namespace clas12::framework;
  * @brief Modern electron selection algorithm
  *
  * Demonstrates:
- * - SimpleAlgorithm CRTP base class (Requirement 4.1)
+ * - Algorithm CRTP base class (Requirement 4.1)
  * - Range adaptors for particle filtering (Requirement 3.1, 3.2)
  * - CutBuilder for fluent cut definitions (Requirement 9.1, 9.2)
  * - TypedEventStore for sharing selected electrons (Requirement 8.1, 8.2)
  * - Property system for configuration (Requirement 2.1, 2.2)
  */
-class ModernElectronSelectionAlg : public SimpleAlgorithm {
+class ModernElectronSelectionAlg : public Algorithm {
 public:
     ModernElectronSelectionAlg()
-        : SimpleAlgorithm("ModernElectronSelection")
+        : Algorithm("ModernElectronSelection")
         , m_cutflow("Electron Selection") {
         // Declare properties with validation (Requirement 2.1, 2.3)
         declare_property(m_min_momentum);
@@ -279,9 +279,9 @@ private:
  * - Property system for beam energy configuration
  * - Storing computed quantities for downstream use
  */
-class DISKinematicsAlg : public SimpleAlgorithm {
+class DISKinematicsAlg : public Algorithm {
 public:
-    DISKinematicsAlg() : SimpleAlgorithm("DISKinematics") {
+    DISKinematicsAlg() : Algorithm("DISKinematics") {
         declare_property(m_beam_energy);
         declare_property(m_target_mass);
     }
@@ -420,9 +420,9 @@ private:
  * Demonstrates LambdaAlgorithm for simple, inline algorithm definitions
  * (Requirement 4.3)
  */
-class ElectronHistogramAlg : public SimpleAlgorithm {
+class ElectronHistogramAlg : public Algorithm {
 public:
-    ElectronHistogramAlg() : SimpleAlgorithm("ElectronHistograms") {}
+    ElectronHistogramAlg() : Algorithm("ElectronHistograms") {}
 
     auto on_initialize() -> StatusCode override {
         m_hist_svc = svc<HistogramService>();
@@ -488,7 +488,7 @@ auto main(int argc, char* argv[]) -> int {
     fmt::print("║     Modern C++20/23 Electron Analysis Example                ║\n");
     fmt::print("║                                                              ║\n");
     fmt::print("║  Demonstrates:                                               ║\n");
-    fmt::print("║  • SimpleAlgorithm CRTP base class                           ║\n");
+    fmt::print("║  • Algorithm CRTP base class                           ║\n");
     fmt::print("║  • Range adaptors for particle filtering                     ║\n");
     fmt::print("║  • CutBuilder for fluent cut definitions                     ║\n");
     fmt::print("║  • TypedEventStore for inter-algorithm communication         ║\n");
@@ -549,9 +549,9 @@ auto main(int argc, char* argv[]) -> int {
         .add_algorithm<ElectronHistogramAlg>()
         .build();
 
-    fmt::print("  [+] ModernElectronSelection (SimpleAlgorithm + CutBuilder + Ranges)\n");
-    fmt::print("  [+] DISKinematics (SimpleAlgorithm + TypedEventStore)\n");
-    fmt::print("  [+] ElectronHistograms (SimpleAlgorithm)\n");
+    fmt::print("  [+] ModernElectronSelection (Algorithm + CutBuilder + Ranges)\n");
+    fmt::print("  [+] DISKinematics (Algorithm + TypedEventStore)\n");
+    fmt::print("  [+] ElectronHistograms (Algorithm)\n");
 
     if (max_events > 0) {
         fmt::print("Max events: {} (will process all available)\n", max_events);
@@ -595,13 +595,13 @@ auto main(int argc, char* argv[]) -> int {
     fmt::print("║  Output file: {:<45} ║\n", output_file);
     fmt::print("║                                                              ║\n");
     fmt::print("║  Modern C++20/23 Features Demonstrated:                      ║\n");
-    fmt::print("║  ✓ SimpleAlgorithm CRTP base class (Req 4.1)                 ║\n");
+    fmt::print("║  ✓ Algorithm CRTP base class (Req 4.1)                 ║\n");
     fmt::print("║  ✓ Range adaptors for particle filtering (Req 3.1-3.4)       ║\n");
     fmt::print("║  ✓ CutBuilder fluent API (Req 9.1-9.3)                       ║\n");
     fmt::print("║  ✓ TypedEventStore type-safe storage (Req 8.1-8.4)           ║\n");
     fmt::print("║  ✓ Property system with validation (Req 2.1-2.3)             ║\n");
     fmt::print("║  ✓ Automatic service injection (Req 4.2, 12.1-12.2)          ║\n");
-    fmt::print("║  ✓ SimpleAlgorithm CRTP pattern (Req 4.1)                    ║\n");
+    fmt::print("║  ✓ Algorithm CRTP pattern (Req 4.1)                    ║\n");
     fmt::print("╚══════════════════════════════════════════════════════════════╝\n");
 
     return EXIT_SUCCESS;

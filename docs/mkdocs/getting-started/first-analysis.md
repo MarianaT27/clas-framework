@@ -32,12 +32,12 @@ This creates a complete analysis directory with:
 
 ### Step 1: Create Your Algorithm
 
-Create a new header file in your analysis directory using `SimpleAlgorithm<T>`:
+Create a new header file in your analysis directory using `Algorithm`:
 
 ```cpp
 #pragma once
 
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/AtomicHistogram.hpp>
@@ -47,10 +47,10 @@ Create a new header file in your analysis directory using `SimpleAlgorithm<T>`:
 
 namespace my_analysis {
 
-class MyAnalysisAlg : public clas12::framework::SimpleAlgorithm<MyAnalysisAlg> {
+class MyAnalysisAlg : public clas12::framework::Algorithm<MyAnalysisAlg> {
 public:
     explicit MyAnalysisAlg(std::string name = "MyAnalysis")
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_cutflow("My Cutflow") {}
 
     auto configure() -> void override {

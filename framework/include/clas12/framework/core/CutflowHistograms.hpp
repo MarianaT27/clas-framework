@@ -43,7 +43,7 @@ namespace clas12::framework {
  *     int sector;
  * };
  *
- * class ElectronAnalysis : public SimpleAlgorithm<ElectronAnalysis> {
+ * class ElectronAnalysis : public Algorithm<ElectronAnalysis> {
  *     CutflowHistograms<ElectronContext> m_analysis{"Electron Selection"};
  *
  *     auto on_initialize() -> StatusCode override {

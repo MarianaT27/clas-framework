@@ -31,10 +31,10 @@ namespace {
  * Placed last in the algorithm chain. Events that reach this algorithm have
  * passed all upstream cuts (electron + DIS + photon selection).
  */
-class HipoEventWriterAlg : public clas12::framework::SimpleAlgorithm {
+class HipoEventWriterAlg : public clas12::framework::Algorithm {
 public:
     explicit HipoEventWriterAlg(std::string name = "HipoEventWriterAlg")
-        : SimpleAlgorithm(std::move(name)) {}
+        : Algorithm(std::move(name)) {}
 
     auto on_initialize() -> clas12::framework::StatusCode override {
         m_hipo_svc = svc<clas12::framework::HipoFileService>();

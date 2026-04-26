@@ -34,10 +34,10 @@ namespace {
  * data (which may be in EVIO format) by scanning all bank structures and
  * re-serializing them using event_builder.
  */
-class HipoEventWriterAlg : public clas12::framework::SimpleAlgorithm {
+class HipoEventWriterAlg : public clas12::framework::Algorithm {
 public:
     explicit HipoEventWriterAlg(std::string name = "HipoEventWriterAlg")
-        : SimpleAlgorithm(std::move(name)) {}
+        : Algorithm(std::move(name)) {}
 
     auto on_initialize() -> clas12::framework::StatusCode override {
         m_hipo_svc = svc<clas12::framework::HipoFileService>();

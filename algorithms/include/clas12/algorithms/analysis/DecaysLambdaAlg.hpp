@@ -13,7 +13,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -112,10 +112,10 @@ struct DecaysDaughter {
  * - Decay vertex analysis
  * - Daughter particle correlations
  */
-class DecaysLambdaAlg : public clas12::framework::SimpleAlgorithm {
+class DecaysLambdaAlg : public clas12::framework::Algorithm {
    public:
     explicit DecaysLambdaAlg(std::string name = "DecaysLambdaAlg")
-        : SimpleAlgorithm(std::move(name)), m_cutflow("DECAYS Lambda Analysis") {
+        : Algorithm(std::move(name)), m_cutflow("DECAYS Lambda Analysis") {
         declare_property(m_mass_window);
         declare_property(m_min_momentum);
         declare_property(m_min_decay_length);

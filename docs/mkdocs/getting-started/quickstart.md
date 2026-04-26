@@ -67,7 +67,7 @@ Services provide shared functionality:
 
 ### Algorithms
 
-Algorithms inherit from `SimpleAlgorithm<T>` and follow this lifecycle:
+Algorithms inherit from `Algorithm` and follow this lifecycle:
 
 1. `configure()` - Request services via `require_service<T>()`
 2. `on_initialize()` - Setup (book histograms, configure resources)

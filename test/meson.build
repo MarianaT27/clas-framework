@@ -64,14 +64,14 @@ test('Logging Service Tests', test_logging_service)
 test('Application Exception Tests', test_application_exception)
 test('Range Adaptors Tests', test_ranges)
 
-# Unit tests for SimpleAlgorithm
+# Unit tests for the Algorithm base class (hooks, properties, DI)
 test_simple_algorithm = executable(
   'test_simple_algorithm',
   'test_simple_algorithm.cpp',
   dependencies: test_deps + [toml_dep],
 )
 
-test('SimpleAlgorithm Tests', test_simple_algorithm)
+test('Algorithm Tests', test_simple_algorithm)
 
 # Unit tests for Generator coroutine type
 test_generator = executable(
@@ -108,15 +108,6 @@ test_config_schema = executable(
 )
 
 test('ConfigSchema Tests', test_config_schema)
-
-# Concurrency regression test for IAlgorithm state and counters
-test_algorithm_concurrency = executable(
-  'test_algorithm_concurrency',
-  'test_algorithm_concurrency.cpp',
-  dependencies: test_deps,
-)
-
-test('Algorithm Concurrency Tests', test_algorithm_concurrency)
 
 # Smoke test for generated bank wrappers + PindexLinker
 test_bankdefs_compile = executable(

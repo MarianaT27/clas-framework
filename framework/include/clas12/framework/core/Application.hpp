@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/IAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/ServiceManager.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
@@ -47,7 +47,7 @@ class Application {
      * @brief Add an algorithm to the processing sequence
      * @param algorithm Unique pointer to the algorithm
      */
-    auto add_algorithm(std::unique_ptr<IAlgorithm> algorithm) -> void {
+    auto add_algorithm(std::unique_ptr<Algorithm> algorithm) -> void {
         m_algorithms.push_back(std::move(algorithm));
     }
 
@@ -66,7 +66,7 @@ class Application {
      * Do not mutate the algorithms through this reference.
      */
     [[nodiscard]] auto algorithms() const
-        -> const std::vector<std::unique_ptr<IAlgorithm>>& {
+        -> const std::vector<std::unique_ptr<Algorithm>>& {
         return m_algorithms;
     }
 
@@ -287,7 +287,7 @@ class Application {
    private:
     std::string m_name;
     ServiceManager m_svc_mgr;
-    std::vector<std::unique_ptr<IAlgorithm>> m_algorithms;
+    std::vector<std::unique_ptr<Algorithm>> m_algorithms;
     std::vector<std::string> m_input_files;
     double m_percentage = 100;
     int m_num_threads = 1;

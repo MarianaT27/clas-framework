@@ -5,7 +5,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
 #include <clas12/bankdefs/REC_Particle.hpp>
@@ -26,13 +26,13 @@ namespace clas12::algorithms {
  * // Decision "TriggerFilter" is set (true/false)
  * @endcode
  */
-class TriggerElectronFilter : public clas12::framework::SimpleAlgorithm {
+class TriggerElectronFilter : public clas12::framework::Algorithm {
    public:
     explicit TriggerElectronFilter(
         std::string name = "TriggerElectronFilter",
         clas12::Target target = clas12::Target::LD2,
         clas12::Polarity /*polarity*/ = clas12::Polarity::Outbending)
-        : SimpleAlgorithm(std::move(name)), m_target(target), m_cutflow("Trigger Electron Filter") {
+        : Algorithm(std::move(name)), m_target(target), m_cutflow("Trigger Electron Filter") {
         declare_property(m_enable_trigger_status_cut);
         declare_property(m_enable_chi2pid_cut);
         declare_property(m_enable_momentum_cut);

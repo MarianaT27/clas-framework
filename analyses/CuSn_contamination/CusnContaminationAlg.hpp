@@ -11,7 +11,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -28,17 +28,17 @@ namespace CuSnContamination {
 /**
  * @brief Algorithm for Cusn Contamination analysis
  *
- * This algorithm demonstrates the SimpleAlgorithm CRTP pattern.
+ * This algorithm demonstrates the Algorithm CRTP pattern.
  * Customize the process() method to implement your analysis logic.
  */
-class CuSnContaminationAlg : public clas12::framework::SimpleAlgorithm {
+class CuSnContaminationAlg : public clas12::framework::Algorithm {
 public:
     /**
      * @brief Construct the algorithm
      * @param name Algorithm name (defaults to class name)
      */
     explicit CuSnContaminationAlg(std::string name = "CuSnContaminationAlg")
-        : SimpleAlgorithm(std::move(name)) {
+        : Algorithm(std::move(name)) {
         // Declare configurable properties
         declare_property(m_example_cut);
         declare_property(m_enable_histograms);

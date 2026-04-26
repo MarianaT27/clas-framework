@@ -15,7 +15,7 @@
 #include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -340,11 +340,11 @@ struct HadronTreeData {
  * - "rich": Uses RICH::Particle best_PID as truth label
  * - "exclusive": Uses ed -> ep(n)pi+pi- reaction topology as truth label
  */
-class AiPidHadronAlg : public clas12::framework::SimpleAlgorithm {
+class AiPidHadronAlg : public clas12::framework::Algorithm {
 public:
     explicit AiPidHadronAlg(std::string name = "AiPidHadronAlg",
                             std::string truth_mode = "rich")
-        : SimpleAlgorithm(std::move(name)) {
+        : Algorithm(std::move(name)) {
         declare_property(m_enable_histograms);
         declare_property(m_enable_ntuple);
         declare_property(m_truth_mode);

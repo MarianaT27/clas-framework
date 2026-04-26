@@ -4,15 +4,15 @@ This guide helps you migrate existing analysis code to the modern C++20/23 frame
 
 ## Overview of Changes
 
-The modernized framework uses `SimpleAlgorithm<T>` as the **unified base class** for all algorithms. Legacy specialized classes have been consolidated:
+The modernized framework uses `Algorithm` as the **unified base class** for all algorithms. Legacy specialized classes have been consolidated:
 
 | Old API | Modern API | Notes |
 |---------|------------|-------|
-| `Algorithm` | `SimpleAlgorithm<T>` | Unified base class with CRTP |
-| `FilterAlgorithm` | `SimpleAlgorithm<T>` | Use `StatusCode::FILTERED()` + `event.set_decision()` |
-| `ProducerAlgorithm` | `SimpleAlgorithm<T>` | Use `event.store()` to store products |
-| `AnalysisAlgorithm` | `SimpleAlgorithm<T>` | Direct replacement |
-| `MonitoringAlgorithm` | `SimpleAlgorithm<T>` | Direct replacement |
+| `Algorithm` | `Algorithm` | Unified base class with CRTP |
+| `FilterAlgorithm` | `Algorithm` | Use `StatusCode::FILTERED()` + `event.set_decision()` |
+| `ProducerAlgorithm` | `Algorithm` | Use `event.store()` to store products |
+| `AnalysisAlgorithm` | `Algorithm` | Direct replacement |
+| `MonitoringAlgorithm` | `Algorithm` | Direct replacement |
 | `service<T>()` | `require_service<T>()` | Service injection in `configure()` |
 | Manual particle loops | Range adaptors | Composable, lazy filtering |
 | Manual cut tracking | `CutBuilder` | Fluent API, auto cutflow |
@@ -62,9 +62,9 @@ private:
 
 **After:**
 ```cpp
-class MyAnalysis : public SimpleAlgorithm<MyAnalysis> {
+class MyAnalysis : public Algorithm<MyAnalysis> {
 public:
-    MyAnalysis() : SimpleAlgorithm("MyAnalysis") {}
+    MyAnalysis() : Algorithm("MyAnalysis") {}
 
     auto configure() -> void override {
         // Services are automatically injected
@@ -106,9 +106,9 @@ public:
 
 **After:**
 ```cpp
-class MyFilter : public SimpleAlgorithm<MyFilter> {
+class MyFilter : public Algorithm<MyFilter> {
 public:
-    MyFilter() : SimpleAlgorithm("MyFilter") {}
+    MyFilter() : Algorithm("MyFilter") {}
 
     auto process(Event& event) -> StatusCode override {
         if (!has_electron) {
@@ -140,9 +140,9 @@ public:
 
 **After:**
 ```cpp
-class MyProducer : public SimpleAlgorithm<MyProducer> {
+class MyProducer : public Algorithm<MyProducer> {
 public:
-    MyProducer() : SimpleAlgorithm("MyProducer") {}
+    MyProducer() : Algorithm("MyProducer") {}
 
     auto process(Event& event) -> StatusCode override {
         // Create and store products (same pattern)
@@ -169,9 +169,9 @@ public:
 
 **After:**
 ```cpp
-class MyMonitor : public SimpleAlgorithm<MyMonitor> {
+class MyMonitor : public Algorithm<MyMonitor> {
 public:
-    MyMonitor() : SimpleAlgorithm("MyMonitor") {}
+    MyMonitor() : Algorithm("MyMonitor") {}
 
     auto configure() -> void override {
         m_hist_svc = &require_service<HistogramService>("HistogramService");
@@ -318,9 +318,9 @@ auto alg = std::make_unique<MyAnalysis>(1.0, 10.0);
 
 **After:**
 ```cpp
-class MyAnalysis : public SimpleAlgorithm<MyAnalysis> {
+class MyAnalysis : public Algorithm<MyAnalysis> {
 public:
-    MyAnalysis() : SimpleAlgorithm("MyAnalysis") {
+    MyAnalysis() : Algorithm("MyAnalysis") {
         // Declare properties with defaults and descriptions
         declare_property(m_min_p);
         declare_property(m_max_p);
@@ -390,9 +390,9 @@ namespace Keys {
 
 ## Migration Checklist
 
-When migrating an algorithm to `SimpleAlgorithm<T>`:
+When migrating an algorithm to `Algorithm`:
 
-- [ ] Change base class from `Algorithm`/`FilterAlgorithm`/etc. to `SimpleAlgorithm<YourClass>`
+- [ ] Change base class from `Algorithm`/`FilterAlgorithm`/etc. to `Algorithm<YourClass>`
 - [ ] Move service retrieval from `initialize()` to `configure()` using `require_service<T>()`
 - [ ] Change service member types from `T*` to `ServiceHandle<T>*`
 - [ ] Rename `initialize()` to `on_initialize()`
@@ -403,10 +403,10 @@ When migrating an algorithm to `SimpleAlgorithm<T>`:
 
 ## Using Modern Features
 
-All modern features work with `SimpleAlgorithm<T>`:
+All modern features work with `Algorithm`:
 
 ```cpp
-class ModernAnalysis : public SimpleAlgorithm<ModernAnalysis> {
+class ModernAnalysis : public Algorithm<ModernAnalysis> {
     auto configure() -> void override {
         m_particle_svc = &require_service<ParticleSelectorService>("ParticleSelectorService");
     }

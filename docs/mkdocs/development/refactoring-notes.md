@@ -61,7 +61,7 @@ Migrated from monolithic design to service-based architecture:
 
 ### Algorithm Framework
 
-Introduced `IAlgorithm` interface with lifecycle:
+Introduced `Algorithm` interface with lifecycle:
 
 - `initialize()` - Setup phase
 - `execute(event)` - Per-event processing

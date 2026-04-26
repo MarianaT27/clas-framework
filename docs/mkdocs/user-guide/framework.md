@@ -55,7 +55,7 @@ clas-analysis-1/
 │       ├── core/                 # Core components
 │       │   ├── Application.hpp
 │       │   ├── ApplicationBuilder.hpp
-│       │   ├── IAlgorithm.hpp
+│       │   ├── Algorithm.hpp
 │       │   ├── IService.hpp
 │       │   ├── Event.hpp
 │       │   ├── Cutflow.hpp
@@ -157,7 +157,7 @@ if (cond_svc) {
 
 ## Algorithm Lifecycle
 
-Algorithms follow a strict lifecycle with the `SimpleAlgorithm<T>` base class:
+Algorithms follow a strict lifecycle with the `Algorithm` base class:
 
 ```mermaid
 stateDiagram-v2
@@ -173,12 +173,12 @@ stateDiagram-v2
 ### Implementation
 
 ```cpp
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 
-class MyAlgorithm : public clas12::framework::SimpleAlgorithm<MyAlgorithm> {
+class MyAlgorithm : public clas12::framework::Algorithm<MyAlgorithm> {
 public:
     explicit MyAlgorithm(std::string name = "MyAlgorithm")
-        : SimpleAlgorithm(std::move(name)) {}
+        : Algorithm(std::move(name)) {}
 
     auto configure() -> void override {
         // Request services (called automatically before on_initialize)
@@ -255,8 +255,8 @@ if (sc.is_failure()) {
 |-----------|-------------|
 | Application | `<clas12/framework/core/Application.hpp>` |
 | ApplicationBuilder | `<clas12/framework/core/ApplicationBuilder.hpp>` |
-| SimpleAlgorithm | `<clas12/framework/core/SimpleAlgorithm.hpp>` |
-| Algorithm base | `<clas12/framework/core/IAlgorithm.hpp>` |
+| Algorithm | `<clas12/framework/core/Algorithm.hpp>` |
+| Algorithm base | `<clas12/framework/core/Algorithm.hpp>` |
 | ServiceHandle | `<clas12/framework/core/ServiceHandle.hpp>` |
 | Event | `<clas12/framework/core/Event.hpp>` |
 | Cutflow | `<clas12/framework/core/Cutflow.hpp>` |

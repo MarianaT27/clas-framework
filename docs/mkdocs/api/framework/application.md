@@ -11,7 +11,7 @@ class Application {
 public:
     Application(std::string name);
     
-    auto add_algorithm(std::unique_ptr<IAlgorithm> algorithm) -> void;
+    auto add_algorithm(std::unique_ptr<Algorithm> algorithm) -> void;
     auto service_manager() -> ServiceManager&;
     auto set_input_files(std::vector<std::string> files) -> void;
     auto set_percentage(double percentage) -> void;
@@ -41,7 +41,7 @@ Creates a new application with the given name.
 ### add_algorithm
 
 ```cpp
-auto add_algorithm(std::unique_ptr<IAlgorithm> algorithm) -> void
+auto add_algorithm(std::unique_ptr<Algorithm> algorithm) -> void
 ```
 
 Adds an algorithm to the processing sequence. Algorithms execute in the order they are added.

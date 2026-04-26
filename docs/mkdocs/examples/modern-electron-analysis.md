@@ -4,7 +4,7 @@ This example demonstrates the modernized CLAS12 analysis framework using C++20/2
 
 ## Key Features Demonstrated
 
-- **SimpleAlgorithm CRTP base class** - Reduces boilerplate with automatic service injection
+- **Algorithm CRTP base class** - Reduces boilerplate with automatic service injection
 - **Range adaptors** - Composable, lazy-evaluated particle filtering
 - **CutBuilder** - Fluent, chainable cut definitions with automatic cutflow tracking
 - **TypedEventStore** - Type-safe inter-algorithm communication
@@ -23,10 +23,10 @@ The analysis consists of three algorithms:
 ### 1. Electron Selection with Range Adaptors and CutBuilder
 
 ```cpp
-class ModernElectronSelectionAlg : public SimpleAlgorithm<ModernElectronSelectionAlg> {
+class ModernElectronSelectionAlg : public Algorithm<ModernElectronSelectionAlg> {
 public:
     ModernElectronSelectionAlg()
-        : SimpleAlgorithm("ModernElectronSelection")
+        : Algorithm("ModernElectronSelection")
         , m_cutflow("Electron Selection") {
         // Declare properties with validation
         declare_property(m_min_momentum);
@@ -105,9 +105,9 @@ private:
 ### 2. DIS Kinematics with TypedEventStore
 
 ```cpp
-class DISKinematicsAlg : public SimpleAlgorithm<DISKinematicsAlg> {
+class DISKinematicsAlg : public Algorithm<DISKinematicsAlg> {
 public:
-    DISKinematicsAlg() : SimpleAlgorithm("DISKinematics") {
+    DISKinematicsAlg() : Algorithm("DISKinematics") {
         declare_property(m_beam_energy);
     }
 
@@ -217,7 +217,7 @@ class ElectronAnalysis : public Framework::Algorithm {
 ### Modern API (C++20/23)
 
 ```cpp
-class ModernElectronSelectionAlg : public SimpleAlgorithm<ModernElectronSelectionAlg> {
+class ModernElectronSelectionAlg : public Algorithm<ModernElectronSelectionAlg> {
     auto process(Event& event) -> StatusCode override {
         // Composable range adaptors
         auto fd_electrons = event.all_particles()
@@ -240,7 +240,7 @@ class ModernElectronSelectionAlg : public SimpleAlgorithm<ModernElectronSelectio
 
 | Feature | Benefit |
 |---------|---------|
-| SimpleAlgorithm | Automatic service injection, reduced boilerplate |
+| Algorithm | Automatic service injection, reduced boilerplate |
 | Range Adaptors | Composable, lazy-evaluated, expressive filtering |
 | CutBuilder | Fluent API, automatic cutflow tracking |
 | TypedEventStore | Compile-time type safety, clear data flow |

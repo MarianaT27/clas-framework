@@ -9,7 +9,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -110,10 +110,10 @@ struct ElasticKinematics {
  *
  * Note: This algorithm does NOT require recoil particle detection.
  */
-class ElasticEPAlg : public clas12::framework::SimpleAlgorithm {
+class ElasticEPAlg : public clas12::framework::Algorithm {
    public:
     explicit ElasticEPAlg(std::string name = "ElasticEPAlg", NuclearTarget target = NuclearTarget::Proton, double beam_energy = 10.6)
-        : SimpleAlgorithm(std::move(name)), m_target(target), m_target_mass(get_target_mass(target)), m_cutflow("Elastic e-" + get_target_name(target) + " Selection (W-only)") {
+        : Algorithm(std::move(name)), m_target(target), m_target_mass(get_target_mass(target)), m_cutflow("Elastic e-" + get_target_name(target) + " Selection (W-only)") {
         m_beam_energy.set(beam_energy);
         declare_property(m_beam_energy);
         declare_property(m_W_min);

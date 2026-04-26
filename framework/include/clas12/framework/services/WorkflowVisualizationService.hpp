@@ -7,7 +7,7 @@
 #include <set>
 #include <string>
 #include <vector>
-#include <clas12/framework/core/IAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/IService.hpp>
 
 namespace clas12::framework {

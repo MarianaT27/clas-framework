@@ -18,7 +18,7 @@
  * The traditional pattern uses execute() called by the Application event loop:
  *
  * @code
- * class MyAlgorithm : public SimpleAlgorithm<MyAlgorithm> {
+ * class MyAlgorithm : public Algorithm<MyAlgorithm> {
  * public:
  *     auto process(Event& event) -> StatusCode override {
  *         // Process each event
@@ -66,7 +66,7 @@
  *
  * - All existing algorithms using execute() continue to work unchanged
  * - The Application class event loop is unchanged
- * - SimpleAlgorithm works as before
+ * - Algorithm works as before
  * - Coroutines are opt-in and don't affect existing code
  *
  * @see Requirements 5.1, 5.2, 5.4

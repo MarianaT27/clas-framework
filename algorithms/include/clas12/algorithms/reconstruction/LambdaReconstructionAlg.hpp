@@ -13,7 +13,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -65,10 +65,10 @@ struct LambdaCandidate {
  * 3. Calculating invariant mass for each pair
  * 4. Selecting candidates within a mass window around the Λ mass
  */
-class LambdaReconstructionAlg : public clas12::framework::SimpleAlgorithm {
+class LambdaReconstructionAlg : public clas12::framework::Algorithm {
    public:
     explicit LambdaReconstructionAlg(std::string name = "LambdaReconstructionAlg")
-        : SimpleAlgorithm(std::move(name)), m_cutflow("Lambda Reconstruction") {
+        : Algorithm(std::move(name)), m_cutflow("Lambda Reconstruction") {
         declare_property(m_mass_window);
         declare_property(m_min_proton_p);
         declare_property(m_min_pion_p);

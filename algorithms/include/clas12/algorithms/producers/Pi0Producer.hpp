@@ -4,7 +4,7 @@
 #include <clas12/PIDs.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/physics/CompositeParticle.hpp>
@@ -31,13 +31,13 @@ namespace clas12::algorithms {
  * }
  * @endcode
  */
-class Pi0Producer : public clas12::framework::SimpleAlgorithm {
+class Pi0Producer : public clas12::framework::Algorithm {
    public:
     explicit Pi0Producer(
         std::string name = "Pi0Producer",
         double mass_window_center = 0.135,  // GeV/c²
         double mass_window_width = 0.050)   // GeV/c²
-        : SimpleAlgorithm(std::move(name)), m_mass_center(mass_window_center), m_mass_width(mass_window_width) {
+        : Algorithm(std::move(name)), m_mass_center(mass_window_center), m_mass_width(mass_window_width) {
         declare_bank("REC::Particle");
     }
 

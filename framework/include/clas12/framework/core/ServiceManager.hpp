@@ -296,19 +296,7 @@ class ServiceManager {
 
 }  // namespace clas12::framework
 
-// Include IAlgorithm.hpp for the Algorithm::service template implementation
-#include <clas12/framework/core/IAlgorithm.hpp>
-
-// Template implementation for Algorithm::service
 namespace clas12::framework {
-template <ServiceConcept T>
-auto Algorithm::service(const std::string& service_name) -> T* {
-    if (!m_svc_mgr) {
-        clas12::framework::Log::error("Algorithm", "ServiceManager not set for algorithm '{}'", m_name);
-        return nullptr;
-    }
-    return m_svc_mgr->get_service<T>(service_name);
-}
 
 // Service::locate_service_impl - deferred until ServiceManager is complete
 template <typename T>

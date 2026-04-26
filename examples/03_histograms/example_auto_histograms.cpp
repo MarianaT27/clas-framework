@@ -9,7 +9,7 @@
 
 #include <clas12/framework/core/Application.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
-#include <clas12/framework/core/IAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
@@ -34,24 +34,12 @@
 class HistogramDemo : public clas12::framework::Algorithm {
 public:
     explicit HistogramDemo(std::string name = "HistogramDemo")
-        : Algorithm(std::move(name)) {}
+        : Algorithm(std::move(name)) {
+        required_services(m_hist_svc, m_particle_svc);
+    }
 
-    auto initialize() -> clas12::framework::StatusCode override {
+    auto on_initialize() -> clas12::framework::StatusCode override {
         fmt::print("  {} - Initializing\n", name());
-
-        // Get histogram service
-        m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
-        if (!m_hist_svc) {
-            clas12::framework::Log::error("HistogramDemo", "Failed to get HistogramService");
-            return clas12::framework::StatusCode::FAILURE();
-        }
-
-        // Get particle selector service
-        m_particle_svc = service<clas12::framework::ParticleSelectorService>("ParticleSelectorService");
-        if (!m_particle_svc) {
-            clas12::framework::Log::error("HistogramDemo", "Failed to get ParticleSelectorService");
-            return clas12::framework::StatusCode::FAILURE();
-        }
 
         // Method 1: Book individual histograms with type-safe wrappers
         fmt::print("    Booking individual histograms...\n");
@@ -101,7 +89,7 @@ public:
         return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto execute(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_events_processed++;
 
         auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
@@ -153,7 +141,7 @@ public:
         return clas12::framework::StatusCode::SUCCESS();
     }
 
-    auto finalize() -> clas12::framework::StatusCode override {
+    auto on_finalize() -> clas12::framework::StatusCode override {
         fmt::print("\n{} Statistics:\n", name());
         fmt::print("  Events processed: {}\n", m_events_processed);
         fmt::print("  Histograms created: {} 1D, {} 2D, {} profiles\n",

@@ -32,7 +32,7 @@ auto calculate_momentum(const Particle& p) -> double {
 auto process(const std::vector<Particle>& particles) -> void;
 
 // Use unique_ptr for ownership transfer
-auto create_algorithm() -> std::unique_ptr<IAlgorithm>;
+auto create_algorithm() -> std::unique_ptr<Algorithm>;
 ```
 
 ## Classes

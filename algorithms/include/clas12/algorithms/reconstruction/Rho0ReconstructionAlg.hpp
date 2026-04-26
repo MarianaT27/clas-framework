@@ -31,7 +31,7 @@
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
 namespace clas12::algorithms {
@@ -139,7 +139,7 @@ struct Rho0Candidate {
  *
  * Fits invariant mass with Breit-Wigner + pol3 background
  */
-class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
+class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
    public:
     static constexpr double RHO0_MASS = clas12::Constants::RHO0MASS;  // GeV/c² (~770 MeV)
     static constexpr double RHO0_WIDTH = 0.150;                      // GeV (~150 MeV natural width)
@@ -154,7 +154,7 @@ class Rho0ReconstructionAlg : public clas12::framework::SimpleAlgorithm {
         std::vector<double> t_scan = {},
         std::vector<double> dvz_scan = {}
     )
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_target(target)
         , m_cutflow("Rho0 Reconstruction")
         , m_candidate_cutflow("Rho0 Candidate Cuts") {

@@ -111,7 +111,7 @@ namespace clas12::framework {
  * };
  *
  * // In algorithm:
- * class MyAlgorithm : public SimpleAlgorithm<MyAlgorithm> {
+ * class MyAlgorithm : public Algorithm<MyAlgorithm> {
  *     NTupleWriter<ElectronNTuple> m_ntuple;
  *
  *     auto on_initialize() -> StatusCode override {

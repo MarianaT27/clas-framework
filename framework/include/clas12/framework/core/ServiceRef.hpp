@@ -13,7 +13,7 @@
  * `ServiceRef<T>` is a thin observer handle that:
  *   - Default-constructs to a null state.
  *   - Accepts assignment from `T*` via an implicit constructor, so it
- *     plugs into the existing `SimpleAlgorithm::require_service(...)`
+ *     plugs into the existing `Algorithm::require_service(...)`
  *     lambda that does `*target = svc<T>()`.
  *   - Forwards `operator->` and `operator*` to the wrapped pointer, so
  *     every existing call site `m_hist->book_hist1D(...)` keeps working
@@ -24,7 +24,7 @@
  * Ownership: the service lives in `ServiceManager`. A `ServiceRef<T>` is
  * a non-owning observer, trivially copyable, safe to live in algorithm
  * members. It integrates with the require_service/declare_* helpers on
- * SimpleAlgorithm.
+ * Algorithm.
  */
 
 namespace clas12::framework {

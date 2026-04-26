@@ -6,7 +6,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/SimpleAlgorithm.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HipoFileService.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/PIDs.hpp>
@@ -26,14 +26,14 @@ using clas12::framework::Log;
  *
  * Events passing all cuts are written to an output HIPO file.
  *
- * Uses SimpleAlgorithm CRTP pattern with:
+ * Uses Algorithm CRTP pattern with:
  * - Automatic service injection via svc<T>()
  * - Property system for configuration
  */
-class DiPionFilterAlg : public clas12::framework::SimpleAlgorithm {
+class DiPionFilterAlg : public clas12::framework::Algorithm {
    public:
     explicit DiPionFilterAlg(std::string name = "DiPionFilterAlg")
-        : SimpleAlgorithm(std::move(name))
+        : Algorithm(std::move(name))
         , m_cutflow("Di-Pion Event Filter") {
         // Declare configurable properties
         declare_property(m_q2_min);
