@@ -42,48 +42,94 @@ class ECAL_calib {
 
     ECAL_calib() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("size"); h) h_size = *h;
-        else h_size = {};
-        if (auto h = schema.get_handle("dbstU"); h) h_dbstU = *h;
-        else h_dbstU = {};
-        if (auto h = schema.get_handle("dbstV"); h) h_dbstV = *h;
-        else h_dbstV = {};
-        if (auto h = schema.get_handle("dbstW"); h) h_dbstW = *h;
-        else h_dbstW = {};
-        if (auto h = schema.get_handle("rawEU"); h) h_rawEU = *h;
-        else h_rawEU = {};
-        if (auto h = schema.get_handle("rawEV"); h) h_rawEV = *h;
-        else h_rawEV = {};
-        if (auto h = schema.get_handle("rawEW"); h) h_rawEW = *h;
-        else h_rawEW = {};
-        if (auto h = schema.get_handle("recEU"); h) h_recEU = *h;
-        else h_recEU = {};
-        if (auto h = schema.get_handle("recEV"); h) h_recEV = *h;
-        else h_recEV = {};
-        if (auto h = schema.get_handle("recEW"); h) h_recEW = *h;
-        else h_recEW = {};
-        if (auto h = schema.get_handle("recDTU"); h) h_recDTU = *h;
-        else h_recDTU = {};
-        if (auto h = schema.get_handle("recDTV"); h) h_recDTV = *h;
-        else h_recDTV = {};
-        if (auto h = schema.get_handle("recDTW"); h) h_recDTW = *h;
-        else h_recDTW = {};
-        if (auto h = schema.get_handle("recFTU"); h) h_recFTU = *h;
-        else h_recFTU = {};
-        if (auto h = schema.get_handle("recFTV"); h) h_recFTV = *h;
-        else h_recFTV = {};
-        if (auto h = schema.get_handle("recFTW"); h) h_recFTW = *h;
-        else h_recFTW = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_size;
+            hipo::column_handle h_dbstU;
+            hipo::column_handle h_dbstV;
+            hipo::column_handle h_dbstW;
+            hipo::column_handle h_rawEU;
+            hipo::column_handle h_rawEV;
+            hipo::column_handle h_rawEW;
+            hipo::column_handle h_recEU;
+            hipo::column_handle h_recEV;
+            hipo::column_handle h_recEW;
+            hipo::column_handle h_recDTU;
+            hipo::column_handle h_recDTV;
+            hipo::column_handle h_recDTW;
+            hipo::column_handle h_recFTU;
+            hipo::column_handle h_recFTV;
+            hipo::column_handle h_recFTW;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("size"); h) cache.h_size = *h;
+            else cache.h_size = {};
+            if (auto h = schema.get_handle("dbstU"); h) cache.h_dbstU = *h;
+            else cache.h_dbstU = {};
+            if (auto h = schema.get_handle("dbstV"); h) cache.h_dbstV = *h;
+            else cache.h_dbstV = {};
+            if (auto h = schema.get_handle("dbstW"); h) cache.h_dbstW = *h;
+            else cache.h_dbstW = {};
+            if (auto h = schema.get_handle("rawEU"); h) cache.h_rawEU = *h;
+            else cache.h_rawEU = {};
+            if (auto h = schema.get_handle("rawEV"); h) cache.h_rawEV = *h;
+            else cache.h_rawEV = {};
+            if (auto h = schema.get_handle("rawEW"); h) cache.h_rawEW = *h;
+            else cache.h_rawEW = {};
+            if (auto h = schema.get_handle("recEU"); h) cache.h_recEU = *h;
+            else cache.h_recEU = {};
+            if (auto h = schema.get_handle("recEV"); h) cache.h_recEV = *h;
+            else cache.h_recEV = {};
+            if (auto h = schema.get_handle("recEW"); h) cache.h_recEW = *h;
+            else cache.h_recEW = {};
+            if (auto h = schema.get_handle("recDTU"); h) cache.h_recDTU = *h;
+            else cache.h_recDTU = {};
+            if (auto h = schema.get_handle("recDTV"); h) cache.h_recDTV = *h;
+            else cache.h_recDTV = {};
+            if (auto h = schema.get_handle("recDTW"); h) cache.h_recDTW = *h;
+            else cache.h_recDTW = {};
+            if (auto h = schema.get_handle("recFTU"); h) cache.h_recFTU = *h;
+            else cache.h_recFTU = {};
+            if (auto h = schema.get_handle("recFTV"); h) cache.h_recFTV = *h;
+            else cache.h_recFTV = {};
+            if (auto h = schema.get_handle("recFTW"); h) cache.h_recFTW = *h;
+            else cache.h_recFTW = {};
+        }
+        h_sector = cache.h_sector;
+        h_layer = cache.h_layer;
+        h_size = cache.h_size;
+        h_dbstU = cache.h_dbstU;
+        h_dbstV = cache.h_dbstV;
+        h_dbstW = cache.h_dbstW;
+        h_rawEU = cache.h_rawEU;
+        h_rawEV = cache.h_rawEV;
+        h_rawEW = cache.h_rawEW;
+        h_recEU = cache.h_recEU;
+        h_recEV = cache.h_recEV;
+        h_recEW = cache.h_recEW;
+        h_recDTU = cache.h_recDTU;
+        h_recDTV = cache.h_recDTV;
+        h_recDTW = cache.h_recDTW;
+        h_recFTU = cache.h_recFTU;
+        h_recFTV = cache.h_recFTV;
+        h_recFTW = cache.h_recFTW;
         return true;
     }
 

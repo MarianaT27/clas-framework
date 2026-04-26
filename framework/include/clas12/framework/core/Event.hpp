@@ -9,6 +9,7 @@
 
 #include <any>
 #include <array>
+#include <atomic>
 #include <functional>
 #include <map>
 #include <optional>
@@ -16,8 +17,6 @@
 #include <string>
 #include <string_view>
 #include <tuple>
-#include <typeindex>
-#include <unordered_map>
 #include <vector>
 
 namespace clas12::framework {
@@ -26,6 +25,31 @@ namespace clas12::framework {
  * @brief Type alias for storing particles grouped by their PID type
  */
 using ParticleMap = std::map<clas12::PIDs, std::vector<clas12::Particle>>;
+
+namespace detail {
+
+/// Compile-time-stable, unique index per generated bankdef wrapper type.
+/// First access from any thread assigns the next id from a global counter,
+/// so the value of `bank_type_id<T>()` is identical across all threads /
+/// Event instances within a single process.
+inline std::atomic<int>& bank_type_counter() {
+    static std::atomic<int> counter{0};
+    return counter;
+}
+
+template <typename T>
+inline int bank_type_id() {
+    static const int id = bank_type_counter().fetch_add(1, std::memory_order_relaxed);
+    return id;
+}
+
+/// Cap on distinct bankdef wrapper types observed in one process. The
+/// project ships 273 generated bankdefs but a typical analysis only
+/// touches ~10. The fixed cap keeps Event::m_bank_cache stack-friendly
+/// (one slot per index, ~80 bytes each).
+inline constexpr int kMaxBankTypes = 64;
+
+}  // namespace detail
 
 /**
  * @brief Event Data Model for CLAS12 analysis
@@ -399,19 +423,22 @@ class Event {
      */
     template <typename T>
     auto bank() -> T& {
-        auto& slot = m_bank_cache[std::type_index(typeid(T))];
-        if (!slot.wrapper.has_value()) {
+        auto& slot = m_bank_cache[detail::bank_type_id<T>()];
+        if (!slot.has_value()) {
+            slot.emplace();
             T bound;
             // Generated readers (e.g. read_Calorimeter_bank) call bank<T>()
             // for sibling banks that the algorithm did not declare. Use the
             // checked accessor and fall back to an empty bank_view so the
             // wrapper's valid()/rows() return false instead of asserting.
+            // T::bank_name is a constexpr string_view; bank_view_set::get
+            // already accepts string_view, so no temporary std::string.
             static const hipo::bank_view empty{};
-            auto r = m_banks.get(std::string(T::bank_name));
+            auto r = m_banks.get(T::bank_name);
             bound.bind(r.has_value() ? r->get() : empty);
-            slot.wrapper = std::move(bound);
+            slot->wrapper = std::move(bound);
         }
-        return std::any_cast<T&>(slot.wrapper);
+        return std::any_cast<T&>(slot->wrapper);
     }
 
     /**
@@ -467,7 +494,7 @@ class Event {
     template <typename T>
     auto rows_for_pindex(int pindex) -> PindexRowView<T> {
         auto& bound = bank<T>();  // ensures wrapper is bound and cached
-        auto& slot = m_bank_cache[std::type_index(typeid(T))];
+        auto& slot = *m_bank_cache[detail::bank_type_id<T>()];
         if (!slot.pindex_linker_built) {
             slot.pindex_linker.build(bound.view(), bound.pindex_handle());
             slot.pindex_linker_built = true;
@@ -493,7 +520,7 @@ class Event {
     template <typename T>
     auto rows_for_index(int key) -> PindexRowView<T> {
         auto& bound = bank<T>();
-        auto& slot = m_bank_cache[std::type_index(typeid(T))];
+        auto& slot = *m_bank_cache[detail::bank_type_id<T>()];
         if (!slot.index_linker_built) {
             slot.index_linker.build(bound.view(), bound.index_handle());
             slot.index_linker_built = true;
@@ -510,12 +537,10 @@ class Event {
     int m_file_index = -1;
     TypedEventStore m_typed_store;
 
-    /// Per-event cache of bound generated wrappers and their reverse indexes.
-    /// The key is a std::type_index(typeid(T)) for the wrapper class. Two
-    /// independent linker slots are held: one keyed by `pindex_handle()`
-    /// (for the usual particle -> hit lookup) and one keyed by
-    /// `index_handle()` (for sibling-row links like FMT::Tracks.index ->
-    /// REC::Track row). Each is built lazily on first use.
+    /// Per-event cache of bound generated wrappers and their reverse indexes,
+    /// addressed by `detail::bank_type_id<T>()`. Each slot is wrapped in
+    /// `std::optional` so the array's destructor only does cheap bool
+    /// checks for unpopulated slots.
     struct BankCacheEntry {
         std::any wrapper;                  ///< Holds a concrete T by value.
         PindexLinker pindex_linker;        ///< Built on first rows_for_pindex<T>.
@@ -523,7 +548,7 @@ class Event {
         bool pindex_linker_built = false;
         bool index_linker_built  = false;
     };
-    std::unordered_map<std::type_index, BankCacheEntry> m_bank_cache;
+    std::array<std::optional<BankCacheEntry>, detail::kMaxBankTypes> m_bank_cache;
 
     /**
      * @brief Load particles from REC::Particle bank

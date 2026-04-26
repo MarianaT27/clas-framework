@@ -42,22 +42,42 @@ class HitBasedTrkg_AIHitTrkId {
 
     HitBasedTrkg_AIHitTrkId() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("tid"); h) h_tid = *h;
-        else h_tid = {};
-        if (auto h = schema.get_handle("B"); h) h_B = *h;
-        else h_B = {};
-        if (auto h = schema.get_handle("TProp"); h) h_TProp = *h;
-        else h_TProp = {};
-        if (auto h = schema.get_handle("TFlight"); h) h_TFlight = *h;
-        else h_TFlight = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_tid;
+            hipo::column_handle h_B;
+            hipo::column_handle h_TProp;
+            hipo::column_handle h_TFlight;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("tid"); h) cache.h_tid = *h;
+            else cache.h_tid = {};
+            if (auto h = schema.get_handle("B"); h) cache.h_B = *h;
+            else cache.h_B = {};
+            if (auto h = schema.get_handle("TProp"); h) cache.h_TProp = *h;
+            else cache.h_TProp = {};
+            if (auto h = schema.get_handle("TFlight"); h) cache.h_TFlight = *h;
+            else cache.h_TFlight = {};
+        }
+        h_id = cache.h_id;
+        h_tid = cache.h_tid;
+        h_B = cache.h_B;
+        h_TProp = cache.h_TProp;
+        h_TFlight = cache.h_TFlight;
         return true;
     }
 

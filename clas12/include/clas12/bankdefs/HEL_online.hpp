@@ -42,16 +42,30 @@ class HEL_online {
 
     HEL_online() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("helicity"); h) h_helicity = *h;
-        else h_helicity = {};
-        if (auto h = schema.get_handle("helicityRaw"); h) h_helicityRaw = *h;
-        else h_helicityRaw = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_helicity;
+            hipo::column_handle h_helicityRaw;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("helicity"); h) cache.h_helicity = *h;
+            else cache.h_helicity = {};
+            if (auto h = schema.get_handle("helicityRaw"); h) cache.h_helicityRaw = *h;
+            else cache.h_helicityRaw = {};
+        }
+        h_helicity = cache.h_helicity;
+        h_helicityRaw = cache.h_helicityRaw;
         return true;
     }
 

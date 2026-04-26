@@ -8,6 +8,7 @@ hipo4_sources = files(
   'reader.cpp',
   'writer.cpp',
   'chain.cpp',
+  'prefetch.cpp',
   'validator.cpp',
 )
 
@@ -27,6 +28,7 @@ hipo4_headers = files(
   'writer.h',
   'column_stats.h',
   'chain.h',
+  'prefetch.h',
   'validator.h',
   'threadpool.hpp',
   'progresstracker.hpp',

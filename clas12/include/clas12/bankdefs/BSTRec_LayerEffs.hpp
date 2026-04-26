@@ -42,20 +42,38 @@ class BSTRec_LayerEffs {
 
     BSTRec_LayerEffs() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("residual"); h) h_residual = *h;
-        else h_residual = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_residual;
+            hipo::column_handle h_status;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("residual"); h) cache.h_residual = *h;
+            else cache.h_residual = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+        }
+        h_sector = cache.h_sector;
+        h_layer = cache.h_layer;
+        h_residual = cache.h_residual;
+        h_status = cache.h_status;
         return true;
     }
 

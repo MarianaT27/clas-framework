@@ -42,26 +42,50 @@ class ECAL_scaler {
 
     ECAL_scaler() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("component"); h) h_component = *h;
-        else h_component = {};
-        if (auto h = schema.get_handle("acount"); h) h_acount = *h;
-        else h_acount = {};
-        if (auto h = schema.get_handle("tcount"); h) h_tcount = *h;
-        else h_tcount = {};
-        if (auto h = schema.get_handle("avalue"); h) h_avalue = *h;
-        else h_avalue = {};
-        if (auto h = schema.get_handle("tvalue"); h) h_tvalue = *h;
-        else h_tvalue = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_component;
+            hipo::column_handle h_acount;
+            hipo::column_handle h_tcount;
+            hipo::column_handle h_avalue;
+            hipo::column_handle h_tvalue;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("component"); h) cache.h_component = *h;
+            else cache.h_component = {};
+            if (auto h = schema.get_handle("acount"); h) cache.h_acount = *h;
+            else cache.h_acount = {};
+            if (auto h = schema.get_handle("tcount"); h) cache.h_tcount = *h;
+            else cache.h_tcount = {};
+            if (auto h = schema.get_handle("avalue"); h) cache.h_avalue = *h;
+            else cache.h_avalue = {};
+            if (auto h = schema.get_handle("tvalue"); h) cache.h_tvalue = *h;
+            else cache.h_tvalue = {};
+        }
+        h_sector = cache.h_sector;
+        h_layer = cache.h_layer;
+        h_component = cache.h_component;
+        h_acount = cache.h_acount;
+        h_tcount = cache.h_tcount;
+        h_avalue = cache.h_avalue;
+        h_tvalue = cache.h_tvalue;
         return true;
     }
 

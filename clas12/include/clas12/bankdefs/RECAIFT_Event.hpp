@@ -42,16 +42,30 @@ class RECAIFT_Event {
 
     RECAIFT_Event() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("category"); h) h_category = *h;
-        else h_category = {};
-        if (auto h = schema.get_handle("startTime"); h) h_startTime = *h;
-        else h_startTime = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_category;
+            hipo::column_handle h_startTime;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("category"); h) cache.h_category = *h;
+            else cache.h_category = {};
+            if (auto h = schema.get_handle("startTime"); h) cache.h_startTime = *h;
+            else cache.h_startTime = {};
+        }
+        h_category = cache.h_category;
+        h_startTime = cache.h_startTime;
         return true;
     }
 

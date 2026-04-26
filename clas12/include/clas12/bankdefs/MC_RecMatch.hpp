@@ -42,26 +42,50 @@ class MC_RecMatch {
 
     MC_RecMatch() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("pindex"); h) h_pindex = *h;
-        else h_pindex = {};
-        if (auto h = schema.get_handle("mcindex"); h) h_mcindex = *h;
-        else h_mcindex = {};
-        if (auto h = schema.get_handle("player1"); h) h_player1 = *h;
-        else h_player1 = {};
-        if (auto h = schema.get_handle("player2"); h) h_player2 = *h;
-        else h_player2 = {};
-        if (auto h = schema.get_handle("mclayer1"); h) h_mclayer1 = *h;
-        else h_mclayer1 = {};
-        if (auto h = schema.get_handle("mclayer2"); h) h_mclayer2 = *h;
-        else h_mclayer2 = {};
-        if (auto h = schema.get_handle("quality"); h) h_quality = *h;
-        else h_quality = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_pindex;
+            hipo::column_handle h_mcindex;
+            hipo::column_handle h_player1;
+            hipo::column_handle h_player2;
+            hipo::column_handle h_mclayer1;
+            hipo::column_handle h_mclayer2;
+            hipo::column_handle h_quality;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
+            else cache.h_pindex = {};
+            if (auto h = schema.get_handle("mcindex"); h) cache.h_mcindex = *h;
+            else cache.h_mcindex = {};
+            if (auto h = schema.get_handle("player1"); h) cache.h_player1 = *h;
+            else cache.h_player1 = {};
+            if (auto h = schema.get_handle("player2"); h) cache.h_player2 = *h;
+            else cache.h_player2 = {};
+            if (auto h = schema.get_handle("mclayer1"); h) cache.h_mclayer1 = *h;
+            else cache.h_mclayer1 = {};
+            if (auto h = schema.get_handle("mclayer2"); h) cache.h_mclayer2 = *h;
+            else cache.h_mclayer2 = {};
+            if (auto h = schema.get_handle("quality"); h) cache.h_quality = *h;
+            else cache.h_quality = {};
+        }
+        h_pindex = cache.h_pindex;
+        h_mcindex = cache.h_mcindex;
+        h_player1 = cache.h_player1;
+        h_player2 = cache.h_player2;
+        h_mclayer1 = cache.h_mclayer1;
+        h_mclayer2 = cache.h_mclayer2;
+        h_quality = cache.h_quality;
         return true;
     }
 

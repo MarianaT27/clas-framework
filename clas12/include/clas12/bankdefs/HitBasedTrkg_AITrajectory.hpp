@@ -42,40 +42,78 @@ class HitBasedTrkg_AITrajectory {
 
     HitBasedTrkg_AITrajectory() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("detector"); h) h_detector = *h;
-        else h_detector = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
-        if (auto h = schema.get_handle("tx"); h) h_tx = *h;
-        else h_tx = {};
-        if (auto h = schema.get_handle("ty"); h) h_ty = *h;
-        else h_ty = {};
-        if (auto h = schema.get_handle("tz"); h) h_tz = *h;
-        else h_tz = {};
-        if (auto h = schema.get_handle("B"); h) h_B = *h;
-        else h_B = {};
-        if (auto h = schema.get_handle("path"); h) h_path = *h;
-        else h_path = {};
-        if (auto h = schema.get_handle("dx"); h) h_dx = *h;
-        else h_dx = {};
-        if (auto h = schema.get_handle("edge"); h) h_edge = *h;
-        else h_edge = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_detector;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+            hipo::column_handle h_tx;
+            hipo::column_handle h_ty;
+            hipo::column_handle h_tz;
+            hipo::column_handle h_B;
+            hipo::column_handle h_path;
+            hipo::column_handle h_dx;
+            hipo::column_handle h_edge;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("detector"); h) cache.h_detector = *h;
+            else cache.h_detector = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+            if (auto h = schema.get_handle("tx"); h) cache.h_tx = *h;
+            else cache.h_tx = {};
+            if (auto h = schema.get_handle("ty"); h) cache.h_ty = *h;
+            else cache.h_ty = {};
+            if (auto h = schema.get_handle("tz"); h) cache.h_tz = *h;
+            else cache.h_tz = {};
+            if (auto h = schema.get_handle("B"); h) cache.h_B = *h;
+            else cache.h_B = {};
+            if (auto h = schema.get_handle("path"); h) cache.h_path = *h;
+            else cache.h_path = {};
+            if (auto h = schema.get_handle("dx"); h) cache.h_dx = *h;
+            else cache.h_dx = {};
+            if (auto h = schema.get_handle("edge"); h) cache.h_edge = *h;
+            else cache.h_edge = {};
+        }
+        h_id = cache.h_id;
+        h_detector = cache.h_detector;
+        h_sector = cache.h_sector;
+        h_layer = cache.h_layer;
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
+        h_tx = cache.h_tx;
+        h_ty = cache.h_ty;
+        h_tz = cache.h_tz;
+        h_B = cache.h_B;
+        h_path = cache.h_path;
+        h_dx = cache.h_dx;
+        h_edge = cache.h_edge;
         return true;
     }
 

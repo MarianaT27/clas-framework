@@ -42,34 +42,66 @@ class AHDC_ai_prediction {
 
     AHDC_ai_prediction() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("x1"); h) h_x1 = *h;
-        else h_x1 = {};
-        if (auto h = schema.get_handle("y1"); h) h_y1 = *h;
-        else h_y1 = {};
-        if (auto h = schema.get_handle("x2"); h) h_x2 = *h;
-        else h_x2 = {};
-        if (auto h = schema.get_handle("y2"); h) h_y2 = *h;
-        else h_y2 = {};
-        if (auto h = schema.get_handle("x3"); h) h_x3 = *h;
-        else h_x3 = {};
-        if (auto h = schema.get_handle("y3"); h) h_y3 = *h;
-        else h_y3 = {};
-        if (auto h = schema.get_handle("x4"); h) h_x4 = *h;
-        else h_x4 = {};
-        if (auto h = schema.get_handle("y4"); h) h_y4 = *h;
-        else h_y4 = {};
-        if (auto h = schema.get_handle("x5"); h) h_x5 = *h;
-        else h_x5 = {};
-        if (auto h = schema.get_handle("y5"); h) h_y5 = *h;
-        else h_y5 = {};
-        if (auto h = schema.get_handle("pred"); h) h_pred = *h;
-        else h_pred = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_x1;
+            hipo::column_handle h_y1;
+            hipo::column_handle h_x2;
+            hipo::column_handle h_y2;
+            hipo::column_handle h_x3;
+            hipo::column_handle h_y3;
+            hipo::column_handle h_x4;
+            hipo::column_handle h_y4;
+            hipo::column_handle h_x5;
+            hipo::column_handle h_y5;
+            hipo::column_handle h_pred;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("x1"); h) cache.h_x1 = *h;
+            else cache.h_x1 = {};
+            if (auto h = schema.get_handle("y1"); h) cache.h_y1 = *h;
+            else cache.h_y1 = {};
+            if (auto h = schema.get_handle("x2"); h) cache.h_x2 = *h;
+            else cache.h_x2 = {};
+            if (auto h = schema.get_handle("y2"); h) cache.h_y2 = *h;
+            else cache.h_y2 = {};
+            if (auto h = schema.get_handle("x3"); h) cache.h_x3 = *h;
+            else cache.h_x3 = {};
+            if (auto h = schema.get_handle("y3"); h) cache.h_y3 = *h;
+            else cache.h_y3 = {};
+            if (auto h = schema.get_handle("x4"); h) cache.h_x4 = *h;
+            else cache.h_x4 = {};
+            if (auto h = schema.get_handle("y4"); h) cache.h_y4 = *h;
+            else cache.h_y4 = {};
+            if (auto h = schema.get_handle("x5"); h) cache.h_x5 = *h;
+            else cache.h_x5 = {};
+            if (auto h = schema.get_handle("y5"); h) cache.h_y5 = *h;
+            else cache.h_y5 = {};
+            if (auto h = schema.get_handle("pred"); h) cache.h_pred = *h;
+            else cache.h_pred = {};
+        }
+        h_x1 = cache.h_x1;
+        h_y1 = cache.h_y1;
+        h_x2 = cache.h_x2;
+        h_y2 = cache.h_y2;
+        h_x3 = cache.h_x3;
+        h_y3 = cache.h_y3;
+        h_x4 = cache.h_x4;
+        h_y4 = cache.h_y4;
+        h_x5 = cache.h_x5;
+        h_y5 = cache.h_y5;
+        h_pred = cache.h_pred;
         return true;
     }
 

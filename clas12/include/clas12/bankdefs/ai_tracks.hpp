@@ -42,40 +42,78 @@ class ai_tracks {
 
     ai_tracks() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("charge"); h) h_charge = *h;
-        else h_charge = {};
-        if (auto h = schema.get_handle("prob"); h) h_prob = *h;
-        else h_prob = {};
-        if (auto h = schema.get_handle("c1"); h) h_c1 = *h;
-        else h_c1 = {};
-        if (auto h = schema.get_handle("c2"); h) h_c2 = *h;
-        else h_c2 = {};
-        if (auto h = schema.get_handle("c3"); h) h_c3 = *h;
-        else h_c3 = {};
-        if (auto h = schema.get_handle("c4"); h) h_c4 = *h;
-        else h_c4 = {};
-        if (auto h = schema.get_handle("c5"); h) h_c5 = *h;
-        else h_c5 = {};
-        if (auto h = schema.get_handle("c6"); h) h_c6 = *h;
-        else h_c6 = {};
-        if (auto h = schema.get_handle("p"); h) h_p = *h;
-        else h_p = {};
-        if (auto h = schema.get_handle("theta"); h) h_theta = *h;
-        else h_theta = {};
-        if (auto h = schema.get_handle("phi"); h) h_phi = *h;
-        else h_phi = {};
-        if (auto h = schema.get_handle("vz"); h) h_vz = *h;
-        else h_vz = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_charge;
+            hipo::column_handle h_prob;
+            hipo::column_handle h_c1;
+            hipo::column_handle h_c2;
+            hipo::column_handle h_c3;
+            hipo::column_handle h_c4;
+            hipo::column_handle h_c5;
+            hipo::column_handle h_c6;
+            hipo::column_handle h_p;
+            hipo::column_handle h_theta;
+            hipo::column_handle h_phi;
+            hipo::column_handle h_vz;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("charge"); h) cache.h_charge = *h;
+            else cache.h_charge = {};
+            if (auto h = schema.get_handle("prob"); h) cache.h_prob = *h;
+            else cache.h_prob = {};
+            if (auto h = schema.get_handle("c1"); h) cache.h_c1 = *h;
+            else cache.h_c1 = {};
+            if (auto h = schema.get_handle("c2"); h) cache.h_c2 = *h;
+            else cache.h_c2 = {};
+            if (auto h = schema.get_handle("c3"); h) cache.h_c3 = *h;
+            else cache.h_c3 = {};
+            if (auto h = schema.get_handle("c4"); h) cache.h_c4 = *h;
+            else cache.h_c4 = {};
+            if (auto h = schema.get_handle("c5"); h) cache.h_c5 = *h;
+            else cache.h_c5 = {};
+            if (auto h = schema.get_handle("c6"); h) cache.h_c6 = *h;
+            else cache.h_c6 = {};
+            if (auto h = schema.get_handle("p"); h) cache.h_p = *h;
+            else cache.h_p = {};
+            if (auto h = schema.get_handle("theta"); h) cache.h_theta = *h;
+            else cache.h_theta = {};
+            if (auto h = schema.get_handle("phi"); h) cache.h_phi = *h;
+            else cache.h_phi = {};
+            if (auto h = schema.get_handle("vz"); h) cache.h_vz = *h;
+            else cache.h_vz = {};
+        }
+        h_id = cache.h_id;
+        h_sector = cache.h_sector;
+        h_charge = cache.h_charge;
+        h_prob = cache.h_prob;
+        h_c1 = cache.h_c1;
+        h_c2 = cache.h_c2;
+        h_c3 = cache.h_c3;
+        h_c4 = cache.h_c4;
+        h_c5 = cache.h_c5;
+        h_c6 = cache.h_c6;
+        h_p = cache.h_p;
+        h_theta = cache.h_theta;
+        h_phi = cache.h_phi;
+        h_vz = cache.h_vz;
         return true;
     }
 

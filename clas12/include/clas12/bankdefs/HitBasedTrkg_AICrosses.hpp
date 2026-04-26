@@ -42,48 +42,94 @@ class HitBasedTrkg_AICrosses {
 
     HitBasedTrkg_AICrosses() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("region"); h) h_region = *h;
-        else h_region = {};
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
-        if (auto h = schema.get_handle("err_x"); h) h_err_x = *h;
-        else h_err_x = {};
-        if (auto h = schema.get_handle("err_y"); h) h_err_y = *h;
-        else h_err_y = {};
-        if (auto h = schema.get_handle("err_z"); h) h_err_z = *h;
-        else h_err_z = {};
-        if (auto h = schema.get_handle("ux"); h) h_ux = *h;
-        else h_ux = {};
-        if (auto h = schema.get_handle("uy"); h) h_uy = *h;
-        else h_uy = {};
-        if (auto h = schema.get_handle("uz"); h) h_uz = *h;
-        else h_uz = {};
-        if (auto h = schema.get_handle("err_ux"); h) h_err_ux = *h;
-        else h_err_ux = {};
-        if (auto h = schema.get_handle("err_uy"); h) h_err_uy = *h;
-        else h_err_uy = {};
-        if (auto h = schema.get_handle("err_uz"); h) h_err_uz = *h;
-        else h_err_uz = {};
-        if (auto h = schema.get_handle("Segment1_ID"); h) h_Segment1_ID = *h;
-        else h_Segment1_ID = {};
-        if (auto h = schema.get_handle("Segment2_ID"); h) h_Segment2_ID = *h;
-        else h_Segment2_ID = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_status;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_region;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+            hipo::column_handle h_err_x;
+            hipo::column_handle h_err_y;
+            hipo::column_handle h_err_z;
+            hipo::column_handle h_ux;
+            hipo::column_handle h_uy;
+            hipo::column_handle h_uz;
+            hipo::column_handle h_err_ux;
+            hipo::column_handle h_err_uy;
+            hipo::column_handle h_err_uz;
+            hipo::column_handle h_Segment1_ID;
+            hipo::column_handle h_Segment2_ID;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("region"); h) cache.h_region = *h;
+            else cache.h_region = {};
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+            if (auto h = schema.get_handle("err_x"); h) cache.h_err_x = *h;
+            else cache.h_err_x = {};
+            if (auto h = schema.get_handle("err_y"); h) cache.h_err_y = *h;
+            else cache.h_err_y = {};
+            if (auto h = schema.get_handle("err_z"); h) cache.h_err_z = *h;
+            else cache.h_err_z = {};
+            if (auto h = schema.get_handle("ux"); h) cache.h_ux = *h;
+            else cache.h_ux = {};
+            if (auto h = schema.get_handle("uy"); h) cache.h_uy = *h;
+            else cache.h_uy = {};
+            if (auto h = schema.get_handle("uz"); h) cache.h_uz = *h;
+            else cache.h_uz = {};
+            if (auto h = schema.get_handle("err_ux"); h) cache.h_err_ux = *h;
+            else cache.h_err_ux = {};
+            if (auto h = schema.get_handle("err_uy"); h) cache.h_err_uy = *h;
+            else cache.h_err_uy = {};
+            if (auto h = schema.get_handle("err_uz"); h) cache.h_err_uz = *h;
+            else cache.h_err_uz = {};
+            if (auto h = schema.get_handle("Segment1_ID"); h) cache.h_Segment1_ID = *h;
+            else cache.h_Segment1_ID = {};
+            if (auto h = schema.get_handle("Segment2_ID"); h) cache.h_Segment2_ID = *h;
+            else cache.h_Segment2_ID = {};
+        }
+        h_id = cache.h_id;
+        h_status = cache.h_status;
+        h_sector = cache.h_sector;
+        h_region = cache.h_region;
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
+        h_err_x = cache.h_err_x;
+        h_err_y = cache.h_err_y;
+        h_err_z = cache.h_err_z;
+        h_ux = cache.h_ux;
+        h_uy = cache.h_uy;
+        h_uz = cache.h_uz;
+        h_err_ux = cache.h_err_ux;
+        h_err_uy = cache.h_err_uy;
+        h_err_uz = cache.h_err_uz;
+        h_Segment1_ID = cache.h_Segment1_ID;
+        h_Segment2_ID = cache.h_Segment2_ID;
         return true;
     }
 

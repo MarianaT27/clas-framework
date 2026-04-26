@@ -42,46 +42,90 @@ class CVT_KFTrajectory {
 
     CVT_KFTrajectory() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("detector"); h) h_detector = *h;
-        else h_detector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("index"); h) h_index = *h;
-        else h_index = {};
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
-        if (auto h = schema.get_handle("px"); h) h_px = *h;
-        else h_px = {};
-        if (auto h = schema.get_handle("py"); h) h_py = *h;
-        else h_py = {};
-        if (auto h = schema.get_handle("pz"); h) h_pz = *h;
-        else h_pz = {};
-        if (auto h = schema.get_handle("path"); h) h_path = *h;
-        else h_path = {};
-        if (auto h = schema.get_handle("dx"); h) h_dx = *h;
-        else h_dx = {};
-        if (auto h = schema.get_handle("dE"); h) h_dE = *h;
-        else h_dE = {};
-        if (auto h = schema.get_handle("trackRes"); h) h_trackRes = *h;
-        else h_trackRes = {};
-        if (auto h = schema.get_handle("transportedRes"); h) h_transportedRes = *h;
-        else h_transportedRes = {};
-        if (auto h = schema.get_handle("filteredRes"); h) h_filteredRes = *h;
-        else h_filteredRes = {};
-        if (auto h = schema.get_handle("smoothedRes"); h) h_smoothedRes = *h;
-        else h_smoothedRes = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_detector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_index;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+            hipo::column_handle h_px;
+            hipo::column_handle h_py;
+            hipo::column_handle h_pz;
+            hipo::column_handle h_path;
+            hipo::column_handle h_dx;
+            hipo::column_handle h_dE;
+            hipo::column_handle h_trackRes;
+            hipo::column_handle h_transportedRes;
+            hipo::column_handle h_filteredRes;
+            hipo::column_handle h_smoothedRes;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("detector"); h) cache.h_detector = *h;
+            else cache.h_detector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("index"); h) cache.h_index = *h;
+            else cache.h_index = {};
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+            if (auto h = schema.get_handle("px"); h) cache.h_px = *h;
+            else cache.h_px = {};
+            if (auto h = schema.get_handle("py"); h) cache.h_py = *h;
+            else cache.h_py = {};
+            if (auto h = schema.get_handle("pz"); h) cache.h_pz = *h;
+            else cache.h_pz = {};
+            if (auto h = schema.get_handle("path"); h) cache.h_path = *h;
+            else cache.h_path = {};
+            if (auto h = schema.get_handle("dx"); h) cache.h_dx = *h;
+            else cache.h_dx = {};
+            if (auto h = schema.get_handle("dE"); h) cache.h_dE = *h;
+            else cache.h_dE = {};
+            if (auto h = schema.get_handle("trackRes"); h) cache.h_trackRes = *h;
+            else cache.h_trackRes = {};
+            if (auto h = schema.get_handle("transportedRes"); h) cache.h_transportedRes = *h;
+            else cache.h_transportedRes = {};
+            if (auto h = schema.get_handle("filteredRes"); h) cache.h_filteredRes = *h;
+            else cache.h_filteredRes = {};
+            if (auto h = schema.get_handle("smoothedRes"); h) cache.h_smoothedRes = *h;
+            else cache.h_smoothedRes = {};
+        }
+        h_id = cache.h_id;
+        h_detector = cache.h_detector;
+        h_layer = cache.h_layer;
+        h_index = cache.h_index;
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
+        h_px = cache.h_px;
+        h_py = cache.h_py;
+        h_pz = cache.h_pz;
+        h_path = cache.h_path;
+        h_dx = cache.h_dx;
+        h_dE = cache.h_dE;
+        h_trackRes = cache.h_trackRes;
+        h_transportedRes = cache.h_transportedRes;
+        h_filteredRes = cache.h_filteredRes;
+        h_smoothedRes = cache.h_smoothedRes;
         return true;
     }
 

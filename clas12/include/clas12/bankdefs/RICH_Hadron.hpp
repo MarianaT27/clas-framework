@@ -42,54 +42,106 @@ class RICH_Hadron {
 
     RICH_Hadron() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("hindex"); h) h_hindex = *h;
-        else h_hindex = {};
-        if (auto h = schema.get_handle("pindex"); h) h_pindex = *h;
-        else h_pindex = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("traced_the"); h) h_traced_the = *h;
-        else h_traced_the = {};
-        if (auto h = schema.get_handle("traced_phi"); h) h_traced_phi = *h;
-        else h_traced_phi = {};
-        if (auto h = schema.get_handle("traced_hitx"); h) h_traced_hitx = *h;
-        else h_traced_hitx = {};
-        if (auto h = schema.get_handle("traced_hity"); h) h_traced_hity = *h;
-        else h_traced_hity = {};
-        if (auto h = schema.get_handle("traced_hitz"); h) h_traced_hitz = *h;
-        else h_traced_hitz = {};
-        if (auto h = schema.get_handle("traced_time"); h) h_traced_time = *h;
-        else h_traced_time = {};
-        if (auto h = schema.get_handle("traced_path"); h) h_traced_path = *h;
-        else h_traced_path = {};
-        if (auto h = schema.get_handle("traced_mchi2"); h) h_traced_mchi2 = *h;
-        else h_traced_mchi2 = {};
-        if (auto h = schema.get_handle("traced_ilay"); h) h_traced_ilay = *h;
-        else h_traced_ilay = {};
-        if (auto h = schema.get_handle("traced_ico"); h) h_traced_ico = *h;
-        else h_traced_ico = {};
-        if (auto h = schema.get_handle("traced_emix"); h) h_traced_emix = *h;
-        else h_traced_emix = {};
-        if (auto h = schema.get_handle("traced_emiy"); h) h_traced_emiy = *h;
-        else h_traced_emiy = {};
-        if (auto h = schema.get_handle("traced_emiz"); h) h_traced_emiz = *h;
-        else h_traced_emiz = {};
-        if (auto h = schema.get_handle("etaC_dir"); h) h_etaC_dir = *h;
-        else h_etaC_dir = {};
-        if (auto h = schema.get_handle("etaC_lat"); h) h_etaC_lat = *h;
-        else h_etaC_lat = {};
-        if (auto h = schema.get_handle("etaC_sphe"); h) h_etaC_sphe = *h;
-        else h_etaC_sphe = {};
-        if (auto h = schema.get_handle("etaC_rms"); h) h_etaC_rms = *h;
-        else h_etaC_rms = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_hindex;
+            hipo::column_handle h_pindex;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_traced_the;
+            hipo::column_handle h_traced_phi;
+            hipo::column_handle h_traced_hitx;
+            hipo::column_handle h_traced_hity;
+            hipo::column_handle h_traced_hitz;
+            hipo::column_handle h_traced_time;
+            hipo::column_handle h_traced_path;
+            hipo::column_handle h_traced_mchi2;
+            hipo::column_handle h_traced_ilay;
+            hipo::column_handle h_traced_ico;
+            hipo::column_handle h_traced_emix;
+            hipo::column_handle h_traced_emiy;
+            hipo::column_handle h_traced_emiz;
+            hipo::column_handle h_etaC_dir;
+            hipo::column_handle h_etaC_lat;
+            hipo::column_handle h_etaC_sphe;
+            hipo::column_handle h_etaC_rms;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("hindex"); h) cache.h_hindex = *h;
+            else cache.h_hindex = {};
+            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
+            else cache.h_pindex = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("traced_the"); h) cache.h_traced_the = *h;
+            else cache.h_traced_the = {};
+            if (auto h = schema.get_handle("traced_phi"); h) cache.h_traced_phi = *h;
+            else cache.h_traced_phi = {};
+            if (auto h = schema.get_handle("traced_hitx"); h) cache.h_traced_hitx = *h;
+            else cache.h_traced_hitx = {};
+            if (auto h = schema.get_handle("traced_hity"); h) cache.h_traced_hity = *h;
+            else cache.h_traced_hity = {};
+            if (auto h = schema.get_handle("traced_hitz"); h) cache.h_traced_hitz = *h;
+            else cache.h_traced_hitz = {};
+            if (auto h = schema.get_handle("traced_time"); h) cache.h_traced_time = *h;
+            else cache.h_traced_time = {};
+            if (auto h = schema.get_handle("traced_path"); h) cache.h_traced_path = *h;
+            else cache.h_traced_path = {};
+            if (auto h = schema.get_handle("traced_mchi2"); h) cache.h_traced_mchi2 = *h;
+            else cache.h_traced_mchi2 = {};
+            if (auto h = schema.get_handle("traced_ilay"); h) cache.h_traced_ilay = *h;
+            else cache.h_traced_ilay = {};
+            if (auto h = schema.get_handle("traced_ico"); h) cache.h_traced_ico = *h;
+            else cache.h_traced_ico = {};
+            if (auto h = schema.get_handle("traced_emix"); h) cache.h_traced_emix = *h;
+            else cache.h_traced_emix = {};
+            if (auto h = schema.get_handle("traced_emiy"); h) cache.h_traced_emiy = *h;
+            else cache.h_traced_emiy = {};
+            if (auto h = schema.get_handle("traced_emiz"); h) cache.h_traced_emiz = *h;
+            else cache.h_traced_emiz = {};
+            if (auto h = schema.get_handle("etaC_dir"); h) cache.h_etaC_dir = *h;
+            else cache.h_etaC_dir = {};
+            if (auto h = schema.get_handle("etaC_lat"); h) cache.h_etaC_lat = *h;
+            else cache.h_etaC_lat = {};
+            if (auto h = schema.get_handle("etaC_sphe"); h) cache.h_etaC_sphe = *h;
+            else cache.h_etaC_sphe = {};
+            if (auto h = schema.get_handle("etaC_rms"); h) cache.h_etaC_rms = *h;
+            else cache.h_etaC_rms = {};
+        }
+        h_id = cache.h_id;
+        h_hindex = cache.h_hindex;
+        h_pindex = cache.h_pindex;
+        h_sector = cache.h_sector;
+        h_traced_the = cache.h_traced_the;
+        h_traced_phi = cache.h_traced_phi;
+        h_traced_hitx = cache.h_traced_hitx;
+        h_traced_hity = cache.h_traced_hity;
+        h_traced_hitz = cache.h_traced_hitz;
+        h_traced_time = cache.h_traced_time;
+        h_traced_path = cache.h_traced_path;
+        h_traced_mchi2 = cache.h_traced_mchi2;
+        h_traced_ilay = cache.h_traced_ilay;
+        h_traced_ico = cache.h_traced_ico;
+        h_traced_emix = cache.h_traced_emix;
+        h_traced_emiy = cache.h_traced_emiy;
+        h_traced_emiz = cache.h_traced_emiz;
+        h_etaC_dir = cache.h_etaC_dir;
+        h_etaC_lat = cache.h_etaC_lat;
+        h_etaC_sphe = cache.h_etaC_sphe;
+        h_etaC_rms = cache.h_etaC_rms;
         return true;
     }
 

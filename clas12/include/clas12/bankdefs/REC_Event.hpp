@@ -42,30 +42,58 @@ class REC_Event {
 
     REC_Event() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("category"); h) h_category = *h;
-        else h_category = {};
-        if (auto h = schema.get_handle("topology"); h) h_topology = *h;
-        else h_topology = {};
-        if (auto h = schema.get_handle("beamCharge"); h) h_beamCharge = *h;
-        else h_beamCharge = {};
-        if (auto h = schema.get_handle("liveTime"); h) h_liveTime = *h;
-        else h_liveTime = {};
-        if (auto h = schema.get_handle("startTime"); h) h_startTime = *h;
-        else h_startTime = {};
-        if (auto h = schema.get_handle("RFTime"); h) h_RFTime = *h;
-        else h_RFTime = {};
-        if (auto h = schema.get_handle("helicity"); h) h_helicity = *h;
-        else h_helicity = {};
-        if (auto h = schema.get_handle("helicityRaw"); h) h_helicityRaw = *h;
-        else h_helicityRaw = {};
-        if (auto h = schema.get_handle("procTime"); h) h_procTime = *h;
-        else h_procTime = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_category;
+            hipo::column_handle h_topology;
+            hipo::column_handle h_beamCharge;
+            hipo::column_handle h_liveTime;
+            hipo::column_handle h_startTime;
+            hipo::column_handle h_RFTime;
+            hipo::column_handle h_helicity;
+            hipo::column_handle h_helicityRaw;
+            hipo::column_handle h_procTime;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("category"); h) cache.h_category = *h;
+            else cache.h_category = {};
+            if (auto h = schema.get_handle("topology"); h) cache.h_topology = *h;
+            else cache.h_topology = {};
+            if (auto h = schema.get_handle("beamCharge"); h) cache.h_beamCharge = *h;
+            else cache.h_beamCharge = {};
+            if (auto h = schema.get_handle("liveTime"); h) cache.h_liveTime = *h;
+            else cache.h_liveTime = {};
+            if (auto h = schema.get_handle("startTime"); h) cache.h_startTime = *h;
+            else cache.h_startTime = {};
+            if (auto h = schema.get_handle("RFTime"); h) cache.h_RFTime = *h;
+            else cache.h_RFTime = {};
+            if (auto h = schema.get_handle("helicity"); h) cache.h_helicity = *h;
+            else cache.h_helicity = {};
+            if (auto h = schema.get_handle("helicityRaw"); h) cache.h_helicityRaw = *h;
+            else cache.h_helicityRaw = {};
+            if (auto h = schema.get_handle("procTime"); h) cache.h_procTime = *h;
+            else cache.h_procTime = {};
+        }
+        h_category = cache.h_category;
+        h_topology = cache.h_topology;
+        h_beamCharge = cache.h_beamCharge;
+        h_liveTime = cache.h_liveTime;
+        h_startTime = cache.h_startTime;
+        h_RFTime = cache.h_RFTime;
+        h_helicity = cache.h_helicity;
+        h_helicityRaw = cache.h_helicityRaw;
+        h_procTime = cache.h_procTime;
         return true;
     }
 

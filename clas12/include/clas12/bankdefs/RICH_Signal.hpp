@@ -42,38 +42,74 @@ class RICH_Signal {
 
     RICH_Signal() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("hindex"); h) h_hindex = *h;
-        else h_hindex = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("pmt"); h) h_pmt = *h;
-        else h_pmt = {};
-        if (auto h = schema.get_handle("anode"); h) h_anode = *h;
-        else h_anode = {};
-        if (auto h = schema.get_handle("size"); h) h_size = *h;
-        else h_size = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
-        if (auto h = schema.get_handle("x"); h) h_x = *h;
-        else h_x = {};
-        if (auto h = schema.get_handle("y"); h) h_y = *h;
-        else h_y = {};
-        if (auto h = schema.get_handle("z"); h) h_z = *h;
-        else h_z = {};
-        if (auto h = schema.get_handle("time"); h) h_time = *h;
-        else h_time = {};
-        if (auto h = schema.get_handle("rawtime"); h) h_rawtime = *h;
-        else h_rawtime = {};
-        if (auto h = schema.get_handle("charge"); h) h_charge = *h;
-        else h_charge = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_hindex;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_pmt;
+            hipo::column_handle h_anode;
+            hipo::column_handle h_size;
+            hipo::column_handle h_status;
+            hipo::column_handle h_x;
+            hipo::column_handle h_y;
+            hipo::column_handle h_z;
+            hipo::column_handle h_time;
+            hipo::column_handle h_rawtime;
+            hipo::column_handle h_charge;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("hindex"); h) cache.h_hindex = *h;
+            else cache.h_hindex = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("pmt"); h) cache.h_pmt = *h;
+            else cache.h_pmt = {};
+            if (auto h = schema.get_handle("anode"); h) cache.h_anode = *h;
+            else cache.h_anode = {};
+            if (auto h = schema.get_handle("size"); h) cache.h_size = *h;
+            else cache.h_size = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
+            else cache.h_x = {};
+            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
+            else cache.h_y = {};
+            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
+            else cache.h_z = {};
+            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
+            else cache.h_time = {};
+            if (auto h = schema.get_handle("rawtime"); h) cache.h_rawtime = *h;
+            else cache.h_rawtime = {};
+            if (auto h = schema.get_handle("charge"); h) cache.h_charge = *h;
+            else cache.h_charge = {};
+        }
+        h_id = cache.h_id;
+        h_hindex = cache.h_hindex;
+        h_sector = cache.h_sector;
+        h_pmt = cache.h_pmt;
+        h_anode = cache.h_anode;
+        h_size = cache.h_size;
+        h_status = cache.h_status;
+        h_x = cache.h_x;
+        h_y = cache.h_y;
+        h_z = cache.h_z;
+        h_time = cache.h_time;
+        h_rawtime = cache.h_rawtime;
+        h_charge = cache.h_charge;
         return true;
     }
 

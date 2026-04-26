@@ -42,36 +42,70 @@ class REC_TrackCross {
 
     REC_TrackCross() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("index"); h) h_index = *h;
-        else h_index = {};
-        if (auto h = schema.get_handle("pindex"); h) h_pindex = *h;
-        else h_pindex = {};
-        if (auto h = schema.get_handle("detector"); h) h_detector = *h;
-        else h_detector = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("c_x"); h) h_c_x = *h;
-        else h_c_x = {};
-        if (auto h = schema.get_handle("c_y"); h) h_c_y = *h;
-        else h_c_y = {};
-        if (auto h = schema.get_handle("c_z"); h) h_c_z = *h;
-        else h_c_z = {};
-        if (auto h = schema.get_handle("c_ux"); h) h_c_ux = *h;
-        else h_c_ux = {};
-        if (auto h = schema.get_handle("c_uy"); h) h_c_uy = *h;
-        else h_c_uy = {};
-        if (auto h = schema.get_handle("c_uz"); h) h_c_uz = *h;
-        else h_c_uz = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_index;
+            hipo::column_handle h_pindex;
+            hipo::column_handle h_detector;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_c_x;
+            hipo::column_handle h_c_y;
+            hipo::column_handle h_c_z;
+            hipo::column_handle h_c_ux;
+            hipo::column_handle h_c_uy;
+            hipo::column_handle h_c_uz;
+            hipo::column_handle h_status;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("index"); h) cache.h_index = *h;
+            else cache.h_index = {};
+            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
+            else cache.h_pindex = {};
+            if (auto h = schema.get_handle("detector"); h) cache.h_detector = *h;
+            else cache.h_detector = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("c_x"); h) cache.h_c_x = *h;
+            else cache.h_c_x = {};
+            if (auto h = schema.get_handle("c_y"); h) cache.h_c_y = *h;
+            else cache.h_c_y = {};
+            if (auto h = schema.get_handle("c_z"); h) cache.h_c_z = *h;
+            else cache.h_c_z = {};
+            if (auto h = schema.get_handle("c_ux"); h) cache.h_c_ux = *h;
+            else cache.h_c_ux = {};
+            if (auto h = schema.get_handle("c_uy"); h) cache.h_c_uy = *h;
+            else cache.h_c_uy = {};
+            if (auto h = schema.get_handle("c_uz"); h) cache.h_c_uz = *h;
+            else cache.h_c_uz = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+        }
+        h_index = cache.h_index;
+        h_pindex = cache.h_pindex;
+        h_detector = cache.h_detector;
+        h_sector = cache.h_sector;
+        h_layer = cache.h_layer;
+        h_c_x = cache.h_c_x;
+        h_c_y = cache.h_c_y;
+        h_c_z = cache.h_c_z;
+        h_c_ux = cache.h_c_ux;
+        h_c_uy = cache.h_c_uy;
+        h_c_uz = cache.h_c_uz;
+        h_status = cache.h_status;
         return true;
     }
 

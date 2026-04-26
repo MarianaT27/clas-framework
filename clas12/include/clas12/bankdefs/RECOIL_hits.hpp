@@ -42,28 +42,54 @@ class RECOIL_hits {
 
     RECOIL_hits() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("strip"); h) h_strip = *h;
-        else h_strip = {};
-        if (auto h = schema.get_handle("energy"); h) h_energy = *h;
-        else h_energy = {};
-        if (auto h = schema.get_handle("time"); h) h_time = *h;
-        else h_time = {};
-        if (auto h = schema.get_handle("clusterId"); h) h_clusterId = *h;
-        else h_clusterId = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_strip;
+            hipo::column_handle h_energy;
+            hipo::column_handle h_time;
+            hipo::column_handle h_clusterId;
+            hipo::column_handle h_status;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("strip"); h) cache.h_strip = *h;
+            else cache.h_strip = {};
+            if (auto h = schema.get_handle("energy"); h) cache.h_energy = *h;
+            else cache.h_energy = {};
+            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
+            else cache.h_time = {};
+            if (auto h = schema.get_handle("clusterId"); h) cache.h_clusterId = *h;
+            else cache.h_clusterId = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+        }
+        h_id = cache.h_id;
+        h_sector = cache.h_sector;
+        h_layer = cache.h_layer;
+        h_strip = cache.h_strip;
+        h_energy = cache.h_energy;
+        h_time = cache.h_time;
+        h_clusterId = cache.h_clusterId;
+        h_status = cache.h_status;
         return true;
     }
 

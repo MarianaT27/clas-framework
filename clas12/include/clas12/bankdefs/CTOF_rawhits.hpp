@@ -42,34 +42,66 @@ class CTOF_rawhits {
 
     CTOF_rawhits() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
-        if (auto h = schema.get_handle("component"); h) h_component = *h;
-        else h_component = {};
-        if (auto h = schema.get_handle("energy_up"); h) h_energy_up = *h;
-        else h_energy_up = {};
-        if (auto h = schema.get_handle("energy_down"); h) h_energy_down = *h;
-        else h_energy_down = {};
-        if (auto h = schema.get_handle("time_up"); h) h_time_up = *h;
-        else h_time_up = {};
-        if (auto h = schema.get_handle("time_down"); h) h_time_down = *h;
-        else h_time_down = {};
-        if (auto h = schema.get_handle("energy_up_unc"); h) h_energy_up_unc = *h;
-        else h_energy_up_unc = {};
-        if (auto h = schema.get_handle("energy_down_unc"); h) h_energy_down_unc = *h;
-        else h_energy_down_unc = {};
-        if (auto h = schema.get_handle("time_up_unc"); h) h_time_up_unc = *h;
-        else h_time_up_unc = {};
-        if (auto h = schema.get_handle("time_down_unc"); h) h_time_down_unc = *h;
-        else h_time_down_unc = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_status;
+            hipo::column_handle h_component;
+            hipo::column_handle h_energy_up;
+            hipo::column_handle h_energy_down;
+            hipo::column_handle h_time_up;
+            hipo::column_handle h_time_down;
+            hipo::column_handle h_energy_up_unc;
+            hipo::column_handle h_energy_down_unc;
+            hipo::column_handle h_time_up_unc;
+            hipo::column_handle h_time_down_unc;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+            if (auto h = schema.get_handle("component"); h) cache.h_component = *h;
+            else cache.h_component = {};
+            if (auto h = schema.get_handle("energy_up"); h) cache.h_energy_up = *h;
+            else cache.h_energy_up = {};
+            if (auto h = schema.get_handle("energy_down"); h) cache.h_energy_down = *h;
+            else cache.h_energy_down = {};
+            if (auto h = schema.get_handle("time_up"); h) cache.h_time_up = *h;
+            else cache.h_time_up = {};
+            if (auto h = schema.get_handle("time_down"); h) cache.h_time_down = *h;
+            else cache.h_time_down = {};
+            if (auto h = schema.get_handle("energy_up_unc"); h) cache.h_energy_up_unc = *h;
+            else cache.h_energy_up_unc = {};
+            if (auto h = schema.get_handle("energy_down_unc"); h) cache.h_energy_down_unc = *h;
+            else cache.h_energy_down_unc = {};
+            if (auto h = schema.get_handle("time_up_unc"); h) cache.h_time_up_unc = *h;
+            else cache.h_time_up_unc = {};
+            if (auto h = schema.get_handle("time_down_unc"); h) cache.h_time_down_unc = *h;
+            else cache.h_time_down_unc = {};
+        }
+        h_id = cache.h_id;
+        h_status = cache.h_status;
+        h_component = cache.h_component;
+        h_energy_up = cache.h_energy_up;
+        h_energy_down = cache.h_energy_down;
+        h_time_up = cache.h_time_up;
+        h_time_down = cache.h_time_down;
+        h_energy_up_unc = cache.h_energy_up_unc;
+        h_energy_down_unc = cache.h_energy_down_unc;
+        h_time_up_unc = cache.h_time_up_unc;
+        h_time_down_unc = cache.h_time_down_unc;
         return true;
     }
 

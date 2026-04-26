@@ -42,58 +42,114 @@ class TimeBasedTrkg_TBClusters {
 
     TimeBasedTrkg_TBClusters() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("superlayer"); h) h_superlayer = *h;
-        else h_superlayer = {};
-        if (auto h = schema.get_handle("Hit1_ID"); h) h_Hit1_ID = *h;
-        else h_Hit1_ID = {};
-        if (auto h = schema.get_handle("Hit2_ID"); h) h_Hit2_ID = *h;
-        else h_Hit2_ID = {};
-        if (auto h = schema.get_handle("Hit3_ID"); h) h_Hit3_ID = *h;
-        else h_Hit3_ID = {};
-        if (auto h = schema.get_handle("Hit4_ID"); h) h_Hit4_ID = *h;
-        else h_Hit4_ID = {};
-        if (auto h = schema.get_handle("Hit5_ID"); h) h_Hit5_ID = *h;
-        else h_Hit5_ID = {};
-        if (auto h = schema.get_handle("Hit6_ID"); h) h_Hit6_ID = *h;
-        else h_Hit6_ID = {};
-        if (auto h = schema.get_handle("Hit7_ID"); h) h_Hit7_ID = *h;
-        else h_Hit7_ID = {};
-        if (auto h = schema.get_handle("Hit8_ID"); h) h_Hit8_ID = *h;
-        else h_Hit8_ID = {};
-        if (auto h = schema.get_handle("Hit9_ID"); h) h_Hit9_ID = *h;
-        else h_Hit9_ID = {};
-        if (auto h = schema.get_handle("Hit10_ID"); h) h_Hit10_ID = *h;
-        else h_Hit10_ID = {};
-        if (auto h = schema.get_handle("Hit11_ID"); h) h_Hit11_ID = *h;
-        else h_Hit11_ID = {};
-        if (auto h = schema.get_handle("Hit12_ID"); h) h_Hit12_ID = *h;
-        else h_Hit12_ID = {};
-        if (auto h = schema.get_handle("avgWire"); h) h_avgWire = *h;
-        else h_avgWire = {};
-        if (auto h = schema.get_handle("fitChisqProb"); h) h_fitChisqProb = *h;
-        else h_fitChisqProb = {};
-        if (auto h = schema.get_handle("fitSlope"); h) h_fitSlope = *h;
-        else h_fitSlope = {};
-        if (auto h = schema.get_handle("fitSlopeErr"); h) h_fitSlopeErr = *h;
-        else h_fitSlopeErr = {};
-        if (auto h = schema.get_handle("fitInterc"); h) h_fitInterc = *h;
-        else h_fitInterc = {};
-        if (auto h = schema.get_handle("fitIntercErr"); h) h_fitIntercErr = *h;
-        else h_fitIntercErr = {};
-        if (auto h = schema.get_handle("size"); h) h_size = *h;
-        else h_size = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_status;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_superlayer;
+            hipo::column_handle h_Hit1_ID;
+            hipo::column_handle h_Hit2_ID;
+            hipo::column_handle h_Hit3_ID;
+            hipo::column_handle h_Hit4_ID;
+            hipo::column_handle h_Hit5_ID;
+            hipo::column_handle h_Hit6_ID;
+            hipo::column_handle h_Hit7_ID;
+            hipo::column_handle h_Hit8_ID;
+            hipo::column_handle h_Hit9_ID;
+            hipo::column_handle h_Hit10_ID;
+            hipo::column_handle h_Hit11_ID;
+            hipo::column_handle h_Hit12_ID;
+            hipo::column_handle h_avgWire;
+            hipo::column_handle h_fitChisqProb;
+            hipo::column_handle h_fitSlope;
+            hipo::column_handle h_fitSlopeErr;
+            hipo::column_handle h_fitInterc;
+            hipo::column_handle h_fitIntercErr;
+            hipo::column_handle h_size;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("superlayer"); h) cache.h_superlayer = *h;
+            else cache.h_superlayer = {};
+            if (auto h = schema.get_handle("Hit1_ID"); h) cache.h_Hit1_ID = *h;
+            else cache.h_Hit1_ID = {};
+            if (auto h = schema.get_handle("Hit2_ID"); h) cache.h_Hit2_ID = *h;
+            else cache.h_Hit2_ID = {};
+            if (auto h = schema.get_handle("Hit3_ID"); h) cache.h_Hit3_ID = *h;
+            else cache.h_Hit3_ID = {};
+            if (auto h = schema.get_handle("Hit4_ID"); h) cache.h_Hit4_ID = *h;
+            else cache.h_Hit4_ID = {};
+            if (auto h = schema.get_handle("Hit5_ID"); h) cache.h_Hit5_ID = *h;
+            else cache.h_Hit5_ID = {};
+            if (auto h = schema.get_handle("Hit6_ID"); h) cache.h_Hit6_ID = *h;
+            else cache.h_Hit6_ID = {};
+            if (auto h = schema.get_handle("Hit7_ID"); h) cache.h_Hit7_ID = *h;
+            else cache.h_Hit7_ID = {};
+            if (auto h = schema.get_handle("Hit8_ID"); h) cache.h_Hit8_ID = *h;
+            else cache.h_Hit8_ID = {};
+            if (auto h = schema.get_handle("Hit9_ID"); h) cache.h_Hit9_ID = *h;
+            else cache.h_Hit9_ID = {};
+            if (auto h = schema.get_handle("Hit10_ID"); h) cache.h_Hit10_ID = *h;
+            else cache.h_Hit10_ID = {};
+            if (auto h = schema.get_handle("Hit11_ID"); h) cache.h_Hit11_ID = *h;
+            else cache.h_Hit11_ID = {};
+            if (auto h = schema.get_handle("Hit12_ID"); h) cache.h_Hit12_ID = *h;
+            else cache.h_Hit12_ID = {};
+            if (auto h = schema.get_handle("avgWire"); h) cache.h_avgWire = *h;
+            else cache.h_avgWire = {};
+            if (auto h = schema.get_handle("fitChisqProb"); h) cache.h_fitChisqProb = *h;
+            else cache.h_fitChisqProb = {};
+            if (auto h = schema.get_handle("fitSlope"); h) cache.h_fitSlope = *h;
+            else cache.h_fitSlope = {};
+            if (auto h = schema.get_handle("fitSlopeErr"); h) cache.h_fitSlopeErr = *h;
+            else cache.h_fitSlopeErr = {};
+            if (auto h = schema.get_handle("fitInterc"); h) cache.h_fitInterc = *h;
+            else cache.h_fitInterc = {};
+            if (auto h = schema.get_handle("fitIntercErr"); h) cache.h_fitIntercErr = *h;
+            else cache.h_fitIntercErr = {};
+            if (auto h = schema.get_handle("size"); h) cache.h_size = *h;
+            else cache.h_size = {};
+        }
+        h_id = cache.h_id;
+        h_status = cache.h_status;
+        h_sector = cache.h_sector;
+        h_superlayer = cache.h_superlayer;
+        h_Hit1_ID = cache.h_Hit1_ID;
+        h_Hit2_ID = cache.h_Hit2_ID;
+        h_Hit3_ID = cache.h_Hit3_ID;
+        h_Hit4_ID = cache.h_Hit4_ID;
+        h_Hit5_ID = cache.h_Hit5_ID;
+        h_Hit6_ID = cache.h_Hit6_ID;
+        h_Hit7_ID = cache.h_Hit7_ID;
+        h_Hit8_ID = cache.h_Hit8_ID;
+        h_Hit9_ID = cache.h_Hit9_ID;
+        h_Hit10_ID = cache.h_Hit10_ID;
+        h_Hit11_ID = cache.h_Hit11_ID;
+        h_Hit12_ID = cache.h_Hit12_ID;
+        h_avgWire = cache.h_avgWire;
+        h_fitChisqProb = cache.h_fitChisqProb;
+        h_fitSlope = cache.h_fitSlope;
+        h_fitSlopeErr = cache.h_fitSlopeErr;
+        h_fitInterc = cache.h_fitInterc;
+        h_fitIntercErr = cache.h_fitIntercErr;
+        h_size = cache.h_size;
         return true;
     }
 

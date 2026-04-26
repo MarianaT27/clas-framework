@@ -42,24 +42,46 @@ class TimeBasedTrkg_TBSegmentTrajectory {
 
     TimeBasedTrkg_TBSegmentTrajectory() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("segmentID"); h) h_segmentID = *h;
-        else h_segmentID = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("superlayer"); h) h_superlayer = *h;
-        else h_superlayer = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("matchedHitID"); h) h_matchedHitID = *h;
-        else h_matchedHitID = {};
-        if (auto h = schema.get_handle("trkDoca"); h) h_trkDoca = *h;
-        else h_trkDoca = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_segmentID;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_superlayer;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_matchedHitID;
+            hipo::column_handle h_trkDoca;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("segmentID"); h) cache.h_segmentID = *h;
+            else cache.h_segmentID = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("superlayer"); h) cache.h_superlayer = *h;
+            else cache.h_superlayer = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("matchedHitID"); h) cache.h_matchedHitID = *h;
+            else cache.h_matchedHitID = {};
+            if (auto h = schema.get_handle("trkDoca"); h) cache.h_trkDoca = *h;
+            else cache.h_trkDoca = {};
+        }
+        h_segmentID = cache.h_segmentID;
+        h_sector = cache.h_sector;
+        h_superlayer = cache.h_superlayer;
+        h_layer = cache.h_layer;
+        h_matchedHitID = cache.h_matchedHitID;
+        h_trkDoca = cache.h_trkDoca;
         return true;
     }
 

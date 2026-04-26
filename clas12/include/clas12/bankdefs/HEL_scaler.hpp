@@ -42,28 +42,54 @@ class HEL_scaler {
 
     HEL_scaler() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("fcupgated"); h) h_fcupgated = *h;
-        else h_fcupgated = {};
-        if (auto h = schema.get_handle("fcup"); h) h_fcup = *h;
-        else h_fcup = {};
-        if (auto h = schema.get_handle("slmgated"); h) h_slmgated = *h;
-        else h_slmgated = {};
-        if (auto h = schema.get_handle("slm"); h) h_slm = *h;
-        else h_slm = {};
-        if (auto h = schema.get_handle("clockgated"); h) h_clockgated = *h;
-        else h_clockgated = {};
-        if (auto h = schema.get_handle("clock"); h) h_clock = *h;
-        else h_clock = {};
-        if (auto h = schema.get_handle("helicity"); h) h_helicity = *h;
-        else h_helicity = {};
-        if (auto h = schema.get_handle("helicityRaw"); h) h_helicityRaw = *h;
-        else h_helicityRaw = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_fcupgated;
+            hipo::column_handle h_fcup;
+            hipo::column_handle h_slmgated;
+            hipo::column_handle h_slm;
+            hipo::column_handle h_clockgated;
+            hipo::column_handle h_clock;
+            hipo::column_handle h_helicity;
+            hipo::column_handle h_helicityRaw;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("fcupgated"); h) cache.h_fcupgated = *h;
+            else cache.h_fcupgated = {};
+            if (auto h = schema.get_handle("fcup"); h) cache.h_fcup = *h;
+            else cache.h_fcup = {};
+            if (auto h = schema.get_handle("slmgated"); h) cache.h_slmgated = *h;
+            else cache.h_slmgated = {};
+            if (auto h = schema.get_handle("slm"); h) cache.h_slm = *h;
+            else cache.h_slm = {};
+            if (auto h = schema.get_handle("clockgated"); h) cache.h_clockgated = *h;
+            else cache.h_clockgated = {};
+            if (auto h = schema.get_handle("clock"); h) cache.h_clock = *h;
+            else cache.h_clock = {};
+            if (auto h = schema.get_handle("helicity"); h) cache.h_helicity = *h;
+            else cache.h_helicity = {};
+            if (auto h = schema.get_handle("helicityRaw"); h) cache.h_helicityRaw = *h;
+            else cache.h_helicityRaw = {};
+        }
+        h_fcupgated = cache.h_fcupgated;
+        h_fcup = cache.h_fcup;
+        h_slmgated = cache.h_slmgated;
+        h_slm = cache.h_slm;
+        h_clockgated = cache.h_clockgated;
+        h_clock = cache.h_clock;
+        h_helicity = cache.h_helicity;
+        h_helicityRaw = cache.h_helicityRaw;
         return true;
     }
 

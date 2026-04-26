@@ -42,46 +42,90 @@ class HitBasedTrkg_DNHits {
 
     HitBasedTrkg_DNHits() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("id"); h) h_id = *h;
-        else h_id = {};
-        if (auto h = schema.get_handle("indexTDC"); h) h_indexTDC = *h;
-        else h_indexTDC = {};
-        if (auto h = schema.get_handle("status"); h) h_status = *h;
-        else h_status = {};
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("superlayer"); h) h_superlayer = *h;
-        else h_superlayer = {};
-        if (auto h = schema.get_handle("layer"); h) h_layer = *h;
-        else h_layer = {};
-        if (auto h = schema.get_handle("wire"); h) h_wire = *h;
-        else h_wire = {};
-        if (auto h = schema.get_handle("TDC"); h) h_TDC = *h;
-        else h_TDC = {};
-        if (auto h = schema.get_handle("jitter"); h) h_jitter = *h;
-        else h_jitter = {};
-        if (auto h = schema.get_handle("trkDoca"); h) h_trkDoca = *h;
-        else h_trkDoca = {};
-        if (auto h = schema.get_handle("docaError"); h) h_docaError = *h;
-        else h_docaError = {};
-        if (auto h = schema.get_handle("LR"); h) h_LR = *h;
-        else h_LR = {};
-        if (auto h = schema.get_handle("LocX"); h) h_LocX = *h;
-        else h_LocX = {};
-        if (auto h = schema.get_handle("LocY"); h) h_LocY = *h;
-        else h_LocY = {};
-        if (auto h = schema.get_handle("X"); h) h_X = *h;
-        else h_X = {};
-        if (auto h = schema.get_handle("Z"); h) h_Z = *h;
-        else h_Z = {};
-        if (auto h = schema.get_handle("clusterID"); h) h_clusterID = *h;
-        else h_clusterID = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_id;
+            hipo::column_handle h_indexTDC;
+            hipo::column_handle h_status;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_superlayer;
+            hipo::column_handle h_layer;
+            hipo::column_handle h_wire;
+            hipo::column_handle h_TDC;
+            hipo::column_handle h_jitter;
+            hipo::column_handle h_trkDoca;
+            hipo::column_handle h_docaError;
+            hipo::column_handle h_LR;
+            hipo::column_handle h_LocX;
+            hipo::column_handle h_LocY;
+            hipo::column_handle h_X;
+            hipo::column_handle h_Z;
+            hipo::column_handle h_clusterID;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
+            else cache.h_id = {};
+            if (auto h = schema.get_handle("indexTDC"); h) cache.h_indexTDC = *h;
+            else cache.h_indexTDC = {};
+            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
+            else cache.h_status = {};
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("superlayer"); h) cache.h_superlayer = *h;
+            else cache.h_superlayer = {};
+            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
+            else cache.h_layer = {};
+            if (auto h = schema.get_handle("wire"); h) cache.h_wire = *h;
+            else cache.h_wire = {};
+            if (auto h = schema.get_handle("TDC"); h) cache.h_TDC = *h;
+            else cache.h_TDC = {};
+            if (auto h = schema.get_handle("jitter"); h) cache.h_jitter = *h;
+            else cache.h_jitter = {};
+            if (auto h = schema.get_handle("trkDoca"); h) cache.h_trkDoca = *h;
+            else cache.h_trkDoca = {};
+            if (auto h = schema.get_handle("docaError"); h) cache.h_docaError = *h;
+            else cache.h_docaError = {};
+            if (auto h = schema.get_handle("LR"); h) cache.h_LR = *h;
+            else cache.h_LR = {};
+            if (auto h = schema.get_handle("LocX"); h) cache.h_LocX = *h;
+            else cache.h_LocX = {};
+            if (auto h = schema.get_handle("LocY"); h) cache.h_LocY = *h;
+            else cache.h_LocY = {};
+            if (auto h = schema.get_handle("X"); h) cache.h_X = *h;
+            else cache.h_X = {};
+            if (auto h = schema.get_handle("Z"); h) cache.h_Z = *h;
+            else cache.h_Z = {};
+            if (auto h = schema.get_handle("clusterID"); h) cache.h_clusterID = *h;
+            else cache.h_clusterID = {};
+        }
+        h_id = cache.h_id;
+        h_indexTDC = cache.h_indexTDC;
+        h_status = cache.h_status;
+        h_sector = cache.h_sector;
+        h_superlayer = cache.h_superlayer;
+        h_layer = cache.h_layer;
+        h_wire = cache.h_wire;
+        h_TDC = cache.h_TDC;
+        h_jitter = cache.h_jitter;
+        h_trkDoca = cache.h_trkDoca;
+        h_docaError = cache.h_docaError;
+        h_LR = cache.h_LR;
+        h_LocX = cache.h_LocX;
+        h_LocY = cache.h_LocY;
+        h_X = cache.h_X;
+        h_Z = cache.h_Z;
+        h_clusterID = cache.h_clusterID;
         return true;
     }
 

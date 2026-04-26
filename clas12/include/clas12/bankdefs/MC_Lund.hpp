@@ -42,40 +42,78 @@ class MC_Lund {
 
     MC_Lund() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("index"); h) h_index = *h;
-        else h_index = {};
-        if (auto h = schema.get_handle("lifetime"); h) h_lifetime = *h;
-        else h_lifetime = {};
-        if (auto h = schema.get_handle("type"); h) h_type = *h;
-        else h_type = {};
-        if (auto h = schema.get_handle("pid"); h) h_pid = *h;
-        else h_pid = {};
-        if (auto h = schema.get_handle("parent"); h) h_parent = *h;
-        else h_parent = {};
-        if (auto h = schema.get_handle("daughter"); h) h_daughter = *h;
-        else h_daughter = {};
-        if (auto h = schema.get_handle("px"); h) h_px = *h;
-        else h_px = {};
-        if (auto h = schema.get_handle("py"); h) h_py = *h;
-        else h_py = {};
-        if (auto h = schema.get_handle("pz"); h) h_pz = *h;
-        else h_pz = {};
-        if (auto h = schema.get_handle("energy"); h) h_energy = *h;
-        else h_energy = {};
-        if (auto h = schema.get_handle("mass"); h) h_mass = *h;
-        else h_mass = {};
-        if (auto h = schema.get_handle("vx"); h) h_vx = *h;
-        else h_vx = {};
-        if (auto h = schema.get_handle("vy"); h) h_vy = *h;
-        else h_vy = {};
-        if (auto h = schema.get_handle("vz"); h) h_vz = *h;
-        else h_vz = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_index;
+            hipo::column_handle h_lifetime;
+            hipo::column_handle h_type;
+            hipo::column_handle h_pid;
+            hipo::column_handle h_parent;
+            hipo::column_handle h_daughter;
+            hipo::column_handle h_px;
+            hipo::column_handle h_py;
+            hipo::column_handle h_pz;
+            hipo::column_handle h_energy;
+            hipo::column_handle h_mass;
+            hipo::column_handle h_vx;
+            hipo::column_handle h_vy;
+            hipo::column_handle h_vz;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("index"); h) cache.h_index = *h;
+            else cache.h_index = {};
+            if (auto h = schema.get_handle("lifetime"); h) cache.h_lifetime = *h;
+            else cache.h_lifetime = {};
+            if (auto h = schema.get_handle("type"); h) cache.h_type = *h;
+            else cache.h_type = {};
+            if (auto h = schema.get_handle("pid"); h) cache.h_pid = *h;
+            else cache.h_pid = {};
+            if (auto h = schema.get_handle("parent"); h) cache.h_parent = *h;
+            else cache.h_parent = {};
+            if (auto h = schema.get_handle("daughter"); h) cache.h_daughter = *h;
+            else cache.h_daughter = {};
+            if (auto h = schema.get_handle("px"); h) cache.h_px = *h;
+            else cache.h_px = {};
+            if (auto h = schema.get_handle("py"); h) cache.h_py = *h;
+            else cache.h_py = {};
+            if (auto h = schema.get_handle("pz"); h) cache.h_pz = *h;
+            else cache.h_pz = {};
+            if (auto h = schema.get_handle("energy"); h) cache.h_energy = *h;
+            else cache.h_energy = {};
+            if (auto h = schema.get_handle("mass"); h) cache.h_mass = *h;
+            else cache.h_mass = {};
+            if (auto h = schema.get_handle("vx"); h) cache.h_vx = *h;
+            else cache.h_vx = {};
+            if (auto h = schema.get_handle("vy"); h) cache.h_vy = *h;
+            else cache.h_vy = {};
+            if (auto h = schema.get_handle("vz"); h) cache.h_vz = *h;
+            else cache.h_vz = {};
+        }
+        h_index = cache.h_index;
+        h_lifetime = cache.h_lifetime;
+        h_type = cache.h_type;
+        h_pid = cache.h_pid;
+        h_parent = cache.h_parent;
+        h_daughter = cache.h_daughter;
+        h_px = cache.h_px;
+        h_py = cache.h_py;
+        h_pz = cache.h_pz;
+        h_energy = cache.h_energy;
+        h_mass = cache.h_mass;
+        h_vx = cache.h_vx;
+        h_vy = cache.h_vy;
+        h_vz = cache.h_vz;
         return true;
     }
 

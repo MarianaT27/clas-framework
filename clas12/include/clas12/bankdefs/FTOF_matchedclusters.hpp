@@ -42,32 +42,62 @@ class FTOF_matchedclusters {
 
     FTOF_matchedclusters() = default;
 
-    /// Bind to a live bank_view. Resolves every column handle exactly once.
-    /// Returns false if any required column is missing in the schema.
+    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column handle by name; all
+    /// subsequent bind()s for the same schema hit the cache and copy 25-30
+    /// trivially-copyable column_handle words.
+    /// Returns false if the view is not valid.
     bool bind(const hipo::bank_view& view) noexcept {
         m_view = view;
         if (!view.valid()) return false;
         const auto& schema = view.get_schema();
-        if (auto h = schema.get_handle("sector"); h) h_sector = *h;
-        else h_sector = {};
-        if (auto h = schema.get_handle("paddle_id1A"); h) h_paddle_id1A = *h;
-        else h_paddle_id1A = {};
-        if (auto h = schema.get_handle("paddle_id1B"); h) h_paddle_id1B = *h;
-        else h_paddle_id1B = {};
-        if (auto h = schema.get_handle("clus_1Aid"); h) h_clus_1Aid = *h;
-        else h_clus_1Aid = {};
-        if (auto h = schema.get_handle("clus_1Bid"); h) h_clus_1Bid = *h;
-        else h_clus_1Bid = {};
-        if (auto h = schema.get_handle("clusSize_1A"); h) h_clusSize_1A = *h;
-        else h_clusSize_1A = {};
-        if (auto h = schema.get_handle("clusSize_1B"); h) h_clusSize_1B = *h;
-        else h_clusSize_1B = {};
-        if (auto h = schema.get_handle("tminAlgo_1B_tCorr"); h) h_tminAlgo_1B_tCorr = *h;
-        else h_tminAlgo_1B_tCorr = {};
-        if (auto h = schema.get_handle("midbarAlgo_1B_tCorr"); h) h_midbarAlgo_1B_tCorr = *h;
-        else h_midbarAlgo_1B_tCorr = {};
-        if (auto h = schema.get_handle("EmaxAlgo_1B_tCorr"); h) h_EmaxAlgo_1B_tCorr = *h;
-        else h_EmaxAlgo_1B_tCorr = {};
+        struct HandleCache {
+            const hipo::schema* schema_ptr = nullptr;
+            hipo::column_handle h_sector;
+            hipo::column_handle h_paddle_id1A;
+            hipo::column_handle h_paddle_id1B;
+            hipo::column_handle h_clus_1Aid;
+            hipo::column_handle h_clus_1Bid;
+            hipo::column_handle h_clusSize_1A;
+            hipo::column_handle h_clusSize_1B;
+            hipo::column_handle h_tminAlgo_1B_tCorr;
+            hipo::column_handle h_midbarAlgo_1B_tCorr;
+            hipo::column_handle h_EmaxAlgo_1B_tCorr;
+        };
+        static thread_local HandleCache cache;
+        if (cache.schema_ptr != &schema) {
+            cache.schema_ptr = &schema;
+            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
+            else cache.h_sector = {};
+            if (auto h = schema.get_handle("paddle_id1A"); h) cache.h_paddle_id1A = *h;
+            else cache.h_paddle_id1A = {};
+            if (auto h = schema.get_handle("paddle_id1B"); h) cache.h_paddle_id1B = *h;
+            else cache.h_paddle_id1B = {};
+            if (auto h = schema.get_handle("clus_1Aid"); h) cache.h_clus_1Aid = *h;
+            else cache.h_clus_1Aid = {};
+            if (auto h = schema.get_handle("clus_1Bid"); h) cache.h_clus_1Bid = *h;
+            else cache.h_clus_1Bid = {};
+            if (auto h = schema.get_handle("clusSize_1A"); h) cache.h_clusSize_1A = *h;
+            else cache.h_clusSize_1A = {};
+            if (auto h = schema.get_handle("clusSize_1B"); h) cache.h_clusSize_1B = *h;
+            else cache.h_clusSize_1B = {};
+            if (auto h = schema.get_handle("tminAlgo_1B_tCorr"); h) cache.h_tminAlgo_1B_tCorr = *h;
+            else cache.h_tminAlgo_1B_tCorr = {};
+            if (auto h = schema.get_handle("midbarAlgo_1B_tCorr"); h) cache.h_midbarAlgo_1B_tCorr = *h;
+            else cache.h_midbarAlgo_1B_tCorr = {};
+            if (auto h = schema.get_handle("EmaxAlgo_1B_tCorr"); h) cache.h_EmaxAlgo_1B_tCorr = *h;
+            else cache.h_EmaxAlgo_1B_tCorr = {};
+        }
+        h_sector = cache.h_sector;
+        h_paddle_id1A = cache.h_paddle_id1A;
+        h_paddle_id1B = cache.h_paddle_id1B;
+        h_clus_1Aid = cache.h_clus_1Aid;
+        h_clus_1Bid = cache.h_clus_1Bid;
+        h_clusSize_1A = cache.h_clusSize_1A;
+        h_clusSize_1B = cache.h_clusSize_1B;
+        h_tminAlgo_1B_tCorr = cache.h_tminAlgo_1B_tCorr;
+        h_midbarAlgo_1B_tCorr = cache.h_midbarAlgo_1B_tCorr;
+        h_EmaxAlgo_1B_tCorr = cache.h_EmaxAlgo_1B_tCorr;
         return true;
     }
 
