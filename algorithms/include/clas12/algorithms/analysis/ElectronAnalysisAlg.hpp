@@ -223,20 +223,46 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         double e_chi2pid = 0.0;
         double sampling_fraction = 0.0;
         int sector = 0;
+        double x_r1 = 0.0;
+        double y_r1 = 0.0;
+        double z_r1 = 0.0;
+        double x_r2 = 0.0;
+        double y_r2 = 0.0;
+        double z_r2 = 0.0;
 
-        auto from(const clas12::Particle& electron, const ElectronCandidate& can) -> void {
-            e_p = electron.p();
-            e_theta = electron.theta();
-            e_phi = electron.phi();
-            e_vz = electron.vz();
-            e_chi2pid = electron.chi2pid();
+        auto from(const ElectronCandidate& can) -> void {
+            e_p = can.particle.p();
+            e_theta = can.particle.theta();
+            e_phi = can.particle.phi();
+            e_vz = can.particle.vz();
+            e_chi2pid = can.particle.chi2pid();
             sampling_fraction = can.sampling_fraction;
             sector = can.sector;
+            x_r1 = can.traj.region1_x;
+            y_r1 = can.traj.region1_y;
+            z_r1 = can.traj.region1_z;
+            x_r2 = can.traj.region2_x;
+            y_r2 = can.traj.region2_y;
+            z_r2 = can.traj.region2_z;
         }
 
         static constexpr auto ntuple_fields() {
             using T = ElectronNTupleData;
-            return std::make_tuple(clas12::framework::field("e_p", &T::e_p), clas12::framework::field("e_theta", &T::e_theta), clas12::framework::field("e_phi", &T::e_phi), clas12::framework::field("e_vz", &T::e_vz), clas12::framework::field("e_chi2pid", &T::e_chi2pid), clas12::framework::field("sampling_fraction", &T::sampling_fraction), clas12::framework::field("sector", &T::sector));
+            return std::make_tuple(
+                clas12::framework::field("e_p", &T::e_p),
+                clas12::framework::field("e_theta", &T::e_theta),
+                clas12::framework::field("e_phi", &T::e_phi),
+                clas12::framework::field("e_vz", &T::e_vz),
+                clas12::framework::field("e_chi2pid", &T::e_chi2pid),
+                clas12::framework::field("sampling_fraction", &T::sampling_fraction),
+                clas12::framework::field("sector", &T::sector),
+                clas12::framework::field("x_r1", &T::x_r1),
+                clas12::framework::field("y_r1", &T::y_r1),
+                clas12::framework::field("z_r1", &T::z_r1),
+                clas12::framework::field("x_r2", &T::x_r2),
+                clas12::framework::field("y_r2", &T::y_r2),
+                clas12::framework::field("z_r2", &T::z_r2)
+            );
         }
     };
 
@@ -350,8 +376,9 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         const int theta_nbins = static_cast<int>((m_config.theta_bin_max - m_config.theta_bin_min) / m_config.theta_bin_width);
 
         auto book_dc_3d = [&](const std::string& path, const std::string& title, int xn, double xlo, double xhi) {
-            return m_hist->book_hist3D(path, title, xn, xlo, xhi, 200, 0, 50,  // edge
-                                       200, 0, 10);                            // chi2/ndf
+            return m_hist->book_hist3D(path, title, xn, xlo, xhi, 
+                                200, 0, 50,    // edge
+                                200, 0, 10);   // chi2/ndf
         };
 
         h_dc.chi2ndf_vs_edge_vs_p_r1 = book_dc_3d("/DC/chi2ndf_vs_edge_vs_p_r1", "Region 1;p [GeV/c];edge [cm];#chi^{2}/ndf", p_nbins, m_config.p_bin_min, m_config.p_bin_max);
@@ -414,7 +441,7 @@ class ElectronAnalysisAlg : public clas12::framework::SimpleAlgorithm {
         cut_hists.theta->fill(can.particle.theta());
         cut_hists.phi->fill(can.particle.phi());
         cut_hists.vz->fill(can.particle.vz());
-        cut_hists.sampling_fraction->fill(e.p(), can.sampling_fraction);
+        cut_hists.sampling_fraction->fill(can.particle.p(), can.sampling_fraction);
         cut_hists.dc_edge_r1->fill(can.traj.region1_edge);
     }
 
