@@ -73,6 +73,43 @@ Templates live in `templates/`. Copy one and adapt. For services,
 register in `framework/src/ApplicationBuilder.cpp`
 (`with_standard_services`) so it is wired up by default.
 
+## Adding a configurable knob to an algorithm
+
+Every analysis is driven by a single `--config <path.toml>` flag.
+Each algorithm gets its own `[<AlgorithmName>]` section in that
+file; keys inside match `Property::name()`.
+
+To expose a new knob:
+
+1. Declare it as a `Property<T>` member on the algorithm and call
+   `declare_property(...)` in the constructor:
+   ```cpp
+   class MyAnalysis : public Algorithm {
+   public:
+       MyAnalysis(std::string name = "MyAnalysis") : Algorithm(std::move(name)) {
+           declare_property(m_min_momentum);
+       }
+   private:
+       Property<double> m_min_momentum{"min_momentum", 0.8, "GeV"};
+   };
+   ```
+2. Add the matching key to the analysis's TOML:
+   ```toml
+   [MyAnalysis]
+   min_momentum = 1.2
+   ```
+   The framework looks up `[<algorithm.name()>]` at init time and
+   pushes every matching key into the algorithm's properties via
+   `PropertyMixin::configure_from_toml`. Missing keys keep the C++
+   default; unknown keys log a warning.
+
+For values that are *constructor arguments* (not Properties),
+read them in the entry-point lambda from `config.config_table`:
+```cpp
+double mass_window = (*config.config_table)["MyAnalysis"]
+    ["mass_window"].template value<double>().value_or(0.2);
+```
+
 ## Adding a test
 
 Tests live in `test/` and use Google Test. Register in `test/meson.build`

@@ -175,7 +175,7 @@ stateDiagram-v2
 ```cpp
 #include <clas12/framework/core/Algorithm.hpp>
 
-class MyAlgorithm : public clas12::framework::Algorithm<MyAlgorithm> {
+class MyAlgorithm : public clas12::framework::Algorithm {
 public:
     explicit MyAlgorithm(std::string name = "MyAlgorithm")
         : Algorithm(std::move(name)) {}
@@ -201,7 +201,7 @@ public:
     }
 
 private:
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::HistogramService>* m_hist_svc = nullptr;
 };
 ```
 
@@ -257,7 +257,7 @@ if (sc.is_failure()) {
 | ApplicationBuilder | `<clas12/framework/core/ApplicationBuilder.hpp>` |
 | Algorithm | `<clas12/framework/core/Algorithm.hpp>` |
 | Algorithm base | `<clas12/framework/core/Algorithm.hpp>` |
-| ServiceHandle | `<clas12/framework/core/ServiceHandle.hpp>` |
+| ServiceRef | `<clas12/framework/core/ServiceRef.hpp>` |
 | Event | `<clas12/framework/core/Event.hpp>` |
 | Cutflow | `<clas12/framework/core/Cutflow.hpp>` |
 | HistogramService | `<clas12/framework/services/HistogramService.hpp>` |

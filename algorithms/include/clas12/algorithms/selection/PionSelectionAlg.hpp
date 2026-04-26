@@ -19,7 +19,6 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
 
 namespace clas12::algorithms {
 
@@ -60,8 +59,28 @@ struct PionNTupleData {
         pcal_lv = c.pcal_lv; pcal_lw = c.pcal_lw;
     }
 
-    NTUPLE_FIELDS(p, theta, phi, vz, vx, vy, chi2pid, beta, delta_t, tof_mass2, tof_path, sector,
-                  beta_expected, beta_diff, is_forward, pcal_lv, pcal_lw)
+    static constexpr auto ntuple_fields() {
+        using T = PionNTupleData;
+        return std::make_tuple(
+            clas12::framework::field("p", &T::p),
+            clas12::framework::field("theta", &T::theta),
+            clas12::framework::field("phi", &T::phi),
+            clas12::framework::field("vz", &T::vz),
+            clas12::framework::field("vx", &T::vx),
+            clas12::framework::field("vy", &T::vy),
+            clas12::framework::field("chi2pid", &T::chi2pid),
+            clas12::framework::field("beta", &T::beta),
+            clas12::framework::field("delta_t", &T::delta_t),
+            clas12::framework::field("tof_mass2", &T::tof_mass2),
+            clas12::framework::field("tof_path", &T::tof_path),
+            clas12::framework::field("sector", &T::sector),
+            clas12::framework::field("beta_expected", &T::beta_expected),
+            clas12::framework::field("beta_diff", &T::beta_diff),
+            clas12::framework::field("is_forward", &T::is_forward),
+            clas12::framework::field("pcal_lv", &T::pcal_lv),
+            clas12::framework::field("pcal_lw", &T::pcal_lw)
+        );
+    }
 };
 
 /**
@@ -131,11 +150,11 @@ struct PionCandidate {
 /**
  * @brief Pion (π⁺/π⁻) selection and analysis algorithm
  *
- * Modernized using Algorithm CRTP pattern with:
+ * Modernized using Algorithm hook pattern with:
  * - Automatic service injection via require_service<T>() and optional_service<T>()
  * - Property system for configuration
  * - New histogram templates for physics quantities
- * - Reduced boilerplate through CRTP
+ * - Reduced boilerplate via base-class hooks
  *
  * This algorithm demonstrates pion identification using:
  * - Chi2 PID cuts
@@ -189,7 +208,6 @@ class PionSelectionAlg : public clas12::framework::Algorithm {
     auto on_initialize() -> clas12::framework::StatusCode override {
         // Cache service pointers
         m_hist = svc<clas12::framework::HistogramService>();
-        m_particle = svc<clas12::framework::ParticleSelectorService>();
         m_ntuple = svc<clas12::framework::NTupleService>();
 
         Log::info(name(), "Initializing pion selection algorithm");
@@ -235,24 +253,16 @@ class PionSelectionAlg : public clas12::framework::Algorithm {
             return clas12::framework::StatusCode::FILTERED();
         }
 
-        // Bind REC::Event for start time. Detector banks are accessed
-        // through the per-event generated-wrapper cache via the read_*_bank
-        // helpers below; no need for local bank-view handles.
-        auto& rec_event    = event.bank<clas12::bankdefs::REC_Event>();
-        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
+        // Bind REC::Event for start time. Per-particle detector reads on
+        // Particle route through the per-event generated-wrapper cache.
+        auto& rec_event = event.bank<clas12::bankdefs::REC_Event>();
 
         if (rec_event.rows() == 0) return clas12::framework::StatusCode::SUCCESS();
 
         const double start_time = static_cast<double>(rec_event.startTime(0));
 
-        // Extract pions using ParticleSelectorService
-        auto particles = m_particle->extract_particles(
-            rec_particle,
-            {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS});
-
         // Build π⁺ candidates with all kinematics computed once
-        const auto& pions_plus = particles.pions_plus();
-        auto piplus_candidates = build_pion_candidates(event, pions_plus, start_time, true);
+        auto piplus_candidates = build_pion_candidates(event.pions_plus(), start_time, true);
 
         // Evaluate cutflow per-candidate (sets passes_all_cuts), then fill histograms
         for (auto& cand : piplus_candidates) {
@@ -267,8 +277,7 @@ class PionSelectionAlg : public clas12::framework::Algorithm {
         auto selected_piplus = collect_passing_particles(piplus_candidates);
 
         // Build π⁻ candidates with all kinematics computed once
-        const auto& pions_minus = particles.pions_minus();
-        auto piminus_candidates = build_pion_candidates(event, pions_minus, start_time, false);
+        auto piminus_candidates = build_pion_candidates(event.pions_minus(), start_time, false);
 
         // Evaluate cutflow per-candidate (sets passes_all_cuts), then fill histograms
         for (auto& cand : piminus_candidates) {
@@ -429,7 +438,6 @@ class PionSelectionAlg : public clas12::framework::Algorithm {
 
     // Service pointers (cached in on_initialize via svc<T>())
     clas12::framework::HistogramService* m_hist = nullptr;
-    clas12::framework::ParticleSelectorService* m_particle = nullptr;
     clas12::framework::NTupleService* m_ntuple = nullptr;
 
     // N-tuple writers (replace individual variables + manual registration)
@@ -655,7 +663,6 @@ class PionSelectionAlg : public clas12::framework::Algorithm {
      * in the candidate struct to avoid redundant calculations downstream.
      */
     auto build_pion_candidates(
-        clas12::framework::Event& event,
         const std::vector<clas12::Particle>& pions,
         double start_time,
         bool is_piplus
@@ -696,7 +703,7 @@ class PionSelectionAlg : public clas12::framework::Algorithm {
 
             // Get scintillator info (FTOF for forward pions only)
             if (cand.is_forward_detector) {
-                clas12::ScintillatorBank scintillator = clas12::read_Scintillator_bank(event, pion.index());
+                clas12::ScintillatorBank scintillator = pion.scintillator();
                 cand.sector = scintillator.sector;
                 cand.tof_time = scintillator.time;
                 cand.tof_path = scintillator.path;
@@ -712,8 +719,8 @@ class PionSelectionAlg : public clas12::framework::Algorithm {
             cand.beta_diff = timing.beta_diff;
 
             // Read calorimeter and trajectory banks for fiducial cuts
-            auto calo = clas12::read_Calorimeter_bank(event, pion.index());
-            auto traj = clas12::read_Traj_bank(event, pion.index());
+            auto calo = pion.calo();
+            auto traj = pion.traj();
 
             // Store PCAL fiducial variables and count NaN
             cand.pcal_lv = calo.pcal_lv;

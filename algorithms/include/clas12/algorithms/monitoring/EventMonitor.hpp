@@ -9,7 +9,6 @@
 #include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
 
 namespace clas12::algorithms {
 
@@ -40,7 +39,6 @@ class EventMonitor : public clas12::framework::Algorithm {
 
     auto on_initialize() -> clas12::framework::StatusCode override {
         m_hist_svc = svc<clas12::framework::HistogramService>();
-        m_particle_svc = svc<clas12::framework::ParticleSelectorService>();
 
         clas12::framework::Log::info("Event Monitor", "  {} - Initializing", name());
 
@@ -121,10 +119,8 @@ class EventMonitor : public clas12::framework::Algorithm {
             h_particles_per_event->fill(n_particles);
         }
 
-        auto particles = m_particle_svc->extract_particles(rec_particle, m_monitored_pids);
-
         if (h_electrons_per_event) {
-            h_electrons_per_event->fill(static_cast<int>(particles.electrons().size()));
+            h_electrons_per_event->fill(static_cast<int>(event.electrons().size()));
         }
     }
 
@@ -181,7 +177,6 @@ class EventMonitor : public clas12::framework::Algorithm {
 
     // Services
     clas12::framework::HistogramService* m_hist_svc = nullptr;
-    clas12::framework::ParticleSelectorService* m_particle_svc = nullptr;
 
     // Monitoring histograms (atomic for thread-safety)
     clas12::framework::ThreadLocalHistogram1D* h_particles_per_event = nullptr;

@@ -2,45 +2,63 @@
 
 /**
  * @file AnalysisRunner.hpp
- * @brief Shared utility to eliminate boilerplate in analysis entry points
+ * @brief Single-flag entry point for analyses: `--config <path.toml>`.
  *
- * Every analysis entry point repeats ~90 lines of identical code:
- * - AnalysisConfig struct with target/polarity/percentage/threads/output/input
- * - CLI parsing with cxxopts
- * - Default input file lookup
- * - ROOT thread safety setup
- * - ApplicationBuilder init/run/finalize lifecycle
+ * Every knob lives in TOML now — input files, threads, output ROOT
+ * file, percentage, target, polarity, and per-algorithm `Property`
+ * values. The user's `main()` only needs to declare *which* algorithms
+ * + services compose this analysis; the runner loads the TOML, builds
+ * the Application, applies the per-algorithm `[<Algorithm.name()>]`
+ * section to each algorithm's properties, and runs the event loop.
  *
- * AnalysisRunner extracts all of this into a single `run()` call.
- * The user provides only a lambda that configures the ApplicationBuilder
- * with analysis-specific services and algorithms.
- *
- * Inspired by ATLAS AnalysisBase's standard job runner pattern.
- *
- * Example:
+ * Example user main():
  * @code
  * #include <clas12/framework/core/AnalysisRunner.hpp>
  * #include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
- * #include <clas12/algorithms/analysis/PionAnalysisAlg.hpp>
  *
  * auto main(int argc, char* argv[]) -> int {
  *     return clas12::framework::AnalysisRunner::run(
- *         argc, argv, "Pion Analysis", "pion_analysis",
+ *         argc, argv, "Electron Analysis", "electron_analysis",
  *         [](auto& builder, const auto& config) {
  *             builder
  *                 .add_service<ElectronCutsService>()
- *                 .add_service<FiducialService>()
  *                 .add_algorithm<EventMonitor>("EventMonitor")
- *                 .add_algorithm<ElectronSelectionAlg>("Selection", config.target, config.polarity)
- *                 .add_algorithm<PionAnalysisAlg>("Analysis", config.target, config.polarity);
+ *                 .add_algorithm<ElectronSelectionAlg>(
+ *                     "Selection", config.target, config.polarity);
  *         });
  * }
+ * @endcode
+ *
+ * Example invocation:
+ * @code
+ *   ./electron_analysis --config config/electron_analysis.toml
+ * @endcode
+ *
+ * Required TOML schema:
+ * @code
+ *   [run]
+ *   input       = ["data/run_5032.hipo"]   # list, or single string
+ *   output      = "electron_analysis.root"
+ *   num_threads = 4                        # optional, default 1
+ *   percentage  = 100.0                    # optional, default 100
+ *
+ *   [analysis]
+ *   target      = "LD2"                    # one of: LD2, CxC, CuSn, Cu, Sn
+ *   polarity    = "Outbending"             # Outbending or Inbending
+ *   beam_energy = 10.53                    # optional
+ *   version     = "2.0"                    # optional
+ *
+ *   # Per-algorithm Property values; section name = algorithm name.
+ *   [ElectronAnalysis]
+ *   enable_chi2pid_cut = true
+ *   ...
  * @endcode
  */
 
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -59,137 +77,111 @@
 namespace clas12::framework {
 
 /**
- * @brief Standard analysis configuration parsed from CLI arguments
+ * @brief Run-control + analysis-level config parsed from the TOML file.
+ *
+ * Per-algorithm Property values are NOT in this struct — they go
+ * straight into each algorithm's PropertyMixin via the parsed
+ * `toml::table` carried in `config_table`. The fields here are the
+ * ones the user's `configure_fn` lambda reads to construct
+ * algorithms (target/polarity/beam_energy).
  */
 struct AnalysisConfig {
-    clas12::Target target = clas12::Target::LD2;
-    clas12::Polarity polarity = clas12::Polarity::Outbending;
-    double percentage = 100.0;
-    int num_threads = 1;
-    std::string output_file;
+    clas12::Target           target = clas12::Target::LD2;
+    clas12::Polarity         polarity = clas12::Polarity::Outbending;
+    double                   percentage  = 100.0;
+    int                      num_threads = 1;
+    double                   beam_energy = 10.53;
+    std::string              version     = "2.0";
+    std::string              output_file;
     std::vector<std::string> input_files;
 
-    /// Extensible configuration for analysis-specific options.
-    /// ParseExtraFn writes into this table; algorithms read from it.
-    /// Eliminates the need for static variable bridges in entry points.
-    toml::table custom;
+    /// Whole parsed TOML, kept around so per-algorithm sections are
+    /// available to Application::initialize().
+    std::shared_ptr<const toml::table> config_table;
 
-    /// Returns std::nullopt if the configuration is valid.
-    /// Otherwise returns a human-readable error describing the first failing check.
     [[nodiscard]] auto validate() const -> std::optional<std::string> {
-        if (input_files.empty()) {
-            return std::string{"no input files provided"};
-        }
-        if (output_file.empty()) {
-            return std::string{"output file path is empty"};
-        }
-        if (!(percentage > 0.0 && percentage <= 100.0)) {
-            return "percentage must be in (0, 100], got " + std::to_string(percentage);
-        }
-        if (num_threads < 1) {
-            return "num_threads must be >= 1, got " + std::to_string(num_threads);
-        }
+        if (input_files.empty()) return std::string{"no input files in [run].input"};
+        if (output_file.empty()) return std::string{"empty [run].output"};
+        if (!(percentage > 0.0 && percentage <= 100.0))
+            return "[run].percentage must be in (0, 100], got " + std::to_string(percentage);
+        if (num_threads < 1)
+            return "[run].num_threads must be >= 1, got " + std::to_string(num_threads);
         const std::filesystem::path out_path{output_file};
         const auto ext = out_path.extension().string();
-        if (ext != ".root" && ext != ".hipo") {
-            return "output_file must end in .root or .hipo, got '" + output_file + "'";
-        }
+        if (ext != ".root" && ext != ".hipo")
+            return "[run].output must end in .root or .hipo, got '" + output_file + "'";
         return std::nullopt;
-    }
-
-    [[nodiscard]] auto is_valid() const -> bool {
-        return !validate().has_value();
     }
 };
 
 /**
- * @brief Eliminates boilerplate in analysis entry points
+ * @brief Runs the standard CLI → TOML → Application lifecycle.
  *
- * Handles CLI parsing, input file discovery, ROOT setup, and the
- * init/run/finalize lifecycle. The user provides only a lambda
- * to configure the ApplicationBuilder with their specific algorithms.
+ * The user supplies a single `configure_fn` lambda that registers
+ * services and algorithms on the builder. Everything else (CLI,
+ * TOML parsing, lifecycle, Property wiring) is handled here.
  */
 class AnalysisRunner {
 public:
-    /// Type for the builder configuration callback
     using ConfigureFn = std::function<void(ApplicationBuilder&, const AnalysisConfig&)>;
 
-    /// Type for optional extra CLI options callback
-    using ExtraOptionsFn = std::function<void(cxxopts::Options&)>;
-
-    /// Type for optional extra options parsing callback
-    using ParseExtraFn = std::function<void(const cxxopts::ParseResult&, AnalysisConfig&)>;
-
     /**
-     * @brief Run a standard analysis with minimal boilerplate
-     *
-     * @param argc Argument count from main()
-     * @param argv Argument values from main()
-     * @param analysis_name Human-readable analysis name (e.g., "Pion Analysis")
-     * @param output_prefix Output file prefix (e.g., "pion_analysis")
-     *        The output file will be "{prefix}_{target}_{polarity}.root"
-     * @param configure_fn Lambda to configure the ApplicationBuilder
-     * @param extra_options_fn Optional: add extra CLI options
-     * @param parse_extra_fn Optional: parse extra CLI options into config
-     * @return EXIT_SUCCESS or EXIT_FAILURE
+     * @param argc           argv from main()
+     * @param argv           argv from main()
+     * @param analysis_name  human-readable name used in log banners
+     * @param output_prefix  prefix for the GraphViz dump
+     *                       ("<prefix>_service_graph.dot")
+     * @param configure_fn   lambda that adds services + algorithms
+     *                       to the builder using config.target etc.
      */
     static auto run(
         int argc, char* argv[],
         const std::string& analysis_name,
         const std::string& output_prefix,
-        ConfigureFn configure_fn,
-        ExtraOptionsFn extra_options_fn = nullptr,
-        ParseExtraFn parse_extra_fn = nullptr
+        ConfigureFn configure_fn
     ) -> int {
         ROOT::EnableThreadSafety();
         ROOT::EnableImplicitMT();
 
-        auto config = parse_arguments(argc, argv, analysis_name, output_prefix,
-                                       extra_options_fn, parse_extra_fn);
-        if (!config) return EXIT_SUCCESS;  // --help was requested
+        auto config = parse_arguments(argc, argv, analysis_name, output_prefix);
+        if (!config) return EXIT_SUCCESS;  // --help path
 
         if (auto err = config->validate(); err) {
             Log::error("Main", "Invalid configuration: {}", *err);
             return EXIT_FAILURE;
         }
 
-        // Build application with standard services
         auto builder = make_application(analysis_name)
             .with_input_files(config->input_files)
             .with_output(config->output_file)
             .with_percentage(config->percentage)
             .with_threads(config->num_threads)
             .with_standard_services()
-            .with_version("2.0")
-            .with_beam_energy(10.53)
-            .with_target(clas12::to_string(config->target));
+            .with_version(config->version)
+            .with_beam_energy(config->beam_energy)
+            .with_target(clas12::to_string(config->target))
+            .with_config(config->config_table);
 
-        // Let the user configure their specific services and algorithms
         configure_fn(builder, *config);
 
         auto app = builder.build();
 
-        // Initialize
         if (auto sc = app.initialize(); sc.is_failure()) {
             Log::error("Main", "Initialization failed: {}", sc.message());
             return EXIT_FAILURE;
         }
 
-        // Emit a GraphViz snapshot of the service + algorithm pipeline so
-        // ordering bugs like the old NTupleService special case would show
-        // up visually before running the first event.
         emit_service_graph(app, output_prefix);
 
-        // Log configuration
         Log::section(analysis_name);
-        Log::config("Config", "Target", clas12::to_string(config->target));
-        Log::config("Config", "Polarity", clas12::to_string(config->polarity));
+        Log::config("Config", "TOML",       config_path_for_log());
+        Log::config("Config", "Target",     clas12::to_string(config->target));
+        Log::config("Config", "Polarity",   clas12::to_string(config->polarity));
         Log::config("Config", "Input files", config->input_files.size());
-        Log::config("Config", "Threads", config->num_threads);
-        Log::config("Config", "Output", config->output_file);
+        Log::config("Config", "Threads",    config->num_threads);
+        Log::config("Config", "Output",     config->output_file);
         Log::blank();
 
-        // Run
         {
             auto timer = Log::scoped("Main", "Event processing");
             if (auto sc = app.run(); sc.is_failure()) {
@@ -198,7 +190,6 @@ public:
             }
         }
 
-        // Finalize
         auto result = app.finalize();
         if (result.is_failure()) {
             Log::error("Main", "Finalization failed: {}", result.message());
@@ -210,28 +201,23 @@ public:
     }
 
 private:
-    /// Dump a "{prefix}_service_graph.dot" next to the output file so operators
-    /// can eyeball the service + algorithm wiring. Non-fatal: a filesystem error
-    /// logs a warning and moves on.
+    static inline std::string s_config_path;
+
+    static auto config_path_for_log() -> const std::string& { return s_config_path; }
+
     static auto emit_service_graph(Application& app, const std::string& output_prefix) -> void {
         WorkflowVisualizationService viz;
-
         auto& mgr = app.service_manager();
         for (const auto& name : mgr.service_names()) {
             viz.register_algorithm(name, {}, WorkflowVisualizationService::NodeType::SERVICE);
         }
-
         std::string previous;
         for (const auto& alg : app.algorithms()) {
             const auto& name = alg->name();
-            if (previous.empty()) {
-                viz.register_algorithm(name);
-            } else {
-                viz.register_algorithm(name, {previous});
-            }
+            if (previous.empty()) viz.register_algorithm(name);
+            else                  viz.register_algorithm(name, {previous});
             previous = name;
         }
-
         const std::string dot_path = output_prefix + "_service_graph.dot";
         if (!viz.generate_dot(dot_path)) {
             Log::warning("Main", "Could not emit service graph to {}", dot_path);
@@ -243,103 +229,97 @@ private:
     [[nodiscard]] static auto parse_arguments(
         int argc, char* argv[],
         const std::string& analysis_name,
-        const std::string& output_prefix,
-        const ExtraOptionsFn& extra_options_fn,
-        const ParseExtraFn& parse_extra_fn
+        const std::string& output_prefix
     ) -> std::optional<AnalysisConfig> {
-        std::string default_output = output_prefix + "_{target}_{polarity}.root";
         cxxopts::Options options(output_prefix, analysis_name);
-
         options.add_options()
-            ("target", "Target (LD2, CxC, CuSn, Cu, Sn)",
-                cxxopts::value<std::string>()->default_value("LD2"))
-            ("polarity", "Polarity (Outbending, Inbending)",
-                cxxopts::value<std::string>()->default_value("Outbending"))
-            ("percentage", "Events to process (%)",
-                cxxopts::value<double>()->default_value("100"))
-            ("num_threads", "Thread count",
-                cxxopts::value<int>()->default_value("1"))
-            ("output", "Output ROOT file",
-                cxxopts::value<std::string>()->default_value(default_output))
-            ("input", "Input (file, directory, or comma-separated)",
-                cxxopts::value<std::string>()->default_value(""))
-            ("h,help", "Show help");
-
-        // Allow analyses to add extra options
-        if (extra_options_fn) {
-            extra_options_fn(options);
-        }
+            ("c,config", "Path to TOML configuration file (required)",
+                cxxopts::value<std::string>())
+            ("h,help",   "Show help");
 
         auto args = options.parse(argc, argv);
 
-        if (args.count("help")) {
+        if (args.count("help") || !args.count("config")) {
             fmt::print("{}\n", options.help());
+            if (!args.count("help")) {
+                fmt::print(stderr,
+                    "\nERROR: --config <path> is required.\n"
+                    "Pass a TOML file with [run], [analysis], and per-algorithm sections.\n");
+                return std::nullopt;  // caller treats as success-with-help; we'll fail later via validate()
+            }
             return std::nullopt;
         }
 
-        AnalysisConfig config;
-        config.target = clas12::string_to_target(args["target"].as<std::string>());
-        config.polarity = clas12::string_to_polarity(args["polarity"].as<std::string>());
-        config.percentage = args["percentage"].as<double>();
-        config.num_threads = args["num_threads"].as<int>();
+        const auto path = args["config"].as<std::string>();
+        s_config_path = path;
 
-        config.output_file = args["output"].as<std::string>();
-        config.output_file = clas12::StringUtils::replace_all(
-            config.output_file, "{target}", clas12::to_string(config.target));
-        config.output_file = clas12::StringUtils::replace_all(
-            config.output_file, "{polarity}", clas12::to_string(config.polarity));
+        toml::table parsed;
+        try {
+            parsed = toml::parse_file(path);
+        } catch (const toml::parse_error& e) {
+            Log::error("Main", "Failed to parse TOML '{}': {}", path, e.description());
+            return std::nullopt;
+        }
 
-        std::string input_str = args["input"].as<std::string>();
-        if (!input_str.empty()) {
-            if (std::filesystem::is_directory(input_str)) {
-                config.input_files = clas12::FileUtils::read_recursive_hipo_files(input_str);
-            } else if (input_str.find(',') != std::string::npos) {
-                config.input_files = clas12::StringUtils::split(input_str, ',');
-            } else {
-                config.input_files = {input_str};
-            }
+        AnalysisConfig cfg;
+        cfg.config_table = std::make_shared<const toml::table>(std::move(parsed));
+        const auto& tbl = *cfg.config_table;
+
+        // [run]
+        if (auto run_tbl = tbl["run"].as_table()) {
+            if (auto v = (*run_tbl)["output"].value<std::string>()) cfg.output_file = *v;
+            if (auto v = (*run_tbl)["num_threads"].value<int64_t>()) cfg.num_threads = static_cast<int>(*v);
+            if (auto v = (*run_tbl)["percentage"].value<double>())   cfg.percentage = *v;
+            cfg.input_files = parse_input(run_tbl);
         } else {
-            config.input_files = find_default_input_files(config.target, config.polarity);
+            Log::error("Main", "TOML missing required [run] section");
+            return std::nullopt;
         }
 
-        // Let analyses parse extra options
-        if (parse_extra_fn) {
-            parse_extra_fn(args, config);
+        // [analysis]
+        if (auto an_tbl = tbl["analysis"].as_table()) {
+            if (auto v = (*an_tbl)["target"].value<std::string>())
+                cfg.target = clas12::string_to_target(*v);
+            if (auto v = (*an_tbl)["polarity"].value<std::string>())
+                cfg.polarity = clas12::string_to_polarity(*v);
+            if (auto v = (*an_tbl)["beam_energy"].value<double>())   cfg.beam_energy = *v;
+            if (auto v = (*an_tbl)["version"].value<std::string>())  cfg.version = *v;
         }
 
-        return config;
+        return cfg;
     }
 
-    [[nodiscard]] static auto find_default_input_files(
-        clas12::Target target, clas12::Polarity polarity
-    ) -> std::vector<std::string> {
-        struct DataSource {
-            clas12::Target target;
-            std::string_view outbending_path;
-            std::string_view inbending_path;
+    /// `[run].input` may be either a single string (path or directory)
+    /// or an array of strings. Directories are recursively expanded
+    /// to a list of `.hipo` files. Comma-separated strings are split.
+    [[nodiscard]] static auto parse_input(const toml::table* run_tbl)
+        -> std::vector<std::string>
+    {
+        std::vector<std::string> out;
+        if (!run_tbl) return out;
+
+        auto add_one = [&](const std::string& s) {
+            if (s.empty()) return;
+            if (std::filesystem::is_directory(s)) {
+                auto more = clas12::FileUtils::read_recursive_hipo_files(s);
+                out.insert(out.end(), more.begin(), more.end());
+            } else if (s.find(',') != std::string::npos) {
+                for (auto& part : clas12::StringUtils::split(s, ',')) {
+                    if (!part.empty()) out.push_back(part);
+                }
+            } else {
+                out.push_back(s);
+            }
         };
 
-        constexpr std::array<DataSource, 3> sources = {{
-            {clas12::Target::LD2,
-             "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/",
-             "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-            {clas12::Target::CxC,
-             "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/",
-             "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-            {clas12::Target::CuSn,
-             "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/",
-             "/cache/hallb/scratch/rg-d/production/skim_pass0v11/"},
-        }};
-
-        for (const auto& src : sources) {
-            if (src.target == target) {
-                std::string path = (polarity == clas12::Polarity::Outbending)
-                    ? std::string(src.outbending_path)
-                    : std::string(src.inbending_path);
-                return clas12::FileUtils::read_recursive_hipo_files(path);
+        if (auto arr = (*run_tbl)["input"].as_array()) {
+            for (auto const& el : *arr) {
+                if (auto s = el.value<std::string>()) add_one(*s);
             }
+        } else if (auto s = (*run_tbl)["input"].value<std::string>()) {
+            add_one(*s);
         }
-        return {};
+        return out;
     }
 };
 

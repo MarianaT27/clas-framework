@@ -14,7 +14,7 @@ This example demonstrates:
 
 ```cpp
 #include <clas12/framework/core/Application.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/physics/CompositeParticle.hpp>
@@ -27,7 +27,7 @@ public:
     auto initialize() -> clas12::framework::StatusCode override {
         m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
 
-        // Book histograms - returns AtomicHistogram1D* (thread-safe)
+        // Book histograms - returns ThreadLocalHistogram1D* (thread-safe)
         h_mppi = m_hist_svc->book_hist1D("/Lambda/mppi", "M_{p#pi^{-}};M_{p#pi^{-}} [GeV];Events", 200, 1.0, 1.3);
         h_mppi_cut = m_hist_svc->book_hist1D("/Lambda/mppi_cut", "M_{p#pi^{-}} (cuts);M_{p#pi^{-}} [GeV];Events", 200, 1.0, 1.3);
         h_proton_p = m_hist_svc->book_hist1D("/Lambda/proton_p", "Proton p;p [GeV/c];Events", 100, 0, 5);
@@ -95,7 +95,7 @@ private:
     clas12::framework::HistogramService* m_hist_svc = nullptr;
     clas12::framework::Cutflow m_cutflow;
     // Atomic histograms are thread-safe for parallel processing
-    clas12::framework::AtomicHistogram1D *h_mppi, *h_mppi_cut, *h_proton_p, *h_pion_p;
+    clas12::framework::ThreadLocalHistogram1D *h_mppi, *h_mppi_cut, *h_proton_p, *h_pion_p;
 };
 ```
 

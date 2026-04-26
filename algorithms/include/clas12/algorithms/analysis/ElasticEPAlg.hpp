@@ -13,7 +13,6 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/physics/ParticleUtils.hpp>
 #include <clas12/Detectors.hpp>
 
@@ -152,13 +151,12 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
         m_cutflow.pass("All Events");
 
         // Get electrons directly from REC::Particle bank
-        const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
-        if (electrons.empty()) {
+        if (event.electrons().empty()) {
             return clas12::framework::StatusCode::FILTERED();
         }
         // Select trigger electron (highest momentum in FD)
         const auto possible_electron =
-            clas12::framework::find_trigger_electron(electrons, {clas12::FD, clas12::BD});
+            event.find_trigger_electron({clas12::FD, clas12::BD});
 
         if (!possible_electron.has_value()) {
             return clas12::framework::StatusCode::FILTERED();

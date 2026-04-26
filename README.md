@@ -50,61 +50,69 @@ meson test -C build
   `build/` directory can hold an old version — `rm -rf build && meson
   setup build` to reset).
 
-### Your First Analysis
+### Running an Analysis
 
-Using the new ApplicationBuilder pattern (recommended):
+Every analysis binary takes exactly one CLI argument: a TOML config file.
+
+```bash
+./build/analyses/electron_analysis --config config/electron_analysis.toml
+```
+
+The TOML drives every knob — input files, output, threads, percentage,
+target/polarity, and per-algorithm `Property` values.
+
+```toml
+[run]
+input       = ["data/run_5032.hipo"]
+output      = "electron_analysis.root"
+num_threads = 4
+percentage  = 100.0
+
+[analysis]
+target   = "LD2"
+polarity = "Outbending"
+
+# Per-algorithm sections — one per algorithm the binary registers.
+# Section name = the string passed to add_algorithm<...>("...").
+[ElectronAnalysis]
+enable_chi2pid_cut       = true
+enable_momentum_cut      = true
+enable_vz_cut            = true
+enable_sf_cut            = true
+enable_pcal_fiducial_cut = true
+enable_dc_chi2ndf_cut    = true
+```
+
+Section keys must match `Property::name()` declarations on the
+algorithm. Missing keys keep the C++ default; unknown keys log a
+warning at startup.
+
+### Writing an Analysis
+
+The `main()` only declares which algorithms + services compose this
+analysis; everything else comes from the TOML.
 
 ```cpp
-#include "Framework/ApplicationBuilder.hpp"
-#include "Algorithms/ElectronSelectionAlg.hpp"
-#include "Algorithms/EventMonitor.hpp"
+#include <clas12/framework/core/AnalysisRunner.hpp>
+#include <clas12/algorithms/analysis/ElectronAnalysisAlg.hpp>
+#include <clas12/algorithms/monitoring/EventMonitor.hpp>
+#include <clas12/framework/services/ElectronCutsService.hpp>
 
-int main() {
-    auto app = Framework::make_application("MyAnalysis")
-        .with_input_files({"data/run_5032.hipo"})
-        .with_output("output.root")
-        .with_threads(4)
-        .with_standard_services()
-        .add_algorithm<Algorithms::EventMonitor>("EventMonitor")
-        .add_algorithm<Algorithms::ElectronSelectionAlg>(
-            "ElectronSelection", CLAS::Target::LD2, CLAS::Polarity::Outbending)
-        .build();
-
-    app.initialize();
-    app.run();
-    app.finalize();
-
-    return 0;
+auto main(int argc, char* argv[]) -> int {
+    return clas12::framework::AnalysisRunner::run(
+        argc, argv, "Electron Analysis", "electron_analysis",
+        [](auto& builder, const auto& config) {
+            builder
+                .add_service<clas12::framework::ElectronCutsService>()
+                .add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
+                .add_algorithm<clas12::algorithms::ElectronAnalysisAlg>(
+                    "ElectronAnalysis",
+                    {.target = config.target, .polarity = config.polarity});
+        });
 }
 ```
 
-Or using the traditional approach:
-
-```cpp
-#include "Framework/Application.hpp"
-#include "Framework/Services/HistogramService.hpp"
-#include "Algorithms/ElectronSelectionAlg.hpp"
-
-int main() {
-    Framework::Application app("MyAnalysis");
-
-    auto hist_svc = std::make_unique<Framework::HistogramService>();
-    hist_svc->set_output_file("output.root");
-    app.service_manager().add_service(std::move(hist_svc));
-
-    auto electron_alg = std::make_unique<Algorithms::ElectronSelectionAlg>();
-    app.add_algorithm(std::move(electron_alg));
-
-    app.set_input_files({"data/run_5032.hipo"});
-    app.set_num_threads(4);
-
-    app.initialize();
-    app.run();
-    app.finalize();
-
-    return 0;
-}
-```
+Sample TOML files are in [config/](config/).
 
 ---
 

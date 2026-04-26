@@ -31,7 +31,7 @@ namespace ALERT_track_matching {
 /**
  * @brief Algorithm for ALERT track matching analysis
  *
- * This algorithm demonstrates the Algorithm CRTP pattern.
+ * This algorithm demonstrates the Algorithm hook pattern.
  * Customize the process() method to implement your analysis logic.
  */
 class ALERT_track_matchingAlg : public clas12::framework::Algorithm {

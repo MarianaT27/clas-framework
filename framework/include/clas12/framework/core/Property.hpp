@@ -419,7 +419,7 @@ private:
 };
 
 /**
- * @brief CRTP mixin for property declaration in algorithms
+ * @brief Mixin for property declaration in algorithms
  *
  * PropertyMixin provides automatic property registration and TOML
  * configuration support for algorithms. Algorithms inherit from this

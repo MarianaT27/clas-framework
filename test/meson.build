@@ -91,24 +91,6 @@ test_event_processing_integration = executable(
 
 test('Event Processing Integration Tests', test_event_processing_integration)
 
-# Unit tests for Histogram Templates
-test_histogram_templates = executable(
-  'test_histogram_templates',
-  'test_histogram_templates.cpp',
-  dependencies: test_deps,
-)
-
-test('Histogram Templates Tests', test_histogram_templates)
-
-# Unit tests for ConfigSchema
-test_config_schema = executable(
-  'test_config_schema',
-  'test_config_schema.cpp',
-  dependencies: test_deps + [toml_dep],
-)
-
-test('ConfigSchema Tests', test_config_schema)
-
 # Smoke test for generated bank wrappers + PindexLinker
 test_bankdefs_compile = executable(
   'test_bankdefs_compile',

@@ -26,7 +26,7 @@ using clas12::framework::Log;
  *
  * Events passing all cuts are written to an output HIPO file.
  *
- * Uses Algorithm CRTP pattern with:
+ * Uses Algorithm hook pattern with:
  * - Automatic service injection via svc<T>()
  * - Property system for configuration
  */

@@ -28,7 +28,7 @@ namespace CuSnContamination {
 /**
  * @brief Algorithm for Cusn Contamination analysis
  *
- * This algorithm demonstrates the Algorithm CRTP pattern.
+ * This algorithm demonstrates the Algorithm hook pattern.
  * Customize the process() method to implement your analysis logic.
  */
 class CuSnContaminationAlg : public clas12::framework::Algorithm {

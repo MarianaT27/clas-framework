@@ -6,7 +6,7 @@ Complete example of electron selection and DIS analysis.
 
 ```cpp
 #include <clas12/framework/core/Application.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
@@ -30,7 +30,7 @@ public:
         m_electron_cuts = service<clas12::framework::ElectronCutsService>("ElectronCutsService");
         if (!m_electron_cuts) return clas12::framework::StatusCode::FAILURE();
 
-        // Book histograms - returns AtomicHistogram1D* (thread-safe)
+        // Book histograms - returns ThreadLocalHistogram1D* (thread-safe)
         h_p = m_hist_svc->book_hist1D("/Electron/p", "p;p [GeV/c];Events", 100, 0, 10);
         h_theta = m_hist_svc->book_hist1D("/Electron/theta", "#theta;#theta [deg];Events", 90, 0, 45);
         h_phi = m_hist_svc->book_hist1D("/Electron/phi", "#phi;#phi [deg];Events", 360, -180, 180);
@@ -116,7 +116,7 @@ private:
     clas12::framework::HistogramService* m_hist_svc = nullptr;
     clas12::framework::ElectronCutsService* m_electron_cuts = nullptr;
     // Atomic histograms are thread-safe for parallel processing
-    clas12::framework::AtomicHistogram1D *h_p, *h_theta, *h_phi, *h_vz, *h_q2, *h_w, *h_xb;
+    clas12::framework::ThreadLocalHistogram1D *h_p, *h_theta, *h_phi, *h_vz, *h_q2, *h_w, *h_xb;
 };
 
 int main(int argc, char** argv) {
@@ -179,7 +179,7 @@ W > 2                                   28453     28.5%     79.9%
 | Component | Include Path |
 |-----------|-------------|
 | Application | `<clas12/framework/core/Application.hpp>` |
-| AtomicHistogram | `<clas12/framework/core/AtomicHistogram.hpp>` |
+| ThreadLocalHistogram | `<clas12/framework/core/ThreadLocalHistogram.hpp>` |
 | HistogramService | `<clas12/framework/services/HistogramService.hpp>` |
 | Cutflow | `<clas12/framework/core/Cutflow.hpp>` |
 | ElectronCutsService | `<clas12/framework/services/ElectronCutsService.hpp>` |

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bank_view.h>
+#include <clas12/Detectors.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/physics/ParticleUtils.hpp>
@@ -10,6 +11,7 @@
 #include <any>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <map>
 #include <optional>
@@ -17,6 +19,7 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 namespace clas12::framework {
@@ -94,8 +97,63 @@ class Event {
         if (it != m_particles.end()) {
             return it->second;
         }
-        static const std::vector<clas12::Particle> empty;
-        return empty;
+        return empty_particles();
+    }
+
+    // ========================================================================
+    // Per-PID convenience accessors. Every one is a zero-cost forward to the
+    // already-cached `m_particles` map built by `load_particles()`.
+    // ========================================================================
+    auto electrons()    -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::ELECTRON); }
+    auto positrons()    -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::POSITRON); }
+    auto photons()      -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PHOTON); }
+    auto protons()      -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PROTON); }
+    auto neutrons()     -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::NEUTRON); }
+    auto pions_plus()   -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PIPLUS); }
+    auto pions_minus()  -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PIMINUS); }
+    auto kaons_plus()   -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::KPLUS); }
+    auto kaons_minus()  -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::KMINUS); }
+
+    /**
+     * @brief Particles by integer PDG id (parallel to `particles(PIDs)`).
+     */
+    auto by_pid(int pid) -> const std::vector<clas12::Particle>& {
+        return particles(static_cast<clas12::PIDs>(pid));
+    }
+
+    /**
+     * @brief Particles with the given charge (-1, 0, or +1).
+     *
+     * Served from a flat 3-slot vector of vectors built in the same single
+     * pass over REC::Particle as `m_particles`. No second scan, no map.
+     * Anything outside [-1, +1] returns an empty vector.
+     */
+    auto by_charge(int charge) -> const std::vector<clas12::Particle>& {
+        if (!m_particles_loaded) {
+            load_particles();
+        }
+        if (charge < -1 || charge > 1) return empty_particles();
+        return m_by_charge[charge + 1];
+    }
+
+    /**
+     * @brief First electron whose |status| falls in @p status_range and
+     *        whose status is negative with non-zero momentum.
+     *
+     * Default range covers the forward detector band. Single O(N) scan over
+     * the cached `electrons()` vector — same cost as the old free function.
+     */
+    auto find_trigger_electron(
+        std::pair<double, double> status_range = {clas12::FD, clas12::CD}
+    ) -> std::optional<clas12::Particle> {
+        for (const auto& e : electrons()) {
+            const double abs_status = std::abs(e.status());
+            if (e.status() < 0.0 && e.p() != 0.0 &&
+                status_range.first <= abs_status && abs_status < status_range.second) {
+                return e;
+            }
+        }
+        return std::nullopt;
     }
 
     /**
@@ -529,8 +587,17 @@ class Event {
     }
 
    private:
+    static auto empty_particles() -> const std::vector<clas12::Particle>& {
+        static const std::vector<clas12::Particle> s_empty;
+        return s_empty;
+    }
+
     hipo::bank_view_set& m_banks;
     ParticleMap m_particles;
+    /// Charge-indexed view of REC::Particle, slot index = charge + 1 so
+    /// charges -1/0/+1 map to slots 0/1/2. Built in the same single pass
+    /// as `m_particles` to avoid a second scan or map allocation.
+    std::array<std::vector<clas12::Particle>, 3> m_by_charge;
     bool m_particles_loaded = false;
     std::optional<double> m_start_time;
     long m_event_number = -1;
@@ -638,9 +705,18 @@ class Event {
             const double mass = clas12::physics::ParticleUtils::get_mass(pid);
             const double E = clas12::physics::ParticleUtils::compute_energy(px, py, pz, pid);
 
-            m_particles[particle_type].emplace_back(
+            auto& p = m_particles[particle_type].emplace_back(
                 pid, status, i, charge, mass,
                 px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
+            p.set_event(this);
+
+            // Charge index, populated in the same pass. Slot 0 = -1, 1 = 0,
+            // 2 = +1. Anything outside that range is dropped (matches the
+            // sign-of-charge model REC::Particle uses). The pushed copy
+            // inherits `m_event` from `p`, no separate set_event needed.
+            if (charge >= -1 && charge <= 1) {
+                m_by_charge[charge + 1].push_back(p);
+            }
         }
 
         m_particles_loaded = true;

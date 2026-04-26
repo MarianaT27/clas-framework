@@ -131,7 +131,7 @@ Set number of processing threads.
 auto with_standard_services() -> ApplicationBuilder&;
 ```
 
-Add standard services: LoggingService, HistogramService, NTupleService, ConditionsService, ParticleSelectorService, SamplingFractionService, HipoFileService, RootFileService, MetadataService, ProfilingService.
+Add standard services: LoggingService, HistogramService, NTupleService, ConditionsService, ParticleSelectorService, SamplingFractionService, HipoFileService, OutputFileService, MetadataService, ProfilingService.
 
 #### `add_service`
 

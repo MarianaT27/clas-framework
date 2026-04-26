@@ -6,7 +6,6 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/bankdefs/REC_Particle.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/physics/CompositeParticle.hpp>
 
 namespace clas12::algorithms {
@@ -42,8 +41,6 @@ class Pi0Producer : public clas12::framework::Algorithm {
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        m_particle_svc = svc<clas12::framework::ParticleSelectorService>();
-
         fmt::print("  {} - Initializing\n", name());
         fmt::print("    π⁰ mass window: {:.3f} ± {:.3f} GeV/c²\n", m_mass_center, m_mass_width);
         return clas12::framework::StatusCode::SUCCESS();
@@ -64,12 +61,8 @@ class Pi0Producer : public clas12::framework::Algorithm {
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_events_processed++;
 
-        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
-        auto particles = m_particle_svc->extract_particles(rec_particle, {clas12::PIDs::PHOTON});
-        const auto& photons = particles.photons();
-
         // Reconstruct π⁰ candidates
-        auto pi0_candidates = clas12::physics::CompositeParticleBuilder::reconstruct_pi0(photons);
+        auto pi0_candidates = clas12::physics::CompositeParticleBuilder::reconstruct_pi0(event.photons());
 
         // Filter by mass window
         std::vector<clas12::physics::CompositeParticle> good_pi0s;
@@ -97,7 +90,6 @@ class Pi0Producer : public clas12::framework::Algorithm {
     double m_mass_width;
     size_t m_events_processed = 0;
     size_t m_pi0_produced = 0;
-    clas12::framework::ParticleSelectorService* m_particle_svc = nullptr;
 };
 
 }  // namespace clas12::algorithms

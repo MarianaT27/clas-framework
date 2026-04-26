@@ -1,143 +1,42 @@
 /**
  * @file example_framework.cpp
- * @brief Example analysis using the new CLAS12 framework
+ * @brief Minimal end-to-end example using the new --config TOML flow.
  *
- * This demonstrates how to use the improved framework with:
- * - Configuration loaded from TOML file via ConfigService
- * - Service-oriented architecture
- * - Algorithm sequence
- * - Cutflow tracking
- * - Histogram management
+ * Run with:
+ *   ./framework_example --config config/example_framework.toml
+ *
+ * Demonstrates:
+ *   - AnalysisRunner: single-flag CLI; everything else lives in TOML
+ *   - PropertyMixin: each [<AlgorithmName>] section auto-applies to the
+ *     algorithm's `Property<T>` declarations
+ *   - Builder + standard services + a custom service
  */
 
-#include <clas12/framework/core/Application.hpp>
-#include <clas12/framework/core/ApplicationBuilder.hpp>
-#include <clas12/framework/services/ConfigService.hpp>
-#include <clas12/framework/services/ConditionsService.hpp>
-#include <clas12/framework/services/HistogramService.hpp>
-#include <clas12/framework/services/LoggingService.hpp>
-#include <clas12/framework/services/OutputFileService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
+#include <clas12/framework/core/AnalysisRunner.hpp>
 #include <clas12/framework/services/SamplingFractionService.hpp>
+#include <clas12/framework/services/ConditionsService.hpp>
 #include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
-#include <clas12/FileUtils.hpp>
-#include <fmt/format.h>
 
-int main(int argc, char* argv[]) {
-    // Determine config file path (default or from command line)
-    std::string config_path = "config/example_framework.toml";
-    if (argc > 1) {
-        config_path = argv[1];
-    }
+auto main(int argc, char* argv[]) -> int {
+    return clas12::framework::AnalysisRunner::run(
+        argc, argv, "Example Framework Analysis", "framework_example",
+        [](auto& builder, const auto& config) {
+            // Run number for conditions IOV — pull from
+            // [conditions].run_number in the TOML.
+            int run_number = 0;
+            if (config.config_table) {
+                if (auto v = (*config.config_table)["conditions"]["run_number"]
+                                .template value<int64_t>())
+                    run_number = static_cast<int>(*v);
+            }
 
-    // Create and initialize ConfigService first to load configuration
-    auto config_svc = std::make_unique<clas12::framework::ConfigService>(config_path);
-    auto config_sc = config_svc->initialize();
-    if (config_sc.is_failure()) {
-        clas12::framework::Log::error("Main", "Failed to load configuration: {}", config_sc.message());
-        return 1;
-    }
-
-    // Validate required configuration keys
-    auto validate_result = config_svc->validate({
-        "application.name",
-        "input.data_directory",
-        "output.histogram_file"
-    });
-    if (validate_result.is_error()) {
-        clas12::framework::Log::error("Main", "Configuration validation failed: {}",
-                   validate_result.error_message());
-        return 1;
-    }
-
-    // Read configuration values
-    std::string app_name = config_svc->get<std::string>("application.name", "CLAS12 Analysis");
-    long max_events = config_svc->get<int64_t>("application.max_events", -1);
-    int num_threads = config_svc->get<int64_t>("application.num_threads", 1);
-    
-    std::string data_dir = config_svc->get<std::string>("input.data_directory", "data/");
-    std::string hist_file = config_svc->get<std::string>("output.histogram_file", "output.root");
-    
-    int run_number = config_svc->get<int64_t>("conditions.run_number", 5032);
-    
-    // Parse target and polarity from config
-    std::string target_str = config_svc->get<std::string>("electron_selection.target", "LD2");
-    std::string polarity_str = config_svc->get<std::string>("electron_selection.polarity", "Outbending");
-    
-    // Map target string to enum
-    clas12::Target target = clas12::Target::LD2;
-    if (target_str == "CxC") {
-        target = clas12::Target::CxC;
-    } else if (target_str == "CuSn") {
-        target = clas12::Target::CuSn;
-    } else if (target_str == "Cu") {
-        target = clas12::Target::Cu;
-    } else if (target_str == "Sn") {
-        target = clas12::Target::Sn;
-    }
-    
-    clas12::Polarity polarity = clas12::Polarity::Outbending;
-    if (polarity_str == "Inbending") {
-        polarity = clas12::Polarity::Inbending;
-    }
-
-    // Get input files from configured directory
-    std::vector<std::string> input_files = clas12::FileUtils::read_recursive_hipo_files(data_dir);
-    if (input_files.empty()) {
-        clas12::framework::Log::error("Main", "No input files found in {}", data_dir);
-        return 1;
-    }
-
-    // Create application using ApplicationBuilder with config values
-    auto app = clas12::framework::make_application(app_name)
-        .with_input_files(input_files)
-        .with_output(hist_file)
-        .with_threads(num_threads)
-        .with_standard_services()
-        .add_service<clas12::framework::SamplingFractionService>()
-        .add_algorithm<clas12::algorithms::ElectronSelectionAlg>(
-            "ElectronSelection", target, polarity)
-        .build();
-
-    // Add pre-configured ConfigService (already initialized above)
-    app.service_manager().add_service(std::move(config_svc));
-
-    // Configure ConditionsService with run number from config
-    auto* cond_svc = app.service_manager().get_service<clas12::framework::ConditionsService>("ConditionsService");
-    if (cond_svc) {
-        cond_svc->set_run_number(run_number);
-    }
-
-    fmt::print("Configuration loaded from: {}\n", config_path);
-    fmt::print("  Application: {}\n", app_name);
-    fmt::print("  Max events: {}\n", max_events);
-    fmt::print("  Threads: {}\n", num_threads);
-    fmt::print("  Data directory: {}\n", data_dir);
-    fmt::print("  Output file: {}\n", hist_file);
-    fmt::print("  Target: {}\n", target_str);
-    fmt::print("  Polarity: {}\n", polarity_str);
-    fmt::print("\n");
-
-    // Run the analysis
-    auto sc = app.initialize();
-    if (sc.is_failure()) {
-        clas12::framework::Log::error("Main", "Initialization failed");
-        return 1;
-    }
-
-    sc = app.run();
-    if (sc.is_failure()) {
-        clas12::framework::Log::error("Main", "Event processing failed");
-        return 1;
-    }
-
-    sc = app.finalize();
-    if (sc.is_failure()) {
-        clas12::framework::Log::warning("Main", "Finalization had issues");
-    }
-
-    fmt::print("\n✓ Analysis complete!\n");
-    fmt::print("  Output: {}\n\n", hist_file);
-
-    return 0;
+            builder
+                .template add_service<clas12::framework::SamplingFractionService>()
+                .template configure_service<clas12::framework::ConditionsService>(
+                    [run_number](clas12::framework::ConditionsService& svc) {
+                        svc.set_run_number(run_number);
+                    })
+                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>(
+                    "ElectronSelection", config.target, config.polarity);
+        });
 }

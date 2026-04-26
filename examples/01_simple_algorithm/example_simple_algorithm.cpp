@@ -3,7 +3,7 @@
  * @brief Example demonstrating Algorithm usage
  *
  * This example verifies the algorithm infrastructure by demonstrating:
- * - Algorithm CRTP base class with automatic service injection
+ * - Algorithm base class with automatic service injection
  * - Property system integration
  * - Service access via svc<T>()
  *
@@ -33,7 +33,7 @@ using namespace clas12::framework;
  * @brief Example algorithm demonstrating Algorithm features
  *
  * This algorithm shows:
- * - Inheriting from Algorithm<Derived> (CRTP pattern)
+ * - Inheriting from Algorithm (hook-based base class)
  * - Declaring properties with validation
  * - Automatic service injection via require_service<T>()
  * - Using on_initialize() and on_finalize() hooks

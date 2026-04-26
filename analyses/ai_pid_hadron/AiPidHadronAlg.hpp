@@ -25,7 +25,6 @@
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/bankdefs/REC_Particle.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/PIDs.hpp>
@@ -190,146 +189,143 @@ struct HadronTreeData {
     short FTOF_size = 0;
     char FTOF_layermult = 0;
 
-    template <typename Svc>
-    auto register_branches(Svc* svc, const std::string& tree) -> void {
-        // Particle
-        svc->register_branch(tree, "rich_pid", &rich_pid);
-        svc->register_branch(tree, "pid", &pid);
-        svc->register_branch(tree, "truth_pid", &truth_pid);
-        svc->register_branch(tree, "truth_source", &truth_source);
-        svc->register_branch(tree, "missing_mass", &missing_mass);
-        svc->register_branch(tree, "missing_energy", &missing_energy);
-        svc->register_branch(tree, "missing_px", &missing_px);
-        svc->register_branch(tree, "missing_py", &missing_py);
-        svc->register_branch(tree, "missing_pz", &missing_pz);
-        svc->register_branch(tree, "missing_p", &missing_p);
-        svc->register_branch(tree, "missing_pt", &missing_pt);
-        svc->register_branch(tree, "missing_theta", &missing_theta);
-        svc->register_branch(tree, "missing_phi", &missing_phi);
-        svc->register_branch(tree, "p", &p);
-        svc->register_branch(tree, "theta", &theta);
-        svc->register_branch(tree, "phi", &phi);
-        svc->register_branch(tree, "beta", &beta);
-        svc->register_branch(tree, "charge", &charge);
-
-        // PCAL
-        svc->register_branch(tree, "PCAL_E", &PCAL_E);
-        svc->register_branch(tree, "PCAL_chi2", &PCAL_chi2);
-        svc->register_branch(tree, "PCAL_time", &PCAL_time);
-        svc->register_branch(tree, "PCAL_path", &PCAL_path);
-        svc->register_branch(tree, "PCAL_lu", &PCAL_lu);
-        svc->register_branch(tree, "PCAL_lv", &PCAL_lv);
-        svc->register_branch(tree, "PCAL_lw", &PCAL_lw);
-        svc->register_branch(tree, "PCAL_du", &PCAL_du);
-        svc->register_branch(tree, "PCAL_dv", &PCAL_dv);
-        svc->register_branch(tree, "PCAL_dw", &PCAL_dw);
-        svc->register_branch(tree, "PCAL_m2u", &PCAL_m2u);
-        svc->register_branch(tree, "PCAL_m2v", &PCAL_m2v);
-        svc->register_branch(tree, "PCAL_m2w", &PCAL_m2w);
-        svc->register_branch(tree, "PCAL_m3u", &PCAL_m3u);
-        svc->register_branch(tree, "PCAL_m3v", &PCAL_m3v);
-        svc->register_branch(tree, "PCAL_m3w", &PCAL_m3w);
-        svc->register_branch(tree, "PCAL_dbstU", &PCAL_dbstU);
-        svc->register_branch(tree, "PCAL_dbstV", &PCAL_dbstV);
-        svc->register_branch(tree, "PCAL_dbstW", &PCAL_dbstW);
-        svc->register_branch(tree, "PCAL_rawEU", &PCAL_rawEU);
-        svc->register_branch(tree, "PCAL_rawEV", &PCAL_rawEV);
-        svc->register_branch(tree, "PCAL_rawEW", &PCAL_rawEW);
-        svc->register_branch(tree, "PCAL_recEU", &PCAL_recEU);
-        svc->register_branch(tree, "PCAL_recEV", &PCAL_recEV);
-        svc->register_branch(tree, "PCAL_recEW", &PCAL_recEW);
-        svc->register_branch(tree, "PCAL_recDTU", &PCAL_recDTU);
-        svc->register_branch(tree, "PCAL_recDTV", &PCAL_recDTV);
-        svc->register_branch(tree, "PCAL_recDTW", &PCAL_recDTW);
-        svc->register_branch(tree, "PCAL_recFTU", &PCAL_recFTU);
-        svc->register_branch(tree, "PCAL_recFTV", &PCAL_recFTV);
-        svc->register_branch(tree, "PCAL_recFTW", &PCAL_recFTW);
-        svc->register_branch(tree, "PCAL_size", &PCAL_size);
-
-        // ECIN
-        svc->register_branch(tree, "ICAL_E", &ICAL_E);
-        svc->register_branch(tree, "ICAL_chi2", &ICAL_chi2);
-        svc->register_branch(tree, "ICAL_time", &ICAL_time);
-        svc->register_branch(tree, "ICAL_path", &ICAL_path);
-        svc->register_branch(tree, "ICAL_lu", &ICAL_lu);
-        svc->register_branch(tree, "ICAL_lv", &ICAL_lv);
-        svc->register_branch(tree, "ICAL_lw", &ICAL_lw);
-        svc->register_branch(tree, "ICAL_du", &ICAL_du);
-        svc->register_branch(tree, "ICAL_dv", &ICAL_dv);
-        svc->register_branch(tree, "ICAL_dw", &ICAL_dw);
-        svc->register_branch(tree, "ICAL_m2u", &ICAL_m2u);
-        svc->register_branch(tree, "ICAL_m2v", &ICAL_m2v);
-        svc->register_branch(tree, "ICAL_m2w", &ICAL_m2w);
-        svc->register_branch(tree, "ICAL_m3u", &ICAL_m3u);
-        svc->register_branch(tree, "ICAL_m3v", &ICAL_m3v);
-        svc->register_branch(tree, "ICAL_m3w", &ICAL_m3w);
-        svc->register_branch(tree, "ICAL_dbstU", &ICAL_dbstU);
-        svc->register_branch(tree, "ICAL_dbstV", &ICAL_dbstV);
-        svc->register_branch(tree, "ICAL_dbstW", &ICAL_dbstW);
-        svc->register_branch(tree, "ICAL_rawEU", &ICAL_rawEU);
-        svc->register_branch(tree, "ICAL_rawEV", &ICAL_rawEV);
-        svc->register_branch(tree, "ICAL_rawEW", &ICAL_rawEW);
-        svc->register_branch(tree, "ICAL_recEU", &ICAL_recEU);
-        svc->register_branch(tree, "ICAL_recEV", &ICAL_recEV);
-        svc->register_branch(tree, "ICAL_recEW", &ICAL_recEW);
-        svc->register_branch(tree, "ICAL_recDTU", &ICAL_recDTU);
-        svc->register_branch(tree, "ICAL_recDTV", &ICAL_recDTV);
-        svc->register_branch(tree, "ICAL_recDTW", &ICAL_recDTW);
-        svc->register_branch(tree, "ICAL_recFTU", &ICAL_recFTU);
-        svc->register_branch(tree, "ICAL_recFTV", &ICAL_recFTV);
-        svc->register_branch(tree, "ICAL_recFTW", &ICAL_recFTW);
-        svc->register_branch(tree, "ICAL_size", &ICAL_size);
-
-        // ECOUT
-        svc->register_branch(tree, "OCAL_E", &OCAL_E);
-        svc->register_branch(tree, "OCAL_chi2", &OCAL_chi2);
-        svc->register_branch(tree, "OCAL_time", &OCAL_time);
-        svc->register_branch(tree, "OCAL_path", &OCAL_path);
-        svc->register_branch(tree, "OCAL_lu", &OCAL_lu);
-        svc->register_branch(tree, "OCAL_lv", &OCAL_lv);
-        svc->register_branch(tree, "OCAL_lw", &OCAL_lw);
-        svc->register_branch(tree, "OCAL_du", &OCAL_du);
-        svc->register_branch(tree, "OCAL_dv", &OCAL_dv);
-        svc->register_branch(tree, "OCAL_dw", &OCAL_dw);
-        svc->register_branch(tree, "OCAL_m2u", &OCAL_m2u);
-        svc->register_branch(tree, "OCAL_m2v", &OCAL_m2v);
-        svc->register_branch(tree, "OCAL_m2w", &OCAL_m2w);
-        svc->register_branch(tree, "OCAL_m3u", &OCAL_m3u);
-        svc->register_branch(tree, "OCAL_m3v", &OCAL_m3v);
-        svc->register_branch(tree, "OCAL_m3w", &OCAL_m3w);
-        svc->register_branch(tree, "OCAL_dbstU", &OCAL_dbstU);
-        svc->register_branch(tree, "OCAL_dbstV", &OCAL_dbstV);
-        svc->register_branch(tree, "OCAL_dbstW", &OCAL_dbstW);
-        svc->register_branch(tree, "OCAL_rawEU", &OCAL_rawEU);
-        svc->register_branch(tree, "OCAL_rawEV", &OCAL_rawEV);
-        svc->register_branch(tree, "OCAL_rawEW", &OCAL_rawEW);
-        svc->register_branch(tree, "OCAL_recEU", &OCAL_recEU);
-        svc->register_branch(tree, "OCAL_recEV", &OCAL_recEV);
-        svc->register_branch(tree, "OCAL_recEW", &OCAL_recEW);
-        svc->register_branch(tree, "OCAL_recDTU", &OCAL_recDTU);
-        svc->register_branch(tree, "OCAL_recDTV", &OCAL_recDTV);
-        svc->register_branch(tree, "OCAL_recDTW", &OCAL_recDTW);
-        svc->register_branch(tree, "OCAL_recFTU", &OCAL_recFTU);
-        svc->register_branch(tree, "OCAL_recFTV", &OCAL_recFTV);
-        svc->register_branch(tree, "OCAL_recFTW", &OCAL_recFTW);
-        svc->register_branch(tree, "OCAL_size", &OCAL_size);
-
-        // HTCC
-        svc->register_branch(tree, "HTCC_nphe", &HTCC_nphe);
-        svc->register_branch(tree, "HTCC_time", &HTCC_time);
-        svc->register_branch(tree, "HTCC_path", &HTCC_path);
-        svc->register_branch(tree, "HTCC_chi2", &HTCC_chi2);
-        svc->register_branch(tree, "HTCC_dtheta", &HTCC_dtheta);
-        svc->register_branch(tree, "HTCC_dphi", &HTCC_dphi);
-
-        // FTOF
-        svc->register_branch(tree, "FTOF_E", &FTOF_E);
-        svc->register_branch(tree, "FTOF_time", &FTOF_time);
-        svc->register_branch(tree, "FTOF_path", &FTOF_path);
-        svc->register_branch(tree, "FTOF_chi2", &FTOF_chi2);
-        svc->register_branch(tree, "FTOF_dedx", &FTOF_dedx);
-        svc->register_branch(tree, "FTOF_size", &FTOF_size);
-        svc->register_branch(tree, "FTOF_layermult", &FTOF_layermult);
+    static constexpr auto ntuple_fields() {
+        using T = HadronTreeData;
+        return std::make_tuple(
+            // Particle
+            clas12::framework::field("rich_pid", &T::rich_pid),
+            clas12::framework::field("pid", &T::pid),
+            clas12::framework::field("truth_pid", &T::truth_pid),
+            clas12::framework::field("truth_source", &T::truth_source),
+            clas12::framework::field("missing_mass", &T::missing_mass),
+            clas12::framework::field("missing_energy", &T::missing_energy),
+            clas12::framework::field("missing_px", &T::missing_px),
+            clas12::framework::field("missing_py", &T::missing_py),
+            clas12::framework::field("missing_pz", &T::missing_pz),
+            clas12::framework::field("missing_p", &T::missing_p),
+            clas12::framework::field("missing_pt", &T::missing_pt),
+            clas12::framework::field("missing_theta", &T::missing_theta),
+            clas12::framework::field("missing_phi", &T::missing_phi),
+            clas12::framework::field("p", &T::p),
+            clas12::framework::field("theta", &T::theta),
+            clas12::framework::field("phi", &T::phi),
+            clas12::framework::field("beta", &T::beta),
+            clas12::framework::field("charge", &T::charge),
+            // PCAL
+            clas12::framework::field("PCAL_E", &T::PCAL_E),
+            clas12::framework::field("PCAL_chi2", &T::PCAL_chi2),
+            clas12::framework::field("PCAL_time", &T::PCAL_time),
+            clas12::framework::field("PCAL_path", &T::PCAL_path),
+            clas12::framework::field("PCAL_lu", &T::PCAL_lu),
+            clas12::framework::field("PCAL_lv", &T::PCAL_lv),
+            clas12::framework::field("PCAL_lw", &T::PCAL_lw),
+            clas12::framework::field("PCAL_du", &T::PCAL_du),
+            clas12::framework::field("PCAL_dv", &T::PCAL_dv),
+            clas12::framework::field("PCAL_dw", &T::PCAL_dw),
+            clas12::framework::field("PCAL_m2u", &T::PCAL_m2u),
+            clas12::framework::field("PCAL_m2v", &T::PCAL_m2v),
+            clas12::framework::field("PCAL_m2w", &T::PCAL_m2w),
+            clas12::framework::field("PCAL_m3u", &T::PCAL_m3u),
+            clas12::framework::field("PCAL_m3v", &T::PCAL_m3v),
+            clas12::framework::field("PCAL_m3w", &T::PCAL_m3w),
+            clas12::framework::field("PCAL_dbstU", &T::PCAL_dbstU),
+            clas12::framework::field("PCAL_dbstV", &T::PCAL_dbstV),
+            clas12::framework::field("PCAL_dbstW", &T::PCAL_dbstW),
+            clas12::framework::field("PCAL_rawEU", &T::PCAL_rawEU),
+            clas12::framework::field("PCAL_rawEV", &T::PCAL_rawEV),
+            clas12::framework::field("PCAL_rawEW", &T::PCAL_rawEW),
+            clas12::framework::field("PCAL_recEU", &T::PCAL_recEU),
+            clas12::framework::field("PCAL_recEV", &T::PCAL_recEV),
+            clas12::framework::field("PCAL_recEW", &T::PCAL_recEW),
+            clas12::framework::field("PCAL_recDTU", &T::PCAL_recDTU),
+            clas12::framework::field("PCAL_recDTV", &T::PCAL_recDTV),
+            clas12::framework::field("PCAL_recDTW", &T::PCAL_recDTW),
+            clas12::framework::field("PCAL_recFTU", &T::PCAL_recFTU),
+            clas12::framework::field("PCAL_recFTV", &T::PCAL_recFTV),
+            clas12::framework::field("PCAL_recFTW", &T::PCAL_recFTW),
+            clas12::framework::field("PCAL_size", &T::PCAL_size),
+            // ECIN
+            clas12::framework::field("ICAL_E", &T::ICAL_E),
+            clas12::framework::field("ICAL_chi2", &T::ICAL_chi2),
+            clas12::framework::field("ICAL_time", &T::ICAL_time),
+            clas12::framework::field("ICAL_path", &T::ICAL_path),
+            clas12::framework::field("ICAL_lu", &T::ICAL_lu),
+            clas12::framework::field("ICAL_lv", &T::ICAL_lv),
+            clas12::framework::field("ICAL_lw", &T::ICAL_lw),
+            clas12::framework::field("ICAL_du", &T::ICAL_du),
+            clas12::framework::field("ICAL_dv", &T::ICAL_dv),
+            clas12::framework::field("ICAL_dw", &T::ICAL_dw),
+            clas12::framework::field("ICAL_m2u", &T::ICAL_m2u),
+            clas12::framework::field("ICAL_m2v", &T::ICAL_m2v),
+            clas12::framework::field("ICAL_m2w", &T::ICAL_m2w),
+            clas12::framework::field("ICAL_m3u", &T::ICAL_m3u),
+            clas12::framework::field("ICAL_m3v", &T::ICAL_m3v),
+            clas12::framework::field("ICAL_m3w", &T::ICAL_m3w),
+            clas12::framework::field("ICAL_dbstU", &T::ICAL_dbstU),
+            clas12::framework::field("ICAL_dbstV", &T::ICAL_dbstV),
+            clas12::framework::field("ICAL_dbstW", &T::ICAL_dbstW),
+            clas12::framework::field("ICAL_rawEU", &T::ICAL_rawEU),
+            clas12::framework::field("ICAL_rawEV", &T::ICAL_rawEV),
+            clas12::framework::field("ICAL_rawEW", &T::ICAL_rawEW),
+            clas12::framework::field("ICAL_recEU", &T::ICAL_recEU),
+            clas12::framework::field("ICAL_recEV", &T::ICAL_recEV),
+            clas12::framework::field("ICAL_recEW", &T::ICAL_recEW),
+            clas12::framework::field("ICAL_recDTU", &T::ICAL_recDTU),
+            clas12::framework::field("ICAL_recDTV", &T::ICAL_recDTV),
+            clas12::framework::field("ICAL_recDTW", &T::ICAL_recDTW),
+            clas12::framework::field("ICAL_recFTU", &T::ICAL_recFTU),
+            clas12::framework::field("ICAL_recFTV", &T::ICAL_recFTV),
+            clas12::framework::field("ICAL_recFTW", &T::ICAL_recFTW),
+            clas12::framework::field("ICAL_size", &T::ICAL_size),
+            // ECOUT
+            clas12::framework::field("OCAL_E", &T::OCAL_E),
+            clas12::framework::field("OCAL_chi2", &T::OCAL_chi2),
+            clas12::framework::field("OCAL_time", &T::OCAL_time),
+            clas12::framework::field("OCAL_path", &T::OCAL_path),
+            clas12::framework::field("OCAL_lu", &T::OCAL_lu),
+            clas12::framework::field("OCAL_lv", &T::OCAL_lv),
+            clas12::framework::field("OCAL_lw", &T::OCAL_lw),
+            clas12::framework::field("OCAL_du", &T::OCAL_du),
+            clas12::framework::field("OCAL_dv", &T::OCAL_dv),
+            clas12::framework::field("OCAL_dw", &T::OCAL_dw),
+            clas12::framework::field("OCAL_m2u", &T::OCAL_m2u),
+            clas12::framework::field("OCAL_m2v", &T::OCAL_m2v),
+            clas12::framework::field("OCAL_m2w", &T::OCAL_m2w),
+            clas12::framework::field("OCAL_m3u", &T::OCAL_m3u),
+            clas12::framework::field("OCAL_m3v", &T::OCAL_m3v),
+            clas12::framework::field("OCAL_m3w", &T::OCAL_m3w),
+            clas12::framework::field("OCAL_dbstU", &T::OCAL_dbstU),
+            clas12::framework::field("OCAL_dbstV", &T::OCAL_dbstV),
+            clas12::framework::field("OCAL_dbstW", &T::OCAL_dbstW),
+            clas12::framework::field("OCAL_rawEU", &T::OCAL_rawEU),
+            clas12::framework::field("OCAL_rawEV", &T::OCAL_rawEV),
+            clas12::framework::field("OCAL_rawEW", &T::OCAL_rawEW),
+            clas12::framework::field("OCAL_recEU", &T::OCAL_recEU),
+            clas12::framework::field("OCAL_recEV", &T::OCAL_recEV),
+            clas12::framework::field("OCAL_recEW", &T::OCAL_recEW),
+            clas12::framework::field("OCAL_recDTU", &T::OCAL_recDTU),
+            clas12::framework::field("OCAL_recDTV", &T::OCAL_recDTV),
+            clas12::framework::field("OCAL_recDTW", &T::OCAL_recDTW),
+            clas12::framework::field("OCAL_recFTU", &T::OCAL_recFTU),
+            clas12::framework::field("OCAL_recFTV", &T::OCAL_recFTV),
+            clas12::framework::field("OCAL_recFTW", &T::OCAL_recFTW),
+            clas12::framework::field("OCAL_size", &T::OCAL_size),
+            // HTCC
+            clas12::framework::field("HTCC_nphe", &T::HTCC_nphe),
+            clas12::framework::field("HTCC_time", &T::HTCC_time),
+            clas12::framework::field("HTCC_path", &T::HTCC_path),
+            clas12::framework::field("HTCC_chi2", &T::HTCC_chi2),
+            clas12::framework::field("HTCC_dtheta", &T::HTCC_dtheta),
+            clas12::framework::field("HTCC_dphi", &T::HTCC_dphi),
+            // FTOF
+            clas12::framework::field("FTOF_E", &T::FTOF_E),
+            clas12::framework::field("FTOF_time", &T::FTOF_time),
+            clas12::framework::field("FTOF_path", &T::FTOF_path),
+            clas12::framework::field("FTOF_chi2", &T::FTOF_chi2),
+            clas12::framework::field("FTOF_dedx", &T::FTOF_dedx),
+            clas12::framework::field("FTOF_size", &T::FTOF_size),
+            clas12::framework::field("FTOF_layermult", &T::FTOF_layermult)
+        );
     }
 };
 
@@ -367,7 +363,6 @@ public:
 
     auto on_initialize() -> clas12::framework::StatusCode override {
         m_hist = svc<clas12::framework::HistogramService>();
-        m_particle = svc<clas12::framework::ParticleSelectorService>();
         m_ntuple_svc = svc<clas12::framework::NTupleService>();
 
         clas12::framework::Log::info(name(), "Truth PID mode: {}", m_truth_mode.get());
@@ -595,7 +590,6 @@ private:
 
     // --- Services ---
     clas12::framework::HistogramService* m_hist = nullptr;
-    clas12::framework::ParticleSelectorService* m_particle = nullptr;
     clas12::framework::NTupleService* m_ntuple_svc = nullptr;
 
     // N-tuple writer
@@ -633,30 +627,25 @@ private:
     // ========================================================================
 
     auto process_rich(clas12::framework::Event& event) -> clas12::framework::StatusCode {
-        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
-        // Every detector bank below is accessed via the per-event
-        // generated-wrapper cache through the read_*_bank helpers; no
-        // local hipo::bank_view handles are needed here.
+        // Detector banks below are read via Particle's accessors, which
+        // route to the per-event generated-wrapper cache.
 
         if (event.get_bank("RICH::Particle").rows() == 0) {
             return clas12::framework::StatusCode::FILTERED();
         }
 
-        // Extract all charged hadrons from REC::Particle
-        auto particles = m_particle->extract_particles(
-            rec_particle,
-            {clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
-             clas12::PIDs::KPLUS, clas12::PIDs::KMINUS});
-
-        // Loop over all hadron candidates and look up their RICH info
-        for (const auto& [pid_type, particle_vec] : particles.pid_groups()) {
-            for (const auto& particle : particle_vec) {
+        // Loop over all charged hadron candidates and look up their RICH info
+        static constexpr std::array<clas12::PIDs, 4> hadron_pids = {
+            clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
+            clas12::PIDs::KPLUS, clas12::PIDs::KMINUS};
+        for (auto pid_type : hadron_pids) {
+            for (const auto& particle : event.particles(pid_type)) {
                 // Determine cutflow based on REC PID
                 clas12::framework::Cutflow* cf = nullptr;
-                if (pid_type == static_cast<int>(clas12::PIDs::PIPLUS))       cf = &m_cutflow_piplus;
-                else if (pid_type == static_cast<int>(clas12::PIDs::PIMINUS)) cf = &m_cutflow_piminus;
-                else if (pid_type == static_cast<int>(clas12::PIDs::KPLUS))   cf = &m_cutflow_kplus;
-                else if (pid_type == static_cast<int>(clas12::PIDs::KMINUS))  cf = &m_cutflow_kminus;
+                if (pid_type == clas12::PIDs::PIPLUS)       cf = &m_cutflow_piplus;
+                else if (pid_type == clas12::PIDs::PIMINUS) cf = &m_cutflow_piminus;
+                else if (pid_type == clas12::PIDs::KPLUS)   cf = &m_cutflow_kplus;
+                else if (pid_type == clas12::PIDs::KMINUS)  cf = &m_cutflow_kminus;
 
                 if (cf) cf->pass("RICH hadrons");
 
@@ -677,14 +666,14 @@ private:
                 }
 
                 // Count all RICH best_PIDs (before any cuts)
-                int rec_pid = static_cast<int>(pid_type);
+                const int rec_pid = static_cast<int>(pid_type);
                 {
                     std::lock_guard<std::mutex> lock(m_pid_count_mutex);
                     m_rich_pid_counts[best_pid]++;
                 }
 
                 // Determine particle sector from scintillator
-                auto ftof = clas12::read_Scintillator_bank(event, particle.index());
+                auto ftof = particle.scintillator();
                 int sector = ftof.sector;
 
                 // Sector 1: track agreement and fill comparison histograms
@@ -720,14 +709,14 @@ private:
 
                 // Fill TTree
                 if (m_ntuple) {
-                    auto calo = clas12::read_Calorimeter_bank(event, particle.index());
-                    auto htcc = clas12::read_Cherenkov_bank(event, particle.index());
-                    auto ftof = clas12::read_Scintillator_bank(event, particle.index());
+                    auto calo = particle.calo();
+                    auto htcc = particle.cherenkov();
+                    auto ftof_nt = particle.scintillator();
 
                     populate_particle_data(particle, rich);
                     populate_calorimeter_data(calo);
                     populate_cherenkov_data(htcc);
-                    populate_scintillator_data(ftof);
+                    populate_scintillator_data(ftof_nt);
                     m_ntuple.fill();
                 }
             }
@@ -750,23 +739,15 @@ private:
         m_cutflow_exclusive.pass("Has good electron");
         m_cutflow_exclusive.pass("Passes DIS cuts");
 
-        // 2. Extract hadrons from REC::Particle. Detector banks are read
-        // through the per-event generated-wrapper cache inside the
-        // fill_exclusive_ntuple helper, so no local bank-view handles
-        // are needed here.
-        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
-
-        auto particles = m_particle->extract_particles(
-            rec_particle,
-            {clas12::PIDs::PROTON, clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
-             clas12::PIDs::KPLUS, clas12::PIDs::KMINUS, clas12::PIDs::NEUTRON});
-
-        const auto& protons     = particles.protons();
-        const auto& pions_plus  = particles.pions_plus();
-        const auto& pions_minus = particles.pions_minus();
-        const auto& kaons_plus  = particles.by_pid(clas12::PIDs::KPLUS);
-        const auto& kaons_minus = particles.by_pid(clas12::PIDs::KMINUS);
-        const auto& neutrons    = particles.by_pid(clas12::PIDs::NEUTRON);
+        // 2. Read hadrons via Event's per-PID accessors. Detector banks
+        // for selected particles are read on demand through the per-event
+        // generated-wrapper cache inside fill_exclusive_ntuple.
+        const auto& protons     = event.protons();
+        const auto& pions_plus  = event.pions_plus();
+        const auto& pions_minus = event.pions_minus();
+        const auto& kaons_plus  = event.particles(clas12::PIDs::KPLUS);
+        const auto& kaons_minus = event.particles(clas12::PIDs::KMINUS);
+        const auto& neutrons    = event.particles(clas12::PIDs::NEUTRON);
 
         // 3. Topology check: require proton + (pi+pi- or K+K-)
         if (protons.empty()) return clas12::framework::StatusCode::FILTERED();
@@ -857,8 +838,8 @@ private:
 
                     // Fill NTuple for pi+ (true PID = 211) and pi- (true PID = -211)
                     if (m_ntuple) {
-                        fill_exclusive_ntuple(event, pip, static_cast<int>(clas12::PIDs::PIPLUS), excl);
-                        fill_exclusive_ntuple(event, pim, static_cast<int>(clas12::PIDs::PIMINUS), excl);
+                        fill_exclusive_ntuple(pip, static_cast<int>(clas12::PIDs::PIPLUS), excl);
+                        fill_exclusive_ntuple(pim, static_cast<int>(clas12::PIDs::PIMINUS), excl);
                     }
 
                     // Count exclusive PIDs
@@ -928,8 +909,8 @@ private:
                     if (h_exclusive.kminus_theta) h_exclusive.kminus_theta->fill(km.theta());
 
                     if (m_ntuple) {
-                        fill_exclusive_ntuple(event, kp, static_cast<int>(clas12::PIDs::KPLUS), excl);
-                        fill_exclusive_ntuple(event, km, static_cast<int>(clas12::PIDs::KMINUS), excl);
+                        fill_exclusive_ntuple(kp, static_cast<int>(clas12::PIDs::KPLUS), excl);
+                        fill_exclusive_ntuple(km, static_cast<int>(clas12::PIDs::KMINUS), excl);
                     }
 
                     {
@@ -1022,12 +1003,11 @@ private:
         d.charge       = particle.charge();
     }
 
-    void fill_exclusive_ntuple(clas12::framework::Event& event,
-                               const clas12::Particle& hadron, int true_pid,
+    void fill_exclusive_ntuple(const clas12::Particle& hadron, int true_pid,
                                const ExclusivityVars& excl) {
-        auto calo = clas12::read_Calorimeter_bank(event, hadron.index());
-        auto htcc = clas12::read_Cherenkov_bank(event, hadron.index());
-        auto ftof = clas12::read_Scintillator_bank(event, hadron.index());
+        auto calo = hadron.calo();
+        auto htcc = hadron.cherenkov();
+        auto ftof = hadron.scintillator();
 
         auto& d = m_ntuple.data();
         d.rich_pid       = 0;

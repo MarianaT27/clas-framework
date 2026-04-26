@@ -503,19 +503,21 @@ class LambdaReconstructionAlg : public clas12::framework::Algorithm {
         std::vector<double> lambda_mass, lambda_p, lambda_theta;
         std::vector<double> proton_p, pion_p, coplanarity, missing_mass, delta_vz;
 
-        template <typename Svc>
-        auto register_branches(Svc* svc, const std::string& tree) -> void {
-            svc->register_branch(tree, "e_p", &e_p);
-            svc->register_branch(tree, "e_theta", &e_theta);
-            svc->register_branch(tree, "e_phi", &e_phi);
-            svc->register_branch(tree, "lambda_mass", &lambda_mass);
-            svc->register_branch(tree, "lambda_p", &lambda_p);
-            svc->register_branch(tree, "lambda_theta", &lambda_theta);
-            svc->register_branch(tree, "proton_p", &proton_p);
-            svc->register_branch(tree, "pion_p", &pion_p);
-            svc->register_branch(tree, "coplanarity", &coplanarity);
-            svc->register_branch(tree, "missing_mass", &missing_mass);
-            svc->register_branch(tree, "delta_vz", &delta_vz);
+        static constexpr auto ntuple_fields() {
+            using T = LambdaNTupleData;
+            return std::make_tuple(
+                clas12::framework::field("e_p", &T::e_p),
+                clas12::framework::field("e_theta", &T::e_theta),
+                clas12::framework::field("e_phi", &T::e_phi),
+                clas12::framework::field("lambda_mass", &T::lambda_mass),
+                clas12::framework::field("lambda_p", &T::lambda_p),
+                clas12::framework::field("lambda_theta", &T::lambda_theta),
+                clas12::framework::field("proton_p", &T::proton_p),
+                clas12::framework::field("pion_p", &T::pion_p),
+                clas12::framework::field("coplanarity", &T::coplanarity),
+                clas12::framework::field("missing_mass", &T::missing_mass),
+                clas12::framework::field("delta_vz", &T::delta_vz)
+            );
         }
 
         auto clear_vectors() -> void {

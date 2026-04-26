@@ -1,24 +1,24 @@
 # Example 01: Simple Algorithm
 
-This example demonstrates the basic CRTP-based `SimpleAlgorithm` pattern.
+This example demonstrates the basic `Algorithm` base class.
 
 ## Key Concepts
 
-- **CRTP Pattern**: Inherit from `SimpleAlgorithm<YourClass>` for reduced boilerplate
-- **Service Injection**: Use `require_service<T>()` in `configure()` to declare dependencies
-- **Properties**: Declare configurable parameters with `Property<T>`
-- **Lifecycle**: Override `on_initialize()`, `process()`, and `on_finalize()`
+- **Hook pattern**: derive from `Algorithm` and override `on_initialize()`, `process()`, and `on_finalize()`.
+- **Service injection**: declare dependencies with `required_services(...)` in the constructor.
+- **Properties**: declare configurable parameters with `Property<T>` so they can be set from the analysis TOML.
+- **Single CLI flag**: every binary takes `--config <path.toml>` only.
 
 ## Running
 
 ```bash
-./build/example_simple_algorithm data/sample.hipo
+./build/example_simple_algorithm --config config/example_simple.toml
 ```
 
 ## Code Structure
 
 ```cpp
-class MyAlgorithm : public clas12::framework::SimpleAlgorithm<MyAlgorithm> {
+class MyAlgorithm : public clas12::framework::Algorithm<MyAlgorithm> {
     // Constructor: declare properties
     // configure(): declare services
     // process(): per-event logic

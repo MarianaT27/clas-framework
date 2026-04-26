@@ -126,10 +126,9 @@ class IService {
     /**
      * @brief HIPO banks this service needs to function.
      *
-     * Default: empty. Override in services that always need certain banks
-     * (e.g. ParticleSelectorService needs "REC::Particle"). Application
-     * collects the union of algorithm-declared AND service-declared banks
-     * and passes it to the HIPO chain.
+     * Default: empty. Override in services that always need certain banks.
+     * Application collects the union of algorithm-declared AND
+     * service-declared banks and passes it to the HIPO chain.
      */
     [[nodiscard]] virtual auto required_banks() const -> std::vector<std::string> {
         return {};

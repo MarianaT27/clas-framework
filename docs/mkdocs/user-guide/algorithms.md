@@ -65,7 +65,7 @@ auto app = clas12::framework::make_application("My Analysis")
 
 ## Algorithm Base Class
 
-All algorithms in the framework use the unified `Algorithm` CRTP base class. This provides:
+All algorithms in the framework use the unified `Algorithm` base class. This provides:
 
 - **Automatic service injection** via `require_service<T>()` in `configure()`
 - **Clean lifecycle separation** between configuration and initialization
@@ -74,7 +74,7 @@ All algorithms in the framework use the unified `Algorithm` CRTP base class. Thi
 ```cpp
 #include <clas12/framework/core/Algorithm.hpp>
 
-class MyAlgorithm : public clas12::framework::Algorithm<MyAlgorithm> {
+class MyAlgorithm : public clas12::framework::Algorithm {
 public:
     explicit MyAlgorithm(std::string name = "MyAlgorithm")
         : Algorithm(std::move(name)) {}
@@ -100,7 +100,7 @@ public:
     }
 
 private:
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::HistogramService>* m_hist_svc = nullptr;
 };
 ```
 
@@ -114,7 +114,7 @@ Filter events by returning `StatusCode::FILTERED()` and setting decisions:
 #include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/PIDs.hpp>
 
-class TriggerElectronFilter : public clas12::framework::Algorithm<TriggerElectronFilter> {
+class TriggerElectronFilter : public clas12::framework::Algorithm {
 public:
     explicit TriggerElectronFilter(std::string name = "TriggerElectronFilter")
         : Algorithm(std::move(name)) {}
@@ -141,7 +141,7 @@ public:
     }
 
 private:
-    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
 };
 ```
 
@@ -150,7 +150,7 @@ private:
 Fill histograms and compute physics quantities. Histograms are **thread-safe atomic** by default:
 
 ```cpp
-class ElectronAnalysisAlg : public clas12::framework::Algorithm<ElectronAnalysisAlg> {
+class ElectronAnalysisAlg : public clas12::framework::Algorithm {
 public:
     explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysisAlg")
         : Algorithm(std::move(name)) {}
@@ -161,7 +161,7 @@ public:
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        // book_hist1D returns AtomicHistogram1D* (thread-safe)
+        // book_hist1D returns ThreadLocalHistogram1D* (thread-safe)
         h_momentum = m_hist_svc->get()->book_hist1D("/Electron/p", "Momentum;p [GeV];Events", 100, 0, 10);
         h_theta = m_hist_svc->get()->book_hist1D("/Electron/theta", "Theta;#theta [deg];Events", 100, 0, 45);
         return clas12::framework::StatusCode::SUCCESS();
@@ -186,11 +186,11 @@ public:
     }
 
 private:
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
-    // Use AtomicHistogram types (thread-safe, lock-free)
-    clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
-    clas12::framework::AtomicHistogram1D* h_theta = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
+    // Use ThreadLocalHistogram types (thread-safe, lock-free)
+    clas12::framework::ThreadLocalHistogram1D* h_momentum = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_theta = nullptr;
 };
 ```
 
@@ -201,7 +201,7 @@ Create new data products and store them in the event:
 ```cpp
 #include <clas12/physics/CompositeParticle.hpp>
 
-class Pi0Producer : public clas12::framework::Algorithm<Pi0Producer> {
+class Pi0Producer : public clas12::framework::Algorithm {
 public:
     explicit Pi0Producer(std::string name = "Pi0Producer", double mass_center = 0.135, double mass_width = 0.050)
         : Algorithm(std::move(name)), m_mass_center(mass_center), m_mass_width(mass_width) {}
@@ -238,7 +238,7 @@ public:
 private:
     double m_mass_center;
     double m_mass_width;
-    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
 };
 ```
 
@@ -261,10 +261,10 @@ app.add_algorithm(std::make_unique<Pi0AnalysisAlg>());
 
 ### Using require_service<T>() (Recommended)
 
-With `Algorithm`, services are requested in `configure()` and accessed via `ServiceHandle` pointers:
+With `Algorithm`, services are requested in `configure()` and accessed via `ServiceRef` pointers:
 
 ```cpp
-class MyAlgorithm : public clas12::framework::Algorithm<MyAlgorithm> {
+class MyAlgorithm : public clas12::framework::Algorithm {
 public:
     auto configure() -> void override {
         // Required service - throws if not available
@@ -287,9 +287,9 @@ public:
     }
 
 private:
-    clas12::framework::ServiceHandle<clas12::framework::HistogramService>* m_hist_svc = nullptr;
-    clas12::framework::ServiceHandle<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
-    clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::HistogramService>* m_hist_svc = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::NTupleService>* m_ntuple_svc = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_momentum = nullptr;
 };
 ```
 
@@ -307,7 +307,7 @@ private:
 Track selection efficiency:
 
 ```cpp
-class MyAlgorithm : public clas12::framework::Algorithm<MyAlgorithm> {
+class MyAlgorithm : public clas12::framework::Algorithm {
 public:
     explicit MyAlgorithm(std::string name = "MyAlgorithm")
         : Algorithm(std::move(name)), m_cutflow("My Selection") {}
@@ -351,7 +351,7 @@ public:
 
 private:
     clas12::framework::Cutflow m_cutflow;
-    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
 };
 ```
 
@@ -375,7 +375,7 @@ Forward Angle                           38542     38.5%     91.5%
 Algorithms can be configured via constructor parameters:
 
 ```cpp
-class ElectronSelectionAlg : public clas12::framework::Algorithm<ElectronSelectionAlg> {
+class ElectronSelectionAlg : public clas12::framework::Algorithm {
 public:
     ElectronSelectionAlg(
         std::string name,
@@ -400,7 +400,7 @@ private:
     clas12::Target m_target;
     clas12::Polarity m_polarity;
     bool m_enable_systematics;
-    clas12::framework::ServiceHandle<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::ParticleSelectorService>* m_particle_svc = nullptr;
 };
 
 // Usage

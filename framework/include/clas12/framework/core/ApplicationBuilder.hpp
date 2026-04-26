@@ -16,6 +16,8 @@
 #include <tuple>
 #include <vector>
 
+#include <toml++/toml.hpp>
+
 #include <clas12/framework/core/Application.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
 // Concrete service headers used to be included here so
@@ -81,6 +83,15 @@ public:
     /// Set number of processing threads
     auto with_threads(int n) -> ApplicationBuilder& {
         m_num_threads = n;
+        return *this;
+    }
+
+    /// Attach the parsed TOML config table. The Application will look
+    /// up `[<algorithm.name()>]` for every registered algorithm and
+    /// apply matching `Property` values via
+    /// `PropertyMixin::configure_from_toml`.
+    auto with_config(std::shared_ptr<const toml::table> config) -> ApplicationBuilder& {
+        m_config = std::move(config);
         return *this;
     }
 
@@ -176,6 +187,7 @@ private:
     double m_percentage = 100.0;
     int m_num_threads = 1;
     bool m_add_standard_services = false;
+    std::shared_ptr<const toml::table> m_config;
 
     // Metadata
     std::string m_version = "1.0";

@@ -96,25 +96,25 @@ analyses/my_analysis/
 
 ### Generated Algorithm
 
-The generated algorithm follows the CRTP-based `Algorithm` pattern:
+The generated algorithm follows the `Algorithm` pattern:
 
 ```cpp
 #pragma once
 
 #include <clas12/framework/core/Algorithm.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/PIDs.hpp>
 
 namespace my_analysis {
 
-class MyAnalysisAlg : public clas12::framework::Algorithm<MyAnalysisAlg> {
+class MyAnalysisAlg : public clas12::framework::Algorithm {
 public:
     explicit MyAnalysisAlg(std::string name = "MyAnalysisAlg")
         : Algorithm(std::move(name)) {}
 
     auto do_initialize() -> clas12::framework::StatusCode {
-        // Get histogram service - returns AtomicHistogram1D* (thread-safe)
+        // Get histogram service - returns ThreadLocalHistogram1D* (thread-safe)
         h_momentum = histogram_service()->book_hist1D(
             "/MyAnalysis/momentum",
             "Momentum;p [GeV/c];Events",
@@ -140,7 +140,7 @@ public:
 
 private:
     // Atomic histograms are thread-safe for parallel processing
-    clas12::framework::AtomicHistogram1D* h_momentum = nullptr;
+    clas12::framework::ThreadLocalHistogram1D* h_momentum = nullptr;
 };
 
 }  // namespace my_analysis
@@ -219,7 +219,7 @@ After scaffolding, you can customize:
 ### Example: Adding Cutflow
 
 ```cpp
-class MyAnalysisAlg : public clas12::framework::Algorithm<MyAnalysisAlg> {
+class MyAnalysisAlg : public clas12::framework::Algorithm {
 private:
     clas12::framework::Cutflow m_cutflow{"My Selection"};
 
@@ -259,7 +259,7 @@ The scaffolding script uses templates from `templates/`:
 
 | Template | Description |
 |----------|-------------|
-| `algorithm/MyAlgorithm.hpp.template` | CRTP-based algorithm |
+| `algorithm/MyAlgorithm.hpp.template` | standard algorithm |
 | `analysis/my_analysis.cpp.template` | Main executable |
 | `analysis/meson.build.template` | Build configuration |
 

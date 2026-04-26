@@ -35,13 +35,29 @@ struct DISNTupleData {
     double epsilon = 0.0;
     double gamma_flux = 0.0;
 
-    NTUPLE_FIELDS(e_p, e_theta, e_phi, e_vz, e_chi2pid, Q2, W, nu, xB, y, epsilon, gamma_flux)
+    static constexpr auto ntuple_fields() {
+        using T = DISNTupleData;
+        return std::make_tuple(
+            clas12::framework::field("e_p", &T::e_p),
+            clas12::framework::field("e_theta", &T::e_theta),
+            clas12::framework::field("e_phi", &T::e_phi),
+            clas12::framework::field("e_vz", &T::e_vz),
+            clas12::framework::field("e_chi2pid", &T::e_chi2pid),
+            clas12::framework::field("Q2", &T::Q2),
+            clas12::framework::field("W", &T::W),
+            clas12::framework::field("nu", &T::nu),
+            clas12::framework::field("xB", &T::xB),
+            clas12::framework::field("y", &T::y),
+            clas12::framework::field("epsilon", &T::epsilon),
+            clas12::framework::field("gamma_flux", &T::gamma_flux)
+        );
+    }
 };
 
 /**
  * @brief Algorithm for DIS event selection
  *
- * Modernized using Algorithm CRTP pattern with:
+ * Modernized using Algorithm hook pattern with:
  * - Automatic service injection via svc<T>()
  * - Property system for configuration
  * - CutBuilder for fluent cut definitions

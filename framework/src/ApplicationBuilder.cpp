@@ -21,7 +21,6 @@
 #include <clas12/framework/services/MetadataService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/framework/services/ProfilingService.hpp>
 #include <clas12/framework/services/SamplingFractionService.hpp>
 
@@ -49,6 +48,7 @@ auto ApplicationBuilder::build() -> Application {
     app.set_input_files(m_input_files);
     app.set_percentage(m_percentage);
     app.set_num_threads(m_num_threads);
+    app.set_config(m_config);  // null if user never called with_config()
 
     return app;
 }
@@ -62,7 +62,6 @@ auto ApplicationBuilder::add_standard_services_to(Application& app) -> void {
     auto hist_svc = std::make_unique<HistogramService>();
     auto ntuple_svc = std::make_unique<NTupleService>();
     auto conditions_svc = std::make_unique<ConditionsService>();
-    auto particle_svc = std::make_unique<ParticleSelectorService>();
     auto sf_svc = std::make_unique<SamplingFractionService>();
 
     // File services
@@ -97,7 +96,6 @@ auto ApplicationBuilder::add_standard_services_to(Application& app) -> void {
     mgr.add_service(std::move(hipo_svc));
     mgr.add_service(std::move(conditions_svc));
     mgr.add_service(std::move(hist_svc),     {"OutputFileService"});
-    mgr.add_service(std::move(particle_svc));
     mgr.add_service(std::move(sf_svc));
     mgr.add_service(std::move(metadata_svc), {"OutputFileService"});
     mgr.add_service(std::move(profiling_svc));

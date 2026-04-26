@@ -57,7 +57,7 @@ For more control, implement a custom algorithm:
 
 ```cpp
 #include <clas12/framework/core/Application.hpp>
-#include <clas12/framework/core/AtomicHistogram.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/PhotonCutsService.hpp>
@@ -72,7 +72,7 @@ public:
     auto initialize() -> clas12::framework::StatusCode override {
         m_hist_svc = service<clas12::framework::HistogramService>("HistogramService");
 
-        // Book histograms - returns AtomicHistogram1D* (thread-safe)
+        // Book histograms - returns ThreadLocalHistogram1D* (thread-safe)
         h_mgg = m_hist_svc->book_hist1D("/Pi0/mgg", "M_{#gamma#gamma};M_{#gamma#gamma} [GeV];Events", 200, 0, 0.3);
         h_mgg_cut = m_hist_svc->book_hist1D("/Pi0/mgg_cut", "M_{#gamma#gamma} (cuts);M_{#gamma#gamma} [GeV];Events", 200, 0, 0.3);
         h_opening_angle = m_hist_svc->book_hist1D("/Pi0/opening_angle", "Opening Angle;#theta_{#gamma#gamma} [deg];Events", 180, 0, 180);
@@ -145,7 +145,7 @@ private:
     clas12::framework::HistogramService* m_hist_svc = nullptr;
     clas12::framework::Cutflow m_cutflow;
     // Atomic histograms are thread-safe for parallel processing
-    clas12::framework::AtomicHistogram1D *h_mgg, *h_mgg_cut, *h_opening_angle, *h_photon_E;
+    clas12::framework::ThreadLocalHistogram1D *h_mgg, *h_mgg_cut, *h_opening_angle, *h_photon_E;
 };
 ```
 
@@ -181,10 +181,29 @@ auto execute(Framework::Event& event) -> Framework::StatusCode override {
 
 ## Command Line Usage
 
-The `pi0` executable supports these options:
+The `pi0` executable takes one flag — `--config <path.toml>`. Every
+knob (input, output, threads, target/polarity, per-algorithm
+properties) lives in the TOML.
 
 ```bash
-./builddir/pi0 --target=LD2 --polarity=Outbending \
-    --input=/path/to/data --output=pi0_analysis.root \
-    --mass_window=0.2 --min_energy=0.3 --num_threads=4
+./builddir/pi0 --config config/pi0.toml
+```
+
+Example TOML:
+
+```toml
+[run]
+input       = "/path/to/data"
+output      = "pi0_analysis.root"
+num_threads = 4
+
+[analysis]
+target   = "LD2"
+polarity = "Outbending"
+
+[Pi0Reconstruction]
+mass_window = 0.2
+
+[PhotonSelection]
+min_energy = 0.3
 ```

@@ -20,7 +20,6 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/physics/Kinematics.hpp>
 #include <vector>
 
@@ -63,7 +62,7 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
     using StatusCode = clas12::framework::StatusCode;
 
     explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis", const Config& config = Config{}) : Algorithm(std::move(name)), m_config(config), m_target(m_config.target), m_polarity(m_config.polarity), m_cutflow("Electron Selection") {
-        required_services(m_hist, m_ntuple, m_particle, m_electron_cuts);
+        required_services(m_hist, m_ntuple, m_electron_cuts);
         declare_banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Cherenkov", "REC::Scintillator", "REC::Traj", "REC::Track");
         declare_properties(m_enable_chi2pid_cut, m_enable_momentum_cut, m_enable_vz_cut, m_enable_sf_cut, m_enable_pcal_fiducial_cut, m_enable_dc_chi2ndf_cut);
     }
@@ -98,30 +97,27 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
     auto process(clas12::framework::Event& event) -> StatusCode override {
         m_cutflow.pass("All Events");
 
-        bankdefs::REC_Particle rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
-        framework::EventParticles particles = m_particle->extract_particles(rec_particle);
-
         // Process negative tracks
-        process_tracks(particles.by_charge(-1), h_neg_tracks, event);
+        process_tracks(event.by_charge(-1), h_neg_tracks);
 
         // Select trigger electron
-        if (particles.electrons().empty()) return StatusCode::FILTERED();
-        std::optional<clas12::Particle> trigger_e = particles.find_trigger_electron();
+        if (event.electrons().empty()) return StatusCode::FILTERED();
+        std::optional<clas12::Particle> trigger_e = event.find_trigger_electron();
         if (!trigger_e.has_value()) return StatusCode::FILTERED();
-        const Particle electron = trigger_e.value();
+        clas12::Particle electron = trigger_e.value();
         m_cutflow.pass("Trigger Electron");
 
         // Build electron candidate with all detector information
         ElectronCandidate can;
         can.particle = electron;
-        can.calorimeter = clas12::read_Calorimeter_bank(event, electron.index());
-        can.traj = clas12::read_Traj_bank(event, electron.index());
-        can.track = clas12::read_Track_bank(event, electron.index());
+        can.calorimeter = electron.calo();
+        can.traj = electron.traj();
+        can.track = electron.track();
         can.total_energy = can.calorimeter.pcal_energy + can.calorimeter.inner_energy + can.calorimeter.outer_energy;
         can.sampling_fraction = can.total_energy / electron.p();
         can.sector = can.calorimeter.pcal_sector;
 
-        process_tracks({can.particle}, h_electron_tracks, event);
+        process_tracks({can.particle}, h_electron_tracks);
 
         if (m_enable_chi2pid_cut.get() && !m_electron_cuts->pass_chi2pid_cut(electron.chi2pid())) return StatusCode::FILTERED();
         m_cutflow.pass("Chi2 PID");
@@ -156,7 +152,10 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
             m_ntuple_electron.fill();
         }
 
-        // Set decision flag for downstream algorithms
+        // Publish the trigger electron + decision so downstream algorithms
+        // (e.g. PionAnalysis) can gate on `HasGoodElectron` and pick the
+        // electron up via `Keys::TriggerElectron`.
+        event.store_typed(clas12::framework::Keys::TriggerElectron, electron);
         event.set_decision_typed(clas12::framework::Decisions::HasGoodElectron, true);
 
         return StatusCode::SUCCESS();
@@ -197,7 +196,6 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
     // Services (auto-resolved by required_services(...) in the constructor)
     clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
     clas12::framework::ServiceRef<clas12::framework::NTupleService> m_ntuple;
-    clas12::framework::ServiceRef<clas12::framework::ParticleSelectorService> m_particle;
     clas12::framework::ServiceRef<clas12::framework::ElectronCutsService> m_electron_cuts;
 
     struct ElectronCandidate {
@@ -212,9 +210,6 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
         [[nodiscard]] auto is_valid() const -> bool { return sector >= 1 && sector <= 6 && particle.p() > 0; }
     };
 
-    /// N-Tuple data structure for electron analysis. Branch names and
-    /// ordering match the original output schema so downstream readers
-    /// see no change.
     struct ElectronNTupleData {
         double e_p = 0.0;
         double e_theta = 0.0;
@@ -481,14 +476,16 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
      * For each track, reads calorimeter, Cherenkov, and DC trajectory
      * information and fills the corresponding per-sector histograms.
      */
-    auto process_tracks(const std::vector<clas12::Particle>& tracks, TrackHistograms& histograms, clas12::framework::Event& event) -> void {
+    auto process_tracks(const std::vector<clas12::Particle>& tracks, TrackHistograms& histograms) -> void {
         for (const auto& track : tracks) {
-            clas12::CalorimeterBank calo = clas12::read_Calorimeter_bank(event, track.index());
-            clas12::CherenkovBank cherenkov = clas12::read_Cherenkov_bank(event, track.index());
-            clas12::DCTrajBank traj = clas12::read_Traj_bank(event, track.index());
-            clas12::TrackBank trk_r1 = clas12::read_Track_bank(event, traj.region1_index);
-            clas12::TrackBank trk_r2 = clas12::read_Track_bank(event, traj.region2_index);
-            clas12::TrackBank trk_r3 = clas12::read_Track_bank(event, traj.region3_index);
+            clas12::CalorimeterBank calo = track.calo();
+            clas12::CherenkovBank cherenkov = track.cherenkov();
+            clas12::DCTrajBank traj = track.traj();
+            // Region track lookups use traj's region indices, not the
+            // particle pindex — they still go through the bank reader.
+            clas12::TrackBank trk_r1 = clas12::read_Track_bank(*track.event(), traj.region1_index);
+            clas12::TrackBank trk_r2 = clas12::read_Track_bank(*track.event(), traj.region2_index);
+            clas12::TrackBank trk_r3 = clas12::read_Track_bank(*track.event(), traj.region3_index);
 
             const int sector = calo.pcal_sector;
             if (sector < 1 || sector > 6) continue;

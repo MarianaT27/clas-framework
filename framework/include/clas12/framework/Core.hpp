@@ -24,7 +24,6 @@
 
 // Configuration
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ConfigSchema.hpp>
 
 // Status and error handling
 #include <clas12/framework/core/StatusCode.hpp>
@@ -33,7 +32,6 @@
 
 // Histograms
 #include <clas12/framework/core/Histogram.hpp>
-#include <clas12/framework/core/HistogramFiller.hpp>
 #include <clas12/framework/core/ThreadLocalHistogram.hpp>
 
 // Cutflow
@@ -43,5 +41,4 @@
 // Common services
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
-#include <clas12/framework/services/ConfigService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>

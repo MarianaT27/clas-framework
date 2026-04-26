@@ -15,24 +15,24 @@ public:
 
     // Core booking methods - return atomic histograms
     auto book_hist1D(const std::string& path, const std::string& title,
-                     int nbins, double xmin, double xmax) -> AtomicHistogram1D*;
+                     int nbins, double xmin, double xmax) -> ThreadLocalHistogram1D*;
     auto book_hist2D(const std::string& path, const std::string& title,
                      int nbinsx, double xmin, double xmax,
-                     int nbinsy, double ymin, double ymax) -> AtomicHistogram2D*;
+                     int nbinsy, double ymin, double ymax) -> ThreadLocalHistogram2D*;
 
     // Physics histogram templates
-    auto book_momentum_hist(...) -> AtomicHistogram1D*;
-    auto book_theta_hist(...) -> AtomicHistogram1D*;
-    auto book_phi_hist(...) -> AtomicHistogram1D*;
-    auto book_q2_hist(...) -> AtomicHistogram1D*;
-    auto book_w_hist(...) -> AtomicHistogram1D*;
-    auto book_xb_hist(...) -> AtomicHistogram1D*;
-    auto book_vz_hist(...) -> AtomicHistogram1D*;
-    auto book_theta_vs_p(...) -> AtomicHistogram2D*;
+    auto book_momentum_hist(...) -> ThreadLocalHistogram1D*;
+    auto book_theta_hist(...) -> ThreadLocalHistogram1D*;
+    auto book_phi_hist(...) -> ThreadLocalHistogram1D*;
+    auto book_q2_hist(...) -> ThreadLocalHistogram1D*;
+    auto book_w_hist(...) -> ThreadLocalHistogram1D*;
+    auto book_xb_hist(...) -> ThreadLocalHistogram1D*;
+    auto book_vz_hist(...) -> ThreadLocalHistogram1D*;
+    auto book_theta_vs_p(...) -> ThreadLocalHistogram2D*;
 
     // Access methods
-    auto get_atomic_hist1D(const std::string& path) -> AtomicHistogram1D*;
-    auto get_atomic_hist2D(const std::string& path) -> AtomicHistogram2D*;
+    auto get_atomic_hist1D(const std::string& path) -> ThreadLocalHistogram1D*;
+    auto get_atomic_hist2D(const std::string& path) -> ThreadLocalHistogram2D*;
     auto get_hist1D(const std::string& path) -> TH1D*;
     auto get_hist2D(const std::string& path) -> TH2D*;
 };

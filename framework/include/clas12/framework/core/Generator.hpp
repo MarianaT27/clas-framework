@@ -18,7 +18,7 @@
  * The traditional pattern uses execute() called by the Application event loop:
  *
  * @code
- * class MyAlgorithm : public Algorithm<MyAlgorithm> {
+ * class MyAlgorithm : public Algorithm {
  * public:
  *     auto process(Event& event) -> StatusCode override {
  *         // Process each event

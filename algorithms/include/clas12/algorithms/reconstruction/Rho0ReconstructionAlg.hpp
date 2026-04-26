@@ -1119,37 +1119,39 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         std::vector<double> opening_angle, pip_vz, pim_vz;
         std::vector<int> detector_region;
 
-        template <typename Svc>
-        auto register_branches(Svc* svc, const std::string& tree) -> void {
-            svc->register_branch(tree, "e_p", &e_p);
-            svc->register_branch(tree, "e_theta", &e_theta);
-            svc->register_branch(tree, "e_phi", &e_phi);
-            svc->register_branch(tree, "e_vz", &e_vz);
-            svc->register_branch(tree, "Q2", &Q2);
-            svc->register_branch(tree, "nu", &nu);
-            svc->register_branch(tree, "W", &W);
-            svc->register_branch(tree, "xB", &xB);
-            svc->register_branch(tree, "y", &y);
-            svc->register_branch(tree, "n_candidates", &n_candidates);
-            svc->register_branch(tree, "pip_p", &pip_p);
-            svc->register_branch(tree, "pip_theta", &pip_theta);
-            svc->register_branch(tree, "pip_phi", &pip_phi);
-            svc->register_branch(tree, "pim_p", &pim_p);
-            svc->register_branch(tree, "pim_theta", &pim_theta);
-            svc->register_branch(tree, "pim_phi", &pim_phi);
-            svc->register_branch(tree, "rho0_masses", &rho0_masses);
-            svc->register_branch(tree, "rho0_ps", &rho0_ps);
-            svc->register_branch(tree, "rho0_thetas", &rho0_thetas);
-            svc->register_branch(tree, "rho0_phis", &rho0_phis);
-            svc->register_branch(tree, "rho0_zh", &rho0_zh);
-            svc->register_branch(tree, "rho0_lc", &rho0_lc);
-            svc->register_branch(tree, "rho0_t", &rho0_t);
-            svc->register_branch(tree, "delta_vz_pim", &delta_vz_pim);
-            svc->register_branch(tree, "delta_vz_pip", &delta_vz_pip);
-            svc->register_branch(tree, "opening_angle", &opening_angle);
-            svc->register_branch(tree, "detector_region", &detector_region);
-            svc->register_branch(tree, "pip_vz", &pip_vz);
-            svc->register_branch(tree, "pim_vz", &pim_vz);
+        static constexpr auto ntuple_fields() {
+            using T = Rho0NTupleData;
+            return std::make_tuple(
+                clas12::framework::field("e_p", &T::e_p),
+                clas12::framework::field("e_theta", &T::e_theta),
+                clas12::framework::field("e_phi", &T::e_phi),
+                clas12::framework::field("e_vz", &T::e_vz),
+                clas12::framework::field("Q2", &T::Q2),
+                clas12::framework::field("nu", &T::nu),
+                clas12::framework::field("W", &T::W),
+                clas12::framework::field("xB", &T::xB),
+                clas12::framework::field("y", &T::y),
+                clas12::framework::field("n_candidates", &T::n_candidates),
+                clas12::framework::field("pip_p", &T::pip_p),
+                clas12::framework::field("pip_theta", &T::pip_theta),
+                clas12::framework::field("pip_phi", &T::pip_phi),
+                clas12::framework::field("pim_p", &T::pim_p),
+                clas12::framework::field("pim_theta", &T::pim_theta),
+                clas12::framework::field("pim_phi", &T::pim_phi),
+                clas12::framework::field("rho0_masses", &T::rho0_masses),
+                clas12::framework::field("rho0_ps", &T::rho0_ps),
+                clas12::framework::field("rho0_thetas", &T::rho0_thetas),
+                clas12::framework::field("rho0_phis", &T::rho0_phis),
+                clas12::framework::field("rho0_zh", &T::rho0_zh),
+                clas12::framework::field("rho0_lc", &T::rho0_lc),
+                clas12::framework::field("rho0_t", &T::rho0_t),
+                clas12::framework::field("delta_vz_pim", &T::delta_vz_pim),
+                clas12::framework::field("delta_vz_pip", &T::delta_vz_pip),
+                clas12::framework::field("opening_angle", &T::opening_angle),
+                clas12::framework::field("detector_region", &T::detector_region),
+                clas12::framework::field("pip_vz", &T::pip_vz),
+                clas12::framework::field("pim_vz", &T::pim_vz)
+            );
         }
 
         auto clear_vectors() -> void {

@@ -4,7 +4,7 @@ This example demonstrates the modernized CLAS12 analysis framework using C++20/2
 
 ## Key Features Demonstrated
 
-- **Algorithm CRTP base class** - Reduces boilerplate with automatic service injection
+- **Algorithm base class** - Reduces boilerplate with automatic service injection
 - **Range adaptors** - Composable, lazy-evaluated particle filtering
 - **CutBuilder** - Fluent, chainable cut definitions with automatic cutflow tracking
 - **TypedEventStore** - Type-safe inter-algorithm communication
@@ -23,7 +23,7 @@ The analysis consists of three algorithms:
 ### 1. Electron Selection with Range Adaptors and CutBuilder
 
 ```cpp
-class ModernElectronSelectionAlg : public Algorithm<ModernElectronSelectionAlg> {
+class ModernElectronSelectionAlg : public Algorithm {
 public:
     ModernElectronSelectionAlg()
         : Algorithm("ModernElectronSelection")
@@ -96,7 +96,7 @@ private:
     Property<double> m_vz_min{"vz_min", -12.0, "Minimum vertex z [cm]"};
     Property<double> m_vz_max{"vz_max", 10.0, "Maximum vertex z [cm]"};
 
-    ServiceHandle<HistogramService>* m_hist_svc = nullptr;
+    ServiceRef<HistogramService>* m_hist_svc = nullptr;
     Cutflow m_cutflow;
     TypedEventStore m_event_store;
 };
@@ -105,7 +105,7 @@ private:
 ### 2. DIS Kinematics with TypedEventStore
 
 ```cpp
-class DISKinematicsAlg : public Algorithm<DISKinematicsAlg> {
+class DISKinematicsAlg : public Algorithm {
 public:
     DISKinematicsAlg() : Algorithm("DISKinematics") {
         declare_property(m_beam_energy);
@@ -217,7 +217,7 @@ class ElectronAnalysis : public Framework::Algorithm {
 ### Modern API (C++20/23)
 
 ```cpp
-class ModernElectronSelectionAlg : public Algorithm<ModernElectronSelectionAlg> {
+class ModernElectronSelectionAlg : public Algorithm {
     auto process(Event& event) -> StatusCode override {
         // Composable range adaptors
         auto fd_electrons = event.all_particles()

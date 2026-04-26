@@ -14,7 +14,6 @@
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
 #include <clas12/bankdefs/REC_Particle.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
 #include <clas12/framework/core/Histogram.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/FileUtils.hpp>
@@ -35,7 +34,7 @@ class HistogramDemo : public clas12::framework::Algorithm {
 public:
     explicit HistogramDemo(std::string name = "HistogramDemo")
         : Algorithm(std::move(name)) {
-        required_services(m_hist_svc, m_particle_svc);
+        required_services(m_hist_svc);
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
@@ -99,16 +98,8 @@ public:
         // Fill individual histogram
         h_n_particles.fill(n_particles);
 
-        // Extract particles using ParticleSelectorService
-        auto particles = m_particle_svc->extract_particles(
-            rec_particle,
-            {clas12::PIDs::ELECTRON, clas12::PIDs::POSITRON,
-             clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
-             clas12::PIDs::PHOTON}
-        );
-
         // Fill histogram group
-        for (const auto& [pid, particle_list] : particles.pid_groups()) {
+        for (const auto& [pid, particle_list] : event.particles()) {
             for (const auto& p : particle_list) {
                 double momentum = p.p();
                 double theta = p.theta() * TMath::RadToDeg();
@@ -156,7 +147,6 @@ public:
 
 private:
     clas12::framework::HistogramService* m_hist_svc = nullptr;
-    clas12::framework::ParticleSelectorService* m_particle_svc = nullptr;
     size_t m_events_processed = 0;
 
     // Individual histogram
@@ -204,7 +194,6 @@ int main(int argc, char** argv) {
         .add_algorithm<HistogramDemo>("HistogramDemo")
         .build();
 
-    fmt::print("  ✓ ParticleSelectorService (via with_standard_services)\n");
     fmt::print("  ✓ OutputFileService (via with_standard_services)\n");
     fmt::print("  ✓ HistogramService → auto-write enabled (via with_standard_services)\n");
     fmt::print("  ✓ HistogramDemo algorithm\n");

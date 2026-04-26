@@ -3,7 +3,7 @@
  * @brief Modern electron analysis example using C++20/23 framework features
  *
  * This example demonstrates the modernized CLAS12 analysis framework with:
- * - Algorithm CRTP base class for reduced boilerplate
+ * - Algorithm base class for reduced boilerplate
  * - Range adaptors for composable particle filtering
  * - CutBuilder for fluent, chainable cut definitions
  * - TypedEventStore for type-safe inter-algorithm communication
@@ -18,36 +18,27 @@
  * @see Requirements: All (1-12)
  */
 
-#include <cstdlib>
-#include <filesystem>
 #include <ranges>
 #include <vector>
 
-#include <fmt/format.h>
-#include <cxxopts.hpp>
-#include <TROOT.h>
 #include <TH1D.h>
 #include <TH2D.h>
 
 // Framework headers
-#include <clas12/framework/core/Application.hpp>
-#include <clas12/framework/core/ApplicationBuilder.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
+#include <clas12/framework/core/AnalysisRunner.hpp>
 #include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/Ranges.hpp>
-#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 
 // Service headers
 #include <clas12/framework/services/HistogramService.hpp>
-#include <clas12/framework/services/OutputFileService.hpp>
-#include <clas12/framework/services/LoggingService.hpp>
 
 // CLAS headers
 #include <clas12/Detectors.hpp>
-#include <clas12/FileUtils.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/PIDs.hpp>
 
@@ -64,7 +55,7 @@ using namespace clas12::framework;
  * @brief Modern electron selection algorithm
  *
  * Demonstrates:
- * - Algorithm CRTP base class (Requirement 4.1)
+ * - Algorithm base class (Requirement 4.1)
  * - Range adaptors for particle filtering (Requirement 3.1, 3.2)
  * - CutBuilder for fluent cut definitions (Requirement 9.1, 9.2)
  * - TypedEventStore for sharing selected electrons (Requirement 8.1, 8.2)
@@ -477,132 +468,23 @@ private:
 };
 
 // ============================================================================
-// Main Application
+// Main — uses AnalysisRunner so the binary takes a single --config flag.
 // ============================================================================
+//
+// Run with:
+//   ./example_modern_electron_analysis --config config/example_modern_electron.toml
+//
+// The TOML drives input/output/threads as well as every algorithm
+// `Property<T>` (e.g. ModernElectronSelection.min_momentum,
+// DISKinematics.beam_energy, ...). See README for the schema.
 
 auto main(int argc, char* argv[]) -> int {
-    // Enable ROOT thread safety
-    ROOT::EnableThreadSafety();
-
-    fmt::print("╔══════════════════════════════════════════════════════════════╗\n");
-    fmt::print("║     Modern C++20/23 Electron Analysis Example                ║\n");
-    fmt::print("║                                                              ║\n");
-    fmt::print("║  Demonstrates:                                               ║\n");
-    fmt::print("║  • Algorithm CRTP base class                           ║\n");
-    fmt::print("║  • Range adaptors for particle filtering                     ║\n");
-    fmt::print("║  • CutBuilder for fluent cut definitions                     ║\n");
-    fmt::print("║  • TypedEventStore for inter-algorithm communication         ║\n");
-    fmt::print("║  • Property system for configuration                         ║\n");
-    fmt::print("╚══════════════════════════════════════════════════════════════╝\n\n");
-
-    // Parse command line arguments
-    cxxopts::Options options("modern_electron_analysis",
-                             "Modern electron analysis using C++20/23 features");
-
-    options.add_options()
-        ("i,input", "Input file or directory", cxxopts::value<std::string>()->default_value("data/"))
-        ("o,output", "Output ROOT file", cxxopts::value<std::string>()->default_value("modern_electron_analysis.root"))
-        ("n,nevents", "Max events to process (0 = all)", cxxopts::value<int>()->default_value("0"))
-        ("beam", "Beam energy [GeV]", cxxopts::value<double>()->default_value("10.6"))
-        ("h,help", "Print help");
-
-    auto args = options.parse(argc, argv);
-
-    if (args.count("help")) {
-        fmt::print("{}\n", options.help());
-        return EXIT_SUCCESS;
-    }
-
-    std::string input_path = args["input"].as<std::string>();
-    std::string output_file = args["output"].as<std::string>();
-    int max_events = args["nevents"].as<int>();
-    [[maybe_unused]] double beam_energy = args["beam"].as<double>();
-
-    // ========================================================================
-    // Find input files
-    // ========================================================================
-    std::vector<std::string> input_files;
-    if (std::filesystem::is_directory(input_path)) {
-        input_files = clas12::FileUtils::read_recursive_hipo_files(input_path);
-    } else if (std::filesystem::exists(input_path)) {
-        input_files = {input_path};
-    }
-
-    if (input_files.empty()) {
-        fmt::print("No input files found in: {}\n", input_path);
-        fmt::print("Running initialization only to verify framework features...\n\n");
-    } else {
-        fmt::print("Found {} input file(s)\n", input_files.size());
-    }
-
-    // ========================================================================
-    // Create application using ApplicationBuilder (fluent API)
-    // ========================================================================
-    fmt::print("\n--- Setting up Application with ApplicationBuilder ---\n");
-
-    auto app = make_application("ModernElectronAnalysis")
-        .with_input_files(input_files)
-        .with_output(output_file)
-        .with_standard_services()
-        .add_algorithm<ModernElectronSelectionAlg>()
-        .add_algorithm<DISKinematicsAlg>()
-        .add_algorithm<ElectronHistogramAlg>()
-        .build();
-
-    fmt::print("  [+] ModernElectronSelection (Algorithm + CutBuilder + Ranges)\n");
-    fmt::print("  [+] DISKinematics (Algorithm + TypedEventStore)\n");
-    fmt::print("  [+] ElectronHistograms (Algorithm)\n");
-
-    if (max_events > 0) {
-        fmt::print("Max events: {} (will process all available)\n", max_events);
-    }
-
-    // Initialize
-    fmt::print("\n--- Initialization ---\n");
-    auto sc = app.initialize();
-    if (sc.is_failure()) {
-        fmt::print("ERROR: Initialization failed: {}\n", sc.message());
-        return EXIT_FAILURE;
-    }
-    fmt::print("✓ Initialization successful\n");
-
-    // Run (if we have input files)
-    if (!input_files.empty()) {
-        fmt::print("\n--- Processing Events ---\n");
-        sc = app.run();
-        if (sc.is_failure()) {
-            fmt::print("ERROR: Event processing failed: {}\n", sc.message());
-            return EXIT_FAILURE;
-        }
-        fmt::print("✓ Event processing complete\n");
-    }
-
-    // Finalize
-    fmt::print("\n--- Finalization ---\n");
-    sc = app.finalize();
-    if (sc.is_failure()) {
-        fmt::print("WARNING: Finalization had issues\n");
-    }
-    fmt::print("✓ Finalization complete\n");
-
-    // ========================================================================
-    // Summary
-    // ========================================================================
-    fmt::print("\n");
-    fmt::print("╔══════════════════════════════════════════════════════════════╗\n");
-    fmt::print("║                        Summary                               ║\n");
-    fmt::print("╠══════════════════════════════════════════════════════════════╣\n");
-    fmt::print("║  Output file: {:<45} ║\n", output_file);
-    fmt::print("║                                                              ║\n");
-    fmt::print("║  Modern C++20/23 Features Demonstrated:                      ║\n");
-    fmt::print("║  ✓ Algorithm CRTP base class (Req 4.1)                 ║\n");
-    fmt::print("║  ✓ Range adaptors for particle filtering (Req 3.1-3.4)       ║\n");
-    fmt::print("║  ✓ CutBuilder fluent API (Req 9.1-9.3)                       ║\n");
-    fmt::print("║  ✓ TypedEventStore type-safe storage (Req 8.1-8.4)           ║\n");
-    fmt::print("║  ✓ Property system with validation (Req 2.1-2.3)             ║\n");
-    fmt::print("║  ✓ Automatic service injection (Req 4.2, 12.1-12.2)          ║\n");
-    fmt::print("║  ✓ Algorithm CRTP pattern (Req 4.1)                    ║\n");
-    fmt::print("╚══════════════════════════════════════════════════════════════╝\n");
-
-    return EXIT_SUCCESS;
+    return clas12::framework::AnalysisRunner::run(
+        argc, argv, "Modern Electron Analysis", "modern_electron_analysis",
+        [](auto& builder, const auto& /*config*/) {
+            builder
+                .template add_algorithm<ModernElectronSelectionAlg>()
+                .template add_algorithm<DISKinematicsAlg>()
+                .template add_algorithm<ElectronHistogramAlg>();
+        });
 }

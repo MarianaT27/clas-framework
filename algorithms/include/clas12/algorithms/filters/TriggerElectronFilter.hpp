@@ -9,7 +9,6 @@
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
 #include <clas12/bankdefs/REC_Particle.hpp>
-#include <clas12/framework/services/ParticleSelectorService.hpp>
 
 namespace clas12::algorithms {
 
@@ -41,7 +40,6 @@ class TriggerElectronFilter : public clas12::framework::Algorithm {
     }
 
     auto on_initialize() -> clas12::framework::StatusCode override {
-        m_particle = svc<clas12::framework::ParticleSelectorService>();
         m_electron_cuts = svc<clas12::framework::ElectronCutsService>();
         if (!m_electron_cuts) {
             clas12::framework::Log::error(name(), "ElectronCutsService not registered");
@@ -75,9 +73,7 @@ class TriggerElectronFilter : public clas12::framework::Algorithm {
     auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
         m_cutflow.pass("All Events");
 
-        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
-        auto particles = m_particle->extract_particles(rec_particle, {clas12::PIDs::ELECTRON});
-        const auto& electrons = particles.electrons();
+        const auto& electrons = event.electrons();
         if (electrons.empty()) {
             event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
             return clas12::framework::StatusCode::FILTERED();
@@ -85,7 +81,7 @@ class TriggerElectronFilter : public clas12::framework::Algorithm {
         m_cutflow.pass("Has Electron");
 
         // Find trigger electron
-        auto trigger_e = particles.find_trigger_electron({2000, 4000});
+        auto trigger_e = event.find_trigger_electron({2000, 4000});
         if (m_enable_trigger_status_cut.get() && !trigger_e.has_value()) {
             event.set_decision_typed(clas12::framework::Decisions::HasTriggerElectron, false);
             return clas12::framework::StatusCode::FILTERED();
@@ -125,7 +121,6 @@ class TriggerElectronFilter : public clas12::framework::Algorithm {
    private:
     clas12::Target m_target;
     clas12::framework::Cutflow m_cutflow;
-    clas12::framework::ParticleSelectorService* m_particle = nullptr;
     clas12::framework::ElectronCutsService* m_electron_cuts = nullptr;
 
     // Cut toggle properties
