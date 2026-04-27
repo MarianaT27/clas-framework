@@ -336,39 +336,31 @@ struct HadronTreeData {
  * - "rich": Uses RICH::Particle best_PID as truth label
  * - "exclusive": Uses ed -> ep(n)pi+pi- reaction topology as truth label
  */
+/// Configuration for AiPidHadronAlg.
+struct AiPidHadronConfig {
+    std::string truth_mode = "rich";
+};
+
 class AiPidHadronAlg : public clas12::framework::Algorithm {
 public:
-    explicit AiPidHadronAlg(std::string name = "AiPidHadronAlg",
-                            std::string truth_mode = "rich")
-        : Algorithm(std::move(name)) {
-        declare_property(m_enable_histograms);
-        declare_property(m_enable_ntuple);
-        declare_property(m_truth_mode);
-        declare_property(m_beam_energy);
-        declare_property(m_mm_center);
-        declare_property(m_mm_width);
+    using Config = AiPidHadronConfig;
+    using StatusCode = clas12::framework::StatusCode;
 
-        if (!truth_mode.empty()) {
-            m_truth_mode.set(std::move(truth_mode));
-        }
-        // Declare required banks
-        declare_bank("REC::Particle");
-        declare_bank("RICH::Particle");
-        declare_bank("REC::Calorimeter");
-        declare_bank("REC::CaloExtras");
-        declare_bank("REC::Cherenkov");
-        declare_bank("REC::Scintillator");
-        declare_bank("REC::ScintExtras");
+    explicit AiPidHadronAlg(std::string name = "AiPidHadronAlg", const Config& config = Config{})
+        : Algorithm(std::move(name)), m_config(config) {
+        if (!m_config.truth_mode.empty()) m_truth_mode.set(m_config.truth_mode);
+        required_services(m_hist, m_ntuple_svc);
+        declare_banks("REC::Particle", "RICH::Particle", "REC::Calorimeter", "REC::CaloExtras", "REC::Cherenkov", "REC::Scintillator", "REC::ScintExtras");
+        declare_properties(m_enable_histograms, m_enable_ntuple, m_truth_mode, m_beam_energy, m_mm_center, m_mm_width);
     }
 
-    auto on_initialize() -> clas12::framework::StatusCode override {
-        m_hist = svc<clas12::framework::HistogramService>();
-        m_ntuple_svc = svc<clas12::framework::NTupleService>();
+    [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
+    auto on_initialize() -> StatusCode override {
         clas12::framework::Log::info(name(), "Truth PID mode: {}", m_truth_mode.get());
 
         if (m_truth_mode.get() == "rich") {
-            if (m_enable_histograms && m_hist) {
+            if (m_enable_histograms.get()) {
                 book_histograms("/AiPidHadron/PiPlus",  h_piplus,  "#pi^{+}");
                 book_histograms("/AiPidHadron/PiMinus", h_piminus, "#pi^{-}");
                 book_histograms("/AiPidHadron/KPlus",   h_kplus,   "K^{+}");
@@ -393,7 +385,7 @@ public:
             clas12::framework::Log::info(name(), "  Beam energy: {} GeV", m_beam_energy.get());
             clas12::framework::Log::info(name(), "  MM cut: {} +/- {} GeV", m_mm_center.get(), m_mm_width.get());
 
-            if (m_enable_histograms && m_hist) {
+            if (m_enable_histograms.get()) {
                 book_exclusive_histograms();
             }
 
@@ -408,8 +400,8 @@ public:
             return clas12::framework::StatusCode::FAILURE();
         }
 
-        if (m_enable_ntuple && m_ntuple_svc) {
-            m_ntuple.init(m_ntuple_svc, "rich_hadrons");
+        if (m_enable_ntuple.get()) {
+            m_ntuple.init(m_ntuple_svc.get(), "rich_hadrons");
         }
 
         return clas12::framework::StatusCode::SUCCESS();
@@ -589,8 +581,10 @@ private:
     };
 
     // --- Services ---
-    clas12::framework::HistogramService* m_hist = nullptr;
-    clas12::framework::NTupleService* m_ntuple_svc = nullptr;
+    Config m_config;
+
+    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
+    clas12::framework::ServiceRef<clas12::framework::NTupleService> m_ntuple_svc;
 
     // N-tuple writer
     clas12::framework::NTupleWriter<HadronTreeData> m_ntuple;
@@ -1195,7 +1189,7 @@ private:
     HadronHistograms h_kminus;
 
     void book_comparison_histograms() {
-        auto* svc = m_hist;
+        auto* svc = m_hist.get();
         auto dir = std::string("/AiPidHadron/RICHComparison");
 
         h_rich_vs_rec_pid = svc->book_hist2D(
@@ -1259,7 +1253,7 @@ private:
     }
 
     void book_histograms(const std::string& dir, HadronHistograms& h, const std::string& label) {
-        auto* svc = m_hist;
+        auto* svc = m_hist.get();
 
         auto pre = dir + "/precut";
         h.precut.p        = svc->book_hist1D(pre + "/p",        fmt::format("{} Momentum (pre-cut);p [GeV/c];Events", label),    200, 0, 10);
@@ -1337,7 +1331,7 @@ private:
     ExclusiveHistograms h_exclusive;
 
     void book_exclusive_histograms() {
-        auto* svc = m_hist;
+        auto* svc = m_hist.get();
         auto dir = std::string("/AiPidHadron/Exclusive");
 
         h_exclusive.mm_all = svc->book_hist1D(

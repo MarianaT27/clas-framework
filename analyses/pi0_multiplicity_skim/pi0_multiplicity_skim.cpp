@@ -89,8 +89,8 @@ auto main(int argc, char* argv[]) -> int {
                 .template add_service<clas12::framework::ElectronCutsService>()
                 .template add_service<clas12::framework::PhotonCutsService>()
                 .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
-                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", config.target, config.polarity)
-                .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::physics::DISAnalysis::standard_dis_region())
+                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity})
+                .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::algorithms::DISSelectionConfig{.dis_region = clas12::physics::DISAnalysis::standard_dis_region()})
                 .template add_algorithm<clas12::algorithms::PhotonSelectionAlg>("PhotonSelection");
 
             if (!hipo_output.empty()) {

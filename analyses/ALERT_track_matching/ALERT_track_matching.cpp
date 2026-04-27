@@ -14,7 +14,7 @@ auto main(int argc, char* argv[]) -> int {
         []([[maybe_unused]] auto& builder, [[maybe_unused]] const auto& config) {
             constexpr double beam_energy = 2.2;  // GeV for ALERT data
             builder
-                .template add_algorithm<clas12::algorithms::ElasticEPAlg>("ElasticEPAlg", clas12::algorithms::NuclearTarget::Deuteron, beam_energy)
+                .template add_algorithm<clas12::algorithms::ElasticEPAlg>("ElasticEPAlg", clas12::algorithms::ElasticEPConfig{.target = clas12::algorithms::NuclearTarget::Deuteron, .beam_energy = beam_energy})
                 .template add_algorithm<ALERT_track_matching::ALERT_track_matchingAlg>("ALERT_track_matchingAlg");
         });
 }

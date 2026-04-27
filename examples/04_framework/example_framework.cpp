@@ -37,6 +37,6 @@ auto main(int argc, char* argv[]) -> int {
                         svc.set_run_number(run_number);
                     })
                 .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>(
-                    "ElectronSelection", config.target, config.polarity);
+                    "ElectronSelection", clas12::algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity});
         });
 }

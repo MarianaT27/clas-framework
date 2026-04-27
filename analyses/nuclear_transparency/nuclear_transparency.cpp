@@ -57,10 +57,9 @@ auto main(int argc, char* argv[]) -> int {
                 .template add_service<clas12::framework::ElectronCutsService>()
                 .template add_service<clas12::framework::DecayTreeFitterService>()
                 .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
-                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", config.target, config.polarity)
-                .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::physics::DISAnalysis::KinematicRegion{.q2_min = 1.0, .w_min = 2.0})
-                .template add_algorithm<clas12::algorithms::PionSelectionAlg>("PionSelection", config.target, true, sigma_scan)
-                .template add_algorithm<clas12::algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", config.target, sigma_scan,
-                    lc_scan, zh_scan, t_scan, dvz_scan);
+                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity})
+                .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::algorithms::DISSelectionConfig{.dis_region = clas12::physics::DISAnalysis::KinematicRegion{.q2_min = 1.0, .w_min = 2.0}})
+                .template add_algorithm<clas12::algorithms::PionSelectionAlg>("PionSelection", clas12::algorithms::PionSelectionConfig{.target = config.target, .sigma_scan = sigma_scan})
+                .template add_algorithm<clas12::algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", clas12::algorithms::Rho0ReconstructionConfig{.target = config.target, .sigma_scan = sigma_scan, .lc_scan = lc_scan, .zh_scan = zh_scan, .t_scan = t_scan, .dvz_scan = dvz_scan});
         });
 }

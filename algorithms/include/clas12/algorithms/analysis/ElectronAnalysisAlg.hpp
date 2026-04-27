@@ -7,13 +7,13 @@
 #include <clas12/Target.hpp>
 #include <clas12/bankdefs/REC_Event.hpp>
 #include <clas12/bankdefs/REC_Particle.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SectorHistograms.hpp>
-#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/services/ConditionsService.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
@@ -244,21 +244,8 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
 
         static constexpr auto ntuple_fields() {
             using T = ElectronNTupleData;
-            return std::make_tuple(
-                clas12::framework::field("e_p", &T::e_p),
-                clas12::framework::field("e_theta", &T::e_theta),
-                clas12::framework::field("e_phi", &T::e_phi),
-                clas12::framework::field("e_vz", &T::e_vz),
-                clas12::framework::field("e_chi2pid", &T::e_chi2pid),
-                clas12::framework::field("sampling_fraction", &T::sampling_fraction),
-                clas12::framework::field("sector", &T::sector),
-                clas12::framework::field("x_r1", &T::x_r1),
-                clas12::framework::field("y_r1", &T::y_r1),
-                clas12::framework::field("z_r1", &T::z_r1),
-                clas12::framework::field("x_r2", &T::x_r2),
-                clas12::framework::field("y_r2", &T::y_r2),
-                clas12::framework::field("z_r2", &T::z_r2)
-            );
+            return std::make_tuple(clas12::framework::field("e_p", &T::e_p), clas12::framework::field("e_theta", &T::e_theta), clas12::framework::field("e_phi", &T::e_phi), clas12::framework::field("e_vz", &T::e_vz), clas12::framework::field("e_chi2pid", &T::e_chi2pid), clas12::framework::field("sampling_fraction", &T::sampling_fraction), clas12::framework::field("sector", &T::sector),
+                                   clas12::framework::field("x_r1", &T::x_r1), clas12::framework::field("y_r1", &T::y_r1), clas12::framework::field("z_r1", &T::z_r1), clas12::framework::field("x_r2", &T::x_r2), clas12::framework::field("y_r2", &T::y_r2), clas12::framework::field("z_r2", &T::z_r2));
         }
     };
 
@@ -372,9 +359,8 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
         const int theta_nbins = static_cast<int>((m_config.theta_bin_max - m_config.theta_bin_min) / m_config.theta_bin_width);
 
         auto book_dc_3d = [&](const std::string& path, const std::string& title, int xn, double xlo, double xhi) {
-            return m_hist->book_hist3D(path, title, xn, xlo, xhi, 
-                                200, 0, 50,    // edge
-                                200, 0, 10);   // chi2/ndf
+            return m_hist->book_hist3D(path, title, xn, xlo, xhi, 200, 0, 50,  // edge
+                                       200, 0, 10);                            // chi2/ndf
         };
 
         h_dc.chi2ndf_vs_edge_vs_p_r1 = book_dc_3d("/DC/chi2ndf_vs_edge_vs_p_r1", "Region 1;p [GeV/c];edge [cm];#chi^{2}/ndf", p_nbins, m_config.p_bin_min, m_config.p_bin_max);

@@ -26,14 +26,15 @@
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/ReadBank.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/Algorithm.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
+#include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/PhotonCutsService.hpp>
 #include "bank.h"
 
@@ -41,30 +42,31 @@ namespace clas12::algorithms {
 
 using clas12::framework::Log;
 
+/// Configuration for PhotonSelectionAlg.
+struct PhotonSelectionConfig {
+    bool use_ai = true;
+};
+
 class PhotonSelectionAlg : public clas12::framework::Algorithm {
    public:
-    explicit PhotonSelectionAlg(std::string name = "PhotonSelection",
-                                 bool use_ai = true)
-        : Algorithm(std::move(name))
-        , m_use_ai{"use_ai", use_ai, "Use AI-based photon selection"}
-        , m_cutflow("Photon Selection") {
-        declare_property(m_min_energy);
-        declare_property(m_min_beta);
-        declare_property(m_max_beta);
-        declare_property(m_use_ai);
-        declare_bank("RUN::config");
-        declare_bank("REC::Particle");
-        declare_bank("REC::Calorimeter");
+    using Config = PhotonSelectionConfig;
+    using StatusCode = clas12::framework::StatusCode;
+
+    explicit PhotonSelectionAlg(std::string name = "PhotonSelection", const Config& config = Config{})
+        : Algorithm(std::move(name)), m_config(config), m_cutflow("Photon Selection") {
+        m_use_ai.set(m_config.use_ai);
+        required_services(m_hist, m_photon_cuts);
+        declare_banks("RUN::config", "REC::Particle", "REC::Calorimeter");
+        declare_properties(m_min_energy, m_min_beta, m_max_beta, m_use_ai);
     }
 
-    auto on_initialize() -> clas12::framework::StatusCode override {
-        m_hist = svc<clas12::framework::HistogramService>();
-        m_photon_cuts = svc<clas12::framework::PhotonCutsService>();
+    [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
+    auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::config(name(), "Use AI selection", m_use_ai.get() ? "yes" : "no");
-        Log::config(name(), "Min photon energy", fmt::format("{} GeV", m_min_energy.get()));
-        Log::config(name(), "Beta range", fmt::format("[{}, {}]", m_min_beta.get(), m_max_beta.get()));
+        Log::info(name(), "Use AI selection: {}", m_use_ai.get() ? "yes" : "no");
+        Log::info(name(), "Min photon energy: {} GeV", m_min_energy.get());
+        Log::info(name(), "Beta range: [{}, {}]", m_min_beta.get(), m_max_beta.get());
 
         m_cutflow.add_cut("All Photons");
         m_cutflow.add_cut("AI / Energy Cut");
@@ -73,12 +75,11 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
 
         book_histograms();
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        // Require upstream DIS electron (typed decision set by DISSelectionAlg)
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return clas12::framework::StatusCode::FILTERED();
+    auto process(clas12::framework::Event& event) -> StatusCode override {
+        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
 
         const auto& RUN_config = event.get_bank("RUN::config");
         const auto& REC_Particle = event.get_bank("REC::Particle");
@@ -86,7 +87,6 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
 
         const auto& all_photons = event.particles(clas12::PIDs::PHOTON);
 
-        // Fill raw photon histograms
         if (h_n_photons_raw) h_n_photons_raw->fill(static_cast<double>(all_photons.size()));
         for (const auto& photon : all_photons) {
             m_cutflow.pass("All Photons");
@@ -95,7 +95,6 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
             if (h_phi_raw) h_phi_raw->fill(photon.phi());
         }
 
-        // Step 1: AI-based or energy-threshold selection
         std::vector<clas12::Particle> candidates;
         if (m_use_ai.get()) {
             candidates = m_photon_cuts->select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
@@ -106,7 +105,6 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
         }
         for (size_t i = 0; i < candidates.size(); ++i) m_cutflow.pass("AI / Energy Cut");
 
-        // Step 2: PCAL fiducial + beta cuts
         std::vector<clas12::Particle> selected;
         for (const auto& photon : candidates) {
             clas12::CalorimeterBank calo = clas12::read_Calorimeter_bank(event, photon.index());
@@ -119,7 +117,6 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
             selected.push_back(photon);
         }
 
-        // Fill selected photon histograms
         if (h_n_photons_selected) h_n_photons_selected->fill(static_cast<double>(selected.size()));
         for (const auto& photon : selected) {
             if (h_energy_selected) h_energy_selected->fill(photon.E());
@@ -127,36 +124,32 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
             if (h_phi_selected) h_phi_selected->fill(photon.phi());
         }
 
-        // Store in event store
         event.store_typed(clas12::framework::Keys::SelectedPhotons_Pi0, selected);
         event.set_decision_typed(clas12::framework::Decisions::HasGoodPhoton, !selected.empty());
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return StatusCode::SUCCESS();
     }
 
-    auto on_finalize() -> clas12::framework::StatusCode override {
+    auto on_finalize() -> StatusCode override {
         Log::subsection(fmt::format("{} Summary", name()));
         Log::blank();
         m_cutflow.print();
         Log::success(name(), "Finalization complete");
-        return clas12::framework::StatusCode::SUCCESS();
+        return StatusCode::SUCCESS();
     }
 
    private:
-    // Properties
+    Config m_config;
+    clas12::framework::Cutflow m_cutflow;
+
     clas12::framework::Property<double> m_min_energy{"min_photon_energy", 0.2, "Minimum photon energy [GeV]"};
     clas12::framework::Property<double> m_min_beta{"min_beta", 0.9, "Minimum photon beta"};
     clas12::framework::Property<double> m_max_beta{"max_beta", 1.1, "Maximum photon beta"};
     clas12::framework::Property<bool> m_use_ai{"use_ai", true, "Use AI-based photon selection"};
 
-    // Service pointers (cached in on_initialize via svc<T>())
-    clas12::framework::HistogramService* m_hist = nullptr;
-    clas12::framework::PhotonCutsService* m_photon_cuts = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
+    clas12::framework::ServiceRef<clas12::framework::PhotonCutsService> m_photon_cuts;
 
-    // Cutflow
-    clas12::framework::Cutflow m_cutflow;
-
-    // Histograms
     clas12::framework::ThreadLocalHistogram1D* h_n_photons_raw = nullptr;
     clas12::framework::ThreadLocalHistogram1D* h_energy_raw = nullptr;
     clas12::framework::ThreadLocalHistogram1D* h_theta_raw = nullptr;
@@ -167,21 +160,17 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
     clas12::framework::ThreadLocalHistogram1D* h_phi_selected = nullptr;
 
     auto book_histograms() -> void {
-        if (m_hist) { auto* svc = m_hist;
-            const std::string dir = "/PhotonSelection";
+        const std::string dir = "/PhotonSelection";
 
-            // Raw photon distributions
-            h_n_photons_raw = svc->book_hist1D(dir + "/n_photons_raw", "Number of Photons (raw);N_{#gamma};Events", 20, 0, 20);
-            h_energy_raw = svc->book_hist1D(dir + "/energy_raw", "Photon Energy (raw);E [GeV];Photons", 100, 0, 5);
-            h_theta_raw = svc->book_hist1D(dir + "/theta_raw", "Photon #theta (raw);#theta [deg];Photons", 180, 0, 40);
-            h_phi_raw = svc->book_phi_hist(dir + "/phi_raw", "Photon #phi (raw)");
+        h_n_photons_raw = m_hist->book_hist1D(dir + "/n_photons_raw", "Number of Photons (raw);N_{#gamma};Events", 20, 0, 20);
+        h_energy_raw = m_hist->book_hist1D(dir + "/energy_raw", "Photon Energy (raw);E [GeV];Photons", 100, 0, 5);
+        h_theta_raw = m_hist->book_hist1D(dir + "/theta_raw", "Photon #theta (raw);#theta [deg];Photons", 180, 0, 40);
+        h_phi_raw = m_hist->book_phi_hist(dir + "/phi_raw", "Photon #phi (raw)");
 
-            // Selected photon distributions
-            h_n_photons_selected = svc->book_hist1D(dir + "/n_photons_selected", "Number of Photons (selected);N_{#gamma};Events", 20, 0, 20);
-            h_energy_selected = svc->book_hist1D(dir + "/energy_selected", "Photon Energy (selected);E [GeV];Photons", 100, 0, 5);
-            h_theta_selected = svc->book_hist1D(dir + "/theta_selected", "Photon #theta (selected);#theta [deg];Photons", 180, 0, 40);
-            h_phi_selected = svc->book_phi_hist(dir + "/phi_selected", "Photon #phi (selected)");
-        }
+        h_n_photons_selected = m_hist->book_hist1D(dir + "/n_photons_selected", "Number of Photons (selected);N_{#gamma};Events", 20, 0, 20);
+        h_energy_selected = m_hist->book_hist1D(dir + "/energy_selected", "Photon Energy (selected);E [GeV];Photons", 100, 0, 5);
+        h_theta_selected = m_hist->book_hist1D(dir + "/theta_selected", "Photon #theta (selected);#theta [deg];Photons", 180, 0, 40);
+        h_phi_selected = m_hist->book_phi_hist(dir + "/phi_selected", "Photon #phi (selected)");
     }
 };
 

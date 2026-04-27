@@ -16,6 +16,6 @@ auto main(int argc, char* argv[]) -> int {
                 .template add_service<clas12::framework::ElectronCutsService>()
                 .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
                 .template add_algorithm<clas12::algorithms::ElectronAnalysisAlg>("ElectronAnalysis", electron_config)
-                .template add_algorithm<clas12::algorithms::PionAnalysisAlg>("PionAnalysis", config.target, config.polarity);
+                .template add_algorithm<clas12::algorithms::PionAnalysisAlg>("PionAnalysis", clas12::algorithms::PionAnalysisConfig{.target = config.target, .polarity = config.polarity});
         });
 }

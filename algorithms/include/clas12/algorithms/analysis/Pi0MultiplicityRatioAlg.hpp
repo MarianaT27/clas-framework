@@ -19,40 +19,52 @@
 
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
-#include <clas12/physics/CompositeParticle.hpp>
-#include <clas12/physics/DISAnalysis.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/Algorithm.hpp>
+#include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
+#include <clas12/framework/services/LoggingService.hpp>
+#include <clas12/physics/CompositeParticle.hpp>
+#include <clas12/physics/DISAnalysis.hpp>
 
 namespace clas12::algorithms {
 
 using clas12::framework::Log;
 
+/// Configuration for Pi0MultiplicityRatioAlg.
+struct Pi0MultiplicityRatioConfig {
+    std::vector<double> Q2_edges = {1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 11.0};
+    std::vector<double> xB_edges = {0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.7};
+    std::vector<double> z_edges = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
+    std::vector<double> pT2_edges = {0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5};
+};
+
 class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
    public:
-    explicit Pi0MultiplicityRatioAlg(std::string name = "Pi0MultiplicityRatio")
-        : Algorithm(std::move(name))
-        , m_cutflow("Pi0 Multiplicity") {
-        declare_property(m_beam_energy);
+    using Config = Pi0MultiplicityRatioConfig;
+    using StatusCode = clas12::framework::StatusCode;
+
+    explicit Pi0MultiplicityRatioAlg(std::string name = "Pi0MultiplicityRatio", const Config& config = Config{})
+        : Algorithm(std::move(name)), m_config(config), m_cutflow("Pi0 Multiplicity") {
+        required_services(m_hist);
+        declare_properties(m_beam_energy);
     }
 
-    auto on_initialize() -> clas12::framework::StatusCode override {
-        m_hist = svc<clas12::framework::HistogramService>();
+    [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
+    auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::config(name(), "Beam energy", fmt::format("{} GeV", m_beam_energy.get()));
-        Log::config(name(), "Q2 bins", fmt::format("{}", m_Q2_edges.size() - 1));
-        Log::config(name(), "xB bins", fmt::format("{}", m_xB_edges.size() - 1));
-        Log::config(name(), "z bins", fmt::format("{}", m_z_edges.size() - 1));
-        Log::config(name(), "pT2 bins", fmt::format("{}", m_pT2_edges.size() - 1));
-        Log::config(name(), "Total 4D bins", fmt::format("{}", total_4D_bins()));
+        Log::info(name(), "Beam energy: {} GeV", m_beam_energy.get());
+        Log::info(name(), "Q2 bins: {}", m_config.Q2_edges.size() - 1);
+        Log::info(name(), "xB bins: {}", m_config.xB_edges.size() - 1);
+        Log::info(name(), "z bins: {}", m_config.z_edges.size() - 1);
+        Log::info(name(), "pT2 bins: {}", m_config.pT2_edges.size() - 1);
+        Log::info(name(), "Total 4D bins: {}", total_4D_bins());
 
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Has DIS Electron");
@@ -84,16 +96,16 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
         if (h_n_DIS_vs_xB) h_n_DIS_vs_xB->fill(xB);
 
         // Fill per-Q2-bin normalization
-        for (size_t i = 0; i < m_Q2_edges.size() - 1; ++i) {
-            if (Q2 >= m_Q2_edges[i] && Q2 < m_Q2_edges[i + 1]) {
+        for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {
+            if (Q2 >= m_config.Q2_edges[i] && Q2 < m_config.Q2_edges[i + 1]) {
                 if (h_n_DIS_Q2bin[i]) h_n_DIS_Q2bin[i]->fill(0.5);
                 break;
             }
         }
 
         // Fill per-xB-bin normalization
-        for (size_t i = 0; i < m_xB_edges.size() - 1; ++i) {
-            if (xB >= m_xB_edges[i] && xB < m_xB_edges[i + 1]) {
+        for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {
+            if (xB >= m_config.xB_edges[i] && xB < m_config.xB_edges[i + 1]) {
                 if (h_n_DIS_xBbin[i]) h_n_DIS_xBbin[i]->fill(0.5);
                 break;
             }
@@ -161,17 +173,17 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
 
             // Find bin indices once for all binned fills
             int iQ2 = -1, ixB = -1, iz = -1, ipT2 = -1;
-            for (size_t i = 0; i < m_Q2_edges.size() - 1; ++i) {
-                if (Q2 >= m_Q2_edges[i] && Q2 < m_Q2_edges[i + 1]) { iQ2 = static_cast<int>(i); break; }
+            for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {
+                if (Q2 >= m_config.Q2_edges[i] && Q2 < m_config.Q2_edges[i + 1]) { iQ2 = static_cast<int>(i); break; }
             }
-            for (size_t i = 0; i < m_xB_edges.size() - 1; ++i) {
-                if (xB >= m_xB_edges[i] && xB < m_xB_edges[i + 1]) { ixB = static_cast<int>(i); break; }
+            for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {
+                if (xB >= m_config.xB_edges[i] && xB < m_config.xB_edges[i + 1]) { ixB = static_cast<int>(i); break; }
             }
-            for (size_t i = 0; i < m_z_edges.size() - 1; ++i) {
-                if (z >= m_z_edges[i] && z < m_z_edges[i + 1]) { iz = static_cast<int>(i); break; }
+            for (size_t i = 0; i < m_config.z_edges.size() - 1; ++i) {
+                if (z >= m_config.z_edges[i] && z < m_config.z_edges[i + 1]) { iz = static_cast<int>(i); break; }
             }
-            for (size_t i = 0; i < m_pT2_edges.size() - 1; ++i) {
-                if (pT2 >= m_pT2_edges[i] && pT2 < m_pT2_edges[i + 1]) { ipT2 = static_cast<int>(i); break; }
+            for (size_t i = 0; i < m_config.pT2_edges.size() - 1; ++i) {
+                if (pT2 >= m_config.pT2_edges[i] && pT2 < m_config.pT2_edges[i + 1]) { ipT2 = static_cast<int>(i); break; }
             }
 
             // Fill multiplicity histograms per Q2 bin
@@ -214,20 +226,13 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
     }
 
    private:
-    // Properties
+    Config m_config;
+
     clas12::framework::Property<double> m_beam_energy{"beam_energy", 10.53, "Beam energy [GeV]"};
 
-    // Service pointers (cached in on_initialize via svc<T>())
-    clas12::framework::HistogramService* m_hist = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
 
-    // Cutflow
     clas12::framework::Cutflow m_cutflow;
-
-    // Binning definitions
-    std::vector<double> m_Q2_edges = {1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 11.0};
-    std::vector<double> m_xB_edges = {0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.7};
-    std::vector<double> m_z_edges = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
-    std::vector<double> m_pT2_edges = {0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5};
 
     // --- Histograms ---
 
@@ -262,19 +267,20 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
     clas12::framework::ThreadLocalHistogram1D* h_sum_sinphi_4D = nullptr;
 
     [[nodiscard]] auto flat_4D_index(int iQ2, int ixB, int iz, int ipT2) const -> int {
-        int N_xB = static_cast<int>(m_xB_edges.size()) - 1;
-        int N_z = static_cast<int>(m_z_edges.size()) - 1;
-        int N_pT2 = static_cast<int>(m_pT2_edges.size()) - 1;
+        int N_xB = static_cast<int>(m_config.xB_edges.size()) - 1;
+        int N_z = static_cast<int>(m_config.z_edges.size()) - 1;
+        int N_pT2 = static_cast<int>(m_config.pT2_edges.size()) - 1;
         return ((iQ2 * N_xB + ixB) * N_z + iz) * N_pT2 + ipT2;
     }
 
     [[nodiscard]] auto total_4D_bins() const -> int {
-        return static_cast<int>((m_Q2_edges.size() - 1) * (m_xB_edges.size() - 1) * (m_z_edges.size() - 1) * (m_pT2_edges.size() - 1));
+        return static_cast<int>((m_config.Q2_edges.size() - 1) * (m_config.xB_edges.size() - 1) * (m_config.z_edges.size() - 1) * (m_config.pT2_edges.size() - 1));
     }
 
     auto book_histograms() -> void {
-        if (m_hist) { auto* svc = m_hist;
-            const std::string dir = "/Pi0Multiplicity";
+        auto* svc = m_hist.get();
+        const std::string dir = "/Pi0Multiplicity";
+        {
 
             // DIS normalization
             h_n_DIS_events = svc->book_hist1D(dir + "/n_DIS_events", "DIS Event Count;count;Events", 1, 0, 1);
@@ -282,20 +288,20 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
             h_n_DIS_vs_xB = svc->book_hist1D(dir + "/n_DIS_vs_xB", "DIS Events vs x_{B};x_{B};Events", 100, 0, 0.8);
 
             // Per-Q2-bin DIS normalization
-            h_n_DIS_Q2bin.resize(m_Q2_edges.size() - 1);
-            for (size_t i = 0; i < m_Q2_edges.size() - 1; ++i) {
+            h_n_DIS_Q2bin.resize(m_config.Q2_edges.size() - 1);
+            for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {
                 h_n_DIS_Q2bin[i] = svc->book_hist1D(
                     fmt::format("{}/norm/n_DIS_Q2bin{}", dir, i),
-                    fmt::format("DIS Events Q^{{2}} [{:.1f}, {:.1f}];count;Events", m_Q2_edges[i], m_Q2_edges[i + 1]),
+                    fmt::format("DIS Events Q^{{2}} [{:.1f}, {:.1f}];count;Events", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]),
                     1, 0, 1);
             }
 
             // Per-xB-bin DIS normalization
-            h_n_DIS_xBbin.resize(m_xB_edges.size() - 1);
-            for (size_t i = 0; i < m_xB_edges.size() - 1; ++i) {
+            h_n_DIS_xBbin.resize(m_config.xB_edges.size() - 1);
+            for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {
                 h_n_DIS_xBbin[i] = svc->book_hist1D(
                     fmt::format("{}/norm/n_DIS_xBbin{}", dir, i),
-                    fmt::format("DIS Events x_{{B}} [{:.2f}, {:.2f}];count;Events", m_xB_edges[i], m_xB_edges[i + 1]),
+                    fmt::format("DIS Events x_{{B}} [{:.2f}, {:.2f}];count;Events", m_config.xB_edges[i], m_config.xB_edges[i + 1]),
                     1, 0, 1);
             }
 
@@ -311,34 +317,34 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
             h_pT2_vs_Q2 = svc->book_hist2D(dir + "/pT2_vs_Q2", "p_{T}^{2} vs Q^{2};Q^{2} [GeV^{2}];p_{T}^{2} [GeV^{2}]", 100, 0, 12, 100, 0, 2);
 
             // Multiplicity: z per Q2 bin
-            h_z_Q2bin.resize(m_Q2_edges.size() - 1);
-            h_pT2_Q2bin.resize(m_Q2_edges.size() - 1);
-            for (size_t i = 0; i < m_Q2_edges.size() - 1; ++i) {
+            h_z_Q2bin.resize(m_config.Q2_edges.size() - 1);
+            h_pT2_Q2bin.resize(m_config.Q2_edges.size() - 1);
+            for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {
                 h_z_Q2bin[i] = svc->book_hist1D(
                     fmt::format("{}/z_Q2bin/z_Q2bin{}", dir, i),
-                    fmt::format("#pi^{{0}} z, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};z;Counts", m_Q2_edges[i], m_Q2_edges[i + 1]),
+                    fmt::format("#pi^{{0}} z, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};z;Counts", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]),
                     100, 0, 1);
                 h_pT2_Q2bin[i] = svc->book_hist1D(
                     fmt::format("{}/pT2_Q2bin/pT2_Q2bin{}", dir, i),
-                    fmt::format("#pi^{{0}} p_{{T}}^{{2}}, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_Q2_edges[i], m_Q2_edges[i + 1]),
+                    fmt::format("#pi^{{0}} p_{{T}}^{{2}}, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]),
                     100, 0, 2);
             }
 
             // Multiplicity: z per xB bin
-            h_z_xBbin.resize(m_xB_edges.size() - 1);
-            for (size_t i = 0; i < m_xB_edges.size() - 1; ++i) {
+            h_z_xBbin.resize(m_config.xB_edges.size() - 1);
+            for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {
                 h_z_xBbin[i] = svc->book_hist1D(
                     fmt::format("{}/z_xBbin/z_xBbin{}", dir, i),
-                    fmt::format("#pi^{{0}} z, x_{{B}} #in [{:.2f}, {:.2f}];z;Counts", m_xB_edges[i], m_xB_edges[i + 1]),
+                    fmt::format("#pi^{{0}} z, x_{{B}} #in [{:.2f}, {:.2f}];z;Counts", m_config.xB_edges[i], m_config.xB_edges[i + 1]),
                     100, 0, 1);
             }
 
             // Multiplicity: pT2 per z bin
-            h_pT2_zbin.resize(m_z_edges.size() - 1);
-            for (size_t i = 0; i < m_z_edges.size() - 1; ++i) {
+            h_pT2_zbin.resize(m_config.z_edges.size() - 1);
+            for (size_t i = 0; i < m_config.z_edges.size() - 1; ++i) {
                 h_pT2_zbin[i] = svc->book_hist1D(
                     fmt::format("{}/pT2_zbin/pT2_zbin{}", dir, i),
-                    fmt::format("#pi^{{0}} p_{{T}}^{{2}}, z #in [{:.1f}, {:.1f}];p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_z_edges[i], m_z_edges[i + 1]),
+                    fmt::format("#pi^{{0}} p_{{T}}^{{2}}, z #in [{:.1f}, {:.1f}];p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_config.z_edges[i], m_config.z_edges[i + 1]),
                     100, 0, 2);
             }
 

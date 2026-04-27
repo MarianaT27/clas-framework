@@ -28,34 +28,27 @@
 
 namespace ALERT_track_matching {
 
+/// Configuration for ALERT_track_matchingAlg.
+struct ALERT_track_matchingConfig {
+    // Reserved for future tuning knobs that aren't user-tunable Properties.
+};
+
 /**
  * @brief Algorithm for ALERT track matching analysis
- *
- * This algorithm demonstrates the Algorithm hook pattern.
- * Customize the process() method to implement your analysis logic.
  */
 class ALERT_track_matchingAlg : public clas12::framework::Algorithm {
 public:
-    /**
-     * @brief Construct the algorithm
-     * @param name Algorithm name (defaults to class name)
-     */
-    explicit ALERT_track_matchingAlg(std::string name = "ALERT_track_matchingAlg")
-        : Algorithm(std::move(name)) {
-        // Declare configurable properties
-        declare_property(m_example_cut);
-        declare_property(m_enable_histograms);
-        declare_property(m_phi_cut);
-        declare_property(m_delta_vz_cm_min);
-        declare_property(m_delta_vz_cm_max);
-        declare_property(m_enable_ntuple);
-        declare_property(m_ai_hit_id_offset);
-        // Declare required banks
-        declare_bank("REC::Particle");
-        declare_bank("AHDC::track");
-        declare_bank("ALERT::ai:projections");
-        declare_bank("ATOF::hits");
+    using Config = ALERT_track_matchingConfig;
+    using StatusCode = clas12::framework::StatusCode;
+
+    explicit ALERT_track_matchingAlg(std::string name = "ALERT_track_matchingAlg", const Config& config = Config{})
+        : Algorithm(std::move(name)), m_config(config) {
+        required_services(m_hist_svc, m_ntuple_svc);
+        declare_banks("REC::Particle", "AHDC::track", "ALERT::ai:projections", "ATOF::hits");
+        declare_properties(m_example_cut, m_enable_histograms, m_phi_cut, m_delta_vz_cm_min, m_delta_vz_cm_max, m_enable_ntuple, m_ai_hit_id_offset);
     }
+
+    [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     /**
      * @brief Configure service dependencies
@@ -68,17 +61,9 @@ public:
      * Called after services are injected. Book histograms and setup resources here.
      * @return StatusCode SUCCESS to continue, FAILURE to abort
      */
-    auto on_initialize() -> clas12::framework::StatusCode override {
-        m_hist_svc = svc<clas12::framework::HistogramService>();
-        m_ntuple_svc = svc<clas12::framework::NTupleService>();
-
-        if (m_enable_histograms && m_hist_svc) {
-            book_histograms();
-        }
-
-        if (m_enable_ntuple.get() && m_ntuple_svc) {
-            setup_ntuple();
-        }
+    auto on_initialize() -> StatusCode override {
+        if (m_enable_histograms.get()) book_histograms();
+        if (m_enable_ntuple.get()) setup_ntuple();
 
         // Read the file analyses/ALERT_track_matching/atof_wedge_H2.data
         // Read the ATOF wedge H2 data file
@@ -515,9 +500,11 @@ private:
         "enable_ntuple", true, "Enable N-tuple output"
     };
 
-    // Service pointers
-    clas12::framework::HistogramService* m_hist_svc = nullptr;
-    clas12::framework::NTupleService* m_ntuple_svc = nullptr;
+    Config m_config;
+
+    // Services
+    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist_svc;
+    clas12::framework::ServiceRef<clas12::framework::NTupleService> m_ntuple_svc;
 
     // Mutex for thread-safe NTuple filling
     mutable std::mutex m_ntuple_mutex;
@@ -581,9 +568,13 @@ private:
     int    m_nt_n_tracks = 0, m_nt_n_good_atof_hits = 0;
     int    m_nt_n_true_atof_hits = 0, m_nt_n_matched_tracks = 0;
 
+    // NOTE: This algorithm currently registers ~40 branches via the legacy
+    // svc->register_branch path. Migration to NTupleWriter<HadronTreeData>
+    // (with static ntuple_fields()) is mechanical and is deferred to keep
+    // this uniformization pass focused on constructor/service shape.
     auto setup_ntuple() -> void {
         if (!m_ntuple_svc) return;
-        auto* svc = m_ntuple_svc;
+        auto* svc = m_ntuple_svc.get();
         const std::string tree = "alert_track_matching";
 
         // Electron
@@ -646,7 +637,7 @@ private:
 
     auto book_histograms() -> void {
         // Use lock-free atomic histograms for parallel accumulation
-        auto* svc = m_hist_svc;
+        auto* svc = m_hist_svc.get();
         h_p = svc->book_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
         h_phi = svc->book_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
         h_theta = svc->book_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);

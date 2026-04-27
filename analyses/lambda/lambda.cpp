@@ -28,9 +28,9 @@ auto main(int argc, char* argv[]) -> int {
                 .template add_service<clas12::framework::ElectronCutsService>()
                 .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
                 .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>(
-                    "ElectronSelection", config.target, config.polarity)
+                    "ElectronSelection", clas12::algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity})
                 .template add_algorithm<clas12::algorithms::DISSelectionAlg>(
-                    "DISSelection", clas12::physics::DISAnalysis::standard_dis_region())
+                    "DISSelection", clas12::algorithms::DISSelectionConfig{.dis_region = clas12::physics::DISAnalysis::standard_dis_region()})
                 .template add_algorithm<clas12::algorithms::LambdaReconstructionAlg>(
                     "LambdaReconstruction");
         });

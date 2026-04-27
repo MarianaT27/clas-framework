@@ -38,10 +38,10 @@ auto main(int argc, char* argv[]) -> int {
                 .template add_service<clas12::framework::PhotonCutsService>()
                 .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
                 .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>()
-                .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::physics::DISAnalysis::standard_dis_region())
+                .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::algorithms::DISSelectionConfig{.dis_region = clas12::physics::DISAnalysis::standard_dis_region()})
                 .template add_algorithm<clas12::algorithms::PhotonSelectionAlg>("PhotonSelection")
-                .template add_algorithm<clas12::algorithms::Pi0ReconstructionAlg>("Pi0Reconstruction", mass_window)
+                .template add_algorithm<clas12::algorithms::Pi0ReconstructionAlg>("Pi0Reconstruction", clas12::algorithms::Pi0ReconstructionConfig{.pi0_mass_window = mass_window})
                 .template add_algorithm<clas12::algorithms::Pi0MultiplicityRatioAlg>("Pi0Multiplicity")
-                .template add_algorithm<clas12::algorithms::Pi0EventMixingAlg>("Pi0EventMixing", max_pool_events);
+                .template add_algorithm<clas12::algorithms::Pi0EventMixingAlg>("Pi0EventMixing", clas12::algorithms::Pi0EventMixingConfig{.max_pool_events = max_pool_events});
         });
 }

@@ -19,19 +19,18 @@
 #include <clas12/Particle.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/bankdefs/RUN_config.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/CandidateUtils.hpp>
-#include <clas12/framework/core/AutoCutflow.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
-#include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Event.hpp>
+#include <clas12/framework/core/EventHelpers.hpp>
+#include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
-#include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
-#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
 namespace clas12::algorithms {
@@ -139,58 +138,45 @@ struct Rho0Candidate {
  *
  * Fits invariant mass with Breit-Wigner + pol3 background
  */
+/// Configuration for Rho0ReconstructionAlg.
+struct Rho0ReconstructionConfig {
+    clas12::Target target = clas12::Target::LD2;
+    std::vector<double> sigma_scan = {};
+    std::vector<double> lc_scan = {};
+    std::vector<double> zh_scan = {};
+    std::vector<double> t_scan = {};
+    std::vector<double> dvz_scan = {};
+};
+
 class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
    public:
+    using Config = Rho0ReconstructionConfig;
+    using StatusCode = clas12::framework::StatusCode;
+
     static constexpr double RHO0_MASS = clas12::Constants::RHO0MASS;  // GeV/c² (~770 MeV)
     static constexpr double RHO0_WIDTH = 0.150;                      // GeV (~150 MeV natural width)
     static constexpr double HBARC = 0.197327;                        // GeV·fm (for coherence length)
 
-    explicit Rho0ReconstructionAlg(
-        std::string name = "Rho0ReconstructionAlg",
-        clas12::Target target = clas12::Target::LD2,
-        std::vector<double> sigma_scan = {},
-        std::vector<double> lc_scan = {},
-        std::vector<double> zh_scan = {},
-        std::vector<double> t_scan = {},
-        std::vector<double> dvz_scan = {}
-    )
-        : Algorithm(std::move(name))
-        , m_target(target)
-        , m_cutflow("Rho0 Reconstruction")
-        , m_candidate_cutflow("Rho0 Candidate Cuts") {
-        declare_property(m_zh_min);
-        declare_property(m_lc_max);
-        declare_property(m_t_min);
-        declare_property(m_t_max);
-        declare_property(m_enable_delta_vz_pim_cut);
-        declare_property(m_enable_delta_vz_pip_cut);
-        declare_property(m_enable_zh_cut);
-        declare_property(m_enable_lc_cut);
-        declare_property(m_enable_t_cut);
-        declare_property(m_enable_ntuple);
-        declare_property(m_enable_fitting);
-        declare_property(m_sigma_scan_values);
-        declare_property(m_lc_scan_values);
-        declare_property(m_zh_scan_values);
-        declare_property(m_t_scan_values);
-        declare_property(m_dvz_scan_values);
-        if (!sigma_scan.empty()) m_sigma_scan_values.set(std::move(sigma_scan));
-        if (!lc_scan.empty()) m_lc_scan_values.set(std::move(lc_scan));
-        if (!zh_scan.empty()) m_zh_scan_values.set(std::move(zh_scan));
-        if (!t_scan.empty()) m_t_scan_values.set(std::move(t_scan));
-        if (!dvz_scan.empty()) m_dvz_scan_values.set(std::move(dvz_scan));
-        declare_bank("RUN::config");
+    explicit Rho0ReconstructionAlg(std::string name = "Rho0ReconstructionAlg", const Config& config = Config{})
+        : Algorithm(std::move(name)), m_config(config), m_cutflow("Rho0 Reconstruction"), m_candidate_cutflow("Rho0 Candidate Cuts") {
+        if (!m_config.sigma_scan.empty()) m_sigma_scan_values.set(m_config.sigma_scan);
+        if (!m_config.lc_scan.empty()) m_lc_scan_values.set(m_config.lc_scan);
+        if (!m_config.zh_scan.empty()) m_zh_scan_values.set(m_config.zh_scan);
+        if (!m_config.t_scan.empty()) m_t_scan_values.set(m_config.t_scan);
+        if (!m_config.dvz_scan.empty()) m_dvz_scan_values.set(m_config.dvz_scan);
+
+        required_services(m_hist_svc, m_ntuple_svc, m_output_svc);
+        declare_banks("RUN::config");
+        declare_properties(m_zh_min, m_lc_max, m_t_min, m_t_max, m_enable_delta_vz_pim_cut, m_enable_delta_vz_pip_cut, m_enable_zh_cut, m_enable_lc_cut, m_enable_t_cut, m_enable_ntuple, m_enable_fitting, m_sigma_scan_values, m_lc_scan_values, m_zh_scan_values, m_t_scan_values, m_dvz_scan_values);
     }
 
-    auto on_initialize() -> clas12::framework::StatusCode override {
-        m_hist_svc = svc<clas12::framework::HistogramService>();
-        m_ntuple_svc = svc<clas12::framework::NTupleService>();
-        m_output_svc = svc<clas12::framework::OutputFileService>();
+    [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
+    auto on_initialize() -> StatusCode override {
         using Log = clas12::framework::Log;
 
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::config(name(), "Target", clas12::to_string(m_target));
+        Log::config(name(), "Target", clas12::to_string(m_config.target));
         Log::config(name(), "Pion selection", "Using pre-selected pions from PionSelectionAlg");
         Log::blank();
 
@@ -263,23 +249,12 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         m_cutflow.add_cut("Has >= 1 Pi-");
         m_cutflow.add_cut("Rho0 Found");
 
-        // Candidate-level cuts (declarative predicates)
-        m_candidate_cutflow
-            .define("delta_vz_pim Cut", [this](const Rho0Candidate& c) {
-                return !m_enable_delta_vz_pim_cut.get() || c.passes_delta_vz_pim;
-            })
-            .define("delta_vz_pip Cut", [this](const Rho0Candidate& c) {
-                return !m_enable_delta_vz_pip_cut.get() || c.passes_delta_vz_pip;
-            })
-            .define("zh > 0.9", [this](const Rho0Candidate& c) {
-                return !m_enable_zh_cut.get() || c.passes_zh;
-            })
-            .define("lc < 1 fm", [this](const Rho0Candidate& c) {
-                return !m_enable_lc_cut.get() || c.passes_lc;
-            })
-            .define("0.1 < -t < 0.5", [this](const Rho0Candidate& c) {
-                return !m_enable_t_cut.get() || c.passes_t;
-            });
+        // Candidate-level cuts (sequential, short-circuit on first fail).
+        m_candidate_cutflow.add_cut("delta_vz_pim Cut");
+        m_candidate_cutflow.add_cut("delta_vz_pip Cut");
+        m_candidate_cutflow.add_cut("zh > 0.9");
+        m_candidate_cutflow.add_cut("lc < 1 fm");
+        m_candidate_cutflow.add_cut("0.1 < -t < 0.5");
 
         Log::stat(name(), "Cutflow stages", m_cutflow.num_cuts() + m_candidate_cutflow.num_cuts());
         Log::success(name(), "Initialization complete");
@@ -365,9 +340,18 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         // Fill lc-binned histograms (with specific cut combination)
         fill_lc_binned_histograms(candidates, Q2);
 
-        // Update candidate-level cutflow counters
+        // Update candidate-level cutflow counters (sequential, short-circuit).
         for (const auto& cand : candidates) {
-            (void)m_candidate_cutflow.evaluate(cand);
+            if (m_enable_delta_vz_pim_cut.get() && !cand.passes_delta_vz_pim) continue;
+            m_candidate_cutflow.pass("delta_vz_pim Cut");
+            if (m_enable_delta_vz_pip_cut.get() && !cand.passes_delta_vz_pip) continue;
+            m_candidate_cutflow.pass("delta_vz_pip Cut");
+            if (m_enable_zh_cut.get() && !cand.passes_zh) continue;
+            m_candidate_cutflow.pass("zh > 0.9");
+            if (m_enable_lc_cut.get() && !cand.passes_lc) continue;
+            m_candidate_cutflow.pass("lc < 1 fm");
+            if (m_enable_t_cut.get() && !cand.passes_t) continue;
+            m_candidate_cutflow.pass("0.1 < -t < 0.5");
         }
 
         // Process cut scan variations (rho0-level cut threshold scans)
@@ -528,7 +512,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     auto save_run_metadata() -> void {
         if (!m_output_svc || m_runs.empty()) return;
 
-        auto* out_svc = m_output_svc;
+        auto* out_svc = m_output_svc.get();
         if (!out_svc->is_file_open()) {
             clas12::framework::Log::error(name(), "Output file is not open for writing metadata");
             return;
@@ -866,8 +850,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     }
 
    private:
-    // Target
-    clas12::Target m_target;
+    Config m_config;
 
     // Properties
     clas12::framework::Property<double> m_zh_min{"zh_min", 0.9, "Minimum zh (energy fraction)"};
@@ -904,7 +887,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
      * Values from: μ ± 3σ analysis
      */
     auto get_piplus_delta_vz_range() const -> DeltaVzCutRange {
-        switch (m_target) {
+        switch (m_config.target) {
             case clas12::Target::LD2:
                 return {-4.0134, 2.3256};
             case clas12::Target::CxC:
@@ -923,7 +906,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
      * Values from: μ ± 3σ analysis
      */
     auto get_piminus_delta_vz_range() const -> DeltaVzCutRange {
-        switch (m_target) {
+        switch (m_config.target) {
             case clas12::Target::LD2:
                 return {-3.8801, 4.2481};
             case clas12::Target::CxC:
@@ -937,14 +920,13 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         }
     }
 
-    // Service pointers (cached in on_initialize via svc<T>())
-    clas12::framework::HistogramService* m_hist_svc = nullptr;
-    clas12::framework::NTupleService* m_ntuple_svc = nullptr;
-    clas12::framework::OutputFileService* m_output_svc = nullptr;
+    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist_svc;
+    clas12::framework::ServiceRef<clas12::framework::NTupleService> m_ntuple_svc;
+    clas12::framework::ServiceRef<clas12::framework::OutputFileService> m_output_svc;
 
     // Cutflow (event-level + candidate-level)
     clas12::framework::Cutflow m_cutflow;
-    clas12::framework::ContextCutflow<Rho0Candidate> m_candidate_cutflow;
+    clas12::framework::Cutflow m_candidate_cutflow;
 
     // Run tracking for metadata
     std::set<int> m_runs;
@@ -1235,7 +1217,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
 
     auto book_histograms() -> void {
         if (m_hist_svc) {
-            auto* svc = m_hist_svc;
+            auto* svc = m_hist_svc.get();
             book_main_histograms(svc);
             book_nminus1_histograms(svc);
             book_region_histograms(svc);
@@ -1448,7 +1430,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     }
     auto setup_ntuple() -> void {
         if (m_ntuple_svc) {
-            m_ntuple_writer.init(m_ntuple_svc, "rho0_events");
+            m_ntuple_writer.init(m_ntuple_svc.get(), "rho0_events");
             clas12::framework::Log::info(name(), "N-tuple branches registered for rho0_events");
         }
     }
@@ -1576,7 +1558,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         const std::vector<ScanFitResult>& scan_results
     ) -> void {
         if (!m_output_svc) return;
-        auto* out_svc = m_output_svc;
+        auto* out_svc = m_output_svc.get();
         if (!out_svc->is_file_open()) return;
 
         std::lock_guard<std::mutex> lock(out_svc->mutex());
@@ -1781,7 +1763,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     ) -> void {
         if (!m_output_svc) return;
 
-        auto* out_svc = m_output_svc;
+        auto* out_svc = m_output_svc.get();
         if (!out_svc->is_file_open()) {
             clas12::framework::Log::error(name(), "Output file is not open for writing fit results");
             return;
