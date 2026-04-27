@@ -71,6 +71,7 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     auto on_initialize() -> StatusCode override {
+        Log::subsection(fmt::format("{} Configuration", name()));
         Log::info(name(), "Initializing algorithm");
         Log::info(name(), "Target: {}, Polarity: {}", m_target, m_polarity);
 
