@@ -21,7 +21,6 @@
 #include <clas12/framework/services/MetadataService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
-#include <clas12/framework/services/ProfilingService.hpp>
 #include <clas12/framework/services/SamplingFractionService.hpp>
 
 namespace clas12::framework {
@@ -67,7 +66,6 @@ auto ApplicationBuilder::add_standard_services_to(Application& app) -> void {
     // File services
     auto hipo_svc = std::make_unique<HipoFileService>();
     auto metadata_svc = std::make_unique<MetadataService>();
-    auto profiling_svc = std::make_unique<ProfilingService>();
 
     // Configure OutputFileService with output file. HistogramService,
     // NTupleService and MetadataService discover it via locate_service()
@@ -98,7 +96,6 @@ auto ApplicationBuilder::add_standard_services_to(Application& app) -> void {
     mgr.add_service(std::move(hist_svc),     {"OutputFileService"});
     mgr.add_service(std::move(sf_svc));
     mgr.add_service(std::move(metadata_svc), {"OutputFileService"});
-    mgr.add_service(std::move(profiling_svc));
     mgr.add_service(std::move(ntuple_svc),   {"OutputFileService", "HistogramService"});
 }
 

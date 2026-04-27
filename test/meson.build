@@ -48,13 +48,6 @@ test_application_exception = executable(
   dependencies: test_deps,
 )
 
-# Unit tests for Range Adaptors
-test_ranges = executable(
-  'test_ranges',
-  'test_ranges.cpp',
-  dependencies: test_deps,
-)
-
 # Register tests
 test('Cutflow Tests', test_cutflow)
 test('Service Tests', test_services)
@@ -62,7 +55,6 @@ test('Result Type Tests', test_result)
 test('Event Store Tests', test_event_store)
 test('Logging Service Tests', test_logging_service)
 test('Application Exception Tests', test_application_exception)
-test('Range Adaptors Tests', test_ranges)
 
 # Unit tests for the Algorithm base class (hooks, properties, DI)
 test_simple_algorithm = executable(

@@ -10,7 +10,6 @@
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
 #include <clas12/algorithms/reconstruction/Pi0ReconstructionAlg.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
-#include <clas12/framework/services/FiducialService.hpp>
 #include <clas12/framework/services/PhotonCutsService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
@@ -29,7 +28,6 @@ auto main(int argc, char* argv[]) -> int {
             }
             builder
                 .template add_service<clas12::framework::ElectronCutsService>()
-                .template add_service<clas12::framework::FiducialService>()
                 .template add_service<clas12::framework::PhotonCutsService>()
                 .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
                 .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>()

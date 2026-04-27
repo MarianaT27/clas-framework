@@ -18,7 +18,6 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
-#include <clas12/framework/core/Ranges.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/FileUtils.hpp>
 #include "TH1D.h"
@@ -77,16 +76,17 @@ public:
     auto process(Event& event) -> StatusCode override {
         m_events_processed++;
 
-        // Use range adaptors to filter electrons by momentum
-        auto electrons = event.all_particles()
-            | Ranges::by_pid(clas12::PIDs::ELECTRON)
-            | Ranges::by_momentum(m_min_momentum.get(), m_max_momentum.get());
-
+        // Iterate the cached electron vector and count those in the
+        // configured momentum window.
         int electron_count = 0;
-        for (const auto& electron : electrons) {
+        const double pmin = m_min_momentum.get();
+        const double pmax = m_max_momentum.get();
+        for (const auto& electron : event.electrons()) {
+            const double pmag = electron.p();
+            if (pmag < pmin || pmag > pmax) continue;
             electron_count++;
             if (m_h_electron_momentum) {
-                m_h_electron_momentum->fill(electron.p());
+                m_h_electron_momentum->fill(pmag);
             }
         }
 

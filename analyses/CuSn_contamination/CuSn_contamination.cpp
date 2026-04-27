@@ -6,7 +6,6 @@
 #include <clas12/framework/core/AnalysisRunner.hpp>
 #include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
-#include <clas12/framework/services/FiducialService.hpp>
 
 #include "CusnContaminationAlg.hpp"
 
@@ -16,7 +15,6 @@ auto main(int argc, char* argv[]) -> int {
         [](auto& builder, const auto& config) {
             builder
                 .template add_service<clas12::framework::ElectronCutsService>()
-                .template add_service<clas12::framework::FiducialService>()
                 .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::Target::Custom, config.polarity)
                 .template add_algorithm<CuSnContamination::CuSnContaminationAlg>("CuSnContaminationAlg");
         });

@@ -146,4 +146,13 @@ auto Particle::scintillator() const -> ScintillatorBank {
     return clas12::read_Scintillator_bank(*m_event, m_index);
 }
 
+auto Particle::region_tracks() const -> std::array<TrackBank, 3> {
+    const auto t = traj();
+    return {
+        clas12::read_Track_bank(*m_event, t.region1_index),
+        clas12::read_Track_bank(*m_event, t.region2_index),
+        clas12::read_Track_bank(*m_event, t.region3_index),
+    };
+}
+
 }  // namespace clas12

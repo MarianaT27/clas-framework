@@ -1,6 +1,7 @@
 #pragma once
 
 // C++ headers
+#include <array>
 #include <cmath>
 #include <limits>
 
@@ -130,6 +131,14 @@ class Particle {
     auto track()        const -> TrackBank;
     auto cherenkov()    const -> CherenkovBank;
     auto scintillator() const -> ScintillatorBank;
+
+    /// Three DC region tracks for this particle's trajectory, in order
+    /// {region1, region2, region3}. Reads `traj()` once internally,
+    /// then `read_Track_bank` for each region's index. The PindexLinker
+    /// for REC::Track is cached on the Event after the first call from
+    /// any particle, so subsequent particles in the same event reuse
+    /// it.
+    auto region_tracks() const -> std::array<TrackBank, 3>;
 
     // ****** operators
     auto operator==(const Particle& other) const -> bool { return m_index == other.m_index; }

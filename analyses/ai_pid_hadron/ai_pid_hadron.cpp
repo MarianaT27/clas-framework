@@ -9,7 +9,6 @@
 #include <clas12/algorithms/selection/DISSelectionAlg.hpp>
 #include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
-#include <clas12/framework/services/FiducialService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
 #include "AiPidHadronAlg.hpp"
@@ -28,7 +27,6 @@ auto main(int argc, char* argv[]) -> int {
             }
             builder
                 .template add_service<clas12::framework::ElectronCutsService>()
-                .template add_service<clas12::framework::FiducialService>()
                 .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", config.target, config.polarity)
                 .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::physics::DISAnalysis::high_q2_region())
                 .template add_algorithm<ai_pid_hadron::AiPidHadronAlg>("AiPidHadronAlg", truth_mode);

@@ -170,18 +170,12 @@ class Event {
      *
      * Example usage:
      * @code
-     * // Get all electrons with momentum > 2 GeV in Forward Detector
-     * auto electrons = event.all_particles()
-     *     | Ranges::by_pid(clas12::PIDs::ELECTRON)
-     *     | Ranges::by_min_momentum(2.0)
-     *     | Ranges::in_detector(clas12::FD);
-     *
-     * for (const auto& e : electrons) {
-     *     // Process electron
+     * for (const auto& p : event.all_particles()) {
+     *     if (p.pdg() != clas12::PIDs::ELECTRON) continue;
+     *     if (p.p() < 2.0) continue;
+     *     // ... process forward-detector electron
      * }
      * @endcode
-     *
-     * @see Requirements 3.1, 3.3
      */
     auto all_particles() {
         if (!m_particles_loaded) {

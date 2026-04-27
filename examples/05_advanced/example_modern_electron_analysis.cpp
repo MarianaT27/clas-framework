@@ -31,7 +31,6 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/Ranges.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 
 // Service headers
@@ -128,17 +127,15 @@ public:
         m_cutflow.pass("All Events");
 
         // ====================================================================
-        // Step 1: Use range adaptors to find Forward Detector electrons
-        // (Requirement 3.1, 3.2, 3.4 - composable, lazy-evaluated filters)
+        // Step 1: Pull Forward Detector electrons from Event's cached
+        // per-PID vector and gate on |status| ∈ [FD, CD).
         // ====================================================================
-        auto fd_electrons = event.all_particles()
-            | Ranges::by_pid(clas12::PIDs::ELECTRON)
-            | Ranges::in_detector(clas12::FD);
-
-        // Collect electrons into a vector for further processing
         std::vector<clas12::Particle> electron_candidates;
-        for (const auto& e : fd_electrons) {
-            electron_candidates.push_back(e);
+        for (const auto& e : event.electrons()) {
+            const double abs_status = std::abs(e.status());
+            if (clas12::FD <= abs_status && abs_status < clas12::CD) {
+                electron_candidates.push_back(e);
+            }
         }
 
         if (electron_candidates.empty()) {

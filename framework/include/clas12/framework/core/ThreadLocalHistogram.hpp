@@ -27,15 +27,34 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <concepts>
 #include <vector>
 
 #include <TH1D.h>
 #include <TH2D.h>
 #include <TH3D.h>
 
-#include <clas12/framework/core/Accumulator.hpp>
-
 namespace clas12::framework {
+
+/**
+ * @brief A type models `Accumulator<T>` iff partial results of type
+ *        `T` can be folded together and reset to the identity.
+ *
+ * Each worker thread accumulates a private copy of a histogram or
+ * cutflow; a final merge step sums everything into a single output.
+ * Used internally by `ThreadLocalHistogram1D/2D/3D` to satisfy a
+ * compile-time check that they expose `merge(const T&)` and `reset()`.
+ *
+ * Required member functions:
+ *   - `void merge(const T& other)` — fold `other` into `*this`.
+ *   - `void reset()` — restore the identity (empty result).
+ */
+template <typename T>
+concept Accumulator = requires(T& a, const T& b) {
+    { a.merge(b) } -> std::same_as<void>;
+    { a.reset()  } -> std::same_as<void>;
+};
+
 
 namespace detail {
 

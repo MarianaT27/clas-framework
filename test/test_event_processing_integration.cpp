@@ -18,7 +18,7 @@
 
 #include <clas12/framework/core/Generator.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/Ranges.hpp>
+#include <clas12/Detectors.hpp>
 #include <clas12/PIDs.hpp>
 #include <reader.h>
 #include <bank_view.h>
@@ -245,11 +245,7 @@ TEST_F(EventProcessingIntegrationTest, RangeAdaptorsWithRealData) {
     for ([[maybe_unused]] auto& evt : rdr.loop(banks)) {
         Event event(banks);
 
-        // Use range adaptors to filter particles
-        auto electrons = event.all_particles()
-            | Ranges::by_pid(clas12::PIDs::ELECTRON);
-
-        for (const auto& e : electrons) {
+        for (const auto& e : event.electrons()) {
             total_electrons++;
             if (e.p() > 1.0) {
                 high_p_electrons++;
@@ -276,15 +272,12 @@ TEST_F(EventProcessingIntegrationTest, ComposedRangeFilters) {
     for ([[maybe_unused]] auto& evt : rdr.loop(banks)) {
         Event event(banks);
 
-        // Compose multiple filters
-        auto fd_electrons = event.all_particles()
-            | Ranges::by_pid(clas12::PIDs::ELECTRON)
-            | Ranges::in_detector(clas12::FD)
-            | Ranges::by_min_momentum(0.5);
-
-        for (const auto& e : fd_electrons) {
+        // Compose multiple filters by hand: forward-detector, p > 0.5.
+        for (const auto& e : event.electrons()) {
+            const double abs_status = std::abs(e.status());
+            if (!(clas12::FD <= abs_status && abs_status < clas12::CD)) continue;
+            if (e.p() < 0.5) continue;
             fd_electron_count++;
-            // Verify filters applied correctly
             EXPECT_EQ(e.pdg(), 11);
             EXPECT_GE(e.p(), 0.5);
         }

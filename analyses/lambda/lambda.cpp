@@ -12,7 +12,6 @@
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
 #include <clas12/algorithms/reconstruction/LambdaReconstructionAlg.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
-#include <clas12/framework/services/FiducialService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
 auto main(int argc, char* argv[]) -> int {
@@ -27,7 +26,6 @@ auto main(int argc, char* argv[]) -> int {
             // automatically — no manual configure_from_toml() needed.
             builder
                 .template add_service<clas12::framework::ElectronCutsService>()
-                .template add_service<clas12::framework::FiducialService>()
                 .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
                 .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>(
                     "ElectronSelection", config.target, config.polarity)

@@ -481,11 +481,7 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
             clas12::CalorimeterBank calo = track.calo();
             clas12::CherenkovBank cherenkov = track.cherenkov();
             clas12::DCTrajBank traj = track.traj();
-            // Region track lookups use traj's region indices, not the
-            // particle pindex — they still go through the bank reader.
-            clas12::TrackBank trk_r1 = clas12::read_Track_bank(*track.event(), traj.region1_index);
-            clas12::TrackBank trk_r2 = clas12::read_Track_bank(*track.event(), traj.region2_index);
-            clas12::TrackBank trk_r3 = clas12::read_Track_bank(*track.event(), traj.region3_index);
+            const auto [trk_r1, trk_r2, trk_r3] = track.region_tracks();
 
             const int sector = calo.pcal_sector;
             if (sector < 1 || sector > 6) continue;
