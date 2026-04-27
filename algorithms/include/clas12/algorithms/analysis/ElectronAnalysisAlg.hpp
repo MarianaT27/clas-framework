@@ -123,23 +123,23 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
         m_cutflow.pass("Chi2 PID");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("Chi2PID", can);
 
-        if (m_enable_momentum_cut.get() && m_electron_cuts->pass_momentum_cut(electron.p())) return StatusCode::FILTERED();
+        if (m_enable_momentum_cut.get() && !m_electron_cuts->pass_momentum_cut(electron.p())) return StatusCode::FILTERED();
         m_cutflow.pass("Momentum > 0.8 GeV");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("Momentum", can);
 
-        if (m_enable_vz_cut.get() && m_electron_cuts->pass_vz_cut(electron.vz())) return StatusCode::FILTERED();
+        if (m_enable_vz_cut.get() && !m_electron_cuts->pass_vz_cut(electron.vz())) return StatusCode::FILTERED();
         m_cutflow.pass("Vertex Z");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("VertexZ", can);
 
-        if (m_enable_sf_cut.get() && m_electron_cuts->pass_sampling_fraction_cut(can.sampling_fraction, electron.p(), can.sector)) return StatusCode::FILTERED();
+        if (m_enable_sf_cut.get() && !m_electron_cuts->pass_sampling_fraction_cut(can.sampling_fraction, electron.p(), can.sector)) return StatusCode::FILTERED();
         m_cutflow.pass("Sampling Fraction");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("SamplingFraction", can);
 
-        if (m_enable_pcal_fiducial_cut.get() && m_electron_cuts->pass_pcal_fiducial_cut(can.calorimeter.pcal_lv, can.calorimeter.pcal_lw)) return StatusCode::FILTERED();
+        if (m_enable_pcal_fiducial_cut.get() && !m_electron_cuts->pass_pcal_fiducial_cut(can.calorimeter.pcal_lv, can.calorimeter.pcal_lw)) return StatusCode::FILTERED();
         m_cutflow.pass("PCAL Fiducial");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("PCALFiducial", can);
 
-        if (m_enable_dc_chi2ndf_cut.get() && m_electron_cuts->pass_dc_edge_cut(can.traj.region1_edge, can.traj.region2_edge, can.traj.region3_edge)) return StatusCode::FILTERED();
+        if (m_enable_dc_chi2ndf_cut.get() && !m_electron_cuts->pass_dc_edge_cut(can.traj.region1_edge, can.traj.region2_edge, can.traj.region3_edge)) return StatusCode::FILTERED();
         m_cutflow.pass("DC Chi2/NDF");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("DCChi2", can);
 
