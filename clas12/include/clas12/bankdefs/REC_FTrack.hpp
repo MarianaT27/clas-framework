@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `REC::FTrack` (group 300, item 47).
@@ -319,4 +319,4 @@ inline REC_FTrack::Row REC_FTrack::row(int index) const noexcept {
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

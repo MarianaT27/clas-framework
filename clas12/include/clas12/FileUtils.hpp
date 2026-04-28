@@ -9,13 +9,12 @@
 
 #include <fmt/core.h>
 
-namespace clas12 {
 
 /**
  * @brief File and directory utility functions
  *
  * This namespace contains general-purpose file I/O utilities that were
- * previously in clas12::Helpers.
+ * previously in Helpers.
  */
 namespace FileUtils {
 
@@ -113,4 +112,3 @@ inline auto filter_by_run_numbers(const std::vector<std::string>& files,
 
 }  // namespace FileUtils
 
-}  // namespace clas12

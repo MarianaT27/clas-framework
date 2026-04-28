@@ -2,7 +2,7 @@
 
 /**
  * @file ApplicationBuilder.hpp
- * @brief Fluent builder for clas12::framework::Application
+ * @brief Fluent builder for framework::Application
  *
  * C++ Core Guidelines:
  * - C.50: Use a factory function if you need "virtual behavior" during initialization
@@ -26,7 +26,7 @@
 // need to be parsed once during framework_lib compilation instead of once
 // per analysis translation unit.
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Fluent builder for constructing Application instances
@@ -215,4 +215,4 @@ private:
     return ApplicationBuilder(std::move(name));
 }
 
-}  // namespace clas12::framework
+}  // namespace framework

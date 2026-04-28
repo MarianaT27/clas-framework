@@ -7,7 +7,7 @@
 #include <string>
 #include <string_view>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Error with source location and optional cause chain
@@ -176,4 +176,4 @@ private:
     std::unique_ptr<Error> m_cause;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

@@ -23,7 +23,7 @@
 
 namespace CuSnContamination {
 
-using clas12::framework::Log;
+using framework::Log;
 
 /// Configuration for CuSnContaminationAlg.
 struct CuSnContaminationConfig {
@@ -33,10 +33,10 @@ struct CuSnContaminationConfig {
 /**
  * @brief Algorithm for Cu/Sn contamination analysis
  */
-class CuSnContaminationAlg : public clas12::framework::Algorithm {
+class CuSnContaminationAlg : public framework::Algorithm {
    public:
     using Config = CuSnContaminationConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit CuSnContaminationAlg(std::string name = "CuSnContaminationAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config) {
@@ -53,7 +53,7 @@ class CuSnContaminationAlg : public clas12::framework::Algorithm {
         return StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> StatusCode override {
+    auto process(framework::Event& event) -> StatusCode override {
         double mc_vz = 0;
         const bool has_mc = event.has_bank("MC::Particle");
         if (has_mc) {
@@ -75,7 +75,7 @@ class CuSnContaminationAlg : public clas12::framework::Algorithm {
                 }
             }
 
-            if (m_enable_histograms.get() && h_p && h_phi && h_theta && h_vz) {
+            if (m_enable_histograms.get()) {
                 h_p->fill(electron4VecP.P());
                 h_phi->fill(electron4VecP.Phi() * 180.0 / M_PI);
                 h_theta->fill(electron4VecP.Theta() * 180.0 / M_PI);
@@ -94,7 +94,7 @@ class CuSnContaminationAlg : public clas12::framework::Algorithm {
             mc_vz = electron3VecV.Z();
         }
 
-        auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
+        auto electron_opt = framework::EventHelpers::get_selected_electron(event);
         if (!electron_opt) return StatusCode::FILTERED();
         auto recon_electron = *electron_opt;
         double rec_vz = recon_electron.vz();
@@ -120,29 +120,29 @@ class CuSnContaminationAlg : public clas12::framework::Algorithm {
    private:
     Config m_config;
 
-    clas12::framework::Property<double> m_example_cut{"example_cut", 1.0, "Example cut threshold value"};
-    clas12::framework::Property<bool> m_enable_histograms{"enable_histograms", true, "Enable histogram filling"};
+    framework::Property<double> m_example_cut{"example_cut", 1.0, "Example cut threshold value"};
+    framework::Property<bool> m_enable_histograms{"enable_histograms", true, "Enable histogram filling"};
 
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
+    framework::ServiceRef<framework::HistogramService> m_hist;
 
-    clas12::framework::ThreadLocalHistogram1D* h_p = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_phi = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_theta = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_vz = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_vz_Cu = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_vz_Sn = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_vz_CuSn = nullptr;
+    framework::ThreadLocalHistogram1D* h_p = nullptr;
+    framework::ThreadLocalHistogram1D* h_phi = nullptr;
+    framework::ThreadLocalHistogram1D* h_theta = nullptr;
+    framework::ThreadLocalHistogram1D* h_vz = nullptr;
+    framework::ThreadLocalHistogram1D* h_vz_Cu = nullptr;
+    framework::ThreadLocalHistogram1D* h_vz_Sn = nullptr;
+    framework::ThreadLocalHistogram1D* h_vz_CuSn = nullptr;
 
-    clas12::framework::ThreadLocalHistogram1D* h_rec_vz_Cu = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_rec_vz_Sn = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_rec_vz_CuSn = nullptr;
+    framework::ThreadLocalHistogram1D* h_rec_vz_Cu = nullptr;
+    framework::ThreadLocalHistogram1D* h_rec_vz_Sn = nullptr;
+    framework::ThreadLocalHistogram1D* h_rec_vz_CuSn = nullptr;
 
     static constexpr int N_P_BINS = 20;
     static constexpr std::array<double, N_P_BINS + 1> p_bin_edges = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0};
 
-    clas12::framework::ThreadLocalHistogram2D* h_vz_vs_theta = nullptr;
-    clas12::framework::ThreadLocalHistogram2D* h_vz_vs_p = nullptr;
-    std::array<clas12::framework::ThreadLocalHistogram2D*, N_P_BINS> h_vz_vs_theta_pbin = {};
+    framework::ThreadLocalHistogram2D* h_vz_vs_theta = nullptr;
+    framework::ThreadLocalHistogram2D* h_vz_vs_p = nullptr;
+    std::array<framework::ThreadLocalHistogram2D*, N_P_BINS> h_vz_vs_theta_pbin = {};
 
     auto book_histograms() -> void {
         h_p = m_hist->book_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);

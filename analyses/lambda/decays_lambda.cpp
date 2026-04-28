@@ -14,7 +14,7 @@
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
 
 auto main(int argc, char* argv[]) -> int {
-    return clas12::framework::AnalysisRunner::run(
+    return framework::AnalysisRunner::run(
         argc, argv, "DECAYS Lambda Analysis", "decays_lambda_analysis",
         [](auto& builder, const auto& /*config*/) {
             // Tuning knobs (mass_window, min_momentum, min_decay_length,
@@ -22,7 +22,7 @@ auto main(int argc, char* argv[]) -> int {
             // DecaysLambdaAlg and load automatically from the
             // [DecaysLambdaAnalysis] TOML section.
             builder
-                .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
-                .template add_algorithm<clas12::algorithms::DecaysLambdaAlg>("DecaysLambdaAnalysis");
+                .template add_algorithm<algorithms::EventMonitor>("EventMonitor")
+                .template add_algorithm<algorithms::DecaysLambdaAlg>("DecaysLambdaAnalysis");
         });
 }

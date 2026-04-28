@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `MUCAL::adc` (group 22800, item 11).
@@ -199,4 +199,4 @@ inline MUCAL_adc::Row MUCAL_adc::row(int index) const noexcept {
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

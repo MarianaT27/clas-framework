@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `RASTER::adc` (group 22200, item 11).
@@ -199,4 +199,4 @@ inline RASTER_adc::Row RASTER_adc::row(int index) const noexcept {
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

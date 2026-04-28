@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `FT::particles` (group 20900, item 24).
@@ -297,4 +297,4 @@ inline FT_particles::Row FT_particles::row(int index) const noexcept {
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

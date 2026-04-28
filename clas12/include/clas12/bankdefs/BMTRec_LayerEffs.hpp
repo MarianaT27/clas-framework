@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `BMTRec::LayerEffs` (group 20100, item 26).
@@ -157,4 +157,4 @@ inline BMTRec_LayerEffs::Row BMTRec_LayerEffs::row(int index) const noexcept {
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

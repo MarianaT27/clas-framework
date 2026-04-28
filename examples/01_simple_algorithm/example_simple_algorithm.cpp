@@ -22,7 +22,7 @@
 #include <clas12/FileUtils.hpp>
 #include "TH1D.h"
 
-using namespace clas12::framework;
+using namespace framework;
 
 // ============================================================================
 // Example 1: Algorithm with service injection and properties
@@ -164,7 +164,7 @@ public:
     }
 
     auto process(Event& event) -> StatusCode override {
-        auto photons = event.particles(clas12::PIDs::PHOTON);
+        auto photons = event.particles(PIDs::PHOTON);
 
         for (const auto& photon : photons) {
             if (photon.E() > m_energy_threshold.get()) {
@@ -205,7 +205,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Get input files first to configure builder
-    std::vector<std::string> input_files = clas12::FileUtils::read_recursive_hipo_files(data_dir);
+    std::vector<std::string> input_files = FileUtils::read_recursive_hipo_files(data_dir);
 
     // ========================================================================
     // Create application using ApplicationBuilder

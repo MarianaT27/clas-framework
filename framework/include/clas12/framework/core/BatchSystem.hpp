@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Batch job system for HPC clusters
@@ -300,4 +300,4 @@ class BatchSystem {
     }
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `HitBasedTrkg::HBSegments` (group 20600, item 23).
@@ -493,4 +493,4 @@ inline HitBasedTrkg_HBSegments::Row HitBasedTrkg_HBSegments::row(int index) cons
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

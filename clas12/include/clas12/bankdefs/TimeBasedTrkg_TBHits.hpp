@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `TimeBasedTrkg::TBHits` (group 20600, item 31).
@@ -507,4 +507,4 @@ inline TimeBasedTrkg_TBHits::Row TimeBasedTrkg_TBHits::row(int index) const noex
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

@@ -31,9 +31,9 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 
-namespace clas12::algorithms {
+namespace algorithms {
 
-using clas12::framework::Log;
+using framework::Log;
 
 /// Configuration for Pi0EventMixingAlg.
 struct Pi0EventMixingConfig {
@@ -46,10 +46,10 @@ struct Pi0EventMixingConfig {
     std::vector<double> nu_edges = {2.0, 4.0, 5.5, 7.0, 9.0, 11.0};
 };
 
-class Pi0EventMixingAlg : public clas12::framework::Algorithm {
+class Pi0EventMixingAlg : public framework::Algorithm {
    public:
     using Config = Pi0EventMixingConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit Pi0EventMixingAlg(std::string name = "Pi0EventMixing", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Pi0 Event Mixing") {
@@ -79,13 +79,13 @@ class Pi0EventMixingAlg : public clas12::framework::Algorithm {
         return StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> StatusCode override {
+    auto process(framework::Event& event) -> StatusCode override {
         m_cutflow.pass("All Events");
 
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
+        if (!event.passes_decision_typed(framework::Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
         m_cutflow.pass("Has DIS Electron");
 
-        auto dis = clas12::framework::EventHelpers::get_dis_kinematics(event);
+        auto dis = framework::EventHelpers::get_dis_kinematics(event);
         if (!dis) return StatusCode::FILTERED();
 
         const double Q2 = dis->Q2;
@@ -93,13 +93,13 @@ class Pi0EventMixingAlg : public clas12::framework::Algorithm {
         const double nu = dis->nu;
         const double W = dis->W;
 
-        auto photons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedPhotons_Pi0);
+        auto photons_opt = event.retrieve_typed(framework::Keys::SelectedPhotons_Pi0);
         if (!photons_opt || photons_opt->empty()) return StatusCode::SUCCESS();
         m_cutflow.pass("Has Photons");
 
         const auto& photons = *photons_opt;
 
-        auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
+        auto electron_opt = framework::EventHelpers::get_selected_electron(event);
         if (!electron_opt) return StatusCode::SUCCESS();
 
         ROOT::Math::PxPyPzEVector beam_4v(0.0, 0.0, m_beam_energy.get(), m_beam_energy.get());
@@ -126,7 +126,7 @@ class Pi0EventMixingAlg : public clas12::framework::Algorithm {
                     ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
                     double pT = std::sqrt(p_perp.Mag2());
 
-                    if (h_mgg_same_all) h_mgg_same_all->fill(mgg);
+                    h_mgg_same_all->fill(mgg);
                     int bin_4d = find_4d_bin(Q2, xB, z, pT);
                     if (bin_4d >= 0 && h_mgg_same.count(bin_4d)) h_mgg_same[bin_4d]->fill(mgg);
                     m_cutflow.pass("Same-event pairs");
@@ -150,7 +150,7 @@ class Pi0EventMixingAlg : public clas12::framework::Algorithm {
                     ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
                     double pT = std::sqrt(p_perp.Mag2());
 
-                    if (h_mgg_rotated_all) h_mgg_rotated_all->fill(mgg);
+                    h_mgg_rotated_all->fill(mgg);
                     int bin_4d = find_4d_bin(Q2, xB, z, pT);
                     if (bin_4d >= 0 && h_mgg_rotated.count(bin_4d)) h_mgg_rotated[bin_4d]->fill(mgg);
                     m_cutflow.pass("Rotated-bg pairs");
@@ -177,7 +177,7 @@ class Pi0EventMixingAlg : public clas12::framework::Algorithm {
                         ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
                         double pT = std::sqrt(p_perp.Mag2());
 
-                        if (h_mgg_mixed_all) h_mgg_mixed_all->fill(mgg);
+                        h_mgg_mixed_all->fill(mgg);
                         int bin_4d = find_4d_bin(Q2, xB, z, pT);
                         if (bin_4d >= 0 && h_mgg_mixed.count(bin_4d)) h_mgg_mixed[bin_4d]->fill(mgg);
                     }
@@ -238,15 +238,15 @@ class Pi0EventMixingAlg : public clas12::framework::Algorithm {
    private:
     Config m_config;
 
-    clas12::framework::Property<int> m_max_pool_events{"max_pool_events", 100, "Max events per DIS bin"};
-    clas12::framework::Property<double> m_beam_energy{"beam_energy", 10.53, "Beam energy [GeV]"};
+    framework::Property<int> m_max_pool_events{"max_pool_events", 100, "Max events per DIS bin"};
+    framework::Property<double> m_beam_energy{"beam_energy", 10.53, "Beam energy [GeV]"};
 
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
+    framework::ServiceRef<framework::HistogramService> m_hist;
 
-    clas12::framework::Cutflow m_cutflow;
+    framework::Cutflow m_cutflow;
 
     struct PhotonPool {
-        std::vector<clas12::Particle> photons;
+        std::vector<Particle> photons;
         std::deque<size_t> event_sizes;
     };
     std::map<int, PhotonPool> m_photon_pools;
@@ -254,13 +254,13 @@ class Pi0EventMixingAlg : public clas12::framework::Algorithm {
 
     static constexpr int N_MULT_BINS = 4;
 
-    std::map<int, clas12::framework::ThreadLocalHistogram1D*> h_mgg_same;
-    std::map<int, clas12::framework::ThreadLocalHistogram1D*> h_mgg_mixed;
-    std::map<int, clas12::framework::ThreadLocalHistogram1D*> h_mgg_rotated;
+    std::map<int, framework::ThreadLocalHistogram1D*> h_mgg_same;
+    std::map<int, framework::ThreadLocalHistogram1D*> h_mgg_mixed;
+    std::map<int, framework::ThreadLocalHistogram1D*> h_mgg_rotated;
 
-    clas12::framework::ThreadLocalHistogram1D* h_mgg_same_all = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_mgg_mixed_all = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_mgg_rotated_all = nullptr;
+    framework::ThreadLocalHistogram1D* h_mgg_same_all = nullptr;
+    framework::ThreadLocalHistogram1D* h_mgg_mixed_all = nullptr;
+    framework::ThreadLocalHistogram1D* h_mgg_rotated_all = nullptr;
 
     static constexpr double SIDEBAND_LOW = 0.19;
     static constexpr double SIDEBAND_HIGH = 0.24;
@@ -380,4 +380,4 @@ class Pi0EventMixingAlg : public clas12::framework::Algorithm {
     }
 };
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

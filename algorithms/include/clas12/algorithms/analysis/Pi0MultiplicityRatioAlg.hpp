@@ -32,9 +32,9 @@
 #include <clas12/physics/CompositeParticle.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
-namespace clas12::algorithms {
+namespace algorithms {
 
-using clas12::framework::Log;
+using framework::Log;
 
 /// Configuration for Pi0MultiplicityRatioAlg.
 struct Pi0MultiplicityRatioConfig {
@@ -44,10 +44,10 @@ struct Pi0MultiplicityRatioConfig {
     std::vector<double> pT2_edges = {0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5};
 };
 
-class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
+class Pi0MultiplicityRatioAlg : public framework::Algorithm {
    public:
     using Config = Pi0MultiplicityRatioConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit Pi0MultiplicityRatioAlg(std::string name = "Pi0MultiplicityRatio", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Pi0 Multiplicity") {
@@ -73,32 +73,31 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
 
         book_histograms();
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    auto process(framework::Event& event) -> framework::StatusCode override {
         m_cutflow.pass("All Events");
 
         // Retrieve DIS kinematics from event store
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return clas12::framework::StatusCode::FILTERED();
+        if (!event.passes_decision_typed(framework::Decisions::HasGoodDISElectron)) return framework::StatusCode::FILTERED();
         m_cutflow.pass("Has DIS Electron");
 
-        auto dis = clas12::framework::EventHelpers::get_dis_kinematics(event);
-        if (!dis) return clas12::framework::StatusCode::FILTERED();
+        auto dis = framework::EventHelpers::get_dis_kinematics(event);
+        if (!dis) return framework::StatusCode::FILTERED();
 
         const double Q2 = dis->Q2;
         const double xB = dis->xB;
         const double nu = dis->nu;
 
         // Fill DIS normalization histograms (one entry per DIS event)
-        if (h_n_DIS_events) h_n_DIS_events->fill(0.5);
-        if (h_n_DIS_vs_Q2) h_n_DIS_vs_Q2->fill(Q2);
-        if (h_n_DIS_vs_xB) h_n_DIS_vs_xB->fill(xB);
-
+        h_n_DIS_events->fill(0.5);
+        h_n_DIS_vs_Q2->fill(Q2);
+        h_n_DIS_vs_xB->fill(xB);
         // Fill per-Q2-bin normalization
         for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {
             if (Q2 >= m_config.Q2_edges[i] && Q2 < m_config.Q2_edges[i + 1]) {
-                if (h_n_DIS_Q2bin[i]) h_n_DIS_Q2bin[i]->fill(0.5);
+                h_n_DIS_Q2bin[i]->fill(0.5);
                 break;
             }
         }
@@ -106,20 +105,20 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
         // Fill per-xB-bin normalization
         for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {
             if (xB >= m_config.xB_edges[i] && xB < m_config.xB_edges[i + 1]) {
-                if (h_n_DIS_xBbin[i]) h_n_DIS_xBbin[i]->fill(0.5);
+                h_n_DIS_xBbin[i]->fill(0.5);
                 break;
             }
         }
 
         // Retrieve pi0 candidates
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasPi0)) return clas12::framework::StatusCode::SUCCESS();
-        auto pi0_opt = event.retrieve_typed(clas12::framework::Keys::Pi0Candidates);
-        if (!pi0_opt || pi0_opt->empty()) return clas12::framework::StatusCode::SUCCESS();
+        if (!event.passes_decision_typed(framework::Decisions::HasPi0)) return framework::StatusCode::SUCCESS();
+        auto pi0_opt = event.retrieve_typed(framework::Keys::Pi0Candidates);
+        if (!pi0_opt || pi0_opt->empty()) return framework::StatusCode::SUCCESS();
         m_cutflow.pass("Has Pi0");
 
         // Get electron for virtual photon direction
-        auto electron_opt = clas12::framework::EventHelpers::get_selected_electron(event);
-        if (!electron_opt) return clas12::framework::StatusCode::SUCCESS();
+        auto electron_opt = framework::EventHelpers::get_selected_electron(event);
+        if (!electron_opt) return framework::StatusCode::SUCCESS();
 
         // Virtual photon 4-vector: q = beam - scattered_electron
         ROOT::Math::PxPyPzEVector beam_4v(0.0, 0.0, m_beam_energy.get(), m_beam_energy.get());
@@ -161,16 +160,14 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
             double pi0_mass = pi0.mass();
 
             // Fill 1D distributions
-            if (h_z) h_z->fill(z);
-            if (h_pT2) h_pT2->fill(pT2);
-            if (h_phi_h) h_phi_h->fill(phi_h);
-            if (h_pi0_mass) h_pi0_mass->fill(pi0_mass);
-
+            h_z->fill(z);
+            h_pT2->fill(pT2);
+            h_phi_h->fill(phi_h);
+            h_pi0_mass->fill(pi0_mass);
             // Fill 2D distributions
-            if (h_z_vs_Q2) h_z_vs_Q2->fill(Q2, z);
-            if (h_z_vs_pT2) h_z_vs_pT2->fill(pT2, z);
-            if (h_pT2_vs_Q2) h_pT2_vs_Q2->fill(Q2, pT2);
-
+            h_z_vs_Q2->fill(Q2, z);
+            h_z_vs_pT2->fill(pT2, z);
+            h_pT2_vs_Q2->fill(Q2, pT2);
             // Find bin indices once for all binned fills
             int iQ2 = -1, ixB = -1, iz = -1, ipT2 = -1;
             for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {
@@ -188,83 +185,83 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
 
             // Fill multiplicity histograms per Q2 bin
             if (iQ2 >= 0) {
-                if (h_z_Q2bin[iQ2]) h_z_Q2bin[iQ2]->fill(z);
-                if (h_pT2_Q2bin[iQ2]) h_pT2_Q2bin[iQ2]->fill(pT2);
+                h_z_Q2bin[iQ2]->fill(z);
+                h_pT2_Q2bin[iQ2]->fill(pT2);
             }
 
             // Fill multiplicity histograms per xB bin
             if (ixB >= 0) {
-                if (h_z_xBbin[ixB]) h_z_xBbin[ixB]->fill(z);
+                h_z_xBbin[ixB]->fill(z);
             }
 
             // Fill multiplicity histograms per z bin
             if (iz >= 0) {
-                if (h_pT2_zbin[iz]) h_pT2_zbin[iz]->fill(pT2);
+                h_pT2_zbin[iz]->fill(pT2);
             }
 
             // Fill 4D flat-indexed histograms for pT broadening and azimuthal moments
             if (iQ2 >= 0 && ixB >= 0 && iz >= 0 && ipT2 >= 0) {
                 double phi_h_rad = phi_h * M_PI / 180.0;
                 double idx = static_cast<double>(flat_4D_index(iQ2, ixB, iz, ipT2)) + 0.5;
-                if (h_counts_4D) h_counts_4D->fill(idx);
-                if (h_sum_pT2_4D) h_sum_pT2_4D->fill(idx, pT2);
-                if (h_sum_cosphi_4D) h_sum_cosphi_4D->fill(idx, std::cos(phi_h_rad));
-                if (h_sum_sinphi_4D) h_sum_sinphi_4D->fill(idx, std::sin(phi_h_rad));
+                h_counts_4D->fill(idx);
+                h_sum_pT2_4D->fill(idx, pT2);
+                h_sum_cosphi_4D->fill(idx, std::cos(phi_h_rad));
+                h_sum_sinphi_4D->fill(idx, std::sin(phi_h_rad));
             }
         }
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
-    auto on_finalize() -> clas12::framework::StatusCode override {
+    auto on_finalize() -> framework::StatusCode override {
         Log::subsection(fmt::format("{} Summary", name()));
         Log::blank();
         m_cutflow.print();
         Log::success(name(), "Finalization complete");
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
    private:
     Config m_config;
 
-    clas12::framework::Property<double> m_beam_energy{"beam_energy", 10.53, "Beam energy [GeV]"};
+    framework::Property<double> m_beam_energy{"beam_energy", 10.53, "Beam energy [GeV]"};
 
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
+    framework::ServiceRef<framework::HistogramService> m_hist;
 
-    clas12::framework::Cutflow m_cutflow;
+    framework::Cutflow m_cutflow;
 
     // --- Histograms ---
 
     // DIS normalization
-    clas12::framework::ThreadLocalHistogram1D* h_n_DIS_events = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_n_DIS_vs_Q2 = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_n_DIS_vs_xB = nullptr;
-    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_n_DIS_Q2bin;
-    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_n_DIS_xBbin;
+    framework::ThreadLocalHistogram1D* h_n_DIS_events = nullptr;
+    framework::ThreadLocalHistogram1D* h_n_DIS_vs_Q2 = nullptr;
+    framework::ThreadLocalHistogram1D* h_n_DIS_vs_xB = nullptr;
+    std::vector<framework::ThreadLocalHistogram1D*> h_n_DIS_Q2bin;
+    std::vector<framework::ThreadLocalHistogram1D*> h_n_DIS_xBbin;
 
     // 1D distributions
-    clas12::framework::ThreadLocalHistogram1D* h_z = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_pT2 = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_phi_h = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_pi0_mass = nullptr;
+    framework::ThreadLocalHistogram1D* h_z = nullptr;
+    framework::ThreadLocalHistogram1D* h_pT2 = nullptr;
+    framework::ThreadLocalHistogram1D* h_phi_h = nullptr;
+    framework::ThreadLocalHistogram1D* h_pi0_mass = nullptr;
 
     // 2D distributions
-    clas12::framework::ThreadLocalHistogram2D* h_z_vs_Q2 = nullptr;
-    clas12::framework::ThreadLocalHistogram2D* h_z_vs_pT2 = nullptr;
-    clas12::framework::ThreadLocalHistogram2D* h_pT2_vs_Q2 = nullptr;
+    framework::ThreadLocalHistogram2D* h_z_vs_Q2 = nullptr;
+    framework::ThreadLocalHistogram2D* h_z_vs_pT2 = nullptr;
+    framework::ThreadLocalHistogram2D* h_pT2_vs_Q2 = nullptr;
 
     // Multiplicity per kinematic bin
-    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_z_Q2bin;
-    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_pT2_Q2bin;
-    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_z_xBbin;
-    std::vector<clas12::framework::ThreadLocalHistogram1D*> h_pT2_zbin;
+    std::vector<framework::ThreadLocalHistogram1D*> h_z_Q2bin;
+    std::vector<framework::ThreadLocalHistogram1D*> h_pT2_Q2bin;
+    std::vector<framework::ThreadLocalHistogram1D*> h_z_xBbin;
+    std::vector<framework::ThreadLocalHistogram1D*> h_pT2_zbin;
 
     // pT broadening and azimuthal moments in 4D bins (Q2, xB, z, pT2)
-    clas12::framework::ThreadLocalHistogram1D* h_counts_4D = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_sum_pT2_4D = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_sum_cosphi_4D = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_sum_sinphi_4D = nullptr;
+    framework::ThreadLocalHistogram1D* h_counts_4D = nullptr;
+    framework::ThreadLocalHistogram1D* h_sum_pT2_4D = nullptr;
+    framework::ThreadLocalHistogram1D* h_sum_cosphi_4D = nullptr;
+    framework::ThreadLocalHistogram1D* h_sum_sinphi_4D = nullptr;
 
     [[nodiscard]] auto flat_4D_index(int iQ2, int ixB, int iz, int ipT2) const -> int {
         int N_xB = static_cast<int>(m_config.xB_edges.size()) - 1;
@@ -362,4 +359,4 @@ class Pi0MultiplicityRatioAlg : public clas12::framework::Algorithm {
     }
 };
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

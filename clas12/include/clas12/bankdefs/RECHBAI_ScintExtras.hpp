@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `RECHBAI::ScintExtras` (group 400, item 23).
@@ -143,4 +143,4 @@ inline RECHBAI_ScintExtras::Row RECHBAI_ScintExtras::row(int index) const noexce
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

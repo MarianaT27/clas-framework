@@ -7,7 +7,7 @@
 
 #include <cmath>
 
-namespace clas12::framework {
+namespace framework {
 
 auto DTFFitter::fit() -> DTFResult {
         DTFResult result;
@@ -237,4 +237,4 @@ auto DTFFitter::compute_jacobian(const Eigen::VectorXd& params) const -> Eigen::
     }
 #endif
 
-}  // namespace clas12::framework
+}  // namespace framework

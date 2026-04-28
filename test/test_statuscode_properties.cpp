@@ -3,7 +3,7 @@
 #include <rapidcheck/gtest.h>
 #include <clas12/framework/core/StatusCode.hpp>
 
-using namespace clas12::framework;
+using namespace framework;
 
 /**
  * **Feature: code-quality-improvements, Property 2: StatusCode Error Message Preservation**

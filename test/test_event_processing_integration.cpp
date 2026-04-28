@@ -23,7 +23,7 @@
 #include <reader.h>
 #include <bank_view.h>
 
-using namespace clas12::framework;
+using namespace framework;
 
 // ============================================================================
 // Test Fixture with Real HIPO Data
@@ -275,7 +275,7 @@ TEST_F(EventProcessingIntegrationTest, ComposedRangeFilters) {
         // Compose multiple filters by hand: forward-detector, p > 0.5.
         for (const auto& e : event.electrons()) {
             const double abs_status = std::abs(e.status());
-            if (!(clas12::FD <= abs_status && abs_status < clas12::CD)) continue;
+            if (!(FD <= abs_status && abs_status < CD)) continue;
             if (e.p() < 0.5) continue;
             fd_electron_count++;
             EXPECT_EQ(e.pdg(), 11);
@@ -308,7 +308,7 @@ TEST_F(EventProcessingIntegrationTest, TraditionalPatternStillWorks) {
 
         // Traditional execute-style logic
         Event event(banks);
-        auto& electrons = event.particles(clas12::PIDs::ELECTRON);
+        auto& electrons = event.particles(PIDs::ELECTRON);
 
         if (!electrons.empty()) {
             passed++;
@@ -336,9 +336,9 @@ TEST_F(EventProcessingIntegrationTest, EventStoreWithRealData) {
         Event event(banks);
 
         // Store computed values
-        auto& electrons = event.particles(clas12::PIDs::ELECTRON);
-        clas12::framework::TypedKey<int> n_electrons_key("n_electrons");
-        clas12::framework::TypedKey<bool> has_electron_key("has_electron");
+        auto& electrons = event.particles(PIDs::ELECTRON);
+        framework::TypedKey<int> n_electrons_key("n_electrons");
+        framework::TypedKey<bool> has_electron_key("has_electron");
         event.store_typed(n_electrons_key, static_cast<int>(electrons.size()));
         event.store_typed(has_electron_key, !electrons.empty());
 

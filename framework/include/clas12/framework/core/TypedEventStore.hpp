@@ -11,14 +11,12 @@
 #include <vector>
 
 // Forward declarations
-namespace clas12 {
 class MCParticle;
-}
-namespace clas12::physics {
+namespace physics {
 class CompositeParticle;
 }
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Type-safe key for event store access
@@ -33,7 +31,7 @@ namespace clas12::framework {
  * @code
  * // Define typed keys
  * inline constexpr TypedKey<double> Q2{"Q2"};
- * inline constexpr TypedKey<std::vector<clas12::Particle>> Electrons{"electrons"};
+ * inline constexpr TypedKey<std::vector<Particle>> Electrons{"electrons"};
  *
  * // Use with TypedEventStore
  * store.store(Q2, 4.5);
@@ -250,15 +248,15 @@ class TypedEventStore {
 namespace Keys {
 
 // Particle collections
-inline const TypedKey<std::vector<clas12::Particle>> Electrons{"electrons"};
-inline const TypedKey<std::vector<clas12::Particle>> Positrons{"positrons"};
-inline const TypedKey<std::vector<clas12::Particle>> Photons{"photons"};
-inline const TypedKey<std::vector<clas12::Particle>> Protons{"protons"};
-inline const TypedKey<std::vector<clas12::Particle>> Neutrons{"neutrons"};
-inline const TypedKey<std::vector<clas12::Particle>> PiPlus{"pi_plus"};
-inline const TypedKey<std::vector<clas12::Particle>> PiMinus{"pi_minus"};
-inline const TypedKey<std::vector<clas12::Particle>> KPlus{"k_plus"};
-inline const TypedKey<std::vector<clas12::Particle>> KMinus{"k_minus"};
+inline const TypedKey<std::vector<Particle>> Electrons{"electrons"};
+inline const TypedKey<std::vector<Particle>> Positrons{"positrons"};
+inline const TypedKey<std::vector<Particle>> Photons{"photons"};
+inline const TypedKey<std::vector<Particle>> Protons{"protons"};
+inline const TypedKey<std::vector<Particle>> Neutrons{"neutrons"};
+inline const TypedKey<std::vector<Particle>> PiPlus{"pi_plus"};
+inline const TypedKey<std::vector<Particle>> PiMinus{"pi_minus"};
+inline const TypedKey<std::vector<Particle>> KPlus{"k_plus"};
+inline const TypedKey<std::vector<Particle>> KMinus{"k_minus"};
 
 // Kinematic variables
 inline const TypedKey<double> Q2{"Q2"};
@@ -275,22 +273,22 @@ inline const TypedKey<double> Pi0Phi{"pi0_phi"};
 inline const TypedKey<double> PhotonOpeningAngle{"photon_opening_angle"};
 
 // Pi0 reconstruction outputs (collections)
-inline const TypedKey<std::vector<clas12::Particle>> SelectedPhotons_Pi0{"selected_photons_pi0"};
-inline const TypedKey<std::vector<clas12::physics::CompositeParticle>> Pi0Candidates{"pi0_candidates"};
+inline const TypedKey<std::vector<Particle>> SelectedPhotons_Pi0{"selected_photons_pi0"};
+inline const TypedKey<std::vector<physics::CompositeParticle>> Pi0Candidates{"pi0_candidates"};
 
 // NOTE: Boolean decision flags belong in the Decisions namespace (Decisions.hpp).
 // Do not define boolean decision keys here.
 
 // Selected particle collections (algorithm outputs)
-inline const TypedKey<std::vector<clas12::Particle>> SelectedElectrons{"SelectedElectrons"};
-inline const TypedKey<std::vector<clas12::Particle>> SelectedPhotons{"selected_photons"};
-inline const TypedKey<std::vector<clas12::Particle>> SelectedProtons{"selected_protons"};
-inline const TypedKey<std::vector<clas12::Particle>> SelectedPiPlus{"selected_pi_plus"};
-inline const TypedKey<std::vector<clas12::Particle>> SelectedPiMinus{"selected_pi_minus"};
+inline const TypedKey<std::vector<Particle>> SelectedElectrons{"SelectedElectrons"};
+inline const TypedKey<std::vector<Particle>> SelectedPhotons{"selected_photons"};
+inline const TypedKey<std::vector<Particle>> SelectedProtons{"selected_protons"};
+inline const TypedKey<std::vector<Particle>> SelectedPiPlus{"selected_pi_plus"};
+inline const TypedKey<std::vector<Particle>> SelectedPiMinus{"selected_pi_minus"};
 
 // Trigger electron (single particle)
-inline const TypedKey<clas12::Particle> TriggerElectron{"trigger_electron"};
-inline const TypedKey<clas12::Particle> BestElectron{"best_electron"};
+inline const TypedKey<Particle> TriggerElectron{"trigger_electron"};
+inline const TypedKey<Particle> BestElectron{"best_electron"};
 
 // Beam and target info
 inline const TypedKey<double> BeamEnergy{"beam_energy"};
@@ -306,7 +304,7 @@ inline const TypedKey<double> DIS_y{"dis_y"};
 inline const TypedKey<double> DIS_nu{"dis_nu"};
 
 // Selected DIS electron
-inline const TypedKey<std::vector<clas12::Particle>> SelectedDISElectron{"SelectedDISElectron"};
+inline const TypedKey<std::vector<Particle>> SelectedDISElectron{"SelectedDISElectron"};
 
 // =============================================================================
 // Lambda reconstruction variables
@@ -322,12 +320,12 @@ inline const TypedKey<double> LambdaMissingMass{"lambda_missing_mass"};
 // =============================================================================
 inline const TypedKey<bool> IsMonteCarlo{"is_monte_carlo"};
 inline const TypedKey<bool> HasMCTruth{"has_mc_truth"};
-inline const TypedKey<std::vector<clas12::MCParticle>> MCParticles{"mc_particles"};
-inline const TypedKey<std::vector<clas12::MCParticle>> MCElectrons{"mc_electrons"};
-inline const TypedKey<std::vector<clas12::MCParticle>> MCPhotons{"mc_photons"};
-inline const TypedKey<std::vector<clas12::MCParticle>> MCProtons{"mc_protons"};
-inline const TypedKey<std::vector<clas12::MCParticle>> MCPiPlus{"mc_pi_plus"};
-inline const TypedKey<std::vector<clas12::MCParticle>> MCPiMinus{"mc_pi_minus"};
+inline const TypedKey<std::vector<MCParticle>> MCParticles{"mc_particles"};
+inline const TypedKey<std::vector<MCParticle>> MCElectrons{"mc_electrons"};
+inline const TypedKey<std::vector<MCParticle>> MCPhotons{"mc_photons"};
+inline const TypedKey<std::vector<MCParticle>> MCProtons{"mc_protons"};
+inline const TypedKey<std::vector<MCParticle>> MCPiPlus{"mc_pi_plus"};
+inline const TypedKey<std::vector<MCParticle>> MCPiMinus{"mc_pi_minus"};
 
 // MC matching flags
 inline const TypedKey<bool> ElectronMatchedToMC{"electron_matched_to_mc"};
@@ -336,7 +334,7 @@ inline const TypedKey<double> ElectronMCMatchQuality{"electron_mc_match_quality"
 // =============================================================================
 // Elastic scattering variables
 // =============================================================================
-inline const TypedKey<clas12::Particle> ElasticElectron{"elastic_electron"};
+inline const TypedKey<Particle> ElasticElectron{"elastic_electron"};
 inline const TypedKey<double> ElasticQ2{"elastic_Q2"};
 inline const TypedKey<double> ElasticW{"elastic_W"};
 inline const TypedKey<double> ElasticNu{"elastic_nu"};
@@ -356,8 +354,8 @@ inline const TypedKey<double> DecaysLambdaMomentum{"decays_lambda_p"};
 // =============================================================================
 // Rho0 reconstruction outputs
 // =============================================================================
-inline const TypedKey<std::vector<clas12::Particle>> Rho0PionPairs{"Rho0_PionPairs"};
+inline const TypedKey<std::vector<Particle>> Rho0PionPairs{"Rho0_PionPairs"};
 
 }  // namespace Keys
 
-}  // namespace clas12::framework
+}  // namespace framework

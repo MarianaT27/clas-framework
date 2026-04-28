@@ -23,7 +23,7 @@
 #include <clas12/framework/services/OutputFileService.hpp>
 #include <clas12/framework/services/SamplingFractionService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 auto ApplicationBuilder::build() -> Application {
     Application app(m_name);
@@ -99,4 +99,4 @@ auto ApplicationBuilder::add_standard_services_to(Application& app) -> void {
     mgr.add_service(std::move(ntuple_svc),   {"OutputFileService", "HistogramService"});
 }
 
-}  // namespace clas12::framework
+}  // namespace framework

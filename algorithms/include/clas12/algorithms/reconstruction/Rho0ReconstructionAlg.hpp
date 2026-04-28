@@ -33,7 +33,7 @@
 #include <clas12/framework/services/OutputFileService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
-namespace clas12::algorithms {
+namespace algorithms {
 
 // ============================================================================
 // Fit functions for Breit-Wigner + polynomial background
@@ -84,8 +84,8 @@ enum class DetectorRegion { ForwardForward, Mixed, CentralCentral, Unknown };
  */
 struct Rho0Candidate {
     // Particle references
-    clas12::Particle pip;
-    clas12::Particle pim;
+    Particle pip;
+    Particle pim;
 
     // Reconstructed rho0 properties
     double mass = 0.0;
@@ -140,7 +140,7 @@ struct Rho0Candidate {
  */
 /// Configuration for Rho0ReconstructionAlg.
 struct Rho0ReconstructionConfig {
-    clas12::Target target = clas12::Target::LD2;
+    Target target = Target::LD2;
     std::vector<double> sigma_scan = {};
     std::vector<double> lc_scan = {};
     std::vector<double> zh_scan = {};
@@ -148,12 +148,12 @@ struct Rho0ReconstructionConfig {
     std::vector<double> dvz_scan = {};
 };
 
-class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
+class Rho0ReconstructionAlg : public framework::Algorithm {
    public:
     using Config = Rho0ReconstructionConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
-    static constexpr double RHO0_MASS = clas12::Constants::RHO0MASS;  // GeV/c² (~770 MeV)
+    static constexpr double RHO0_MASS = Constants::RHO0MASS;  // GeV/c² (~770 MeV)
     static constexpr double RHO0_WIDTH = 0.150;                      // GeV (~150 MeV natural width)
     static constexpr double HBARC = 0.197327;                        // GeV·fm (for coherence length)
 
@@ -173,10 +173,10 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     auto on_initialize() -> StatusCode override {
-        using Log = clas12::framework::Log;
+        using Log = framework::Log;
 
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::config(name(), "Target", clas12::to_string(m_config.target));
+        Log::config(name(), "Target", to_string(m_config.target));
         Log::config(name(), "Pion selection", "Using pre-selected pions from PionSelectionAlg");
         Log::blank();
 
@@ -259,14 +259,14 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         Log::stat(name(), "Cutflow stages", m_cutflow.num_cuts() + m_candidate_cutflow.num_cuts());
         Log::success(name(), "Initialization complete");
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    auto process(framework::Event& event) -> framework::StatusCode override {
         m_cutflow.pass("All Events");
 
         // Track run number from RUN::config bank
-        clas12::bankdefs::RUN_config run_config;
+        bankdefs::RUN_config run_config;
         run_config.bind(event.get_bank("RUN::config"));
         if (run_config.rows() > 0) {
             const int run = run_config.run(0);
@@ -275,19 +275,19 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         }
 
         // Check for good DIS electron from upstream algorithm
-        auto electron_opt = clas12::framework::EventHelpers::get_dis_electron(event);
-        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
+        auto electron_opt = framework::EventHelpers::get_dis_electron(event);
+        if (!electron_opt) return framework::StatusCode::FILTERED();
         const auto& electron = *electron_opt;
         m_cutflow.pass("Has Good DIS Electron");
 
         // Get DIS kinematics from upstream
-        auto dis = clas12::framework::EventHelpers::get_dis_kinematics(event);
-        if (!dis) return clas12::framework::StatusCode::FILTERED();
+        auto dis = framework::EventHelpers::get_dis_kinematics(event);
+        if (!dis) return framework::StatusCode::FILTERED();
         double Q2 = dis->Q2;
         double nu = dis->nu;
 
         // Calculate virtual photon 4-momentum (needed for pion cut impact and rho0 reconstruction)
-        clas12::physics::BeamConfig beam;
+        physics::BeamConfig beam;
         ROOT::Math::PxPyPzEVector beam_4vec(beam.px, beam.py, beam.pz, beam.energy);
         ROOT::Math::PxPyPzEVector virtual_photon = beam_4vec - electron.PxPyPzEVector();
 
@@ -298,8 +298,8 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
             if (ph_it == m_pion_cut_step_histograms.end()) continue;
             auto& ph = ph_it->second;
 
-            auto step_piplus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(fmt::format("PiPlus_{}", label)));
-            auto step_piminus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(fmt::format("PiMinus_{}", label)));
+            auto step_piplus_opt = event.retrieve_typed(framework::TypedKey<std::vector<Particle>>(fmt::format("PiPlus_{}", label)));
+            auto step_piminus_opt = event.retrieve_typed(framework::TypedKey<std::vector<Particle>>(fmt::format("PiMinus_{}", label)));
             auto* step_piplus = step_piplus_opt.has_value() ? &step_piplus_opt.value() : nullptr;
             auto* step_piminus = step_piminus_opt.has_value() ? &step_piminus_opt.value() : nullptr;
 
@@ -317,18 +317,18 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         }
 
         // Get pre-selected pions from PionSelectionAlg
-        auto pions_plus = event.retrieve_typed(clas12::framework::Keys::SelectedPiPlus).value_or(std::vector<clas12::Particle>{});
-        auto pions_minus = event.retrieve_typed(clas12::framework::Keys::SelectedPiMinus).value_or(std::vector<clas12::Particle>{});
+        auto pions_plus = event.retrieve_typed(framework::Keys::SelectedPiPlus).value_or(std::vector<Particle>{});
+        auto pions_minus = event.retrieve_typed(framework::Keys::SelectedPiMinus).value_or(std::vector<Particle>{});
 
-        if (pions_plus.empty()) return clas12::framework::StatusCode::FILTERED();
+        if (pions_plus.empty()) return framework::StatusCode::FILTERED();
         m_cutflow.pass("Has >= 1 Pi+");
 
-        if (pions_minus.empty()) return clas12::framework::StatusCode::FILTERED();
+        if (pions_minus.empty()) return framework::StatusCode::FILTERED();
         m_cutflow.pass("Has >= 1 Pi-");
 
         // Build candidates with all kinematics computed once
         auto candidates = build_rho0_candidates(pions_plus, pions_minus, electron, virtual_photon, nu, Q2);
-        if (candidates.empty()) return clas12::framework::StatusCode::FILTERED();
+        if (candidates.empty()) return framework::StatusCode::FILTERED();
         m_cutflow.pass("Rho0 Found");
 
         // Fill pre-cut histograms
@@ -379,7 +379,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
 
         // Check if any candidates passed all cuts
         size_t n_passing = count_passing_candidates(candidates);
-        if (n_passing == 0) return clas12::framework::StatusCode::FILTERED();
+        if (n_passing == 0) return framework::StatusCode::FILTERED();
 
         // Fill post-cut histograms
         fill_post_cut_histograms(candidates, Q2);
@@ -397,9 +397,9 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
             if (sh_it == m_sigma_scan_histograms.end()) continue;
             auto& sh = sh_it->second;
 
-            auto scan_piplus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(
+            auto scan_piplus_opt = event.retrieve_typed(framework::TypedKey<std::vector<Particle>>(
                 format_sigma_key("SelectedPiPlus", scan_sigma)));
-            auto scan_piminus_opt = event.retrieve_typed(clas12::framework::TypedKey<std::vector<clas12::Particle>>(
+            auto scan_piminus_opt = event.retrieve_typed(framework::TypedKey<std::vector<Particle>>(
                 format_sigma_key("SelectedPiMinus", scan_sigma)));
 
             if (!scan_piplus_opt || !scan_piminus_opt || scan_piplus_opt->empty() || scan_piminus_opt->empty()) continue;
@@ -417,12 +417,12 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
             }
         }
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
 
-    auto on_finalize() -> clas12::framework::StatusCode override {
-        using Log = clas12::framework::Log;
+    auto on_finalize() -> framework::StatusCode override {
+        using Log = framework::Log;
 
         Log::subsection(fmt::format("{} Summary", name()));
 
@@ -503,7 +503,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
 
         Log::success(name(), "Finalization complete");
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
     /**
@@ -514,7 +514,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
 
         auto* out_svc = m_output_svc.get();
         if (!out_svc->is_file_open()) {
-            clas12::framework::Log::error(name(), "Output file is not open for writing metadata");
+            framework::Log::error(name(), "Output file is not open for writing metadata");
             return;
         }
 
@@ -523,7 +523,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         
         TFile* file = out_svc->get_file();
         if (!file) {
-            clas12::framework::Log::error(name(), "Failed to get file pointer");
+            framework::Log::error(name(), "Failed to get file pointer");
             return;
         }
 
@@ -549,15 +549,15 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         TParameter<int> n_runs("n_runs", static_cast<int>(m_runs.size()));
         n_runs.Write();
 
-        clas12::framework::Log::info(name(), "Saved {} unique runs to metadata", m_runs.size());
+        framework::Log::info(name(), "Saved {} unique runs to metadata", m_runs.size());
 
         // Print runs to console using logger table
         std::vector<int> runs_vec(m_runs.begin(), m_runs.end());
-        clas12::framework::Log::print_run_metadata("Run Metadata", m_runs.size(), runs_vec);
+        framework::Log::print_run_metadata("Run Metadata", m_runs.size(), runs_vec);
     }
 
     // Public helper methods
-    static auto calculate_invariant_mass(const clas12::Particle& pip, const clas12::Particle& pim) -> double {
+    static auto calculate_invariant_mass(const Particle& pip, const Particle& pim) -> double {
         return (pip.PxPyPzEVector() + pim.PxPyPzEVector()).M();
     }
 
@@ -585,9 +585,9 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
      * in the candidate struct to avoid redundant calculations downstream.
      */
     auto build_rho0_candidates(
-        const std::vector<clas12::Particle>& pions_plus,
-        const std::vector<clas12::Particle>& pions_minus,
-        const clas12::Particle& electron,
+        const std::vector<Particle>& pions_plus,
+        const std::vector<Particle>& pions_minus,
+        const Particle& electron,
         const ROOT::Math::PxPyPzEVector& virtual_photon,
         double nu,
         double Q2
@@ -604,10 +604,10 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
                 cand.pim = pim;
 
                 // Classify detector region
-                bool pip_fwd = clas12::framework::CandidateUtils::is_forward_detector(pip.status());
-                bool pim_fwd = clas12::framework::CandidateUtils::is_forward_detector(pim.status());
-                bool pip_cd  = clas12::framework::CandidateUtils::is_central_detector(pip.status());
-                bool pim_cd  = clas12::framework::CandidateUtils::is_central_detector(pim.status());
+                bool pip_fwd = framework::CandidateUtils::is_forward_detector(pip.status());
+                bool pim_fwd = framework::CandidateUtils::is_forward_detector(pim.status());
+                bool pip_cd  = framework::CandidateUtils::is_central_detector(pip.status());
+                bool pim_cd  = framework::CandidateUtils::is_central_detector(pim.status());
 
                 if (pip_fwd && pim_fwd) cand.detector_region = DetectorRegion::ForwardForward;
                 else if (pip_cd && pim_cd) cand.detector_region = DetectorRegion::CentralCentral;
@@ -663,13 +663,12 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
      */
     auto fill_pre_cut_histograms(const std::vector<Rho0Candidate>& candidates) -> void {
         for (const auto& cand : candidates) {
-            if (h_pipim_mass_all) h_pipim_mass_all->fill(cand.mass);
-            if (h_zh) h_zh->fill(cand.zh);
-            if (h_lc) h_lc->fill(cand.lc);
-            if (h_t) h_t->fill(cand.minus_t);
-            if (h_delta_vz_pim) h_delta_vz_pim->fill(cand.delta_vz_pim);
-            if (h_delta_vz_pip) h_delta_vz_pip->fill(cand.delta_vz_pip);
-
+            h_pipim_mass_all->fill(cand.mass);
+            h_zh->fill(cand.zh);
+            h_lc->fill(cand.lc);
+            h_t->fill(cand.minus_t);
+            h_delta_vz_pim->fill(cand.delta_vz_pim);
+            h_delta_vz_pip->fill(cand.delta_vz_pip);
             // Region-specific pre-cut mass
             auto& rh = get_region_histograms(cand.detector_region);
             if (rh.mass_all) rh.mass_all->fill(cand.mass);
@@ -683,19 +682,17 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         for (const auto& cand : candidates) {
             if (!cand.passes_all_cuts) continue;
 
-            if (h_pipim_mass_selected) h_pipim_mass_selected->fill(cand.mass);
-            if (h_rho0_momentum) h_rho0_momentum->fill(cand.momentum);
-            if (h_rho0_theta) h_rho0_theta->fill(cand.theta);
-            if (h_rho0_phi) h_rho0_phi->fill(cand.phi);
-            if (h_opening_angle) h_opening_angle->fill(cand.opening_angle);
-            if (h_pipim_mass_vs_momentum) h_pipim_mass_vs_momentum->fill(cand.momentum, cand.mass);
-
-            if (h_zh_selected) h_zh_selected->fill(cand.zh);
-            if (h_lc_selected) h_lc_selected->fill(cand.lc);
-            if (h_t_selected) h_t_selected->fill(cand.minus_t);
-            if (h_delta_vz_pim_selected) h_delta_vz_pim_selected->fill(cand.delta_vz_pim);
-            if (h_delta_vz_pip_selected) h_delta_vz_pip_selected->fill(cand.delta_vz_pip);
-
+            h_pipim_mass_selected->fill(cand.mass);
+            h_rho0_momentum->fill(cand.momentum);
+            h_rho0_theta->fill(cand.theta);
+            h_rho0_phi->fill(cand.phi);
+            h_opening_angle->fill(cand.opening_angle);
+            h_pipim_mass_vs_momentum->fill(cand.momentum, cand.mass);
+            h_zh_selected->fill(cand.zh);
+            h_lc_selected->fill(cand.lc);
+            h_t_selected->fill(cand.minus_t);
+            h_delta_vz_pim_selected->fill(cand.delta_vz_pim);
+            h_delta_vz_pip_selected->fill(cand.delta_vz_pip);
             // Region-specific post-cut histograms
             auto& rh = get_region_histograms(cand.detector_region);
             if (rh.mass_selected) rh.mass_selected->fill(cand.mass);
@@ -752,28 +749,28 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         for (const auto& cand : candidates) {
             // N-1 for delta_vz_pim (skip=0): all cuts except delta_vz_pim
             if (passes_all_except(cand, 0)) {
-                if (h_delta_vz_pim_nminus1) h_delta_vz_pim_nminus1->fill(cand.delta_vz_pim);
-                if (h_pipim_mass_nminus1_delta_vz_pim) h_pipim_mass_nminus1_delta_vz_pim->fill(cand.mass);
+                h_delta_vz_pim_nminus1->fill(cand.delta_vz_pim);
+                h_pipim_mass_nminus1_delta_vz_pim->fill(cand.mass);
             }
             // N-1 for delta_vz_pip (skip=1): all cuts except delta_vz_pip
             if (passes_all_except(cand, 1)) {
-                if (h_delta_vz_pip_nminus1) h_delta_vz_pip_nminus1->fill(cand.delta_vz_pip);
-                if (h_pipim_mass_nminus1_delta_vz_pip) h_pipim_mass_nminus1_delta_vz_pip->fill(cand.mass);
+                h_delta_vz_pip_nminus1->fill(cand.delta_vz_pip);
+                h_pipim_mass_nminus1_delta_vz_pip->fill(cand.mass);
             }
             // N-1 for zh (skip=2): all cuts except zh
             if (passes_all_except(cand, 2)) {
-                if (h_zh_nminus1) h_zh_nminus1->fill(cand.zh);
-                if (h_pipim_mass_nminus1_zh) h_pipim_mass_nminus1_zh->fill(cand.mass);
+                h_zh_nminus1->fill(cand.zh);
+                h_pipim_mass_nminus1_zh->fill(cand.mass);
             }
             // N-1 for lc (skip=3): all cuts except lc
             if (passes_all_except(cand, 3)) {
-                if (h_lc_nminus1) h_lc_nminus1->fill(cand.lc);
-                if (h_pipim_mass_nminus1_lc) h_pipim_mass_nminus1_lc->fill(cand.mass);
+                h_lc_nminus1->fill(cand.lc);
+                h_pipim_mass_nminus1_lc->fill(cand.mass);
             }
             // N-1 for -t (skip=4): all cuts except -t
             if (passes_all_except(cand, 4)) {
-                if (h_t_nminus1) h_t_nminus1->fill(cand.minus_t);
-                if (h_pipim_mass_nminus1_t) h_pipim_mass_nminus1_t->fill(cand.mass);
+                h_t_nminus1->fill(cand.minus_t);
+                h_pipim_mass_nminus1_t->fill(cand.mass);
             }
         }
     }
@@ -781,8 +778,8 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     /**
      * @brief Fill ntuple with candidate data
      */
-    auto fill_ntuple(const std::vector<Rho0Candidate>& candidates, const clas12::Particle& electron,
-                     const clas12::framework::EventHelpers::DISVars& dis, size_t n_passing) -> void {
+    auto fill_ntuple(const std::vector<Rho0Candidate>& candidates, const Particle& electron,
+                     const framework::EventHelpers::DISVars& dis, size_t n_passing) -> void {
         if (!m_ntuple_writer.is_initialized() || !m_enable_ntuple.get()) return;
 
         std::lock_guard<std::mutex> lock(m_ntuple_mutex);
@@ -830,15 +827,15 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     /**
      * @brief Store passing candidates in event for downstream algorithms
      */
-    auto store_candidates_in_event(const std::vector<Rho0Candidate>& candidates, clas12::framework::Event& event) -> void {
-        std::vector<clas12::Particle> stored_particles;
+    auto store_candidates_in_event(const std::vector<Rho0Candidate>& candidates, framework::Event& event) -> void {
+        std::vector<Particle> stored_particles;
         for (const auto& cand : candidates) {
             if (cand.passes_all_cuts) {
                 stored_particles.push_back(cand.pip);
                 stored_particles.push_back(cand.pim);
             }
         }
-        event.store_typed(clas12::framework::Keys::Rho0PionPairs, stored_particles);
+        event.store_typed(framework::Keys::Rho0PionPairs, stored_particles);
     }
 
     /**
@@ -853,22 +850,22 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     Config m_config;
 
     // Properties
-    clas12::framework::Property<double> m_zh_min{"zh_min", 0.9, "Minimum zh (energy fraction)"};
-    clas12::framework::Property<double> m_lc_max{"lc_max", 1.0, "Maximum coherence length [fm]"};
-    clas12::framework::Property<double> m_t_min{"t_min", 0.1, "Minimum -t [GeV²]"};
-    clas12::framework::Property<double> m_t_max{"t_max", 0.5, "Maximum -t [GeV²]"};
-    clas12::framework::Property<bool> m_enable_delta_vz_pim_cut{"enable_delta_vz_pim_cut", true, "Enable delta_vz pi- cut"};
-    clas12::framework::Property<bool> m_enable_delta_vz_pip_cut{"enable_delta_vz_pip_cut", true, "Enable delta_vz pi+ cut"};
-    clas12::framework::Property<bool> m_enable_zh_cut{"enable_zh_cut", true, "Enable zh cut"};
-    clas12::framework::Property<bool> m_enable_lc_cut{"enable_lc_cut", true, "Enable coherence length cut"};
-    clas12::framework::Property<bool> m_enable_t_cut{"enable_t_cut", true, "Enable -t cut"};
-    clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
-    clas12::framework::Property<bool> m_enable_fitting{"enable_fitting", true, "Enable BW+pol3 fitting in finalize"};
-    clas12::framework::Property<std::vector<double>> m_sigma_scan_values{"sigma_scan_values", {}, "Sigma values for delta_t scan (empty=disabled)"};
-    clas12::framework::Property<std::vector<double>> m_lc_scan_values{"lc_scan_values", {}, "lc_max values for coherence length scan (empty=disabled)"};
-    clas12::framework::Property<std::vector<double>> m_zh_scan_values{"zh_scan_values", {}, "zh_min values for energy fraction scan (empty=disabled)"};
-    clas12::framework::Property<std::vector<double>> m_t_scan_values{"t_scan_values", {}, "t_max values for momentum transfer scan (empty=disabled)"};
-    clas12::framework::Property<std::vector<double>> m_dvz_scan_values{"dvz_scan_values", {}, "N-sigma values for delta_vz scan (empty=disabled)"};
+    framework::Property<double> m_zh_min{"zh_min", 0.9, "Minimum zh (energy fraction)"};
+    framework::Property<double> m_lc_max{"lc_max", 1.0, "Maximum coherence length [fm]"};
+    framework::Property<double> m_t_min{"t_min", 0.1, "Minimum -t [GeV²]"};
+    framework::Property<double> m_t_max{"t_max", 0.5, "Maximum -t [GeV²]"};
+    framework::Property<bool> m_enable_delta_vz_pim_cut{"enable_delta_vz_pim_cut", true, "Enable delta_vz pi- cut"};
+    framework::Property<bool> m_enable_delta_vz_pip_cut{"enable_delta_vz_pip_cut", true, "Enable delta_vz pi+ cut"};
+    framework::Property<bool> m_enable_zh_cut{"enable_zh_cut", true, "Enable zh cut"};
+    framework::Property<bool> m_enable_lc_cut{"enable_lc_cut", true, "Enable coherence length cut"};
+    framework::Property<bool> m_enable_t_cut{"enable_t_cut", true, "Enable -t cut"};
+    framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
+    framework::Property<bool> m_enable_fitting{"enable_fitting", true, "Enable BW+pol3 fitting in finalize"};
+    framework::Property<std::vector<double>> m_sigma_scan_values{"sigma_scan_values", {}, "Sigma values for delta_t scan (empty=disabled)"};
+    framework::Property<std::vector<double>> m_lc_scan_values{"lc_scan_values", {}, "lc_max values for coherence length scan (empty=disabled)"};
+    framework::Property<std::vector<double>> m_zh_scan_values{"zh_scan_values", {}, "zh_min values for energy fraction scan (empty=disabled)"};
+    framework::Property<std::vector<double>> m_t_scan_values{"t_scan_values", {}, "t_max values for momentum transfer scan (empty=disabled)"};
+    framework::Property<std::vector<double>> m_dvz_scan_values{"dvz_scan_values", {}, "N-sigma values for delta_vz scan (empty=disabled)"};
 
     /**
      * @brief Delta vz cut range structure
@@ -888,13 +885,13 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
      */
     auto get_piplus_delta_vz_range() const -> DeltaVzCutRange {
         switch (m_config.target) {
-            case clas12::Target::LD2:
+            case Target::LD2:
                 return {-4.0134, 2.3256};
-            case clas12::Target::CxC:
+            case Target::CxC:
                 return {-4.0065, 2.3378};
-            case clas12::Target::Cu:
+            case Target::Cu:
                 return {-3.6048, 2.1625};
-            case clas12::Target::Sn:
+            case Target::Sn:
                 return {-3.9862, 2.3633};
             default:
                 return {-4.0134, 2.3256};  // Default to LD2
@@ -907,26 +904,26 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
      */
     auto get_piminus_delta_vz_range() const -> DeltaVzCutRange {
         switch (m_config.target) {
-            case clas12::Target::LD2:
+            case Target::LD2:
                 return {-3.8801, 4.2481};
-            case clas12::Target::CxC:
+            case Target::CxC:
                 return {-3.6559, 3.9862};
-            case clas12::Target::Cu:
+            case Target::Cu:
                 return {-3.5778, 3.9216};
-            case clas12::Target::Sn:
+            case Target::Sn:
                 return {-3.5268, 3.8075};
             default:
                 return {-3.8801, 4.2481};  // Default to LD2
         }
     }
 
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist_svc;
-    clas12::framework::ServiceRef<clas12::framework::NTupleService> m_ntuple_svc;
-    clas12::framework::ServiceRef<clas12::framework::OutputFileService> m_output_svc;
+    framework::ServiceRef<framework::HistogramService> m_hist_svc;
+    framework::ServiceRef<framework::NTupleService> m_ntuple_svc;
+    framework::ServiceRef<framework::OutputFileService> m_output_svc;
 
     // Cutflow (event-level + candidate-level)
-    clas12::framework::Cutflow m_cutflow;
-    clas12::framework::Cutflow m_candidate_cutflow;
+    framework::Cutflow m_cutflow;
+    framework::Cutflow m_candidate_cutflow;
 
     // Run tracking for metadata
     std::set<int> m_runs;
@@ -937,14 +934,14 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
 
     // Region-specific histogram set (mass + kinematics)
     struct RegionHistograms {
-        clas12::framework::ThreadLocalHistogram1D* mass_all = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* mass_selected = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* momentum = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* opening_angle = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* mass_vs_momentum = nullptr;
-        std::map<std::string, clas12::framework::ThreadLocalHistogram1D*> mass_q2_bins;
+        framework::ThreadLocalHistogram1D* mass_all = nullptr;
+        framework::ThreadLocalHistogram1D* mass_selected = nullptr;
+        framework::ThreadLocalHistogram1D* momentum = nullptr;
+        framework::ThreadLocalHistogram1D* theta = nullptr;
+        framework::ThreadLocalHistogram1D* phi = nullptr;
+        framework::ThreadLocalHistogram1D* opening_angle = nullptr;
+        framework::ThreadLocalHistogram2D* mass_vs_momentum = nullptr;
+        std::map<std::string, framework::ThreadLocalHistogram1D*> mass_q2_bins;
     };
 
     RegionHistograms m_hist_ff;     // Forward-Forward
@@ -958,9 +955,9 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
 
     // Sigma scan histogram set
     struct ScanHistograms {
-        clas12::framework::ThreadLocalHistogram1D* mass_all = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* mass_selected = nullptr;
-        std::map<std::string, clas12::framework::ThreadLocalHistogram1D*> mass_q2_bins;
+        framework::ThreadLocalHistogram1D* mass_all = nullptr;
+        framework::ThreadLocalHistogram1D* mass_selected = nullptr;
+        std::map<std::string, framework::ThreadLocalHistogram1D*> mass_q2_bins;
     };
     std::map<std::string, ScanHistograms> m_sigma_scan_histograms;
 
@@ -1008,46 +1005,46 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     }
 
     // Histograms - Rho0 candidates (atomic for thread-safety)
-    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_all = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_selected = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_rho0_momentum = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_rho0_theta = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_rho0_phi = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_opening_angle = nullptr;
-    clas12::framework::ThreadLocalHistogram2D* h_pipim_mass_vs_momentum = nullptr;
+    framework::ThreadLocalHistogram1D* h_pipim_mass_all = nullptr;
+    framework::ThreadLocalHistogram1D* h_pipim_mass_selected = nullptr;
+    framework::ThreadLocalHistogram1D* h_rho0_momentum = nullptr;
+    framework::ThreadLocalHistogram1D* h_rho0_theta = nullptr;
+    framework::ThreadLocalHistogram1D* h_rho0_phi = nullptr;
+    framework::ThreadLocalHistogram1D* h_opening_angle = nullptr;
+    framework::ThreadLocalHistogram2D* h_pipim_mass_vs_momentum = nullptr;
 
     // Histograms - Kinematic variables (before cuts)
-    clas12::framework::ThreadLocalHistogram1D* h_zh = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_lc = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_t = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pim = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pip = nullptr;
+    framework::ThreadLocalHistogram1D* h_zh = nullptr;
+    framework::ThreadLocalHistogram1D* h_lc = nullptr;
+    framework::ThreadLocalHistogram1D* h_t = nullptr;
+    framework::ThreadLocalHistogram1D* h_delta_vz_pim = nullptr;
+    framework::ThreadLocalHistogram1D* h_delta_vz_pip = nullptr;
 
     // Histograms - Kinematic variables (after cuts)
-    clas12::framework::ThreadLocalHistogram1D* h_zh_selected = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_lc_selected = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_t_selected = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pim_selected = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pip_selected = nullptr;
+    framework::ThreadLocalHistogram1D* h_zh_selected = nullptr;
+    framework::ThreadLocalHistogram1D* h_lc_selected = nullptr;
+    framework::ThreadLocalHistogram1D* h_t_selected = nullptr;
+    framework::ThreadLocalHistogram1D* h_delta_vz_pim_selected = nullptr;
+    framework::ThreadLocalHistogram1D* h_delta_vz_pip_selected = nullptr;
 
     // N-1 histograms: cut variable distributions with all other cuts applied
-    clas12::framework::ThreadLocalHistogram1D* h_zh_nminus1 = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_lc_nminus1 = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_t_nminus1 = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pip_nminus1 = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_pim_nminus1 = nullptr;
+    framework::ThreadLocalHistogram1D* h_zh_nminus1 = nullptr;
+    framework::ThreadLocalHistogram1D* h_lc_nminus1 = nullptr;
+    framework::ThreadLocalHistogram1D* h_t_nminus1 = nullptr;
+    framework::ThreadLocalHistogram1D* h_delta_vz_pip_nminus1 = nullptr;
+    framework::ThreadLocalHistogram1D* h_delta_vz_pim_nminus1 = nullptr;
     // N-1 histograms: invariant mass with all other cuts applied
-    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_zh = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_lc = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_t = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_delta_vz_pip = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_delta_vz_pim = nullptr;
+    framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_zh = nullptr;
+    framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_lc = nullptr;
+    framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_t = nullptr;
+    framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_delta_vz_pip = nullptr;
+    framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_delta_vz_pim = nullptr;
 
     // Q²-binned invariant mass histograms
-    std::map<std::string, clas12::framework::ThreadLocalHistogram1D*> h_pipim_mass_q2_bins;
+    std::map<std::string, framework::ThreadLocalHistogram1D*> h_pipim_mass_q2_bins;
 
     // lc-binned invariant mass histograms
-    std::map<std::string, clas12::framework::ThreadLocalHistogram1D*> h_pipim_mass_lc_bins;
+    std::map<std::string, framework::ThreadLocalHistogram1D*> h_pipim_mass_lc_bins;
 
     // Q² bin edges: 1.0-2.0, 2.0-2.5, 2.5-3.0, 3.0-3.5, 3.5-4.5, 4.5-6 GeV²
     static constexpr std::array<std::pair<double, double>, 6> Q2_BINS = {{
@@ -1104,35 +1101,35 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         static constexpr auto ntuple_fields() {
             using T = Rho0NTupleData;
             return std::make_tuple(
-                clas12::framework::field("e_p", &T::e_p),
-                clas12::framework::field("e_theta", &T::e_theta),
-                clas12::framework::field("e_phi", &T::e_phi),
-                clas12::framework::field("e_vz", &T::e_vz),
-                clas12::framework::field("Q2", &T::Q2),
-                clas12::framework::field("nu", &T::nu),
-                clas12::framework::field("W", &T::W),
-                clas12::framework::field("xB", &T::xB),
-                clas12::framework::field("y", &T::y),
-                clas12::framework::field("n_candidates", &T::n_candidates),
-                clas12::framework::field("pip_p", &T::pip_p),
-                clas12::framework::field("pip_theta", &T::pip_theta),
-                clas12::framework::field("pip_phi", &T::pip_phi),
-                clas12::framework::field("pim_p", &T::pim_p),
-                clas12::framework::field("pim_theta", &T::pim_theta),
-                clas12::framework::field("pim_phi", &T::pim_phi),
-                clas12::framework::field("rho0_masses", &T::rho0_masses),
-                clas12::framework::field("rho0_ps", &T::rho0_ps),
-                clas12::framework::field("rho0_thetas", &T::rho0_thetas),
-                clas12::framework::field("rho0_phis", &T::rho0_phis),
-                clas12::framework::field("rho0_zh", &T::rho0_zh),
-                clas12::framework::field("rho0_lc", &T::rho0_lc),
-                clas12::framework::field("rho0_t", &T::rho0_t),
-                clas12::framework::field("delta_vz_pim", &T::delta_vz_pim),
-                clas12::framework::field("delta_vz_pip", &T::delta_vz_pip),
-                clas12::framework::field("opening_angle", &T::opening_angle),
-                clas12::framework::field("detector_region", &T::detector_region),
-                clas12::framework::field("pip_vz", &T::pip_vz),
-                clas12::framework::field("pim_vz", &T::pim_vz)
+                framework::field("e_p", &T::e_p),
+                framework::field("e_theta", &T::e_theta),
+                framework::field("e_phi", &T::e_phi),
+                framework::field("e_vz", &T::e_vz),
+                framework::field("Q2", &T::Q2),
+                framework::field("nu", &T::nu),
+                framework::field("W", &T::W),
+                framework::field("xB", &T::xB),
+                framework::field("y", &T::y),
+                framework::field("n_candidates", &T::n_candidates),
+                framework::field("pip_p", &T::pip_p),
+                framework::field("pip_theta", &T::pip_theta),
+                framework::field("pip_phi", &T::pip_phi),
+                framework::field("pim_p", &T::pim_p),
+                framework::field("pim_theta", &T::pim_theta),
+                framework::field("pim_phi", &T::pim_phi),
+                framework::field("rho0_masses", &T::rho0_masses),
+                framework::field("rho0_ps", &T::rho0_ps),
+                framework::field("rho0_thetas", &T::rho0_thetas),
+                framework::field("rho0_phis", &T::rho0_phis),
+                framework::field("rho0_zh", &T::rho0_zh),
+                framework::field("rho0_lc", &T::rho0_lc),
+                framework::field("rho0_t", &T::rho0_t),
+                framework::field("delta_vz_pim", &T::delta_vz_pim),
+                framework::field("delta_vz_pip", &T::delta_vz_pip),
+                framework::field("opening_angle", &T::opening_angle),
+                framework::field("detector_region", &T::detector_region),
+                framework::field("pip_vz", &T::pip_vz),
+                framework::field("pim_vz", &T::pim_vz)
             );
         }
 
@@ -1146,7 +1143,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
             pip_vz.clear(); pim_vz.clear();
         }
     };
-    clas12::framework::NTupleWriter<Rho0NTupleData> m_ntuple_writer;
+    framework::NTupleWriter<Rho0NTupleData> m_ntuple_writer;
 
     /**
      * @brief Fill a binned histogram by looking up the appropriate bin for a variable value
@@ -1154,7 +1151,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     template<typename BinArray>
     static auto fill_binned_histogram(
         const BinArray& bins, const std::string& prefix,
-        const std::map<std::string, clas12::framework::ThreadLocalHistogram1D*>& hist_map,
+        const std::map<std::string, framework::ThreadLocalHistogram1D*>& hist_map,
         double variable, double fill_value
     ) -> void {
         for (size_t i = 0; i < bins.size(); ++i) {
@@ -1431,7 +1428,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     auto setup_ntuple() -> void {
         if (m_ntuple_svc) {
             m_ntuple_writer.init(m_ntuple_svc.get(), "rho0_events");
-            clas12::framework::Log::info(name(), "N-tuple branches registered for rho0_events");
+            framework::Log::info(name(), "N-tuple branches registered for rho0_events");
         }
     }
     /**
@@ -1457,7 +1454,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         const std::map<std::string, ScanHistograms>& histograms,
         std::function<std::string(double)> label_formatter
     ) -> void {
-        using Log = clas12::framework::Log;
+        using Log = framework::Log;
 
         Log::subsection(fmt::format("{} Scan Results", def.display_name));
 
@@ -1595,7 +1592,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         }
 
         tree->Write("", TObject::kOverwrite);
-        clas12::framework::Log::info(name(), "{} scan results saved to TTree with {} entries",
+        framework::Log::info(name(), "{} scan results saved to TTree with {} entries",
             def.display_name, tree->GetEntries());
     }
 
@@ -1605,9 +1602,9 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
      * Signal yield is integrated between [0.6-1.0] GeV.
      */
     auto fit_invariant_mass_histograms() -> void {
-        clas12::framework::Log::info(name(), "Fitting invariant mass histograms with BW + pol3...");
-        clas12::framework::Log::info(name(), "  Fit ranges: [0.3-1.2] and [0.3-1.4] GeV");
-        clas12::framework::Log::info(name(), "  Integration range: [0.6-1.0] GeV");
+        framework::Log::info(name(), "Fitting invariant mass histograms with BW + pol3...");
+        framework::Log::info(name(), "  Fit ranges: [0.3-1.2] and [0.3-1.4] GeV");
+        framework::Log::info(name(), "  Integration range: [0.6-1.0] GeV");
 
         // Maps for narrow [0.3-1.2] and wide [0.3-1.4] fit results
         std::map<std::string, FitResult> fit_results_narrow;
@@ -1618,7 +1615,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         double total_rho0_wide_err_sq = 0.0;
 
         // Fit the main selected mass histogram with both ranges
-        if (h_pipim_mass_selected && h_pipim_mass_selected->entries() > 100) {
+        if (h_pipim_mass_selected->entries() > 100) {
             auto root_hist = h_pipim_mass_selected->to_root("pipim_mass_selected_fit", "Selected Mass");
             auto [result_narrow, result_wide] = fit_histogram_compare_ranges(root_hist.get(), "All Q² (selected)");
             if (result_narrow.valid) fit_results_narrow["All"] = result_narrow;
@@ -1733,7 +1730,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
                 });
             }
 
-            clas12::framework::Log::print_yield_summary_table("ρ⁰ Yield Comparison (Integration: 0.6-1.0 GeV)", columns, rows);
+            framework::Log::print_yield_summary_table("ρ⁰ Yield Comparison (Integration: 0.6-1.0 GeV)", columns, rows);
         }
     }
 
@@ -1765,7 +1762,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
 
         auto* out_svc = m_output_svc.get();
         if (!out_svc->is_file_open()) {
-            clas12::framework::Log::error(name(), "Output file is not open for writing fit results");
+            framework::Log::error(name(), "Output file is not open for writing fit results");
             return;
         }
 
@@ -1774,7 +1771,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
 
         TFile* file = out_svc->get_file();
         if (!file) {
-            clas12::framework::Log::error(name(), "Failed to get file pointer");
+            framework::Log::error(name(), "Failed to get file pointer");
             return;
         }
 
@@ -1853,7 +1850,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
 
         // Write tree to the file
         tree->Write("", TObject::kOverwrite);
-        clas12::framework::Log::info(name(), "Fit results saved to TTree '{}/{}' with {} entries", config.root_dir, config.tree_name, tree->GetEntries());
+        framework::Log::info(name(), "Fit results saved to TTree '{}/{}' with {} entries", config.root_dir, config.tree_name, tree->GetEntries());
 
         // Save fit functions separately for easy access in Python
         std::string fits_path = fmt::format("{}/{}", config.root_dir, config.fits_dir);
@@ -1872,7 +1869,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
                 std::string func_name = fmt::format("fit_{}", bin_name);
                 it->second.fit_function->SetName(func_name.c_str());
                 it->second.fit_function->Write("", TObject::kOverwrite);
-                clas12::framework::Log::info(name(), "  Saved fit function '{}'", func_name);
+                framework::Log::info(name(), "  Saved fit function '{}'", func_name);
             }
         }
 
@@ -1881,10 +1878,10 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
             auto& all_func = results.at("All").fit_function;
             all_func->SetName(config.all_func_name.c_str());
             all_func->Write("", TObject::kOverwrite);
-            clas12::framework::Log::info(name(), "  Saved fit function '{}'", config.all_func_name);
+            framework::Log::info(name(), "  Saved fit function '{}'", config.all_func_name);
         }
 
-        clas12::framework::Log::info(name(), "All fit functions saved to '{}' directory", fits_path);
+        framework::Log::info(name(), "All fit functions saved to '{}' directory", fits_path);
     }
 
     /**
@@ -2000,7 +1997,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         };
         save_fit_results_to_file(results_wide, total_wide, std::sqrt(total_wide_err_sq), Q2_BINS, config_wide);
 
-        clas12::framework::Log::info(name(), "{} region: fitted {} Q² bins", region_label, rh.mass_q2_bins.size());
+        framework::Log::info(name(), "{} region: fitted {} Q² bins", region_label, rh.mass_q2_bins.size());
     }
 
     /**
@@ -2059,7 +2056,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
         int fit_status = hist->Fit(fit_func.get(), "QRS0");  // Q=quiet, R=use range, S=return status, 0=don't draw
 
         if (fit_status != 0) {
-            clas12::framework::Log::warning(name(), "Fit failed for {} (range [{:.1f}, {:.1f}])", label, fit_min, fit_max);
+            framework::Log::warning(name(), "Fit failed for {} (range [{:.1f}, {:.1f}])", label, fit_min, fit_max);
             return result;
         }
 
@@ -2118,7 +2115,7 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
             double yield_diff_pct = (result_narrow.n_rho0 > 0) ?
                 100.0 * yield_diff / result_narrow.n_rho0 : 0.0;
 
-            clas12::framework::Log::print_fit_results_table(
+            framework::Log::print_fit_results_table(
                 fmt::format("Fit Comparison: {}", label),
                 {
                     {"Range [0.3-1.2]", fmt::format("N={:.0f}±{:.0f}, M={:.4f}, χ²/ndf={:.2f}",
@@ -2135,4 +2132,4 @@ class Rho0ReconstructionAlg : public clas12::framework::Algorithm {
     }
 };
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

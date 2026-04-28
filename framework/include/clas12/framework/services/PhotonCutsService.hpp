@@ -19,7 +19,7 @@
 #include <tuple>
 #include <vector>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Service for photon selection cuts in CLAS12 analysis
@@ -31,7 +31,7 @@ namespace clas12::framework {
  *
  * Usage:
  * @code
- * auto photon_cuts = service<clas12::framework::PhotonCutsService>("PhotonCutsService");
+ * auto photon_cuts = service<framework::PhotonCutsService>("PhotonCutsService");
  * photon_cuts->set_pass(1);  // Set reconstruction pass
  *
  * auto good_photons = photon_cuts->select_photons_with_AI(
@@ -112,7 +112,7 @@ class PhotonCutsService : public Service {
     auto select_photons_with_AI(
         const hipo::bank_view& RUN_config,
         const hipo::bank_view& REC_Particle,
-        const hipo::bank_view& REC_Calorimeter) const -> std::vector<clas12::Particle> {
+        const hipo::bank_view& REC_Calorimeter) const -> std::vector<Particle> {
 
         int run_number = RUN_config.get<int32_t>("run", 0);
         std::vector<int> good_photon_rows;
@@ -128,7 +128,7 @@ class PhotonCutsService : public Service {
         }
 
         // Build particle objects for good photons
-        std::vector<clas12::Particle> good_photons;
+        std::vector<Particle> good_photons;
         for (const auto& row : good_photon_rows) {
             int pid = REC_Particle.get<int32_t>("pid", row);
             int status = static_cast<int>(REC_Particle.get<int16_t>("status", row));
@@ -143,7 +143,7 @@ class PhotonCutsService : public Service {
             double vt = static_cast<double>(REC_Particle.get<float>("vt", row));
             double beta = static_cast<double>(REC_Particle.get<float>("beta", row));
             double chi2pid = static_cast<double>(REC_Particle.get<float>("chi2pid", row));
-            double E = clas12::physics::ParticleUtils::compute_energy(px, py, pz, pid);
+            double E = physics::ParticleUtils::compute_energy(px, py, pz, pid);
 
             good_photons.emplace_back(pid, status, row, charge, 0, px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
         }
@@ -287,4 +287,4 @@ class PhotonCutsService : public Service {
         int pass) const -> bool;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

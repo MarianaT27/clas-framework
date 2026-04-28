@@ -9,7 +9,7 @@
 #include <utility>
 #include <variant>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief A Result type for operations that can fail
@@ -369,7 +369,7 @@ private:
     ({                                                                         \
         auto _result = (expr);                                                 \
         if (_result.is_error()) {                                              \
-            auto _new_error = ::clas12::framework::Error(context_msg);                 \
+            auto _new_error = ::framework::Error(context_msg);                 \
             _new_error.with_cause(std::move(_result).error());                 \
             return decltype(_result)::error(std::move(_new_error));            \
         }                                                                      \
@@ -390,7 +390,7 @@ private:
     [&]() {                                                                    \
         auto _result = (expr);                                                 \
         if (_result.is_error()) {                                              \
-            auto _new_error = ::clas12::framework::Error(context_msg);                 \
+            auto _new_error = ::framework::Error(context_msg);                 \
             _new_error.with_cause(std::move(_result).error());                 \
             return decltype(_result)::error(std::move(_new_error));            \
         }                                                                      \
@@ -402,4 +402,4 @@ private:
 #define FW_TRY FRAMEWORK_TRY
 #define FW_TRY_CTX FRAMEWORK_TRY_CONTEXT
 
-}  // namespace clas12::framework
+}  // namespace framework

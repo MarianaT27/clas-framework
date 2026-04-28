@@ -3,7 +3,6 @@
 #include <optional>
 #include <string>
 
-namespace clas12 {
 
 enum class PIDs {
     ELECTRON = 11,
@@ -97,5 +96,3 @@ inline auto pid_name(PIDs pid) -> std::string {
             return "Unknown";
     }
 }
-
-}  // namespace clas12

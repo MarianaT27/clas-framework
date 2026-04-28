@@ -7,7 +7,7 @@
 
 #include <Math/Vector4D.h>
 
-namespace clas12::framework::fitting {
+namespace framework::fitting {
 
 /**
  * @brief Types of kinematic constraints
@@ -304,4 +304,4 @@ class EnergyConstraint : public Constraint {
     std::vector<int> m_final_indices;
 };
 
-}  // namespace clas12::framework::fitting
+}  // namespace framework::fitting

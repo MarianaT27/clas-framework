@@ -5,7 +5,6 @@
 
 #include <fmt/core.h>
 
-namespace clas12 {
 
 /**
  * @brief String manipulation utility functions
@@ -73,4 +72,3 @@ inline auto split(const std::string& str, char delimiter) -> std::vector<std::st
 
 }  // namespace StringUtils
 
-}  // namespace clas12

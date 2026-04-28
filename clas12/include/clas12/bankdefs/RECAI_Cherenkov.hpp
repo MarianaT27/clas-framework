@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `RECAI::Cherenkov` (group 400, item 33).
@@ -304,4 +304,4 @@ inline RECAI_Cherenkov::Row RECAI_Cherenkov::row(int index) const noexcept {
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

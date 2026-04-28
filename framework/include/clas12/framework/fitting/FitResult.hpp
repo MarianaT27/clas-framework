@@ -8,7 +8,7 @@
 #include <Math/Vector4D.h>
 #include <TMath.h>
 
-namespace clas12::framework::fitting {
+namespace framework::fitting {
 
 /**
  * @brief Result of a kinematic fit
@@ -175,4 +175,4 @@ struct CovarianceMatrix {
     }
 };
 
-}  // namespace clas12::framework::fitting
+}  // namespace framework::fitting

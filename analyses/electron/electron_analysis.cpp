@@ -9,16 +9,16 @@
 #include <clas12/framework/services/ElectronCutsService.hpp>
 
 auto main(int argc, char* argv[]) -> int {
-    return clas12::framework::AnalysisRunner::run(
+    return framework::AnalysisRunner::run(
         argc, argv, "Electron Analysis", "electron_analysis",
         [](auto& builder, const auto& config) {
-            clas12::algorithms::ElectronAnalysisConfig alg_config;
+            algorithms::ElectronAnalysisConfig alg_config;
             alg_config.target = config.target;
             alg_config.polarity = config.polarity;
 
             builder
-                .template add_service<clas12::framework::ElectronCutsService>()
-                .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
-                .template add_algorithm<clas12::algorithms::ElectronAnalysisAlg>("ElectronAnalysis", alg_config);
+                .template add_service<framework::ElectronCutsService>()
+                .template add_algorithm<algorithms::EventMonitor>("EventMonitor")
+                .template add_algorithm<algorithms::ElectronAnalysisAlg>("ElectronAnalysis", alg_config);
         });
 }

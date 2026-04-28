@@ -14,7 +14,6 @@
 #include <fmt/core.h>
 #include <fmt/format.h>
 
-namespace clas12 {
 
 // Forward declarations for the detector-bank structs and the Event the
 // per-particle helpers route through. Full definitions live in
@@ -53,7 +52,7 @@ class Particle {
     // Non-owning back-pointer to the Event this Particle was vended
     // from. nullptr for default-constructed / test-built Particles —
     // calling the detector accessors below on those is undefined.
-    clas12::framework::Event* m_event{nullptr};
+    framework::Event* m_event{nullptr};
 
     // ****** private methods
 
@@ -106,12 +105,12 @@ class Particle {
     /// Called by `Event::load_particles` after construction; not
     /// useful from user code. nullptr is allowed (and is the default
     /// for default-constructed Particles).
-    auto set_event(clas12::framework::Event* event) noexcept -> void { m_event = event; }
+    auto set_event(framework::Event* event) noexcept -> void { m_event = event; }
 
     /// Non-owning Event pointer; nullptr if this Particle was not
     /// vended from an Event (e.g. test fixtures). Detector accessors
     /// below assume non-null.
-    auto event() const noexcept -> clas12::framework::Event* { return m_event; }
+    auto event() const noexcept -> framework::Event* { return m_event; }
 
     // ============================================================
     // Detector data attached to this particle's pindex.
@@ -149,16 +148,15 @@ class Particle {
 
     auto operator>(const Particle& other) const -> bool { return m_index > other.m_index; }
 };
-}  // namespace clas12
 
 namespace fmt {
 template <>
-class formatter<clas12::Particle> {
+class formatter<Particle> {
    public:
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
 
     template <typename Context>
-    constexpr auto format(clas12::Particle const& foo, Context& ctx) const {
+    constexpr auto format(Particle const& foo, Context& ctx) const {
         return format_to(ctx.out(), "(PDG: {}, Index: {}, Status: {}, px: {}, py: {}, pz: {}, vx: {}, vy: {}, vz: {})", foo.pdg(), foo.index(), foo.status(), foo.px(), foo.py(), foo.pz(), foo.vx(), foo.vy(), foo.vz());
     }
 };

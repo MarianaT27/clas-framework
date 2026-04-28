@@ -11,9 +11,9 @@
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/physics/CompositeParticle.hpp>
 
-namespace clas12::algorithms {
+namespace algorithms {
 
-using clas12::framework::Log;
+using framework::Log;
 
 /// Configuration for Pi0Producer.
 struct Pi0ProducerConfig {
@@ -27,10 +27,10 @@ struct Pi0ProducerConfig {
  * Reconstructs neutral pions from two-photon combinations within a mass
  * window and stores them in the event for downstream use.
  */
-class Pi0Producer : public clas12::framework::Algorithm {
+class Pi0Producer : public framework::Algorithm {
    public:
     using Config = Pi0ProducerConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit Pi0Producer(std::string name = "Pi0Producer", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config) {
@@ -55,12 +55,12 @@ class Pi0Producer : public clas12::framework::Algorithm {
         return StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> StatusCode override {
+    auto process(framework::Event& event) -> StatusCode override {
         m_events_processed.fetch_add(1, std::memory_order_relaxed);
 
-        auto pi0_candidates = clas12::physics::CompositeParticleBuilder::reconstruct_pi0(event.photons());
+        auto pi0_candidates = physics::CompositeParticleBuilder::reconstruct_pi0(event.photons());
 
-        std::vector<clas12::physics::CompositeParticle> good_pi0s;
+        std::vector<physics::CompositeParticle> good_pi0s;
         for (const auto& pi0 : pi0_candidates) {
             if (pi0.in_mass_window(m_config.mass_window_center, m_config.mass_window_width)) {
                 good_pi0s.push_back(pi0);
@@ -69,9 +69,9 @@ class Pi0Producer : public clas12::framework::Algorithm {
 
         m_pi0_produced.fetch_add(good_pi0s.size(), std::memory_order_relaxed);
 
-        event.store_typed(clas12::framework::Keys::Pi0Candidates, good_pi0s);
+        event.store_typed(framework::Keys::Pi0Candidates, good_pi0s);
         if (!good_pi0s.empty()) {
-            event.set_decision_typed(clas12::framework::Decisions::HasPi0, true);
+            event.set_decision_typed(framework::Decisions::HasPi0, true);
         }
 
         return StatusCode::SUCCESS();
@@ -83,4 +83,4 @@ class Pi0Producer : public clas12::framework::Algorithm {
     std::atomic<size_t> m_pi0_produced{0};
 };
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

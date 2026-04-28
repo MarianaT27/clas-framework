@@ -27,7 +27,7 @@
 #define CLAS12_HAS_EIGEN 0
 #endif
 
-namespace clas12::framework {
+namespace framework {
 
 // Forward declaration
 class DTFFitter;
@@ -194,7 +194,7 @@ class DTFFitter {
      * @param particle Reconstructed particle
      * @return Reference to this fitter for chaining
      */
-    auto add_particle(const std::string& role, const clas12::Particle& particle)
+    auto add_particle(const std::string& role, const Particle& particle)
         -> DTFFitter& {
         int idx = static_cast<int>(m_particles.size());
         m_particles[role] = particle;
@@ -285,7 +285,7 @@ class DTFFitter {
 
    private:
     DecayDescriptor m_descriptor;
-    std::map<std::string, clas12::Particle> m_particles;
+    std::map<std::string, Particle> m_particles;
     std::map<std::string, int> m_role_to_index;
     std::map<int, std::string> m_index_to_role;
     std::map<int, ROOT::Math::PxPyPzEVector> m_initial_momenta;
@@ -434,8 +434,8 @@ class DecayTreeFitterService : public Service {
      * @param origin Origin vertex (for pointing constraint)
      * @return DTFResult with fitted quantities
      */
-    auto fit_two_body(const clas12::Particle& daughter1,
-                      const clas12::Particle& daughter2,
+    auto fit_two_body(const Particle& daughter1,
+                      const Particle& daughter2,
                       double mother_mass,
                       const ROOT::Math::XYZVector& origin = {0, 0, 0}) -> DTFResult {
         ++m_total_fits;
@@ -476,8 +476,8 @@ class DecayTreeFitterService : public Service {
      * @param origin Origin vertex (for pointing constraint)
      * @return DTFResult with fitted quantities
      */
-    auto fit_two_body_vertex_only(const clas12::Particle& daughter1,
-                                  const clas12::Particle& daughter2,
+    auto fit_two_body_vertex_only(const Particle& daughter1,
+                                  const Particle& daughter2,
                                   const ROOT::Math::XYZVector& origin = {0, 0, 0}) -> DTFResult {
         ++m_total_fits;
 
@@ -514,7 +514,7 @@ class DecayTreeFitterService : public Service {
      * @param origin Origin vertex (e.g., primary vertex)
      * @return DTFResult
      */
-    auto fit_with_pointing(const std::vector<clas12::Particle>& daughters,
+    auto fit_with_pointing(const std::vector<Particle>& daughters,
                            double mother_mass,
                            const ROOT::Math::XYZVector& origin) -> DTFResult {
         ++m_total_fits;
@@ -547,7 +547,7 @@ class DecayTreeFitterService : public Service {
      * @param constraints List of constraints
      * @return DTFResult
      */
-    auto fit_with_constraints(const std::map<std::string, clas12::Particle>& particles,
+    auto fit_with_constraints(const std::map<std::string, Particle>& particles,
                               const std::vector<DTFConstraint>& constraints) -> DTFResult {
         ++m_total_fits;
 
@@ -591,4 +591,4 @@ class DecayTreeFitterService : public Service {
     mutable size_t m_successful_fits = 0;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

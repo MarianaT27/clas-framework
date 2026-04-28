@@ -12,8 +12,8 @@
 #include <ROOT/RNTupleReader.hxx>
 #include <ROOT/RNTupleView.hxx>
 
-using clas12::framework::NTupleService;
-using clas12::framework::OutputFileService;
+using framework::NTupleService;
+using framework::OutputFileService;
 
 // Test fixture: create a fresh NTupleService wired to a temp ROOT file.
 // TearDown removes the file. The service is rebuilt per test so each

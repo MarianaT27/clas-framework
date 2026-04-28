@@ -9,7 +9,7 @@
 #include "TDirectory.h"
 #include "TFile.h"
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Service for managing the output ROOT file
@@ -285,4 +285,4 @@ class OutputFileService : public Service {
     }
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

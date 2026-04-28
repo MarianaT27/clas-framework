@@ -13,9 +13,9 @@
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
-namespace clas12::algorithms {
+namespace algorithms {
 
-using clas12::framework::Log;
+using framework::Log;
 
 /// Configuration for DiPionFilterAlg.
 struct DiPionFilterConfig {
@@ -26,10 +26,10 @@ struct DiPionFilterConfig {
  * @brief Algorithm for filtering events with DIS electron + pi+ pi- and
  *        writing them to HIPO output.
  */
-class DiPionFilterAlg : public clas12::framework::Algorithm {
+class DiPionFilterAlg : public framework::Algorithm {
    public:
     using Config = DiPionFilterConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit DiPionFilterAlg(std::string name = "DiPionFilterAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Di-Pion Event Filter") {
@@ -64,16 +64,16 @@ class DiPionFilterAlg : public clas12::framework::Algorithm {
         return StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> StatusCode override {
+    auto process(framework::Event& event) -> StatusCode override {
         m_cutflow.pass("All Events");
 
-        const auto& electrons = event.particles(clas12::PIDs::ELECTRON);
+        const auto& electrons = event.particles(PIDs::ELECTRON);
         if (electrons.empty()) return StatusCode::FILTERED();
         m_cutflow.pass("Has Electron");
 
-        const auto& electron = *std::max_element(electrons.begin(), electrons.end(), [](const clas12::Particle& a, const clas12::Particle& b) { return a.p() < b.p(); });
+        const auto& electron = *std::max_element(electrons.begin(), electrons.end(), [](const Particle& a, const Particle& b) { return a.p() < b.p(); });
 
-        clas12::physics::DISAnalysis::DISKinematics kin = clas12::physics::DISAnalysis::calculate_kinematics(electron);
+        physics::DISAnalysis::DISKinematics kin = physics::DISAnalysis::calculate_kinematics(electron);
 
         if (m_enable_q2_cut.get() && kin.q2 < m_q2_min.get()) return StatusCode::FILTERED();
         m_cutflow.pass("Q2 Cut");
@@ -81,11 +81,11 @@ class DiPionFilterAlg : public clas12::framework::Algorithm {
         if (m_enable_w_cut.get() && kin.w < m_w_min.get()) return StatusCode::FILTERED();
         m_cutflow.pass("W Cut");
 
-        const auto& pions_plus = event.particles(clas12::PIDs::PIPLUS);
+        const auto& pions_plus = event.particles(PIDs::PIPLUS);
         if (pions_plus.empty()) return StatusCode::FILTERED();
         m_cutflow.pass("Has pi+");
 
-        std::vector<const clas12::Particle*> good_piplus;
+        std::vector<const Particle*> good_piplus;
         for (const auto& pi : pions_plus) {
             if (m_enable_piplus_momentum_cut.get() && pi.p() < m_pion_p_min.get()) continue;
             if (m_enable_piplus_chi2pid_cut.get() && std::abs(pi.chi2pid()) >= m_pion_chi2pid_max.get()) continue;
@@ -108,11 +108,11 @@ class DiPionFilterAlg : public clas12::framework::Algorithm {
         m_cutflow.pass("pi+ Momentum");
         m_cutflow.pass("pi+ Chi2PID");
 
-        const auto& pions_minus = event.particles(clas12::PIDs::PIMINUS);
+        const auto& pions_minus = event.particles(PIDs::PIMINUS);
         if (pions_minus.empty()) return StatusCode::FILTERED();
         m_cutflow.pass("Has pi-");
 
-        std::vector<const clas12::Particle*> good_piminus;
+        std::vector<const Particle*> good_piminus;
         for (const auto& pi : pions_minus) {
             if (m_enable_piminus_momentum_cut.get() && pi.p() < m_pion_p_min.get()) continue;
             if (m_enable_piminus_chi2pid_cut.get() && std::abs(pi.chi2pid()) >= m_pion_chi2pid_max.get()) continue;
@@ -137,9 +137,9 @@ class DiPionFilterAlg : public clas12::framework::Algorithm {
 
         if (m_enable_histograms.get()) fill_histograms(electron, kin, *good_piplus.front(), *good_piminus.front());
 
-        event.set_decision_typed(clas12::framework::Decisions::HasDiPionEvent, true);
-        event.store_typed(clas12::framework::Keys::DiPionQ2, kin.q2);
-        event.store_typed(clas12::framework::Keys::DiPionW, kin.w);
+        event.set_decision_typed(framework::Decisions::HasDiPionEvent, true);
+        event.store_typed(framework::Keys::DiPionQ2, kin.q2);
+        event.store_typed(framework::Keys::DiPionW, kin.w);
 
         return StatusCode::SUCCESS();
     }
@@ -154,50 +154,50 @@ class DiPionFilterAlg : public clas12::framework::Algorithm {
 
    private:
     Config m_config;
-    clas12::framework::Cutflow m_cutflow;
+    framework::Cutflow m_cutflow;
 
-    clas12::framework::Property<double> m_q2_min{"q2_min", 0.7, "Minimum Q2 [GeV^2]"};
-    clas12::framework::Property<double> m_w_min{"w_min", 1.7, "Minimum W [GeV]"};
-    clas12::framework::Property<double> m_pion_p_min{"pion_p_min", 0.3, "Minimum pion momentum [GeV]"};
-    clas12::framework::Property<double> m_pion_chi2pid_max{"pion_chi2pid_max", 10.0, "Maximum |chi2pid| for pions"};
-    clas12::framework::Property<bool> m_enable_histograms{"enable_histograms", true, "Enable histogram output"};
-    clas12::framework::Property<bool> m_enable_q2_cut{"enable_q2_cut", true, "Enable Q2 cut"};
-    clas12::framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
-    clas12::framework::Property<bool> m_enable_piplus_momentum_cut{"enable_piplus_momentum_cut", true, "Enable pi+ momentum cut"};
-    clas12::framework::Property<bool> m_enable_piplus_chi2pid_cut{"enable_piplus_chi2pid_cut", true, "Enable pi+ chi2PID cut"};
-    clas12::framework::Property<bool> m_enable_piminus_momentum_cut{"enable_piminus_momentum_cut", true, "Enable pi- momentum cut"};
-    clas12::framework::Property<bool> m_enable_piminus_chi2pid_cut{"enable_piminus_chi2pid_cut", true, "Enable pi- chi2PID cut"};
+    framework::Property<double> m_q2_min{"q2_min", 0.7, "Minimum Q2 [GeV^2]"};
+    framework::Property<double> m_w_min{"w_min", 1.7, "Minimum W [GeV]"};
+    framework::Property<double> m_pion_p_min{"pion_p_min", 0.3, "Minimum pion momentum [GeV]"};
+    framework::Property<double> m_pion_chi2pid_max{"pion_chi2pid_max", 10.0, "Maximum |chi2pid| for pions"};
+    framework::Property<bool> m_enable_histograms{"enable_histograms", true, "Enable histogram output"};
+    framework::Property<bool> m_enable_q2_cut{"enable_q2_cut", true, "Enable Q2 cut"};
+    framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
+    framework::Property<bool> m_enable_piplus_momentum_cut{"enable_piplus_momentum_cut", true, "Enable pi+ momentum cut"};
+    framework::Property<bool> m_enable_piplus_chi2pid_cut{"enable_piplus_chi2pid_cut", true, "Enable pi+ chi2PID cut"};
+    framework::Property<bool> m_enable_piminus_momentum_cut{"enable_piminus_momentum_cut", true, "Enable pi- momentum cut"};
+    framework::Property<bool> m_enable_piminus_chi2pid_cut{"enable_piminus_chi2pid_cut", true, "Enable pi- chi2PID cut"};
 
-    clas12::framework::ServiceRef<clas12::framework::HipoFileService> m_hipo_svc;
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist_svc;
+    framework::ServiceRef<framework::HipoFileService> m_hipo_svc;
+    framework::ServiceRef<framework::HistogramService> m_hist_svc;
 
-    clas12::framework::ThreadLocalHistogram1D* h_Q2 = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_W = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_piplus_p = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_piminus_p = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_piplus_chi2pid = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_piminus_chi2pid = nullptr;
-    clas12::framework::ThreadLocalHistogram2D* h_Q2_vs_W = nullptr;
+    framework::ThreadLocalHistogram1D* h_Q2 = nullptr;
+    framework::ThreadLocalHistogram1D* h_W = nullptr;
+    framework::ThreadLocalHistogram1D* h_piplus_p = nullptr;
+    framework::ThreadLocalHistogram1D* h_piminus_p = nullptr;
+    framework::ThreadLocalHistogram1D* h_piplus_chi2pid = nullptr;
+    framework::ThreadLocalHistogram1D* h_piminus_chi2pid = nullptr;
+    framework::ThreadLocalHistogram2D* h_Q2_vs_W = nullptr;
 
     auto book_histograms() -> void {
-        h_Q2 = m_hist_svc->book_q2_hist("/DiPion/Q2", "Q^{2}");
-        h_W = m_hist_svc->book_w_hist("/DiPion/W", "W");
-        h_piplus_p = m_hist_svc->book_momentum_hist("/DiPion/piplus_p", "#pi^{+} Momentum", 100, 0, 6);
-        h_piminus_p = m_hist_svc->book_momentum_hist("/DiPion/piminus_p", "#pi^{-} Momentum", 100, 0, 6);
+        h_Q2 = m_hist_svc->book_hist1D("/DiPion/Q2", "Q^{2};Q^{2} [GeV^{2}];Counts", 100, 0.0, 12.0);
+        h_W = m_hist_svc->book_hist1D("/DiPion/W", "W;W [GeV];Counts", 100, 0.0, 5.0);
+        h_piplus_p = m_hist_svc->book_hist1D("/DiPion/piplus_p", "#pi^{+} Momentum;Momentum [GeV/c];Counts", 100, 0, 6);
+        h_piminus_p = m_hist_svc->book_hist1D("/DiPion/piminus_p", "#pi^{-} Momentum;Momentum [GeV/c];Counts", 100, 0, 6);
         h_piplus_chi2pid = m_hist_svc->book_hist1D("/DiPion/piplus_chi2pid", "#pi^{+} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
         h_piminus_chi2pid = m_hist_svc->book_hist1D("/DiPion/piminus_chi2pid", "#pi^{-} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
         h_Q2_vs_W = m_hist_svc->book_hist2D("/DiPion/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]", 100, 1, 5, 100, 0, 10);
     }
 
-    auto fill_histograms([[maybe_unused]] const clas12::Particle& electron, const clas12::physics::DISAnalysis::DISKinematics& kin, const clas12::Particle& piplus, const clas12::Particle& piminus) -> void {
-        if (h_Q2) h_Q2->fill(kin.q2);
-        if (h_W) h_W->fill(kin.w);
-        if (h_piplus_p) h_piplus_p->fill(piplus.p());
-        if (h_piminus_p) h_piminus_p->fill(piminus.p());
-        if (h_piplus_chi2pid) h_piplus_chi2pid->fill(piplus.chi2pid());
-        if (h_piminus_chi2pid) h_piminus_chi2pid->fill(piminus.chi2pid());
-        if (h_Q2_vs_W) h_Q2_vs_W->fill(kin.w, kin.q2);
+    auto fill_histograms([[maybe_unused]] const Particle& electron, const physics::DISAnalysis::DISKinematics& kin, const Particle& piplus, const Particle& piminus) -> void {
+        h_Q2->fill(kin.q2);
+        h_W->fill(kin.w);
+        h_piplus_p->fill(piplus.p());
+        h_piminus_p->fill(piminus.p());
+        h_piplus_chi2pid->fill(piplus.chi2pid());
+        h_piminus_chi2pid->fill(piminus.chi2pid());
+        h_Q2_vs_W->fill(kin.w, kin.q2);
     }
 };
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

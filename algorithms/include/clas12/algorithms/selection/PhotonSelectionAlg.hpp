@@ -38,19 +38,19 @@
 #include <clas12/framework/services/PhotonCutsService.hpp>
 #include "bank.h"
 
-namespace clas12::algorithms {
+namespace algorithms {
 
-using clas12::framework::Log;
+using framework::Log;
 
 /// Configuration for PhotonSelectionAlg.
 struct PhotonSelectionConfig {
     bool use_ai = true;
 };
 
-class PhotonSelectionAlg : public clas12::framework::Algorithm {
+class PhotonSelectionAlg : public framework::Algorithm {
    public:
     using Config = PhotonSelectionConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit PhotonSelectionAlg(std::string name = "PhotonSelection", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Photon Selection") {
@@ -78,24 +78,24 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
         return StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> StatusCode override {
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
+    auto process(framework::Event& event) -> StatusCode override {
+        if (!event.passes_decision_typed(framework::Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
 
         const auto& RUN_config = event.get_bank("RUN::config");
         const auto& REC_Particle = event.get_bank("REC::Particle");
         const auto& REC_Calorimeter = event.get_bank("REC::Calorimeter");
 
-        const auto& all_photons = event.particles(clas12::PIDs::PHOTON);
+        const auto& all_photons = event.particles(PIDs::PHOTON);
 
-        if (h_n_photons_raw) h_n_photons_raw->fill(static_cast<double>(all_photons.size()));
+        h_n_photons_raw->fill(static_cast<double>(all_photons.size()));
         for (const auto& photon : all_photons) {
             m_cutflow.pass("All Photons");
-            if (h_energy_raw) h_energy_raw->fill(photon.E());
-            if (h_theta_raw) h_theta_raw->fill(photon.theta());
-            if (h_phi_raw) h_phi_raw->fill(photon.phi());
+            h_energy_raw->fill(photon.E());
+            h_theta_raw->fill(photon.theta());
+            h_phi_raw->fill(photon.phi());
         }
 
-        std::vector<clas12::Particle> candidates;
+        std::vector<Particle> candidates;
         if (m_use_ai.get()) {
             candidates = m_photon_cuts->select_photons_with_AI(RUN_config, REC_Particle, REC_Calorimeter);
         } else {
@@ -105,10 +105,10 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
         }
         for (size_t i = 0; i < candidates.size(); ++i) m_cutflow.pass("AI / Energy Cut");
 
-        std::vector<clas12::Particle> selected;
+        std::vector<Particle> selected;
         for (const auto& photon : candidates) {
-            clas12::CalorimeterBank calo = clas12::read_Calorimeter_bank(event, photon.index());
-            if (!clas12::framework::PhotonCutsService::pass_pcal_fiducial_cut(calo.pcal_lv, calo.pcal_lw)) continue;
+            CalorimeterBank calo = read_Calorimeter_bank(event, photon.index());
+            if (!framework::PhotonCutsService::pass_pcal_fiducial_cut(calo.pcal_lv, calo.pcal_lw)) continue;
             m_cutflow.pass("PCAL Fiducial");
 
             if (photon.beta() <= m_min_beta.get() || photon.beta() >= m_max_beta.get()) continue;
@@ -117,15 +117,15 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
             selected.push_back(photon);
         }
 
-        if (h_n_photons_selected) h_n_photons_selected->fill(static_cast<double>(selected.size()));
+        h_n_photons_selected->fill(static_cast<double>(selected.size()));
         for (const auto& photon : selected) {
-            if (h_energy_selected) h_energy_selected->fill(photon.E());
-            if (h_theta_selected) h_theta_selected->fill(photon.theta());
-            if (h_phi_selected) h_phi_selected->fill(photon.phi());
+            h_energy_selected->fill(photon.E());
+            h_theta_selected->fill(photon.theta());
+            h_phi_selected->fill(photon.phi());
         }
 
-        event.store_typed(clas12::framework::Keys::SelectedPhotons_Pi0, selected);
-        event.set_decision_typed(clas12::framework::Decisions::HasGoodPhoton, !selected.empty());
+        event.store_typed(framework::Keys::SelectedPhotons_Pi0, selected);
+        event.set_decision_typed(framework::Decisions::HasGoodPhoton, !selected.empty());
 
         return StatusCode::SUCCESS();
     }
@@ -140,24 +140,24 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
 
    private:
     Config m_config;
-    clas12::framework::Cutflow m_cutflow;
+    framework::Cutflow m_cutflow;
 
-    clas12::framework::Property<double> m_min_energy{"min_photon_energy", 0.2, "Minimum photon energy [GeV]"};
-    clas12::framework::Property<double> m_min_beta{"min_beta", 0.9, "Minimum photon beta"};
-    clas12::framework::Property<double> m_max_beta{"max_beta", 1.1, "Maximum photon beta"};
-    clas12::framework::Property<bool> m_use_ai{"use_ai", true, "Use AI-based photon selection"};
+    framework::Property<double> m_min_energy{"min_photon_energy", 0.2, "Minimum photon energy [GeV]"};
+    framework::Property<double> m_min_beta{"min_beta", 0.9, "Minimum photon beta"};
+    framework::Property<double> m_max_beta{"max_beta", 1.1, "Maximum photon beta"};
+    framework::Property<bool> m_use_ai{"use_ai", true, "Use AI-based photon selection"};
 
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
-    clas12::framework::ServiceRef<clas12::framework::PhotonCutsService> m_photon_cuts;
+    framework::ServiceRef<framework::HistogramService> m_hist;
+    framework::ServiceRef<framework::PhotonCutsService> m_photon_cuts;
 
-    clas12::framework::ThreadLocalHistogram1D* h_n_photons_raw = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_energy_raw = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_theta_raw = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_phi_raw = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_n_photons_selected = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_energy_selected = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_theta_selected = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_phi_selected = nullptr;
+    framework::ThreadLocalHistogram1D* h_n_photons_raw = nullptr;
+    framework::ThreadLocalHistogram1D* h_energy_raw = nullptr;
+    framework::ThreadLocalHistogram1D* h_theta_raw = nullptr;
+    framework::ThreadLocalHistogram1D* h_phi_raw = nullptr;
+    framework::ThreadLocalHistogram1D* h_n_photons_selected = nullptr;
+    framework::ThreadLocalHistogram1D* h_energy_selected = nullptr;
+    framework::ThreadLocalHistogram1D* h_theta_selected = nullptr;
+    framework::ThreadLocalHistogram1D* h_phi_selected = nullptr;
 
     auto book_histograms() -> void {
         const std::string dir = "/PhotonSelection";
@@ -165,13 +165,13 @@ class PhotonSelectionAlg : public clas12::framework::Algorithm {
         h_n_photons_raw = m_hist->book_hist1D(dir + "/n_photons_raw", "Number of Photons (raw);N_{#gamma};Events", 20, 0, 20);
         h_energy_raw = m_hist->book_hist1D(dir + "/energy_raw", "Photon Energy (raw);E [GeV];Photons", 100, 0, 5);
         h_theta_raw = m_hist->book_hist1D(dir + "/theta_raw", "Photon #theta (raw);#theta [deg];Photons", 180, 0, 40);
-        h_phi_raw = m_hist->book_phi_hist(dir + "/phi_raw", "Photon #phi (raw)");
+        h_phi_raw = m_hist->book_hist1D(dir + "/phi_raw", "Photon #phi (raw);#phi [deg];Counts", 360, -180.0, 180.0);
 
         h_n_photons_selected = m_hist->book_hist1D(dir + "/n_photons_selected", "Number of Photons (selected);N_{#gamma};Events", 20, 0, 20);
         h_energy_selected = m_hist->book_hist1D(dir + "/energy_selected", "Photon Energy (selected);E [GeV];Photons", 100, 0, 5);
         h_theta_selected = m_hist->book_hist1D(dir + "/theta_selected", "Photon #theta (selected);#theta [deg];Photons", 180, 0, 40);
-        h_phi_selected = m_hist->book_phi_hist(dir + "/phi_selected", "Photon #phi (selected)");
+        h_phi_selected = m_hist->book_hist1D(dir + "/phi_selected", "Photon #phi (selected);#phi [deg];Counts", 360, -180.0, 180.0);
     }
 };
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

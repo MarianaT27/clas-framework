@@ -22,7 +22,7 @@
 class TH1D;
 class TH2D;
 
-namespace clas12::framework {
+namespace framework {
 
 // Forward declaration
 class IService;
@@ -143,4 +143,4 @@ concept ConfigProvider = ServiceConcept<T> &&
         { svc.contains(key) } -> std::convertible_to<bool>;
     };
 
-}  // namespace clas12::framework
+}  // namespace framework

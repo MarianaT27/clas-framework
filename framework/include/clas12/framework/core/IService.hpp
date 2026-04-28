@@ -7,7 +7,7 @@
 #include <vector>
 #include <clas12/framework/core/StatusCode.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Service lifecycle states
@@ -341,4 +341,4 @@ class Service : public IService {
     }
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

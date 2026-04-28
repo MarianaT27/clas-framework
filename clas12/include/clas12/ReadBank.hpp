@@ -16,7 +16,6 @@
 
 #include <clas12/framework/core/Event.hpp>
 
-namespace clas12 {
 
 /**
  * @brief Find the MC particle index matching a reconstructed particle.
@@ -24,9 +23,9 @@ namespace clas12 {
  * Walks MC::RecMatch rows linked to `rec_pindex` and returns the first row
  * whose quality is at least `min_quality`. Returns -1 if no match is found.
  */
-inline auto get_mc_particle_index(clas12::framework::Event& event, int rec_pindex,
+inline auto get_mc_particle_index(framework::Event& event, int rec_pindex,
                                   float min_quality = 0.92f) -> int {
-    for (auto match : event.rows_for_pindex<clas12::bankdefs::MC_RecMatch>(rec_pindex)) {
+    for (auto match : event.rows_for_pindex<bankdefs::MC_RecMatch>(rec_pindex)) {
         const int mc_index = match.mcindex();
         const float quality = match.quality();
         if (quality >= min_quality && mc_index >= 0) return mc_index;
@@ -41,9 +40,9 @@ inline auto get_mc_particle_index(clas12::framework::Event& event, int rec_pinde
  * MC::GenMatch is keyed by mcindex (not pindex), so this is a linear scan.
  * The bank is small (one row per matched particle).
  */
-inline auto get_rec_particle_index(clas12::framework::Event& event, int mc_index,
+inline auto get_rec_particle_index(framework::Event& event, int mc_index,
                                    float min_quality = 0.92f) -> int {
-    auto& match = event.bank<clas12::bankdefs::MC_GenMatch>();
+    auto& match = event.bank<bankdefs::MC_GenMatch>();
     if (!match.valid()) return -1;
 
     const int n_rows = match.rows();
@@ -58,4 +57,3 @@ inline auto get_rec_particle_index(clas12::framework::Event& event, int mc_index
     return -1;
 }
 
-}  // namespace clas12

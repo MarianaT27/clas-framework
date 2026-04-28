@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `BSTRec::Crosses` (group 20200, item 25).
@@ -395,4 +395,4 @@ inline BSTRec_Crosses::Row BSTRec_Crosses::row(int index) const noexcept {
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

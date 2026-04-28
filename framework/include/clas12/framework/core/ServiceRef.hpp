@@ -27,7 +27,7 @@
  * Algorithm.
  */
 
-namespace clas12::framework {
+namespace framework {
 
 template <typename T>
 class ServiceRef {
@@ -62,4 +62,4 @@ private:
     T* m_p = nullptr;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

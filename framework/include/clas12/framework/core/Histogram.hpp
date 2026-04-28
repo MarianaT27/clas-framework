@@ -11,7 +11,7 @@
 #include "TH2D.h"
 #include "TProfile.h"
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Type-safe histogram wrapper for 1D histograms (thread-safe atomic)
@@ -316,4 +316,4 @@ class CutflowHistogram {
     auto sanitize_name(const std::string& name) -> std::string;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

@@ -13,7 +13,7 @@
 
 #include <clas12/framework/core/Generator.hpp>
 
-using namespace clas12::framework;
+using namespace framework;
 
 // ============================================================================
 // Basic Generator Tests

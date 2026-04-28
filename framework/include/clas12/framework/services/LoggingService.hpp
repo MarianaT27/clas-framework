@@ -11,7 +11,7 @@
 #include <unordered_map>
 #include <clas12/framework/core/IService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Log level enumeration
@@ -833,4 +833,4 @@ class Log {
     static inline LoggingService* s_instance = nullptr;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

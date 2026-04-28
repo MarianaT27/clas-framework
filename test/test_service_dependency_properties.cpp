@@ -8,7 +8,7 @@
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/core/ServiceManager.hpp>
 
-using namespace clas12::framework;
+using namespace framework;
 
 /**
  * Test service that tracks initialization order

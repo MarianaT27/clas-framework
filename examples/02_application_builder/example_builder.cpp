@@ -25,37 +25,37 @@ auto main(int argc, char** argv) -> int {
     int num_threads = (argc > 2) ? std::stoi(argv[2]) : 4;
 
     // Find input files
-    auto input_files = clas12::FileUtils::read_recursive_hipo_files(data_dir);
+    auto input_files = FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
-        clas12::framework::Log::error("Main", "No HIPO files found in {}", data_dir);
+        framework::Log::error("Main", "No HIPO files found in {}", data_dir);
         return EXIT_FAILURE;
     }
 
     // Configure algorithm
-    clas12::algorithms::ElectronAnalysisConfig alg_config;
-    alg_config.target = clas12::Target::LD2;
-    alg_config.polarity = clas12::Polarity::Outbending;
+    algorithms::ElectronAnalysisConfig alg_config;
+    alg_config.target = Target::LD2;
+    alg_config.polarity = Polarity::Outbending;
 
     // Build application using fluent API
-    auto app = clas12::framework::make_application("Builder Example")
+    auto app = framework::make_application("Builder Example")
         .with_input_files(input_files)
         .with_output("builder_example.root")
         .with_threads(num_threads)
         .with_standard_services()
         .with_target("LD2")
         .with_beam_energy(10.53)
-        .add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
-        .add_algorithm<clas12::algorithms::ElectronAnalysisAlg>("ElectronAnalysis", alg_config)
+        .add_algorithm<algorithms::EventMonitor>("EventMonitor")
+        .add_algorithm<algorithms::ElectronAnalysisAlg>("ElectronAnalysis", alg_config)
         .build();
 
     // Run analysis
     if (auto sc = app.initialize(); sc.is_failure()) {
-        clas12::framework::Log::error("Main", "Initialization failed: {}", sc.message());
+        framework::Log::error("Main", "Initialization failed: {}", sc.message());
         return EXIT_FAILURE;
     }
 
     if (auto sc = app.run(); sc.is_failure()) {
-        clas12::framework::Log::error("Main", "Processing failed: {}", sc.message());
+        framework::Log::error("Main", "Processing failed: {}", sc.message());
         return EXIT_FAILURE;
     }
 

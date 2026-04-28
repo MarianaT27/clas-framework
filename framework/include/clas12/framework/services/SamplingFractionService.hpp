@@ -8,7 +8,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Polynomial coefficients for sampling fraction parameterization
@@ -57,14 +57,14 @@ struct SectorSFParameters {
  *
  * Usage:
  * @code
- * auto sf_svc = service<clas12::framework::SamplingFractionService>("SamplingFractionService");
+ * auto sf_svc = service<framework::SamplingFractionService>("SamplingFractionService");
  *
  * double mu = sf_svc->evaluate_mu("OB", sector, momentum);
  * double sigma = sf_svc->evaluate_sigma("OB", sector, momentum);
  *
  * // Or use convenience methods
  * bool passes = sf_svc->passes_cut(SF, momentum, sector,
- *                                   clas12::Polarity::Outbending);
+ *                                   Polarity::Outbending);
  * @endcode
  */
 class SamplingFractionService : public Service {
@@ -147,13 +147,13 @@ class SamplingFractionService : public Service {
     }
 
     // ============================================================================
-    // Convenience Methods with clas12::Polarity
+    // Convenience Methods with Polarity
     // ============================================================================
 
     /**
      * @brief Check if sampling fraction passes the cut
      */
-    [[nodiscard]] auto passes_cut(double SF, double p, int sector, clas12::Polarity polarity) const
+    [[nodiscard]] auto passes_cut(double SF, double p, int sector, Polarity polarity) const
         -> bool {
         return passes_cut(SF, p, sector, polarity, m_n_sigma);
     }
@@ -161,11 +161,11 @@ class SamplingFractionService : public Service {
     /**
      * @brief Check if sampling fraction passes the cut with custom n_sigma
      */
-    [[nodiscard]] auto passes_cut(double SF, double p, int sector, clas12::Polarity polarity, double n_sigma) const
+    [[nodiscard]] auto passes_cut(double SF, double p, int sector, Polarity polarity, double n_sigma) const
         -> bool {
         if (sector < 1 || sector > NUM_SECTORS) return false;
 
-        std::string polarity_str = (polarity == clas12::Polarity::Outbending) ? "OB" : "IB";
+        std::string polarity_str = (polarity == Polarity::Outbending) ? "OB" : "IB";
 
         double cut_low = evaluate_minus_cut(polarity_str, sector, p, n_sigma);
         double cut_high = evaluate_plus_cut(polarity_str, sector, p, n_sigma);
@@ -176,8 +176,8 @@ class SamplingFractionService : public Service {
     /**
      * @brief Get μ and σ values
      */
-    [[nodiscard]] auto get_mean_sigma(double p, int sector, clas12::Polarity polarity) const -> std::pair<double, double> {
-        std::string polarity_str = (polarity == clas12::Polarity::Outbending) ? "OB" : "IB";
+    [[nodiscard]] auto get_mean_sigma(double p, int sector, Polarity polarity) const -> std::pair<double, double> {
+        std::string polarity_str = (polarity == Polarity::Outbending) ? "OB" : "IB";
 
         double mu = evaluate_mu(polarity_str, sector, p);
         double sigma = evaluate_sigma(polarity_str, sector, p);
@@ -186,20 +186,20 @@ class SamplingFractionService : public Service {
     }
 
     /**
-     * @brief Get μ value using clas12::Polarity
+     * @brief Get μ value using Polarity
      */
-    [[nodiscard]] auto get_mu(double p, int sector, clas12::Polarity polarity) const
+    [[nodiscard]] auto get_mu(double p, int sector, Polarity polarity) const
         -> double {
-        std::string polarity_str = (polarity == clas12::Polarity::Outbending) ? "OB" : "IB";
+        std::string polarity_str = (polarity == Polarity::Outbending) ? "OB" : "IB";
         return evaluate_mu(polarity_str, sector, p);
     }
 
     /**
-     * @brief Get σ value using clas12::Polarity
+     * @brief Get σ value using Polarity
      */
-    [[nodiscard]] auto get_sigma(double p, int sector, clas12::Polarity polarity) const
+    [[nodiscard]] auto get_sigma(double p, int sector, Polarity polarity) const
         -> double {
-        std::string polarity_str = (polarity == clas12::Polarity::Outbending) ? "OB" : "IB";
+        std::string polarity_str = (polarity == Polarity::Outbending) ? "OB" : "IB";
         return evaluate_sigma(polarity_str, sector, p);
     }
 
@@ -250,4 +250,4 @@ class SamplingFractionService : public Service {
     }
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

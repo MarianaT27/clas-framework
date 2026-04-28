@@ -18,7 +18,7 @@
 #include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
 
 auto main(int argc, char* argv[]) -> int {
-    return clas12::framework::AnalysisRunner::run(
+    return framework::AnalysisRunner::run(
         argc, argv, "Example Framework Analysis", "framework_example",
         [](auto& builder, const auto& config) {
             // Run number for conditions IOV — pull from
@@ -31,12 +31,12 @@ auto main(int argc, char* argv[]) -> int {
             }
 
             builder
-                .template add_service<clas12::framework::SamplingFractionService>()
-                .template configure_service<clas12::framework::ConditionsService>(
-                    [run_number](clas12::framework::ConditionsService& svc) {
+                .template add_service<framework::SamplingFractionService>()
+                .template configure_service<framework::ConditionsService>(
+                    [run_number](framework::ConditionsService& svc) {
                         svc.set_run_number(run_number);
                     })
-                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>(
-                    "ElectronSelection", clas12::algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity});
+                .template add_algorithm<algorithms::ElectronSelectionAlg>(
+                    "ElectronSelection", algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity});
         });
 }

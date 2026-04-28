@@ -35,7 +35,7 @@ auto read_scan(const toml::table& root, std::string_view key) -> std::vector<dou
 }  // namespace
 
 auto main(int argc, char* argv[]) -> int {
-    return clas12::framework::AnalysisRunner::run(
+    return framework::AnalysisRunner::run(
         argc, argv, "Nuclear Transparency Analysis", "nuclear_transparency_analysis",
         [](auto& builder, const auto& config) {
             // Scan parameters live under [scans] in the TOML, e.g.
@@ -54,12 +54,12 @@ auto main(int argc, char* argv[]) -> int {
             }
 
             builder
-                .template add_service<clas12::framework::ElectronCutsService>()
-                .template add_service<clas12::framework::DecayTreeFitterService>()
-                .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
-                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity})
-                .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::algorithms::DISSelectionConfig{.dis_region = clas12::physics::DISAnalysis::KinematicRegion{.q2_min = 1.0, .w_min = 2.0}})
-                .template add_algorithm<clas12::algorithms::PionSelectionAlg>("PionSelection", clas12::algorithms::PionSelectionConfig{.target = config.target, .sigma_scan = sigma_scan})
-                .template add_algorithm<clas12::algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", clas12::algorithms::Rho0ReconstructionConfig{.target = config.target, .sigma_scan = sigma_scan, .lc_scan = lc_scan, .zh_scan = zh_scan, .t_scan = t_scan, .dvz_scan = dvz_scan});
+                .template add_service<framework::ElectronCutsService>()
+                .template add_service<framework::DecayTreeFitterService>()
+                .template add_algorithm<algorithms::EventMonitor>("EventMonitor")
+                .template add_algorithm<algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity})
+                .template add_algorithm<algorithms::DISSelectionAlg>("DISSelection", algorithms::DISSelectionConfig{.dis_region = physics::DISAnalysis::KinematicRegion{.q2_min = 1.0, .w_min = 2.0}})
+                .template add_algorithm<algorithms::PionSelectionAlg>("PionSelection", algorithms::PionSelectionConfig{.target = config.target, .sigma_scan = sigma_scan})
+                .template add_algorithm<algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", algorithms::Rho0ReconstructionConfig{.target = config.target, .sigma_scan = sigma_scan, .lc_scan = lc_scan, .zh_scan = zh_scan, .t_scan = t_scan, .dvz_scan = dvz_scan});
         });
 }

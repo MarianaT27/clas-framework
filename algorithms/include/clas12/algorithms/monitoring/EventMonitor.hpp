@@ -11,14 +11,14 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 
-namespace clas12::algorithms {
+namespace algorithms {
 
-using clas12::framework::Log;
+using framework::Log;
 
 /// Configuration for EventMonitor.
 struct EventMonitorConfig {
     size_t progress_interval = 10000;
-    std::vector<clas12::PIDs> monitored_pids = {clas12::PIDs::ELECTRON};
+    std::vector<PIDs> monitored_pids = {PIDs::ELECTRON};
 };
 
 /**
@@ -26,10 +26,10 @@ struct EventMonitorConfig {
  *
  * Tracks event processing rates, particle multiplicities, and timing.
  */
-class EventMonitor : public clas12::framework::Algorithm {
+class EventMonitor : public framework::Algorithm {
    public:
     using Config = EventMonitorConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit EventMonitor(std::string name = "EventMonitor", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config) {
@@ -52,7 +52,7 @@ class EventMonitor : public clas12::framework::Algorithm {
         return StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> StatusCode override {
+    auto process(framework::Event& event) -> StatusCode override {
         const auto event_start = std::chrono::high_resolution_clock::now();
         m_events_processed.fetch_add(1, std::memory_order_relaxed);
         process_particle_statistics(event);
@@ -79,19 +79,19 @@ class EventMonitor : public clas12::framework::Algorithm {
         h_processing_time = m_hist->book_hist1D("/Monitor/processing_time", "Event Processing Time;Time [#mus];Events", TIME_HIST_BINS, TIME_HIST_MIN, TIME_HIST_MAX);
     }
 
-    auto process_particle_statistics(clas12::framework::Event& event) -> void {
-        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
+    auto process_particle_statistics(framework::Event& event) -> void {
+        auto& rec_particle = event.bank<bankdefs::REC_Particle>();
         const int n_particles = rec_particle.rows();
         m_total_particles.fetch_add(static_cast<size_t>(n_particles), std::memory_order_relaxed);
 
-        if (h_particles_per_event) h_particles_per_event->fill(n_particles);
-        if (h_electrons_per_event) h_electrons_per_event->fill(static_cast<int>(event.electrons().size()));
+        h_particles_per_event->fill(n_particles);
+        h_electrons_per_event->fill(static_cast<int>(event.electrons().size()));
     }
 
     auto record_processing_time(const std::chrono::time_point<std::chrono::high_resolution_clock>& event_start) -> void {
         const auto event_end = std::chrono::high_resolution_clock::now();
         const auto event_duration = std::chrono::duration_cast<std::chrono::microseconds>(event_end - event_start);
-        if (h_processing_time) h_processing_time->fill(event_duration.count());
+        h_processing_time->fill(event_duration.count());
     }
 
     [[nodiscard]] auto calculate_event_rate(long duration_seconds) const -> double {
@@ -117,15 +117,15 @@ class EventMonitor : public clas12::framework::Algorithm {
 
     Config m_config;
 
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
+    framework::ServiceRef<framework::HistogramService> m_hist;
 
-    clas12::framework::ThreadLocalHistogram1D* h_particles_per_event = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_electrons_per_event = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_processing_time = nullptr;
+    framework::ThreadLocalHistogram1D* h_particles_per_event = nullptr;
+    framework::ThreadLocalHistogram1D* h_electrons_per_event = nullptr;
+    framework::ThreadLocalHistogram1D* h_processing_time = nullptr;
 
     std::atomic<size_t> m_events_processed{0};
     std::atomic<size_t> m_total_particles{0};
     std::chrono::time_point<std::chrono::high_resolution_clock> m_start_time;
 };
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

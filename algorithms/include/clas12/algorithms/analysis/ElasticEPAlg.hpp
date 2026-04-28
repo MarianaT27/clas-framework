@@ -17,28 +17,28 @@
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/physics/ParticleUtils.hpp>
 
-namespace clas12::algorithms {
+namespace algorithms {
 
-using clas12::framework::Log;
+using framework::Log;
 
 enum class NuclearTarget { Proton, Neutron, Deuteron, Helium4 };
 
 inline auto get_target_mass(NuclearTarget target) -> double {
     switch (target) {
-        case NuclearTarget::Proton: return clas12::Constants::PROTONMASS;
-        case NuclearTarget::Neutron: return clas12::Constants::NEUTRONMASS;
-        case NuclearTarget::Deuteron: return clas12::Constants::DEUTERIUMMASS;
-        case NuclearTarget::Helium4: return clas12::Constants::HELIUM4MASS;
-        default: return clas12::Constants::PROTONMASS;
+        case NuclearTarget::Proton: return Constants::PROTONMASS;
+        case NuclearTarget::Neutron: return Constants::NEUTRONMASS;
+        case NuclearTarget::Deuteron: return Constants::DEUTERIUMMASS;
+        case NuclearTarget::Helium4: return Constants::HELIUM4MASS;
+        default: return Constants::PROTONMASS;
     }
 }
 
-inline auto get_recoil_pid(NuclearTarget target) -> clas12::PIDs {
+inline auto get_recoil_pid(NuclearTarget target) -> PIDs {
     switch (target) {
-        case NuclearTarget::Proton: return clas12::PIDs::PROTON;
-        case NuclearTarget::Neutron: return clas12::PIDs::NEUTRON;
-        case NuclearTarget::Deuteron: return clas12::PIDs::DEUTERON;
-        default: return clas12::PIDs::PROTON;
+        case NuclearTarget::Proton: return PIDs::PROTON;
+        case NuclearTarget::Neutron: return PIDs::NEUTRON;
+        case NuclearTarget::Deuteron: return PIDs::DEUTERON;
+        default: return PIDs::PROTON;
     }
 }
 
@@ -70,10 +70,10 @@ struct ElasticEPConfig {
 /**
  * @brief Algorithm for elastic electron selection based on W cut
  */
-class ElasticEPAlg : public clas12::framework::Algorithm {
+class ElasticEPAlg : public framework::Algorithm {
    public:
     using Config = ElasticEPConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit ElasticEPAlg(std::string name = "ElasticEPAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_target_mass(get_target_mass(config.target)), m_cutflow("Elastic e-" + get_target_name(config.target) + " Selection (W-only)") {
@@ -105,13 +105,13 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
         return StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> StatusCode override {
+    auto process(framework::Event& event) -> StatusCode override {
         m_cutflow.pass("All Events");
 
         if (event.electrons().empty()) return StatusCode::FILTERED();
-        const auto possible_electron = event.find_trigger_electron({clas12::FD, clas12::BD});
+        const auto possible_electron = event.find_trigger_electron({FD, BD});
         if (!possible_electron.has_value()) return StatusCode::FILTERED();
-        const clas12::Particle& electron = possible_electron.value();
+        const Particle& electron = possible_electron.value();
 
         if (electron.vz() == -3.0 || electron.p() <= 0.00001 || electron.theta() <= 0.00001) return StatusCode::FILTERED();
 
@@ -120,26 +120,23 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
         m_cutflow.pass("Has Electron");
 
         double vz = electron.vz();
-        if (h_Vz_precut) h_Vz_precut->fill(vz);
-
+        h_Vz_precut->fill(vz);
         if (m_enable_vz_cut.get() && (vz < m_Vz_min.get() || vz > m_Vz_max.get())) return StatusCode::FILTERED();
         m_cutflow.pass("Vz Cut");
 
-        if (h_W_precut) h_W_precut->fill(kin.W);
-        if (h_Q2_precut) h_Q2_precut->fill(kin.Q2);
-
+        h_W_precut->fill(kin.W);
+        h_Q2_precut->fill(kin.Q2);
         if (m_enable_w_cut.get() && (kin.W < m_W_min.get() || kin.W > m_W_max.get())) return StatusCode::FILTERED();
         m_cutflow.pass("W Cut");
 
-        event.set_decision_typed(clas12::framework::Decisions::HasElasticElectron, true);
-        event.store_typed(clas12::framework::Keys::ElasticElectron, electron);
-        event.store_typed(clas12::framework::Keys::ElasticQ2, kin.Q2);
-        event.store_typed(clas12::framework::Keys::ElasticW, kin.W);
-        event.store_typed(clas12::framework::Keys::ElasticNu, kin.nu);
+        event.set_decision_typed(framework::Decisions::HasElasticElectron, true);
+        event.store_typed(framework::Keys::ElasticElectron, electron);
+        event.store_typed(framework::Keys::ElasticQ2, kin.Q2);
+        event.store_typed(framework::Keys::ElasticW, kin.W);
+        event.store_typed(framework::Keys::ElasticNu, kin.nu);
 
         fill_histograms(kin);
-        if (h_Vz) h_Vz->fill(vz);
-
+        h_Vz->fill(vz);
         if (m_ntuple) {
             auto& d = m_ntuple_writer.data();
             d.e_p = electron.p();
@@ -164,27 +161,27 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
    private:
     Config m_config;
     double m_target_mass;
-    clas12::framework::Cutflow m_cutflow;
+    framework::Cutflow m_cutflow;
 
-    clas12::framework::Property<double> m_beam_energy{"beam_energy", 2.2, "Beam energy [GeV]"};
-    clas12::framework::Property<double> m_W_min{"W_min", 1.6, "Minimum W [GeV]"};
-    clas12::framework::Property<double> m_W_max{"W_max", 2.0, "Maximum W [GeV]"};
-    clas12::framework::Property<double> m_Vz_min{"Vz_min", -30.0, "Minimum Vz [cm]"};
-    clas12::framework::Property<double> m_Vz_max{"Vz_max", 10.0, "Maximum Vz [cm]"};
-    clas12::framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
-    clas12::framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
+    framework::Property<double> m_beam_energy{"beam_energy", 2.2, "Beam energy [GeV]"};
+    framework::Property<double> m_W_min{"W_min", 1.6, "Minimum W [GeV]"};
+    framework::Property<double> m_W_max{"W_max", 2.0, "Maximum W [GeV]"};
+    framework::Property<double> m_Vz_min{"Vz_min", -30.0, "Minimum Vz [cm]"};
+    framework::Property<double> m_Vz_max{"Vz_max", 10.0, "Maximum Vz [cm]"};
+    framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
+    framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
 
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
-    clas12::framework::ServiceRef<clas12::framework::NTupleService> m_ntuple;
+    framework::ServiceRef<framework::HistogramService> m_hist;
+    framework::ServiceRef<framework::NTupleService> m_ntuple;
 
-    clas12::framework::ThreadLocalHistogram1D* h_Q2 = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_Q2_precut = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_W = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_W_precut = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_nu = nullptr;
-    clas12::framework::ThreadLocalHistogram2D* h_p_e_vs_theta_e = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_Vz_precut = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_Vz = nullptr;
+    framework::ThreadLocalHistogram1D* h_Q2 = nullptr;
+    framework::ThreadLocalHistogram1D* h_Q2_precut = nullptr;
+    framework::ThreadLocalHistogram1D* h_W = nullptr;
+    framework::ThreadLocalHistogram1D* h_W_precut = nullptr;
+    framework::ThreadLocalHistogram1D* h_nu = nullptr;
+    framework::ThreadLocalHistogram2D* h_p_e_vs_theta_e = nullptr;
+    framework::ThreadLocalHistogram1D* h_Vz_precut = nullptr;
+    framework::ThreadLocalHistogram1D* h_Vz = nullptr;
 
     struct ElasticEPNTupleData {
         double e_p = 0.0;
@@ -196,13 +193,13 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
 
         static constexpr auto ntuple_fields() {
             using T = ElasticEPNTupleData;
-            return std::make_tuple(clas12::framework::field("e_p", &T::e_p), clas12::framework::field("e_theta", &T::e_theta), clas12::framework::field("e_phi", &T::e_phi), clas12::framework::field("Q2", &T::Q2), clas12::framework::field("W", &T::W), clas12::framework::field("nu", &T::nu));
+            return std::make_tuple(framework::field("e_p", &T::e_p), framework::field("e_theta", &T::e_theta), framework::field("e_phi", &T::e_phi), framework::field("Q2", &T::Q2), framework::field("W", &T::W), framework::field("nu", &T::nu));
         }
     };
 
-    clas12::framework::NTupleWriter<ElasticEPNTupleData> m_ntuple_writer;
+    framework::NTupleWriter<ElasticEPNTupleData> m_ntuple_writer;
 
-    auto calculate_kinematics(const clas12::Particle& electron) -> ElasticKinematics {
+    auto calculate_kinematics(const Particle& electron) -> ElasticKinematics {
         ElasticKinematics kin;
         const double M = m_target_mass;
         const double Eb = m_beam_energy.get();
@@ -229,11 +226,11 @@ class ElasticEPAlg : public clas12::framework::Algorithm {
     }
 
     auto fill_histograms(const ElasticKinematics& kin) -> void {
-        if (h_Q2) h_Q2->fill(kin.Q2);
-        if (h_W) h_W->fill(kin.W);
-        if (h_nu) h_nu->fill(kin.nu);
-        if (h_p_e_vs_theta_e) h_p_e_vs_theta_e->fill(kin.theta_e * clas12::Constants::RAD_TO_DEG, kin.p_e);
+        h_Q2->fill(kin.Q2);
+        h_W->fill(kin.W);
+        h_nu->fill(kin.nu);
+        h_p_e_vs_theta_e->fill(kin.theta_e * Constants::RAD_TO_DEG, kin.p_e);
     }
 };
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `CVTRec::CosmicSeeds` (group 20500, item 29).
@@ -633,4 +633,4 @@ inline CVTRec_CosmicSeeds::Row CVTRec_CosmicSeeds::row(int index) const noexcept
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

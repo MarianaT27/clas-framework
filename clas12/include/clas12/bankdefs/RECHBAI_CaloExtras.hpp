@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `RECHBAI::CaloExtras` (group 400, item 24).
@@ -325,4 +325,4 @@ inline RECHBAI_CaloExtras::Row RECHBAI_CaloExtras::row(int index) const noexcept
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

@@ -3,7 +3,7 @@
 #include <cctype>
 #include <clas12/framework/services/HistogramService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 // HistogramGroup implementation
 
@@ -61,4 +61,4 @@ auto CutflowHistogram::get_histogram(const std::string& cut_name) -> std::option
     return std::nullopt;
 }
 
-}  // namespace clas12::framework
+}  // namespace framework

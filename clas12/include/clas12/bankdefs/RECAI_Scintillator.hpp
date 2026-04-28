@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `RECAI::Scintillator` (group 400, item 35).
@@ -346,4 +346,4 @@ inline RECAI_Scintillator::Row RECAI_Scintillator::row(int index) const noexcept
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

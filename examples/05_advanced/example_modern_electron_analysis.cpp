@@ -44,7 +44,7 @@
 // Physics headers
 #include <clas12/physics/Kinematics.hpp>
 
-using namespace clas12::framework;
+using namespace framework;
 
 // ============================================================================
 // Algorithm 1: Electron Selection using CutBuilder and Range Adaptors
@@ -130,10 +130,10 @@ public:
         // Step 1: Pull Forward Detector electrons from Event's cached
         // per-PID vector and gate on |status| ∈ [FD, CD).
         // ====================================================================
-        std::vector<clas12::Particle> electron_candidates;
+        std::vector<Particle> electron_candidates;
         for (const auto& e : event.electrons()) {
             const double abs_status = std::abs(e.status());
-            if (clas12::FD <= abs_status && abs_status < clas12::CD) {
+            if (FD <= abs_status && abs_status < CD) {
                 electron_candidates.push_back(e);
             }
         }
@@ -194,7 +194,7 @@ public:
         m_event_store.store(Decisions::HasGoodElectron, true);
 
         // Also store all passing electrons
-        std::vector<clas12::Particle> selected_electrons;
+        std::vector<Particle> selected_electrons;
         for (const auto& e : electron_candidates) {
             if (e.p() >= m_min_momentum.get() && e.p() <= m_max_momentum.get() &&
                 e.theta() >= m_min_theta.get() && e.theta() <= m_max_theta.get() &&
@@ -331,15 +331,15 @@ public:
         const double E_beam = m_beam_energy.get();
 
         // Create beam particle (electron along z-axis)
-        clas12::Particle beam(11, 0, -1, -1, clas12::Constants::ELECTRONMASS,
+        Particle beam(11, 0, -1, -1, Constants::ELECTRONMASS,
                             0.0, 0.0, E_beam, E_beam, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
 
         // Create target particle (proton at rest)
-        clas12::Particle target(2212, 0, -1, 1, clas12::Constants::PROTONMASS,
-                              0.0, 0.0, 0.0, clas12::Constants::PROTONMASS, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        Particle target(2212, 0, -1, 1, Constants::PROTONMASS,
+                              0.0, 0.0, 0.0, Constants::PROTONMASS, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 
         // Compute DIS kinematics
-        auto dis_kin = clas12::physics::KinematicCalculator::calculate_DIS(beam, electron, target);
+        auto dis_kin = physics::KinematicCalculator::calculate_DIS(beam, electron, target);
         double Q2 = dis_kin.Q2;
         double W = dis_kin.W;
         double xbj = dis_kin.x_bj;
@@ -476,7 +476,7 @@ private:
 // DISKinematics.beam_energy, ...). See README for the schema.
 
 auto main(int argc, char* argv[]) -> int {
-    return clas12::framework::AnalysisRunner::run(
+    return framework::AnalysisRunner::run(
         argc, argv, "Modern Electron Analysis", "modern_electron_analysis",
         [](auto& builder, const auto& /*config*/) {
             builder

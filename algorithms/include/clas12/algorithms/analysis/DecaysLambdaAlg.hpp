@@ -18,9 +18,9 @@
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 
-namespace clas12::algorithms {
+namespace algorithms {
 
-using clas12::framework::Log;
+using framework::Log;
 
 constexpr int LAMBDA_PID = 3122;
 constexpr double LAMBDA_MASS_PDG = 1.115683;
@@ -85,10 +85,10 @@ struct DecaysLambdaConfig {
 /**
  * @brief Algorithm for Lambda analysis using DECAYS::Particle bank
  */
-class DecaysLambdaAlg : public clas12::framework::Algorithm {
+class DecaysLambdaAlg : public framework::Algorithm {
    public:
     using Config = DecaysLambdaConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit DecaysLambdaAlg(std::string name = "DecaysLambdaAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("DECAYS Lambda Analysis") {
@@ -125,10 +125,10 @@ class DecaysLambdaAlg : public clas12::framework::Algorithm {
         return StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> StatusCode override {
+    auto process(framework::Event& event) -> StatusCode override {
         m_cutflow.pass("All Events");
 
-        clas12::bankdefs::DECAYS_Particle decays;
+        bankdefs::DECAYS_Particle decays;
         if (!decays.bind(event.get_bank("DECAYS::Particle"))) return StatusCode::FILTERED();
 
         const int nrows = decays.rows();
@@ -189,9 +189,9 @@ class DecaysLambdaAlg : public clas12::framework::Algorithm {
         if (lambdas.empty()) return StatusCode::FILTERED();
         m_cutflow.pass("Has Lambda");
 
-        if (h_n_lambdas) h_n_lambdas->fill(lambdas.size());
+        h_n_lambdas->fill(lambdas.size());
         for (const auto& lambda : lambdas) {
-            if (h_mass_nocuts) h_mass_nocuts->fill(lambda.mass);
+            h_mass_nocuts->fill(lambda.mass);
         }
 
         std::vector<DecaysLambda> selected_lambdas;
@@ -201,8 +201,7 @@ class DecaysLambdaAlg : public clas12::framework::Algorithm {
         bool passed_vertex_detach = false;
 
         for (const auto& lambda : lambdas) {
-            if (h_vertex_detach_precut) h_vertex_detach_precut->fill(lambda.vertex_detach_z());
-
+            h_vertex_detach_precut->fill(lambda.vertex_detach_z());
             if (m_enable_mass_window_cut.get() && std::abs(lambda.mass - LAMBDA_MASS_PDG) > m_mass_window.get()) continue;
             passed_mass = true;
 
@@ -233,11 +232,11 @@ class DecaysLambdaAlg : public clas12::framework::Algorithm {
 
         if (selected_lambdas.empty()) return StatusCode::FILTERED();
 
-        event.set_decision_typed(clas12::framework::Decisions::HasDecaysLambda, true);
+        event.set_decision_typed(framework::Decisions::HasDecaysLambda, true);
 
         auto best_it = std::min_element(selected_lambdas.begin(), selected_lambdas.end(), [](const DecaysLambda& a, const DecaysLambda& b) { return std::abs(a.mass - LAMBDA_MASS_PDG) < std::abs(b.mass - LAMBDA_MASS_PDG); });
-        event.store_typed(clas12::framework::Keys::DecaysLambdaMass, best_it->mass);
-        event.store_typed(clas12::framework::Keys::DecaysLambdaMomentum, best_it->momentum());
+        event.store_typed(framework::Keys::DecaysLambdaMass, best_it->mass);
+        event.store_typed(framework::Keys::DecaysLambdaMomentum, best_it->momentum());
 
         for (const auto& lambda : selected_lambdas) fill_lambda_histograms(lambda, all_daughters);
 
@@ -256,39 +255,39 @@ class DecaysLambdaAlg : public clas12::framework::Algorithm {
    private:
     Config m_config;
 
-    clas12::framework::Property<double> m_mass_window{"mass_window", 0.1, "Mass window around PDG mass [GeV]"};
-    clas12::framework::Property<double> m_min_momentum{"min_momentum", 0.0, "Minimum Lambda momentum [GeV]"};
-    clas12::framework::Property<double> m_min_decay_length{"min_decay_length", 0.0, "Minimum decay length [cm], 0=disabled"};
-    clas12::framework::Property<double> m_min_vertex_detach{"min_vertex_detach", -1000.0, "Minimum z displacement [cm], -1000=disabled"};
-    clas12::framework::Property<double> m_max_vertex_detach{"max_vertex_detach", 0.0, "Maximum z displacement [cm], 0=no limit"};
-    clas12::framework::Property<bool> m_enable_mass_window_cut{"enable_mass_window_cut", true, "Enable mass window cut"};
-    clas12::framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
-    clas12::framework::Property<bool> m_enable_decay_length_cut{"enable_decay_length_cut", true, "Enable decay length cut"};
-    clas12::framework::Property<bool> m_enable_vertex_detach_cut{"enable_vertex_detach_cut", true, "Enable vertex detachment cut"};
-    clas12::framework::Cutflow m_cutflow;
+    framework::Property<double> m_mass_window{"mass_window", 0.1, "Mass window around PDG mass [GeV]"};
+    framework::Property<double> m_min_momentum{"min_momentum", 0.0, "Minimum Lambda momentum [GeV]"};
+    framework::Property<double> m_min_decay_length{"min_decay_length", 0.0, "Minimum decay length [cm], 0=disabled"};
+    framework::Property<double> m_min_vertex_detach{"min_vertex_detach", -1000.0, "Minimum z displacement [cm], -1000=disabled"};
+    framework::Property<double> m_max_vertex_detach{"max_vertex_detach", 0.0, "Maximum z displacement [cm], 0=no limit"};
+    framework::Property<bool> m_enable_mass_window_cut{"enable_mass_window_cut", true, "Enable mass window cut"};
+    framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
+    framework::Property<bool> m_enable_decay_length_cut{"enable_decay_length_cut", true, "Enable decay length cut"};
+    framework::Property<bool> m_enable_vertex_detach_cut{"enable_vertex_detach_cut", true, "Enable vertex detachment cut"};
+    framework::Cutflow m_cutflow;
 
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
-    clas12::framework::ServiceRef<clas12::framework::NTupleService> m_ntuple;
+    framework::ServiceRef<framework::HistogramService> m_hist;
+    framework::ServiceRef<framework::NTupleService> m_ntuple;
 
-    clas12::framework::ThreadLocalHistogram1D* h_n_lambdas = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_mass_nocuts = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_mass_selected = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_umass = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_momentum = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_theta = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_phi = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_decay_length = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_decay_vz = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_origin_vz = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_r = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_ndau = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_proton_p = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_pion_p = nullptr;
-    clas12::framework::ThreadLocalHistogram2D* h_mass_vs_p = nullptr;
-    clas12::framework::ThreadLocalHistogram2D* h_decay_vz_vs_origin_vz = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_vertex_detach = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_vertex_detach_precut = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_vertex_detach_xy = nullptr;
+    framework::ThreadLocalHistogram1D* h_n_lambdas = nullptr;
+    framework::ThreadLocalHistogram1D* h_mass_nocuts = nullptr;
+    framework::ThreadLocalHistogram1D* h_mass_selected = nullptr;
+    framework::ThreadLocalHistogram1D* h_umass = nullptr;
+    framework::ThreadLocalHistogram1D* h_momentum = nullptr;
+    framework::ThreadLocalHistogram1D* h_theta = nullptr;
+    framework::ThreadLocalHistogram1D* h_phi = nullptr;
+    framework::ThreadLocalHistogram1D* h_decay_length = nullptr;
+    framework::ThreadLocalHistogram1D* h_decay_vz = nullptr;
+    framework::ThreadLocalHistogram1D* h_origin_vz = nullptr;
+    framework::ThreadLocalHistogram1D* h_r = nullptr;
+    framework::ThreadLocalHistogram1D* h_ndau = nullptr;
+    framework::ThreadLocalHistogram1D* h_proton_p = nullptr;
+    framework::ThreadLocalHistogram1D* h_pion_p = nullptr;
+    framework::ThreadLocalHistogram2D* h_mass_vs_p = nullptr;
+    framework::ThreadLocalHistogram2D* h_decay_vz_vs_origin_vz = nullptr;
+    framework::ThreadLocalHistogram1D* h_vertex_detach = nullptr;
+    framework::ThreadLocalHistogram1D* h_vertex_detach_precut = nullptr;
+    framework::ThreadLocalHistogram1D* h_vertex_detach_xy = nullptr;
 
     struct DecaysLambdaNTupleData {
         std::vector<double> mass;
@@ -305,11 +304,11 @@ class DecaysLambdaAlg : public clas12::framework::Algorithm {
 
         static constexpr auto ntuple_fields() {
             using T = DecaysLambdaNTupleData;
-            return std::make_tuple(clas12::framework::field("mass", &T::mass), clas12::framework::field("umass", &T::umass), clas12::framework::field("p", &T::p), clas12::framework::field("theta", &T::theta), clas12::framework::field("phi", &T::phi), clas12::framework::field("decay_length", &T::decay_length), clas12::framework::field("vz", &T::vz), clas12::framework::field("ovz", &T::ovz), clas12::framework::field("proton_p", &T::proton_p), clas12::framework::field("pion_p", &T::pion_p), clas12::framework::field("vertex_detach", &T::vertex_detach));
+            return std::make_tuple(framework::field("mass", &T::mass), framework::field("umass", &T::umass), framework::field("p", &T::p), framework::field("theta", &T::theta), framework::field("phi", &T::phi), framework::field("decay_length", &T::decay_length), framework::field("vz", &T::vz), framework::field("ovz", &T::ovz), framework::field("proton_p", &T::proton_p), framework::field("pion_p", &T::pion_p), framework::field("vertex_detach", &T::vertex_detach));
         }
     };
 
-    clas12::framework::NTupleWriter<DecaysLambdaNTupleData> m_ntuple_writer;
+    framework::NTupleWriter<DecaysLambdaNTupleData> m_ntuple_writer;
 
     auto book_histograms() -> void {
         h_n_lambdas = m_hist->book_hist1D("/DecaysLambda/n_lambdas", "Number of #Lambda per event;N_{#Lambda};Events", 10, 0, 10);
@@ -334,27 +333,26 @@ class DecaysLambdaAlg : public clas12::framework::Algorithm {
     }
 
     auto fill_lambda_histograms(const DecaysLambda& lambda, const std::vector<DecaysDaughter>& daughters) -> void {
-        if (h_mass_selected) h_mass_selected->fill(lambda.mass);
-        if (h_umass) h_umass->fill(lambda.umass);
-        if (h_momentum) h_momentum->fill(lambda.momentum());
-        if (h_theta) h_theta->fill(lambda.theta() * clas12::Constants::RAD_TO_DEG);
-        if (h_phi) h_phi->fill(lambda.phi() * clas12::Constants::RAD_TO_DEG);
-        if (h_decay_length) h_decay_length->fill(lambda.decay_length());
-        if (h_decay_vz) h_decay_vz->fill(lambda.vz);
-        if (h_origin_vz) h_origin_vz->fill(lambda.ovz);
-        if (h_r) h_r->fill(lambda.r);
-        if (h_ndau) h_ndau->fill(lambda.ndau);
-        if (h_mass_vs_p) h_mass_vs_p->fill(lambda.momentum(), lambda.mass);
-        if (h_decay_vz_vs_origin_vz) h_decay_vz_vs_origin_vz->fill(lambda.ovz, lambda.vz);
-        if (h_vertex_detach) h_vertex_detach->fill(lambda.vertex_detach_z());
-        if (h_vertex_detach_xy) h_vertex_detach_xy->fill(lambda.vertex_detach_xy());
-
+        h_mass_selected->fill(lambda.mass);
+        h_umass->fill(lambda.umass);
+        h_momentum->fill(lambda.momentum());
+        h_theta->fill(lambda.theta() * Constants::RAD_TO_DEG);
+        h_phi->fill(lambda.phi() * Constants::RAD_TO_DEG);
+        h_decay_length->fill(lambda.decay_length());
+        h_decay_vz->fill(lambda.vz);
+        h_origin_vz->fill(lambda.ovz);
+        h_r->fill(lambda.r);
+        h_ndau->fill(lambda.ndau);
+        h_mass_vs_p->fill(lambda.momentum(), lambda.mass);
+        h_decay_vz_vs_origin_vz->fill(lambda.ovz, lambda.vz);
+        h_vertex_detach->fill(lambda.vertex_detach_z());
+        h_vertex_detach_xy->fill(lambda.vertex_detach_xy());
         for (const auto& dau : daughters) {
             if (dau.idx == lambda.dau1idx || dau.idx == lambda.dau2idx) {
-                if (dau.pid == static_cast<int>(clas12::PIDs::PROTON)) {
-                    if (h_proton_p) h_proton_p->fill(dau.momentum());
-                } else if (dau.pid == static_cast<int>(clas12::PIDs::PIMINUS)) {
-                    if (h_pion_p) h_pion_p->fill(dau.momentum());
+                if (dau.pid == static_cast<int>(PIDs::PROTON)) {
+                    h_proton_p->fill(dau.momentum());
+                } else if (dau.pid == static_cast<int>(PIDs::PIMINUS)) {
+                    h_pion_p->fill(dau.momentum());
                 }
             }
         }
@@ -388,8 +386,8 @@ class DecaysLambdaAlg : public clas12::framework::Algorithm {
             double proton_p = 0.0, pion_p = 0.0;
             for (const auto& dau : daughters) {
                 if (dau.idx == lambda.dau1idx || dau.idx == lambda.dau2idx) {
-                    if (dau.pid == static_cast<int>(clas12::PIDs::PROTON)) proton_p = dau.momentum();
-                    else if (dau.pid == static_cast<int>(clas12::PIDs::PIMINUS)) pion_p = dau.momentum();
+                    if (dau.pid == static_cast<int>(PIDs::PROTON)) proton_p = dau.momentum();
+                    else if (dau.pid == static_cast<int>(PIDs::PIMINUS)) pion_p = dau.momentum();
                 }
             }
             d.proton_p.push_back(proton_p);
@@ -400,4 +398,4 @@ class DecaysLambdaAlg : public clas12::framework::Algorithm {
     }
 };
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

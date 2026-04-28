@@ -7,9 +7,9 @@
 #include <clas12/Particle.hpp>
 
 
-namespace clas12::algorithms {
+namespace algorithms {
 
-using clas12::framework::Log;
+using framework::Log;
 
 Pi0ReconstructionAlg::Pi0ReconstructionAlg(std::string name, const Config& config)
     : Algorithm(std::move(name)), m_config(config), m_cutflow("Pi0 Reconstruction") {
@@ -17,8 +17,8 @@ Pi0ReconstructionAlg::Pi0ReconstructionAlg(std::string name, const Config& confi
     declare_properties(m_min_photon_energy, m_pi0_mass_window);
 }
 
-auto Pi0ReconstructionAlg::select_photons(const std::vector<clas12::Particle>& photons) const -> std::vector<clas12::Particle> {
-    std::vector<clas12::Particle> selected;
+auto Pi0ReconstructionAlg::select_photons(const std::vector<Particle>& photons) const -> std::vector<Particle> {
+    std::vector<Particle> selected;
     selected.reserve(photons.size());
     for (const auto& photon : photons) {
         if (photon.E() >= m_min_photon_energy.get()) selected.push_back(photon);
@@ -26,14 +26,14 @@ auto Pi0ReconstructionAlg::select_photons(const std::vector<clas12::Particle>& p
     return selected;
 }
 
-auto Pi0ReconstructionAlg::calculate_invariant_mass(const clas12::Particle& g1, const clas12::Particle& g2) -> double {
+auto Pi0ReconstructionAlg::calculate_invariant_mass(const Particle& g1, const Particle& g2) -> double {
     return (g1.PxPyPzEVector() + g2.PxPyPzEVector()).M();
 }
 
-auto Pi0ReconstructionAlg::find_best_pi0(const std::vector<clas12::Particle>& photons) const -> std::optional<std::tuple<clas12::Particle, clas12::Particle, double>> {
+auto Pi0ReconstructionAlg::find_best_pi0(const std::vector<Particle>& photons) const -> std::optional<std::tuple<Particle, Particle, double>> {
     if (photons.size() < 2) return std::nullopt;
 
-    std::optional<std::tuple<clas12::Particle, clas12::Particle, double>> best;
+    std::optional<std::tuple<Particle, Particle, double>> best;
     double best_mass_diff = std::numeric_limits<double>::max();
 
     for (size_t i = 0; i < photons.size(); ++i) {
@@ -50,10 +50,10 @@ auto Pi0ReconstructionAlg::find_best_pi0(const std::vector<clas12::Particle>& ph
     return best;
 }
 
-auto Pi0ReconstructionAlg::find_all_unique_pi0_candidates(const std::vector<clas12::Particle>& photons) const -> std::optional<std::vector<std::tuple<clas12::Particle, clas12::Particle, double>>> {
+auto Pi0ReconstructionAlg::find_all_unique_pi0_candidates(const std::vector<Particle>& photons) const -> std::optional<std::vector<std::tuple<Particle, Particle, double>>> {
     if (photons.size() < 2) return std::nullopt;
 
-    std::vector<std::tuple<clas12::Particle, clas12::Particle, double>> candidates;
+    std::vector<std::tuple<Particle, Particle, double>> candidates;
     std::vector<bool> used(photons.size(), false);
 
     while (true) {
@@ -100,13 +100,13 @@ auto Pi0ReconstructionAlg::on_initialize() -> StatusCode {
     return StatusCode::SUCCESS();
 }
 
-auto Pi0ReconstructionAlg::process(clas12::framework::Event& event) -> StatusCode {
+auto Pi0ReconstructionAlg::process(framework::Event& event) -> StatusCode {
     m_cutflow.pass("All Events");
 
-    if (!event.passes_decision_typed(clas12::framework::Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
+    if (!event.passes_decision_typed(framework::Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
     m_cutflow.pass("Has Electron");
 
-    auto photons_opt = event.retrieve_typed(clas12::framework::Keys::SelectedPhotons_Pi0);
+    auto photons_opt = event.retrieve_typed(framework::Keys::SelectedPhotons_Pi0);
     if (!photons_opt || photons_opt->size() < 2) return StatusCode::FILTERED();
     m_cutflow.pass("Has >= 2 Photons");
 
@@ -118,14 +118,14 @@ auto Pi0ReconstructionAlg::process(clas12::framework::Event& event) -> StatusCod
     auto& tuple_candidates = candidates_opt.value();
     m_cutflow.pass("Pi0 Found");
 
-    std::vector<clas12::physics::CompositeParticle> pi0_candidates;
+    std::vector<physics::CompositeParticle> pi0_candidates;
     pi0_candidates.reserve(tuple_candidates.size());
     for (const auto& [g1, g2, mass] : tuple_candidates) {
-        pi0_candidates.emplace_back(std::vector<clas12::Particle>{g1, g2}, 111);
+        pi0_candidates.emplace_back(std::vector<Particle>{g1, g2}, 111);
     }
 
-    event.store_typed(clas12::framework::Keys::Pi0Candidates, pi0_candidates);
-    event.set_decision_typed(clas12::framework::Decisions::HasPi0, true);
+    event.store_typed(framework::Keys::Pi0Candidates, pi0_candidates);
+    event.set_decision_typed(framework::Decisions::HasPi0, true);
 
     return StatusCode::SUCCESS();
 }
@@ -138,4 +138,4 @@ auto Pi0ReconstructionAlg::on_finalize() -> StatusCode {
     return StatusCode::SUCCESS();
 }
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

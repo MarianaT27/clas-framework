@@ -33,52 +33,52 @@ namespace {
  * data (which may be in EVIO format) by scanning all bank structures and
  * re-serializing them using event_builder.
  */
-class HipoEventWriterAlg : public clas12::framework::Algorithm {
+class HipoEventWriterAlg : public framework::Algorithm {
 public:
     explicit HipoEventWriterAlg(std::string name = "HipoEventWriterAlg")
         : Algorithm(std::move(name)) {}
 
-    auto on_initialize() -> clas12::framework::StatusCode override {
-        m_hipo_svc = svc<clas12::framework::HipoFileService>();
+    auto on_initialize() -> framework::StatusCode override {
+        m_hipo_svc = svc<framework::HipoFileService>();
         if (!m_hipo_svc || !m_hipo_svc->is_output_enabled()) {
-            clas12::framework::Log::warning(name(), "HIPO output not configured — writer disabled");
+            framework::Log::warning(name(), "HIPO output not configured — writer disabled");
             m_enabled = false;
         } else {
-            clas12::framework::Log::info(name(), "Will write passing events to HIPO output (all banks)");
+            framework::Log::info(name(), "Will write passing events to HIPO output (all banks)");
             m_enabled = true;
         }
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
-        if (!m_enabled) return clas12::framework::StatusCode::SUCCESS();
+    auto process(framework::Event& event) -> framework::StatusCode override {
+        if (!m_enabled) return framework::StatusCode::SUCCESS();
 
         // Write the raw event data directly — preserves the original format
         // (EVIO-style events as produced by CLAS12 reconstruction)
         auto raw = event.get_bank_view_set().raw_event_data();
-        if (raw.empty()) return clas12::framework::StatusCode::SUCCESS();
+        if (raw.empty()) return framework::StatusCode::SUCCESS();
 
         m_hipo_svc->write_event(raw);
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
-    auto on_finalize() -> clas12::framework::StatusCode override {
+    auto on_finalize() -> framework::StatusCode override {
         if (m_enabled && m_hipo_svc) {
-            clas12::framework::Log::info(name(), "Events written to HIPO: {}",
+            framework::Log::info(name(), "Events written to HIPO: {}",
                                           m_hipo_svc->events_written());
         }
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
 private:
-    clas12::framework::HipoFileService* m_hipo_svc = nullptr;
+    framework::HipoFileService* m_hipo_svc = nullptr;
     bool m_enabled = false;
 };
 
 }  // namespace
 
 auto main(int argc, char* argv[]) -> int {
-    return clas12::framework::AnalysisRunner::run(
+    return framework::AnalysisRunner::run(
         argc, argv, "Di-Pion Analysis", "dipion_analysis",
         [](auto& builder, const auto& config) {
             std::string hipo_output;
@@ -88,17 +88,17 @@ auto main(int argc, char* argv[]) -> int {
             }
 
             builder
-                .template add_service<clas12::framework::ElectronCutsService>()
-                .template add_service<clas12::framework::DecayTreeFitterService>()
-                .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
-                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity})
-                .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::algorithms::DISSelectionConfig{.dis_region = clas12::physics::DISAnalysis::KinematicRegion{.q2_min = 1.0, .w_min = 2.0}})
-                .template add_algorithm<clas12::algorithms::PionSelectionAlg>("PionSelection", clas12::algorithms::PionSelectionConfig{.target = config.target});
-                //.template add_algorithm<clas12::algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", config.target);
+                .template add_service<framework::ElectronCutsService>()
+                .template add_service<framework::DecayTreeFitterService>()
+                .template add_algorithm<algorithms::EventMonitor>("EventMonitor")
+                .template add_algorithm<algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity})
+                .template add_algorithm<algorithms::DISSelectionAlg>("DISSelection", algorithms::DISSelectionConfig{.dis_region = physics::DISAnalysis::KinematicRegion{.q2_min = 1.0, .w_min = 2.0}})
+                .template add_algorithm<algorithms::PionSelectionAlg>("PionSelection", algorithms::PionSelectionConfig{.target = config.target});
+                //.template add_algorithm<algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", config.target);
 
             if (!hipo_output.empty()) {
-                builder.template configure_service<clas12::framework::HipoFileService>(
-                    [hipo_output](clas12::framework::HipoFileService& svc) {
+                builder.template configure_service<framework::HipoFileService>(
+                    [hipo_output](framework::HipoFileService& svc) {
                         svc.set_output_file(hipo_output);
                     });
                 builder.template add_algorithm<HipoEventWriterAlg>("HipoEventWriter");

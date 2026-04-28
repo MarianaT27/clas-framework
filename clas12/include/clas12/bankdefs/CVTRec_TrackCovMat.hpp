@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `CVTRec::TrackCovMat` (group 20500, item 28).
@@ -619,4 +619,4 @@ inline CVTRec_TrackCovMat::Row CVTRec_TrackCovMat::row(int index) const noexcept
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

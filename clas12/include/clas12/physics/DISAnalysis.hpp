@@ -6,7 +6,7 @@
 #include <clas12/Particle.hpp>
 #include <clas12/physics/Kinematics.hpp>
 
-namespace clas12::physics {
+namespace physics {
 
 /**
  * @brief Beam configuration for DIS analysis
@@ -22,9 +22,9 @@ struct BeamConfig {
     /**
      * @brief Create a beam particle from this configuration
      */
-    auto to_particle() const -> clas12::Particle {
-        double E = std::sqrt(px * px + py * py + pz * pz + clas12::Constants::ELECTRONMASS * clas12::Constants::ELECTRONMASS);
-        return clas12::Particle(11, 0, -1, -1, clas12::Constants::ELECTRONMASS,
+    auto to_particle() const -> Particle {
+        double E = std::sqrt(px * px + py * py + pz * pz + Constants::ELECTRONMASS * Constants::ELECTRONMASS);
+        return Particle(11, 0, -1, -1, Constants::ELECTRONMASS,
                               px, py, pz, E, 0, 0, 0, 0, 1.0, 0);
     }
 };
@@ -161,27 +161,27 @@ class DISAnalysis {
      * @return DISKinematics structure with all calculated values
      */
     static auto calculate_kinematics(
-        const clas12::Particle& electron,
+        const Particle& electron,
         const BeamConfig& beam = BeamConfig()) -> DISKinematics {
         // Create target proton at rest
-        clas12::Particle target(2212, 0, -1, 1, clas12::Constants::PROTONMASS,
-                              0, 0, 0, clas12::Constants::PROTONMASS, 0, 0, 0, 0, 0, 0);
+        Particle target(2212, 0, -1, 1, Constants::PROTONMASS,
+                              0, 0, 0, Constants::PROTONMASS, 0, 0, 0, 0, 0, 0);
 
         // Create beam particle
-        clas12::Particle beam_particle = beam.to_particle();
+        Particle beam_particle = beam.to_particle();
 
         // Use Physics::KinematicCalculator for calculations
         double q2_val = KinematicCalculator::calculate_Q2(beam_particle, electron);
         double w_val = KinematicCalculator::calculate_W(beam_particle, electron, target);
         double nu_val = beam.energy - electron.E();
         double y_val = KinematicCalculator::calculate_y(beam_particle, electron);
-        double xb_val = KinematicCalculator::calculate_x_bjorken(q2_val, nu_val, clas12::Constants::PROTONMASS);
+        double xb_val = KinematicCalculator::calculate_x_bjorken(q2_val, nu_val, Constants::PROTONMASS);
 
         // Virtual photon polarization parameter
         double epsilon_val = calculate_epsilon(q2_val, nu_val, beam.energy);
 
         // Boost factor (γ = Q/M)
-        double gamma_val = std::sqrt(q2_val) / clas12::Constants::PROTONMASS;
+        double gamma_val = std::sqrt(q2_val) / Constants::PROTONMASS;
 
         return DISKinematics{
             .q2 = q2_val,
@@ -352,4 +352,4 @@ class StructureFunctionHelper {
     }
 };
 
-}  // namespace clas12::physics
+}  // namespace physics

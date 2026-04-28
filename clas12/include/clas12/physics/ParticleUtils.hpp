@@ -6,13 +6,13 @@
 #include <limits>
 #include <vector>
 
-namespace clas12::physics {
+namespace physics {
 
 /**
  * @brief Utility functions for particle physics calculations and selection
  *
  * This namespace contains physics-related helper functions that were previously
- * in clas12::Helpers. These are specifically for particle physics operations.
+ * in Helpers. These are specifically for particle physics operations.
  */
 namespace ParticleUtils {
 
@@ -26,23 +26,23 @@ inline auto get_mass(const int pid) -> double {
     switch (pid) {
         case 11:
         case -11:
-            return clas12::Constants::ELECTRONMASS;
+            return Constants::ELECTRONMASS;
         case 22:
             return 0.0;
         case 211:
         case -211:
-            return clas12::Constants::PIMASS;
+            return Constants::PIMASS;
         case 321:
         case -321:
-            return clas12::Constants::KMASS;
+            return Constants::KMASS;
         case 2212:
         case -2212:
-            return clas12::Constants::PROTONMASS;
+            return Constants::PROTONMASS;
         case 2112:
         case -2112:
-            return clas12::Constants::NEUTRONMASS;
+            return Constants::NEUTRONMASS;
         case 111:
-            return clas12::Constants::PI0MASS;
+            return Constants::PI0MASS;
         default:
             return std::numeric_limits<double>::quiet_NaN();
     }
@@ -153,4 +153,4 @@ inline double wrap_angle_rad(double angle) {
 
 }  // namespace ParticleUtils
 
-}  // namespace clas12::physics
+}  // namespace physics

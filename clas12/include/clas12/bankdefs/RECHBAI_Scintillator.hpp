@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `RECHBAI::Scintillator` (group 400, item 15).
@@ -346,4 +346,4 @@ inline RECHBAI_Scintillator::Row RECHBAI_Scintillator::row(int index) const noex
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

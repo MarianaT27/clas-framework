@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `ALERT::ai:pid` (group 23000, item 34).
@@ -213,4 +213,4 @@ inline ALERT_ai_pid::Row ALERT_ai_pid::row(int index) const noexcept {
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

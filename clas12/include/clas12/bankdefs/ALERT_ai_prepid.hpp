@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `ALERT::ai:prepid` (group 23000, item 33).
@@ -213,4 +213,4 @@ inline ALERT_ai_prepid::Row ALERT_ai_prepid::row(int index) const noexcept {
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

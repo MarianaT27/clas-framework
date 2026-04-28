@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `ALERT::ai:projections` (group 23000, item 32).
@@ -129,4 +129,4 @@ inline ALERT_ai_projections::Row ALERT_ai_projections::row(int index) const noex
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

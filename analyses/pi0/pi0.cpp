@@ -14,7 +14,7 @@
 #include <clas12/physics/DISAnalysis.hpp>
 
 auto main(int argc, char* argv[]) -> int {
-    return clas12::framework::AnalysisRunner::run(
+    return framework::AnalysisRunner::run(
         argc, argv, "Pi0 Analysis", "pi0_analysis",
         [](auto& builder, const auto& config) {
             // mass_window is a constructor arg (not a Property) so it
@@ -27,12 +27,12 @@ auto main(int argc, char* argv[]) -> int {
                     mass_window = *v;
             }
             builder
-                .template add_service<clas12::framework::ElectronCutsService>()
-                .template add_service<clas12::framework::PhotonCutsService>()
-                .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
-                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>()
-                .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::algorithms::DISSelectionConfig{.dis_region = clas12::physics::DISAnalysis::standard_dis_region()})
-                .template add_algorithm<clas12::algorithms::PhotonSelectionAlg>("PhotonSelection")
-                .template add_algorithm<clas12::algorithms::Pi0ReconstructionAlg>("Pi0Reconstruction", clas12::algorithms::Pi0ReconstructionConfig{.pi0_mass_window = mass_window});
+                .template add_service<framework::ElectronCutsService>()
+                .template add_service<framework::PhotonCutsService>()
+                .template add_algorithm<algorithms::EventMonitor>("EventMonitor")
+                .template add_algorithm<algorithms::ElectronSelectionAlg>()
+                .template add_algorithm<algorithms::DISSelectionAlg>("DISSelection", algorithms::DISSelectionConfig{.dis_region = physics::DISAnalysis::standard_dis_region()})
+                .template add_algorithm<algorithms::PhotonSelectionAlg>("PhotonSelection")
+                .template add_algorithm<algorithms::Pi0ReconstructionAlg>("Pi0Reconstruction", algorithms::Pi0ReconstructionConfig{.pi0_mass_window = mass_window});
         });
 }

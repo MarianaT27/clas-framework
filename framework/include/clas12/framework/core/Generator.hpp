@@ -78,7 +78,7 @@
 #include <optional>
 #include <utility>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief A lazy generator using C++20 coroutines
@@ -519,4 +519,4 @@ private:
     handle_type m_handle = nullptr;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

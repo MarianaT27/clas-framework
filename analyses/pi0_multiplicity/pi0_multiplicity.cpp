@@ -21,7 +21,7 @@
 #include <clas12/physics/DISAnalysis.hpp>
 
 auto main(int argc, char* argv[]) -> int {
-    return clas12::framework::AnalysisRunner::run(
+    return framework::AnalysisRunner::run(
         argc, argv, "Pi0 Multiplicity Ratio", "pi0_multiplicity",
         [](auto& builder, const auto& config) {
             // Constructor args: pull from each algorithm's TOML section.
@@ -34,14 +34,14 @@ auto main(int argc, char* argv[]) -> int {
                     max_pool_events = static_cast<int>(*v);
             }
             builder
-                .template add_service<clas12::framework::ElectronCutsService>()
-                .template add_service<clas12::framework::PhotonCutsService>()
-                .template add_algorithm<clas12::algorithms::EventMonitor>("EventMonitor")
-                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>()
-                .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::algorithms::DISSelectionConfig{.dis_region = clas12::physics::DISAnalysis::standard_dis_region()})
-                .template add_algorithm<clas12::algorithms::PhotonSelectionAlg>("PhotonSelection")
-                .template add_algorithm<clas12::algorithms::Pi0ReconstructionAlg>("Pi0Reconstruction", clas12::algorithms::Pi0ReconstructionConfig{.pi0_mass_window = mass_window})
-                .template add_algorithm<clas12::algorithms::Pi0MultiplicityRatioAlg>("Pi0Multiplicity")
-                .template add_algorithm<clas12::algorithms::Pi0EventMixingAlg>("Pi0EventMixing", clas12::algorithms::Pi0EventMixingConfig{.max_pool_events = max_pool_events});
+                .template add_service<framework::ElectronCutsService>()
+                .template add_service<framework::PhotonCutsService>()
+                .template add_algorithm<algorithms::EventMonitor>("EventMonitor")
+                .template add_algorithm<algorithms::ElectronSelectionAlg>()
+                .template add_algorithm<algorithms::DISSelectionAlg>("DISSelection", algorithms::DISSelectionConfig{.dis_region = physics::DISAnalysis::standard_dis_region()})
+                .template add_algorithm<algorithms::PhotonSelectionAlg>("PhotonSelection")
+                .template add_algorithm<algorithms::Pi0ReconstructionAlg>("Pi0Reconstruction", algorithms::Pi0ReconstructionConfig{.pi0_mass_window = mass_window})
+                .template add_algorithm<algorithms::Pi0MultiplicityRatioAlg>("Pi0Multiplicity")
+                .template add_algorithm<algorithms::Pi0EventMixingAlg>("Pi0EventMixing", algorithms::Pi0EventMixingConfig{.max_pool_events = max_pool_events});
         });
 }

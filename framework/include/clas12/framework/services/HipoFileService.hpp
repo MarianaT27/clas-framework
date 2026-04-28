@@ -12,7 +12,7 @@
 #include <dictionary.h>
 #include <event_builder.h>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Service for managing HIPO file I/O
@@ -257,4 +257,4 @@ private:
     }
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

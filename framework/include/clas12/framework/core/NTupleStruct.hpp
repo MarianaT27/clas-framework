@@ -42,7 +42,7 @@
 
 #include <clas12/framework/services/NTupleService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 // =============================================================================
 // Modern template-based field registration (preferred, no macros)
@@ -58,9 +58,9 @@ namespace clas12::framework {
 //         static constexpr auto ntuple_fields() {
 //             using T = ElectronNTupleData;
 //             return std::make_tuple(
-//                 clas12::framework::field("e_p",     &T::e_p),
-//                 clas12::framework::field("e_theta", &T::e_theta),
-//                 clas12::framework::field("sector",  &T::sector));
+//                 framework::field("e_p",     &T::e_p),
+//                 framework::field("e_theta", &T::e_theta),
+//                 framework::field("sector",  &T::sector));
 //         }
 //     };
 //
@@ -125,9 +125,9 @@ concept HasStaticNTupleFields = requires { T::ntuple_fields(); };
  *     static constexpr auto ntuple_fields() {
  *         using T = ElectronData;
  *         return std::make_tuple(
- *             clas12::framework::field("p",     &T::p),
- *             clas12::framework::field("theta", &T::theta),
- *             clas12::framework::field("phi",   &T::phi));
+ *             framework::field("p",     &T::p),
+ *             framework::field("theta", &T::theta),
+ *             framework::field("phi",   &T::phi));
  *     }
  * };
  *
@@ -266,4 +266,4 @@ auto make_ntuple_writer(NTupleService* svc, const std::string& tree_name) -> NTu
     return NTupleWriter<T>(svc, tree_name);
 }
 
-}  // namespace clas12::framework
+}  // namespace framework

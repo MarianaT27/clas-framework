@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `RECHBAI::TrackCross` (group 400, item 17).
@@ -276,4 +276,4 @@ inline RECHBAI_TrackCross::Row RECHBAI_TrackCross::row(int index) const noexcept
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

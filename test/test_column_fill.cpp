@@ -6,8 +6,8 @@
 
 #include <clas12/framework/core/ThreadLocalHistogram.hpp>
 
-using clas12::framework::ThreadLocalHistogram1D;
-using clas12::framework::ThreadLocalHistogram2D;
+using framework::ThreadLocalHistogram1D;
+using framework::ThreadLocalHistogram2D;
 
 // =============================================================================
 // ThreadLocalHistogram1D::fill_span

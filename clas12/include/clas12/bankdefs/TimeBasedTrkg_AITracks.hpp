@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `TimeBasedTrkg::AITracks` (group 20600, item 76).
@@ -675,4 +675,4 @@ inline TimeBasedTrkg_AITracks::Row TimeBasedTrkg_AITracks::row(int index) const 
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

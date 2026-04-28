@@ -14,7 +14,7 @@
 #include <clas12/framework/core/StatusCode.hpp>
 #include <chain.h>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Main application class for running analyses
@@ -342,4 +342,4 @@ class Application {
     mutable std::atomic<long> m_exception_count{0};
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

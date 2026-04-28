@@ -12,8 +12,7 @@
 #include <clas12/framework/services/ElectronCutsService.hpp>
 #include <clas12/framework/services/SamplingFractionService.hpp>
 
-using clas12::framework::ElectronCutsService;
-using clas12::Target;
+using framework::ElectronCutsService;
 
 namespace {
 

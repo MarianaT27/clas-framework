@@ -10,7 +10,7 @@
 #include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/IService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Service for visualizing algorithm workflows and dependencies
@@ -605,4 +605,4 @@ class WorkflowBuilder {
     std::string m_producing_object;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

@@ -10,7 +10,7 @@
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Interval of Validity for calibration constants
@@ -83,8 +83,8 @@ class ConditionsService : public Service {
      * @param sector Detector sector (1-6)
      * @return std::vector<double> SF polynomial parameters
      */
-    auto get_sampling_fraction_params(clas12::Target target,
-                                      clas12::Polarity polarity,
+    auto get_sampling_fraction_params(Target target,
+                                      Polarity polarity,
                                       int sector) -> std::vector<double> {
         // For now, return empty vector - would be populated from conditions DB
         // In a full implementation, this would query by IOV and return
@@ -179,4 +179,4 @@ class ConditionsService : public Service {
     }
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

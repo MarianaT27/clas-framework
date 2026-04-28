@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `TimeBasedTrkg::TBCovMat` (group 20600, item 37).
@@ -619,4 +619,4 @@ inline TimeBasedTrkg_TBCovMat::Row TimeBasedTrkg_TBCovMat::row(int index) const 
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

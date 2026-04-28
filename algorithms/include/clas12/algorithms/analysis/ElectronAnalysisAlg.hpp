@@ -23,10 +23,10 @@
 #include <clas12/physics/Kinematics.hpp>
 #include <vector>
 
-namespace clas12::algorithms {
+namespace algorithms {
 
 // Import Log singleton for convenient logging
-using clas12::framework::Log;
+using framework::Log;
 
 /**
  * @brief Full electron analysis algorithm (refactored from study1::Reader)
@@ -43,8 +43,8 @@ using clas12::framework::Log;
  */
 /// Configuration structure for ElectronAnalysisAlg parameters
 struct ElectronAnalysisConfig {
-    clas12::Target target = clas12::Target::LD2;
-    clas12::Polarity polarity = clas12::Polarity::Outbending;
+    Target target = Target::LD2;
+    Polarity polarity = Polarity::Outbending;
     bool enable_cut_stage_histograms = true;
     // Momentum binning for DC histograms
     double p_bin_min = 1.0;
@@ -56,10 +56,10 @@ struct ElectronAnalysisConfig {
     double theta_bin_width = 5.0;
 };
 
-class ElectronAnalysisAlg : public clas12::framework::Algorithm {
+class ElectronAnalysisAlg : public framework::Algorithm {
    public:
     using Config = ElectronAnalysisConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis", const Config& config = Config{}) : Algorithm(std::move(name)), m_config(config), m_target(m_config.target), m_polarity(m_config.polarity), m_cutflow("Electron Selection") {
         required_services(m_hist, m_ntuple, m_electron_cuts);
@@ -95,7 +95,7 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
         return StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> StatusCode override {
+    auto process(framework::Event& event) -> StatusCode override {
         m_cutflow.pass("All Events");
 
         // Process negative tracks
@@ -103,9 +103,9 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
 
         // Select trigger electron
         if (event.electrons().empty()) return StatusCode::FILTERED();
-        std::optional<clas12::Particle> trigger_e = event.find_trigger_electron();
+        std::optional<Particle> trigger_e = event.find_trigger_electron();
         if (!trigger_e.has_value()) return StatusCode::FILTERED();
-        clas12::Particle electron = trigger_e.value();
+        Particle electron = trigger_e.value();
         m_cutflow.pass("Trigger Electron");
 
         // Build electron candidate with all detector information
@@ -156,13 +156,13 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
         // Publish the trigger electron + decision so downstream algorithms
         // (e.g. PionAnalysis) can gate on `HasGoodElectron` and pick the
         // electron up via `Keys::TriggerElectron`.
-        event.store_typed(clas12::framework::Keys::TriggerElectron, electron);
-        event.set_decision_typed(clas12::framework::Decisions::HasGoodElectron, true);
+        event.store_typed(framework::Keys::TriggerElectron, electron);
+        event.set_decision_typed(framework::Decisions::HasGoodElectron, true);
 
         return StatusCode::SUCCESS();
     }
 
-    auto on_finalize() -> clas12::framework::StatusCode override {
+    auto on_finalize() -> framework::StatusCode override {
         if (Log::is_available()) {
             Log::info(name(), "Finalizing algorithm");
             auto final_count = m_cutflow.get_count("DC Chi2/NDF");
@@ -177,33 +177,33 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
         fmt::print("\n");
         m_cutflow.print();
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
    private:
     Config m_config;
-    clas12::Target m_target;
-    clas12::Polarity m_polarity;
-    clas12::framework::Cutflow m_cutflow;
+    Target m_target;
+    Polarity m_polarity;
+    framework::Cutflow m_cutflow;
 
     // Cut toggle properties
-    clas12::framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable Chi2 PID cut"};
-    clas12::framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
-    clas12::framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
-    clas12::framework::Property<bool> m_enable_sf_cut{"enable_sf_cut", true, "Enable sampling fraction cut"};
-    clas12::framework::Property<bool> m_enable_pcal_fiducial_cut{"enable_pcal_fiducial_cut", true, "Enable PCAL fiducial cut"};
-    clas12::framework::Property<bool> m_enable_dc_chi2ndf_cut{"enable_dc_chi2ndf_cut", true, "Enable DC Chi2/NDF cut"};
+    framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable Chi2 PID cut"};
+    framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
+    framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
+    framework::Property<bool> m_enable_sf_cut{"enable_sf_cut", true, "Enable sampling fraction cut"};
+    framework::Property<bool> m_enable_pcal_fiducial_cut{"enable_pcal_fiducial_cut", true, "Enable PCAL fiducial cut"};
+    framework::Property<bool> m_enable_dc_chi2ndf_cut{"enable_dc_chi2ndf_cut", true, "Enable DC Chi2/NDF cut"};
 
     // Services (auto-resolved by required_services(...) in the constructor)
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
-    clas12::framework::ServiceRef<clas12::framework::NTupleService> m_ntuple;
-    clas12::framework::ServiceRef<clas12::framework::ElectronCutsService> m_electron_cuts;
+    framework::ServiceRef<framework::HistogramService> m_hist;
+    framework::ServiceRef<framework::NTupleService> m_ntuple;
+    framework::ServiceRef<framework::ElectronCutsService> m_electron_cuts;
 
     struct ElectronCandidate {
-        clas12::Particle particle;
-        clas12::CalorimeterBank calorimeter;
-        clas12::DCTrajBank traj;
-        clas12::TrackBank track;
+        Particle particle;
+        CalorimeterBank calorimeter;
+        DCTrajBank traj;
+        TrackBank track;
         double sampling_fraction = 0.0;
         double total_energy = 0.0;
         int sector = 0;
@@ -244,76 +244,76 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
 
         static constexpr auto ntuple_fields() {
             using T = ElectronNTupleData;
-            return std::make_tuple(clas12::framework::field("e_p", &T::e_p), clas12::framework::field("e_theta", &T::e_theta), clas12::framework::field("e_phi", &T::e_phi), clas12::framework::field("e_vz", &T::e_vz), clas12::framework::field("e_chi2pid", &T::e_chi2pid), clas12::framework::field("sampling_fraction", &T::sampling_fraction), clas12::framework::field("sector", &T::sector),
-                                   clas12::framework::field("x_r1", &T::x_r1), clas12::framework::field("y_r1", &T::y_r1), clas12::framework::field("z_r1", &T::z_r1), clas12::framework::field("x_r2", &T::x_r2), clas12::framework::field("y_r2", &T::y_r2), clas12::framework::field("z_r2", &T::z_r2));
+            return std::make_tuple(framework::field("e_p", &T::e_p), framework::field("e_theta", &T::e_theta), framework::field("e_phi", &T::e_phi), framework::field("e_vz", &T::e_vz), framework::field("e_chi2pid", &T::e_chi2pid), framework::field("sampling_fraction", &T::sampling_fraction), framework::field("sector", &T::sector),
+                                   framework::field("x_r1", &T::x_r1), framework::field("y_r1", &T::y_r1), framework::field("z_r1", &T::z_r1), framework::field("x_r2", &T::x_r2), framework::field("y_r2", &T::y_r2), framework::field("z_r2", &T::z_r2));
         }
     };
 
-    clas12::framework::NTupleWriter<ElectronNTupleData> m_ntuple_electron;
+    framework::NTupleWriter<ElectronNTupleData> m_ntuple_electron;
 
     // Histograms - organized by category (lock-free atomic)
     struct {
-        clas12::framework::ThreadLocalHistogram1D* momentum = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* vz = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* chi2pid = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* p_vs_theta = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* phi_vs_theta = nullptr;
+        framework::ThreadLocalHistogram1D* momentum = nullptr;
+        framework::ThreadLocalHistogram1D* theta = nullptr;
+        framework::ThreadLocalHistogram1D* phi = nullptr;
+        framework::ThreadLocalHistogram1D* vz = nullptr;
+        framework::ThreadLocalHistogram1D* chi2pid = nullptr;
+        framework::ThreadLocalHistogram2D* p_vs_theta = nullptr;
+        framework::ThreadLocalHistogram2D* phi_vs_theta = nullptr;
     } h_electron;
 
     struct {
-        clas12::framework::ThreadLocalHistogram2D* lu_vs_lv_pcal = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* lu_vs_lw_pcal = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* lu_vs_lv_inner = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* lu_vs_lw_inner = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* lu_vs_lv_outer = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* lu_vs_lw_outer = nullptr;
+        framework::ThreadLocalHistogram2D* lu_vs_lv_pcal = nullptr;
+        framework::ThreadLocalHistogram2D* lu_vs_lw_pcal = nullptr;
+        framework::ThreadLocalHistogram2D* lu_vs_lv_inner = nullptr;
+        framework::ThreadLocalHistogram2D* lu_vs_lw_inner = nullptr;
+        framework::ThreadLocalHistogram2D* lu_vs_lv_outer = nullptr;
+        framework::ThreadLocalHistogram2D* lu_vs_lw_outer = nullptr;
     } h_calorimeter;
 
     // DC chi2/ndf vs edge, sliced on momentum and on theta.
     // Each TH3D replaces a stack of per-bin 2D histograms; project at
     // analysis time via TH3::ProjectionYZ(binlo, binhi).
     struct {
-        clas12::framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_p_r1 = nullptr;
-        clas12::framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_p_r2 = nullptr;
-        clas12::framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_p_r3 = nullptr;
-        clas12::framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_theta_r1 = nullptr;
-        clas12::framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_theta_r2 = nullptr;
-        clas12::framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_theta_r3 = nullptr;
+        framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_p_r1 = nullptr;
+        framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_p_r2 = nullptr;
+        framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_p_r3 = nullptr;
+        framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_theta_r1 = nullptr;
+        framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_theta_r2 = nullptr;
+        framework::ThreadLocalHistogram3D* chi2ndf_vs_edge_vs_theta_r3 = nullptr;
     } h_dc;
 
     struct {
-        clas12::framework::ThreadLocalHistogram2D* vz_vs_theta = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* vz_vs_p = nullptr;
-        clas12::framework::ThreadLocalHistogram3D* vz_vs_theta_vs_p = nullptr;
+        framework::ThreadLocalHistogram2D* vz_vs_theta = nullptr;
+        framework::ThreadLocalHistogram2D* vz_vs_p = nullptr;
+        framework::ThreadLocalHistogram3D* vz_vs_theta_vs_p = nullptr;
     } h_electron_vz;
 
     // Track histograms structure (for neg/pos tracks, pions, etc.)
     // Each histogram is stored per sector (1-6) via PerSectorHist handles.
     struct TrackHistograms {
         // Calorimeter (per sector)
-        clas12::framework::PerSectorHist1D<6> nphe;
-        clas12::framework::PerSectorHist2D<6> EPCal_vs_ECal;
-        clas12::framework::PerSectorHist1D<6> EPCal;
-        clas12::framework::PerSectorHist2D<6> EPCal_vs_ECal_cut;
-        clas12::framework::PerSectorHist1D<6> EPCal_cut;
-        clas12::framework::PerSectorHist2D<6> Etot_vs_SF;
-        clas12::framework::PerSectorHist2D<6> Etot_vs_SF_cut;
-        clas12::framework::PerSectorHist2D<6> p_vs_SF;
-        clas12::framework::PerSectorHist2D<6> lv_vs_SF;
-        clas12::framework::PerSectorHist2D<6> lw_vs_SF;
-        clas12::framework::PerSectorHist2D<6> lu_vs_SF_low;
-        clas12::framework::PerSectorHist2D<6> lu_vs_SF_high;
-        clas12::framework::PerSectorHist2D<6> lu_vs_SF_low_with_cut;
-        clas12::framework::PerSectorHist2D<6> lu_vs_SF_high_with_cut;
+        framework::PerSectorHist1D<6> nphe;
+        framework::PerSectorHist2D<6> EPCal_vs_ECal;
+        framework::PerSectorHist1D<6> EPCal;
+        framework::PerSectorHist2D<6> EPCal_vs_ECal_cut;
+        framework::PerSectorHist1D<6> EPCal_cut;
+        framework::PerSectorHist2D<6> Etot_vs_SF;
+        framework::PerSectorHist2D<6> Etot_vs_SF_cut;
+        framework::PerSectorHist2D<6> p_vs_SF;
+        framework::PerSectorHist2D<6> lv_vs_SF;
+        framework::PerSectorHist2D<6> lw_vs_SF;
+        framework::PerSectorHist2D<6> lu_vs_SF_low;
+        framework::PerSectorHist2D<6> lu_vs_SF_high;
+        framework::PerSectorHist2D<6> lu_vs_SF_low_with_cut;
+        framework::PerSectorHist2D<6> lu_vs_SF_high_with_cut;
         // DC fiducial (per sector)
-        clas12::framework::PerSectorHist2D<6> edge_vs_theta_r1;
-        clas12::framework::PerSectorHist2D<6> edge_vs_theta_r2;
-        clas12::framework::PerSectorHist2D<6> edge_vs_theta_r3;
-        clas12::framework::PerSectorHist2D<6> edge_vs_chi2ndf_r1;
-        clas12::framework::PerSectorHist2D<6> edge_vs_chi2ndf_r2;
-        clas12::framework::PerSectorHist2D<6> edge_vs_chi2ndf_r3;
+        framework::PerSectorHist2D<6> edge_vs_theta_r1;
+        framework::PerSectorHist2D<6> edge_vs_theta_r2;
+        framework::PerSectorHist2D<6> edge_vs_theta_r3;
+        framework::PerSectorHist2D<6> edge_vs_chi2ndf_r1;
+        framework::PerSectorHist2D<6> edge_vs_chi2ndf_r2;
+        framework::PerSectorHist2D<6> edge_vs_chi2ndf_r3;
     };
 
     TrackHistograms h_neg_tracks;
@@ -322,12 +322,12 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
     // Histograms for each cut stage (lock-free atomic)
     struct CutStageHistograms {
         bool booked = false;
-        clas12::framework::ThreadLocalHistogram1D* momentum = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* vz = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* sampling_fraction = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* dc_edge_r1 = nullptr;
+        framework::ThreadLocalHistogram1D* momentum = nullptr;
+        framework::ThreadLocalHistogram1D* theta = nullptr;
+        framework::ThreadLocalHistogram1D* phi = nullptr;
+        framework::ThreadLocalHistogram1D* vz = nullptr;
+        framework::ThreadLocalHistogram2D* sampling_fraction = nullptr;
+        framework::ThreadLocalHistogram1D* dc_edge_r1 = nullptr;
     };
 
     std::map<std::string, CutStageHistograms> m_cut_stage_histograms;
@@ -431,7 +431,7 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
      * @brief Books histograms for a track category with per-sector granularity
      */
     auto book_track_histograms(TrackHistograms& h, const std::string& category) -> void {
-        clas12::framework::SectorHistogramGroup<6> g(m_hist.get(), fmt::format("/Tracks/{}", category));
+        framework::SectorHistogramGroup<6> g(m_hist.get(), fmt::format("/Tracks/{}", category));
 
         h.nphe = g.add_hist1D("nphe", "Cherenkov nphe;nphe;Tracks", 51, 0, 50);
         h.EPCal_vs_ECal = g.add_hist2D("EPCal_vs_ECal", "E_{PCal} vs E_{Cal};E_{PCal} [GeV];E_{Cal} [GeV]", 200, 0, 0.6, 200, 0, 0.6);
@@ -463,11 +463,11 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
      * For each track, reads calorimeter, Cherenkov, and DC trajectory
      * information and fills the corresponding per-sector histograms.
      */
-    auto process_tracks(const std::vector<clas12::Particle>& tracks, TrackHistograms& histograms) -> void {
+    auto process_tracks(const std::vector<Particle>& tracks, TrackHistograms& histograms) -> void {
         for (const auto& track : tracks) {
-            clas12::CalorimeterBank calo = track.calo();
-            clas12::CherenkovBank cherenkov = track.cherenkov();
-            clas12::DCTrajBank traj = track.traj();
+            CalorimeterBank calo = track.calo();
+            CherenkovBank cherenkov = track.cherenkov();
+            DCTrajBank traj = track.traj();
             const auto [trk_r1, trk_r2, trk_r3] = track.region_tracks();
 
             const int sector = calo.pcal_sector;
@@ -541,7 +541,7 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
         }
     }
 
-    auto fill_final_histograms(const clas12::Particle& electron, const clas12::CalorimeterBank& calo, const clas12::DCTrajBank& traj, const clas12::TrackBank& track) -> void {
+    auto fill_final_histograms(const Particle& electron, const CalorimeterBank& calo, const DCTrajBank& traj, const TrackBank& track) -> void {
         // Fill thread-safe electron kinematics histograms
         h_electron.momentum->fill(electron.p());
         h_electron.theta->fill(electron.theta());
@@ -582,4 +582,4 @@ class ElectronAnalysisAlg : public clas12::framework::Algorithm {
     }
 };
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

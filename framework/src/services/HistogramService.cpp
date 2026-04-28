@@ -20,7 +20,7 @@
 #include "TObject.h"
 #include "TProfile.h"
 
-namespace clas12::framework {
+namespace framework {
 
 auto HistogramService::merge_histograms() -> void {
     for (const auto& [path, atomic_hist] : m_atomic_hist1D) {
@@ -257,4 +257,4 @@ auto HistogramService::create_directories(TFile* file, const std::string& path) 
     }
 }
 
-}  // namespace clas12::framework
+}  // namespace framework

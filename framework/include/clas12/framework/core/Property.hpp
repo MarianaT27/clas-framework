@@ -24,7 +24,7 @@
 
 #include <clas12/framework/core/StatusCode.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Supported property value types
@@ -273,11 +273,11 @@ inline auto Property<std::string>::format_validation_error(const std::string& va
     return fmt::format("Property '{}': validation failed for value '{}'", m_name, value);
 }
 
-}  // namespace clas12::framework
+}  // namespace framework
 
 
 // Forward declaration for PropertyBase
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Base interface for type-erased property access
@@ -575,4 +575,4 @@ private:
     std::map<std::string, std::unique_ptr<IPropertyBase>> m_properties;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

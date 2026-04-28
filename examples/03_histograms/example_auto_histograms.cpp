@@ -30,28 +30,28 @@
  * 3. Using CutflowHistogram for automatic per-cut histograms
  * 4. All histograms automatically written to ROOT file on finalize
  */
-class HistogramDemo : public clas12::framework::Algorithm {
+class HistogramDemo : public framework::Algorithm {
 public:
     explicit HistogramDemo(std::string name = "HistogramDemo")
         : Algorithm(std::move(name)) {
         required_services(m_hist_svc);
     }
 
-    auto on_initialize() -> clas12::framework::StatusCode override {
+    auto on_initialize() -> framework::StatusCode override {
         fmt::print("  {} - Initializing\n", name());
 
         // Method 1: Book individual histograms with type-safe wrappers
         fmt::print("    Booking individual histograms...\n");
-        clas12::framework::ThreadLocalHistogram1D* h_n_part = m_hist_svc->book_hist1D(
+        framework::ThreadLocalHistogram1D* h_n_part = m_hist_svc->book_hist1D(
             "/Event/n_particles",
             "Particles per Event;N_{particles};Events",
             50, 0, 50
         );
-        h_n_particles = clas12::framework::Hist1D(h_n_part);
+        h_n_particles = framework::Hist1D(h_n_part);
 
         // Method 2: Use HistogramGroup for organized collections
         fmt::print("    Creating histogram group for particles...\n");
-        m_particle_hists = std::make_unique<clas12::framework::HistogramGroup>(
+        m_particle_hists = std::make_unique<framework::HistogramGroup>(
             m_hist_svc, "/Particles"
         );
         m_particle_hists->add_hist1D("momentum", "Momentum;p [GeV/c];Particles", 100, 0, 10);
@@ -62,7 +62,7 @@ public:
 
         // Method 3: Use CutflowHistogram for automatic per-cut histograms
         fmt::print("    Creating cutflow histogram for momentum...\n");
-        m_p_cutflow = std::make_unique<clas12::framework::CutflowHistogram>(
+        m_p_cutflow = std::make_unique<framework::CutflowHistogram>(
             m_hist_svc, "/Particles/p_cutflow",
             "Momentum Cutflow;p [GeV/c];Particles",
             100, 0, 10
@@ -85,13 +85,13 @@ public:
                    m_hist_svc->num_hist2D(),
                    m_hist_svc->num_profiles());
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    auto process(framework::Event& event) -> framework::StatusCode override {
         m_events_processed++;
 
-        auto& rec_particle = event.bank<clas12::bankdefs::REC_Particle>();
+        auto& rec_particle = event.bank<bankdefs::REC_Particle>();
 
         int n_particles = rec_particle.rows();
 
@@ -129,10 +129,10 @@ public:
             }
         }
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
-    auto on_finalize() -> clas12::framework::StatusCode override {
+    auto on_finalize() -> framework::StatusCode override {
         fmt::print("\n{} Statistics:\n", name());
         fmt::print("  Events processed: {}\n", m_events_processed);
         fmt::print("  Histograms created: {} 1D, {} 2D, {} profiles\n",
@@ -142,21 +142,21 @@ public:
         fmt::print("  Output file: {}\n", m_hist_svc->get_output_file());
         fmt::print("  → All histograms will be automatically written!\n");
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
 private:
-    clas12::framework::HistogramService* m_hist_svc = nullptr;
+    framework::HistogramService* m_hist_svc = nullptr;
     size_t m_events_processed = 0;
 
     // Individual histogram
-    clas12::framework::Hist1D h_n_particles;
+    framework::Hist1D h_n_particles;
 
     // Histogram group
-    std::unique_ptr<clas12::framework::HistogramGroup> m_particle_hists;
+    std::unique_ptr<framework::HistogramGroup> m_particle_hists;
 
     // Cutflow histogram
-    std::unique_ptr<clas12::framework::CutflowHistogram> m_p_cutflow;
+    std::unique_ptr<framework::CutflowHistogram> m_p_cutflow;
 
     // Profile
     TProfile* p_theta_vs_p = nullptr;
@@ -173,9 +173,9 @@ int main(int argc, char** argv) {
     fmt::print("\n");
 
     // Get input files first (needed for builder)
-    std::vector<std::string> input_files = clas12::FileUtils::read_recursive_hipo_files(data_dir);
+    std::vector<std::string> input_files = FileUtils::read_recursive_hipo_files(data_dir);
     if (input_files.empty()) {
-        clas12::framework::Log::error("Main", "No .hipo files found in {}", data_dir);
+        framework::Log::error("Main", "No .hipo files found in {}", data_dir);
         fmt::print("\nUsage: {} [data_dir] [max_events]\n", argv[0]);
         return 1;
     }
@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
     fmt::print("  Output file: demo_histograms.root\n");
 
     // Create application using ApplicationBuilder
-    auto app = clas12::framework::make_application("Histogram Demo")
+    auto app = framework::make_application("Histogram Demo")
         .with_input_files(input_files)
         .with_output("demo_histograms.root")
         .with_standard_services()
@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
 
     auto sc = app.initialize();
     if (sc.is_failure()) {
-        clas12::framework::Log::error("Main", "Initialization failed");
+        framework::Log::error("Main", "Initialization failed");
         return 1;
     }
 
@@ -223,7 +223,7 @@ int main(int argc, char** argv) {
     auto end_time = std::chrono::high_resolution_clock::now();
 
     if (sc.is_failure()) {
-        clas12::framework::Log::error("Main", "Event processing failed");
+        framework::Log::error("Main", "Event processing failed");
         return 1;
     }
 
@@ -236,7 +236,7 @@ int main(int argc, char** argv) {
 
     sc = app.finalize();
     if (sc.is_failure()) {
-        clas12::framework::Log::warning("Main", "Finalization had issues");
+        framework::Log::warning("Main", "Finalization had issues");
     }
 
     // Summary

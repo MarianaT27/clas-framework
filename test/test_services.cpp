@@ -2,7 +2,7 @@
 #include <clas12/framework/core/ServiceManager.hpp>
 #include <clas12/framework/services/ConditionsService.hpp>
 
-using namespace clas12::framework;
+using namespace framework;
 
 TEST(ServiceManagerTest, AddAndRetrieveService) {
     ServiceManager svc_mgr;

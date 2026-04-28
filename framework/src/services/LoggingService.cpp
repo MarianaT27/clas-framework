@@ -19,7 +19,7 @@
 
 #include <fmt/format.h>
 
-namespace clas12::framework {
+namespace framework {
 
 namespace {
 
@@ -826,4 +826,4 @@ LoggingService::ScopedLog::~ScopedLog() {
     if (m_svc) m_svc->done(m_source, m_operation, m_timer.elapsed_ms());
 }
 
-}  // namespace clas12::framework
+}  // namespace framework

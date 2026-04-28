@@ -1,6 +1,6 @@
 #include <clas12/framework/services/PhotonCutsService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 auto PhotonCutsService::filter_photon(
     const hipo::bank_view& particle_bank,
@@ -72,7 +72,7 @@ auto PhotonCutsService::filter_photon(
         const auto& calo_PART = inner_calo_it->second;
 
         auto pid = particle_bank.get<int32_t>("pid", inner_row);
-        auto mass = clas12::physics::ParticleUtils::get_mass(pid);
+        auto mass = physics::ParticleUtils::get_mass(pid);
 
         if (std::isnan(mass)) continue;
 
@@ -190,4 +190,4 @@ auto PhotonCutsService::filter_photon(
     return classify_photon(input_data, runnum, pass);
 }
 
-}  // namespace clas12::framework
+}  // namespace framework

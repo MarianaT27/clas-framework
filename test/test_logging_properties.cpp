@@ -7,7 +7,7 @@
 #include <sstream>
 #include <clas12/framework/services/LoggingService.hpp>
 
-using namespace clas12::framework;
+using namespace framework;
 
 namespace {
 

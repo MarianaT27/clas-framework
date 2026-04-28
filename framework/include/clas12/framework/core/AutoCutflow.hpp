@@ -33,7 +33,7 @@
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Cutflow with automatic cut registration and execution
@@ -181,7 +181,7 @@ private:
  * Example:
  * @code
  * struct ElectronContext {
- *     const clas12::Particle& electron;
+ *     const Particle& electron;
  *     double SF;
  *     int sector;
  * };
@@ -535,4 +535,4 @@ private:
     }
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

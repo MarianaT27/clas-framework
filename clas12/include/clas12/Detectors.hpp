@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 
-namespace clas12 {
 
 //regions
 static constexpr uint16_t FT = 1000;
@@ -70,5 +69,3 @@ static constexpr uint16_t BTOF3 = 253;
 static constexpr uint16_t BTOF4 = 254;
 static constexpr uint16_t BTOF5 = 255;
 static constexpr uint16_t BVETO = 256;
-
-}  // namespace clas12

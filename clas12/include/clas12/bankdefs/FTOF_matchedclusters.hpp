@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `FTOF::matchedclusters` (group 21200, item 33).
@@ -241,4 +241,4 @@ inline FTOF_matchedclusters::Row FTOF_matchedclusters::row(int index) const noex
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

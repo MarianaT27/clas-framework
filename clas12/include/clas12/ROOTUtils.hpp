@@ -10,7 +10,6 @@
 #include <TROOT.h>
 #include <TStyle.h>
 
-namespace clas12 {
 
 /**
  * @brief ROOT-specific utility functions
@@ -91,4 +90,3 @@ inline auto find_equal_count_bins(const std::vector<double>& values, int numBins
 
 }  // namespace ROOTUtils
 
-}  // namespace clas12

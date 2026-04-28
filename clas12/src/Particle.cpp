@@ -5,7 +5,6 @@
 // Event so the forward declarations in Particle.hpp resolve here.
 #include <clas12/ReadBank.hpp>
 
-namespace clas12 {
 
 Particle::Particle(int pdg, int status, int index, int charge, double mass, double px, double py, double pz, double E, double vx, double vy, double vz, double vt, double beta, double chi2pid)
     : m_pdgcode(pdg), m_status(status), m_index(index), m_charge(charge), m_mass(mass), m_px(px), m_py(py), m_pz(pz), m_E(E), m_vx(vx), m_vy(vy), m_vz(vz), m_vt(vt), m_beta(beta), m_chi2pid(chi2pid) {
@@ -127,32 +126,30 @@ auto Particle::mass() const -> double {
 // ----------------------------------------------------------------------
 
 auto Particle::calo() const -> CalorimeterBank {
-    return clas12::read_Calorimeter_bank(*m_event, m_index);
+    return read_Calorimeter_bank(*m_event, m_index);
 }
 
 auto Particle::traj() const -> DCTrajBank {
-    return clas12::read_Traj_bank(*m_event, m_index);
+    return read_Traj_bank(*m_event, m_index);
 }
 
 auto Particle::track() const -> TrackBank {
-    return clas12::read_Track_bank(*m_event, m_index);
+    return read_Track_bank(*m_event, m_index);
 }
 
 auto Particle::cherenkov() const -> CherenkovBank {
-    return clas12::read_Cherenkov_bank(*m_event, m_index);
+    return read_Cherenkov_bank(*m_event, m_index);
 }
 
 auto Particle::scintillator() const -> ScintillatorBank {
-    return clas12::read_Scintillator_bank(*m_event, m_index);
+    return read_Scintillator_bank(*m_event, m_index);
 }
 
 auto Particle::region_tracks() const -> std::array<TrackBank, 3> {
     const auto t = traj();
     return {
-        clas12::read_Track_bank(*m_event, t.region1_index),
-        clas12::read_Track_bank(*m_event, t.region2_index),
-        clas12::read_Track_bank(*m_event, t.region3_index),
+        read_Track_bank(*m_event, t.region1_index),
+        read_Track_bank(*m_event, t.region2_index),
+        read_Track_bank(*m_event, t.region3_index),
     };
 }
-
-}  // namespace clas12

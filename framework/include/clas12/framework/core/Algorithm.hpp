@@ -18,7 +18,7 @@
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 class Event;
 
@@ -308,4 +308,4 @@ private:
     std::vector<std::function<void()>> m_ntuple_init_hooks;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

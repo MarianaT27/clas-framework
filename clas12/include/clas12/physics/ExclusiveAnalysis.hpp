@@ -6,7 +6,7 @@
 #include <clas12/Particle.hpp>
 #include <clas12/physics/Kinematics.hpp>
 
-namespace clas12::physics {
+namespace physics {
 
 /**
  * @brief Higher-level tools for exclusive reaction analysis
@@ -99,8 +99,8 @@ class ExclusiveAnalysis {
      * @return Exclusivity check results
      */
     static auto check_exclusivity(
-        const clas12::Particle& electron,
-        const std::vector<clas12::Particle>& detected_particles,
+        const Particle& electron,
+        const std::vector<Particle>& detected_particles,
         const ExclusivityCuts& cuts = ExclusivityCuts(),
         const Kinematics::BeamConfig& beam = Kinematics::BeamConfig()) -> ExclusivityResult {
         using namespace Kinematics;
@@ -206,8 +206,8 @@ class ExclusiveAnalysis {
      * For ep → e'p'X: t = (q - p_X)²
      */
     static auto calculate_t(
-        const clas12::Particle& electron,
-        const clas12::Particle& meson,
+        const Particle& electron,
+        const Particle& meson,
         const Kinematics::BeamConfig& beam = Kinematics::BeamConfig()) -> double {
         return Kinematics::momentum_transfer_t(electron, meson, beam);
     }
@@ -233,9 +233,9 @@ class ExclusiveAnalysis {
          * Simplified calculation - full implementation requires proper Lorentz boosts
          */
         static auto calculate(
-            const clas12::Particle& electron,
-            const clas12::Particle& meson_or_photon,
-            const clas12::Particle& recoil_proton) -> ExclusiveAngles {
+            const Particle& electron,
+            const Particle& meson_or_photon,
+            const Particle& recoil_proton) -> ExclusiveAngles {
             using namespace Kinematics;
 
             // Calculate relative phi angle
@@ -308,8 +308,8 @@ class ExclusiveAnalysis {
      * @brief Reconstruct π⁰ from two photons
      */
     static auto reconstruct_pi0(
-        const clas12::Particle& gamma1,
-        const clas12::Particle& gamma2) -> std::optional<clas12::Particle> {
+        const Particle& gamma1,
+        const Particle& gamma2) -> std::optional<Particle> {
         using namespace Kinematics;
 
         double m_pipi = invariant_mass(gamma1, gamma2);
@@ -335,8 +335,8 @@ class ExclusiveAnalysis {
      * Checks if particles are coplanar (φ difference ~ 180°)
      */
     static auto check_coplanarity(
-        const clas12::Particle& p1,
-        const clas12::Particle& p2,
+        const Particle& p1,
+        const Particle& p2,
         double tolerance = 20.0  // degrees
         ) -> bool {
         double dphi = std::abs(Kinematics::delta_phi(p1, p2));
@@ -348,7 +348,7 @@ class ExclusiveAnalysis {
      * For exclusive reactions, p_T should sum to ~0
      */
     static auto transverse_momentum_balance(
-        const std::vector<clas12::Particle>& particles) -> double {
+        const std::vector<Particle>& particles) -> double {
         double px_sum = 0.0;
         double py_sum = 0.0;
 
@@ -420,4 +420,4 @@ class ResonanceHelper {
     }
 };
 
-}  // namespace clas12::physics
+}  // namespace physics

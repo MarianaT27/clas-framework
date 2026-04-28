@@ -7,7 +7,7 @@
 #include <string>
 #include <clas12/Particle.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Types of systematic variations
@@ -79,7 +79,7 @@ class SystematicManager {
      * For now, uses simple scaling. In production, would use proper
      * smearing with random number generator for resolution effects.
      */
-    auto vary(const clas12::Particle& particle, const SystematicVariation& variation) const -> clas12::Particle {
+    auto vary(const Particle& particle, const SystematicVariation& variation) const -> Particle {
         double scale_factor = 1.0;
 
         switch (variation.type) {
@@ -103,7 +103,7 @@ class SystematicManager {
 
         // Create new particle with scaled momentum
         // Since Particle is immutable, we create a new one
-        return clas12::Particle(
+        return Particle(
             particle.pdg(),
             particle.status(),
             particle.index(),
@@ -125,14 +125,14 @@ class SystematicManager {
      * @brief Register custom variation function
      */
     auto register_custom_variation(const std::string& name,
-                                   std::function<clas12::Particle(const clas12::Particle&)> func) -> void {
+                                   std::function<Particle(const Particle&)> func) -> void {
         m_custom_variations[name] = std::move(func);
     }
 
     /**
      * @brief Apply custom variation
      */
-    auto apply_custom(const clas12::Particle& particle, const std::string& name) const -> clas12::Particle {
+    auto apply_custom(const Particle& particle, const std::string& name) const -> Particle {
         auto it = m_custom_variations.find(name);
         if (it != m_custom_variations.end()) {
             return it->second(particle);
@@ -163,8 +163,8 @@ class SystematicManager {
 
    private:
     std::vector<SystematicVariation> m_variations;
-    std::map<std::string, std::function<clas12::Particle(const clas12::Particle&)>> m_custom_variations;
+    std::map<std::string, std::function<Particle(const Particle&)>> m_custom_variations;
     std::string m_current_variation;  // Empty string means nominal
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

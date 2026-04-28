@@ -54,7 +54,7 @@
 #include <ROOT/RNTupleWriter.hxx>
 #include <ROOT/RNTupleWriteOptions.hxx>
 
-namespace clas12::framework {
+namespace framework {
 
 class OutputFileService;
 
@@ -331,4 +331,4 @@ class TreeFiller {
     std::string m_tree_name;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

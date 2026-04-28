@@ -14,7 +14,6 @@
 #include <fmt/core.h>
 #include <fmt/format.h>
 
-namespace clas12 {
 
 /**
  * @brief Monte Carlo truth particle for generator-level information
@@ -259,19 +258,18 @@ class MCParticle {
     }
 };
 
-}  // namespace clas12
 
 // ============================================================================
 // fmt formatter for MCParticle
 // ============================================================================
 namespace fmt {
 template <>
-class formatter<clas12::MCParticle> {
+class formatter<MCParticle> {
    public:
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
 
     template <typename Context>
-    constexpr auto format(const clas12::MCParticle& mc, Context& ctx) const {
+    constexpr auto format(const MCParticle& mc, Context& ctx) const {
         return format_to(ctx.out(),
                          "(MC: PDG={}, idx={}, parent={}, p={:.3f} GeV, theta={:.1f} deg, vz={:.2f} cm, matched={})",
                          mc.pdg(), mc.index(), mc.parent_index(),

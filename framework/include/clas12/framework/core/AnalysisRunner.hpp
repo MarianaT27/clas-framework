@@ -17,7 +17,7 @@
  * #include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
  *
  * auto main(int argc, char* argv[]) -> int {
- *     return clas12::framework::AnalysisRunner::run(
+ *     return framework::AnalysisRunner::run(
  *         argc, argv, "Electron Analysis", "electron_analysis",
  *         [](auto& builder, const auto& config) {
  *             builder
@@ -74,7 +74,7 @@
 #include <clas12/framework/core/ApplicationBuilder.hpp>
 #include <clas12/framework/services/WorkflowVisualizationService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Run-control + analysis-level config parsed from the TOML file.
@@ -86,8 +86,8 @@ namespace clas12::framework {
  * algorithms (target/polarity/beam_energy).
  */
 struct AnalysisConfig {
-    clas12::Target           target = clas12::Target::LD2;
-    clas12::Polarity         polarity = clas12::Polarity::Outbending;
+    Target           target = Target::LD2;
+    Polarity         polarity = Polarity::Outbending;
     double                   percentage  = 100.0;
     int                      num_threads = 1;
     double                   beam_energy = 10.53;
@@ -159,7 +159,7 @@ public:
             .with_standard_services()
             .with_version(config->version)
             .with_beam_energy(config->beam_energy)
-            .with_target(clas12::to_string(config->target))
+            .with_target(to_string(config->target))
             .with_config(config->config_table);
 
         configure_fn(builder, *config);
@@ -175,8 +175,8 @@ public:
 
         Log::section(analysis_name);
         Log::config("Config", "TOML",       config_path_for_log());
-        Log::config("Config", "Target",     clas12::to_string(config->target));
-        Log::config("Config", "Polarity",   clas12::to_string(config->polarity));
+        Log::config("Config", "Target",     to_string(config->target));
+        Log::config("Config", "Polarity",   to_string(config->polarity));
         Log::config("Config", "Input files", config->input_files.size());
         Log::config("Config", "Threads",    config->num_threads);
         Log::config("Config", "Output",     config->output_file);
@@ -279,9 +279,9 @@ private:
         // [analysis]
         if (auto an_tbl = tbl["analysis"].as_table()) {
             if (auto v = (*an_tbl)["target"].value<std::string>())
-                cfg.target = clas12::string_to_target(*v);
+                cfg.target = string_to_target(*v);
             if (auto v = (*an_tbl)["polarity"].value<std::string>())
-                cfg.polarity = clas12::string_to_polarity(*v);
+                cfg.polarity = string_to_polarity(*v);
             if (auto v = (*an_tbl)["beam_energy"].value<double>())   cfg.beam_energy = *v;
             if (auto v = (*an_tbl)["version"].value<std::string>())  cfg.version = *v;
         }
@@ -301,10 +301,10 @@ private:
         auto add_one = [&](const std::string& s) {
             if (s.empty()) return;
             if (std::filesystem::is_directory(s)) {
-                auto more = clas12::FileUtils::read_recursive_hipo_files(s);
+                auto more = FileUtils::read_recursive_hipo_files(s);
                 out.insert(out.end(), more.begin(), more.end());
             } else if (s.find(',') != std::string::npos) {
-                for (auto& part : clas12::StringUtils::split(s, ',')) {
+                for (auto& part : StringUtils::split(s, ',')) {
                     if (!part.empty()) out.push_back(part);
                 }
             } else {
@@ -323,4 +323,4 @@ private:
     }
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

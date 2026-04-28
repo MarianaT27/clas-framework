@@ -32,23 +32,23 @@
 #include <clas12/framework/services/NTupleService.hpp>
 #include "clas12/bankdefs/generated_readers.hpp"
 
-namespace clas12::algorithms {
+namespace algorithms {
 
-using clas12::framework::Log;
+using framework::Log;
 
 /// Configuration for ElectronSelectionAlg.
 struct ElectronSelectionConfig {
-    clas12::Target target = clas12::Target::LD2;
-    clas12::Polarity polarity = clas12::Polarity::Outbending;
+    Target target = Target::LD2;
+    Polarity polarity = Polarity::Outbending;
 };
 
 /**
  * @brief Algorithm for electron selection and kinematics
  */
-class ElectronSelectionAlg : public clas12::framework::Algorithm {
+class ElectronSelectionAlg : public framework::Algorithm {
    public:
     using Config = ElectronSelectionConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit ElectronSelectionAlg(std::string name = "ElectronSelectionAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Electron Selection") {
@@ -61,8 +61,8 @@ class ElectronSelectionAlg : public clas12::framework::Algorithm {
 
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::info(name(), "Target: {}", clas12::to_string(m_config.target));
-        Log::info(name(), "Polarity: {}", clas12::to_string(m_config.polarity));
+        Log::info(name(), "Target: {}", to_string(m_config.target));
+        Log::info(name(), "Polarity: {}", to_string(m_config.polarity));
         Log::info(name(), "NTuple output: {}", m_enable_ntuple.get() ? "enabled" : "disabled");
 
         m_electron_cuts->set_target(m_config.target);
@@ -83,20 +83,20 @@ class ElectronSelectionAlg : public clas12::framework::Algorithm {
         m_cutflow.add_cut("DC R2 Edge");
         m_cutflow.add_cut("DC R3 Edge");
 
-        auto vz_range = framework::ElectronCutsService::get_vz_range(clas12::RunGroup::RG_D, m_config.target);
+        auto vz_range = framework::ElectronCutsService::get_vz_range(RunGroup::RG_D, m_config.target);
         Log::info(name(), "Vz range: [{:.2f}, {:.2f}] cm", vz_range.min, vz_range.max);
         Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
 
         return StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> StatusCode override {
+    auto process(framework::Event& event) -> StatusCode override {
         m_cutflow.pass("All Events");
 
         if (event.electrons().empty()) return StatusCode::FILTERED();
-        std::optional<clas12::Particle> trigger_e = event.find_trigger_electron();
+        std::optional<Particle> trigger_e = event.find_trigger_electron();
         if (!trigger_e.has_value()) return StatusCode::FILTERED();
-        clas12::Particle electron = trigger_e.value();
+        Particle electron = trigger_e.value();
         m_cutflow.pass("Has Electron");
 
         CalorimeterBank calorimeter = electron.calo();
@@ -137,8 +137,8 @@ class ElectronSelectionAlg : public clas12::framework::Algorithm {
             m_ntuple.fill();
         }
 
-        event.store_typed(clas12::framework::Keys::TriggerElectron, electron);
-        event.set_decision_typed(clas12::framework::Decisions::HasGoodElectron, true);
+        event.store_typed(framework::Keys::TriggerElectron, electron);
+        event.set_decision_typed(framework::Decisions::HasGoodElectron, true);
 
         return StatusCode::SUCCESS();
     }
@@ -160,45 +160,45 @@ class ElectronSelectionAlg : public clas12::framework::Algorithm {
 
    private:
     Config m_config;
-    clas12::framework::Cutflow m_cutflow;
+    framework::Cutflow m_cutflow;
 
-    clas12::framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
-    clas12::framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable chi2 PID cut"};
-    clas12::framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
-    clas12::framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
-    clas12::framework::Property<bool> m_enable_sf_cut{"enable_sf_cut", true, "Enable sampling fraction cut"};
-    clas12::framework::Property<bool> m_enable_pcal_fiducial_cut{"enable_pcal_fiducial_cut", true, "Enable PCAL fiducial cut"};
-    clas12::framework::Property<bool> m_enable_dc_edge_cut{"enable_dc_edge_cut", true, "Enable DC edge cut"};
-    clas12::framework::Property<double> m_pcal_lv_min{"pcal_lv_min", 9.0, "PCAL lv minimum [cm]"};
-    clas12::framework::Property<double> m_pcal_lw_min{"pcal_lw_min", 9.0, "PCAL lw minimum [cm]"};
-    clas12::framework::Property<double> m_dc_r1_edge_min{"dc_r1_edge_min", 1.68, "DC R1 edge minimum [cm]"};
-    clas12::framework::Property<double> m_dc_r2_edge_min{"dc_r2_edge_min", 2.0, "DC R2 edge minimum [cm]"};
-    clas12::framework::Property<double> m_dc_r3_edge_min{"dc_r3_edge_min", 8.75, "DC R3 edge minimum [cm]"};
+    framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
+    framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable chi2 PID cut"};
+    framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
+    framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
+    framework::Property<bool> m_enable_sf_cut{"enable_sf_cut", true, "Enable sampling fraction cut"};
+    framework::Property<bool> m_enable_pcal_fiducial_cut{"enable_pcal_fiducial_cut", true, "Enable PCAL fiducial cut"};
+    framework::Property<bool> m_enable_dc_edge_cut{"enable_dc_edge_cut", true, "Enable DC edge cut"};
+    framework::Property<double> m_pcal_lv_min{"pcal_lv_min", 9.0, "PCAL lv minimum [cm]"};
+    framework::Property<double> m_pcal_lw_min{"pcal_lw_min", 9.0, "PCAL lw minimum [cm]"};
+    framework::Property<double> m_dc_r1_edge_min{"dc_r1_edge_min", 1.68, "DC R1 edge minimum [cm]"};
+    framework::Property<double> m_dc_r2_edge_min{"dc_r2_edge_min", 2.0, "DC R2 edge minimum [cm]"};
+    framework::Property<double> m_dc_r3_edge_min{"dc_r3_edge_min", 8.75, "DC R3 edge minimum [cm]"};
 
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
-    clas12::framework::ServiceRef<clas12::framework::NTupleService> m_ntuple_svc;
-    clas12::framework::ServiceRef<clas12::framework::ElectronCutsService> m_electron_cuts;
+    framework::ServiceRef<framework::HistogramService> m_hist;
+    framework::ServiceRef<framework::NTupleService> m_ntuple_svc;
+    framework::ServiceRef<framework::ElectronCutsService> m_electron_cuts;
 
     struct StageHistograms {
-        clas12::framework::ThreadLocalHistogram1D* p = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* pt = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* sector = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* vz = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* vx = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* vy = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* chi2pid = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* pcal_lv = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* pcal_lw = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* sf_vs_p = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* chi2pid_vs_p = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* vz_vs_phi = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* vz_vs_theta = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* theta_vs_phi = nullptr;
-        clas12::framework::ThreadLocalHistogram2D* p_vs_theta = nullptr;
+        framework::ThreadLocalHistogram1D* p = nullptr;
+        framework::ThreadLocalHistogram1D* theta = nullptr;
+        framework::ThreadLocalHistogram1D* phi = nullptr;
+        framework::ThreadLocalHistogram1D* pt = nullptr;
+        framework::ThreadLocalHistogram1D* sector = nullptr;
+        framework::ThreadLocalHistogram1D* vz = nullptr;
+        framework::ThreadLocalHistogram1D* vx = nullptr;
+        framework::ThreadLocalHistogram1D* vy = nullptr;
+        framework::ThreadLocalHistogram1D* chi2pid = nullptr;
+        framework::ThreadLocalHistogram1D* pcal_lv = nullptr;
+        framework::ThreadLocalHistogram1D* pcal_lw = nullptr;
+        framework::ThreadLocalHistogram2D* sf_vs_p = nullptr;
+        framework::ThreadLocalHistogram2D* chi2pid_vs_p = nullptr;
+        framework::ThreadLocalHistogram2D* vz_vs_phi = nullptr;
+        framework::ThreadLocalHistogram2D* vz_vs_theta = nullptr;
+        framework::ThreadLocalHistogram2D* theta_vs_phi = nullptr;
+        framework::ThreadLocalHistogram2D* p_vs_theta = nullptr;
 
-        auto book(clas12::framework::HistogramService* svc, const std::string& dir) -> void {
+        auto book(framework::HistogramService* svc, const std::string& dir) -> void {
             p = svc->book_hist1D(dir + "/p", "Electron Momentum;p [GeV/c];Events", 100, 0.0, 12.0);
             theta = svc->book_hist1D(dir + "/theta", "Electron #theta;#theta [deg];Events", 90, 0.0, 45.0);
             phi = svc->book_hist1D(dir + "/phi", "Electron #phi;#phi [deg];Events", 360, -180.0, 180.0);
@@ -219,7 +219,7 @@ class ElectronSelectionAlg : public clas12::framework::Algorithm {
             p_vs_theta = svc->book_hist2D(dir + "/p_vs_theta", "p vs #theta;#theta [deg];p [GeV/c]", 90, 0.0, 45.0, 100, 0.0, 12.0);
         }
 
-        auto fill(const clas12::Particle& e, const clas12::CalorimeterBank& calo, double SF) const -> void {
+        auto fill(const Particle& e, const CalorimeterBank& calo, double SF) const -> void {
             p->fill(e.p());
             theta->fill(e.theta());
             phi->fill(e.phi());
@@ -258,11 +258,11 @@ class ElectronSelectionAlg : public clas12::framework::Algorithm {
 
         static constexpr auto ntuple_fields() {
             using T = ElectronNTupleData;
-            return std::make_tuple(clas12::framework::field("e_p", &T::e_p), clas12::framework::field("e_theta", &T::e_theta), clas12::framework::field("e_phi", &T::e_phi), clas12::framework::field("e_vz", &T::e_vz), clas12::framework::field("e_chi2pid", &T::e_chi2pid), clas12::framework::field("e_sector", &T::e_sector));
+            return std::make_tuple(framework::field("e_p", &T::e_p), framework::field("e_theta", &T::e_theta), framework::field("e_phi", &T::e_phi), framework::field("e_vz", &T::e_vz), framework::field("e_chi2pid", &T::e_chi2pid), framework::field("e_sector", &T::e_sector));
         }
     };
 
-    clas12::framework::NTupleWriter<ElectronNTupleData> m_ntuple;
+    framework::NTupleWriter<ElectronNTupleData> m_ntuple;
 };
 
-}  // namespace clas12::algorithms
+}  // namespace algorithms

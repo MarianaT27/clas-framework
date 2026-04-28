@@ -10,7 +10,7 @@
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/services/SamplingFractionService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 // Forward declarations
 class SamplingFractionService;
@@ -37,9 +37,9 @@ class SamplingFractionService;
  * - These are configured via the SamplingFractionService
  *
  * Configurable Parameters (via Config struct):
- * - target: clas12::Target (default: LD2)
- * - polarity: clas12::Polarity (default: Outbending)
- * - run_group: clas12::RunGroup (default: RG_D)
+ * - target: Target (default: LD2)
+ * - polarity: Polarity (default: Outbending)
+ * - run_group: RunGroup (default: RG_D)
  * - min_electron_momentum: default 0.8 GeV
  * - min_chi2pid, max_chi2pid: default -5.0 to 5.0
  * - n_sigma: default 3.5
@@ -47,24 +47,24 @@ class SamplingFractionService;
  *
  * Usage:
  * @code
- * auto electron_cuts = service<clas12::framework::ElectronCutsService>("ElectronCutsService");
+ * auto electron_cuts = service<framework::ElectronCutsService>("ElectronCutsService");
  * // ElectronCutsService auto-resolves SamplingFractionService via the
  * // framework — no manual wiring required as long as SamplingFractionService
  * // is registered in the ApplicationBuilder.
  *
  * // Configure via struct (preferred)
  * ElectronCutsService::Config config;
- * config.target = clas12::Target::LD2;
- * config.polarity = clas12::Polarity::Outbending;
- * config.run_group = clas12::RunGroup::RG_D;
+ * config.target = Target::LD2;
+ * config.polarity = Polarity::Outbending;
+ * config.run_group = RunGroup::RG_D;
  * config.min_electron_momentum = 1.0;  // Tighter momentum cut
  * config.pcal_level = ElectronCutsService::PCALFiducialLevel::Medium;
  * electron_cuts->set_config(config);
  *
  * // Or configure via individual setters (legacy)
- * electron_cuts->set_target(clas12::Target::LD2);
- * electron_cuts->set_polarity(clas12::Polarity::Outbending);
- * electron_cuts->set_run_group(clas12::RunGroup::RG_D);
+ * electron_cuts->set_target(Target::LD2);
+ * electron_cuts->set_polarity(Polarity::Outbending);
+ * electron_cuts->set_run_group(RunGroup::RG_D);
  * electron_cuts->set_min_electron_momentum(0.8);
  *
  * // Apply individual cuts
@@ -118,9 +118,9 @@ class ElectronCutsService : public Service {
     // ============================================================================
 
     struct Config {
-        clas12::Target target = clas12::Target::LD2;
-        clas12::Polarity polarity = clas12::Polarity::Outbending;
-        clas12::RunGroup run_group = clas12::RunGroup::RG_D;
+        Target target = Target::LD2;
+        Polarity polarity = Polarity::Outbending;
+        RunGroup run_group = RunGroup::RG_D;
         double n_sigma = SF_N_SIGMA;
         double min_electron_momentum = MIN_ELECTRON_MOMENTUM;
         double min_chi2pid = MIN_CHI2PID;
@@ -197,11 +197,11 @@ class ElectronCutsService : public Service {
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     /// Legacy setters for backward compatibility
-    void set_target(clas12::Target target) { m_config.target = target; }
+    void set_target(Target target) { m_config.target = target; }
 
-    void set_polarity(clas12::Polarity polarity) { m_config.polarity = polarity; }
+    void set_polarity(Polarity polarity) { m_config.polarity = polarity; }
 
-    void set_run_group(clas12::RunGroup run_group) { m_config.run_group = run_group; }
+    void set_run_group(RunGroup run_group) { m_config.run_group = run_group; }
 
     void set_n_sigma(double n_sigma) { m_config.n_sigma = n_sigma; }
 
@@ -215,11 +215,11 @@ class ElectronCutsService : public Service {
     }
 
     /// Legacy getters for backward compatibility
-    [[nodiscard]] auto target() const -> clas12::Target { return m_config.target; }
+    [[nodiscard]] auto target() const -> Target { return m_config.target; }
 
-    [[nodiscard]] auto polarity() const -> clas12::Polarity { return m_config.polarity; }
+    [[nodiscard]] auto polarity() const -> Polarity { return m_config.polarity; }
 
-    [[nodiscard]] auto run_group() const -> clas12::RunGroup { return m_config.run_group; }
+    [[nodiscard]] auto run_group() const -> RunGroup { return m_config.run_group; }
 
     [[nodiscard]] auto n_sigma() const -> double { return m_config.n_sigma; }
 
@@ -247,16 +247,16 @@ class ElectronCutsService : public Service {
         return get_vz_range(m_config.run_group, m_config.target);
     }
 
-    [[nodiscard]] static auto get_vz_range(clas12::RunGroup /*run_group*/, clas12::Target target) -> VzRange {
+    [[nodiscard]] static auto get_vz_range(RunGroup /*run_group*/, Target target) -> VzRange {
         // RG-D cuts are applied for every run group. Add a switch on
         // `run_group` here if cuts diverge for RG-A/B/C in the future.
-        static constexpr std::array<std::pair<clas12::Target, VzRange>, 6> RG_D_VZ_RANGES = {
-            {{clas12::Target::LD2, {-15.0, 5.0}},
-             {clas12::Target::CxC, {-10.6, 5.0}},
-             {clas12::Target::Cu, {-10.6, -6.5}},
-             {clas12::Target::Sn, {-5.5, 5.0}},
-             {clas12::Target::CuSn, {-10.6, 5.0}},
-            {clas12::Target::Custom, {-12.0, 5.0}}}};  // Custom target uses wide default cuts
+        static constexpr std::array<std::pair<Target, VzRange>, 6> RG_D_VZ_RANGES = {
+            {{Target::LD2, {-15.0, 5.0}},
+             {Target::CxC, {-10.6, 5.0}},
+             {Target::Cu, {-10.6, -6.5}},
+             {Target::Sn, {-5.5, 5.0}},
+             {Target::CuSn, {-10.6, 5.0}},
+            {Target::Custom, {-12.0, 5.0}}}};  // Custom target uses wide default cuts
 
         // For now, all run groups use RG-D cuts
         // This can be extended when cuts for other run groups are defined
@@ -269,8 +269,8 @@ class ElectronCutsService : public Service {
     }
 
     // Legacy overload for backward compatibility
-    [[nodiscard]] static auto get_vz_range(clas12::Target target) -> VzRange {
-        return get_vz_range(clas12::RunGroup::RG_D, target);
+    [[nodiscard]] static auto get_vz_range(Target target) -> VzRange {
+        return get_vz_range(RunGroup::RG_D, target);
     }
 
     // Chi2 PID Cut
@@ -288,7 +288,7 @@ class ElectronCutsService : public Service {
         return get_vz_range(m_config.target).contains(vz);
     }
 
-    [[nodiscard]] auto pass_vz_cut(double vz, clas12::Target target) const -> bool {
+    [[nodiscard]] auto pass_vz_cut(double vz, Target target) const -> bool {
         return get_vz_range(target).contains(vz);
     }
 
@@ -379,9 +379,9 @@ class ElectronCutsService : public Service {
      * Use with SamplingFractionService for full selection.
      */
     auto apply_basic_cuts(
-        const clas12::Particle& electron,
-        const clas12::CalorimeterBank& calorimeter,
-        const clas12::DCTrajBank& traj) const -> CutResults {
+        const Particle& electron,
+        const CalorimeterBank& calorimeter,
+        const DCTrajBank& traj) const -> CutResults {
 
         CutResults results;
 
@@ -399,9 +399,9 @@ class ElectronCutsService : public Service {
      * @brief Check if electron passes basic cuts (excluding sampling fraction)
      */
     [[nodiscard]] auto passes_basic_cuts(
-        const clas12::Particle& electron,
-        const clas12::CalorimeterBank& calorimeter,
-        const clas12::DCTrajBank& traj) const -> bool {
+        const Particle& electron,
+        const CalorimeterBank& calorimeter,
+        const DCTrajBank& traj) const -> bool {
 
         auto results = apply_basic_cuts(electron, calorimeter, traj);
         return results.chi2pid && results.momentum && results.vz &&
@@ -413,4 +413,4 @@ class ElectronCutsService : public Service {
     SamplingFractionService* m_sf_service = nullptr;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

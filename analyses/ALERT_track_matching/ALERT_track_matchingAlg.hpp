@@ -36,10 +36,10 @@ struct ALERT_track_matchingConfig {
 /**
  * @brief Algorithm for ALERT track matching analysis
  */
-class ALERT_track_matchingAlg : public clas12::framework::Algorithm {
+class ALERT_track_matchingAlg : public framework::Algorithm {
 public:
     using Config = ALERT_track_matchingConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit ALERT_track_matchingAlg(std::string name = "ALERT_track_matchingAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config) {
@@ -69,8 +69,8 @@ public:
         // Read the ATOF wedge H2 data file
             std::ifstream atof_file("analyses/ALERT_track_matching/atof_wedge_H2.data");
             if (!atof_file.is_open()) {
-                clas12::framework::Log::error(name(), "Failed to open ATOF wedge H2 data file");
-                return clas12::framework::StatusCode::FAILURE();
+                framework::Log::error(name(), "Failed to open ATOF wedge H2 data file");
+                return framework::StatusCode::FAILURE();
             }
             std::string line;
             while (std::getline(atof_file, line)) {
@@ -82,7 +82,7 @@ public:
             }
             atof_file.close();
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
     /**
@@ -92,16 +92,16 @@ public:
      * @param event The current event data
      * @return StatusCode SUCCESS to continue, FILTERED to skip, FAILURE to stop
      */
-    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    auto process(framework::Event& event) -> framework::StatusCode override {
 
         // Check for elastic electron decision from upstream algorithm
-        if (!event.passes_decision_typed(clas12::framework::Decisions::HasElasticElectron)) {
-            return clas12::framework::StatusCode::FILTERED();
+        if (!event.passes_decision_typed(framework::Decisions::HasElasticElectron)) {
+            return framework::StatusCode::FILTERED();
         }
         // Get elastic electron using typed retrieval
-        auto electron_opt = event.retrieve_typed(clas12::framework::Keys::ElasticElectron);
+        auto electron_opt = event.retrieve_typed(framework::Keys::ElasticElectron);
         if (!electron_opt) {
-            return clas12::framework::StatusCode::FILTERED();
+            return framework::StatusCode::FILTERED();
         }
         const auto& elastic_electron = *electron_opt;
         double electron_phi = elastic_electron.phi();  // degrees
@@ -110,9 +110,9 @@ public:
         // and ATOF::hits. bind() resolves every column handle once, so the
         // per-row getters below go through pre-resolved handles with zero
         // string lookups in the hot path.
-        clas12::bankdefs::AHDC_track ahdc_tracks;
-        clas12::bankdefs::ALERT_ai_projections alert_projections;
-        clas12::bankdefs::ATOF_hits atof_hits;
+        bankdefs::AHDC_track ahdc_tracks;
+        bankdefs::ALERT_ai_projections alert_projections;
+        bankdefs::ATOF_hits atof_hits;
         ahdc_tracks.bind(event.get_bank("AHDC::track"));
         alert_projections.bind(event.get_bank("ALERT::ai:projections"));
         atof_hits.bind(event.get_bank("ATOF::hits"));
@@ -148,12 +148,11 @@ public:
             double delta_phi = std::fmod(electron_phi - atof_phi, 360.0);
             if (delta_phi < 0.0) delta_phi += 360.0;
 
-            if (h_atof_electron_delta_phi_all) h_atof_electron_delta_phi_all->fill(delta_phi);
-
+            h_atof_electron_delta_phi_all->fill(delta_phi);
             if (delta_phi >= 150.0 && delta_phi <= 200.0) {
                 true_atof_hit_indices.push_back(idx);
                 true_atof_hit_phis.push_back(atof_phi);
-                if (h_atof_electron_delta_phi_true) h_atof_electron_delta_phi_true->fill(delta_phi);
+                h_atof_electron_delta_phi_true->fill(delta_phi);
             }
         }
 
@@ -179,12 +178,11 @@ public:
         }
 
         // Fill diagnostic histograms
-        if (h_n_predictions) h_n_predictions->fill(good_tracks.size());
-        if (h_n_good_atof_hits) h_n_good_atof_hits->fill(good_atof_hit_indices.size());
-        if (h_n_true_atof_hits) h_n_true_atof_hits->fill(true_atof_hit_indices.size());
-
+        h_n_predictions->fill(good_tracks.size());
+        h_n_good_atof_hits->fill(good_atof_hit_indices.size());
+        h_n_true_atof_hits->fill(true_atof_hit_indices.size());
         if (good_tracks.empty() || good_atof_hit_indices.empty()) {
-            return clas12::framework::StatusCode::FILTERED();
+            return framework::StatusCode::FILTERED();
         }
 
         // Match tracks to the elastic electron using phi angle
@@ -206,24 +204,23 @@ public:
             double delta_vz_cm = delta_vz / 10.0;
 
             // Fill histograms before cuts
-            if (h_delta_phi) h_delta_phi->fill(delta_phi);
-            if (h_delta_vz) h_delta_vz->fill(delta_vz);
-            if (h_delta_vz_cm) h_delta_vz_cm->fill(delta_vz_cm);
-
+            h_delta_phi->fill(delta_phi);
+            h_delta_vz->fill(delta_vz);
+            h_delta_vz_cm->fill(delta_vz_cm);
             // Fill delta_phi after delta Vz cm cut
             if (delta_vz_cm >= m_delta_vz_cm_min && delta_vz_cm <= m_delta_vz_cm_max) {
-                if (h_delta_phi_after_vz_cm_cut) h_delta_phi_after_vz_cm_cut->fill(delta_phi);
+                h_delta_phi_after_vz_cm_cut->fill(delta_phi);
             }
 
             // Select tracks with delta_phi between 150 and 200 degrees and deltaVz within cm cut
             if (delta_phi >= 150.0 && delta_phi <= 200.0 && delta_vz_cm >= m_delta_vz_cm_min && delta_vz_cm <= m_delta_vz_cm_max) {
                 matched_tracks.push_back(&track);
-                if (h_best_delta_phi) h_best_delta_phi->fill(delta_phi);
+                h_best_delta_phi->fill(delta_phi);
             }
         }
 
         if (matched_tracks.empty() || matched_tracks.size() > 1) {
-            return clas12::framework::StatusCode::FILTERED();
+            return framework::StatusCode::FILTERED();
         }
 
         // Select best true ATOF hit: closest in phi to the matched track prediction
@@ -238,8 +235,7 @@ public:
                 if (dphi < 0.0) dphi += 360.0;
                 if (dphi > 180.0) dphi = 360.0 - dphi;
 
-                if (h_track_atof_dphi) h_track_atof_dphi->fill(dphi);
-
+                h_track_atof_dphi->fill(dphi);
                 if (dphi < best_phi_distance && dphi <= m_phi_cut) {
                     best_phi_distance = dphi;
                     best_true_atof_hit_index = true_atof_hit_indices[i];
@@ -252,9 +248,9 @@ public:
                 const double best_atof_phi = std::atan2(hy, hx) * 180.0 / M_PI;
                 double best_delta_phi = std::fmod(electron_phi - best_atof_phi, 360.0);
                 if (best_delta_phi < 0.0) best_delta_phi += 360.0;
-                if (h_atof_electron_delta_phi_best) h_atof_electron_delta_phi_best->fill(best_delta_phi);
-                if (h_best_track_atof_dphi) h_best_track_atof_dphi->fill(best_phi_distance);
-                if (h_track_phi_vs_atof_phi) h_track_phi_vs_atof_phi->fill(best_atof_phi, track_phi);
+                h_atof_electron_delta_phi_best->fill(best_delta_phi);
+                h_best_track_atof_dphi->fill(best_phi_distance);
+                h_track_phi_vs_atof_phi->fill(best_atof_phi, track_phi);
             }
         }
 
@@ -272,8 +268,7 @@ public:
                 }
             }
 
-            if (h_matched_atof_hit_id) h_matched_atof_hit_id->fill(matched_atof_hit_id);
-
+            h_matched_atof_hit_id->fill(matched_atof_hit_id);
             // Efficiency: only for the best true ATOF hit
             if (best_true_atof_hit_index >= 0) {
                 ++m_n_true_sample;  // denominator: true track + true ATOF hit
@@ -289,12 +284,11 @@ public:
                     const int true_layer     = atof_hits.layer(best_true_atof_hit_index);
                     const int true_component = atof_hits.component(best_true_atof_hit_index);
 
-                    if (h_delta_component) h_delta_component->fill(ai_component - true_component);
-                    if (h_delta_sector) h_delta_sector->fill(ai_sector - true_sector);
-                    if (h_ai_vs_true_component) h_ai_vs_true_component->fill(true_component, ai_component);
-                    if (h_ai_vs_true_layer) h_ai_vs_true_layer->fill(true_layer, ai_layer);
-                    if (h_ai_vs_true_sector) h_ai_vs_true_sector->fill(true_sector, ai_sector);
-
+                    h_delta_component->fill(ai_component - true_component);
+                    h_delta_sector->fill(ai_sector - true_sector);
+                    h_ai_vs_true_component->fill(true_component, ai_component);
+                    h_ai_vs_true_layer->fill(true_layer, ai_layer);
+                    h_ai_vs_true_sector->fill(true_sector, ai_sector);
                     if (ai_sector == true_sector) ++m_n_correct_sector;
                     if (ai_layer == true_layer) ++m_n_correct_layer;
                     if (ai_component == true_component) ++m_n_correct_component;
@@ -419,7 +413,7 @@ public:
             }
         }
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
     /**
@@ -428,9 +422,9 @@ public:
      * Called after all events. Print statistics and cleanup here.
      * @return StatusCode SUCCESS or FAILURE
      */
-    auto on_finalize() -> clas12::framework::StatusCode override {
+    auto on_finalize() -> framework::StatusCode override {
         // Print AI ATOF matching efficiency
-        using Log = clas12::framework::Log;
+        using Log = framework::Log;
 
         int n_matched = m_n_tracks_matched_to_electron.load();
         int n_true_sample = m_n_true_sample.load();
@@ -472,74 +466,74 @@ public:
         Log::info(name(), "AI found best ATOF hit (over all):    {:5d} / {:5d} = {:5.1f}%",
                   n_true_match, n_matched, n_matched > 0 ? 100.0 * n_true_match / n_matched : 0.0);
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
 private:
     // Configurable properties
-    clas12::framework::Property<double> m_example_cut{
+    framework::Property<double> m_example_cut{
         "example_cut", 1.0, "Example cut threshold value"
     };
-    clas12::framework::Property<bool> m_enable_histograms{
+    framework::Property<bool> m_enable_histograms{
         "enable_histograms", true, "Enable histogram filling"
     };
-    clas12::framework::Property<double> m_phi_cut{
+    framework::Property<double> m_phi_cut{
         "phi_cut", 30.0, "Phi matching tolerance in degrees"
     };
-    clas12::framework::Property<double> m_delta_vz_cm_min{
+    framework::Property<double> m_delta_vz_cm_min{
         "delta_vz_cm_min", 12.38, "Delta Vz minimum cut in cm"
     };
-    clas12::framework::Property<double> m_delta_vz_cm_max{
+    framework::Property<double> m_delta_vz_cm_max{
         "delta_vz_cm_max", 37.26, "Delta Vz maximum cut in cm"
     };
-    clas12::framework::Property<int> m_ai_hit_id_offset{
+    framework::Property<int> m_ai_hit_id_offset{
         "ai_hit_id_offset", 1, "Offset to subtract from AI matched_atof_hit_id (0 if 0-based, 1 if 1-based)"
     };
 
-    clas12::framework::Property<bool> m_enable_ntuple{
+    framework::Property<bool> m_enable_ntuple{
         "enable_ntuple", true, "Enable N-tuple output"
     };
 
     Config m_config;
 
     // Services
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist_svc;
-    clas12::framework::ServiceRef<clas12::framework::NTupleService> m_ntuple_svc;
+    framework::ServiceRef<framework::HistogramService> m_hist_svc;
+    framework::ServiceRef<framework::NTupleService> m_ntuple_svc;
 
     // Mutex for thread-safe NTuple filling
     mutable std::mutex m_ntuple_mutex;
 
     // Lock-free atomic histograms (managed by HistogramService)
-    clas12::framework::ThreadLocalHistogram1D* h_p = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_phi = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_theta = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_vz = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_vz_Cu = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_vz_Sn = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_delta_vz = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_delta_vz_cm = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_delta_phi = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_delta_phi_after_vz_cm_cut = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_n_predictions = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_best_delta_phi = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_n_good_atof_hits = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_matched_atof_hit_id = nullptr;
+    framework::ThreadLocalHistogram1D* h_p = nullptr;
+    framework::ThreadLocalHistogram1D* h_phi = nullptr;
+    framework::ThreadLocalHistogram1D* h_theta = nullptr;
+    framework::ThreadLocalHistogram1D* h_vz = nullptr;
+    framework::ThreadLocalHistogram1D* h_vz_Cu = nullptr;
+    framework::ThreadLocalHistogram1D* h_vz_Sn = nullptr;
+    framework::ThreadLocalHistogram1D* h_delta_vz = nullptr;
+    framework::ThreadLocalHistogram1D* h_delta_vz_cm = nullptr;
+    framework::ThreadLocalHistogram1D* h_delta_phi = nullptr;
+    framework::ThreadLocalHistogram1D* h_delta_phi_after_vz_cm_cut = nullptr;
+    framework::ThreadLocalHistogram1D* h_n_predictions = nullptr;
+    framework::ThreadLocalHistogram1D* h_best_delta_phi = nullptr;
+    framework::ThreadLocalHistogram1D* h_n_good_atof_hits = nullptr;
+    framework::ThreadLocalHistogram1D* h_matched_atof_hit_id = nullptr;
 
     // ATOF-electron delta_phi histograms
-    clas12::framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_all = nullptr;   // all good ATOF hits
-    clas12::framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_true = nullptr;  // true ATOF hits (passing delta_phi cut)
-    clas12::framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_best = nullptr;  // best true ATOF hit
-    clas12::framework::ThreadLocalHistogram1D* h_n_true_atof_hits = nullptr;
+    framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_all = nullptr;   // all good ATOF hits
+    framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_true = nullptr;  // true ATOF hits (passing delta_phi cut)
+    framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_best = nullptr;  // best true ATOF hit
+    framework::ThreadLocalHistogram1D* h_n_true_atof_hits = nullptr;
 
     // Debug histograms
-    clas12::framework::ThreadLocalHistogram1D* h_track_atof_dphi = nullptr;          // track-ATOF phi distance for all true hits
-    clas12::framework::ThreadLocalHistogram1D* h_best_track_atof_dphi = nullptr;     // best track-ATOF phi distance (selected truth)
-    clas12::framework::ThreadLocalHistogram1D* h_delta_component = nullptr;          // AI component - true component
-    clas12::framework::ThreadLocalHistogram1D* h_delta_sector = nullptr;             // AI sector - true sector
-    clas12::framework::ThreadLocalHistogram2D* h_ai_vs_true_component = nullptr;     // AI component vs true component
-    clas12::framework::ThreadLocalHistogram2D* h_ai_vs_true_layer = nullptr;         // AI layer vs true layer
-    clas12::framework::ThreadLocalHistogram2D* h_ai_vs_true_sector = nullptr;        // AI sector vs true sector
-    clas12::framework::ThreadLocalHistogram2D* h_track_phi_vs_atof_phi = nullptr;    // track phi vs best true ATOF hit phi
+    framework::ThreadLocalHistogram1D* h_track_atof_dphi = nullptr;          // track-ATOF phi distance for all true hits
+    framework::ThreadLocalHistogram1D* h_best_track_atof_dphi = nullptr;     // best track-ATOF phi distance (selected truth)
+    framework::ThreadLocalHistogram1D* h_delta_component = nullptr;          // AI component - true component
+    framework::ThreadLocalHistogram1D* h_delta_sector = nullptr;             // AI sector - true sector
+    framework::ThreadLocalHistogram2D* h_ai_vs_true_component = nullptr;     // AI component vs true component
+    framework::ThreadLocalHistogram2D* h_ai_vs_true_layer = nullptr;         // AI layer vs true layer
+    framework::ThreadLocalHistogram2D* h_ai_vs_true_sector = nullptr;        // AI sector vs true sector
+    framework::ThreadLocalHistogram2D* h_track_phi_vs_atof_phi = nullptr;    // track phi vs best true ATOF hit phi
 
     // NTuple branch variables
     double m_nt_e_p = 0.0, m_nt_e_theta = 0.0, m_nt_e_phi = 0.0, m_nt_e_vz = 0.0;

@@ -8,14 +8,14 @@
 #include <clas12/physics/CompositeParticle.hpp>
 #include "fmt/base.h"
 
-namespace clas12::physics {
+namespace physics {
 
 namespace detail {
 /// Check if a double is finite (not NaN or Inf)
 inline auto is_finite(double x) -> bool { return std::isfinite(x); }
 
 /// Validate that a particle's 4-vector components are all finite
-inline auto is_valid_4vec(const clas12::Particle& p) -> bool {
+inline auto is_valid_4vec(const Particle& p) -> bool {
     return is_finite(p.px()) && is_finite(p.py()) &&
            is_finite(p.pz()) && is_finite(p.E());
 }
@@ -39,9 +39,9 @@ class KinematicCalculator {
      * @param detected_particles Detected particles in final state
      * @return Missing mass squared in GeV²
      */
-    static auto missing_mass_squared(const clas12::Particle& beam,
-                                     const clas12::Particle& target,
-                                     const std::vector<clas12::Particle>& detected_particles) -> double {
+    static auto missing_mass_squared(const Particle& beam,
+                                     const Particle& target,
+                                     const std::vector<Particle>& detected_particles) -> double {
         if (!detail::is_valid_4vec(beam) || !detail::is_valid_4vec(target)) {
             return std::numeric_limits<double>::quiet_NaN();
         }
@@ -68,9 +68,9 @@ class KinematicCalculator {
     /**
      * @brief Calculate missing mass
      */
-    static auto missing_mass(const clas12::Particle& beam,
-                             const clas12::Particle& target,
-                             const std::vector<clas12::Particle>& detected_particles) -> double {
+    static auto missing_mass(const Particle& beam,
+                             const Particle& target,
+                             const std::vector<Particle>& detected_particles) -> double {
         double mm2 = missing_mass_squared(beam, target, detected_particles);
         return (mm2 > 0) ? std::sqrt(mm2) : -std::sqrt(-mm2);
     }
@@ -82,9 +82,9 @@ class KinematicCalculator {
      * @param target Target proton
      * @return W in GeV
      */
-    static auto calculate_W(const clas12::Particle& beam,
-                            const clas12::Particle& scattered,
-                            const clas12::Particle& target) -> double {
+    static auto calculate_W(const Particle& beam,
+                            const Particle& scattered,
+                            const Particle& target) -> double {
         if (!detail::is_valid_4vec(beam) || !detail::is_valid_4vec(scattered) || !detail::is_valid_4vec(target)) {
             return std::numeric_limits<double>::quiet_NaN();
         }
@@ -110,11 +110,11 @@ class KinematicCalculator {
      * @param scattered Scattered electron
      * @return Q² in GeV²
      */
-    static auto calculate_Q2(const clas12::Particle& beam, const clas12::Particle& scattered) -> double {
+    static auto calculate_Q2(const Particle& beam, const Particle& scattered) -> double {
         if (!detail::is_valid_4vec(beam) || !detail::is_valid_4vec(scattered)) {
             return std::numeric_limits<double>::quiet_NaN();
         }
-        return 4.0 * beam.E() * scattered.E() * std::pow(std::sin(scattered.theta() * clas12::Constants::DEG_TO_RAD / 2.0), 2);
+        return 4.0 * beam.E() * scattered.E() * std::pow(std::sin(scattered.theta() * Constants::DEG_TO_RAD / 2.0), 2);
     }
 
     /**
@@ -137,8 +137,8 @@ class KinematicCalculator {
      * @param scattered Scattered electron
      * @return y
      */
-    static auto calculate_y(const clas12::Particle& beam,
-                            const clas12::Particle& scattered) -> double {
+    static auto calculate_y(const Particle& beam,
+                            const Particle& scattered) -> double {
         if (!detail::is_valid_4vec(beam) || !detail::is_valid_4vec(scattered) || beam.E() == 0.0) {
             return std::numeric_limits<double>::quiet_NaN();
         }
@@ -157,9 +157,9 @@ class KinematicCalculator {
         double nu;
     };
 
-    static auto calculate_DIS(const clas12::Particle& beam,
-                              const clas12::Particle& scattered,
-                              const clas12::Particle& target) -> DISKinematics {
+    static auto calculate_DIS(const Particle& beam,
+                              const Particle& scattered,
+                              const Particle& target) -> DISKinematics {
         DISKinematics kin;
         kin.Q2 = calculate_Q2(beam, scattered);
         kin.W = calculate_W(beam, scattered, target);
@@ -172,7 +172,7 @@ class KinematicCalculator {
     /**
      * @brief Calculate opening angle between two particles (degrees)
      */
-    static auto opening_angle(const clas12::Particle& p1, const clas12::Particle& p2) -> double {
+    static auto opening_angle(const Particle& p1, const Particle& p2) -> double {
         if (!detail::is_valid_4vec(p1) || !detail::is_valid_4vec(p2) || p1.p() == 0.0 || p2.p() == 0.0) {
             return std::numeric_limits<double>::quiet_NaN();
         }
@@ -189,7 +189,7 @@ class KinematicCalculator {
         double beta_x, beta_y, beta_z, gamma;
     };
 
-    static auto boost_to_cm(const clas12::Particle& p1, const clas12::Particle& p2) -> BoostVector {
+    static auto boost_to_cm(const Particle& p1, const Particle& p2) -> BoostVector {
         double px_tot = p1.px() + p2.px();
         double py_tot = p1.py() + p2.py();
         double pz_tot = p1.pz() + p2.pz();
@@ -211,7 +211,7 @@ class KinematicCalculator {
      * @brief Calculate t (Mandelstam variable)
      * For photoproduction: t = (p_gamma - p_meson)²
      */
-    static auto calculate_t(const clas12::Particle& photon,
+    static auto calculate_t(const Particle& photon,
                             const CompositeParticle& meson) -> double {
         double dpx = photon.px() - meson.px();
         double dpy = photon.py() - meson.py();
@@ -226,4 +226,4 @@ class KinematicCalculator {
     }
 };
 
-}  // namespace clas12::physics
+}  // namespace physics

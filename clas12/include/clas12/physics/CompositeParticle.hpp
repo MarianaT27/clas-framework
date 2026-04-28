@@ -5,7 +5,7 @@
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
 
-namespace clas12::physics {
+namespace physics {
 
 /**
  * @brief Composite particle created from decay products
@@ -20,7 +20,7 @@ class CompositeParticle {
      * @param daughters Vector of daughter particles
      * @param pid PDG ID of the composite particle
      */
-    CompositeParticle(std::vector<clas12::Particle> daughters, int pid = 0)
+    CompositeParticle(std::vector<Particle> daughters, int pid = 0)
         : m_daughters(std::move(daughters)), m_pid(pid) {
         calculate_four_momentum();
     }
@@ -81,7 +81,7 @@ class CompositeParticle {
     /**
      * @brief Get daughter particles
      */
-    auto daughters() const -> const std::vector<clas12::Particle>& {
+    auto daughters() const -> const std::vector<Particle>& {
         return m_daughters;
     }
 
@@ -107,7 +107,7 @@ class CompositeParticle {
     }
 
    private:
-    std::vector<clas12::Particle> m_daughters;
+    std::vector<Particle> m_daughters;
     int m_pid;
     double m_px = 0.0;
     double m_py = 0.0;
@@ -150,14 +150,14 @@ class CompositeParticleBuilder {
      * @param photons Vector of photons
      * @return Vector of π⁰ candidates
      */
-    static auto reconstruct_pi0(const std::vector<clas12::Particle>& photons)
+    static auto reconstruct_pi0(const std::vector<Particle>& photons)
         -> std::vector<CompositeParticle> {
         std::vector<CompositeParticle> pi0_candidates;
 
         // Combine all photon pairs
         for (size_t i = 0; i < photons.size(); ++i) {
             for (size_t j = i + 1; j < photons.size(); ++j) {
-                std::vector<clas12::Particle> daughters = {photons[i], photons[j]};
+                std::vector<Particle> daughters = {photons[i], photons[j]};
                 pi0_candidates.emplace_back(daughters, 111);  // PDG ID for π⁰
             }
         }
@@ -171,14 +171,14 @@ class CompositeParticleBuilder {
      * @param pions_minus Vector of π⁻
      * @return Vector of ρ candidates
      */
-    static auto reconstruct_rho(const std::vector<clas12::Particle>& pions_plus,
-                                const std::vector<clas12::Particle>& pions_minus)
+    static auto reconstruct_rho(const std::vector<Particle>& pions_plus,
+                                const std::vector<Particle>& pions_minus)
         -> std::vector<CompositeParticle> {
         std::vector<CompositeParticle> rho_candidates;
 
         for (const auto& pip : pions_plus) {
             for (const auto& pim : pions_minus) {
-                std::vector<clas12::Particle> daughters = {pip, pim};
+                std::vector<Particle> daughters = {pip, pim};
                 rho_candidates.emplace_back(daughters, 113);  // PDG ID for ρ⁰
             }
         }
@@ -192,14 +192,14 @@ class CompositeParticleBuilder {
      * @param positrons Vector of positrons
      * @return Vector of J/ψ candidates
      */
-    static auto reconstruct_jpsi(const std::vector<clas12::Particle>& electrons,
-                                 const std::vector<clas12::Particle>& positrons)
+    static auto reconstruct_jpsi(const std::vector<Particle>& electrons,
+                                 const std::vector<Particle>& positrons)
         -> std::vector<CompositeParticle> {
         std::vector<CompositeParticle> jpsi_candidates;
 
         for (const auto& e_minus : electrons) {
             for (const auto& e_plus : positrons) {
-                std::vector<clas12::Particle> daughters = {e_minus, e_plus};
+                std::vector<Particle> daughters = {e_minus, e_plus};
                 jpsi_candidates.emplace_back(daughters, 443);  // PDG ID for J/ψ
             }
         }
@@ -214,15 +214,15 @@ class CompositeParticleBuilder {
      * @param pid PDG ID of composite
      * @return Vector of candidates
      */
-    static auto reconstruct_two_body(const std::vector<clas12::Particle>& particles1,
-                                     const std::vector<clas12::Particle>& particles2,
+    static auto reconstruct_two_body(const std::vector<Particle>& particles1,
+                                     const std::vector<Particle>& particles2,
                                      int pid = 0)
         -> std::vector<CompositeParticle> {
         std::vector<CompositeParticle> candidates;
 
         for (const auto& p1 : particles1) {
             for (const auto& p2 : particles2) {
-                std::vector<clas12::Particle> daughters = {p1, p2};
+                std::vector<Particle> daughters = {p1, p2};
                 candidates.emplace_back(daughters, pid);
             }
         }
@@ -231,4 +231,4 @@ class CompositeParticleBuilder {
     }
 };
 
-}  // namespace clas12::physics
+}  // namespace physics

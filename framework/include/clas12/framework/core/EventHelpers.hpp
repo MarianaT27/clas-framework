@@ -16,7 +16,7 @@
  * const auto& electron = electrons_opt->front();
  *
  * // AFTER: 2 lines
- * auto electron_opt = clas12::framework::EventHelpers::get_dis_electron(event);
+ * auto electron_opt = framework::EventHelpers::get_dis_electron(event);
  * if (!electron_opt) return FILTERED();
  * const auto& electron = *electron_opt;
  * @endcode
@@ -30,14 +30,14 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/physics/Kinematics.hpp>
 
-namespace clas12::framework::EventHelpers {
+namespace framework::EventHelpers {
 
 /**
  * @brief Retrieve the selected electron (checks HasGoodElectron decision)
  * @return Copy of the first selected electron, or nullopt
  */
 inline auto get_selected_electron(Event& event)
-    -> std::optional<clas12::Particle> {
+    -> std::optional<Particle> {
     if (!event.passes_decision_typed(Decisions::HasGoodElectron)) return std::nullopt;
     auto electrons_opt = event.retrieve_typed(Keys::SelectedElectrons);
     if (!electrons_opt || electrons_opt->empty()) return std::nullopt;
@@ -49,7 +49,7 @@ inline auto get_selected_electron(Event& event)
  * @return Copy of the first selected electron, or nullopt
  */
 inline auto get_dis_electron(Event& event)
-    -> std::optional<clas12::Particle> {
+    -> std::optional<Particle> {
     if (!event.passes_decision_typed(Decisions::HasGoodDISElectron)) return std::nullopt;
     auto electrons_opt = event.retrieve_typed(Keys::SelectedElectrons);
     if (!electrons_opt || electrons_opt->empty()) return std::nullopt;
@@ -87,7 +87,7 @@ inline auto get_dis_kinematics(Event& event) -> std::optional<DISVars> {
  *
  * Reads `Keys::TriggerElectron`. If absent, returns nullopt. On the
  * first call for an event, computes Q2/W/xB/y/nu via
- * `clas12::physics::KinematicCalculator::calculate_DIS` and stores
+ * `physics::KinematicCalculator::calculate_DIS` and stores
  * each component under `Keys::DIS_*` so subsequent calls for the same
  * event hit the cache. Target is treated as a stationary proton —
  * algorithms that need a different target should compute their own
@@ -104,17 +104,17 @@ inline auto dis_kinematics(Event& event, double beam_energy)
 
     auto electron_opt = event.retrieve_typed(Keys::TriggerElectron);
     if (!electron_opt) return std::nullopt;
-    const clas12::Particle& scattered = *electron_opt;
+    const Particle& scattered = *electron_opt;
 
     // Construct beam (along +z, electron mass) and stationary proton target.
-    clas12::Particle beam(11, 0, -1, -1, clas12::Constants::ELECTRONMASS,
+    Particle beam(11, 0, -1, -1, Constants::ELECTRONMASS,
                           0.0, 0.0, beam_energy, beam_energy,
                           0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
-    clas12::Particle target(2212, 0, -1, +1, clas12::Constants::PROTONMASS,
-                            0.0, 0.0, 0.0, clas12::Constants::PROTONMASS,
+    Particle target(2212, 0, -1, +1, Constants::PROTONMASS,
+                            0.0, 0.0, 0.0, Constants::PROTONMASS,
                             0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 
-    auto kin = clas12::physics::KinematicCalculator::calculate_DIS(beam, scattered, target);
+    auto kin = physics::KinematicCalculator::calculate_DIS(beam, scattered, target);
 
     DISVars vars{kin.Q2, kin.W, kin.x_bj, kin.y, kin.nu};
     event.store_typed(Keys::DIS_Q2, vars.Q2);
@@ -125,4 +125,4 @@ inline auto dis_kinematics(Event& event, double beam_energy)
     return vars;
 }
 
-}  // namespace clas12::framework::EventHelpers
+}  // namespace framework::EventHelpers

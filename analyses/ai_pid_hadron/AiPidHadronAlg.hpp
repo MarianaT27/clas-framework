@@ -193,138 +193,138 @@ struct HadronTreeData {
         using T = HadronTreeData;
         return std::make_tuple(
             // Particle
-            clas12::framework::field("rich_pid", &T::rich_pid),
-            clas12::framework::field("pid", &T::pid),
-            clas12::framework::field("truth_pid", &T::truth_pid),
-            clas12::framework::field("truth_source", &T::truth_source),
-            clas12::framework::field("missing_mass", &T::missing_mass),
-            clas12::framework::field("missing_energy", &T::missing_energy),
-            clas12::framework::field("missing_px", &T::missing_px),
-            clas12::framework::field("missing_py", &T::missing_py),
-            clas12::framework::field("missing_pz", &T::missing_pz),
-            clas12::framework::field("missing_p", &T::missing_p),
-            clas12::framework::field("missing_pt", &T::missing_pt),
-            clas12::framework::field("missing_theta", &T::missing_theta),
-            clas12::framework::field("missing_phi", &T::missing_phi),
-            clas12::framework::field("p", &T::p),
-            clas12::framework::field("theta", &T::theta),
-            clas12::framework::field("phi", &T::phi),
-            clas12::framework::field("beta", &T::beta),
-            clas12::framework::field("charge", &T::charge),
+            framework::field("rich_pid", &T::rich_pid),
+            framework::field("pid", &T::pid),
+            framework::field("truth_pid", &T::truth_pid),
+            framework::field("truth_source", &T::truth_source),
+            framework::field("missing_mass", &T::missing_mass),
+            framework::field("missing_energy", &T::missing_energy),
+            framework::field("missing_px", &T::missing_px),
+            framework::field("missing_py", &T::missing_py),
+            framework::field("missing_pz", &T::missing_pz),
+            framework::field("missing_p", &T::missing_p),
+            framework::field("missing_pt", &T::missing_pt),
+            framework::field("missing_theta", &T::missing_theta),
+            framework::field("missing_phi", &T::missing_phi),
+            framework::field("p", &T::p),
+            framework::field("theta", &T::theta),
+            framework::field("phi", &T::phi),
+            framework::field("beta", &T::beta),
+            framework::field("charge", &T::charge),
             // PCAL
-            clas12::framework::field("PCAL_E", &T::PCAL_E),
-            clas12::framework::field("PCAL_chi2", &T::PCAL_chi2),
-            clas12::framework::field("PCAL_time", &T::PCAL_time),
-            clas12::framework::field("PCAL_path", &T::PCAL_path),
-            clas12::framework::field("PCAL_lu", &T::PCAL_lu),
-            clas12::framework::field("PCAL_lv", &T::PCAL_lv),
-            clas12::framework::field("PCAL_lw", &T::PCAL_lw),
-            clas12::framework::field("PCAL_du", &T::PCAL_du),
-            clas12::framework::field("PCAL_dv", &T::PCAL_dv),
-            clas12::framework::field("PCAL_dw", &T::PCAL_dw),
-            clas12::framework::field("PCAL_m2u", &T::PCAL_m2u),
-            clas12::framework::field("PCAL_m2v", &T::PCAL_m2v),
-            clas12::framework::field("PCAL_m2w", &T::PCAL_m2w),
-            clas12::framework::field("PCAL_m3u", &T::PCAL_m3u),
-            clas12::framework::field("PCAL_m3v", &T::PCAL_m3v),
-            clas12::framework::field("PCAL_m3w", &T::PCAL_m3w),
-            clas12::framework::field("PCAL_dbstU", &T::PCAL_dbstU),
-            clas12::framework::field("PCAL_dbstV", &T::PCAL_dbstV),
-            clas12::framework::field("PCAL_dbstW", &T::PCAL_dbstW),
-            clas12::framework::field("PCAL_rawEU", &T::PCAL_rawEU),
-            clas12::framework::field("PCAL_rawEV", &T::PCAL_rawEV),
-            clas12::framework::field("PCAL_rawEW", &T::PCAL_rawEW),
-            clas12::framework::field("PCAL_recEU", &T::PCAL_recEU),
-            clas12::framework::field("PCAL_recEV", &T::PCAL_recEV),
-            clas12::framework::field("PCAL_recEW", &T::PCAL_recEW),
-            clas12::framework::field("PCAL_recDTU", &T::PCAL_recDTU),
-            clas12::framework::field("PCAL_recDTV", &T::PCAL_recDTV),
-            clas12::framework::field("PCAL_recDTW", &T::PCAL_recDTW),
-            clas12::framework::field("PCAL_recFTU", &T::PCAL_recFTU),
-            clas12::framework::field("PCAL_recFTV", &T::PCAL_recFTV),
-            clas12::framework::field("PCAL_recFTW", &T::PCAL_recFTW),
-            clas12::framework::field("PCAL_size", &T::PCAL_size),
+            framework::field("PCAL_E", &T::PCAL_E),
+            framework::field("PCAL_chi2", &T::PCAL_chi2),
+            framework::field("PCAL_time", &T::PCAL_time),
+            framework::field("PCAL_path", &T::PCAL_path),
+            framework::field("PCAL_lu", &T::PCAL_lu),
+            framework::field("PCAL_lv", &T::PCAL_lv),
+            framework::field("PCAL_lw", &T::PCAL_lw),
+            framework::field("PCAL_du", &T::PCAL_du),
+            framework::field("PCAL_dv", &T::PCAL_dv),
+            framework::field("PCAL_dw", &T::PCAL_dw),
+            framework::field("PCAL_m2u", &T::PCAL_m2u),
+            framework::field("PCAL_m2v", &T::PCAL_m2v),
+            framework::field("PCAL_m2w", &T::PCAL_m2w),
+            framework::field("PCAL_m3u", &T::PCAL_m3u),
+            framework::field("PCAL_m3v", &T::PCAL_m3v),
+            framework::field("PCAL_m3w", &T::PCAL_m3w),
+            framework::field("PCAL_dbstU", &T::PCAL_dbstU),
+            framework::field("PCAL_dbstV", &T::PCAL_dbstV),
+            framework::field("PCAL_dbstW", &T::PCAL_dbstW),
+            framework::field("PCAL_rawEU", &T::PCAL_rawEU),
+            framework::field("PCAL_rawEV", &T::PCAL_rawEV),
+            framework::field("PCAL_rawEW", &T::PCAL_rawEW),
+            framework::field("PCAL_recEU", &T::PCAL_recEU),
+            framework::field("PCAL_recEV", &T::PCAL_recEV),
+            framework::field("PCAL_recEW", &T::PCAL_recEW),
+            framework::field("PCAL_recDTU", &T::PCAL_recDTU),
+            framework::field("PCAL_recDTV", &T::PCAL_recDTV),
+            framework::field("PCAL_recDTW", &T::PCAL_recDTW),
+            framework::field("PCAL_recFTU", &T::PCAL_recFTU),
+            framework::field("PCAL_recFTV", &T::PCAL_recFTV),
+            framework::field("PCAL_recFTW", &T::PCAL_recFTW),
+            framework::field("PCAL_size", &T::PCAL_size),
             // ECIN
-            clas12::framework::field("ICAL_E", &T::ICAL_E),
-            clas12::framework::field("ICAL_chi2", &T::ICAL_chi2),
-            clas12::framework::field("ICAL_time", &T::ICAL_time),
-            clas12::framework::field("ICAL_path", &T::ICAL_path),
-            clas12::framework::field("ICAL_lu", &T::ICAL_lu),
-            clas12::framework::field("ICAL_lv", &T::ICAL_lv),
-            clas12::framework::field("ICAL_lw", &T::ICAL_lw),
-            clas12::framework::field("ICAL_du", &T::ICAL_du),
-            clas12::framework::field("ICAL_dv", &T::ICAL_dv),
-            clas12::framework::field("ICAL_dw", &T::ICAL_dw),
-            clas12::framework::field("ICAL_m2u", &T::ICAL_m2u),
-            clas12::framework::field("ICAL_m2v", &T::ICAL_m2v),
-            clas12::framework::field("ICAL_m2w", &T::ICAL_m2w),
-            clas12::framework::field("ICAL_m3u", &T::ICAL_m3u),
-            clas12::framework::field("ICAL_m3v", &T::ICAL_m3v),
-            clas12::framework::field("ICAL_m3w", &T::ICAL_m3w),
-            clas12::framework::field("ICAL_dbstU", &T::ICAL_dbstU),
-            clas12::framework::field("ICAL_dbstV", &T::ICAL_dbstV),
-            clas12::framework::field("ICAL_dbstW", &T::ICAL_dbstW),
-            clas12::framework::field("ICAL_rawEU", &T::ICAL_rawEU),
-            clas12::framework::field("ICAL_rawEV", &T::ICAL_rawEV),
-            clas12::framework::field("ICAL_rawEW", &T::ICAL_rawEW),
-            clas12::framework::field("ICAL_recEU", &T::ICAL_recEU),
-            clas12::framework::field("ICAL_recEV", &T::ICAL_recEV),
-            clas12::framework::field("ICAL_recEW", &T::ICAL_recEW),
-            clas12::framework::field("ICAL_recDTU", &T::ICAL_recDTU),
-            clas12::framework::field("ICAL_recDTV", &T::ICAL_recDTV),
-            clas12::framework::field("ICAL_recDTW", &T::ICAL_recDTW),
-            clas12::framework::field("ICAL_recFTU", &T::ICAL_recFTU),
-            clas12::framework::field("ICAL_recFTV", &T::ICAL_recFTV),
-            clas12::framework::field("ICAL_recFTW", &T::ICAL_recFTW),
-            clas12::framework::field("ICAL_size", &T::ICAL_size),
+            framework::field("ICAL_E", &T::ICAL_E),
+            framework::field("ICAL_chi2", &T::ICAL_chi2),
+            framework::field("ICAL_time", &T::ICAL_time),
+            framework::field("ICAL_path", &T::ICAL_path),
+            framework::field("ICAL_lu", &T::ICAL_lu),
+            framework::field("ICAL_lv", &T::ICAL_lv),
+            framework::field("ICAL_lw", &T::ICAL_lw),
+            framework::field("ICAL_du", &T::ICAL_du),
+            framework::field("ICAL_dv", &T::ICAL_dv),
+            framework::field("ICAL_dw", &T::ICAL_dw),
+            framework::field("ICAL_m2u", &T::ICAL_m2u),
+            framework::field("ICAL_m2v", &T::ICAL_m2v),
+            framework::field("ICAL_m2w", &T::ICAL_m2w),
+            framework::field("ICAL_m3u", &T::ICAL_m3u),
+            framework::field("ICAL_m3v", &T::ICAL_m3v),
+            framework::field("ICAL_m3w", &T::ICAL_m3w),
+            framework::field("ICAL_dbstU", &T::ICAL_dbstU),
+            framework::field("ICAL_dbstV", &T::ICAL_dbstV),
+            framework::field("ICAL_dbstW", &T::ICAL_dbstW),
+            framework::field("ICAL_rawEU", &T::ICAL_rawEU),
+            framework::field("ICAL_rawEV", &T::ICAL_rawEV),
+            framework::field("ICAL_rawEW", &T::ICAL_rawEW),
+            framework::field("ICAL_recEU", &T::ICAL_recEU),
+            framework::field("ICAL_recEV", &T::ICAL_recEV),
+            framework::field("ICAL_recEW", &T::ICAL_recEW),
+            framework::field("ICAL_recDTU", &T::ICAL_recDTU),
+            framework::field("ICAL_recDTV", &T::ICAL_recDTV),
+            framework::field("ICAL_recDTW", &T::ICAL_recDTW),
+            framework::field("ICAL_recFTU", &T::ICAL_recFTU),
+            framework::field("ICAL_recFTV", &T::ICAL_recFTV),
+            framework::field("ICAL_recFTW", &T::ICAL_recFTW),
+            framework::field("ICAL_size", &T::ICAL_size),
             // ECOUT
-            clas12::framework::field("OCAL_E", &T::OCAL_E),
-            clas12::framework::field("OCAL_chi2", &T::OCAL_chi2),
-            clas12::framework::field("OCAL_time", &T::OCAL_time),
-            clas12::framework::field("OCAL_path", &T::OCAL_path),
-            clas12::framework::field("OCAL_lu", &T::OCAL_lu),
-            clas12::framework::field("OCAL_lv", &T::OCAL_lv),
-            clas12::framework::field("OCAL_lw", &T::OCAL_lw),
-            clas12::framework::field("OCAL_du", &T::OCAL_du),
-            clas12::framework::field("OCAL_dv", &T::OCAL_dv),
-            clas12::framework::field("OCAL_dw", &T::OCAL_dw),
-            clas12::framework::field("OCAL_m2u", &T::OCAL_m2u),
-            clas12::framework::field("OCAL_m2v", &T::OCAL_m2v),
-            clas12::framework::field("OCAL_m2w", &T::OCAL_m2w),
-            clas12::framework::field("OCAL_m3u", &T::OCAL_m3u),
-            clas12::framework::field("OCAL_m3v", &T::OCAL_m3v),
-            clas12::framework::field("OCAL_m3w", &T::OCAL_m3w),
-            clas12::framework::field("OCAL_dbstU", &T::OCAL_dbstU),
-            clas12::framework::field("OCAL_dbstV", &T::OCAL_dbstV),
-            clas12::framework::field("OCAL_dbstW", &T::OCAL_dbstW),
-            clas12::framework::field("OCAL_rawEU", &T::OCAL_rawEU),
-            clas12::framework::field("OCAL_rawEV", &T::OCAL_rawEV),
-            clas12::framework::field("OCAL_rawEW", &T::OCAL_rawEW),
-            clas12::framework::field("OCAL_recEU", &T::OCAL_recEU),
-            clas12::framework::field("OCAL_recEV", &T::OCAL_recEV),
-            clas12::framework::field("OCAL_recEW", &T::OCAL_recEW),
-            clas12::framework::field("OCAL_recDTU", &T::OCAL_recDTU),
-            clas12::framework::field("OCAL_recDTV", &T::OCAL_recDTV),
-            clas12::framework::field("OCAL_recDTW", &T::OCAL_recDTW),
-            clas12::framework::field("OCAL_recFTU", &T::OCAL_recFTU),
-            clas12::framework::field("OCAL_recFTV", &T::OCAL_recFTV),
-            clas12::framework::field("OCAL_recFTW", &T::OCAL_recFTW),
-            clas12::framework::field("OCAL_size", &T::OCAL_size),
+            framework::field("OCAL_E", &T::OCAL_E),
+            framework::field("OCAL_chi2", &T::OCAL_chi2),
+            framework::field("OCAL_time", &T::OCAL_time),
+            framework::field("OCAL_path", &T::OCAL_path),
+            framework::field("OCAL_lu", &T::OCAL_lu),
+            framework::field("OCAL_lv", &T::OCAL_lv),
+            framework::field("OCAL_lw", &T::OCAL_lw),
+            framework::field("OCAL_du", &T::OCAL_du),
+            framework::field("OCAL_dv", &T::OCAL_dv),
+            framework::field("OCAL_dw", &T::OCAL_dw),
+            framework::field("OCAL_m2u", &T::OCAL_m2u),
+            framework::field("OCAL_m2v", &T::OCAL_m2v),
+            framework::field("OCAL_m2w", &T::OCAL_m2w),
+            framework::field("OCAL_m3u", &T::OCAL_m3u),
+            framework::field("OCAL_m3v", &T::OCAL_m3v),
+            framework::field("OCAL_m3w", &T::OCAL_m3w),
+            framework::field("OCAL_dbstU", &T::OCAL_dbstU),
+            framework::field("OCAL_dbstV", &T::OCAL_dbstV),
+            framework::field("OCAL_dbstW", &T::OCAL_dbstW),
+            framework::field("OCAL_rawEU", &T::OCAL_rawEU),
+            framework::field("OCAL_rawEV", &T::OCAL_rawEV),
+            framework::field("OCAL_rawEW", &T::OCAL_rawEW),
+            framework::field("OCAL_recEU", &T::OCAL_recEU),
+            framework::field("OCAL_recEV", &T::OCAL_recEV),
+            framework::field("OCAL_recEW", &T::OCAL_recEW),
+            framework::field("OCAL_recDTU", &T::OCAL_recDTU),
+            framework::field("OCAL_recDTV", &T::OCAL_recDTV),
+            framework::field("OCAL_recDTW", &T::OCAL_recDTW),
+            framework::field("OCAL_recFTU", &T::OCAL_recFTU),
+            framework::field("OCAL_recFTV", &T::OCAL_recFTV),
+            framework::field("OCAL_recFTW", &T::OCAL_recFTW),
+            framework::field("OCAL_size", &T::OCAL_size),
             // HTCC
-            clas12::framework::field("HTCC_nphe", &T::HTCC_nphe),
-            clas12::framework::field("HTCC_time", &T::HTCC_time),
-            clas12::framework::field("HTCC_path", &T::HTCC_path),
-            clas12::framework::field("HTCC_chi2", &T::HTCC_chi2),
-            clas12::framework::field("HTCC_dtheta", &T::HTCC_dtheta),
-            clas12::framework::field("HTCC_dphi", &T::HTCC_dphi),
+            framework::field("HTCC_nphe", &T::HTCC_nphe),
+            framework::field("HTCC_time", &T::HTCC_time),
+            framework::field("HTCC_path", &T::HTCC_path),
+            framework::field("HTCC_chi2", &T::HTCC_chi2),
+            framework::field("HTCC_dtheta", &T::HTCC_dtheta),
+            framework::field("HTCC_dphi", &T::HTCC_dphi),
             // FTOF
-            clas12::framework::field("FTOF_E", &T::FTOF_E),
-            clas12::framework::field("FTOF_time", &T::FTOF_time),
-            clas12::framework::field("FTOF_path", &T::FTOF_path),
-            clas12::framework::field("FTOF_chi2", &T::FTOF_chi2),
-            clas12::framework::field("FTOF_dedx", &T::FTOF_dedx),
-            clas12::framework::field("FTOF_size", &T::FTOF_size),
-            clas12::framework::field("FTOF_layermult", &T::FTOF_layermult)
+            framework::field("FTOF_E", &T::FTOF_E),
+            framework::field("FTOF_time", &T::FTOF_time),
+            framework::field("FTOF_path", &T::FTOF_path),
+            framework::field("FTOF_chi2", &T::FTOF_chi2),
+            framework::field("FTOF_dedx", &T::FTOF_dedx),
+            framework::field("FTOF_size", &T::FTOF_size),
+            framework::field("FTOF_layermult", &T::FTOF_layermult)
         );
     }
 };
@@ -341,10 +341,10 @@ struct AiPidHadronConfig {
     std::string truth_mode = "rich";
 };
 
-class AiPidHadronAlg : public clas12::framework::Algorithm {
+class AiPidHadronAlg : public framework::Algorithm {
 public:
     using Config = AiPidHadronConfig;
-    using StatusCode = clas12::framework::StatusCode;
+    using StatusCode = framework::StatusCode;
 
     explicit AiPidHadronAlg(std::string name = "AiPidHadronAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config) {
@@ -357,7 +357,7 @@ public:
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     auto on_initialize() -> StatusCode override {
-        clas12::framework::Log::info(name(), "Truth PID mode: {}", m_truth_mode.get());
+        framework::Log::info(name(), "Truth PID mode: {}", m_truth_mode.get());
 
         if (m_truth_mode.get() == "rich") {
             if (m_enable_histograms.get()) {
@@ -370,7 +370,7 @@ public:
                 book_comparison_histograms();
             }
 
-            auto init_cutflow = [](clas12::framework::Cutflow& cf) {
+            auto init_cutflow = [](framework::Cutflow& cf) {
                 cf.add_cut("RICH hadrons");
                 cf.add_cut("RICH PID match");
                 cf.add_cut("RQ > 0.1");
@@ -381,9 +381,9 @@ public:
             init_cutflow(m_cutflow_kplus);
             init_cutflow(m_cutflow_kminus);
         } else if (m_truth_mode.get() == "exclusive") {
-            clas12::framework::Log::info(name(), "Exclusive mode: ed -> ep(n)pi+pi-");
-            clas12::framework::Log::info(name(), "  Beam energy: {} GeV", m_beam_energy.get());
-            clas12::framework::Log::info(name(), "  MM cut: {} +/- {} GeV", m_mm_center.get(), m_mm_width.get());
+            framework::Log::info(name(), "Exclusive mode: ed -> ep(n)pi+pi-");
+            framework::Log::info(name(), "  Beam energy: {} GeV", m_beam_energy.get());
+            framework::Log::info(name(), "  MM cut: {} +/- {} GeV", m_mm_center.get(), m_mm_width.get());
 
             if (m_enable_histograms.get()) {
                 book_exclusive_histograms();
@@ -396,27 +396,27 @@ public:
             m_cutflow_exclusive.add_cut("Has meson pair");
             m_cutflow_exclusive.add_cut("Missing mass cut");
         } else {
-            clas12::framework::Log::error(name(), "Unknown truth_mode '{}'. Use 'rich' or 'exclusive'.", m_truth_mode.get());
-            return clas12::framework::StatusCode::FAILURE();
+            framework::Log::error(name(), "Unknown truth_mode '{}'. Use 'rich' or 'exclusive'.", m_truth_mode.get());
+            return framework::StatusCode::FAILURE();
         }
 
         if (m_enable_ntuple.get()) {
             m_ntuple.init(m_ntuple_svc.get(), "rich_hadrons");
         }
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
-    auto process(clas12::framework::Event& event) -> clas12::framework::StatusCode override {
+    auto process(framework::Event& event) -> framework::StatusCode override {
         if (m_truth_mode.get() == "exclusive") {
             return process_exclusive(event);
         }
         return process_rich(event);
     }
 
-    auto on_finalize() -> clas12::framework::StatusCode override {
+    auto on_finalize() -> framework::StatusCode override {
         if (m_ntuple) {
-            clas12::framework::Log::info(name(), "N-tuple entries: {}", m_ntuple.service()->get_entries(m_ntuple.tree_name()));
+            framework::Log::info(name(), "N-tuple entries: {}", m_ntuple.service()->get_entries(m_ntuple.tree_name()));
         }
 
         if (m_truth_mode.get() == "rich") {
@@ -432,12 +432,12 @@ public:
 
                 std::vector<std::vector<std::string>> rows;
                 for (const auto& [pid, count] : m_rich_pid_counts) {
-                    auto pid_enum = clas12::to_pid_enum(pid);
-                    std::string pname = pid_enum ? clas12::pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
+                    auto pid_enum = to_pid_enum(pid);
+                    std::string pname = pid_enum ? pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
                     double frac = total > 0 ? 100.0 * static_cast<double>(count) / static_cast<double>(total) : 0.0;
                     rows.push_back({fmt::format("{}", pid), pname, fmt::format("{}", count), fmt::format("{:.2f}%", frac)});
                 }
-                clas12::framework::Log::print_yield_summary_table(
+                framework::Log::print_yield_summary_table(
                     "RICH best_PID Summary",
                     {"PID", "Name", "Count", "Fraction"},
                     rows, fmt::format("Total: {}", total));
@@ -465,7 +465,7 @@ public:
                 size_t grand_total = total_agree + total_disagree;
                 double grand_rate = grand_total > 0 ? 100.0 * static_cast<double>(total_agree)
                                                        / static_cast<double>(grand_total) : 0.0;
-                clas12::framework::Log::print_yield_summary_table(
+                framework::Log::print_yield_summary_table(
                     "RICH vs REC PID Agreement (Sector 1)",
                     {"REC PID", "Agree", "Disagree", "Total", "Rate"},
                     rows, fmt::format("Overall: {}/{} ({:.2f}%)", total_agree, grand_total, grand_rate));
@@ -480,34 +480,34 @@ public:
 
                 std::vector<std::vector<std::string>> rows;
                 for (const auto& [pid, count] : m_excl_pid_counts) {
-                    auto pid_enum = clas12::to_pid_enum(pid);
-                    std::string pname = pid_enum ? clas12::pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
+                    auto pid_enum = to_pid_enum(pid);
+                    std::string pname = pid_enum ? pid_name(*pid_enum) : fmt::format("Unknown({})", pid);
                     double frac = total > 0 ? 100.0 * static_cast<double>(count) / static_cast<double>(total) : 0.0;
                     rows.push_back({fmt::format("{}", pid), pname, fmt::format("{}", count), fmt::format("{:.2f}%", frac)});
                 }
-                clas12::framework::Log::print_yield_summary_table(
+                framework::Log::print_yield_summary_table(
                     "Exclusive PID Summary",
                     {"PID", "Name", "Count", "Fraction"},
                     rows, fmt::format("Total: {}", total));
             }
         }
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
 private:
     // --- RICH vs REC PID comparison structs ---
     struct KinematicHistograms {
-        clas12::framework::ThreadLocalHistogram1D* p = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* beta = nullptr;
+        framework::ThreadLocalHistogram1D* p = nullptr;
+        framework::ThreadLocalHistogram1D* theta = nullptr;
+        framework::ThreadLocalHistogram1D* phi = nullptr;
+        framework::ThreadLocalHistogram1D* beta = nullptr;
     };
 
     struct PidCompareHistograms {
         KinematicHistograms agree;
         KinematicHistograms disagree;
-        clas12::framework::ThreadLocalHistogram1D* rich_pid_dist = nullptr; // RICH PID distribution for this REC species
+        framework::ThreadLocalHistogram1D* rich_pid_dist = nullptr; // RICH PID distribution for this REC species
     };
 
     struct PidAgreement {
@@ -527,10 +527,10 @@ private:
 
     // Per-particle cut variable histograms (forward declaration for use in methods and structs)
     struct ParticleCutHistograms {
-        clas12::framework::ThreadLocalHistogram1D* chi2pid = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* p = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* vz = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* delta_vz = nullptr;
+        framework::ThreadLocalHistogram1D* chi2pid = nullptr;
+        framework::ThreadLocalHistogram1D* p = nullptr;
+        framework::ThreadLocalHistogram1D* vz = nullptr;
+        framework::ThreadLocalHistogram1D* delta_vz = nullptr;
     };
 
     // Exclusivity variables computed from four-momentum conservation
@@ -547,72 +547,72 @@ private:
 
     // Per-channel exclusivity histograms
     struct ExclusivityHistograms {
-        clas12::framework::ThreadLocalHistogram1D* missing_energy = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* missing_p = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* missing_pt = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* missing_theta = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* missing_phi = nullptr;
+        framework::ThreadLocalHistogram1D* missing_energy = nullptr;
+        framework::ThreadLocalHistogram1D* missing_p = nullptr;
+        framework::ThreadLocalHistogram1D* missing_pt = nullptr;
+        framework::ThreadLocalHistogram1D* missing_theta = nullptr;
+        framework::ThreadLocalHistogram1D* missing_phi = nullptr;
         // Detected neutron (filled only when neutron found)
-        clas12::framework::ThreadLocalHistogram1D* n_detected = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* neutron_opening_angle = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* neutron_p = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* neutron_beta = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* mm_with_neutron = nullptr; // MM(ed→epn+mesons)
+        framework::ThreadLocalHistogram1D* n_detected = nullptr;
+        framework::ThreadLocalHistogram1D* neutron_opening_angle = nullptr;
+        framework::ThreadLocalHistogram1D* neutron_p = nullptr;
+        framework::ThreadLocalHistogram1D* neutron_beta = nullptr;
+        framework::ThreadLocalHistogram1D* mm_with_neutron = nullptr; // MM(ed→epn+mesons)
     };
 
     // --- Properties ---
-    clas12::framework::Property<bool> m_enable_histograms{
+    framework::Property<bool> m_enable_histograms{
         "enable_histograms", true, "Enable histogram filling"
     };
-    clas12::framework::Property<std::string> m_truth_mode{
+    framework::Property<std::string> m_truth_mode{
         "truth_mode", "rich", "Truth PID mode: 'rich' or 'exclusive'"
     };
-    clas12::framework::Property<double> m_beam_energy{
+    framework::Property<double> m_beam_energy{
         "beam_energy", 10.53, "Beam energy [GeV]"
     };
-    clas12::framework::Property<double> m_mm_center{
+    framework::Property<double> m_mm_center{
         "mm_center", 0.9396, "Missing mass cut center [GeV] (neutron mass)"
     };
-    clas12::framework::Property<double> m_mm_width{
+    framework::Property<double> m_mm_width{
         "mm_width", 0.2, "Missing mass cut half-width [GeV]"
     };
-    clas12::framework::Property<bool> m_enable_ntuple{
+    framework::Property<bool> m_enable_ntuple{
         "enable_ntuple", false, "Enable N-tuple output"
     };
 
     // --- Services ---
     Config m_config;
 
-    clas12::framework::ServiceRef<clas12::framework::HistogramService> m_hist;
-    clas12::framework::ServiceRef<clas12::framework::NTupleService> m_ntuple_svc;
+    framework::ServiceRef<framework::HistogramService> m_hist;
+    framework::ServiceRef<framework::NTupleService> m_ntuple_svc;
 
     // N-tuple writer
-    clas12::framework::NTupleWriter<HadronTreeData> m_ntuple;
+    framework::NTupleWriter<HadronTreeData> m_ntuple;
 
     // --- RICH mode members ---
-    clas12::framework::Cutflow m_cutflow_piplus{"π⁺ RICH Selection"};
-    clas12::framework::Cutflow m_cutflow_piminus{"π⁻ RICH Selection"};
-    clas12::framework::Cutflow m_cutflow_kplus{"K⁺ RICH Selection"};
-    clas12::framework::Cutflow m_cutflow_kminus{"K⁻ RICH Selection"};
+    framework::Cutflow m_cutflow_piplus{"π⁺ RICH Selection"};
+    framework::Cutflow m_cutflow_piminus{"π⁻ RICH Selection"};
+    framework::Cutflow m_cutflow_kplus{"K⁺ RICH Selection"};
+    framework::Cutflow m_cutflow_kminus{"K⁻ RICH Selection"};
     std::mutex m_pid_count_mutex;
     std::map<int, size_t> m_rich_pid_counts;
     std::map<int, PidAgreement> m_pid_agreement;
 
     // RICH vs REC PID comparison histograms (Sector 1 only)
-    clas12::framework::ThreadLocalHistogram2D* h_rich_vs_rec_pid = nullptr;
+    framework::ThreadLocalHistogram2D* h_rich_vs_rec_pid = nullptr;
     PidCompareHistograms h_cmp_piplus;
     PidCompareHistograms h_cmp_piminus;
     PidCompareHistograms h_cmp_kplus;
     PidCompareHistograms h_cmp_kminus;
 
     // Per-RICH-species REC PID distribution (Sector 1)
-    clas12::framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_piplus = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_piminus = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_kplus = nullptr;
-    clas12::framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_kminus = nullptr;
+    framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_piplus = nullptr;
+    framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_piminus = nullptr;
+    framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_kplus = nullptr;
+    framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_kminus = nullptr;
 
     // --- Exclusive mode members ---
-    clas12::framework::Cutflow m_cutflow_exclusive{"Exclusive ed→ep(n)π⁺π⁻"};
+    framework::Cutflow m_cutflow_exclusive{"Exclusive ed→ep(n)π⁺π⁻"};
     std::mutex m_excl_count_mutex;
     std::map<int, size_t> m_excl_pid_counts;
 
@@ -620,42 +620,42 @@ private:
     // RICH mode processing
     // ========================================================================
 
-    auto process_rich(clas12::framework::Event& event) -> clas12::framework::StatusCode {
+    auto process_rich(framework::Event& event) -> framework::StatusCode {
         // Detector banks below are read via Particle's accessors, which
         // route to the per-event generated-wrapper cache.
 
         if (event.get_bank("RICH::Particle").rows() == 0) {
-            return clas12::framework::StatusCode::FILTERED();
+            return framework::StatusCode::FILTERED();
         }
 
         // Loop over all charged hadron candidates and look up their RICH info
-        static constexpr std::array<clas12::PIDs, 4> hadron_pids = {
-            clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
-            clas12::PIDs::KPLUS, clas12::PIDs::KMINUS};
+        static constexpr std::array<PIDs, 4> hadron_pids = {
+            PIDs::PIPLUS, PIDs::PIMINUS,
+            PIDs::KPLUS, PIDs::KMINUS};
         for (auto pid_type : hadron_pids) {
             for (const auto& particle : event.particles(pid_type)) {
                 // Determine cutflow based on REC PID
-                clas12::framework::Cutflow* cf = nullptr;
-                if (pid_type == clas12::PIDs::PIPLUS)       cf = &m_cutflow_piplus;
-                else if (pid_type == clas12::PIDs::PIMINUS) cf = &m_cutflow_piminus;
-                else if (pid_type == clas12::PIDs::KPLUS)   cf = &m_cutflow_kplus;
-                else if (pid_type == clas12::PIDs::KMINUS)  cf = &m_cutflow_kminus;
+                framework::Cutflow* cf = nullptr;
+                if (pid_type == PIDs::PIPLUS)       cf = &m_cutflow_piplus;
+                else if (pid_type == PIDs::PIMINUS) cf = &m_cutflow_piminus;
+                else if (pid_type == PIDs::KPLUS)   cf = &m_cutflow_kplus;
+                else if (pid_type == PIDs::KMINUS)  cf = &m_cutflow_kminus;
 
                 if (cf) cf->pass("RICH hadrons");
 
-                auto rich = clas12::read_RICHParticle_bank(event, particle.index());
+                auto rich = read_RICHParticle_bank(event, particle.index());
 
                 // Determine histogram set based on RICH best_PID
                 int best_pid = rich.best_PID;
                 HadronHistograms* h = nullptr;
 
-                if (best_pid == static_cast<int>(clas12::PIDs::PIPLUS)) {
+                if (best_pid == static_cast<int>(PIDs::PIPLUS)) {
                     h = &h_piplus;
-                } else if (best_pid == static_cast<int>(clas12::PIDs::PIMINUS)) {
+                } else if (best_pid == static_cast<int>(PIDs::PIMINUS)) {
                     h = &h_piminus;
-                } else if (best_pid == static_cast<int>(clas12::PIDs::KPLUS)) {
+                } else if (best_pid == static_cast<int>(PIDs::KPLUS)) {
                     h = &h_kplus;
-                } else if (best_pid == static_cast<int>(clas12::PIDs::KMINUS)) {
+                } else if (best_pid == static_cast<int>(PIDs::KMINUS)) {
                     h = &h_kminus;
                 }
 
@@ -716,19 +716,19 @@ private:
             }
         }
 
-        return clas12::framework::StatusCode::SUCCESS();
+        return framework::StatusCode::SUCCESS();
     }
 
     // ========================================================================
     // Exclusive mode processing: ed -> ep(n)pi+pi-
     // ========================================================================
 
-    auto process_exclusive(clas12::framework::Event& event) -> clas12::framework::StatusCode {
+    auto process_exclusive(framework::Event& event) -> framework::StatusCode {
         m_cutflow_exclusive.pass("Total events");
 
         // 1. Require good DIS electron from upstream
-        auto electron_opt = clas12::framework::EventHelpers::get_dis_electron(event);
-        if (!electron_opt) return clas12::framework::StatusCode::FILTERED();
+        auto electron_opt = framework::EventHelpers::get_dis_electron(event);
+        if (!electron_opt) return framework::StatusCode::FILTERED();
         const auto& electron = *electron_opt;
         m_cutflow_exclusive.pass("Has good electron");
         m_cutflow_exclusive.pass("Passes DIS cuts");
@@ -739,18 +739,18 @@ private:
         const auto& protons     = event.protons();
         const auto& pions_plus  = event.pions_plus();
         const auto& pions_minus = event.pions_minus();
-        const auto& kaons_plus  = event.particles(clas12::PIDs::KPLUS);
-        const auto& kaons_minus = event.particles(clas12::PIDs::KMINUS);
-        const auto& neutrons    = event.particles(clas12::PIDs::NEUTRON);
+        const auto& kaons_plus  = event.particles(PIDs::KPLUS);
+        const auto& kaons_minus = event.particles(PIDs::KMINUS);
+        const auto& neutrons    = event.particles(PIDs::NEUTRON);
 
         // 3. Topology check: require proton + (pi+pi- or K+K-)
-        if (protons.empty()) return clas12::framework::StatusCode::FILTERED();
+        if (protons.empty()) return framework::StatusCode::FILTERED();
         m_cutflow_exclusive.pass("Has >= 1 proton");
 
         bool has_pion_pair = !pions_plus.empty() && !pions_minus.empty();
         bool has_kaon_pair = !kaons_plus.empty() && !kaons_minus.empty();
 
-        if (!has_pion_pair && !has_kaon_pair) return clas12::framework::StatusCode::FILTERED();
+        if (!has_pion_pair && !has_kaon_pair) return framework::StatusCode::FILTERED();
         m_cutflow_exclusive.pass("Has meson pair");
 
         // 3b. Fill hadron cut variable histograms (before quality cuts)
@@ -761,18 +761,16 @@ private:
 
         // 4. Construct beam and deuterium target
         const double beam_E = m_beam_energy.get();
-        clas12::Particle beam(11, 0, -1, -1, clas12::Constants::ELECTRONMASS,
+        Particle beam(11, 0, -1, -1, Constants::ELECTRONMASS,
                               0, 0, beam_E, beam_E, 0, 0, 0, 0, 1.0, 0);
 
-        clas12::Particle target(static_cast<int>(clas12::PIDs::DEUTERON), 0, -1, 0,
-                                clas12::Constants::DEUTERIUMMASS,
-                                0, 0, 0, clas12::Constants::DEUTERIUMMASS, 0, 0, 0, 0, 0, 0);
+        Particle target(static_cast<int>(PIDs::DEUTERON), 0, -1, 0,
+                                Constants::DEUTERIUMMASS,
+                                0, 0, 0, Constants::DEUTERIUMMASS, 0, 0, 0, 0, 0, 0);
 
         // 5. Loop over all (p, pi+, pi-) combinations
-        if (h_exclusive.n_combinations) {
-            int n_combos = static_cast<int>(protons.size() * pions_plus.size() * pions_minus.size());
-            h_exclusive.n_combinations->fill(n_combos);
-        }
+        const int n_combos = static_cast<int>(protons.size() * pions_plus.size() * pions_minus.size());
+        h_exclusive.n_combinations->fill(n_combos);
 
         bool any_passed_mm = false;
 
@@ -784,37 +782,36 @@ private:
                     if (!passes_hadron_cuts(pim, e_vz)) continue;
 
                     // Detected final state: e, p, pi+, pi-
-                    std::vector<clas12::Particle> detected = {electron, proton, pip, pim};
+                    std::vector<Particle> detected = {electron, proton, pip, pim};
                     auto excl = compute_exclusivity(beam, target, detected);
 
                     // Fill pre-cut missing mass histograms (without neutron)
-                    if (h_exclusive.mm_all) h_exclusive.mm_all->fill(excl.missing_mass);
-                    if (h_exclusive.mm_squared) h_exclusive.mm_squared->fill(excl.missing_mass2);
-
+                    h_exclusive.mm_all->fill(excl.missing_mass);
+                    h_exclusive.mm_squared->fill(excl.missing_mass2);
                     // Neutron detection
-                    if (h_exclusive.pion_excl.n_detected) h_exclusive.pion_excl.n_detected->fill(static_cast<int>(neutrons.size()));
+                    h_exclusive.pion_excl.n_detected->fill(static_cast<int>(neutrons.size()));
                     if (!neutrons.empty()) {
                         // Find neutron closest to missing momentum direction
                         ROOT::Math::XYZVector miss_dir(excl.missing_px, excl.missing_py, excl.missing_pz);
                         double best_angle = 999;
-                        const clas12::Particle* best_n = nullptr;
+                        const Particle* best_n = nullptr;
                         for (const auto& n : neutrons) {
                             double angle = ROOT::Math::VectorUtil::Angle(miss_dir, n.PxPyPzVector()) * 180.0 / M_PI;
                             if (angle < best_angle) { best_angle = angle; best_n = &n; }
                         }
                         if (best_n) {
-                            if (h_exclusive.pion_excl.neutron_opening_angle) h_exclusive.pion_excl.neutron_opening_angle->fill(best_angle);
-                            if (h_exclusive.pion_excl.neutron_p)    h_exclusive.pion_excl.neutron_p->fill(best_n->p());
-                            if (h_exclusive.pion_excl.neutron_beta) h_exclusive.pion_excl.neutron_beta->fill(best_n->beta());
+                            h_exclusive.pion_excl.neutron_opening_angle->fill(best_angle);
+                            h_exclusive.pion_excl.neutron_p->fill(best_n->p());
+                            h_exclusive.pion_excl.neutron_beta->fill(best_n->beta());
                             // Exclusivity variables with neutron: ed → e p n π+ π- (X)
-                            std::vector<clas12::Particle> detected_with_n = {electron, proton, pip, pim, *best_n};
+                            std::vector<Particle> detected_with_n = {electron, proton, pip, pim, *best_n};
                             auto excl_n = compute_exclusivity(beam, target, detected_with_n);
-                            if (h_exclusive.pion_excl.mm_with_neutron) h_exclusive.pion_excl.mm_with_neutron->fill(excl_n.missing_mass);
-                            if (h_exclusive.pion_excl.missing_energy)  h_exclusive.pion_excl.missing_energy->fill(excl_n.missing_energy);
-                            if (h_exclusive.pion_excl.missing_p)       h_exclusive.pion_excl.missing_p->fill(excl_n.missing_p);
-                            if (h_exclusive.pion_excl.missing_pt)      h_exclusive.pion_excl.missing_pt->fill(excl_n.missing_pt);
-                            if (h_exclusive.pion_excl.missing_theta)   h_exclusive.pion_excl.missing_theta->fill(excl_n.missing_theta);
-                            if (h_exclusive.pion_excl.missing_phi)     h_exclusive.pion_excl.missing_phi->fill(excl_n.missing_phi);
+                            h_exclusive.pion_excl.mm_with_neutron->fill(excl_n.missing_mass);
+                            h_exclusive.pion_excl.missing_energy->fill(excl_n.missing_energy);
+                            h_exclusive.pion_excl.missing_p->fill(excl_n.missing_p);
+                            h_exclusive.pion_excl.missing_pt->fill(excl_n.missing_pt);
+                            h_exclusive.pion_excl.missing_theta->fill(excl_n.missing_theta);
+                            h_exclusive.pion_excl.missing_phi->fill(excl_n.missing_phi);
                         }
                     }
 
@@ -824,33 +821,30 @@ private:
                     any_passed_mm = true;
 
                     // Fill post-cut histograms
-                    if (h_exclusive.mm_selected) h_exclusive.mm_selected->fill(excl.missing_mass);
-                    if (h_exclusive.piplus_p) h_exclusive.piplus_p->fill(pip.p());
-                    if (h_exclusive.piplus_theta) h_exclusive.piplus_theta->fill(pip.theta());
-                    if (h_exclusive.piminus_p) h_exclusive.piminus_p->fill(pim.p());
-                    if (h_exclusive.piminus_theta) h_exclusive.piminus_theta->fill(pim.theta());
-
+                    h_exclusive.mm_selected->fill(excl.missing_mass);
+                    h_exclusive.piplus_p->fill(pip.p());
+                    h_exclusive.piplus_theta->fill(pip.theta());
+                    h_exclusive.piminus_p->fill(pim.p());
+                    h_exclusive.piminus_theta->fill(pim.theta());
                     // Fill NTuple for pi+ (true PID = 211) and pi- (true PID = -211)
                     if (m_ntuple) {
-                        fill_exclusive_ntuple(pip, static_cast<int>(clas12::PIDs::PIPLUS), excl);
-                        fill_exclusive_ntuple(pim, static_cast<int>(clas12::PIDs::PIMINUS), excl);
+                        fill_exclusive_ntuple(pip, static_cast<int>(PIDs::PIPLUS), excl);
+                        fill_exclusive_ntuple(pim, static_cast<int>(PIDs::PIMINUS), excl);
                     }
 
                     // Count exclusive PIDs
                     {
                         std::lock_guard<std::mutex> lock(m_excl_count_mutex);
-                        m_excl_pid_counts[static_cast<int>(clas12::PIDs::PIPLUS)]++;
-                        m_excl_pid_counts[static_cast<int>(clas12::PIDs::PIMINUS)]++;
+                        m_excl_pid_counts[static_cast<int>(PIDs::PIPLUS)]++;
+                        m_excl_pid_counts[static_cast<int>(PIDs::PIMINUS)]++;
                     }
                 }
             }
         }
 
         // 6. Loop over all (p, K+, K-) combinations
-        if (h_exclusive.kaon_n_combinations) {
-            int n_combos = static_cast<int>(protons.size() * kaons_plus.size() * kaons_minus.size());
-            h_exclusive.kaon_n_combinations->fill(n_combos);
-        }
+        const int kaon_n_combos = static_cast<int>(protons.size() * kaons_plus.size() * kaons_minus.size());
+        h_exclusive.kaon_n_combinations->fill(kaon_n_combos);
 
         for (const auto& proton : protons) {
             if (!passes_hadron_cuts(proton, e_vz)) continue;
@@ -859,36 +853,35 @@ private:
                 for (const auto& km : kaons_minus) {
                     if (!passes_hadron_cuts(km, e_vz)) continue;
 
-                    std::vector<clas12::Particle> detected = {electron, proton, kp, km};
+                    std::vector<Particle> detected = {electron, proton, kp, km};
                     auto excl = compute_exclusivity(beam, target, detected);
 
                     // Fill pre-cut missing mass histograms (without neutron)
-                    if (h_exclusive.kaon_mm_all) h_exclusive.kaon_mm_all->fill(excl.missing_mass);
-                    if (h_exclusive.kaon_mm_squared) h_exclusive.kaon_mm_squared->fill(excl.missing_mass2);
-
+                    h_exclusive.kaon_mm_all->fill(excl.missing_mass);
+                    h_exclusive.kaon_mm_squared->fill(excl.missing_mass2);
                     // Neutron detection
-                    if (h_exclusive.kaon_excl.n_detected) h_exclusive.kaon_excl.n_detected->fill(static_cast<int>(neutrons.size()));
+                    h_exclusive.kaon_excl.n_detected->fill(static_cast<int>(neutrons.size()));
                     if (!neutrons.empty()) {
                         ROOT::Math::XYZVector miss_dir(excl.missing_px, excl.missing_py, excl.missing_pz);
                         double best_angle = 999;
-                        const clas12::Particle* best_n = nullptr;
+                        const Particle* best_n = nullptr;
                         for (const auto& n : neutrons) {
                             double angle = ROOT::Math::VectorUtil::Angle(miss_dir, n.PxPyPzVector()) * 180.0 / M_PI;
                             if (angle < best_angle) { best_angle = angle; best_n = &n; }
                         }
                         if (best_n) {
-                            if (h_exclusive.kaon_excl.neutron_opening_angle) h_exclusive.kaon_excl.neutron_opening_angle->fill(best_angle);
-                            if (h_exclusive.kaon_excl.neutron_p)    h_exclusive.kaon_excl.neutron_p->fill(best_n->p());
-                            if (h_exclusive.kaon_excl.neutron_beta) h_exclusive.kaon_excl.neutron_beta->fill(best_n->beta());
+                            h_exclusive.kaon_excl.neutron_opening_angle->fill(best_angle);
+                            h_exclusive.kaon_excl.neutron_p->fill(best_n->p());
+                            h_exclusive.kaon_excl.neutron_beta->fill(best_n->beta());
                             // Exclusivity variables with neutron: ed → e p n K+ K- (X)
-                            std::vector<clas12::Particle> detected_with_n = {electron, proton, kp, km, *best_n};
+                            std::vector<Particle> detected_with_n = {electron, proton, kp, km, *best_n};
                             auto excl_n = compute_exclusivity(beam, target, detected_with_n);
-                            if (h_exclusive.kaon_excl.mm_with_neutron) h_exclusive.kaon_excl.mm_with_neutron->fill(excl_n.missing_mass);
-                            if (h_exclusive.kaon_excl.missing_energy)  h_exclusive.kaon_excl.missing_energy->fill(excl_n.missing_energy);
-                            if (h_exclusive.kaon_excl.missing_p)       h_exclusive.kaon_excl.missing_p->fill(excl_n.missing_p);
-                            if (h_exclusive.kaon_excl.missing_pt)      h_exclusive.kaon_excl.missing_pt->fill(excl_n.missing_pt);
-                            if (h_exclusive.kaon_excl.missing_theta)   h_exclusive.kaon_excl.missing_theta->fill(excl_n.missing_theta);
-                            if (h_exclusive.kaon_excl.missing_phi)     h_exclusive.kaon_excl.missing_phi->fill(excl_n.missing_phi);
+                            h_exclusive.kaon_excl.mm_with_neutron->fill(excl_n.missing_mass);
+                            h_exclusive.kaon_excl.missing_energy->fill(excl_n.missing_energy);
+                            h_exclusive.kaon_excl.missing_p->fill(excl_n.missing_p);
+                            h_exclusive.kaon_excl.missing_pt->fill(excl_n.missing_pt);
+                            h_exclusive.kaon_excl.missing_theta->fill(excl_n.missing_theta);
+                            h_exclusive.kaon_excl.missing_phi->fill(excl_n.missing_phi);
                         }
                     }
 
@@ -896,21 +889,20 @@ private:
 
                     any_passed_mm = true;
 
-                    if (h_exclusive.kaon_mm_selected) h_exclusive.kaon_mm_selected->fill(excl.missing_mass);
-                    if (h_exclusive.kplus_p) h_exclusive.kplus_p->fill(kp.p());
-                    if (h_exclusive.kplus_theta) h_exclusive.kplus_theta->fill(kp.theta());
-                    if (h_exclusive.kminus_p) h_exclusive.kminus_p->fill(km.p());
-                    if (h_exclusive.kminus_theta) h_exclusive.kminus_theta->fill(km.theta());
-
+                    h_exclusive.kaon_mm_selected->fill(excl.missing_mass);
+                    h_exclusive.kplus_p->fill(kp.p());
+                    h_exclusive.kplus_theta->fill(kp.theta());
+                    h_exclusive.kminus_p->fill(km.p());
+                    h_exclusive.kminus_theta->fill(km.theta());
                     if (m_ntuple) {
-                        fill_exclusive_ntuple(kp, static_cast<int>(clas12::PIDs::KPLUS), excl);
-                        fill_exclusive_ntuple(km, static_cast<int>(clas12::PIDs::KMINUS), excl);
+                        fill_exclusive_ntuple(kp, static_cast<int>(PIDs::KPLUS), excl);
+                        fill_exclusive_ntuple(km, static_cast<int>(PIDs::KMINUS), excl);
                     }
 
                     {
                         std::lock_guard<std::mutex> lock(m_excl_count_mutex);
-                        m_excl_pid_counts[static_cast<int>(clas12::PIDs::KPLUS)]++;
-                        m_excl_pid_counts[static_cast<int>(clas12::PIDs::KMINUS)]++;
+                        m_excl_pid_counts[static_cast<int>(PIDs::KPLUS)]++;
+                        m_excl_pid_counts[static_cast<int>(PIDs::KMINUS)]++;
                     }
                 }
             }
@@ -920,15 +912,15 @@ private:
             m_cutflow_exclusive.pass("Missing mass cut");
         }
 
-        return any_passed_mm ? clas12::framework::StatusCode::SUCCESS()
-                             : clas12::framework::StatusCode::FILTERED();
+        return any_passed_mm ? framework::StatusCode::SUCCESS()
+                             : framework::StatusCode::FILTERED();
     }
 
     // ========================================================================
     // Hadron quality cuts
     // ========================================================================
 
-    void fill_cut_histograms(ParticleCutHistograms& h, const clas12::Particle& p, double electron_vz) {
+    void fill_cut_histograms(ParticleCutHistograms& h, const Particle& p, double electron_vz) {
         if (h.chi2pid)  h.chi2pid->fill(p.chi2pid());
         if (h.p)        h.p->fill(p.p());
         if (h.vz)       h.vz->fill(p.vz());
@@ -936,11 +928,11 @@ private:
     }
 
     void fill_all_cut_histograms(double electron_vz,
-                                  const std::vector<clas12::Particle>& protons,
-                                  const std::vector<clas12::Particle>& pions_plus,
-                                  const std::vector<clas12::Particle>& pions_minus,
-                                  const std::vector<clas12::Particle>& kaons_plus,
-                                  const std::vector<clas12::Particle>& kaons_minus) {
+                                  const std::vector<Particle>& protons,
+                                  const std::vector<Particle>& pions_plus,
+                                  const std::vector<Particle>& pions_minus,
+                                  const std::vector<Particle>& kaons_plus,
+                                  const std::vector<Particle>& kaons_minus) {
         for (const auto& p : protons)      fill_cut_histograms(h_exclusive.proton_cuts,  p, electron_vz);
         for (const auto& p : pions_plus)   fill_cut_histograms(h_exclusive.piplus_cuts,   p, electron_vz);
         for (const auto& p : pions_minus)  fill_cut_histograms(h_exclusive.piminus_cuts,  p, electron_vz);
@@ -948,7 +940,7 @@ private:
         for (const auto& p : kaons_minus)  fill_cut_histograms(h_exclusive.kminus_cuts,   p, electron_vz);
     }
 
-    bool passes_hadron_cuts(const clas12::Particle& hadron, double electron_vz) const {
+    bool passes_hadron_cuts(const Particle& hadron, double electron_vz) const {
         if (hadron.p() < 0.3) return false;
         if (hadron.chi2pid() < -3.0 || hadron.chi2pid() > 3.0) return false;
         if (hadron.vz() < -15.0 || hadron.vz() > 5.0) return false;
@@ -956,9 +948,9 @@ private:
         return true;
     }
 
-    static auto compute_exclusivity(const clas12::Particle& beam,
-                                     const clas12::Particle& target,
-                                     const std::vector<clas12::Particle>& detected) -> ExclusivityVars {
+    static auto compute_exclusivity(const Particle& beam,
+                                     const Particle& target,
+                                     const std::vector<Particle>& detected) -> ExclusivityVars {
         auto p_miss = beam.PxPyPzEVector() + target.PxPyPzEVector();
         for (const auto& p : detected) {
             p_miss -= p.PxPyPzEVector();
@@ -983,7 +975,7 @@ private:
     // TTree populate helpers
     // ========================================================================
 
-    void populate_particle_data(const clas12::Particle& particle, const clas12::RICHParticleBank& rich) {
+    void populate_particle_data(const Particle& particle, const RICHParticleBank& rich) {
         auto& d = m_ntuple.data();
         d.rich_pid     = rich.best_PID;
         d.truth_pid    = rich.best_PID;
@@ -997,7 +989,7 @@ private:
         d.charge       = particle.charge();
     }
 
-    void fill_exclusive_ntuple(const clas12::Particle& hadron, int true_pid,
+    void fill_exclusive_ntuple(const Particle& hadron, int true_pid,
                                const ExclusivityVars& excl) {
         auto calo = hadron.calo();
         auto htcc = hadron.cherenkov();
@@ -1029,7 +1021,7 @@ private:
         m_ntuple.fill();
     }
 
-    void populate_calorimeter_data(const clas12::CalorimeterBank& calo) {
+    void populate_calorimeter_data(const CalorimeterBank& calo) {
         auto& d = m_ntuple.data();
 
         // PCAL
@@ -1135,7 +1127,7 @@ private:
         d.OCAL_size   = calo.outer_size;
     }
 
-    void populate_cherenkov_data(const clas12::CherenkovBank& htcc) {
+    void populate_cherenkov_data(const CherenkovBank& htcc) {
         auto& d = m_ntuple.data();
         d.HTCC_nphe   = htcc.nphe;
         d.HTCC_time   = htcc.time;
@@ -1145,7 +1137,7 @@ private:
         d.HTCC_dphi   = htcc.dphi;
     }
 
-    void populate_scintillator_data(const clas12::ScintillatorBank& scint) {
+    void populate_scintillator_data(const ScintillatorBank& scint) {
         auto& d = m_ntuple.data();
         d.FTOF_E         = scint.energy;
         d.FTOF_time      = scint.time;
@@ -1163,23 +1155,23 @@ private:
     // --- RICH mode histograms ---
     struct HadronHistograms {
         struct {
-            clas12::framework::ThreadLocalHistogram1D* p = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* vz = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* RQ = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* best_PID = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* best_ntot = nullptr;
+            framework::ThreadLocalHistogram1D* p = nullptr;
+            framework::ThreadLocalHistogram1D* theta = nullptr;
+            framework::ThreadLocalHistogram1D* phi = nullptr;
+            framework::ThreadLocalHistogram1D* vz = nullptr;
+            framework::ThreadLocalHistogram1D* RQ = nullptr;
+            framework::ThreadLocalHistogram1D* best_PID = nullptr;
+            framework::ThreadLocalHistogram1D* best_ntot = nullptr;
         } precut;
 
         struct {
-            clas12::framework::ThreadLocalHistogram1D* p = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* theta = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* phi = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* vz = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* RQ = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* best_PID = nullptr;
-            clas12::framework::ThreadLocalHistogram1D* best_ntot = nullptr;
+            framework::ThreadLocalHistogram1D* p = nullptr;
+            framework::ThreadLocalHistogram1D* theta = nullptr;
+            framework::ThreadLocalHistogram1D* phi = nullptr;
+            framework::ThreadLocalHistogram1D* vz = nullptr;
+            framework::ThreadLocalHistogram1D* RQ = nullptr;
+            framework::ThreadLocalHistogram1D* best_PID = nullptr;
+            framework::ThreadLocalHistogram1D* best_ntot = nullptr;
         } postcut;
     };
 
@@ -1228,22 +1220,21 @@ private:
             "REC PID for RICH K^{-} S1;REC PID;Events", 800, -400, 400);
     }
 
-    void fill_comparison(const clas12::Particle& particle, int rec_pid, int rich_pid) {
+    void fill_comparison(const Particle& particle, int rec_pid, int rich_pid) {
         PidCompareHistograms* h = nullptr;
-        if      (rec_pid == static_cast<int>(clas12::PIDs::PIPLUS))  h = &h_cmp_piplus;
-        else if (rec_pid == static_cast<int>(clas12::PIDs::PIMINUS)) h = &h_cmp_piminus;
-        else if (rec_pid == static_cast<int>(clas12::PIDs::KPLUS))   h = &h_cmp_kplus;
-        else if (rec_pid == static_cast<int>(clas12::PIDs::KMINUS))  h = &h_cmp_kminus;
+        if      (rec_pid == static_cast<int>(PIDs::PIPLUS))  h = &h_cmp_piplus;
+        else if (rec_pid == static_cast<int>(PIDs::PIMINUS)) h = &h_cmp_piminus;
+        else if (rec_pid == static_cast<int>(PIDs::KPLUS))   h = &h_cmp_kplus;
+        else if (rec_pid == static_cast<int>(PIDs::KMINUS))  h = &h_cmp_kminus;
         if (!h) return;
 
         if (h->rich_pid_dist) h->rich_pid_dist->fill(rich_pid);
-        if (h_rich_vs_rec_pid) h_rich_vs_rec_pid->fill(pid_to_bin_index(rec_pid), pid_to_bin_index(rich_pid));
-
+        h_rich_vs_rec_pid->fill(pid_to_bin_index(rec_pid), pid_to_bin_index(rich_pid));
         // Fill REC PID distribution keyed by RICH species
-        if      (rich_pid == static_cast<int>(clas12::PIDs::PIPLUS)  && h_rec_pid_for_rich_piplus)  h_rec_pid_for_rich_piplus->fill(rec_pid);
-        else if (rich_pid == static_cast<int>(clas12::PIDs::PIMINUS) && h_rec_pid_for_rich_piminus) h_rec_pid_for_rich_piminus->fill(rec_pid);
-        else if (rich_pid == static_cast<int>(clas12::PIDs::KPLUS)   && h_rec_pid_for_rich_kplus)   h_rec_pid_for_rich_kplus->fill(rec_pid);
-        else if (rich_pid == static_cast<int>(clas12::PIDs::KMINUS)  && h_rec_pid_for_rich_kminus)  h_rec_pid_for_rich_kminus->fill(rec_pid);
+        if      (rich_pid == static_cast<int>(PIDs::PIPLUS) )  h_rec_pid_for_rich_piplus->fill(rec_pid);
+        else if (rich_pid == static_cast<int>(PIDs::PIMINUS)) h_rec_pid_for_rich_piminus->fill(rec_pid);
+        else if (rich_pid == static_cast<int>(PIDs::KPLUS)  )   h_rec_pid_for_rich_kplus->fill(rec_pid);
+        else if (rich_pid == static_cast<int>(PIDs::KMINUS) )  h_rec_pid_for_rich_kminus->fill(rec_pid);
 
         auto& kh = (rec_pid == rich_pid) ? h->agree : h->disagree;
         if (kh.p)     kh.p->fill(particle.p());
@@ -1274,7 +1265,7 @@ private:
         h.postcut.best_ntot = svc->book_hist1D(post + "/best_ntot", fmt::format("{} RICH best ntot (post-cut);ntot;Events", label),     800, -400, 400);
     }
 
-    void fill_precut_histograms(const clas12::Particle& particle, const clas12::RICHParticleBank& rich, HadronHistograms& h) {
+    void fill_precut_histograms(const Particle& particle, const RICHParticleBank& rich, HadronHistograms& h) {
         if (h.precut.p)        h.precut.p->fill(particle.p());
         if (h.precut.theta)    h.precut.theta->fill(particle.theta());
         if (h.precut.phi)      h.precut.phi->fill(particle.phi());
@@ -1284,7 +1275,7 @@ private:
         if (h.precut.best_ntot) h.precut.best_ntot->fill(rich.best_ntot);
     }
 
-    void fill_postcut_histograms(const clas12::Particle& particle, const clas12::RICHParticleBank& rich, HadronHistograms& h) {
+    void fill_postcut_histograms(const Particle& particle, const RICHParticleBank& rich, HadronHistograms& h) {
         if (h.postcut.p)        h.postcut.p->fill(particle.p());
         if (h.postcut.theta)    h.postcut.theta->fill(particle.theta());
         if (h.postcut.phi)      h.postcut.phi->fill(particle.phi());
@@ -1297,24 +1288,24 @@ private:
     // --- Exclusive mode histograms ---
     struct ExclusiveHistograms {
         // ed -> ep pi+ pi- (n)
-        clas12::framework::ThreadLocalHistogram1D* mm_all = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* mm_selected = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* mm_squared = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* n_combinations = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* piplus_p = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* piplus_theta = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* piminus_p = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* piminus_theta = nullptr;
+        framework::ThreadLocalHistogram1D* mm_all = nullptr;
+        framework::ThreadLocalHistogram1D* mm_selected = nullptr;
+        framework::ThreadLocalHistogram1D* mm_squared = nullptr;
+        framework::ThreadLocalHistogram1D* n_combinations = nullptr;
+        framework::ThreadLocalHistogram1D* piplus_p = nullptr;
+        framework::ThreadLocalHistogram1D* piplus_theta = nullptr;
+        framework::ThreadLocalHistogram1D* piminus_p = nullptr;
+        framework::ThreadLocalHistogram1D* piminus_theta = nullptr;
 
         // ed -> ep K+ K- (n)
-        clas12::framework::ThreadLocalHistogram1D* kaon_mm_all = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* kaon_mm_selected = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* kaon_mm_squared = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* kaon_n_combinations = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* kplus_p = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* kplus_theta = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* kminus_p = nullptr;
-        clas12::framework::ThreadLocalHistogram1D* kminus_theta = nullptr;
+        framework::ThreadLocalHistogram1D* kaon_mm_all = nullptr;
+        framework::ThreadLocalHistogram1D* kaon_mm_selected = nullptr;
+        framework::ThreadLocalHistogram1D* kaon_mm_squared = nullptr;
+        framework::ThreadLocalHistogram1D* kaon_n_combinations = nullptr;
+        framework::ThreadLocalHistogram1D* kplus_p = nullptr;
+        framework::ThreadLocalHistogram1D* kplus_theta = nullptr;
+        framework::ThreadLocalHistogram1D* kminus_p = nullptr;
+        framework::ThreadLocalHistogram1D* kminus_theta = nullptr;
 
         // Exclusivity variables per channel
         ExclusivityHistograms pion_excl;

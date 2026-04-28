@@ -4,7 +4,7 @@
 #include <vector>
 #include <clas12/Particle.hpp>
 
-namespace clas12::physics {
+namespace physics {
 
 /**
  * @brief General physics helper utilities
@@ -15,7 +15,7 @@ class PhysicsHelpers {
      * @brief Rapidity calculation
      * y = 0.5 * ln[(E + p_z)/(E - p_z)]
      */
-    static auto rapidity(const clas12::Particle& p) -> double {
+    static auto rapidity(const Particle& p) -> double {
         double E = p.E();
         double pz = p.pz();
         return 0.5 * std::log((E + pz) / (E - pz));
@@ -25,7 +25,7 @@ class PhysicsHelpers {
      * @brief Pseudorapidity calculation
      * η = -ln[tan(θ/2)]
      */
-    static auto pseudorapidity(const clas12::Particle& p) -> double {
+    static auto pseudorapidity(const Particle& p) -> double {
         double theta_rad = p.theta() * M_PI / 180.0;
         return -std::log(std::tan(theta_rad / 2.0));
     }
@@ -34,7 +34,7 @@ class PhysicsHelpers {
      * @brief Transverse mass
      * m_T = sqrt(m² + p_T²)
      */
-    static auto transverse_mass(const clas12::Particle& p) -> double {
+    static auto transverse_mass(const Particle& p) -> double {
         double pt_val = p.pt();
         double m = p.mass();
         return std::sqrt(m * m + pt_val * pt_val);
@@ -43,10 +43,10 @@ class PhysicsHelpers {
     /**
      * @brief Sort particles by momentum
      */
-    static auto sort_by_momentum(std::vector<clas12::Particle> particles, bool descending = true)
-        -> std::vector<clas12::Particle> {
+    static auto sort_by_momentum(std::vector<Particle> particles, bool descending = true)
+        -> std::vector<Particle> {
         std::sort(particles.begin(), particles.end(),
-                  [descending](const clas12::Particle& a, const clas12::Particle& b) {
+                  [descending](const Particle& a, const Particle& b) {
                       return descending ? a.p() > b.p() : a.p() < b.p();
                   });
         return particles;
@@ -55,10 +55,10 @@ class PhysicsHelpers {
     /**
      * @brief Sort particles by energy
      */
-    static auto sort_by_energy(std::vector<clas12::Particle> particles, bool descending = true)
-        -> std::vector<clas12::Particle> {
+    static auto sort_by_energy(std::vector<Particle> particles, bool descending = true)
+        -> std::vector<Particle> {
         std::sort(particles.begin(), particles.end(),
-                  [descending](const clas12::Particle& a, const clas12::Particle& b) {
+                  [descending](const Particle& a, const Particle& b) {
                       return descending ? a.E() > b.E() : a.E() < b.E();
                   });
         return particles;
@@ -79,7 +79,7 @@ class PhysicsHelpers {
         }
     };
 
-    static auto total_four_momentum(const std::vector<clas12::Particle>& particles) -> FourMomentum {
+    static auto total_four_momentum(const std::vector<Particle>& particles) -> FourMomentum {
         FourMomentum total{0, 0, 0, 0};
 
         for (const auto& p : particles) {
@@ -126,8 +126,8 @@ class PhysicsHelpers {
      * For A → B + C, calculate angle of B in A rest frame
      */
     static auto decay_angle_cm(
-        const clas12::Particle& parent,
-        const clas12::Particle& daughter) -> double {
+        const Particle& parent,
+        const Particle& daughter) -> double {
         // Get parent momentum direction
         double px_p = parent.px();
         double py_p = parent.py();
@@ -158,7 +158,7 @@ class PhysicsHelpers {
 
         auto total() const -> int { return charged + neutral; }
 
-        static auto calculate(const std::vector<clas12::Particle>& particles) -> Multiplicity {
+        static auto calculate(const std::vector<Particle>& particles) -> Multiplicity {
             Multiplicity mult;
 
             for (const auto& p : particles) {
@@ -195,7 +195,7 @@ class PhysicsHelpers {
      * @brief Sphericity tensor calculation for event shape
      * Sphericity: S = 3/2 (λ2 + λ3) where λi are eigenvalues
      */
-    static auto calculate_sphericity(const std::vector<clas12::Particle>& particles) -> double {
+    static auto calculate_sphericity(const std::vector<Particle>& particles) -> double {
         // Build momentum tensor
         double S_xx = 0, S_yy = 0, S_zz = 0;
         double S_xy = 0, S_xz = 0, S_yz = 0;
@@ -233,7 +233,7 @@ class PhysicsHelpers {
      * @brief Thrust calculation for event shape
      * Thrust: max Σ|p·n| / Σ|p|
      */
-    static auto calculate_thrust(const std::vector<clas12::Particle>& particles) -> double {
+    static auto calculate_thrust(const std::vector<Particle>& particles) -> double {
         // Simplified calculation along z-axis
         // Full calculation requires optimization over all directions
         double thrust_z = 0;
@@ -348,4 +348,4 @@ class StatisticsHelper {
     }
 };
 
-}  // namespace clas12::physics
+}  // namespace physics

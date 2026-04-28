@@ -2,7 +2,7 @@
 
 #include <clas12/framework/core/TypedEventStore.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Standard decision keys for inter-algorithm communication
@@ -139,4 +139,4 @@ inline const TypedKey<bool> HasDecaysLambda{"HasDecaysLambda"};
 
 }  // namespace Decisions
 
-}  // namespace clas12::framework
+}  // namespace framework

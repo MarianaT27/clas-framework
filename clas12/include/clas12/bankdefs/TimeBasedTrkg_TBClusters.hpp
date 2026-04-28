@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `TimeBasedTrkg::TBClusters` (group 20600, item 32).
@@ -423,4 +423,4 @@ inline TimeBasedTrkg_TBClusters::Row TimeBasedTrkg_TBClusters::row(int index) co
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

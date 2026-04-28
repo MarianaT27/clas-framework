@@ -11,7 +11,7 @@
 
 #include <clas12/PIDs.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Particle information in a decay descriptor
@@ -387,4 +387,4 @@ class DecayDescriptor {
     }
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

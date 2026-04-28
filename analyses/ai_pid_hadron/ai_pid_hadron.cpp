@@ -14,7 +14,7 @@
 #include "AiPidHadronAlg.hpp"
 
 auto main(int argc, char* argv[]) -> int {
-    return clas12::framework::AnalysisRunner::run(
+    return framework::AnalysisRunner::run(
         argc, argv, "AI PID Hadron Analysis", "ai_pid_hadron",
         [](auto& builder, const auto& config) {
             // truth_mode is a constructor arg; pull it from the
@@ -26,9 +26,9 @@ auto main(int argc, char* argv[]) -> int {
                     truth_mode = *v;
             }
             builder
-                .template add_service<clas12::framework::ElectronCutsService>()
-                .template add_algorithm<clas12::algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", clas12::algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity})
-                .template add_algorithm<clas12::algorithms::DISSelectionAlg>("DISSelection", clas12::algorithms::DISSelectionConfig{.dis_region = clas12::physics::DISAnalysis::high_q2_region()})
+                .template add_service<framework::ElectronCutsService>()
+                .template add_algorithm<algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity})
+                .template add_algorithm<algorithms::DISSelectionAlg>("DISSelection", algorithms::DISSelectionConfig{.dis_region = physics::DISAnalysis::high_q2_region()})
                 .template add_algorithm<ai_pid_hadron::AiPidHadronAlg>("AiPidHadronAlg", ai_pid_hadron::AiPidHadronConfig{.truth_mode = truth_mode});
         });
 }

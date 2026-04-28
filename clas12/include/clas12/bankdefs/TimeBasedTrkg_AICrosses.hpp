@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `TimeBasedTrkg::AICrosses` (group 20600, item 75).
@@ -353,4 +353,4 @@ inline TimeBasedTrkg_AICrosses::Row TimeBasedTrkg_AICrosses::row(int index) cons
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

@@ -12,7 +12,7 @@
 
 #include <clas12/framework/services/LoggingService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Cutflow manager for tracking event selection efficiency
@@ -196,4 +196,4 @@ class Cutflow {
     std::unordered_map<std::string, std::size_t, StringHash, StringEq> m_index;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

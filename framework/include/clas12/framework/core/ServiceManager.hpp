@@ -16,7 +16,7 @@
 #include <clas12/framework/core/Result.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 // Forward declaration
 class LoggingService;
@@ -54,7 +54,7 @@ class ServiceManager {
                      std::vector<std::string> dependencies) -> StatusCode {
         const std::string& name = service->name();
         if (m_services.find(name) != m_services.end()) {
-            clas12::framework::Log::error("ServiceManager", "Service '{}' already exists", name);
+            framework::Log::error("ServiceManager", "Service '{}' already exists", name);
             return StatusCode::failure(fmt::format("Service '{}' already exists", name));
         }
         // Cache the dynamic type so get_service<T>() can do an O(1) lookup
@@ -83,7 +83,7 @@ class ServiceManager {
     auto get_service(const std::string& name) -> T* {
         auto it = m_services.find(name);
         if (it == m_services.end()) {
-            clas12::framework::Log::warning("ServiceManager", "Service '{}' not found", name);
+            framework::Log::warning("ServiceManager", "Service '{}' not found", name);
             return nullptr;
         }
         return dynamic_cast<T*>(it->second.get());
@@ -114,7 +114,7 @@ class ServiceManager {
     auto initialize_all() -> StatusCode {
         auto sort_result = topological_sort();
         if (sort_result.is_error()) {
-            clas12::framework::Log::error("ServiceManager", "{}", sort_result.error_message());
+            framework::Log::error("ServiceManager", "{}", sort_result.error_message());
             return StatusCode::failure(sort_result.error_message());
         }
 
@@ -128,14 +128,14 @@ class ServiceManager {
                 svc->set_service_manager(this);
             }
 
-            clas12::framework::Log::info("ServiceManager", "Initializing service: {}", name);
+            framework::Log::info("ServiceManager", "Initializing service: {}", name);
 
             auto sc = it->second->initialize();
             if (sc.is_failure()) {
                 std::string error_msg = sc.message().empty()
                                             ? fmt::format("Failed to initialize service '{}'", name)
                                             : fmt::format("Failed to initialize service '{}': {}", name, sc.message());
-                clas12::framework::Log::error("ServiceManager", "{}", error_msg);
+                framework::Log::error("ServiceManager", "{}", error_msg);
                 return StatusCode::failure(error_msg);
             }
         }
@@ -236,7 +236,7 @@ class ServiceManager {
         auto result = topological_sort();
         if (!result.is_ok()) {
             std::string error_msg = fmt::format("Failed to determine service order: {}", result.error_message());
-            clas12::framework::Log::error("ServiceManager", "{}", error_msg);
+            framework::Log::error("ServiceManager", "{}", error_msg);
             return StatusCode::failure(error_msg);
         }
 
@@ -248,9 +248,9 @@ class ServiceManager {
             auto it = m_services.find(name);
             if (it == m_services.end()) continue;
 
-            clas12::framework::Log::info("ServiceManager", "Finalizing service: {}", name);
+            framework::Log::info("ServiceManager", "Finalizing service: {}", name);
             auto sc = it->second->finalize();
-            if (sc.is_failure()) clas12::framework::Log::warning("ServiceManager", "Failed to finalize service '{}'", name);
+            if (sc.is_failure()) framework::Log::warning("ServiceManager", "Failed to finalize service '{}'", name);
         }
         return StatusCode::SUCCESS();
     }
@@ -294,13 +294,13 @@ class ServiceManager {
     std::unordered_map<std::type_index, IService*> m_type_cache;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework
 
-namespace clas12::framework {
+namespace framework {
 
 // Service::locate_service_impl - deferred until ServiceManager is complete
 template <typename T>
 auto Service::locate_service_impl(const std::string& name) -> T* {
     return m_svc_mgr->get_service<T>(name);
 }
-}  // namespace clas12::framework
+}  // namespace framework

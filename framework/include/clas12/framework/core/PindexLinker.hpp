@@ -27,10 +27,10 @@
  *
  * Usage:
  * @code
- *   clas12::bankdefs::REC_Calorimeter calo;
+ *   bankdefs::REC_Calorimeter calo;
  *   calo.bind(event.get_bank("REC::Calorimeter"));
  *
- *   clas12::framework::PindexLinker link;
+ *   framework::PindexLinker link;
  *   link.build(calo.view(), calo.pindex_handle());
  *
  *   for (int row : link.rows_for(pindex)) {
@@ -53,7 +53,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Fast reverse index from "link column value" -> "rows that point at it".
@@ -147,7 +147,7 @@ class PindexLinker {
  * @brief Build a PindexLinker for any generated bank wrapper that exposes
  *        a `pindex_handle()` member.
  *
- * Works with clas12::bankdefs::REC_Calorimeter, REC_Scintillator, etc.
+ * Works with bankdefs::REC_Calorimeter, REC_Scintillator, etc.
  */
 template <typename BankT>
 inline auto link_by_pindex(const BankT& bank) -> PindexLinker {
@@ -221,4 +221,4 @@ class PindexRowView {
     std::span<const int>  m_rows{};
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

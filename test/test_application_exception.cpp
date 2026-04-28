@@ -5,7 +5,7 @@
 #include <vector>
 #include <clas12/framework/core/StatusCode.hpp>
 
-using namespace clas12::framework;
+using namespace framework;
 
 /**
  * Test that verifies exception handling in algorithm execution.

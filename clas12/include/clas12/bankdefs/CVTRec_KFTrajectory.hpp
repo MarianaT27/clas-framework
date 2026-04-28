@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `CVTRec::KFTrajectory` (group 20500, item 32).
@@ -345,4 +345,4 @@ inline CVTRec_KFTrajectory::Row CVTRec_KFTrajectory::row(int index) const noexce
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs

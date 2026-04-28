@@ -12,7 +12,7 @@
 #include "TObjString.h"
 #include "TTree.h"
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Service for storing analysis metadata and provenance
@@ -226,14 +226,14 @@ class MetadataService : public Service {
         if (m_output_svc && m_output_svc->is_file_open()) {
             // Use OutputFileService's file handle (preferred)
             file_ptr = m_output_svc->get_file();
-            clas12::framework::Log::info("MetadataService", "Writing metadata to: {}",
+            framework::Log::info("MetadataService", "Writing metadata to: {}",
                                  m_output_svc->get_output_file());
         } else if (!m_output_file.empty()) {
             // Fallback: open file directly (legacy behavior)
-            clas12::framework::Log::info("MetadataService", "Writing metadata to: {}", m_output_file);
+            framework::Log::info("MetadataService", "Writing metadata to: {}", m_output_file);
             owned_file = std::make_unique<TFile>(m_output_file.c_str(), "UPDATE");
             if (owned_file->IsZombie() || !owned_file->IsOpen()) {
-                clas12::framework::Log::error("MetadataService", "Failed to open file for metadata");
+                framework::Log::error("MetadataService", "Failed to open file for metadata");
                 return;
             }
             file_ptr = owned_file.get();
@@ -307,7 +307,7 @@ class MetadataService : public Service {
             owned_file->Close();
         }
 
-        clas12::framework::Log::info("MetadataService", "Metadata written successfully");
+        framework::Log::info("MetadataService", "Metadata written successfully");
     }
 
    private:
@@ -327,4 +327,4 @@ class MetadataService : public Service {
     std::chrono::system_clock::time_point m_end_time;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

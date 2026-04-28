@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-namespace clas12::framework {
+namespace framework {
 
 // Forward declarations for Result bridge
 template <typename T>
@@ -127,13 +127,13 @@ private:
     std::string m_message;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework
 
 // Include Result.hpp for bridge implementations
 // This must come after StatusCode is fully defined
 #include <clas12/framework/core/Result.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 // ============================================================================
 // StatusCode-Result Bridge Implementations
@@ -161,4 +161,4 @@ inline auto StatusCode::from_result(const Result<void>& result) -> StatusCode {
     return StatusCode::failure(result.error().message());
 }
 
-}  // namespace clas12::framework
+}  // namespace framework

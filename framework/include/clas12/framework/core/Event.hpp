@@ -22,12 +22,12 @@
 #include <utility>
 #include <vector>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Type alias for storing particles grouped by their PID type
  */
-using ParticleMap = std::map<clas12::PIDs, std::vector<clas12::Particle>>;
+using ParticleMap = std::map<PIDs, std::vector<Particle>>;
 
 namespace detail {
 
@@ -87,9 +87,9 @@ class Event {
     /**
      * @brief Get particles of a specific type
      * @param pid Particle ID
-     * @return const std::vector<clas12::Particle>& Vector of particles
+     * @return const std::vector<Particle>& Vector of particles
      */
-    auto particles(clas12::PIDs pid) -> const std::vector<clas12::Particle>& {
+    auto particles(PIDs pid) -> const std::vector<Particle>& {
         if (!m_particles_loaded) {
             load_particles();
         }
@@ -104,21 +104,21 @@ class Event {
     // Per-PID convenience accessors. Every one is a zero-cost forward to the
     // already-cached `m_particles` map built by `load_particles()`.
     // ========================================================================
-    auto electrons()    -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::ELECTRON); }
-    auto positrons()    -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::POSITRON); }
-    auto photons()      -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PHOTON); }
-    auto protons()      -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PROTON); }
-    auto neutrons()     -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::NEUTRON); }
-    auto pions_plus()   -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PIPLUS); }
-    auto pions_minus()  -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::PIMINUS); }
-    auto kaons_plus()   -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::KPLUS); }
-    auto kaons_minus()  -> const std::vector<clas12::Particle>& { return particles(clas12::PIDs::KMINUS); }
+    auto electrons()    -> const std::vector<Particle>& { return particles(PIDs::ELECTRON); }
+    auto positrons()    -> const std::vector<Particle>& { return particles(PIDs::POSITRON); }
+    auto photons()      -> const std::vector<Particle>& { return particles(PIDs::PHOTON); }
+    auto protons()      -> const std::vector<Particle>& { return particles(PIDs::PROTON); }
+    auto neutrons()     -> const std::vector<Particle>& { return particles(PIDs::NEUTRON); }
+    auto pions_plus()   -> const std::vector<Particle>& { return particles(PIDs::PIPLUS); }
+    auto pions_minus()  -> const std::vector<Particle>& { return particles(PIDs::PIMINUS); }
+    auto kaons_plus()   -> const std::vector<Particle>& { return particles(PIDs::KPLUS); }
+    auto kaons_minus()  -> const std::vector<Particle>& { return particles(PIDs::KMINUS); }
 
     /**
      * @brief Particles by integer PDG id (parallel to `particles(PIDs)`).
      */
-    auto by_pid(int pid) -> const std::vector<clas12::Particle>& {
-        return particles(static_cast<clas12::PIDs>(pid));
+    auto by_pid(int pid) -> const std::vector<Particle>& {
+        return particles(static_cast<PIDs>(pid));
     }
 
     /**
@@ -128,7 +128,7 @@ class Event {
      * pass over REC::Particle as `m_particles`. No second scan, no map.
      * Anything outside [-1, +1] returns an empty vector.
      */
-    auto by_charge(int charge) -> const std::vector<clas12::Particle>& {
+    auto by_charge(int charge) -> const std::vector<Particle>& {
         if (!m_particles_loaded) {
             load_particles();
         }
@@ -144,8 +144,8 @@ class Event {
      * the cached `electrons()` vector — same cost as the old free function.
      */
     auto find_trigger_electron(
-        std::pair<double, double> status_range = {clas12::FD, clas12::CD}
-    ) -> std::optional<clas12::Particle> {
+        std::pair<double, double> status_range = {FD, CD}
+    ) -> std::optional<Particle> {
         for (const auto& e : electrons()) {
             const double abs_status = std::abs(e.status());
             if (e.status() < 0.0 && e.p() != 0.0 &&
@@ -161,7 +161,7 @@ class Event {
      *
      * Returns a lazy-evaluated view of all particles across all PID types.
      * This view is compatible with C++20 range adaptors and can be composed
-     * using the pipe operator with filters from clas12::framework::Ranges.
+     * using the pipe operator with filters from framework::Ranges.
      *
      * The view uses lazy evaluation - particles are only accessed when
      * the view is iterated, and filtering operations are applied on-the-fly.
@@ -171,7 +171,7 @@ class Event {
      * Example usage:
      * @code
      * for (const auto& p : event.all_particles()) {
-     *     if (p.pdg() != clas12::PIDs::ELECTRON) continue;
+     *     if (p.pdg() != PIDs::ELECTRON) continue;
      *     if (p.p() < 2.0) continue;
      *     // ... process forward-detector electron
      * }
@@ -197,13 +197,13 @@ class Event {
      * Use this when you need to store the particles or iterate multiple times.
      * For single-pass filtering, prefer all_particles() for better performance.
      *
-     * @return std::vector<clas12::Particle> Vector of all particles
+     * @return std::vector<Particle> Vector of all particles
      */
-    auto all_particles_vector() -> std::vector<clas12::Particle> {
+    auto all_particles_vector() -> std::vector<Particle> {
         if (!m_particles_loaded) {
             load_particles();
         }
-        std::vector<clas12::Particle> result;
+        std::vector<Particle> result;
         for (const auto& [pid, particles] : m_particles) {
             result.insert(result.end(), particles.begin(), particles.end());
         }
@@ -452,7 +452,7 @@ class Event {
     // ========================================================================
     //
     // bank<T>() and rows_for_pindex<T>() provide a per-event cache of
-    // bound generated wrappers (clas12::bankdefs::REC_Calorimeter, etc.)
+    // bound generated wrappers (bankdefs::REC_Calorimeter, etc.)
     // and their associated PindexLinker instances. The first call for a
     // given bank type binds the wrapper from m_banks and builds the
     // linker; subsequent calls reuse both.
@@ -466,7 +466,7 @@ class Event {
      * @brief Get a bound generated bank wrapper, caching on first use.
      *
      * The wrapper type T must be one of the classes generated under
-     * clas12::bankdefs (e.g. REC_Calorimeter). bind() is called with the
+     * bankdefs (e.g. REC_Calorimeter). bind() is called with the
      * hipo::bank_view looked up by T::bank_name on the first access, and
      * the bound wrapper is stashed for subsequent calls.
      *
@@ -581,8 +581,8 @@ class Event {
     }
 
    private:
-    static auto empty_particles() -> const std::vector<clas12::Particle>& {
-        static const std::vector<clas12::Particle> s_empty;
+    static auto empty_particles() -> const std::vector<Particle>& {
+        static const std::vector<Particle> s_empty;
         return s_empty;
     }
 
@@ -591,7 +591,7 @@ class Event {
     /// Charge-indexed view of REC::Particle, slot index = charge + 1 so
     /// charges -1/0/+1 map to slots 0/1/2. Built in the same single pass
     /// as `m_particles` to avoid a second scan or map allocation.
-    std::array<std::vector<clas12::Particle>, 3> m_by_charge;
+    std::array<std::vector<Particle>, 3> m_by_charge;
     bool m_particles_loaded = false;
     std::optional<double> m_start_time;
     long m_event_number = -1;
@@ -623,15 +623,15 @@ class Event {
         const auto& REC_Particle = m_banks["REC::Particle"];
 
         // Initialize particle vectors for common types
-        static constexpr std::array<clas12::PIDs, 9> target_types = {
-            clas12::PIDs::ELECTRON, clas12::PIDs::POSITRON,
-            clas12::PIDs::PHOTON,
-            clas12::PIDs::PROTON, clas12::PIDs::NEUTRON,
-            clas12::PIDs::PIPLUS, clas12::PIDs::PIMINUS,
-            clas12::PIDs::KPLUS, clas12::PIDs::KMINUS};
+        static constexpr std::array<PIDs, 9> target_types = {
+            PIDs::ELECTRON, PIDs::POSITRON,
+            PIDs::PHOTON,
+            PIDs::PROTON, PIDs::NEUTRON,
+            PIDs::PIPLUS, PIDs::PIMINUS,
+            PIDs::KPLUS, PIDs::KMINUS};
 
         for (const auto& type : target_types) {
-            m_particles[type] = std::vector<clas12::Particle>();
+            m_particles[type] = std::vector<Particle>();
         }
 
         const int n_rows = REC_Particle.rows();
@@ -673,7 +673,7 @@ class Event {
             // Find matching particle type. target_types is small (9) and
             // sorted by selection frequency; linear scan is faster than a
             // hash or map lookup at this size.
-            clas12::PIDs particle_type;
+            PIDs particle_type;
             bool found = false;
             for (const auto& type : target_types) {
                 if (pid == static_cast<int>(type)) {
@@ -696,8 +696,8 @@ class Event {
             const double beta = static_cast<double>(REC_Particle.get<float>(h_beta, i));
             const double chi2pid = static_cast<double>(REC_Particle.get<float>(h_chi2pid, i));
 
-            const double mass = clas12::physics::ParticleUtils::get_mass(pid);
-            const double E = clas12::physics::ParticleUtils::compute_energy(px, py, pz, pid);
+            const double mass = physics::ParticleUtils::get_mass(pid);
+            const double E = physics::ParticleUtils::compute_energy(px, py, pz, pid);
 
             auto& p = m_particles[particle_type].emplace_back(
                 pid, status, i, charge, mass,
@@ -724,4 +724,4 @@ class Event {
     }
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

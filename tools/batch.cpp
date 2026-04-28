@@ -67,7 +67,7 @@ struct BatchConfig {
 auto load_config_from_json(const std::string& path) -> std::optional<BatchConfig> {
     std::ifstream file(path);
     if (!file.is_open()) {
-        clas12::framework::Log::error("Batch", "Cannot open config file: {}", path);
+        framework::Log::error("Batch", "Cannot open config file: {}", path);
         return std::nullopt;
     }
 
@@ -126,15 +126,15 @@ auto load_config_from_json(const std::string& path) -> std::optional<BatchConfig
 // Data directory resolution
 //──────────────────────────────────────────────────────────────────────────────
 
-auto resolve_data_directory(clas12::Target target, clas12::Polarity polarity) -> std::string {
+auto resolve_data_directory(Target target, Polarity polarity) -> std::string {
     // RG-D data paths at JLab
-    if (polarity == clas12::Polarity::Outbending) {
+    if (polarity == Polarity::Outbending) {
         switch (target) {
-            case clas12::Target::LD2:
+            case Target::LD2:
                 return "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/";
-            case clas12::Target::CxC:
+            case Target::CxC:
                 return "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/";
-            case clas12::Target::CuSn:
+            case Target::CuSn:
                 return "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/";
             default:
                 return "";
@@ -149,9 +149,9 @@ auto resolve_data_directory(clas12::Target target, clas12::Polarity polarity) ->
 // Batch system conversion
 //──────────────────────────────────────────────────────────────────────────────
 
-auto parse_batch_system(const std::string& name) -> std::optional<clas12::framework::BatchSystem::System> {
-    if (name == "slurm") return clas12::framework::BatchSystem::System::SLURM;
-    if (name == "local") return clas12::framework::BatchSystem::System::Local;
+auto parse_batch_system(const std::string& name) -> std::optional<framework::BatchSystem::System> {
+    if (name == "slurm") return framework::BatchSystem::System::SLURM;
+    if (name == "local") return framework::BatchSystem::System::Local;
     return std::nullopt;
 }
 
@@ -292,12 +292,12 @@ int main(int argc, char* argv[]) {
     std::string target_str = args["target"].as<std::string>();
     std::string polarity_str = args["polarity"].as<std::string>();
 
-    clas12::Target target = clas12::Target::LD2;
-    clas12::Polarity polarity = clas12::Polarity::Outbending;
+    Target target = Target::LD2;
+    Polarity polarity = Polarity::Outbending;
 
     if (!target_str.empty() && !polarity_str.empty()) {
-        target = clas12::string_to_target(target_str);
-        polarity = clas12::string_to_polarity(polarity_str);
+        target = string_to_target(target_str);
+        polarity = string_to_polarity(polarity_str);
 
         if (cfg.data_dir.empty()) {
             cfg.data_dir = resolve_data_directory(target, polarity);
@@ -309,7 +309,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (cfg.data_dir.empty()) {
-        clas12::framework::Log::error("Batch", "No data source specified. Use --data-dir, --target/--polarity, or --config");
+        framework::Log::error("Batch", "No data source specified. Use --data-dir, --target/--polarity, or --config");
         return EXIT_FAILURE;
     }
 
@@ -318,7 +318,7 @@ int main(int argc, char* argv[]) {
     // ─────────────────────────────────────────────────────────────────────────
 
     if (!fs::exists(cfg.executable)) {
-        clas12::framework::Log::error("Batch", "Executable not found: {}", cfg.executable);
+        framework::Log::error("Batch", "Executable not found: {}", cfg.executable);
         return EXIT_FAILURE;
     }
 
@@ -338,10 +338,10 @@ int main(int argc, char* argv[]) {
     // ─────────────────────────────────────────────────────────────────────────
 
     fmt::print("Reading input files from: {}\n", cfg.data_dir);
-    std::vector<std::string> input_files = clas12::FileUtils::read_recursive_hipo_files(cfg.data_dir);
+    std::vector<std::string> input_files = FileUtils::read_recursive_hipo_files(cfg.data_dir);
 
     if (input_files.empty()) {
-        clas12::framework::Log::error("Batch", "No .hipo files found in {}", cfg.data_dir);
+        framework::Log::error("Batch", "No .hipo files found in {}", cfg.data_dir);
         return EXIT_FAILURE;
     }
 
@@ -353,7 +353,7 @@ int main(int argc, char* argv[]) {
 
     auto batch_system = parse_batch_system(cfg.system);
     if (!batch_system) {
-        clas12::framework::Log::error("Batch", "Unknown batch system '{}'. Valid options: slurm, local", cfg.system);
+        framework::Log::error("Batch", "Unknown batch system '{}'. Valid options: slurm, local", cfg.system);
         return EXIT_FAILURE;
     }
 
@@ -361,7 +361,7 @@ int main(int argc, char* argv[]) {
     // Build job configuration
     // ─────────────────────────────────────────────────────────────────────────
 
-    clas12::framework::BatchSystem::JobConfig job_config;
+    framework::BatchSystem::JobConfig job_config;
     job_config.job_name = cfg.job_name;
     job_config.output_dir = cfg.output_dir;
     job_config.log_dir = cfg.log_dir;
@@ -400,7 +400,7 @@ int main(int argc, char* argv[]) {
     fmt::print("═══════════════════════════════════════════════════════════════\n");
     fmt::print("  Job name:        {}\n", cfg.job_name);
     fmt::print("  Executable:      {}\n", cfg.executable);
-    fmt::print("  Batch system:    {}\n", clas12::framework::BatchSystem::system_name(*batch_system));
+    fmt::print("  Batch system:    {}\n", framework::BatchSystem::system_name(*batch_system));
     fmt::print("  Data directory:  {}\n", cfg.data_dir);
     fmt::print("  Total files:     {}\n", input_files.size());
     fmt::print("  Files per job:   {}\n", cfg.files_per_job);
@@ -427,10 +427,10 @@ int main(int argc, char* argv[]) {
     // ─────────────────────────────────────────────────────────────────────────
 
     fmt::print("Generating batch submission scripts...\n");
-    auto job_ids = clas12::framework::BatchSystem::submit_jobs(job_config, *batch_system);
+    auto job_ids = framework::BatchSystem::submit_jobs(job_config, *batch_system);
 
     if (job_ids.empty()) {
-        clas12::framework::Log::error("Batch", "Failed to generate batch scripts");
+        framework::Log::error("Batch", "Failed to generate batch scripts");
         return EXIT_FAILURE;
     }
 
@@ -447,10 +447,10 @@ int main(int argc, char* argv[]) {
         fmt::print("To submit jobs:\n");
 
         switch (*batch_system) {
-            case clas12::framework::BatchSystem::System::SLURM:
+            case framework::BatchSystem::System::SLURM:
                 fmt::print("  for script in batch_scripts/*.slurm; do sbatch $script; done\n");
                 break;
-            case clas12::framework::BatchSystem::System::Local:
+            case framework::BatchSystem::System::Local:
                 fmt::print("  for script in batch_scripts/*.sh; do bash $script & done\n");
                 break;
         }
@@ -462,23 +462,23 @@ int main(int argc, char* argv[]) {
         std::string glob;
         std::string monitor;
         switch (*batch_system) {
-            case clas12::framework::BatchSystem::System::SLURM:
+            case framework::BatchSystem::System::SLURM:
                 glob = "batch_scripts/*.slurm";
                 monitor = "squeue -u $USER";
                 break;
-            case clas12::framework::BatchSystem::System::Local:
+            case framework::BatchSystem::System::Local:
                 glob = "batch_scripts/*.sh";
                 monitor = fmt::format("ps aux | grep {}", cfg.job_name);
                 break;
         }
 
-        const std::string cmd = (*batch_system == clas12::framework::BatchSystem::System::SLURM)
+        const std::string cmd = (*batch_system == framework::BatchSystem::System::SLURM)
             ? fmt::format("for script in {}; do sbatch \"$script\"; done", glob)
             : fmt::format("for script in {}; do bash \"$script\" & done", glob);
 
         const int rc = std::system(cmd.c_str());
         if (rc != 0) {
-            clas12::framework::Log::error("Batch", "Submission command exited with status {}", rc);
+            framework::Log::error("Batch", "Submission command exited with status {}", rc);
             return EXIT_FAILURE;
         }
         fmt::print("Submitted. Monitor with:\n  {}\n", monitor);

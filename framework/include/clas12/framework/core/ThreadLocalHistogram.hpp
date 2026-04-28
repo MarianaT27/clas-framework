@@ -34,7 +34,7 @@
 #include <TH2D.h>
 #include <TH3D.h>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief A type models `Accumulator<T>` iff partial results of type
@@ -767,4 +767,4 @@ static_assert(Accumulator<ThreadLocalHistogram2D>,
 static_assert(Accumulator<ThreadLocalHistogram3D>,
               "ThreadLocalHistogram3D must model Accumulator<T>");
 
-}  // namespace clas12::framework
+}  // namespace framework

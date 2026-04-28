@@ -32,7 +32,7 @@
 #include <clas12/framework/core/ThreadLocalHistogram.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 
-namespace clas12::framework {
+namespace framework {
 
 /**
  * @brief Array-backed handle to one ThreadLocalHistogram1D per sector.
@@ -160,4 +160,4 @@ class SectorHistogramGroup {
     std::map<std::string, PerSectorHist2D<NSectors>> m_hist2d;
 };
 
-}  // namespace clas12::framework
+}  // namespace framework

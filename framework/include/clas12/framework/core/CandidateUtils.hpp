@@ -11,7 +11,7 @@
 #include <cmath>
 #include <clas12/Constants.hpp>
 
-namespace clas12::framework::CandidateUtils {
+namespace framework::CandidateUtils {
 
 /**
  * @brief Result of time-of-flight calculations
@@ -40,7 +40,7 @@ inline auto compute_timing(double p, double mass, double beta_measured,
     result.beta_expected = p / std::sqrt(p * p + mass * mass);
 
     if (tof_path > 0) {
-        double t_expected = tof_path / (result.beta_expected * clas12::Constants::SPEED_OF_LIGHT);
+        double t_expected = tof_path / (result.beta_expected * Constants::SPEED_OF_LIGHT);
         double measured_time = tof_time - start_time;
         result.delta_t = measured_time - t_expected;
     }
@@ -75,4 +75,4 @@ inline auto is_central_detector(int status) -> bool {
     return status >= 4000 && status < 6000;
 }
 
-}  // namespace clas12::framework::CandidateUtils
+}  // namespace framework::CandidateUtils

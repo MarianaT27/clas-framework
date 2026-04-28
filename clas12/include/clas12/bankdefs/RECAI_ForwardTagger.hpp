@@ -14,7 +14,7 @@
 #include <bank_view.h>
 #include <schema.h>
 
-namespace clas12::bankdefs {
+namespace bankdefs {
 
 
 /// HIPO bank wrapper for `RECAI::ForwardTagger` (group 400, item 34).
@@ -332,4 +332,4 @@ inline RECAI_ForwardTagger::Row RECAI_ForwardTagger::row(int index) const noexce
     return Row{this, index};
 }
 
-}  // namespace clas12::bankdefs
+}  // namespace bankdefs
