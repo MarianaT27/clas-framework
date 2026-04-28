@@ -2,82 +2,52 @@
  * @file example_simple_algorithm.cpp
  * @brief Example demonstrating Algorithm usage
  *
- * This example verifies the algorithm infrastructure by demonstrating:
- * - Algorithm base class with automatic service injection
- * - Property system integration
- * - Service access via svc<T>()
- *
- * @see Requirements 4.1, 4.2, 4.3
+ * Shows the standard CLAS12 algorithm shape:
+ *  - Inheriting from framework::Algorithm
+ *  - Declaring properties + services + banks in the constructor
+ *  - Owning mh::Histogram instances as value members and registering them
+ *    with HistogramService for ROOT writeout at finalize
  */
 
 #include <fmt/format.h>
 
+#include <clas12/PIDs.hpp>
+#include <clas12/FileUtils.hpp>
+#include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Application.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
-#include <clas12/framework/core/Algorithm.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
+#include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
-#include <clas12/PIDs.hpp>
-#include <clas12/FileUtils.hpp>
-#include "TH1D.h"
 
 using namespace framework;
 
 // ============================================================================
 // Example 1: Algorithm with service injection and properties
 // ============================================================================
-
-/**
- * @brief Example algorithm demonstrating Algorithm features
- *
- * This algorithm shows:
- * - Inheriting from Algorithm (hook-based base class)
- * - Declaring properties with validation
- * - Automatic service injection via require_service<T>()
- * - Using on_initialize() and on_finalize() hooks
- */
 class ElectronCounterAlg : public Algorithm {
 public:
     ElectronCounterAlg() : Algorithm("ElectronCounter") {
-        // Declare properties in constructor
-        declare_property(m_min_momentum);
-        declare_property(m_max_momentum);
-        declare_property(m_verbose);
+        required_services(m_hist);
+        declare_banks("REC::Particle");
+        declare_properties(m_min_momentum, m_max_momentum, m_verbose);
     }
 
-    /**
-     * @brief Custom initialization — obtain services and book histograms
-     */
     auto on_initialize() -> StatusCode override {
-        m_hist_svc = svc<HistogramService>();
-
         fmt::print("  [{}] Initializing with momentum range [{}, {}] GeV\n",
                    name(), m_min_momentum.get(), m_max_momentum.get());
-
-        // Book histograms using the service
-        if (m_hist_svc) {
-            m_h_electron_momentum = m_hist_svc->book_hist1D(
-                "electron_momentum", "Electron Momentum;p [GeV];Counts",
-                100, 0.0, 10.0);
-            m_h_electron_count = m_hist_svc->book_hist1D(
-                "electron_count", "Electrons per Event;N_{e};Events",
-                10, 0, 10);
-        }
-
+        m_hist->register_hist("electron_momentum",
+                              "Electron Momentum;p [GeV];Counts", h_electron_momentum);
+        m_hist->register_hist("electron_count",
+                              "Electrons per Event;N_{e};Events", h_electron_count);
         return StatusCode::SUCCESS();
     }
 
-    /**
-     * @brief Process a single event
-     *
-     * This is the main per-event logic. Count electrons and fill histograms.
-     */
     auto process(Event& event) -> StatusCode override {
         m_events_processed++;
 
-        // Iterate the cached electron vector and count those in the
-        // configured momentum window.
         int electron_count = 0;
         const double pmin = m_min_momentum.get();
         const double pmax = m_max_momentum.get();
@@ -85,15 +55,10 @@ public:
             const double pmag = electron.p();
             if (pmag < pmin || pmag > pmax) continue;
             electron_count++;
-            if (m_h_electron_momentum) {
-                m_h_electron_momentum->fill(pmag);
-            }
+            h_electron_momentum.fill(pmag);
         }
 
-        if (m_h_electron_count) {
-            m_h_electron_count->fill(electron_count);
-        }
-
+        h_electron_count.fill(static_cast<double>(electron_count));
         m_total_electrons += electron_count;
 
         if (m_verbose.get() && electron_count > 0) {
@@ -104,9 +69,6 @@ public:
         return StatusCode::SUCCESS();
     }
 
-    /**
-     * @brief Finalization - print summary statistics
-     */
     auto on_finalize() -> StatusCode override {
         fmt::print("  [{}] Summary:\n", name());
         fmt::print("    Events processed: {}\n", m_events_processed);
@@ -119,19 +81,15 @@ public:
     }
 
 private:
-    // Properties with validation
     Property<double> m_min_momentum{"min_momentum", 0.5, "Minimum electron momentum [GeV]"};
     Property<double> m_max_momentum{"max_momentum", 10.0, "Maximum electron momentum [GeV]"};
-    Property<bool> m_verbose{"verbose", false, "Print per-event information"};
+    Property<bool>   m_verbose{"verbose", false, "Print per-event information"};
 
-    // Service pointer
-    HistogramService* m_hist_svc = nullptr;
+    ServiceRef<HistogramService> m_hist;
 
-    // Histogram pointers (atomic for thread-safety)
-    ThreadLocalHistogram1D* m_h_electron_momentum = nullptr;
-    ThreadLocalHistogram1D* m_h_electron_count = nullptr;
+    H1<> h_electron_momentum{mh::regular(0.0, 10.0, 100)};
+    H1<> h_electron_count{mh::regular(0.0, 10.0, 10)};
 
-    // Counters
     int m_events_processed = 0;
     int m_total_electrons = 0;
 };
@@ -139,42 +97,30 @@ private:
 // ============================================================================
 // Example 2: Another Algorithm demonstrating multiple services
 // ============================================================================
-
-/**
- * @brief Algorithm demonstrating multiple service injection
- */
 class PhotonAnalysisAlg : public Algorithm {
 public:
     PhotonAnalysisAlg() : Algorithm("PhotonAnalysis") {
-        declare_property(m_energy_threshold);
+        required_services(m_hist);
+        declare_banks("REC::Particle");
+        declare_properties(m_energy_threshold);
     }
 
     auto on_initialize() -> StatusCode override {
-        m_hist_svc = svc<HistogramService>();
-
         fmt::print("  [{}] Initializing with energy threshold {} GeV\n",
                    name(), m_energy_threshold.get());
-
-        if (m_hist_svc) {
-            m_h_photon_energy = m_hist_svc->book_hist1D(
-                "photon_energy", "Photon Energy;E [GeV];Counts",
-                100, 0.0, 5.0);
-        }
+        m_hist->register_hist("photon_energy",
+                              "Photon Energy;E [GeV];Counts", h_photon_energy);
         return StatusCode::SUCCESS();
     }
 
     auto process(Event& event) -> StatusCode override {
         auto photons = event.particles(PIDs::PHOTON);
-
         for (const auto& photon : photons) {
             if (photon.E() > m_energy_threshold.get()) {
-                if (m_h_photon_energy) {
-                    m_h_photon_energy->fill(photon.E());
-                }
+                h_photon_energy.fill(photon.E());
                 m_photon_count++;
             }
         }
-
         return StatusCode::SUCCESS();
     }
 
@@ -186,105 +132,29 @@ public:
 
 private:
     Property<double> m_energy_threshold{"energy_threshold", 0.1, "Minimum photon energy [GeV]"};
-    HistogramService* m_hist_svc = nullptr;
-    ThreadLocalHistogram1D* m_h_photon_energy = nullptr;
+    ServiceRef<HistogramService> m_hist;
+    H1<> h_photon_energy{mh::regular(0.0, 5.0, 100)};
     int m_photon_count = 0;
 };
 
-// ============================================================================
-// Main: Demonstrate both Algorithm and LambdaAlgorithm
-// ============================================================================
-
-int main(int argc, char* argv[]) {
-    fmt::print("=== Algorithm Example ===\n\n");
-
-    // Determine data directory
-    std::string data_dir = "data/";
-    if (argc > 1) {
-        data_dir = argv[1];
+auto main(int argc, char* argv[]) -> int {
+    if (argc < 2) {
+        fmt::print(stderr, "Usage: {} <input.hipo> [output.root]\n", argv[0]);
+        return 1;
     }
+    const std::string input  = argv[1];
+    const std::string output = argc >= 3 ? argv[2] : "example_simple_algorithm.root";
 
-    // Get input files first to configure builder
-    std::vector<std::string> input_files = FileUtils::read_recursive_hipo_files(data_dir);
-
-    // ========================================================================
-    // Create application using ApplicationBuilder
-    // ========================================================================
-    fmt::print("Setting up application with ApplicationBuilder...\n");
-
-    auto app = make_application("AlgorithmExample")
-        .with_input_files(input_files)
-        .with_output("algorithm_example_output.root")
-        .with_threads(1)
+    auto app = make_application("Simple Algorithm Example")
+        .with_input_files({input})
+        .with_output(output)
         .with_standard_services()
         .add_algorithm<ElectronCounterAlg>()
         .add_algorithm<PhotonAnalysisAlg>()
         .build();
 
-    fmt::print("  ✓ Services configured via with_standard_services()\n");
-    fmt::print("  ✓ Algorithm instances added\n");
-
-    fmt::print("\n  ✓ Algorithm instances configured\n");
-
-    // ========================================================================
-    // Run application
-    // ========================================================================
-    if (input_files.empty()) {
-        fmt::print("WARNING: No input files found in {}\n", data_dir);
-        fmt::print("Running initialization only to verify algorithm infrastructure...\n\n");
-
-        // Still run initialize/finalize to verify service injection works
-        auto sc = app.initialize();
-        if (sc.is_failure()) {
-            fmt::print("ERROR: Initialization failed: {}\n", sc.message());
-            return 1;
-        }
-
-        fmt::print("\n✓ Initialization successful - service injection verified!\n");
-
-        sc = app.finalize();
-        if (sc.is_failure()) {
-            fmt::print("WARNING: Finalization had issues\n");
-        }
-
-        fmt::print("\n=== Summary ===\n");
-        fmt::print("  Algorithm: ElectronCounter, PhotonAnalysis\n");
-        fmt::print("  Service injection: VERIFIED\n");
-        fmt::print("\n✓ Algorithm infrastructure checkpoint complete!\n");
-
-        return 0;
-    }
-
-    fmt::print("\nInput files: {}\n", input_files.size());
-
-    // Initialize
-    fmt::print("\n--- Initialization ---\n");
-    auto sc = app.initialize();
-    if (sc.is_failure()) {
-        fmt::print("ERROR: Initialization failed: {}\n", sc.message());
-        return 1;
-    }
-
-    // Run
-    fmt::print("\n--- Processing Events ---\n");
-    sc = app.run();
-    if (sc.is_failure()) {
-        fmt::print("ERROR: Event processing failed\n");
-        return 1;
-    }
-
-    // Finalize
-    fmt::print("\n--- Finalization ---\n");
-    sc = app.finalize();
-    if (sc.is_failure()) {
-        fmt::print("WARNING: Finalization had issues\n");
-    }
-
-    // Print summary
-    fmt::print("\n=== Final Summary ===\n");
-    fmt::print("  Output file: algorithm_example_output.root\n");
-
-    fmt::print("\n✓ Algorithm infrastructure checkpoint complete!\n");
-
+    if (auto sc = app.initialize(); sc.is_failure()) return 1;
+    if (auto sc = app.run();        sc.is_failure()) return 1;
+    app.finalize();
     return 0;
 }

@@ -25,7 +25,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -180,63 +180,62 @@ class ElectronSelectionAlg : public framework::Algorithm {
     framework::ServiceRef<framework::ElectronCutsService> m_electron_cuts;
 
     struct StageHistograms {
-        framework::ThreadLocalHistogram1D* p = nullptr;
-        framework::ThreadLocalHistogram1D* theta = nullptr;
-        framework::ThreadLocalHistogram1D* phi = nullptr;
-        framework::ThreadLocalHistogram1D* pt = nullptr;
-        framework::ThreadLocalHistogram1D* sector = nullptr;
-        framework::ThreadLocalHistogram1D* vz = nullptr;
-        framework::ThreadLocalHistogram1D* vx = nullptr;
-        framework::ThreadLocalHistogram1D* vy = nullptr;
-        framework::ThreadLocalHistogram1D* chi2pid = nullptr;
-        framework::ThreadLocalHistogram1D* pcal_lv = nullptr;
-        framework::ThreadLocalHistogram1D* pcal_lw = nullptr;
-        framework::ThreadLocalHistogram2D* sf_vs_p = nullptr;
-        framework::ThreadLocalHistogram2D* chi2pid_vs_p = nullptr;
-        framework::ThreadLocalHistogram2D* vz_vs_phi = nullptr;
-        framework::ThreadLocalHistogram2D* vz_vs_theta = nullptr;
-        framework::ThreadLocalHistogram2D* theta_vs_phi = nullptr;
-        framework::ThreadLocalHistogram2D* p_vs_theta = nullptr;
+        framework::H1<> p{mh::regular(0.0, 12.0, static_cast<std::size_t>(100))};
+        framework::H1<> theta{mh::regular(0.0, 45.0, static_cast<std::size_t>(90))};
+        framework::H1<> phi{mh::regular(-180.0, 180.0, static_cast<std::size_t>(360))};
+        framework::H1<> pt{mh::regular(0.0, 4.0, static_cast<std::size_t>(100))};
+        framework::H1<> sector{mh::regular(0.5, 7.5, static_cast<std::size_t>(7))};
+        framework::H1<> vz{mh::regular(-40.0, 40.0, static_cast<std::size_t>(200))};
+        framework::H1<> vx{mh::regular(-2.0, 2.0, static_cast<std::size_t>(100))};
+        framework::H1<> vy{mh::regular(-2.0, 2.0, static_cast<std::size_t>(100))};
+        framework::H1<> chi2pid{mh::regular(-10.0, 10.0, static_cast<std::size_t>(200))};
+        framework::H1<> pcal_lv{mh::regular(0.0, 450.0, static_cast<std::size_t>(100))};
+        framework::H1<> pcal_lw{mh::regular(0.0, 450.0, static_cast<std::size_t>(100))};
+        framework::H2<> sf_vs_p{mh::regular(0.0, 12.0, static_cast<std::size_t>(100)), mh::regular(0.0, 0.5, static_cast<std::size_t>(100))};
+        framework::H2<> chi2pid_vs_p{mh::regular(0.0, 12.0, static_cast<std::size_t>(100)), mh::regular(-10.0, 10.0, static_cast<std::size_t>(200))};
+        framework::H2<> vz_vs_phi{mh::regular(-180.0, 180.0, static_cast<std::size_t>(180)), mh::regular(-40.0, 40.0, static_cast<std::size_t>(100))};
+        framework::H2<> vz_vs_theta{mh::regular(0.0, 45.0, static_cast<std::size_t>(90)), mh::regular(-40.0, 40.0, static_cast<std::size_t>(100))};
+        framework::H2<> theta_vs_phi{mh::regular(-180.0, 180.0, static_cast<std::size_t>(180)), mh::regular(0.0, 45.0, static_cast<std::size_t>(90))};
+        framework::H2<> p_vs_theta{mh::regular(0.0, 45.0, static_cast<std::size_t>(90)), mh::regular(0.0, 12.0, static_cast<std::size_t>(100))};
 
         auto book(framework::HistogramService* svc, const std::string& dir) -> void {
-            p = svc->book_hist1D(dir + "/p", "Electron Momentum;p [GeV/c];Events", 100, 0.0, 12.0);
-            theta = svc->book_hist1D(dir + "/theta", "Electron #theta;#theta [deg];Events", 90, 0.0, 45.0);
-            phi = svc->book_hist1D(dir + "/phi", "Electron #phi;#phi [deg];Events", 360, -180.0, 180.0);
-            pt = svc->book_hist1D(dir + "/pt", "Electron p_{T};p_{T} [GeV/c];Events", 100, 0.0, 4.0);
-            sector = svc->book_hist1D(dir + "/sector", "Electron Sector;Sector;Events", 7, 0.5, 7.5);
-            vz = svc->book_hist1D(dir + "/vz", "Vertex Z;v_{z} [cm];Events", 200, -40.0, 40.0);
-            vx = svc->book_hist1D(dir + "/vx", "Vertex X;v_{x} [cm];Events", 100, -2.0, 2.0);
-            vy = svc->book_hist1D(dir + "/vy", "Vertex Y;v_{y} [cm];Events", 100, -2.0, 2.0);
-            chi2pid = svc->book_hist1D(dir + "/chi2pid", "Electron #chi^{2}_{PID};#chi^{2}_{PID};Events", 200, -10.0, 10.0);
-            pcal_lv = svc->book_hist1D(dir + "/pcal_lv", "PCAL Local V;PCAL_{lv} [cm];Events", 100, 0.0, 450.0);
-            pcal_lw = svc->book_hist1D(dir + "/pcal_lw", "PCAL Local W;PCAL_{lw} [cm];Events", 100, 0.0, 450.0);
-
-            sf_vs_p = svc->book_hist2D(dir + "/sf_vs_p", "SF vs p;p [GeV/c];SF", 100, 0.0, 12.0, 100, 0.0, 0.5);
-            chi2pid_vs_p = svc->book_hist2D(dir + "/chi2pid_vs_p", "#chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}", 100, 0.0, 12.0, 200, -10.0, 10.0);
-            vz_vs_phi = svc->book_hist2D(dir + "/vz_vs_phi", "v_{z} vs #phi;#phi [deg];v_{z} [cm]", 180, -180.0, 180.0, 100, -40.0, 40.0);
-            vz_vs_theta = svc->book_hist2D(dir + "/vz_vs_theta", "v_{z} vs #theta;#theta [deg];v_{z} [cm]", 90, 0.0, 45.0, 100, -40.0, 40.0);
-            theta_vs_phi = svc->book_hist2D(dir + "/theta_vs_phi", "#theta vs #phi;#phi [deg];#theta [deg]", 180, -180.0, 180.0, 90, 0.0, 45.0);
-            p_vs_theta = svc->book_hist2D(dir + "/p_vs_theta", "p vs #theta;#theta [deg];p [GeV/c]", 90, 0.0, 45.0, 100, 0.0, 12.0);
+            svc->register_hist(dir + "/p", "Electron Momentum;p [GeV/c];Events", p);
+            svc->register_hist(dir + "/theta", "Electron #theta;#theta [deg];Events", theta);
+            svc->register_hist(dir + "/phi", "Electron #phi;#phi [deg];Events", phi);
+            svc->register_hist(dir + "/pt", "Electron p_{T};p_{T} [GeV/c];Events", pt);
+            svc->register_hist(dir + "/sector", "Electron Sector;Sector;Events", sector);
+            svc->register_hist(dir + "/vz", "Vertex Z;v_{z} [cm];Events", vz);
+            svc->register_hist(dir + "/vx", "Vertex X;v_{x} [cm];Events", vx);
+            svc->register_hist(dir + "/vy", "Vertex Y;v_{y} [cm];Events", vy);
+            svc->register_hist(dir + "/chi2pid", "Electron #chi^{2}_{PID};#chi^{2}_{PID};Events", chi2pid);
+            svc->register_hist(dir + "/pcal_lv", "PCAL Local V;PCAL_{lv} [cm];Events", pcal_lv);
+            svc->register_hist(dir + "/pcal_lw", "PCAL Local W;PCAL_{lw} [cm];Events", pcal_lw);
+            svc->register_hist(dir + "/sf_vs_p", "SF vs p;p [GeV/c];SF", sf_vs_p);
+            svc->register_hist(dir + "/chi2pid_vs_p", "#chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}", chi2pid_vs_p);
+            svc->register_hist(dir + "/vz_vs_phi", "v_{z} vs #phi;#phi [deg];v_{z} [cm]", vz_vs_phi);
+            svc->register_hist(dir + "/vz_vs_theta", "v_{z} vs #theta;#theta [deg];v_{z} [cm]", vz_vs_theta);
+            svc->register_hist(dir + "/theta_vs_phi", "#theta vs #phi;#phi [deg];#theta [deg]", theta_vs_phi);
+            svc->register_hist(dir + "/p_vs_theta", "p vs #theta;#theta [deg];p [GeV/c]", p_vs_theta);
         }
 
-        auto fill(const Particle& e, const CalorimeterBank& calo, double SF) const -> void {
-            p->fill(e.p());
-            theta->fill(e.theta());
-            phi->fill(e.phi());
-            pt->fill(e.pt());
-            sector->fill(calo.pcal_sector);
-            vz->fill(e.vz());
-            vx->fill(e.vx());
-            vy->fill(e.vy());
-            chi2pid->fill(e.chi2pid());
-            pcal_lv->fill(calo.pcal_lv);
-            pcal_lw->fill(calo.pcal_lw);
-            sf_vs_p->fill(e.p(), SF);
-            chi2pid_vs_p->fill(e.p(), e.chi2pid());
-            vz_vs_phi->fill(e.phi(), e.vz());
-            vz_vs_theta->fill(e.theta(), e.vz());
-            theta_vs_phi->fill(e.phi(), e.theta());
-            p_vs_theta->fill(e.theta(), e.p());
+        auto fill(const Particle& e, const CalorimeterBank& calo, double SF) -> void {
+            p.fill(e.p());
+            theta.fill(e.theta());
+            phi.fill(e.phi());
+            pt.fill(e.pt());
+            sector.fill(calo.pcal_sector);
+            vz.fill(e.vz());
+            vx.fill(e.vx());
+            vy.fill(e.vy());
+            chi2pid.fill(e.chi2pid());
+            pcal_lv.fill(calo.pcal_lv);
+            pcal_lw.fill(calo.pcal_lw);
+            sf_vs_p.fill(e.p(), SF);
+            chi2pid_vs_p.fill(e.p(), e.chi2pid());
+            vz_vs_phi.fill(e.phi(), e.vz());
+            vz_vs_theta.fill(e.theta(), e.vz());
+            theta_vs_phi.fill(e.phi(), e.theta());
+            p_vs_theta.fill(e.theta(), e.p());
         }
     };
 

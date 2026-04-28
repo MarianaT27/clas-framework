@@ -148,11 +148,11 @@ public:
             double delta_phi = std::fmod(electron_phi - atof_phi, 360.0);
             if (delta_phi < 0.0) delta_phi += 360.0;
 
-            h_atof_electron_delta_phi_all->fill(delta_phi);
+            h_atof_electron_delta_phi_all.fill(delta_phi);
             if (delta_phi >= 150.0 && delta_phi <= 200.0) {
                 true_atof_hit_indices.push_back(idx);
                 true_atof_hit_phis.push_back(atof_phi);
-                h_atof_electron_delta_phi_true->fill(delta_phi);
+                h_atof_electron_delta_phi_true.fill(delta_phi);
             }
         }
 
@@ -178,9 +178,9 @@ public:
         }
 
         // Fill diagnostic histograms
-        h_n_predictions->fill(good_tracks.size());
-        h_n_good_atof_hits->fill(good_atof_hit_indices.size());
-        h_n_true_atof_hits->fill(true_atof_hit_indices.size());
+        h_n_predictions.fill(good_tracks.size());
+        h_n_good_atof_hits.fill(good_atof_hit_indices.size());
+        h_n_true_atof_hits.fill(true_atof_hit_indices.size());
         if (good_tracks.empty() || good_atof_hit_indices.empty()) {
             return framework::StatusCode::FILTERED();
         }
@@ -204,18 +204,18 @@ public:
             double delta_vz_cm = delta_vz / 10.0;
 
             // Fill histograms before cuts
-            h_delta_phi->fill(delta_phi);
-            h_delta_vz->fill(delta_vz);
-            h_delta_vz_cm->fill(delta_vz_cm);
+            h_delta_phi.fill(delta_phi);
+            h_delta_vz.fill(delta_vz);
+            h_delta_vz_cm.fill(delta_vz_cm);
             // Fill delta_phi after delta Vz cm cut
             if (delta_vz_cm >= m_delta_vz_cm_min && delta_vz_cm <= m_delta_vz_cm_max) {
-                h_delta_phi_after_vz_cm_cut->fill(delta_phi);
+                h_delta_phi_after_vz_cm_cut.fill(delta_phi);
             }
 
             // Select tracks with delta_phi between 150 and 200 degrees and deltaVz within cm cut
             if (delta_phi >= 150.0 && delta_phi <= 200.0 && delta_vz_cm >= m_delta_vz_cm_min && delta_vz_cm <= m_delta_vz_cm_max) {
                 matched_tracks.push_back(&track);
-                h_best_delta_phi->fill(delta_phi);
+                h_best_delta_phi.fill(delta_phi);
             }
         }
 
@@ -235,7 +235,7 @@ public:
                 if (dphi < 0.0) dphi += 360.0;
                 if (dphi > 180.0) dphi = 360.0 - dphi;
 
-                h_track_atof_dphi->fill(dphi);
+                h_track_atof_dphi.fill(dphi);
                 if (dphi < best_phi_distance && dphi <= m_phi_cut) {
                     best_phi_distance = dphi;
                     best_true_atof_hit_index = true_atof_hit_indices[i];
@@ -248,9 +248,9 @@ public:
                 const double best_atof_phi = std::atan2(hy, hx) * 180.0 / M_PI;
                 double best_delta_phi = std::fmod(electron_phi - best_atof_phi, 360.0);
                 if (best_delta_phi < 0.0) best_delta_phi += 360.0;
-                h_atof_electron_delta_phi_best->fill(best_delta_phi);
-                h_best_track_atof_dphi->fill(best_phi_distance);
-                h_track_phi_vs_atof_phi->fill(best_atof_phi, track_phi);
+                h_atof_electron_delta_phi_best.fill(best_delta_phi);
+                h_best_track_atof_dphi.fill(best_phi_distance);
+                h_track_phi_vs_atof_phi.fill(best_atof_phi, track_phi);
             }
         }
 
@@ -268,7 +268,7 @@ public:
                 }
             }
 
-            h_matched_atof_hit_id->fill(matched_atof_hit_id);
+            h_matched_atof_hit_id.fill(matched_atof_hit_id);
             // Efficiency: only for the best true ATOF hit
             if (best_true_atof_hit_index >= 0) {
                 ++m_n_true_sample;  // denominator: true track + true ATOF hit
@@ -284,11 +284,11 @@ public:
                     const int true_layer     = atof_hits.layer(best_true_atof_hit_index);
                     const int true_component = atof_hits.component(best_true_atof_hit_index);
 
-                    h_delta_component->fill(ai_component - true_component);
-                    h_delta_sector->fill(ai_sector - true_sector);
-                    h_ai_vs_true_component->fill(true_component, ai_component);
-                    h_ai_vs_true_layer->fill(true_layer, ai_layer);
-                    h_ai_vs_true_sector->fill(true_sector, ai_sector);
+                    h_delta_component.fill(ai_component - true_component);
+                    h_delta_sector.fill(ai_sector - true_sector);
+                    h_ai_vs_true_component.fill(true_component, ai_component);
+                    h_ai_vs_true_layer.fill(true_layer, ai_layer);
+                    h_ai_vs_true_sector.fill(true_sector, ai_sector);
                     if (ai_sector == true_sector) ++m_n_correct_sector;
                     if (ai_layer == true_layer) ++m_n_correct_layer;
                     if (ai_component == true_component) ++m_n_correct_component;
@@ -504,36 +504,36 @@ private:
     mutable std::mutex m_ntuple_mutex;
 
     // Lock-free atomic histograms (managed by HistogramService)
-    framework::ThreadLocalHistogram1D* h_p = nullptr;
-    framework::ThreadLocalHistogram1D* h_phi = nullptr;
-    framework::ThreadLocalHistogram1D* h_theta = nullptr;
-    framework::ThreadLocalHistogram1D* h_vz = nullptr;
-    framework::ThreadLocalHistogram1D* h_vz_Cu = nullptr;
-    framework::ThreadLocalHistogram1D* h_vz_Sn = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_vz = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_vz_cm = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_phi = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_phi_after_vz_cm_cut = nullptr;
-    framework::ThreadLocalHistogram1D* h_n_predictions = nullptr;
-    framework::ThreadLocalHistogram1D* h_best_delta_phi = nullptr;
-    framework::ThreadLocalHistogram1D* h_n_good_atof_hits = nullptr;
-    framework::ThreadLocalHistogram1D* h_matched_atof_hit_id = nullptr;
+    framework::H1<> h_p{mh::regular(0, 10, static_cast<std::size_t>(100))};
+    framework::H1<> h_phi{mh::regular(-180, 180, static_cast<std::size_t>(100))};
+    framework::H1<> h_theta{mh::regular(0, 90, static_cast<std::size_t>(100))};
+    framework::H1<> h_vz{mh::regular(-30, 30, static_cast<std::size_t>(100))};
+    framework::H1<> h_vz_Cu{mh::regular(-30, 30, static_cast<std::size_t>(100))};
+    framework::H1<> h_vz_Sn{mh::regular(-30, 30, static_cast<std::size_t>(100))};
+    framework::H1<> h_delta_vz{mh::regular(-100, 100, static_cast<std::size_t>(200))};
+    framework::H1<> h_delta_vz_cm{mh::regular(-10, 50, static_cast<std::size_t>(200))};
+    framework::H1<> h_delta_phi{mh::regular(0, 360, static_cast<std::size_t>(360))};
+    framework::H1<> h_delta_phi_after_vz_cm_cut{mh::regular(0, 360, static_cast<std::size_t>(360))};
+    framework::H1<> h_n_predictions{mh::regular(0, 20, static_cast<std::size_t>(20))};
+    framework::H1<> h_best_delta_phi{mh::regular(150, 200, static_cast<std::size_t>(100))};
+    framework::H1<> h_n_good_atof_hits{mh::regular(0, 20, static_cast<std::size_t>(20))};
+    framework::H1<> h_matched_atof_hit_id{mh::regular(-1, 49, static_cast<std::size_t>(50))};
 
     // ATOF-electron delta_phi histograms
-    framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_all = nullptr;   // all good ATOF hits
-    framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_true = nullptr;  // true ATOF hits (passing delta_phi cut)
-    framework::ThreadLocalHistogram1D* h_atof_electron_delta_phi_best = nullptr;  // best true ATOF hit
-    framework::ThreadLocalHistogram1D* h_n_true_atof_hits = nullptr;
+    framework::H1<> h_atof_electron_delta_phi_all{mh::regular(0, 360, static_cast<std::size_t>(360))};   // all good ATOF hits
+    framework::H1<> h_atof_electron_delta_phi_true{mh::regular(150, 200, static_cast<std::size_t>(100))};  // true ATOF hits (passing delta_phi cut)
+    framework::H1<> h_atof_electron_delta_phi_best{mh::regular(150, 200, static_cast<std::size_t>(100))};  // best true ATOF hit
+    framework::H1<> h_n_true_atof_hits{mh::regular(0, 20, static_cast<std::size_t>(20))};
 
     // Debug histograms
-    framework::ThreadLocalHistogram1D* h_track_atof_dphi = nullptr;          // track-ATOF phi distance for all true hits
-    framework::ThreadLocalHistogram1D* h_best_track_atof_dphi = nullptr;     // best track-ATOF phi distance (selected truth)
-    framework::ThreadLocalHistogram1D* h_delta_component = nullptr;          // AI component - true component
-    framework::ThreadLocalHistogram1D* h_delta_sector = nullptr;             // AI sector - true sector
-    framework::ThreadLocalHistogram2D* h_ai_vs_true_component = nullptr;     // AI component vs true component
-    framework::ThreadLocalHistogram2D* h_ai_vs_true_layer = nullptr;         // AI layer vs true layer
-    framework::ThreadLocalHistogram2D* h_ai_vs_true_sector = nullptr;        // AI sector vs true sector
-    framework::ThreadLocalHistogram2D* h_track_phi_vs_atof_phi = nullptr;    // track phi vs best true ATOF hit phi
+    framework::H1<> h_track_atof_dphi{mh::regular(0, 180, static_cast<std::size_t>(100))};          // track-ATOF phi distance for all true hits
+    framework::H1<> h_best_track_atof_dphi{mh::regular(0, 60, static_cast<std::size_t>(100))};     // best track-ATOF phi distance (selected truth)
+    framework::H1<> h_delta_component{mh::regular(-20, 20, static_cast<std::size_t>(41))};          // AI component - true component
+    framework::H1<> h_delta_sector{mh::regular(-15, 15, static_cast<std::size_t>(31))};             // AI sector - true sector
+    framework::H2<> h_ai_vs_true_component{mh::regular(0, 20, static_cast<std::size_t>(20)), mh::regular(0, 20, static_cast<std::size_t>(20))};     // AI component vs true component
+    framework::H2<> h_ai_vs_true_layer{mh::regular(0, 10, static_cast<std::size_t>(10)), mh::regular(0, 10, static_cast<std::size_t>(10))};         // AI layer vs true layer
+    framework::H2<> h_ai_vs_true_sector{mh::regular(0, 15, static_cast<std::size_t>(15)), mh::regular(0, 15, static_cast<std::size_t>(15))};        // AI sector vs true sector
+    framework::H2<> h_track_phi_vs_atof_phi{mh::regular(-180, 180, static_cast<std::size_t>(72)), mh::regular(-180, 180, static_cast<std::size_t>(72))};    // track phi vs best true ATOF hit phi
 
     // NTuple branch variables
     double m_nt_e_p = 0.0, m_nt_e_theta = 0.0, m_nt_e_phi = 0.0, m_nt_e_vz = 0.0;
@@ -632,36 +632,34 @@ private:
     auto book_histograms() -> void {
         // Use lock-free atomic histograms for parallel accumulation
         auto* svc = m_hist_svc.get();
-        h_p = svc->book_hist1D("/MC/Electron/p", "p;p;Events", 100, 0, 10);
-        h_phi = svc->book_hist1D("/MC/Electron/phi", "#phi;#phi;Events", 100, -180, 180);
-        h_theta = svc->book_hist1D("/MC/Electron/theta", "#theta;#theta;Events", 100, 0, 90);
-        h_vz = svc->book_hist1D("/MC/Electron/vz", "vz;vz;Events", 100, -30, 30);
-        h_vz_Cu = svc->book_hist1D("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", 100, -30, 30);
-        h_vz_Sn = svc->book_hist1D("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", 100, -30, 30);
-        h_delta_vz = svc->book_hist1D("/ALERT/TrackMatching/delta_vz", "#DeltaVz (electron - track);#DeltaVz [mm];Events", 200, -100, 100);
-        h_delta_vz_cm = svc->book_hist1D("/ALERT/TrackMatching/delta_vz_cm", "#DeltaVz (electron - track);#DeltaVz [cm];Events", 200, -10, 50);
-        h_delta_phi = svc->book_hist1D("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 360, 0, 360);
-        h_delta_phi_after_vz_cm_cut = svc->book_hist1D("/ALERT/TrackMatching/delta_phi_after_vz_cm_cut", "#Delta#phi after #DeltaVz cut;#Delta#phi [deg];Events", 360, 0, 360);
-        h_n_predictions = svc->book_hist1D("/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", 20, 0, 20);
-        h_best_delta_phi = svc->book_hist1D("/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi (track-electron);#Delta#phi [deg];Events", 100, 150, 200);
-        h_n_good_atof_hits = svc->book_hist1D("/ALERT/TrackMatching/n_good_atof_hits", "N good ATOF hits;N hits;Events", 20, 0, 20);
-        h_matched_atof_hit_id = svc->book_hist1D("/ALERT/TrackMatching/matched_atof_hit_id", "Matched ATOF hit ID;Hit ID;Events", 50, -1, 49);
-
+        svc->register_hist("/MC/Electron/p", "p;p;Events", h_p);
+        svc->register_hist("/MC/Electron/phi", "#phi;#phi;Events", h_phi);
+        svc->register_hist("/MC/Electron/theta", "#theta;#theta;Events", h_theta);
+        svc->register_hist("/MC/Electron/vz", "vz;vz;Events", h_vz);
+        svc->register_hist("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", h_vz_Cu);
+        svc->register_hist("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", h_vz_Sn);
+        svc->register_hist("/ALERT/TrackMatching/delta_vz", "#DeltaVz (electron - track);#DeltaVz [mm];Events", h_delta_vz);
+        svc->register_hist("/ALERT/TrackMatching/delta_vz_cm", "#DeltaVz (electron - track);#DeltaVz [cm];Events", h_delta_vz_cm);
+        svc->register_hist("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", h_delta_phi);
+        svc->register_hist("/ALERT/TrackMatching/delta_phi_after_vz_cm_cut", "#Delta#phi after #DeltaVz cut;#Delta#phi [deg];Events", h_delta_phi_after_vz_cm_cut);
+        svc->register_hist("/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", h_n_predictions);
+        svc->register_hist("/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi (track-electron);#Delta#phi [deg];Events", h_best_delta_phi);
+        svc->register_hist("/ALERT/TrackMatching/n_good_atof_hits", "N good ATOF hits;N hits;Events", h_n_good_atof_hits);
+        svc->register_hist("/ALERT/TrackMatching/matched_atof_hit_id", "Matched ATOF hit ID;Hit ID;Events", h_matched_atof_hit_id);
         // ATOF-electron delta_phi histograms
-        h_atof_electron_delta_phi_all = svc->book_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_all", "#Delta#phi(e, ATOF hit) all good;#Delta#phi [deg];Hits", 360, 0, 360);
-        h_atof_electron_delta_phi_true = svc->book_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_true", "#Delta#phi(e, ATOF hit) true;#Delta#phi [deg];Hits", 100, 150, 200);
-        h_atof_electron_delta_phi_best = svc->book_hist1D("/ALERT/TrackMatching/atof_electron_delta_phi_best", "Best #Delta#phi(e, ATOF hit);#Delta#phi [deg];Hits", 100, 150, 200);
-        h_n_true_atof_hits = svc->book_hist1D("/ALERT/TrackMatching/n_true_atof_hits", "N true ATOF hits;N hits;Events", 20, 0, 20);
-
+        svc->register_hist("/ALERT/TrackMatching/atof_electron_delta_phi_all", "#Delta#phi(e, ATOF hit) all good;#Delta#phi [deg];Hits", h_atof_electron_delta_phi_all);
+        svc->register_hist("/ALERT/TrackMatching/atof_electron_delta_phi_true", "#Delta#phi(e, ATOF hit) true;#Delta#phi [deg];Hits", h_atof_electron_delta_phi_true);
+        svc->register_hist("/ALERT/TrackMatching/atof_electron_delta_phi_best", "Best #Delta#phi(e, ATOF hit);#Delta#phi [deg];Hits", h_atof_electron_delta_phi_best);
+        svc->register_hist("/ALERT/TrackMatching/n_true_atof_hits", "N true ATOF hits;N hits;Events", h_n_true_atof_hits);
         // Debug histograms
-        h_track_atof_dphi = svc->book_hist1D("/ALERT/Debug/track_atof_dphi", "Track-ATOF #Delta#phi (all true hits);|#Delta#phi| [deg];Hits", 100, 0, 180);
-        h_best_track_atof_dphi = svc->book_hist1D("/ALERT/Debug/best_track_atof_dphi", "Best track-ATOF #Delta#phi (selected truth);|#Delta#phi| [deg];Events", 100, 0, 60);
-        h_delta_component = svc->book_hist1D("/ALERT/Debug/delta_component", "AI - true component;#Delta component;Events", 41, -20, 20);
-        h_delta_sector = svc->book_hist1D("/ALERT/Debug/delta_sector", "AI - true sector;#Delta sector;Events", 31, -15, 15);
-        h_ai_vs_true_component = svc->book_hist2D("/ALERT/Debug/ai_vs_true_component", "AI vs true component;True component;AI component", 20, 0, 20, 20, 0, 20);
-        h_ai_vs_true_layer = svc->book_hist2D("/ALERT/Debug/ai_vs_true_layer", "AI vs true layer;True layer;AI layer", 10, 0, 10, 10, 0, 10);
-        h_ai_vs_true_sector = svc->book_hist2D("/ALERT/Debug/ai_vs_true_sector", "AI vs true sector;True sector;AI sector", 15, 0, 15, 15, 0, 15);
-        h_track_phi_vs_atof_phi = svc->book_hist2D("/ALERT/Debug/track_phi_vs_atof_phi", "Track #phi vs best true ATOF #phi;True ATOF #phi [deg];Track #phi [deg]", 72, -180, 180, 72, -180, 180);
+        svc->register_hist("/ALERT/Debug/track_atof_dphi", "Track-ATOF #Delta#phi (all true hits);|#Delta#phi| [deg];Hits", h_track_atof_dphi);
+        svc->register_hist("/ALERT/Debug/best_track_atof_dphi", "Best track-ATOF #Delta#phi (selected truth);|#Delta#phi| [deg];Events", h_best_track_atof_dphi);
+        svc->register_hist("/ALERT/Debug/delta_component", "AI - true component;#Delta component;Events", h_delta_component);
+        svc->register_hist("/ALERT/Debug/delta_sector", "AI - true sector;#Delta sector;Events", h_delta_sector);
+        svc->register_hist("/ALERT/Debug/ai_vs_true_component", "AI vs true component;True component;AI component", h_ai_vs_true_component);
+        svc->register_hist("/ALERT/Debug/ai_vs_true_layer", "AI vs true layer;True layer;AI layer", h_ai_vs_true_layer);
+        svc->register_hist("/ALERT/Debug/ai_vs_true_sector", "AI vs true sector;True sector;AI sector", h_ai_vs_true_sector);
+        svc->register_hist("/ALERT/Debug/track_phi_vs_atof_phi", "Track #phi vs best true ATOF #phi;True ATOF #phi [deg];Track #phi [deg]", h_track_phi_vs_atof_phi);
     }
 
     struct ATOFWedgeH2Data {

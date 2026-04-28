@@ -15,7 +15,7 @@
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -165,7 +165,7 @@ class LambdaReconstructionAlg : public framework::Algorithm {
         for (const auto& proton : all_protons) {
             for (const auto& pion : all_pions) {
                 double mass_raw = calculate_invariant_mass(proton, pion);
-                h_ppim_mass_nocuts->fill(mass_raw);
+                h_ppim_mass_nocuts.fill(mass_raw);
             }
         }
 
@@ -189,8 +189,8 @@ class LambdaReconstructionAlg : public framework::Algorithm {
         m_cutflow.pass("Has PiMinus");
 
         // Fill pre-selection histograms
-        h_n_protons->fill(protons.size());
-        h_n_pions->fill(pions.size());
+        h_n_protons.fill(protons.size());
+        h_n_pions.fill(pions.size());
         // Get electron for coplanarity calculation (already retrieved above)
         const Particle* electron = &(*electron_opt);
 
@@ -231,7 +231,7 @@ class LambdaReconstructionAlg : public framework::Algorithm {
 
                 // Vertex z difference cut
                 double delta_vz = std::abs(proton.vz() - pion.vz());
-                h_delta_vz_precut->fill(delta_vz);
+                h_delta_vz_precut.fill(delta_vz);
                 if (m_enable_vertex_dz_cut.get() && delta_vz > m_max_delta_vz.get()) continue;
                 passed_vertex_dz = true;
 
@@ -239,7 +239,7 @@ class LambdaReconstructionAlg : public framework::Algorithm {
                 double mass = calculate_invariant_mass(proton, pion);
 
                 // Fill all combinations histogram (after FD and momentum cuts)
-                h_ppim_mass_all->fill(mass);
+                h_ppim_mass_all.fill(mass);
                 // Check mass window
                 if (m_enable_mass_window_cut.get() && std::abs(mass - LAMBDA_MASS) > m_mass_window.get()) continue;
                 passed_mass = true;
@@ -276,7 +276,7 @@ class LambdaReconstructionAlg : public framework::Algorithm {
                 }
 
                 // Fill displaced vertex histogram before cut
-                if (electron) h_displaced_vz_precut->fill(candidate.displaced_vz);
+                if (electron) h_displaced_vz_precut.fill(candidate.displaced_vz);
 
                 // Coplanarity with electron
                 if (electron) {
@@ -295,8 +295,8 @@ class LambdaReconstructionAlg : public framework::Algorithm {
                 }
 
                 // Fill pre-coplanarity histograms
-                h_coplanarity_precut->fill(candidate.coplanarity);
-                h_opening_angle->fill(candidate.opening_angle);
+                h_coplanarity_precut.fill(candidate.coplanarity);
+                h_opening_angle.fill(candidate.opening_angle);
                 candidates.push_back(candidate);
 
                 // Apply displaced vertex cut (Lambda decays downstream)
@@ -365,16 +365,16 @@ class LambdaReconstructionAlg : public framework::Algorithm {
 
         // Fill histograms for all candidates
         for (const auto& cand : final_candidates) {
-            h_ppim_mass_selected->fill(cand.mass);
-            h_lambda_momentum->fill(cand.momentum);
-            h_lambda_theta->fill(cand.theta * Constants::RAD_TO_DEG);
-            h_proton_momentum->fill(cand.proton.p());
-            h_pion_momentum->fill(cand.pion.p());
-            h_coplanarity->fill(cand.coplanarity);
-            h_delta_vz->fill(cand.delta_vz);
-            h_missing_mass->fill(cand.missing_mass);
-            h_displaced_vz->fill(cand.displaced_vz);
-            h_decay_length->fill(cand.decay_length);
+            h_ppim_mass_selected.fill(cand.mass);
+            h_lambda_momentum.fill(cand.momentum);
+            h_lambda_theta.fill(cand.theta * Constants::RAD_TO_DEG);
+            h_proton_momentum.fill(cand.proton.p());
+            h_pion_momentum.fill(cand.pion.p());
+            h_coplanarity.fill(cand.coplanarity);
+            h_delta_vz.fill(cand.delta_vz);
+            h_missing_mass.fill(cand.missing_mass);
+            h_displaced_vz.fill(cand.displaced_vz);
+            h_decay_length.fill(cand.decay_length);
         }
 
         // Fill N-tuple
@@ -463,24 +463,24 @@ class LambdaReconstructionAlg : public framework::Algorithm {
     mutable std::mutex m_ntuple_mutex;
 
     // Lock-free atomic histograms
-    framework::ThreadLocalHistogram1D* h_n_protons = nullptr;
-    framework::ThreadLocalHistogram1D* h_n_pions = nullptr;
-    framework::ThreadLocalHistogram1D* h_proton_momentum = nullptr;
-    framework::ThreadLocalHistogram1D* h_pion_momentum = nullptr;
-    framework::ThreadLocalHistogram1D* h_ppim_mass_nocuts = nullptr;
-    framework::ThreadLocalHistogram1D* h_ppim_mass_all = nullptr;
-    framework::ThreadLocalHistogram1D* h_ppim_mass_selected = nullptr;
-    framework::ThreadLocalHistogram1D* h_lambda_momentum = nullptr;
-    framework::ThreadLocalHistogram1D* h_lambda_theta = nullptr;
-    framework::ThreadLocalHistogram1D* h_coplanarity = nullptr;
-    framework::ThreadLocalHistogram1D* h_coplanarity_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_vz = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_vz_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_opening_angle = nullptr;
-    framework::ThreadLocalHistogram1D* h_missing_mass = nullptr;
-    framework::ThreadLocalHistogram1D* h_displaced_vz = nullptr;
-    framework::ThreadLocalHistogram1D* h_displaced_vz_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_decay_length = nullptr;
+    framework::H1<> h_n_protons{mh::regular(0, 10, static_cast<std::size_t>(10))};
+    framework::H1<> h_n_pions{mh::regular(0, 10, static_cast<std::size_t>(10))};
+    framework::H1<> h_proton_momentum{mh::regular(0, 5, static_cast<std::size_t>(100))};
+    framework::H1<> h_pion_momentum{mh::regular(0, 3, static_cast<std::size_t>(100))};
+    framework::H1<> h_ppim_mass_nocuts{mh::regular(1.08, 1.8, static_cast<std::size_t>(400))};
+    framework::H1<> h_ppim_mass_all{mh::regular(1.08, 1.8, static_cast<std::size_t>(400))};
+    framework::H1<> h_ppim_mass_selected{mh::regular(1.08, 1.8, static_cast<std::size_t>(400))};
+    framework::H1<> h_lambda_momentum{mh::regular(0, 6, static_cast<std::size_t>(100))};
+    framework::H1<> h_lambda_theta{mh::regular(0, 90, static_cast<std::size_t>(90))};
+    framework::H1<> h_coplanarity{mh::regular(0, 90, static_cast<std::size_t>(90))};
+    framework::H1<> h_coplanarity_precut{mh::regular(0, 180, static_cast<std::size_t>(180))};
+    framework::H1<> h_delta_vz{mh::regular(0, 5, static_cast<std::size_t>(100))};
+    framework::H1<> h_delta_vz_precut{mh::regular(0, 20, static_cast<std::size_t>(100))};
+    framework::H1<> h_opening_angle{mh::regular(0, 90, static_cast<std::size_t>(90))};
+    framework::H1<> h_missing_mass{mh::regular(-1, 3, static_cast<std::size_t>(200))};
+    framework::H1<> h_displaced_vz{mh::regular(-20, 40, static_cast<std::size_t>(200))};
+    framework::H1<> h_displaced_vz_precut{mh::regular(-20, 40, static_cast<std::size_t>(200))};
+    framework::H1<> h_decay_length{mh::regular(-20, 60, static_cast<std::size_t>(200))};
 
     // N-tuple data struct
     struct LambdaNTupleData {
@@ -514,24 +514,24 @@ class LambdaReconstructionAlg : public framework::Algorithm {
     framework::NTupleWriter<LambdaNTupleData> m_ntuple;
 
     void book_histograms() {
-        h_n_protons = m_hist_svc.get()->book_hist1D("/Lambda/n_protons", "Number of protons;N_{p};Events", 10, 0, 10);
-        h_n_pions = m_hist_svc.get()->book_hist1D("/Lambda/n_pions", "Number of #pi^{-};N_{#pi^{-}};Events", 10, 0, 10);
-        h_proton_momentum = m_hist_svc.get()->book_hist1D("/Lambda/proton_p", "Proton momentum;p [GeV];Events", 100, 0, 5);
-        h_pion_momentum = m_hist_svc.get()->book_hist1D("/Lambda/pion_p", "#pi^{-} momentum;p [GeV];Events", 100, 0, 3);
-        h_ppim_mass_nocuts = m_hist_svc.get()->book_hist1D("/Lambda/ppim_mass_nocuts", "p#pi^{-} invariant mass (no cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_ppim_mass_all = m_hist_svc.get()->book_hist1D("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (FD+p cuts);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_ppim_mass_selected = m_hist_svc.get()->book_hist1D("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", 400, 1.08, 1.8);
-        h_lambda_momentum = m_hist_svc.get()->book_hist1D("/Lambda/lambda_p", "#Lambda momentum;p [GeV];Events", 100, 0, 6);
-        h_lambda_theta = m_hist_svc.get()->book_hist1D("/Lambda/lambda_theta", "#Lambda #theta;#theta [deg];Events", 90, 0, 90);
-        h_coplanarity = m_hist_svc.get()->book_hist1D("/Lambda/coplanarity", "Coplanarity;#Delta#phi [deg];Events", 90, 0, 90);
-        h_coplanarity_precut = m_hist_svc.get()->book_hist1D("/Lambda/coplanarity_precut", "Coplanarity (pre-cut);#Delta#phi [deg];Events", 180, 0, 180);
-        h_delta_vz = m_hist_svc.get()->book_hist1D("/Lambda/delta_vz", "Vertex #Deltaz;#Deltaz [cm];Events", 100, 0, 5);
-        h_delta_vz_precut = m_hist_svc.get()->book_hist1D("/Lambda/delta_vz_precut", "Vertex #Deltaz (pre-cut);#Deltaz [cm];Events", 100, 0, 20);
-        h_opening_angle = m_hist_svc.get()->book_hist1D("/Lambda/opening_angle", "Opening angle p-#pi^{-};#theta_{open} [deg];Events", 90, 0, 90);
-        h_missing_mass = m_hist_svc.get()->book_hist1D("/Lambda/missing_mass", "Missing mass M(e,e'#Lambda)X;M_{X} [GeV];Events", 200, -1, 3);
-        h_displaced_vz = m_hist_svc.get()->book_hist1D("/Lambda/displaced_vz", "Displaced vertex z (decay - primary);#Deltaz [cm];Events", 200, -20, 40);
-        h_displaced_vz_precut = m_hist_svc.get()->book_hist1D("/Lambda/displaced_vz_precut", "Displaced vertex z (pre-cut);#Deltaz [cm];Events", 200, -20, 40);
-        h_decay_length = m_hist_svc.get()->book_hist1D("/Lambda/decay_length", "Decay length;L [cm];Events", 200, -20, 60);
+        m_hist_svc.get()->register_hist("/Lambda/n_protons", "Number of protons;N_{p};Events", h_n_protons);
+        m_hist_svc.get()->register_hist("/Lambda/n_pions", "Number of #pi^{-};N_{#pi^{-}};Events", h_n_pions);
+        m_hist_svc.get()->register_hist("/Lambda/proton_p", "Proton momentum;p [GeV];Events", h_proton_momentum);
+        m_hist_svc.get()->register_hist("/Lambda/pion_p", "#pi^{-} momentum;p [GeV];Events", h_pion_momentum);
+        m_hist_svc.get()->register_hist("/Lambda/ppim_mass_nocuts", "p#pi^{-} invariant mass (no cuts);M(p#pi^{-}) [GeV];Events", h_ppim_mass_nocuts);
+        m_hist_svc.get()->register_hist("/Lambda/ppim_mass_all", "p#pi^{-} invariant mass (FD+p cuts);M(p#pi^{-}) [GeV];Events", h_ppim_mass_all);
+        m_hist_svc.get()->register_hist("/Lambda/ppim_mass_selected", "p#pi^{-} invariant mass (selected);M(p#pi^{-}) [GeV];Events", h_ppim_mass_selected);
+        m_hist_svc.get()->register_hist("/Lambda/lambda_p", "#Lambda momentum;p [GeV];Events", h_lambda_momentum);
+        m_hist_svc.get()->register_hist("/Lambda/lambda_theta", "#Lambda #theta;#theta [deg];Events", h_lambda_theta);
+        m_hist_svc.get()->register_hist("/Lambda/coplanarity", "Coplanarity;#Delta#phi [deg];Events", h_coplanarity);
+        m_hist_svc.get()->register_hist("/Lambda/coplanarity_precut", "Coplanarity (pre-cut);#Delta#phi [deg];Events", h_coplanarity_precut);
+        m_hist_svc.get()->register_hist("/Lambda/delta_vz", "Vertex #Deltaz;#Deltaz [cm];Events", h_delta_vz);
+        m_hist_svc.get()->register_hist("/Lambda/delta_vz_precut", "Vertex #Deltaz (pre-cut);#Deltaz [cm];Events", h_delta_vz_precut);
+        m_hist_svc.get()->register_hist("/Lambda/opening_angle", "Opening angle p-#pi^{-};#theta_{open} [deg];Events", h_opening_angle);
+        m_hist_svc.get()->register_hist("/Lambda/missing_mass", "Missing mass M(e,e'#Lambda)X;M_{X} [GeV];Events", h_missing_mass);
+        m_hist_svc.get()->register_hist("/Lambda/displaced_vz", "Displaced vertex z (decay - primary);#Deltaz [cm];Events", h_displaced_vz);
+        m_hist_svc.get()->register_hist("/Lambda/displaced_vz_precut", "Displaced vertex z (pre-cut);#Deltaz [cm];Events", h_displaced_vz_precut);
+        m_hist_svc.get()->register_hist("/Lambda/decay_length", "Decay length;L [cm];Events", h_decay_length);
     }
 
 };

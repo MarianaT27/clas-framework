@@ -31,7 +31,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -87,12 +87,12 @@ class PhotonSelectionAlg : public framework::Algorithm {
 
         const auto& all_photons = event.particles(PIDs::PHOTON);
 
-        h_n_photons_raw->fill(static_cast<double>(all_photons.size()));
+        h_n_photons_raw.fill(static_cast<double>(all_photons.size()));
         for (const auto& photon : all_photons) {
             m_cutflow.pass("All Photons");
-            h_energy_raw->fill(photon.E());
-            h_theta_raw->fill(photon.theta());
-            h_phi_raw->fill(photon.phi());
+            h_energy_raw.fill(photon.E());
+            h_theta_raw.fill(photon.theta());
+            h_phi_raw.fill(photon.phi());
         }
 
         std::vector<Particle> candidates;
@@ -117,11 +117,11 @@ class PhotonSelectionAlg : public framework::Algorithm {
             selected.push_back(photon);
         }
 
-        h_n_photons_selected->fill(static_cast<double>(selected.size()));
+        h_n_photons_selected.fill(static_cast<double>(selected.size()));
         for (const auto& photon : selected) {
-            h_energy_selected->fill(photon.E());
-            h_theta_selected->fill(photon.theta());
-            h_phi_selected->fill(photon.phi());
+            h_energy_selected.fill(photon.E());
+            h_theta_selected.fill(photon.theta());
+            h_phi_selected.fill(photon.phi());
         }
 
         event.store_typed(framework::Keys::SelectedPhotons_Pi0, selected);
@@ -150,27 +150,26 @@ class PhotonSelectionAlg : public framework::Algorithm {
     framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::PhotonCutsService> m_photon_cuts;
 
-    framework::ThreadLocalHistogram1D* h_n_photons_raw = nullptr;
-    framework::ThreadLocalHistogram1D* h_energy_raw = nullptr;
-    framework::ThreadLocalHistogram1D* h_theta_raw = nullptr;
-    framework::ThreadLocalHistogram1D* h_phi_raw = nullptr;
-    framework::ThreadLocalHistogram1D* h_n_photons_selected = nullptr;
-    framework::ThreadLocalHistogram1D* h_energy_selected = nullptr;
-    framework::ThreadLocalHistogram1D* h_theta_selected = nullptr;
-    framework::ThreadLocalHistogram1D* h_phi_selected = nullptr;
+    framework::H1<> h_n_photons_raw{mh::regular(0, 20, static_cast<std::size_t>(20))};
+    framework::H1<> h_energy_raw{mh::regular(0, 5, static_cast<std::size_t>(100))};
+    framework::H1<> h_theta_raw{mh::regular(0, 40, static_cast<std::size_t>(180))};
+    framework::H1<> h_phi_raw{mh::regular(-180.0, 180.0, static_cast<std::size_t>(360))};
+    framework::H1<> h_n_photons_selected{mh::regular(0, 20, static_cast<std::size_t>(20))};
+    framework::H1<> h_energy_selected{mh::regular(0, 5, static_cast<std::size_t>(100))};
+    framework::H1<> h_theta_selected{mh::regular(0, 40, static_cast<std::size_t>(180))};
+    framework::H1<> h_phi_selected{mh::regular(-180.0, 180.0, static_cast<std::size_t>(360))};
 
     auto book_histograms() -> void {
         const std::string dir = "/PhotonSelection";
 
-        h_n_photons_raw = m_hist->book_hist1D(dir + "/n_photons_raw", "Number of Photons (raw);N_{#gamma};Events", 20, 0, 20);
-        h_energy_raw = m_hist->book_hist1D(dir + "/energy_raw", "Photon Energy (raw);E [GeV];Photons", 100, 0, 5);
-        h_theta_raw = m_hist->book_hist1D(dir + "/theta_raw", "Photon #theta (raw);#theta [deg];Photons", 180, 0, 40);
-        h_phi_raw = m_hist->book_hist1D(dir + "/phi_raw", "Photon #phi (raw);#phi [deg];Counts", 360, -180.0, 180.0);
-
-        h_n_photons_selected = m_hist->book_hist1D(dir + "/n_photons_selected", "Number of Photons (selected);N_{#gamma};Events", 20, 0, 20);
-        h_energy_selected = m_hist->book_hist1D(dir + "/energy_selected", "Photon Energy (selected);E [GeV];Photons", 100, 0, 5);
-        h_theta_selected = m_hist->book_hist1D(dir + "/theta_selected", "Photon #theta (selected);#theta [deg];Photons", 180, 0, 40);
-        h_phi_selected = m_hist->book_hist1D(dir + "/phi_selected", "Photon #phi (selected);#phi [deg];Counts", 360, -180.0, 180.0);
+        m_hist->register_hist(dir + "/n_photons_raw", "Number of Photons (raw);N_{#gamma};Events", h_n_photons_raw);
+        m_hist->register_hist(dir + "/energy_raw", "Photon Energy (raw);E [GeV];Photons", h_energy_raw);
+        m_hist->register_hist(dir + "/theta_raw", "Photon #theta (raw);#theta [deg];Photons", h_theta_raw);
+        m_hist->register_hist(dir + "/phi_raw", "Photon #phi (raw);#phi [deg];Counts", h_phi_raw);
+        m_hist->register_hist(dir + "/n_photons_selected", "Number of Photons (selected);N_{#gamma};Events", h_n_photons_selected);
+        m_hist->register_hist(dir + "/energy_selected", "Photon Energy (selected);E [GeV];Photons", h_energy_selected);
+        m_hist->register_hist(dir + "/theta_selected", "Photon #theta (selected);#theta [deg];Photons", h_theta_selected);
+        m_hist->register_hist(dir + "/phi_selected", "Photon #phi (selected);#phi [deg];Counts", h_phi_selected);
     }
 };
 

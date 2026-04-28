@@ -12,7 +12,7 @@
  * and scintillator data for AI PID training.
  */
 
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
@@ -498,16 +498,16 @@ public:
 private:
     // --- RICH vs REC PID comparison structs ---
     struct KinematicHistograms {
-        framework::ThreadLocalHistogram1D* p = nullptr;
-        framework::ThreadLocalHistogram1D* theta = nullptr;
-        framework::ThreadLocalHistogram1D* phi = nullptr;
-        framework::ThreadLocalHistogram1D* beta = nullptr;
+        framework::H1<> p{mh::regular(0, 10, static_cast<std::size_t>(200))};
+        framework::H1<> theta{mh::regular(0, 40, static_cast<std::size_t>(200))};
+        framework::H1<> phi{mh::regular(-180, 180, static_cast<std::size_t>(200))};
+        framework::H1<> beta{mh::regular(0, 1.2, static_cast<std::size_t>(200))};
     };
 
     struct PidCompareHistograms {
         KinematicHistograms agree;
         KinematicHistograms disagree;
-        framework::ThreadLocalHistogram1D* rich_pid_dist = nullptr; // RICH PID distribution for this REC species
+        framework::H1<> rich_pid_dist{mh::regular(-400, 400, static_cast<std::size_t>(800))}; // RICH PID distribution for this REC species
     };
 
     struct PidAgreement {
@@ -527,10 +527,10 @@ private:
 
     // Per-particle cut variable histograms (forward declaration for use in methods and structs)
     struct ParticleCutHistograms {
-        framework::ThreadLocalHistogram1D* chi2pid = nullptr;
-        framework::ThreadLocalHistogram1D* p = nullptr;
-        framework::ThreadLocalHistogram1D* vz = nullptr;
-        framework::ThreadLocalHistogram1D* delta_vz = nullptr;
+        framework::H1<> chi2pid{mh::regular(-10, 10, static_cast<std::size_t>(200))};
+        framework::H1<> p{mh::regular(0, 10, static_cast<std::size_t>(200))};
+        framework::H1<> vz{mh::regular(-30, 30, static_cast<std::size_t>(200))};
+        framework::H1<> delta_vz{mh::regular(-10, 10, static_cast<std::size_t>(200))};
     };
 
     // Exclusivity variables computed from four-momentum conservation
@@ -547,17 +547,17 @@ private:
 
     // Per-channel exclusivity histograms
     struct ExclusivityHistograms {
-        framework::ThreadLocalHistogram1D* missing_energy = nullptr;
-        framework::ThreadLocalHistogram1D* missing_p = nullptr;
-        framework::ThreadLocalHistogram1D* missing_pt = nullptr;
-        framework::ThreadLocalHistogram1D* missing_theta = nullptr;
-        framework::ThreadLocalHistogram1D* missing_phi = nullptr;
+        framework::H1<> missing_energy{mh::regular(-2.0, 4.0, static_cast<std::size_t>(300))};
+        framework::H1<> missing_p{mh::regular(0.0, 4.0, static_cast<std::size_t>(300))};
+        framework::H1<> missing_pt{mh::regular(0.0, 2.0, static_cast<std::size_t>(200))};
+        framework::H1<> missing_theta{mh::regular(0, 180, static_cast<std::size_t>(200))};
+        framework::H1<> missing_phi{mh::regular(-180, 180, static_cast<std::size_t>(200))};
         // Detected neutron (filled only when neutron found)
-        framework::ThreadLocalHistogram1D* n_detected = nullptr;
-        framework::ThreadLocalHistogram1D* neutron_opening_angle = nullptr;
-        framework::ThreadLocalHistogram1D* neutron_p = nullptr;
-        framework::ThreadLocalHistogram1D* neutron_beta = nullptr;
-        framework::ThreadLocalHistogram1D* mm_with_neutron = nullptr; // MM(ed→epn+mesons)
+        framework::H1<> n_detected{mh::regular(0, 10, static_cast<std::size_t>(10))};
+        framework::H1<> neutron_opening_angle{mh::regular(0, 180, static_cast<std::size_t>(200))};
+        framework::H1<> neutron_p{mh::regular(0, 4, static_cast<std::size_t>(200))};
+        framework::H1<> neutron_beta{mh::regular(0, 1.2, static_cast<std::size_t>(200))};
+        framework::H1<> mm_with_neutron{mh::regular(-1.0, 2.0, static_cast<std::size_t>(300))}; // MM(ed→epn+mesons)
     };
 
     // --- Properties ---
@@ -599,17 +599,17 @@ private:
     std::map<int, PidAgreement> m_pid_agreement;
 
     // RICH vs REC PID comparison histograms (Sector 1 only)
-    framework::ThreadLocalHistogram2D* h_rich_vs_rec_pid = nullptr;
+    framework::H2<> h_rich_vs_rec_pid{mh::regular(0, 5, static_cast<std::size_t>(5)), mh::regular(0, 5, static_cast<std::size_t>(5))};
     PidCompareHistograms h_cmp_piplus;
     PidCompareHistograms h_cmp_piminus;
     PidCompareHistograms h_cmp_kplus;
     PidCompareHistograms h_cmp_kminus;
 
     // Per-RICH-species REC PID distribution (Sector 1)
-    framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_piplus = nullptr;
-    framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_piminus = nullptr;
-    framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_kplus = nullptr;
-    framework::ThreadLocalHistogram1D* h_rec_pid_for_rich_kminus = nullptr;
+    framework::H1<> h_rec_pid_for_rich_piplus{mh::regular(-400, 400, static_cast<std::size_t>(800))};
+    framework::H1<> h_rec_pid_for_rich_piminus{mh::regular(-400, 400, static_cast<std::size_t>(800))};
+    framework::H1<> h_rec_pid_for_rich_kplus{mh::regular(-400, 400, static_cast<std::size_t>(800))};
+    framework::H1<> h_rec_pid_for_rich_kminus{mh::regular(-400, 400, static_cast<std::size_t>(800))};
 
     // --- Exclusive mode members ---
     framework::Cutflow m_cutflow_exclusive{"Exclusive ed→ep(n)π⁺π⁻"};
@@ -641,8 +641,7 @@ private:
                 else if (pid_type == PIDs::KPLUS)   cf = &m_cutflow_kplus;
                 else if (pid_type == PIDs::KMINUS)  cf = &m_cutflow_kminus;
 
-                if (cf) cf->pass("RICH hadrons");
-
+                cf->pass("RICH hadrons");
                 auto rich = read_RICHParticle_bank(event, particle.index());
 
                 // Determine histogram set based on RICH best_PID
@@ -686,18 +685,15 @@ private:
                 }
 
                 if (!h) continue;
-                if (cf) cf->pass("RICH PID match");
-
+                cf->pass("RICH PID match");
                 // Fill pre-cut histograms
                 fill_precut_histograms(particle, rich, *h);
 
                 // Apply quality cuts
                 if (rich.RQ <= 0.1f) continue;
-                if (cf) cf->pass("RQ > 0.1");
-
+                cf->pass("RQ > 0.1");
                 if (rich.best_ntot <= 2.5f) continue;
-                if (cf) cf->pass("best_ntot > 2.5");
-
+                cf->pass("best_ntot > 2.5");
                 // Fill post-cut histograms
                 fill_postcut_histograms(particle, rich, *h);
 
@@ -770,7 +766,7 @@ private:
 
         // 5. Loop over all (p, pi+, pi-) combinations
         const int n_combos = static_cast<int>(protons.size() * pions_plus.size() * pions_minus.size());
-        h_exclusive.n_combinations->fill(n_combos);
+        h_exclusive.n_combinations.fill(n_combos);
 
         bool any_passed_mm = false;
 
@@ -786,10 +782,10 @@ private:
                     auto excl = compute_exclusivity(beam, target, detected);
 
                     // Fill pre-cut missing mass histograms (without neutron)
-                    h_exclusive.mm_all->fill(excl.missing_mass);
-                    h_exclusive.mm_squared->fill(excl.missing_mass2);
+                    h_exclusive.mm_all.fill(excl.missing_mass);
+                    h_exclusive.mm_squared.fill(excl.missing_mass2);
                     // Neutron detection
-                    h_exclusive.pion_excl.n_detected->fill(static_cast<int>(neutrons.size()));
+                    h_exclusive.pion_excl.n_detected.fill(static_cast<int>(neutrons.size()));
                     if (!neutrons.empty()) {
                         // Find neutron closest to missing momentum direction
                         ROOT::Math::XYZVector miss_dir(excl.missing_px, excl.missing_py, excl.missing_pz);
@@ -800,18 +796,18 @@ private:
                             if (angle < best_angle) { best_angle = angle; best_n = &n; }
                         }
                         if (best_n) {
-                            h_exclusive.pion_excl.neutron_opening_angle->fill(best_angle);
-                            h_exclusive.pion_excl.neutron_p->fill(best_n->p());
-                            h_exclusive.pion_excl.neutron_beta->fill(best_n->beta());
+                            h_exclusive.pion_excl.neutron_opening_angle.fill(best_angle);
+                            h_exclusive.pion_excl.neutron_p.fill(best_n->p());
+                            h_exclusive.pion_excl.neutron_beta.fill(best_n->beta());
                             // Exclusivity variables with neutron: ed → e p n π+ π- (X)
                             std::vector<Particle> detected_with_n = {electron, proton, pip, pim, *best_n};
                             auto excl_n = compute_exclusivity(beam, target, detected_with_n);
-                            h_exclusive.pion_excl.mm_with_neutron->fill(excl_n.missing_mass);
-                            h_exclusive.pion_excl.missing_energy->fill(excl_n.missing_energy);
-                            h_exclusive.pion_excl.missing_p->fill(excl_n.missing_p);
-                            h_exclusive.pion_excl.missing_pt->fill(excl_n.missing_pt);
-                            h_exclusive.pion_excl.missing_theta->fill(excl_n.missing_theta);
-                            h_exclusive.pion_excl.missing_phi->fill(excl_n.missing_phi);
+                            h_exclusive.pion_excl.mm_with_neutron.fill(excl_n.missing_mass);
+                            h_exclusive.pion_excl.missing_energy.fill(excl_n.missing_energy);
+                            h_exclusive.pion_excl.missing_p.fill(excl_n.missing_p);
+                            h_exclusive.pion_excl.missing_pt.fill(excl_n.missing_pt);
+                            h_exclusive.pion_excl.missing_theta.fill(excl_n.missing_theta);
+                            h_exclusive.pion_excl.missing_phi.fill(excl_n.missing_phi);
                         }
                     }
 
@@ -821,11 +817,11 @@ private:
                     any_passed_mm = true;
 
                     // Fill post-cut histograms
-                    h_exclusive.mm_selected->fill(excl.missing_mass);
-                    h_exclusive.piplus_p->fill(pip.p());
-                    h_exclusive.piplus_theta->fill(pip.theta());
-                    h_exclusive.piminus_p->fill(pim.p());
-                    h_exclusive.piminus_theta->fill(pim.theta());
+                    h_exclusive.mm_selected.fill(excl.missing_mass);
+                    h_exclusive.piplus_p.fill(pip.p());
+                    h_exclusive.piplus_theta.fill(pip.theta());
+                    h_exclusive.piminus_p.fill(pim.p());
+                    h_exclusive.piminus_theta.fill(pim.theta());
                     // Fill NTuple for pi+ (true PID = 211) and pi- (true PID = -211)
                     if (m_ntuple) {
                         fill_exclusive_ntuple(pip, static_cast<int>(PIDs::PIPLUS), excl);
@@ -844,7 +840,7 @@ private:
 
         // 6. Loop over all (p, K+, K-) combinations
         const int kaon_n_combos = static_cast<int>(protons.size() * kaons_plus.size() * kaons_minus.size());
-        h_exclusive.kaon_n_combinations->fill(kaon_n_combos);
+        h_exclusive.kaon_n_combinations.fill(kaon_n_combos);
 
         for (const auto& proton : protons) {
             if (!passes_hadron_cuts(proton, e_vz)) continue;
@@ -857,10 +853,10 @@ private:
                     auto excl = compute_exclusivity(beam, target, detected);
 
                     // Fill pre-cut missing mass histograms (without neutron)
-                    h_exclusive.kaon_mm_all->fill(excl.missing_mass);
-                    h_exclusive.kaon_mm_squared->fill(excl.missing_mass2);
+                    h_exclusive.kaon_mm_all.fill(excl.missing_mass);
+                    h_exclusive.kaon_mm_squared.fill(excl.missing_mass2);
                     // Neutron detection
-                    h_exclusive.kaon_excl.n_detected->fill(static_cast<int>(neutrons.size()));
+                    h_exclusive.kaon_excl.n_detected.fill(static_cast<int>(neutrons.size()));
                     if (!neutrons.empty()) {
                         ROOT::Math::XYZVector miss_dir(excl.missing_px, excl.missing_py, excl.missing_pz);
                         double best_angle = 999;
@@ -870,18 +866,18 @@ private:
                             if (angle < best_angle) { best_angle = angle; best_n = &n; }
                         }
                         if (best_n) {
-                            h_exclusive.kaon_excl.neutron_opening_angle->fill(best_angle);
-                            h_exclusive.kaon_excl.neutron_p->fill(best_n->p());
-                            h_exclusive.kaon_excl.neutron_beta->fill(best_n->beta());
+                            h_exclusive.kaon_excl.neutron_opening_angle.fill(best_angle);
+                            h_exclusive.kaon_excl.neutron_p.fill(best_n->p());
+                            h_exclusive.kaon_excl.neutron_beta.fill(best_n->beta());
                             // Exclusivity variables with neutron: ed → e p n K+ K- (X)
                             std::vector<Particle> detected_with_n = {electron, proton, kp, km, *best_n};
                             auto excl_n = compute_exclusivity(beam, target, detected_with_n);
-                            h_exclusive.kaon_excl.mm_with_neutron->fill(excl_n.missing_mass);
-                            h_exclusive.kaon_excl.missing_energy->fill(excl_n.missing_energy);
-                            h_exclusive.kaon_excl.missing_p->fill(excl_n.missing_p);
-                            h_exclusive.kaon_excl.missing_pt->fill(excl_n.missing_pt);
-                            h_exclusive.kaon_excl.missing_theta->fill(excl_n.missing_theta);
-                            h_exclusive.kaon_excl.missing_phi->fill(excl_n.missing_phi);
+                            h_exclusive.kaon_excl.mm_with_neutron.fill(excl_n.missing_mass);
+                            h_exclusive.kaon_excl.missing_energy.fill(excl_n.missing_energy);
+                            h_exclusive.kaon_excl.missing_p.fill(excl_n.missing_p);
+                            h_exclusive.kaon_excl.missing_pt.fill(excl_n.missing_pt);
+                            h_exclusive.kaon_excl.missing_theta.fill(excl_n.missing_theta);
+                            h_exclusive.kaon_excl.missing_phi.fill(excl_n.missing_phi);
                         }
                     }
 
@@ -889,11 +885,11 @@ private:
 
                     any_passed_mm = true;
 
-                    h_exclusive.kaon_mm_selected->fill(excl.missing_mass);
-                    h_exclusive.kplus_p->fill(kp.p());
-                    h_exclusive.kplus_theta->fill(kp.theta());
-                    h_exclusive.kminus_p->fill(km.p());
-                    h_exclusive.kminus_theta->fill(km.theta());
+                    h_exclusive.kaon_mm_selected.fill(excl.missing_mass);
+                    h_exclusive.kplus_p.fill(kp.p());
+                    h_exclusive.kplus_theta.fill(kp.theta());
+                    h_exclusive.kminus_p.fill(km.p());
+                    h_exclusive.kminus_theta.fill(km.theta());
                     if (m_ntuple) {
                         fill_exclusive_ntuple(kp, static_cast<int>(PIDs::KPLUS), excl);
                         fill_exclusive_ntuple(km, static_cast<int>(PIDs::KMINUS), excl);
@@ -921,10 +917,10 @@ private:
     // ========================================================================
 
     void fill_cut_histograms(ParticleCutHistograms& h, const Particle& p, double electron_vz) {
-        if (h.chi2pid)  h.chi2pid->fill(p.chi2pid());
-        if (h.p)        h.p->fill(p.p());
-        if (h.vz)       h.vz->fill(p.vz());
-        if (h.delta_vz) h.delta_vz->fill(p.vz() - electron_vz);
+        h.chi2pid.fill(p.chi2pid());
+        h.p.fill(p.p());
+        h.vz.fill(p.vz());
+        h.delta_vz.fill(p.vz() - electron_vz);
     }
 
     void fill_all_cut_histograms(double electron_vz,
@@ -1155,23 +1151,23 @@ private:
     // --- RICH mode histograms ---
     struct HadronHistograms {
         struct {
-            framework::ThreadLocalHistogram1D* p = nullptr;
-            framework::ThreadLocalHistogram1D* theta = nullptr;
-            framework::ThreadLocalHistogram1D* phi = nullptr;
-            framework::ThreadLocalHistogram1D* vz = nullptr;
-            framework::ThreadLocalHistogram1D* RQ = nullptr;
-            framework::ThreadLocalHistogram1D* best_PID = nullptr;
-            framework::ThreadLocalHistogram1D* best_ntot = nullptr;
+            framework::H1<> p{mh::regular(0, 10, static_cast<std::size_t>(200))};
+            framework::H1<> theta{mh::regular(0, 40, static_cast<std::size_t>(200))};
+            framework::H1<> phi{mh::regular(-180, 180, static_cast<std::size_t>(200))};
+            framework::H1<> vz{mh::regular(-30, 30, static_cast<std::size_t>(200))};
+            framework::H1<> RQ{mh::regular(0, 1, static_cast<std::size_t>(200))};
+            framework::H1<> best_PID{mh::regular(-400, 400, static_cast<std::size_t>(800))};
+            framework::H1<> best_ntot{mh::regular(-400, 400, static_cast<std::size_t>(800))};
         } precut;
 
         struct {
-            framework::ThreadLocalHistogram1D* p = nullptr;
-            framework::ThreadLocalHistogram1D* theta = nullptr;
-            framework::ThreadLocalHistogram1D* phi = nullptr;
-            framework::ThreadLocalHistogram1D* vz = nullptr;
-            framework::ThreadLocalHistogram1D* RQ = nullptr;
-            framework::ThreadLocalHistogram1D* best_PID = nullptr;
-            framework::ThreadLocalHistogram1D* best_ntot = nullptr;
+            framework::H1<> p{mh::regular(0, 10, static_cast<std::size_t>(200))};
+            framework::H1<> theta{mh::regular(0, 40, static_cast<std::size_t>(200))};
+            framework::H1<> phi{mh::regular(-180, 180, static_cast<std::size_t>(200))};
+            framework::H1<> vz{mh::regular(-30, 15, static_cast<std::size_t>(200))};
+            framework::H1<> RQ{mh::regular(0, 1, static_cast<std::size_t>(200))};
+            framework::H1<> best_PID{mh::regular(-400, 400, static_cast<std::size_t>(800))};
+            framework::H1<> best_ntot{mh::regular(-400, 400, static_cast<std::size_t>(800))};
         } postcut;
     };
 
@@ -1183,21 +1179,11 @@ private:
     void book_comparison_histograms() {
         auto* svc = m_hist.get();
         auto dir = std::string("/AiPidHadron/RICHComparison");
+        svc->register_hist(dir + "/rec_vs_rich_pid", "REC PID vs RICH best_PID;REC PID;RICH best_PID", h_rich_vs_rec_pid);
 
-        h_rich_vs_rec_pid = svc->book_hist2D(
-            dir + "/rec_vs_rich_pid",
-            "REC PID vs RICH best_PID;REC PID;RICH best_PID",
-            5, 0, 5, 5, 0, 5);
+        auto book_cmp = [&](PidCompareHistograms& h, const std::string& base, const std::string& label) {            svc->register_hist(base + "/rich_pid_dist", fmt::format("RICH best_PID for REC {};RICH PID;Events", label), h.rich_pid_dist);
 
-        auto book_cmp = [&](PidCompareHistograms& h, const std::string& base, const std::string& label) {
-            h.rich_pid_dist = svc->book_hist1D(base + "/rich_pid_dist",
-                fmt::format("RICH best_PID for REC {};RICH PID;Events", label), 800, -400, 400);
-
-            auto book_kin = [&](KinematicHistograms& kh, const std::string& sub, const std::string& tag) {
-                kh.p     = svc->book_hist1D(sub + "/p",     fmt::format("{} {} Momentum;p [GeV/c];Events", label, tag),       200, 0, 10);
-                kh.theta = svc->book_hist1D(sub + "/theta", fmt::format("{} {} #theta;#theta [deg];Events", label, tag),      200, 0, 40);
-                kh.phi   = svc->book_hist1D(sub + "/phi",   fmt::format("{} {} #phi;#phi [deg];Events", label, tag),          200, -180, 180);
-                kh.beta  = svc->book_hist1D(sub + "/beta",  fmt::format("{} {} #beta;#beta;Events", label, tag),              200, 0, 1.2);
+            auto book_kin = [&](KinematicHistograms& kh, const std::string& sub, const std::string& tag) {                svc->register_hist(sub + "/p", fmt::format("{} {} Momentum;p [GeV/c];Events", label, tag), kh.p);                svc->register_hist(sub + "/theta", fmt::format("{} {} #theta;#theta [deg];Events", label, tag), kh.theta);                svc->register_hist(sub + "/phi", fmt::format("{} {} #phi;#phi [deg];Events", label, tag), kh.phi);                svc->register_hist(sub + "/beta", fmt::format("{} {} #beta;#beta;Events", label, tag), kh.beta);
             };
             book_kin(h.agree,    base + "/agree",    "(RICH=REC)");
             book_kin(h.disagree, base + "/disagree", "(RICH#neqREC)");
@@ -1209,15 +1195,7 @@ private:
         book_cmp(h_cmp_kminus,  dir + "/KMinus",  "K^{-} S1");
 
         // Per-RICH-species REC PID distribution
-        auto rdir = dir + "/ByRICH";
-        h_rec_pid_for_rich_piplus  = svc->book_hist1D(rdir + "/rec_pid_for_rich_piplus",
-            "REC PID for RICH #pi^{+} S1;REC PID;Events", 800, -400, 400);
-        h_rec_pid_for_rich_piminus = svc->book_hist1D(rdir + "/rec_pid_for_rich_piminus",
-            "REC PID for RICH #pi^{-} S1;REC PID;Events", 800, -400, 400);
-        h_rec_pid_for_rich_kplus   = svc->book_hist1D(rdir + "/rec_pid_for_rich_kplus",
-            "REC PID for RICH K^{+} S1;REC PID;Events", 800, -400, 400);
-        h_rec_pid_for_rich_kminus  = svc->book_hist1D(rdir + "/rec_pid_for_rich_kminus",
-            "REC PID for RICH K^{-} S1;REC PID;Events", 800, -400, 400);
+        auto rdir = dir + "/ByRICH";        svc->register_hist(rdir + "/rec_pid_for_rich_piplus", "REC PID for RICH #pi^{+} S1;REC PID;Events", h_rec_pid_for_rich_piplus);        svc->register_hist(rdir + "/rec_pid_for_rich_piminus", "REC PID for RICH #pi^{-} S1;REC PID;Events", h_rec_pid_for_rich_piminus);        svc->register_hist(rdir + "/rec_pid_for_rich_kplus", "REC PID for RICH K^{+} S1;REC PID;Events", h_rec_pid_for_rich_kplus);        svc->register_hist(rdir + "/rec_pid_for_rich_kminus", "REC PID for RICH K^{-} S1;REC PID;Events", h_rec_pid_for_rich_kminus);
     }
 
     void fill_comparison(const Particle& particle, int rec_pid, int rich_pid) {
@@ -1228,84 +1206,70 @@ private:
         else if (rec_pid == static_cast<int>(PIDs::KMINUS))  h = &h_cmp_kminus;
         if (!h) return;
 
-        if (h->rich_pid_dist) h->rich_pid_dist->fill(rich_pid);
-        h_rich_vs_rec_pid->fill(pid_to_bin_index(rec_pid), pid_to_bin_index(rich_pid));
+        h->rich_pid_dist.fill(rich_pid);
+        h_rich_vs_rec_pid.fill(pid_to_bin_index(rec_pid), pid_to_bin_index(rich_pid));
         // Fill REC PID distribution keyed by RICH species
-        if      (rich_pid == static_cast<int>(PIDs::PIPLUS) )  h_rec_pid_for_rich_piplus->fill(rec_pid);
-        else if (rich_pid == static_cast<int>(PIDs::PIMINUS)) h_rec_pid_for_rich_piminus->fill(rec_pid);
-        else if (rich_pid == static_cast<int>(PIDs::KPLUS)  )   h_rec_pid_for_rich_kplus->fill(rec_pid);
-        else if (rich_pid == static_cast<int>(PIDs::KMINUS) )  h_rec_pid_for_rich_kminus->fill(rec_pid);
+        if      (rich_pid == static_cast<int>(PIDs::PIPLUS) )  h_rec_pid_for_rich_piplus.fill(rec_pid);
+        else if (rich_pid == static_cast<int>(PIDs::PIMINUS)) h_rec_pid_for_rich_piminus.fill(rec_pid);
+        else if (rich_pid == static_cast<int>(PIDs::KPLUS)  )   h_rec_pid_for_rich_kplus.fill(rec_pid);
+        else if (rich_pid == static_cast<int>(PIDs::KMINUS) )  h_rec_pid_for_rich_kminus.fill(rec_pid);
 
         auto& kh = (rec_pid == rich_pid) ? h->agree : h->disagree;
-        if (kh.p)     kh.p->fill(particle.p());
-        if (kh.theta) kh.theta->fill(particle.theta());
-        if (kh.phi)   kh.phi->fill(particle.phi());
-        if (kh.beta)  kh.beta->fill(particle.beta());
+        kh.p.fill(particle.p());
+        kh.theta.fill(particle.theta());
+        kh.phi.fill(particle.phi());
+        kh.beta.fill(particle.beta());
     }
 
     void book_histograms(const std::string& dir, HadronHistograms& h, const std::string& label) {
         auto* svc = m_hist.get();
 
-        auto pre = dir + "/precut";
-        h.precut.p        = svc->book_hist1D(pre + "/p",        fmt::format("{} Momentum (pre-cut);p [GeV/c];Events", label),    200, 0, 10);
-        h.precut.theta    = svc->book_hist1D(pre + "/theta",    fmt::format("{} #theta (pre-cut);#theta [deg];Events", label),   200, 0, 40);
-        h.precut.phi      = svc->book_hist1D(pre + "/phi",      fmt::format("{} #phi (pre-cut);#phi [deg];Events", label),       200, -180, 180);
-        h.precut.vz       = svc->book_hist1D(pre + "/vz",       fmt::format("{} v_{{z}} (pre-cut);v_{{z}} [cm];Events", label),  200, -30, 30);
-        h.precut.RQ       = svc->book_hist1D(pre + "/RQ",       fmt::format("{} RICH RQ (pre-cut);RQ;Events", label),            200, 0, 1);
-        h.precut.best_PID = svc->book_hist1D(pre + "/best_PID", fmt::format("{} RICH best PID (pre-cut);PID;Events", label),     800, -400, 400);
-        h.precut.best_ntot = svc->book_hist1D(pre + "/best_ntot", fmt::format("{} RICH best ntot (pre-cut);ntot;Events", label),     800, -400, 400);
+        auto pre = dir + "/precut";        svc->register_hist(pre + "/p", fmt::format("{} Momentum (pre-cut);p [GeV/c];Events", label), h.precut.p);        svc->register_hist(pre + "/theta", fmt::format("{} #theta (pre-cut);#theta [deg];Events", label), h.precut.theta);        svc->register_hist(pre + "/phi", fmt::format("{} #phi (pre-cut);#phi [deg];Events", label), h.precut.phi);        svc->register_hist(pre + "/vz", fmt::format("{} v_{{z}} (pre-cut);v_{{z}} [cm];Events", label), h.precut.vz);        svc->register_hist(pre + "/RQ", fmt::format("{} RICH RQ (pre-cut);RQ;Events", label), h.precut.RQ);        svc->register_hist(pre + "/best_PID", fmt::format("{} RICH best PID (pre-cut);PID;Events", label), h.precut.best_PID);        svc->register_hist(pre + "/best_ntot", fmt::format("{} RICH best ntot (pre-cut);ntot;Events", label), h.precut.best_ntot);
 
-        auto post = dir + "/postcut";
-        h.postcut.p        = svc->book_hist1D(post + "/p",        fmt::format("{} Momentum (post-cut);p [GeV/c];Events", label),    200, 0, 10);
-        h.postcut.theta    = svc->book_hist1D(post + "/theta",    fmt::format("{} #theta (post-cut);#theta [deg];Events", label),   200, 0, 40);
-        h.postcut.phi      = svc->book_hist1D(post + "/phi",      fmt::format("{} #phi (post-cut);#phi [deg];Events", label),       200, -180, 180);
-        h.postcut.vz       = svc->book_hist1D(post + "/vz",       fmt::format("{} v_{{z}} (post-cut);v_{{z}} [cm];Events", label),  200, -30, 30);
-        h.postcut.RQ       = svc->book_hist1D(post + "/RQ",       fmt::format("{} RICH RQ (post-cut);RQ;Events", label),            200, 0, 1);
-        h.postcut.best_PID = svc->book_hist1D(post + "/best_PID", fmt::format("{} RICH best PID (post-cut);PID;Events", label),     800, -400, 400);
-        h.postcut.best_ntot = svc->book_hist1D(post + "/best_ntot", fmt::format("{} RICH best ntot (post-cut);ntot;Events", label),     800, -400, 400);
+        auto post = dir + "/postcut";        svc->register_hist(post + "/p", fmt::format("{} Momentum (post-cut);p [GeV/c];Events", label), h.postcut.p);        svc->register_hist(post + "/theta", fmt::format("{} #theta (post-cut);#theta [deg];Events", label), h.postcut.theta);        svc->register_hist(post + "/phi", fmt::format("{} #phi (post-cut);#phi [deg];Events", label), h.postcut.phi);        svc->register_hist(post + "/vz", fmt::format("{} v_{{z}} (post-cut);v_{{z}} [cm];Events", label), h.postcut.vz);        svc->register_hist(post + "/RQ", fmt::format("{} RICH RQ (post-cut);RQ;Events", label), h.postcut.RQ);        svc->register_hist(post + "/best_PID", fmt::format("{} RICH best PID (post-cut);PID;Events", label), h.postcut.best_PID);        svc->register_hist(post + "/best_ntot", fmt::format("{} RICH best ntot (post-cut);ntot;Events", label), h.postcut.best_ntot);
     }
 
     void fill_precut_histograms(const Particle& particle, const RICHParticleBank& rich, HadronHistograms& h) {
-        if (h.precut.p)        h.precut.p->fill(particle.p());
-        if (h.precut.theta)    h.precut.theta->fill(particle.theta());
-        if (h.precut.phi)      h.precut.phi->fill(particle.phi());
-        if (h.precut.vz)       h.precut.vz->fill(particle.vz());
-        if (h.precut.RQ)       h.precut.RQ->fill(rich.RQ);
-        if (h.precut.best_PID) h.precut.best_PID->fill(rich.best_PID);
-        if (h.precut.best_ntot) h.precut.best_ntot->fill(rich.best_ntot);
+        h.precut.p.fill(particle.p());
+        h.precut.theta.fill(particle.theta());
+        h.precut.phi.fill(particle.phi());
+        h.precut.vz.fill(particle.vz());
+        h.precut.RQ.fill(rich.RQ);
+        h.precut.best_PID.fill(rich.best_PID);
+        h.precut.best_ntot.fill(rich.best_ntot);
     }
 
     void fill_postcut_histograms(const Particle& particle, const RICHParticleBank& rich, HadronHistograms& h) {
-        if (h.postcut.p)        h.postcut.p->fill(particle.p());
-        if (h.postcut.theta)    h.postcut.theta->fill(particle.theta());
-        if (h.postcut.phi)      h.postcut.phi->fill(particle.phi());
-        if (h.postcut.vz)       h.postcut.vz->fill(particle.vz());
-        if (h.postcut.RQ)       h.postcut.RQ->fill(rich.RQ);
-        if (h.postcut.best_PID) h.postcut.best_PID->fill(rich.best_PID);
-        if (h.postcut.best_ntot) h.postcut.best_ntot->fill(rich.best_ntot);
+        h.postcut.p.fill(particle.p());
+        h.postcut.theta.fill(particle.theta());
+        h.postcut.phi.fill(particle.phi());
+        h.postcut.vz.fill(particle.vz());
+        h.postcut.RQ.fill(rich.RQ);
+        h.postcut.best_PID.fill(rich.best_PID);
+        h.postcut.best_ntot.fill(rich.best_ntot);
     }
 
     // --- Exclusive mode histograms ---
     struct ExclusiveHistograms {
         // ed -> ep pi+ pi- (n)
-        framework::ThreadLocalHistogram1D* mm_all = nullptr;
-        framework::ThreadLocalHistogram1D* mm_selected = nullptr;
-        framework::ThreadLocalHistogram1D* mm_squared = nullptr;
-        framework::ThreadLocalHistogram1D* n_combinations = nullptr;
-        framework::ThreadLocalHistogram1D* piplus_p = nullptr;
-        framework::ThreadLocalHistogram1D* piplus_theta = nullptr;
-        framework::ThreadLocalHistogram1D* piminus_p = nullptr;
-        framework::ThreadLocalHistogram1D* piminus_theta = nullptr;
+        framework::H1<> mm_all{mh::regular(0.0, 2.0, static_cast<std::size_t>(300))};
+        framework::H1<> mm_selected{mh::regular(0.0, 2.0, static_cast<std::size_t>(300))};
+        framework::H1<> mm_squared{mh::regular(-1.0, 3.0, static_cast<std::size_t>(300))};
+        framework::H1<> n_combinations{mh::regular(0, 20, static_cast<std::size_t>(20))};
+        framework::H1<> piplus_p{mh::regular(0, 3, static_cast<std::size_t>(200))};
+        framework::H1<> piplus_theta{mh::regular(0, 180, static_cast<std::size_t>(200))};
+        framework::H1<> piminus_p{mh::regular(0, 3, static_cast<std::size_t>(200))};
+        framework::H1<> piminus_theta{mh::regular(0, 180, static_cast<std::size_t>(200))};
 
         // ed -> ep K+ K- (n)
-        framework::ThreadLocalHistogram1D* kaon_mm_all = nullptr;
-        framework::ThreadLocalHistogram1D* kaon_mm_selected = nullptr;
-        framework::ThreadLocalHistogram1D* kaon_mm_squared = nullptr;
-        framework::ThreadLocalHistogram1D* kaon_n_combinations = nullptr;
-        framework::ThreadLocalHistogram1D* kplus_p = nullptr;
-        framework::ThreadLocalHistogram1D* kplus_theta = nullptr;
-        framework::ThreadLocalHistogram1D* kminus_p = nullptr;
-        framework::ThreadLocalHistogram1D* kminus_theta = nullptr;
+        framework::H1<> kaon_mm_all{mh::regular(0.0, 2.0, static_cast<std::size_t>(300))};
+        framework::H1<> kaon_mm_selected{mh::regular(0.0, 2.0, static_cast<std::size_t>(300))};
+        framework::H1<> kaon_mm_squared{mh::regular(-1.0, 3.0, static_cast<std::size_t>(300))};
+        framework::H1<> kaon_n_combinations{mh::regular(0, 20, static_cast<std::size_t>(20))};
+        framework::H1<> kplus_p{mh::regular(0, 3, static_cast<std::size_t>(200))};
+        framework::H1<> kplus_theta{mh::regular(0, 180, static_cast<std::size_t>(200))};
+        framework::H1<> kminus_p{mh::regular(0, 3, static_cast<std::size_t>(200))};
+        framework::H1<> kminus_theta{mh::regular(0, 180, static_cast<std::size_t>(200))};
 
         // Exclusivity variables per channel
         ExclusivityHistograms pion_excl;
@@ -1324,125 +1288,37 @@ private:
     void book_exclusive_histograms() {
         auto* svc = m_hist.get();
         auto dir = std::string("/AiPidHadron/Exclusive");
-
-        h_exclusive.mm_all = svc->book_hist1D(
-            dir + "/missing_mass_all",
-            "Missing Mass ed#rightarrowep#pi^{+}#pi^{-}(X) (all combos);MM [GeV/c^{2}];Events",
-            300, 0.0, 2.0);
-
-        h_exclusive.mm_selected = svc->book_hist1D(
-            dir + "/missing_mass_selected",
-            "Missing Mass ed#rightarrowep#pi^{+}#pi^{-}(X) (selected);MM [GeV/c^{2}];Events",
-            300, 0.0, 2.0);
-
-        h_exclusive.mm_squared = svc->book_hist1D(
-            dir + "/missing_mass_squared",
-            "Missing Mass^{2} ed#rightarrowep#pi^{+}#pi^{-}(X);MM^{2} [GeV^{2}/c^{4}];Events",
-            300, -1.0, 3.0);
-
-        h_exclusive.n_combinations = svc->book_hist1D(
-            dir + "/n_combinations",
-            "Number of (p,#pi^{+},#pi^{-}) combinations per event;N_{combos};Events",
-            20, 0, 20);
-
-        h_exclusive.piplus_p = svc->book_hist1D(
-            dir + "/piplus_momentum",
-            "#pi^{+} Momentum (exclusive);p [GeV/c];Events",
-            200, 0, 3);
-
-        h_exclusive.piplus_theta = svc->book_hist1D(
-            dir + "/piplus_theta",
-            "#pi^{+} #theta (exclusive);#theta [deg];Events",
-            200, 0, 180);
-
-        h_exclusive.piminus_p = svc->book_hist1D(
-            dir + "/piminus_momentum",
-            "#pi^{-} Momentum (exclusive);p [GeV/c];Events",
-            200, 0, 3);
-
-        h_exclusive.piminus_theta = svc->book_hist1D(
-            dir + "/piminus_theta",
-            "#pi^{-} #theta (exclusive);#theta [deg];Events",
-            200, 0, 180);
+        svc->register_hist(dir + "/missing_mass_all", "Missing Mass ed#rightarrowep#pi^{+}#pi^{-}(X) (all combos);MM [GeV/c^{2}];Events", h_exclusive.mm_all);
+        svc->register_hist(dir + "/missing_mass_selected", "Missing Mass ed#rightarrowep#pi^{+}#pi^{-}(X) (selected);MM [GeV/c^{2}];Events", h_exclusive.mm_selected);
+        svc->register_hist(dir + "/missing_mass_squared", "Missing Mass^{2} ed#rightarrowep#pi^{+}#pi^{-}(X);MM^{2} [GeV^{2}/c^{4}];Events", h_exclusive.mm_squared);
+        svc->register_hist(dir + "/n_combinations", "Number of (p,#pi^{+},#pi^{-}) combinations per event;N_{combos};Events", h_exclusive.n_combinations);
+        svc->register_hist(dir + "/piplus_momentum", "#pi^{+} Momentum (exclusive);p [GeV/c];Events", h_exclusive.piplus_p);
+        svc->register_hist(dir + "/piplus_theta", "#pi^{+} #theta (exclusive);#theta [deg];Events", h_exclusive.piplus_theta);
+        svc->register_hist(dir + "/piminus_momentum", "#pi^{-} Momentum (exclusive);p [GeV/c];Events", h_exclusive.piminus_p);
+        svc->register_hist(dir + "/piminus_theta", "#pi^{-} #theta (exclusive);#theta [deg];Events", h_exclusive.piminus_theta);
 
         // --- ed -> ep K+ K- (n) ---
         auto kdir = std::string("/AiPidHadron/ExclusiveKaon");
-
-        h_exclusive.kaon_mm_all = svc->book_hist1D(
-            kdir + "/missing_mass_all",
-            "Missing Mass ed#rightarrowepK^{+}K^{-}(X) (all combos);MM [GeV/c^{2}];Events",
-            300, 0.0, 2.0);
-
-        h_exclusive.kaon_mm_selected = svc->book_hist1D(
-            kdir + "/missing_mass_selected",
-            "Missing Mass ed#rightarrowepK^{+}K^{-}(X) (selected);MM [GeV/c^{2}];Events",
-            300, 0.0, 2.0);
-
-        h_exclusive.kaon_mm_squared = svc->book_hist1D(
-            kdir + "/missing_mass_squared",
-            "Missing Mass^{2} ed#rightarrowepK^{+}K^{-}(X);MM^{2} [GeV^{2}/c^{4}];Events",
-            300, -1.0, 3.0);
-
-        h_exclusive.kaon_n_combinations = svc->book_hist1D(
-            kdir + "/n_combinations",
-            "Number of (p,K^{+},K^{-}) combinations per event;N_{combos};Events",
-            20, 0, 20);
-
-        h_exclusive.kplus_p = svc->book_hist1D(
-            kdir + "/kplus_momentum",
-            "K^{+} Momentum (exclusive);p [GeV/c];Events",
-            200, 0, 3);
-
-        h_exclusive.kplus_theta = svc->book_hist1D(
-            kdir + "/kplus_theta",
-            "K^{+} #theta (exclusive);#theta [deg];Events",
-            200, 0, 180);
-
-        h_exclusive.kminus_p = svc->book_hist1D(
-            kdir + "/kminus_momentum",
-            "K^{-} Momentum (exclusive);p [GeV/c];Events",
-            200, 0, 3);
-
-        h_exclusive.kminus_theta = svc->book_hist1D(
-            kdir + "/kminus_theta",
-            "K^{-} #theta (exclusive);#theta [deg];Events",
-            200, 0, 180);
+        svc->register_hist(kdir + "/missing_mass_all", "Missing Mass ed#rightarrowepK^{+}K^{-}(X) (all combos);MM [GeV/c^{2}];Events", h_exclusive.kaon_mm_all);
+        svc->register_hist(kdir + "/missing_mass_selected", "Missing Mass ed#rightarrowepK^{+}K^{-}(X) (selected);MM [GeV/c^{2}];Events", h_exclusive.kaon_mm_selected);
+        svc->register_hist(kdir + "/missing_mass_squared", "Missing Mass^{2} ed#rightarrowepK^{+}K^{-}(X);MM^{2} [GeV^{2}/c^{4}];Events", h_exclusive.kaon_mm_squared);
+        svc->register_hist(kdir + "/n_combinations", "Number of (p,K^{+},K^{-}) combinations per event;N_{combos};Events", h_exclusive.kaon_n_combinations);
+        svc->register_hist(kdir + "/kplus_momentum", "K^{+} Momentum (exclusive);p [GeV/c];Events", h_exclusive.kplus_p);
+        svc->register_hist(kdir + "/kplus_theta", "K^{+} #theta (exclusive);#theta [deg];Events", h_exclusive.kplus_theta);
+        svc->register_hist(kdir + "/kminus_momentum", "K^{-} Momentum (exclusive);p [GeV/c];Events", h_exclusive.kminus_p);
+        svc->register_hist(kdir + "/kminus_theta", "K^{-} #theta (exclusive);#theta [deg];Events", h_exclusive.kminus_theta);
 
         // --- Exclusivity histograms ---
-        auto book_excl_hists = [&](ExclusivityHistograms& eh, const std::string& base, const std::string& label) {
-            eh.missing_energy = svc->book_hist1D(base + "/missing_energy",
-                fmt::format("{} Missing Energy;#DeltaE [GeV];Events", label), 300, -2.0, 4.0);
-            eh.missing_p = svc->book_hist1D(base + "/missing_momentum",
-                fmt::format("{} Missing Momentum;|p_{{miss}}| [GeV/c];Events", label), 300, 0.0, 4.0);
-            eh.missing_pt = svc->book_hist1D(base + "/missing_pt",
-                fmt::format("{} Missing p_{{T}};p_{{T,miss}} [GeV/c];Events", label), 200, 0.0, 2.0);
-            eh.missing_theta = svc->book_hist1D(base + "/missing_theta",
-                fmt::format("{} Missing #theta;#theta_{{miss}} [deg];Events", label), 200, 0, 180);
-            eh.missing_phi = svc->book_hist1D(base + "/missing_phi",
-                fmt::format("{} Missing #phi;#phi_{{miss}} [deg];Events", label), 200, -180, 180);
+        auto book_excl_hists = [&](ExclusivityHistograms& eh, const std::string& base, const std::string& label) {            svc->register_hist(base + "/missing_energy", fmt::format("{} Missing Energy;#DeltaE [GeV];Events", label), eh.missing_energy);            svc->register_hist(base + "/missing_momentum", fmt::format("{} Missing Momentum;|p_{{miss}}| [GeV/c];Events", label), eh.missing_p);            svc->register_hist(base + "/missing_pt", fmt::format("{} Missing p_{{T}};p_{{T,miss}} [GeV/c];Events", label), eh.missing_pt);            svc->register_hist(base + "/missing_theta", fmt::format("{} Missing #theta;#theta_{{miss}} [deg];Events", label), eh.missing_theta);            svc->register_hist(base + "/missing_phi", fmt::format("{} Missing #phi;#phi_{{miss}} [deg];Events", label), eh.missing_phi);
             // Neutron detection histograms
-            auto ndir = base + "/Neutron";
-            eh.n_detected = svc->book_hist1D(ndir + "/n_detected",
-                fmt::format("{} Number of detected neutrons;N_{{n}};Events", label), 10, 0, 10);
-            eh.neutron_opening_angle = svc->book_hist1D(ndir + "/opening_angle",
-                fmt::format("{} Neutron-Missing opening angle;#Delta#alpha [deg];Events", label), 200, 0, 180);
-            eh.neutron_p = svc->book_hist1D(ndir + "/neutron_p",
-                fmt::format("{} Detected neutron momentum;p_{{n}} [GeV/c];Events", label), 200, 0, 4);
-            eh.neutron_beta = svc->book_hist1D(ndir + "/neutron_beta",
-                fmt::format("{} Detected neutron #beta;#beta_{{n}};Events", label), 200, 0, 1.2);
-            eh.mm_with_neutron = svc->book_hist1D(ndir + "/mm_with_neutron",
-                fmt::format("{} MM (with detected n);MM [GeV/c^{{2}}];Events", label), 300, -1.0, 2.0);
+            auto ndir = base + "/Neutron";            svc->register_hist(ndir + "/n_detected", fmt::format("{} Number of detected neutrons;N_{{n}};Events", label), eh.n_detected);            svc->register_hist(ndir + "/opening_angle", fmt::format("{} Neutron-Missing opening angle;#Delta#alpha [deg];Events", label), eh.neutron_opening_angle);            svc->register_hist(ndir + "/neutron_p", fmt::format("{} Detected neutron momentum;p_{{n}} [GeV/c];Events", label), eh.neutron_p);            svc->register_hist(ndir + "/neutron_beta", fmt::format("{} Detected neutron #beta;#beta_{{n}};Events", label), eh.neutron_beta);            svc->register_hist(ndir + "/mm_with_neutron", fmt::format("{} MM (with detected n);MM [GeV/c^{{2}}];Events", label), eh.mm_with_neutron);
         };
 
         book_excl_hists(h_exclusive.pion_excl, dir, "ed#rightarrowep#pi^{+}#pi^{-}(X)");
         book_excl_hists(h_exclusive.kaon_excl, kdir, "ed#rightarrowepK^{+}K^{-}(X)");
 
         // --- Hadron cut variable histograms ---
-        auto book_cut_hists = [&](ParticleCutHistograms& h, const std::string& base, const std::string& label) {
-            h.chi2pid  = svc->book_hist1D(base + "/chi2pid",  fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), 200, -10, 10);
-            h.p        = svc->book_hist1D(base + "/p",        fmt::format("{} Momentum;p [GeV/c];Events", label),                    200, 0, 10);
-            h.vz       = svc->book_hist1D(base + "/vz",       fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label),                  200, -30, 15);
-            h.delta_vz = svc->book_hist1D(base + "/delta_vz", fmt::format("{} #Deltav_{{z}};#Deltav_{{z}} [cm];Events", label),      200, -10, 10);
+        auto book_cut_hists = [&](ParticleCutHistograms& h, const std::string& base, const std::string& label) {            svc->register_hist(base + "/chi2pid", fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), h.chi2pid);            svc->register_hist(base + "/p", fmt::format("{} Momentum;p [GeV/c];Events", label), h.p);            svc->register_hist(base + "/vz", fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label), h.vz);            svc->register_hist(base + "/delta_vz", fmt::format("{} #Deltav_{{z}};#Deltav_{{z}} [cm];Events", label), h.delta_vz);
         };
 
         auto cuts_dir = std::string("/AiPidHadron/HadronCuts");

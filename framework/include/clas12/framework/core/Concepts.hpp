@@ -18,10 +18,6 @@
 
 #include <clas12/framework/core/StatusCode.hpp>
 
-// Forward declarations for ROOT types used in HistogramProvider concept
-class TH1D;
-class TH2D;
-
 namespace framework {
 
 // Forward declaration
@@ -61,39 +57,6 @@ concept ServiceConcept = std::derived_from<T, IService> &&
         { csvc.name() } -> std::convertible_to<const std::string&>;
         { svc.initialize() } -> std::same_as<StatusCode>;
         { svc.finalize() } -> std::same_as<StatusCode>;
-    };
-
-/**
- * @brief Concept for services that provide histogram functionality
- *
- * A type satisfies HistogramProvider if it:
- * - Satisfies ServiceConcept
- * - Has book_hist1D() method for booking 1D histograms
- * - Has book_hist2D() method for booking 2D histograms
- * - Has get_output_hist1D() method for retrieving 1D histograms
- * - Has get_output_hist2D() method for retrieving 2D histograms
- *
- * This concept is useful for algorithms that need histogram services
- * but want to be generic over the specific histogram service implementation.
- *
- * @tparam T The type to check
- *
- * Example usage:
- * @code
- * template <HistogramProvider T>
- * void book_analysis_histograms(T& hist_svc) {
- *     hist_svc.book_hist1D("/analysis/momentum", "p;p [GeV];Counts", 100, 0, 10);
- * }
- * @endcode
- */
-template <typename T>
-concept HistogramProvider = ServiceConcept<T> &&
-    requires(T svc, const std::string& path, const std::string& title,
-             int nbins, double xmin, double xmax, int nbinsy, double ymin, double ymax) {
-        { svc.book_hist1D(path, title, nbins, xmin, xmax) } -> std::same_as<TH1D*>;
-        { svc.book_hist2D(path, title, nbins, xmin, xmax, nbinsy, ymin, ymax) } -> std::same_as<TH2D*>;
-        { svc.get_output_hist1D(path) } -> std::same_as<TH1D*>;
-        { svc.get_output_hist2D(path) } -> std::same_as<TH2D*>;
     };
 
 /**

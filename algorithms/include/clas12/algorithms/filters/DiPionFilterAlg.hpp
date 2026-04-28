@@ -7,7 +7,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/services/HipoFileService.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -171,32 +171,32 @@ class DiPionFilterAlg : public framework::Algorithm {
     framework::ServiceRef<framework::HipoFileService> m_hipo_svc;
     framework::ServiceRef<framework::HistogramService> m_hist_svc;
 
-    framework::ThreadLocalHistogram1D* h_Q2 = nullptr;
-    framework::ThreadLocalHistogram1D* h_W = nullptr;
-    framework::ThreadLocalHistogram1D* h_piplus_p = nullptr;
-    framework::ThreadLocalHistogram1D* h_piminus_p = nullptr;
-    framework::ThreadLocalHistogram1D* h_piplus_chi2pid = nullptr;
-    framework::ThreadLocalHistogram1D* h_piminus_chi2pid = nullptr;
-    framework::ThreadLocalHistogram2D* h_Q2_vs_W = nullptr;
+    framework::H1<> h_Q2{mh::regular(0.0, 12.0, 100)};
+    framework::H1<> h_W{mh::regular(0.0, 5.0, 100)};
+    framework::H1<> h_piplus_p{mh::regular(0.0, 6.0, 100)};
+    framework::H1<> h_piminus_p{mh::regular(0.0, 6.0, 100)};
+    framework::H1<> h_piplus_chi2pid{mh::regular(-15.0, 15.0, 100)};
+    framework::H1<> h_piminus_chi2pid{mh::regular(-15.0, 15.0, 100)};
+    framework::H2<> h_Q2_vs_W{mh::regular(1.0, 5.0, 100), mh::regular(0.0, 10.0, 100)};
 
     auto book_histograms() -> void {
-        h_Q2 = m_hist_svc->book_hist1D("/DiPion/Q2", "Q^{2};Q^{2} [GeV^{2}];Counts", 100, 0.0, 12.0);
-        h_W = m_hist_svc->book_hist1D("/DiPion/W", "W;W [GeV];Counts", 100, 0.0, 5.0);
-        h_piplus_p = m_hist_svc->book_hist1D("/DiPion/piplus_p", "#pi^{+} Momentum;Momentum [GeV/c];Counts", 100, 0, 6);
-        h_piminus_p = m_hist_svc->book_hist1D("/DiPion/piminus_p", "#pi^{-} Momentum;Momentum [GeV/c];Counts", 100, 0, 6);
-        h_piplus_chi2pid = m_hist_svc->book_hist1D("/DiPion/piplus_chi2pid", "#pi^{+} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
-        h_piminus_chi2pid = m_hist_svc->book_hist1D("/DiPion/piminus_chi2pid", "#pi^{-} #chi^{2}_{PID};#chi^{2}_{PID};Events", 100, -15, 15);
-        h_Q2_vs_W = m_hist_svc->book_hist2D("/DiPion/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]", 100, 1, 5, 100, 0, 10);
+        m_hist_svc->register_hist("/DiPion/Q2",                "Q^{2};Q^{2} [GeV^{2}];Counts",                  h_Q2);
+        m_hist_svc->register_hist("/DiPion/W",                 "W;W [GeV];Counts",                              h_W);
+        m_hist_svc->register_hist("/DiPion/piplus_p",          "#pi^{+} Momentum;Momentum [GeV/c];Counts",       h_piplus_p);
+        m_hist_svc->register_hist("/DiPion/piminus_p",         "#pi^{-} Momentum;Momentum [GeV/c];Counts",       h_piminus_p);
+        m_hist_svc->register_hist("/DiPion/piplus_chi2pid",    "#pi^{+} #chi^{2}_{PID};#chi^{2}_{PID};Events",   h_piplus_chi2pid);
+        m_hist_svc->register_hist("/DiPion/piminus_chi2pid",   "#pi^{-} #chi^{2}_{PID};#chi^{2}_{PID};Events",   h_piminus_chi2pid);
+        m_hist_svc->register_hist("/DiPion/Q2_vs_W",           "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]",             h_Q2_vs_W);
     }
 
     auto fill_histograms([[maybe_unused]] const Particle& electron, const physics::DISAnalysis::DISKinematics& kin, const Particle& piplus, const Particle& piminus) -> void {
-        h_Q2->fill(kin.q2);
-        h_W->fill(kin.w);
-        h_piplus_p->fill(piplus.p());
-        h_piminus_p->fill(piminus.p());
-        h_piplus_chi2pid->fill(piplus.chi2pid());
-        h_piminus_chi2pid->fill(piminus.chi2pid());
-        h_Q2_vs_W->fill(kin.w, kin.q2);
+        h_Q2.fill(kin.q2);
+        h_W.fill(kin.w);
+        h_piplus_p.fill(piplus.p());
+        h_piminus_p.fill(piminus.p());
+        h_piplus_chi2pid.fill(piplus.chi2pid());
+        h_piminus_chi2pid.fill(piminus.chi2pid());
+        h_Q2_vs_W.fill(kin.w, kin.q2);
     }
 };
 

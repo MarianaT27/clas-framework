@@ -16,7 +16,7 @@
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/SectorHistograms.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -187,58 +187,58 @@ class PionAnalysisAlg : public framework::Algorithm {
     framework::NTupleWriter<PionNTupleData> m_ntuple_piminus;
 
     struct PionHistograms {
-        framework::ThreadLocalHistogram1D* p = nullptr;
-        framework::ThreadLocalHistogram1D* theta = nullptr;
-        framework::ThreadLocalHistogram1D* phi = nullptr;
-        framework::ThreadLocalHistogram1D* vz = nullptr;
-        framework::ThreadLocalHistogram1D* chi2pid = nullptr;
-        framework::ThreadLocalHistogram1D* beta = nullptr;
+        framework::H1<> p{mh::regular(0.0, 10.0, static_cast<std::size_t>(100))};
+        framework::H1<> theta{mh::regular(0.0, 40.0, static_cast<std::size_t>(180))};
+        framework::H1<> phi{mh::regular(-180.0, 180.0, static_cast<std::size_t>(360))};
+        framework::H1<> vz{mh::regular(-40.0, 40.0, static_cast<std::size_t>(200))};
+        framework::H1<> chi2pid{mh::regular(-10.0, 10.0, static_cast<std::size_t>(200))};
+        framework::H1<> beta{mh::regular(0.5, 1.1, static_cast<std::size_t>(100))};
 
-        framework::ThreadLocalHistogram2D* vz_vs_phi = nullptr;
-        framework::ThreadLocalHistogram2D* vz_vs_sector = nullptr;
-        framework::ThreadLocalHistogram2D* vz_vs_p_2d = nullptr;
-        framework::ThreadLocalHistogram2D* vx_vs_vy = nullptr;
-        framework::ThreadLocalHistogram1D* delta_vz = nullptr;
-        framework::ThreadLocalHistogram2D* delta_vz_vs_p = nullptr;
+        framework::H2<> vz_vs_phi{mh::regular(-180, 180, static_cast<std::size_t>(180)), mh::regular(-40, 40, static_cast<std::size_t>(100))};
+        framework::H2<> vz_vs_sector{mh::regular(0.5, 6.5, static_cast<std::size_t>(6)), mh::regular(-40, 40, static_cast<std::size_t>(100))};
+        framework::H2<> vz_vs_p_2d{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-40, 40, static_cast<std::size_t>(100))};
+        framework::H2<> vx_vs_vy{mh::regular(-2, 2, static_cast<std::size_t>(100)), mh::regular(-2, 2, static_cast<std::size_t>(100))};
+        framework::H1<> delta_vz{mh::regular(-20, 20, static_cast<std::size_t>(200))};
+        framework::H2<> delta_vz_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-20, 20, static_cast<std::size_t>(200))};
 
-        framework::ThreadLocalHistogram1D* delta_t = nullptr;
-        framework::ThreadLocalHistogram2D* delta_t_vs_p_diag = nullptr;
-        framework::ThreadLocalHistogram1D* tof_mass2 = nullptr;
-        framework::ThreadLocalHistogram2D* tof_mass2_vs_p = nullptr;
-        framework::ThreadLocalHistogram1D* tof_path = nullptr;
-        framework::ThreadLocalHistogram2D* tof_path_vs_p = nullptr;
-        framework::ThreadLocalHistogram2D* beta_vs_p = nullptr;
-        framework::ThreadLocalHistogram1D* beta_diff = nullptr;
-        framework::ThreadLocalHistogram2D* beta_diff_vs_p = nullptr;
+        framework::H1<> delta_t{mh::regular(-2, 2, static_cast<std::size_t>(200))};
+        framework::H2<> delta_t_vs_p_diag{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-2, 2, static_cast<std::size_t>(200))};
+        framework::H1<> tof_mass2{mh::regular(-0.2, 0.5, static_cast<std::size_t>(200))};
+        framework::H2<> tof_mass2_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-0.2, 0.5, static_cast<std::size_t>(200))};
+        framework::H1<> tof_path{mh::regular(0, 800, static_cast<std::size_t>(100))};
+        framework::H2<> tof_path_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(0, 800, static_cast<std::size_t>(100))};
+        framework::H2<> beta_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(0.5, 1.1, static_cast<std::size_t>(100))};
+        framework::H1<> beta_diff{mh::regular(-0.1, 0.1, static_cast<std::size_t>(200))};
+        framework::H2<> beta_diff_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-0.1, 0.1, static_cast<std::size_t>(200))};
 
-        framework::ThreadLocalHistogram2D* chi2pid_vs_p = nullptr;
-        framework::ThreadLocalHistogram2D* chi2pid_vs_theta = nullptr;
-        framework::ThreadLocalHistogram2D* chi2pid_vs_sector = nullptr;
+        framework::H2<> chi2pid_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-10, 10, static_cast<std::size_t>(100))};
+        framework::H2<> chi2pid_vs_theta{mh::regular(0, 45, static_cast<std::size_t>(90)), mh::regular(-10, 10, static_cast<std::size_t>(100))};
+        framework::H2<> chi2pid_vs_sector{mh::regular(0.5, 6.5, static_cast<std::size_t>(6)), mh::regular(-10, 10, static_cast<std::size_t>(100))};
 
-        framework::ThreadLocalHistogram2D* phi_vs_theta = nullptr;
-        framework::ThreadLocalHistogram2D* p_vs_phi = nullptr;
-        framework::ThreadLocalHistogram2D* p_vs_theta_diag = nullptr;
+        framework::H2<> phi_vs_theta{mh::regular(0, 45, static_cast<std::size_t>(90)), mh::regular(-180, 180, static_cast<std::size_t>(180))};
+        framework::H2<> p_vs_phi{mh::regular(-180, 180, static_cast<std::size_t>(180)), mh::regular(0, 10, static_cast<std::size_t>(100))};
+        framework::H2<> p_vs_theta_diag{mh::regular(0, 45, static_cast<std::size_t>(90)), mh::regular(0, 10, static_cast<std::size_t>(100))};
 
-        framework::ThreadLocalHistogram1D* sf = nullptr;
-        framework::ThreadLocalHistogram1D* lv = nullptr;
-        framework::ThreadLocalHistogram1D* lw = nullptr;
-        framework::ThreadLocalHistogram2D* sf_vs_lv = nullptr;
-        framework::ThreadLocalHistogram2D* sf_vs_lw = nullptr;
+        framework::H1<> sf{mh::regular(0, 0.4, static_cast<std::size_t>(100))};
+        framework::H1<> lv{mh::regular(0, 500, static_cast<std::size_t>(100))};
+        framework::H1<> lw{mh::regular(0, 500, static_cast<std::size_t>(100))};
+        framework::H2<> sf_vs_lv{mh::regular(0, 70, static_cast<std::size_t>(200)), mh::regular(0, 0.4, static_cast<std::size_t>(200))};
+        framework::H2<> sf_vs_lw{mh::regular(0, 70, static_cast<std::size_t>(200)), mh::regular(0, 0.4, static_cast<std::size_t>(200))};
 
-        framework::ThreadLocalHistogram1D* chi2ndf = nullptr;
-        framework::ThreadLocalHistogram1D* edge_r1 = nullptr;
-        framework::ThreadLocalHistogram1D* edge_r2 = nullptr;
-        framework::ThreadLocalHistogram1D* edge_r3 = nullptr;
-        framework::ThreadLocalHistogram2D* chi2ndf_vs_edge_r1 = nullptr;
-        framework::ThreadLocalHistogram2D* chi2ndf_vs_edge_r2 = nullptr;
-        framework::ThreadLocalHistogram2D* chi2ndf_vs_edge_r3 = nullptr;
+        framework::H1<> chi2ndf{mh::regular(0, 20, static_cast<std::size_t>(100))};
+        framework::H1<> edge_r1{mh::regular(-10, 50, static_cast<std::size_t>(100))};
+        framework::H1<> edge_r2{mh::regular(-10, 50, static_cast<std::size_t>(100))};
+        framework::H1<> edge_r3{mh::regular(-10, 50, static_cast<std::size_t>(100))};
+        framework::H2<> chi2ndf_vs_edge_r1{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
+        framework::H2<> chi2ndf_vs_edge_r2{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
+        framework::H2<> chi2ndf_vs_edge_r3{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
 
-        framework::ThreadLocalHistogram1D* edge_r1_precut = nullptr;
-        framework::ThreadLocalHistogram1D* edge_r2_precut = nullptr;
-        framework::ThreadLocalHistogram1D* edge_r3_precut = nullptr;
-        framework::ThreadLocalHistogram2D* chi2ndf_vs_edge_r1_precut = nullptr;
-        framework::ThreadLocalHistogram2D* chi2ndf_vs_edge_r2_precut = nullptr;
-        framework::ThreadLocalHistogram2D* chi2ndf_vs_edge_r3_precut = nullptr;
+        framework::H1<> edge_r1_precut{mh::regular(-10, 50, static_cast<std::size_t>(100))};
+        framework::H1<> edge_r2_precut{mh::regular(-10, 50, static_cast<std::size_t>(100))};
+        framework::H1<> edge_r3_precut{mh::regular(-10, 50, static_cast<std::size_t>(100))};
+        framework::H2<> chi2ndf_vs_edge_r1_precut{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
+        framework::H2<> chi2ndf_vs_edge_r2_precut{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
+        framework::H2<> chi2ndf_vs_edge_r3_precut{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
 
         framework::PerSectorHist2D<6> delta_t_vs_p_sector;
         framework::PerSectorHist2D<6> p_vs_theta_sector;
@@ -278,59 +278,14 @@ class PionAnalysisAlg : public framework::Algorithm {
 
     auto book_pion_histograms(const std::string& dir, PionHistograms& h, const std::string& label) -> void {
         auto* svc = m_hist.get();
-
-        h.p = svc->book_hist1D(dir + "/p", fmt::format("{} Momentum;p [GeV/c];Events", label), 100, 0.0, 10.0);
-        h.theta = svc->book_hist1D(dir + "/theta", fmt::format("{} #theta;#theta [deg];Events", label), 180, 0.0, 40.0);
-        h.phi = svc->book_hist1D(dir + "/phi", fmt::format("{} #phi;#phi [deg];Events", label), 360, -180.0, 180.0);
-        h.vz = svc->book_hist1D(dir + "/vz", fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label), 200, -40.0, 40.0);
-        h.chi2pid = svc->book_hist1D(dir + "/chi2pid", fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), 200, -10.0, 10.0);
-        h.beta = svc->book_hist1D(dir + "/beta", fmt::format("{} #beta;#beta;Events", label), 100, 0.5, 1.1);
-
-        h.vz_vs_phi = svc->book_hist2D(dir + "/vz_vs_phi", fmt::format("{} v_{{z}} vs #phi;#phi [deg];v_{{z}} [cm]", label), 180, -180, 180, 100, -40, 40);
-        h.vz_vs_sector = svc->book_hist2D(dir + "/vz_vs_sector", fmt::format("{} v_{{z}} vs Sector;Sector;v_{{z}} [cm]", label), 6, 0.5, 6.5, 100, -40, 40);
-        h.vz_vs_p_2d = svc->book_hist2D(dir + "/vz_vs_p", fmt::format("{} v_{{z}} vs p;p [GeV/c];v_{{z}} [cm]", label), 100, 0, 10, 100, -40, 40);
-        h.vx_vs_vy = svc->book_hist2D(dir + "/vx_vs_vy", fmt::format("{} v_{{x}} vs v_{{y}};v_{{x}} [cm];v_{{y}} [cm]", label), 100, -2, 2, 100, -2, 2);
-        h.delta_vz = svc->book_hist1D(dir + "/delta_vz", fmt::format("{} #Deltav_{{z}} (#pi - e);#Deltav_{{z}} [cm];Events", label), 200, -20, 20);
-        h.delta_vz_vs_p = svc->book_hist2D(dir + "/delta_vz_vs_p", fmt::format("{} #Deltav_{{z}} vs p;p [GeV/c];#Deltav_{{z}} [cm]", label), 100, 0, 10, 200, -20, 20);
-
-        h.delta_t = svc->book_hist1D(dir + "/delta_t", fmt::format("{} #Deltat;#Deltat [ns];Events", label), 200, -2, 2);
-        h.delta_t_vs_p_diag = svc->book_hist2D(dir + "/delta_t_vs_p_diag", fmt::format("{} #Deltat vs p;p [GeV/c];#Deltat [ns]", label), 100, 0, 10, 200, -2, 2);
-        h.tof_mass2 = svc->book_hist1D(dir + "/tof_mass2", fmt::format("{} m^{{2}}_{{TOF}};m^{{2}} [GeV^{{2}}];Events", label), 200, -0.2, 0.5);
-        h.tof_mass2_vs_p = svc->book_hist2D(dir + "/tof_mass2_vs_p", fmt::format("{} m^{{2}}_{{TOF}} vs p;p [GeV/c];m^{{2}} [GeV^{{2}}]", label), 100, 0, 10, 200, -0.2, 0.5);
-        h.tof_path = svc->book_hist1D(dir + "/tof_path", fmt::format("{} TOF Path Length;Path [cm];Events", label), 100, 0, 800);
-        h.tof_path_vs_p = svc->book_hist2D(dir + "/tof_path_vs_p", fmt::format("{} TOF Path vs p;p [GeV/c];Path [cm]", label), 100, 0, 10, 100, 0, 800);
-        h.beta_vs_p = svc->book_hist2D(dir + "/beta_vs_p", fmt::format("{} #beta vs p;p [GeV/c];#beta", label), 100, 0, 10, 100, 0.5, 1.1);
-        h.beta_diff = svc->book_hist1D(dir + "/beta_diff", fmt::format("{} #Delta#beta;#Delta#beta;Events", label), 200, -0.1, 0.1);
-        h.beta_diff_vs_p = svc->book_hist2D(dir + "/beta_diff_vs_p", fmt::format("{} #Delta#beta vs p;p [GeV/c];#Delta#beta", label), 100, 0, 10, 200, -0.1, 0.1);
-
-        h.chi2pid_vs_p = svc->book_hist2D(dir + "/chi2pid_vs_p", fmt::format("{} #chi^{{2}}_{{PID}} vs p;p [GeV/c];#chi^{{2}}_{{PID}}", label), 100, 0, 10, 100, -10, 10);
-        h.chi2pid_vs_theta = svc->book_hist2D(dir + "/chi2pid_vs_theta", fmt::format("{} #chi^{{2}}_{{PID}} vs #theta;#theta [deg];#chi^{{2}}_{{PID}}", label), 90, 0, 45, 100, -10, 10);
-        h.chi2pid_vs_sector = svc->book_hist2D(dir + "/chi2pid_vs_sector", fmt::format("{} #chi^{{2}}_{{PID}} vs Sector;Sector;#chi^{{2}}_{{PID}}", label), 6, 0.5, 6.5, 100, -10, 10);
-
-        h.phi_vs_theta = svc->book_hist2D(dir + "/phi_vs_theta", fmt::format("{} #phi vs #theta;#theta [deg];#phi [deg]", label), 90, 0, 45, 180, -180, 180);
-        h.p_vs_phi = svc->book_hist2D(dir + "/p_vs_phi", fmt::format("{} p vs #phi;#phi [deg];p [GeV/c]", label), 180, -180, 180, 100, 0, 10);
-        h.p_vs_theta_diag = svc->book_hist2D(dir + "/p_vs_theta_diag", fmt::format("{} p vs #theta;#theta [deg];p [GeV/c]", label), 90, 0, 45, 100, 0, 10);
-
-        h.sf = svc->book_hist1D(dir + "/sf", fmt::format("{} Sampling Fraction;SF;Events", label), 100, 0, 0.4);
-        h.lv = svc->book_hist1D(dir + "/lv", fmt::format("{} PCAL lv;lv [cm];Events", label), 100, 0, 500);
-        h.lw = svc->book_hist1D(dir + "/lw", fmt::format("{} PCAL lw;lw [cm];Events", label), 100, 0, 500);
-        h.sf_vs_lv = svc->book_hist2D(dir + "/sf_vs_lv", fmt::format("{} Sf vs lv;lv [cm];SF", label), 200, 0, 70, 200, 0, 0.4);
-        h.sf_vs_lw = svc->book_hist2D(dir + "/sf_vs_lw", fmt::format("{} Sf vs lw;lw [cm];SF", label), 200, 0, 70, 200, 0, 0.4);
-
-        h.chi2ndf = svc->book_hist1D(dir + "/chi2ndf", fmt::format("{} DC #chi^{{2}}/NDF;#chi^{{2}}/NDF;Events", label), 100, 0, 20);
-        h.edge_r1 = svc->book_hist1D(dir + "/edge_r1", fmt::format("{} DC Edge R1;Edge [cm];Events", label), 100, -10, 50);
-        h.edge_r2 = svc->book_hist1D(dir + "/edge_r2", fmt::format("{} DC Edge R2;Edge [cm];Events", label), 100, -10, 50);
-        h.edge_r3 = svc->book_hist1D(dir + "/edge_r3", fmt::format("{} DC Edge R3;Edge [cm];Events", label), 100, -10, 50);
-        h.chi2ndf_vs_edge_r1 = svc->book_hist2D(dir + "/chi2ndf_vs_edge_r1", fmt::format("{} #chi^{{2}}/NDF vs Edge R1;Edge R1 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
-        h.chi2ndf_vs_edge_r2 = svc->book_hist2D(dir + "/chi2ndf_vs_edge_r2", fmt::format("{} #chi^{{2}}/NDF vs Edge R2;Edge R2 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
-        h.chi2ndf_vs_edge_r3 = svc->book_hist2D(dir + "/chi2ndf_vs_edge_r3", fmt::format("{} #chi^{{2}}/NDF vs Edge R3;Edge R3 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
-
-        h.edge_r1_precut = svc->book_hist1D(dir + "/edge_r1_precut", fmt::format("{} DC Edge R1 (pre-cut);Edge [cm];Events", label), 100, -10, 50);
-        h.edge_r2_precut = svc->book_hist1D(dir + "/edge_r2_precut", fmt::format("{} DC Edge R2 (pre-cut);Edge [cm];Events", label), 100, -10, 50);
-        h.edge_r3_precut = svc->book_hist1D(dir + "/edge_r3_precut", fmt::format("{} DC Edge R3 (pre-cut);Edge [cm];Events", label), 100, -10, 50);
-        h.chi2ndf_vs_edge_r1_precut = svc->book_hist2D(dir + "/chi2ndf_vs_edge_r1_precut", fmt::format("{} #chi^{{2}}/NDF vs Edge R1 (pre-cut);Edge R1 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
-        h.chi2ndf_vs_edge_r2_precut = svc->book_hist2D(dir + "/chi2ndf_vs_edge_r2_precut", fmt::format("{} #chi^{{2}}/NDF vs Edge R2 (pre-cut);Edge R2 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
-        h.chi2ndf_vs_edge_r3_precut = svc->book_hist2D(dir + "/chi2ndf_vs_edge_r3_precut", fmt::format("{} #chi^{{2}}/NDF vs Edge R3 (pre-cut);Edge R3 [cm];#chi^{{2}}/NDF", label), 200, 0, 50, 200, 0, 100);
+        svc->register_hist(dir + "/p", fmt::format("{} Momentum;p [GeV/c];Events", label), h.p);        svc->register_hist(dir + "/theta", fmt::format("{} #theta;#theta [deg];Events", label), h.theta);        svc->register_hist(dir + "/phi", fmt::format("{} #phi;#phi [deg];Events", label), h.phi);        svc->register_hist(dir + "/vz", fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label), h.vz);        svc->register_hist(dir + "/chi2pid", fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), h.chi2pid);        svc->register_hist(dir + "/beta", fmt::format("{} #beta;#beta;Events", label), h.beta);
+        svc->register_hist(dir + "/vz_vs_phi", fmt::format("{} v_{{z}} vs #phi;#phi [deg];v_{{z}} [cm]", label), h.vz_vs_phi);        svc->register_hist(dir + "/vz_vs_sector", fmt::format("{} v_{{z}} vs Sector;Sector;v_{{z}} [cm]", label), h.vz_vs_sector);        svc->register_hist(dir + "/vz_vs_p", fmt::format("{} v_{{z}} vs p;p [GeV/c];v_{{z}} [cm]", label), h.vz_vs_p_2d);        svc->register_hist(dir + "/vx_vs_vy", fmt::format("{} v_{{x}} vs v_{{y}};v_{{x}} [cm];v_{{y}} [cm]", label), h.vx_vs_vy);        svc->register_hist(dir + "/delta_vz", fmt::format("{} #Deltav_{{z}} (#pi - e);#Deltav_{{z}} [cm];Events", label), h.delta_vz);        svc->register_hist(dir + "/delta_vz_vs_p", fmt::format("{} #Deltav_{{z}} vs p;p [GeV/c];#Deltav_{{z}} [cm]", label), h.delta_vz_vs_p);
+        svc->register_hist(dir + "/delta_t", fmt::format("{} #Deltat;#Deltat [ns];Events", label), h.delta_t);        svc->register_hist(dir + "/delta_t_vs_p_diag", fmt::format("{} #Deltat vs p;p [GeV/c];#Deltat [ns]", label), h.delta_t_vs_p_diag);        svc->register_hist(dir + "/tof_mass2", fmt::format("{} m^{{2}}_{{TOF}};m^{{2}} [GeV^{{2}}];Events", label), h.tof_mass2);        svc->register_hist(dir + "/tof_mass2_vs_p", fmt::format("{} m^{{2}}_{{TOF}} vs p;p [GeV/c];m^{{2}} [GeV^{{2}}]", label), h.tof_mass2_vs_p);        svc->register_hist(dir + "/tof_path", fmt::format("{} TOF Path Length;Path [cm];Events", label), h.tof_path);        svc->register_hist(dir + "/tof_path_vs_p", fmt::format("{} TOF Path vs p;p [GeV/c];Path [cm]", label), h.tof_path_vs_p);        svc->register_hist(dir + "/beta_vs_p", fmt::format("{} #beta vs p;p [GeV/c];#beta", label), h.beta_vs_p);        svc->register_hist(dir + "/beta_diff", fmt::format("{} #Delta#beta;#Delta#beta;Events", label), h.beta_diff);        svc->register_hist(dir + "/beta_diff_vs_p", fmt::format("{} #Delta#beta vs p;p [GeV/c];#Delta#beta", label), h.beta_diff_vs_p);
+        svc->register_hist(dir + "/chi2pid_vs_p", fmt::format("{} #chi^{{2}}_{{PID}} vs p;p [GeV/c];#chi^{{2}}_{{PID}}", label), h.chi2pid_vs_p);        svc->register_hist(dir + "/chi2pid_vs_theta", fmt::format("{} #chi^{{2}}_{{PID}} vs #theta;#theta [deg];#chi^{{2}}_{{PID}}", label), h.chi2pid_vs_theta);        svc->register_hist(dir + "/chi2pid_vs_sector", fmt::format("{} #chi^{{2}}_{{PID}} vs Sector;Sector;#chi^{{2}}_{{PID}}", label), h.chi2pid_vs_sector);
+        svc->register_hist(dir + "/phi_vs_theta", fmt::format("{} #phi vs #theta;#theta [deg];#phi [deg]", label), h.phi_vs_theta);        svc->register_hist(dir + "/p_vs_phi", fmt::format("{} p vs #phi;#phi [deg];p [GeV/c]", label), h.p_vs_phi);        svc->register_hist(dir + "/p_vs_theta_diag", fmt::format("{} p vs #theta;#theta [deg];p [GeV/c]", label), h.p_vs_theta_diag);
+        svc->register_hist(dir + "/sf", fmt::format("{} Sampling Fraction;SF;Events", label), h.sf);        svc->register_hist(dir + "/lv", fmt::format("{} PCAL lv;lv [cm];Events", label), h.lv);        svc->register_hist(dir + "/lw", fmt::format("{} PCAL lw;lw [cm];Events", label), h.lw);        svc->register_hist(dir + "/sf_vs_lv", fmt::format("{} Sf vs lv;lv [cm];SF", label), h.sf_vs_lv);        svc->register_hist(dir + "/sf_vs_lw", fmt::format("{} Sf vs lw;lw [cm];SF", label), h.sf_vs_lw);
+        svc->register_hist(dir + "/chi2ndf", fmt::format("{} DC #chi^{{2}}/NDF;#chi^{{2}}/NDF;Events", label), h.chi2ndf);        svc->register_hist(dir + "/edge_r1", fmt::format("{} DC Edge R1;Edge [cm];Events", label), h.edge_r1);        svc->register_hist(dir + "/edge_r2", fmt::format("{} DC Edge R2;Edge [cm];Events", label), h.edge_r2);        svc->register_hist(dir + "/edge_r3", fmt::format("{} DC Edge R3;Edge [cm];Events", label), h.edge_r3);        svc->register_hist(dir + "/chi2ndf_vs_edge_r1", fmt::format("{} #chi^{{2}}/NDF vs Edge R1;Edge R1 [cm];#chi^{{2}}/NDF", label), h.chi2ndf_vs_edge_r1);        svc->register_hist(dir + "/chi2ndf_vs_edge_r2", fmt::format("{} #chi^{{2}}/NDF vs Edge R2;Edge R2 [cm];#chi^{{2}}/NDF", label), h.chi2ndf_vs_edge_r2);        svc->register_hist(dir + "/chi2ndf_vs_edge_r3", fmt::format("{} #chi^{{2}}/NDF vs Edge R3;Edge R3 [cm];#chi^{{2}}/NDF", label), h.chi2ndf_vs_edge_r3);
+        svc->register_hist(dir + "/edge_r1_precut", fmt::format("{} DC Edge R1 (pre-cut);Edge [cm];Events", label), h.edge_r1_precut);        svc->register_hist(dir + "/edge_r2_precut", fmt::format("{} DC Edge R2 (pre-cut);Edge [cm];Events", label), h.edge_r2_precut);        svc->register_hist(dir + "/edge_r3_precut", fmt::format("{} DC Edge R3 (pre-cut);Edge [cm];Events", label), h.edge_r3_precut);        svc->register_hist(dir + "/chi2ndf_vs_edge_r1_precut", fmt::format("{} #chi^{{2}}/NDF vs Edge R1 (pre-cut);Edge R1 [cm];#chi^{{2}}/NDF", label), h.chi2ndf_vs_edge_r1_precut);        svc->register_hist(dir + "/chi2ndf_vs_edge_r2_precut", fmt::format("{} #chi^{{2}}/NDF vs Edge R2 (pre-cut);Edge R2 [cm];#chi^{{2}}/NDF", label), h.chi2ndf_vs_edge_r2_precut);        svc->register_hist(dir + "/chi2ndf_vs_edge_r3_precut", fmt::format("{} #chi^{{2}}/NDF vs Edge R3 (pre-cut);Edge R3 [cm];#chi^{{2}}/NDF", label), h.chi2ndf_vs_edge_r3_precut);
 
         framework::SectorHistogramGroup<6> g(svc, dir);
         h.nphe = g.add_hist1D("nphe", "Cherenkov nphe;nphe;Tracks", 51, 0, 50);
@@ -364,12 +319,12 @@ class PionAnalysisAlg : public framework::Algorithm {
         bool in_forward_detector = framework::CandidateUtils::is_forward_detector(pion.status());
 
         if (in_forward_detector) {
-            if (h.edge_r1_precut) h.edge_r1_precut->fill(edge_r1);
-            if (h.edge_r2_precut) h.edge_r2_precut->fill(edge_r2);
-            if (h.edge_r3_precut) h.edge_r3_precut->fill(edge_r3);
-            if (h.chi2ndf_vs_edge_r1_precut) h.chi2ndf_vs_edge_r1_precut->fill(edge_r1, chi2ndf);
-            if (h.chi2ndf_vs_edge_r2_precut) h.chi2ndf_vs_edge_r2_precut->fill(edge_r2, chi2ndf);
-            if (h.chi2ndf_vs_edge_r3_precut) h.chi2ndf_vs_edge_r3_precut->fill(edge_r3, chi2ndf);
+            h.edge_r1_precut.fill(edge_r1);
+            h.edge_r2_precut.fill(edge_r2);
+            h.edge_r3_precut.fill(edge_r3);
+            h.chi2ndf_vs_edge_r1_precut.fill(edge_r1, chi2ndf);
+            h.chi2ndf_vs_edge_r2_precut.fill(edge_r2, chi2ndf);
+            h.chi2ndf_vs_edge_r3_precut.fill(edge_r3, chi2ndf);
         }
 
         if (!evaluate_cutflow(in_forward_detector, pion.p(), E_tot, track.NDF > 0, cutflow)) return;
@@ -390,39 +345,39 @@ class PionAnalysisAlg : public framework::Algorithm {
         auto timing = framework::CandidateUtils::compute_timing(p, Constants::PIMASS, pion.beta(), tof_time, tof_path, start_time);
 
         const double dvz = pion.vz() - electron.vz();
-        h.p->fill(p);
-        h.theta->fill(pion.theta());
-        h.phi->fill(pion.phi());
-        h.vz->fill(pion.vz());
-        h.chi2pid->fill(pion.chi2pid());
-        h.beta->fill(pion.beta());
+        h.p.fill(p);
+        h.theta.fill(pion.theta());
+        h.phi.fill(pion.phi());
+        h.vz.fill(pion.vz());
+        h.chi2pid.fill(pion.chi2pid());
+        h.beta.fill(pion.beta());
 
-        h.vz_vs_phi->fill(pion.phi(), pion.vz());
-        h.vz_vs_p_2d->fill(p, pion.vz());
-        h.vx_vs_vy->fill(pion.vx(), pion.vy());
-        h.delta_vz->fill(dvz);
-        h.delta_vz_vs_p->fill(p, dvz);
+        h.vz_vs_phi.fill(pion.phi(), pion.vz());
+        h.vz_vs_p_2d.fill(p, pion.vz());
+        h.vx_vs_vy.fill(pion.vx(), pion.vy());
+        h.delta_vz.fill(dvz);
+        h.delta_vz_vs_p.fill(p, dvz);
 
-        h.delta_t->fill(timing.delta_t);
-        h.delta_t_vs_p_diag->fill(p, timing.delta_t);
-        h.tof_mass2->fill(timing.tof_mass2);
-        h.tof_mass2_vs_p->fill(p, timing.tof_mass2);
-        h.tof_path->fill(tof_path);
-        h.tof_path_vs_p->fill(p, tof_path);
-        h.beta_vs_p->fill(p, pion.beta());
-        h.beta_diff->fill(timing.beta_diff);
-        h.beta_diff_vs_p->fill(p, timing.beta_diff);
+        h.delta_t.fill(timing.delta_t);
+        h.delta_t_vs_p_diag.fill(p, timing.delta_t);
+        h.tof_mass2.fill(timing.tof_mass2);
+        h.tof_mass2_vs_p.fill(p, timing.tof_mass2);
+        h.tof_path.fill(tof_path);
+        h.tof_path_vs_p.fill(p, tof_path);
+        h.beta_vs_p.fill(p, pion.beta());
+        h.beta_diff.fill(timing.beta_diff);
+        h.beta_diff_vs_p.fill(p, timing.beta_diff);
 
-        h.chi2pid_vs_p->fill(p, pion.chi2pid());
-        h.chi2pid_vs_theta->fill(pion.theta(), pion.chi2pid());
+        h.chi2pid_vs_p.fill(p, pion.chi2pid());
+        h.chi2pid_vs_theta.fill(pion.theta(), pion.chi2pid());
 
-        h.phi_vs_theta->fill(pion.theta(), pion.phi());
-        h.p_vs_phi->fill(pion.phi(), p);
-        h.p_vs_theta_diag->fill(pion.theta(), p);
+        h.phi_vs_theta.fill(pion.theta(), pion.phi());
+        h.p_vs_phi.fill(pion.phi(), p);
+        h.p_vs_theta_diag.fill(pion.theta(), p);
 
         if (sector >= 1 && sector <= 6) {
-            h.vz_vs_sector->fill(static_cast<double>(sector), pion.vz());
-            h.chi2pid_vs_sector->fill(static_cast<double>(sector), pion.chi2pid());
+            h.vz_vs_sector.fill(static_cast<double>(sector), pion.vz());
+            h.chi2pid_vs_sector.fill(static_cast<double>(sector), pion.chi2pid());
         }
 
         if (m_ntuple) {
@@ -431,19 +386,19 @@ class PionAnalysisAlg : public framework::Algorithm {
             ntuple.fill();
         }
 
-        h.sf->fill(SF);
-        h.lv->fill(lv);
-        h.lw->fill(lw);
-        h.sf_vs_lv->fill(lv, SF);
-        h.sf_vs_lw->fill(lw, SF);
+        h.sf.fill(SF);
+        h.lv.fill(lv);
+        h.lw.fill(lw);
+        h.sf_vs_lv.fill(lv, SF);
+        h.sf_vs_lw.fill(lw, SF);
 
-        h.chi2ndf->fill(chi2ndf);
-        h.edge_r1->fill(edge_r1);
-        h.edge_r2->fill(edge_r2);
-        h.edge_r3->fill(edge_r3);
-        h.chi2ndf_vs_edge_r1->fill(edge_r1, chi2ndf);
-        h.chi2ndf_vs_edge_r2->fill(edge_r2, chi2ndf);
-        h.chi2ndf_vs_edge_r3->fill(edge_r3, chi2ndf);
+        h.chi2ndf.fill(chi2ndf);
+        h.edge_r1.fill(edge_r1);
+        h.edge_r2.fill(edge_r2);
+        h.edge_r3.fill(edge_r3);
+        h.chi2ndf_vs_edge_r1.fill(edge_r1, chi2ndf);
+        h.chi2ndf_vs_edge_r2.fill(edge_r2, chi2ndf);
+        h.chi2ndf_vs_edge_r3.fill(edge_r3, chi2ndf);
 
         h.delta_t_vs_p_sector.fill(sector, p, timing.delta_t);
         h.p_vs_theta_sector.fill(sector, pion.theta(), p);

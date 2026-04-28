@@ -6,7 +6,6 @@ framework_inc = include_directories('include')
 
 framework_sources = files(
   'src/ApplicationBuilder.cpp',
-  'src/Histogram.cpp',
   'src/Service.cpp',
   'src/services/DecayTreeFitterService.cpp',
   'src/services/HistogramService.cpp',
@@ -18,14 +17,14 @@ framework_lib = library(
   'clas12-framework',
   framework_sources,
   include_directories: framework_inc,
-  dependencies: [clas12_dep, fmt_dep, toml_dep, root_dep, hipo4_dep, eigen_dep],
+  dependencies: [clas12_dep, fmt_dep, toml_dep, root_dep, hipo4_dep, eigen_dep, mh_dep],
   install: true,
 )
 
 framework_dep = declare_dependency(
   include_directories: framework_inc,
   link_with: framework_lib,
-  dependencies: [clas12_dep, fmt_dep, toml_dep, hipo4_dep, eigen_dep],
+  dependencies: [clas12_dep, fmt_dep, toml_dep, hipo4_dep, eigen_dep, mh_dep],
 )
 
 install_subdir('include/clas12', install_dir: get_option('includedir'))

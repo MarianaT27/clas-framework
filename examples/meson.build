@@ -18,13 +18,6 @@ executable(
   dependencies: example_deps,
 )
 
-# 03: Histogram auto-fill - automatic histogram management
-executable(
-  'example_auto_histograms',
-  files('03_histograms/example_auto_histograms.cpp'),
-  dependencies: example_deps,
-)
-
 # 04: Full framework example - comprehensive usage
 executable(
   'framework_example',
@@ -32,9 +25,3 @@ executable(
   dependencies: example_deps,
 )
 
-# 05: Advanced features
-executable(
-  'example_modern_electron_analysis',
-  files('05_advanced/example_modern_electron_analysis.cpp'),
-  dependencies: example_deps,
-)

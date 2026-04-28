@@ -60,8 +60,8 @@ enum class AlgorithmState : std::uint8_t {
  * one of:
  *   1. atomic (std::atomic<T>, atomic Cutflow counters)
  *   2. mutex-guarded
- *   3. thread-local (one instance per worker via ThreadLocalHistogram or
- *      thread_local storage)
+ *   3. lock-free atomic accumulators (mh::AtomicStorage backing
+ *      framework::H1/H2/H3) or thread_local storage
  *   4. append-only after initialize() (e.g. configuration, ServiceRef)
  * initialize() and finalize() are serial.
  */

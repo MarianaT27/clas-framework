@@ -10,7 +10,7 @@
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -69,7 +69,7 @@ class DISSelectionAlg : public framework::Algorithm {
         Log::info(name(), "Initializing DIS selection algorithm");
 
         m_cutflow.add_cut("All Events");
-        m_cutflow.add_cut("Has Electron");
+        m_cutflow.add_cut("Has Good Electron");
         m_cutflow.add_cut("Q2 Cut");
         m_cutflow.add_cut("W Cut");
         m_cutflow.add_cut("y Cut");
@@ -93,30 +93,31 @@ class DISSelectionAlg : public framework::Algorithm {
         auto electron_opt = framework::EventHelpers::get_selected_electron(event);
         if (!electron_opt) return StatusCode::FILTERED();
         const auto& electron = *electron_opt;
-        m_cutflow.pass("Has Electron");
+        m_cutflow.pass("Has Good Electron");
 
         physics::DISAnalysis::DISKinematics kin = physics::DISAnalysis::calculate_kinematics(electron);
 
-        h_Q2_precut->fill(kin.q2);
-        h_W_precut->fill(kin.w);
-        h_nu_precut->fill(kin.nu);
-        h_xB_precut->fill(kin.xb);
-        h_y_precut->fill(kin.y);
-        h_e_p_precut->fill(electron.p());
-        h_e_theta_precut->fill(electron.theta());
-        h_e_phi_precut->fill(electron.phi());
-        h_Q2_vs_W_precut->fill(kin.w, kin.q2);
-        h_Q2_vs_xB_precut->fill(kin.xb, kin.q2);
-        h_W_vs_y_precut->fill(kin.y, kin.w);
-        h_e_theta_vs_p_precut->fill(electron.p(), electron.theta());
+        h_Q2_precut.fill(kin.q2);
+        h_W_precut.fill(kin.w);
+        h_nu_precut.fill(kin.nu);
+        h_xB_precut.fill(kin.xb);
+        h_y_precut.fill(kin.y);
+        h_e_p_precut.fill(electron.p());
+        h_e_theta_precut.fill(electron.theta());
+        h_e_phi_precut.fill(electron.phi());
+        h_Q2_vs_W_precut.fill(kin.w, kin.q2);
+        h_Q2_vs_xB_precut.fill(kin.xb, kin.q2);
+        h_W_vs_y_precut.fill(kin.y, kin.w);
+        h_e_theta_vs_p_precut.fill(electron.p(), electron.theta());
+
         const bool pass_q2 = !m_enable_q2_cut.get() || (kin.q2 >= m_q2_min.get() && kin.q2 <= m_q2_max.get());
         const bool pass_w = !m_enable_w_cut.get() || (kin.w >= m_w_min.get() && kin.w <= m_w_max.get());
         const bool pass_y = !m_enable_y_cut.get() || (kin.y >= m_y_min.get() && kin.y <= m_y_max.get());
 
         // N-1 histograms: fill if all-other cuts pass.
-        if (pass_w && pass_y) h_Q2_nminus1->fill(kin.q2);
-        if (pass_q2 && pass_y) h_W_nminus1->fill(kin.w);
-        if (pass_q2 && pass_w) h_y_nminus1->fill(kin.y);
+        if (pass_w && pass_y) h_Q2_nminus1.fill(kin.q2);
+        if (pass_q2 && pass_y) h_W_nminus1.fill(kin.w);
+        if (pass_q2 && pass_w) h_y_nminus1.fill(kin.y);
 
         if (!pass_q2) return StatusCode::FILTERED();
         m_cutflow.pass("Q2 Cut");
@@ -135,14 +136,15 @@ class DISSelectionAlg : public framework::Algorithm {
         event.store_typed(framework::Keys::DIS_y, kin.y);
         event.store_typed(framework::Keys::DIS_nu, kin.nu);
 
-        h_Q2->fill(kin.q2);
-        h_W->fill(kin.w);
-        h_nu->fill(kin.nu);
-        h_xB->fill(kin.xb);
-        h_y->fill(kin.y);
-        h_Q2_vs_W->fill(kin.w, kin.q2);
-        h_Q2_vs_xB->fill(kin.xb, kin.q2);
-        h_W_vs_y->fill(kin.y, kin.w);
+        h_Q2.fill(kin.q2);
+        h_W.fill(kin.w);
+        h_nu.fill(kin.nu);
+        h_xB.fill(kin.xb);
+        h_y.fill(kin.y);
+        h_Q2_vs_W.fill(kin.w, kin.q2);
+        h_Q2_vs_xB.fill(kin.xb, kin.q2);
+        h_W_vs_y.fill(kin.y, kin.w);
+
         if (m_ntuple && m_enable_ntuple.get()) {
             m_ntuple.data().e_p = electron.p();
             m_ntuple.data().e_theta = electron.theta();
@@ -192,66 +194,60 @@ class DISSelectionAlg : public framework::Algorithm {
     framework::ServiceRef<framework::HistogramService> m_hist_svc;
     framework::ServiceRef<framework::NTupleService> m_ntuple_svc;
 
-    framework::ThreadLocalHistogram1D* h_Q2 = nullptr;
-    framework::ThreadLocalHistogram1D* h_W = nullptr;
-    framework::ThreadLocalHistogram1D* h_nu = nullptr;
-    framework::ThreadLocalHistogram1D* h_xB = nullptr;
-    framework::ThreadLocalHistogram1D* h_y = nullptr;
+    framework::H1<> h_Q2{mh::regular(0.0, 12.0, static_cast<std::size_t>(100))};
+    framework::H1<> h_W{mh::regular(0.0, 5.0, static_cast<std::size_t>(100))};
+    framework::H1<> h_nu{mh::regular(0, 11, static_cast<std::size_t>(180))};
+    framework::H1<> h_xB{mh::regular(0.0, 1.0, static_cast<std::size_t>(100))};
+    framework::H1<> h_y{mh::regular(0, 1, static_cast<std::size_t>(200))};
 
-    framework::ThreadLocalHistogram1D* h_Q2_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_W_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_nu_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_xB_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_y_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_e_p_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_e_theta_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_e_phi_precut = nullptr;
+    framework::H1<> h_Q2_precut{mh::regular(0.0, 12.0, static_cast<std::size_t>(100))};
+    framework::H1<> h_W_precut{mh::regular(0.0, 5.0, static_cast<std::size_t>(100))};
+    framework::H1<> h_nu_precut{mh::regular(0, 11, static_cast<std::size_t>(180))};
+    framework::H1<> h_xB_precut{mh::regular(0.0, 1.0, static_cast<std::size_t>(100))};
+    framework::H1<> h_y_precut{mh::regular(0, 1, static_cast<std::size_t>(200))};
+    framework::H1<> h_e_p_precut{mh::regular(0.0, 11.0, static_cast<std::size_t>(100))};
+    framework::H1<> h_e_theta_precut{mh::regular(0.0, 180.0, static_cast<std::size_t>(180))};
+    framework::H1<> h_e_phi_precut{mh::regular(-180, 180, static_cast<std::size_t>(360))};
 
-    framework::ThreadLocalHistogram2D* h_Q2_vs_W_precut = nullptr;
-    framework::ThreadLocalHistogram2D* h_Q2_vs_xB_precut = nullptr;
-    framework::ThreadLocalHistogram2D* h_W_vs_y_precut = nullptr;
-    framework::ThreadLocalHistogram2D* h_e_theta_vs_p_precut = nullptr;
+    framework::H2<> h_Q2_vs_W_precut{mh::regular(0, 5, static_cast<std::size_t>(200)), mh::regular(0, 12, static_cast<std::size_t>(200))};
+    framework::H2<> h_Q2_vs_xB_precut{mh::regular(0, 1, static_cast<std::size_t>(200)), mh::regular(0, 12, static_cast<std::size_t>(200))};
+    framework::H2<> h_W_vs_y_precut{mh::regular(0, 1, static_cast<std::size_t>(200)), mh::regular(0, 5, static_cast<std::size_t>(200))};
+    framework::H2<> h_e_theta_vs_p_precut{mh::regular(0, 11, static_cast<std::size_t>(200)), mh::regular(0, 45, static_cast<std::size_t>(200))};
 
-    framework::ThreadLocalHistogram2D* h_Q2_vs_W = nullptr;
-    framework::ThreadLocalHistogram2D* h_Q2_vs_xB = nullptr;
-    framework::ThreadLocalHistogram2D* h_W_vs_y = nullptr;
+    framework::H2<> h_Q2_vs_W{mh::regular(0, 5, static_cast<std::size_t>(200)), mh::regular(0, 12, static_cast<std::size_t>(200))};
+    framework::H2<> h_Q2_vs_xB{mh::regular(0, 1, static_cast<std::size_t>(200)), mh::regular(0, 12, static_cast<std::size_t>(200))};
+    framework::H2<> h_W_vs_y{mh::regular(0, 1, static_cast<std::size_t>(200)), mh::regular(0, 5, static_cast<std::size_t>(200))};
 
-    framework::ThreadLocalHistogram1D* h_Q2_nminus1 = nullptr;
-    framework::ThreadLocalHistogram1D* h_W_nminus1 = nullptr;
-    framework::ThreadLocalHistogram1D* h_y_nminus1 = nullptr;
+    framework::H1<> h_Q2_nminus1{mh::regular(0.0, 12.0, static_cast<std::size_t>(100))};
+    framework::H1<> h_W_nminus1{mh::regular(0.0, 5.0, static_cast<std::size_t>(100))};
+    framework::H1<> h_y_nminus1{mh::regular(0, 1, static_cast<std::size_t>(200))};
 
     framework::NTupleWriter<DISNTupleData> m_ntuple;
 
     auto book_histograms() -> void {
-        auto* svc = m_hist_svc.get();
-
-        h_Q2 = svc->book_hist1D("/DIS/Q2", "Q^{2};Q^{2} [GeV^{2}];Counts", 100, 0.0, 12.0);
-        h_W = svc->book_hist1D("/DIS/W", "W;W [GeV];Counts", 100, 0.0, 5.0);
-        h_nu = svc->book_hist1D("/DIS/nu", "#nu;#nu;Events", 180, 0, 11);
-        h_xB = svc->book_hist1D("/DIS/xB", "x_{B};x_{B};Counts", 100, 0.0, 1.0);
-        h_y = svc->book_hist1D("/DIS/y", "y;y;Events", 200, 0, 1);
-
-        h_Q2_precut = svc->book_hist1D("/DIS/PreCut/Q2", "Q^{2} (pre-cut);Q^{2} [GeV^{2}];Counts", 100, 0.0, 12.0);
-        h_W_precut = svc->book_hist1D("/DIS/PreCut/W", "W (pre-cut);W [GeV];Counts", 100, 0.0, 5.0);
-        h_nu_precut = svc->book_hist1D("/DIS/PreCut/nu", "#nu (pre-cut);#nu;Events", 180, 0, 11);
-        h_xB_precut = svc->book_hist1D("/DIS/PreCut/xB", "x_{B} (pre-cut);x_{B};Counts", 100, 0.0, 1.0);
-        h_y_precut = svc->book_hist1D("/DIS/PreCut/y", "y (pre-cut);y;Events", 200, 0, 1);
-        h_e_p_precut = svc->book_hist1D("/DIS/PreCut/e_p", "Electron p (pre-cut);Momentum [GeV/c];Counts", 100, 0.0, 11.0);
-        h_e_theta_precut = svc->book_hist1D("/DIS/PreCut/e_theta", "Electron #theta (pre-cut);#theta [deg];Counts", 180, 0.0, 180.0);
-        h_e_phi_precut = svc->book_hist1D("/DIS/PreCut/e_phi", "Electron #phi (pre-cut);#phi [deg];Events", 360, -180, 180);
-
-        h_Q2_vs_W_precut = svc->book_hist2D("/DIS/PreCut/Q2_vs_W", "Q^{2} vs W (pre-cut);W [GeV];Q^{2} [GeV^{2}]", 200, 0, 5, 200, 0, 12);
-        h_Q2_vs_xB_precut = svc->book_hist2D("/DIS/PreCut/Q2_vs_xB", "Q^{2} vs x_{B} (pre-cut);x_{B};Q^{2} [GeV^{2}]", 200, 0, 1, 200, 0, 12);
-        h_W_vs_y_precut = svc->book_hist2D("/DIS/PreCut/W_vs_y", "W vs y (pre-cut);y;W [GeV]", 200, 0, 1, 200, 0, 5);
-        h_e_theta_vs_p_precut = svc->book_hist2D("/DIS/PreCut/e_theta_vs_p", "#theta vs p (pre-cut);p [GeV/c];#theta [deg]", 200, 0, 11, 200, 0, 45);
-
-        h_Q2_vs_W = svc->book_hist2D("/DIS/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]", 200, 0, 5, 200, 0, 12);
-        h_Q2_vs_xB = svc->book_hist2D("/DIS/Q2_vs_xB", "Q^{2} vs x_{B};x_{B};Q^{2} [GeV^{2}]", 200, 0, 1, 200, 0, 12);
-        h_W_vs_y = svc->book_hist2D("/DIS/W_vs_y", "W vs y;y;W [GeV]", 200, 0, 1, 200, 0, 5);
-
-        h_Q2_nminus1 = svc->book_hist1D("/DIS/NMinus1/Q2", "Q^{2} (N-1);Q^{2} [GeV^{2}];Counts", 100, 0.0, 12.0);
-        h_W_nminus1 = svc->book_hist1D("/DIS/NMinus1/W", "W (N-1);W [GeV];Counts", 100, 0.0, 5.0);
-        h_y_nminus1 = svc->book_hist1D("/DIS/NMinus1/y", "y (N-1);y;Events", 200, 0, 1);
+        m_hist_svc->register_hist("/DIS/Q2", "Q^{2};Q^{2} [GeV^{2}];Counts", h_Q2);
+        m_hist_svc->register_hist("/DIS/W", "W;W [GeV];Counts", h_W);
+        m_hist_svc->register_hist("/DIS/nu", "#nu;#nu;Events", h_nu);
+        m_hist_svc->register_hist("/DIS/xB", "x_{B};x_{B};Counts", h_xB);
+        m_hist_svc->register_hist("/DIS/y", "y;y;Events", h_y);
+        m_hist_svc->register_hist("/DIS/PreCut/Q2", "Q^{2} (pre-cut);Q^{2} [GeV^{2}];Counts", h_Q2_precut);
+        m_hist_svc->register_hist("/DIS/PreCut/W", "W (pre-cut);W [GeV];Counts", h_W_precut);
+        m_hist_svc->register_hist("/DIS/PreCut/nu", "#nu (pre-cut);#nu;Events", h_nu_precut);
+        m_hist_svc->register_hist("/DIS/PreCut/xB", "x_{B} (pre-cut);x_{B};Counts", h_xB_precut);
+        m_hist_svc->register_hist("/DIS/PreCut/y", "y (pre-cut);y;Events", h_y_precut);
+        m_hist_svc->register_hist("/DIS/PreCut/e_p", "Electron p (pre-cut);Momentum [GeV/c];Counts", h_e_p_precut);
+        m_hist_svc->register_hist("/DIS/PreCut/e_theta", "Electron #theta (pre-cut);#theta [deg];Counts", h_e_theta_precut);
+        m_hist_svc->register_hist("/DIS/PreCut/e_phi", "Electron #phi (pre-cut);#phi [deg];Events", h_e_phi_precut);
+        m_hist_svc->register_hist("/DIS/PreCut/Q2_vs_W", "Q^{2} vs W (pre-cut);W [GeV];Q^{2} [GeV^{2}]", h_Q2_vs_W_precut);
+        m_hist_svc->register_hist("/DIS/PreCut/Q2_vs_xB", "Q^{2} vs x_{B} (pre-cut);x_{B};Q^{2} [GeV^{2}]", h_Q2_vs_xB_precut);
+        m_hist_svc->register_hist("/DIS/PreCut/W_vs_y", "W vs y (pre-cut);y;W [GeV]", h_W_vs_y_precut);
+        m_hist_svc->register_hist("/DIS/PreCut/e_theta_vs_p", "#theta vs p (pre-cut);p [GeV/c];#theta [deg]", h_e_theta_vs_p_precut);
+        m_hist_svc->register_hist("/DIS/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]", h_Q2_vs_W);
+        m_hist_svc->register_hist("/DIS/Q2_vs_xB", "Q^{2} vs x_{B};x_{B};Q^{2} [GeV^{2}]", h_Q2_vs_xB);
+        m_hist_svc->register_hist("/DIS/W_vs_y", "W vs y;y;W [GeV]", h_W_vs_y);
+        m_hist_svc->register_hist("/DIS/NMinus1/Q2", "Q^{2} (N-1);Q^{2} [GeV^{2}];Counts", h_Q2_nminus1);
+        m_hist_svc->register_hist("/DIS/NMinus1/W", "W (N-1);W [GeV];Counts", h_W_nminus1);
+        m_hist_svc->register_hist("/DIS/NMinus1/y", "y (N-1);y;Events", h_y_nminus1);
     }
 };
 

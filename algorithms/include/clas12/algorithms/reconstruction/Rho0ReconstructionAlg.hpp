@@ -309,9 +309,9 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
                 *step_piplus, *step_piminus, electron, virtual_photon, nu, Q2);
 
             for (const auto& cand : step_candidates) {
-                if (ph.mass_all) ph.mass_all->fill(cand.mass);
+                ph.mass_all.fill(cand.mass);
                 if (cand.passes_all_cuts) {
-                    if (ph.mass_selected) ph.mass_selected->fill(cand.mass);
+                    ph.mass_selected.fill(cand.mass);
                 }
             }
         }
@@ -367,10 +367,9 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
                 auto& ch = ch_it->second;
 
                 for (const auto& cand : candidates) {
-                    if (ch.mass_all) ch.mass_all->fill(cand.mass);
-
+                    ch.mass_all.fill(cand.mass);
                     if (passes_cut_scan(cand, def, scan_value)) {
-                        if (ch.mass_selected) ch.mass_selected->fill(cand.mass);
+                        ch.mass_selected.fill(cand.mass);
                         fill_binned_histogram(Q2_BINS, "Q2", ch.mass_q2_bins, Q2, cand.mass);
                     }
                 }
@@ -408,10 +407,9 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
                 *scan_piplus_opt, *scan_piminus_opt, electron, virtual_photon, nu, Q2);
 
             for (const auto& cand : scan_candidates) {
-                if (sh.mass_all) sh.mass_all->fill(cand.mass);
-
+                sh.mass_all.fill(cand.mass);
                 if (cand.passes_all_cuts) {
-                    if (sh.mass_selected) sh.mass_selected->fill(cand.mass);
+                    sh.mass_selected.fill(cand.mass);
                     fill_binned_histogram(Q2_BINS, "Q2", sh.mass_q2_bins, Q2, cand.mass);
                 }
             }
@@ -663,15 +661,15 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
      */
     auto fill_pre_cut_histograms(const std::vector<Rho0Candidate>& candidates) -> void {
         for (const auto& cand : candidates) {
-            h_pipim_mass_all->fill(cand.mass);
-            h_zh->fill(cand.zh);
-            h_lc->fill(cand.lc);
-            h_t->fill(cand.minus_t);
-            h_delta_vz_pim->fill(cand.delta_vz_pim);
-            h_delta_vz_pip->fill(cand.delta_vz_pip);
+            h_pipim_mass_all.fill(cand.mass);
+            h_zh.fill(cand.zh);
+            h_lc.fill(cand.lc);
+            h_t.fill(cand.minus_t);
+            h_delta_vz_pim.fill(cand.delta_vz_pim);
+            h_delta_vz_pip.fill(cand.delta_vz_pip);
             // Region-specific pre-cut mass
             auto& rh = get_region_histograms(cand.detector_region);
-            if (rh.mass_all) rh.mass_all->fill(cand.mass);
+            rh.mass_all.fill(cand.mass);
         }
     }
 
@@ -682,26 +680,25 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
         for (const auto& cand : candidates) {
             if (!cand.passes_all_cuts) continue;
 
-            h_pipim_mass_selected->fill(cand.mass);
-            h_rho0_momentum->fill(cand.momentum);
-            h_rho0_theta->fill(cand.theta);
-            h_rho0_phi->fill(cand.phi);
-            h_opening_angle->fill(cand.opening_angle);
-            h_pipim_mass_vs_momentum->fill(cand.momentum, cand.mass);
-            h_zh_selected->fill(cand.zh);
-            h_lc_selected->fill(cand.lc);
-            h_t_selected->fill(cand.minus_t);
-            h_delta_vz_pim_selected->fill(cand.delta_vz_pim);
-            h_delta_vz_pip_selected->fill(cand.delta_vz_pip);
+            h_pipim_mass_selected.fill(cand.mass);
+            h_rho0_momentum.fill(cand.momentum);
+            h_rho0_theta.fill(cand.theta);
+            h_rho0_phi.fill(cand.phi);
+            h_opening_angle.fill(cand.opening_angle);
+            h_pipim_mass_vs_momentum.fill(cand.momentum, cand.mass);
+            h_zh_selected.fill(cand.zh);
+            h_lc_selected.fill(cand.lc);
+            h_t_selected.fill(cand.minus_t);
+            h_delta_vz_pim_selected.fill(cand.delta_vz_pim);
+            h_delta_vz_pip_selected.fill(cand.delta_vz_pip);
             // Region-specific post-cut histograms
             auto& rh = get_region_histograms(cand.detector_region);
-            if (rh.mass_selected) rh.mass_selected->fill(cand.mass);
-            if (rh.momentum) rh.momentum->fill(cand.momentum);
-            if (rh.theta) rh.theta->fill(cand.theta);
-            if (rh.phi) rh.phi->fill(cand.phi);
-            if (rh.opening_angle) rh.opening_angle->fill(cand.opening_angle);
-            if (rh.mass_vs_momentum) rh.mass_vs_momentum->fill(cand.momentum, cand.mass);
-
+            rh.mass_selected.fill(cand.mass);
+            rh.momentum.fill(cand.momentum);
+            rh.theta.fill(cand.theta);
+            rh.phi.fill(cand.phi);
+            rh.opening_angle.fill(cand.opening_angle);
+            rh.mass_vs_momentum.fill(cand.momentum, cand.mass);
             // Increment region counter
             switch (cand.detector_region) {
                 case DetectorRegion::ForwardForward: m_rho0_ff++; break;
@@ -749,28 +746,28 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
         for (const auto& cand : candidates) {
             // N-1 for delta_vz_pim (skip=0): all cuts except delta_vz_pim
             if (passes_all_except(cand, 0)) {
-                h_delta_vz_pim_nminus1->fill(cand.delta_vz_pim);
-                h_pipim_mass_nminus1_delta_vz_pim->fill(cand.mass);
+                h_delta_vz_pim_nminus1.fill(cand.delta_vz_pim);
+                h_pipim_mass_nminus1_delta_vz_pim.fill(cand.mass);
             }
             // N-1 for delta_vz_pip (skip=1): all cuts except delta_vz_pip
             if (passes_all_except(cand, 1)) {
-                h_delta_vz_pip_nminus1->fill(cand.delta_vz_pip);
-                h_pipim_mass_nminus1_delta_vz_pip->fill(cand.mass);
+                h_delta_vz_pip_nminus1.fill(cand.delta_vz_pip);
+                h_pipim_mass_nminus1_delta_vz_pip.fill(cand.mass);
             }
             // N-1 for zh (skip=2): all cuts except zh
             if (passes_all_except(cand, 2)) {
-                h_zh_nminus1->fill(cand.zh);
-                h_pipim_mass_nminus1_zh->fill(cand.mass);
+                h_zh_nminus1.fill(cand.zh);
+                h_pipim_mass_nminus1_zh.fill(cand.mass);
             }
             // N-1 for lc (skip=3): all cuts except lc
             if (passes_all_except(cand, 3)) {
-                h_lc_nminus1->fill(cand.lc);
-                h_pipim_mass_nminus1_lc->fill(cand.mass);
+                h_lc_nminus1.fill(cand.lc);
+                h_pipim_mass_nminus1_lc.fill(cand.mass);
             }
             // N-1 for -t (skip=4): all cuts except -t
             if (passes_all_except(cand, 4)) {
-                h_t_nminus1->fill(cand.minus_t);
-                h_pipim_mass_nminus1_t->fill(cand.mass);
+                h_t_nminus1.fill(cand.minus_t);
+                h_pipim_mass_nminus1_t.fill(cand.mass);
             }
         }
     }
@@ -934,14 +931,14 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
     // Region-specific histogram set (mass + kinematics)
     struct RegionHistograms {
-        framework::ThreadLocalHistogram1D* mass_all = nullptr;
-        framework::ThreadLocalHistogram1D* mass_selected = nullptr;
-        framework::ThreadLocalHistogram1D* momentum = nullptr;
-        framework::ThreadLocalHistogram1D* theta = nullptr;
-        framework::ThreadLocalHistogram1D* phi = nullptr;
-        framework::ThreadLocalHistogram1D* opening_angle = nullptr;
-        framework::ThreadLocalHistogram2D* mass_vs_momentum = nullptr;
-        std::map<std::string, framework::ThreadLocalHistogram1D*> mass_q2_bins;
+        framework::H1<> mass_all{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
+        framework::H1<> mass_selected{mh::regular(0, 1.2, static_cast<std::size_t>(200))};
+        framework::H1<> momentum{mh::regular(0, 10, static_cast<std::size_t>(100))};
+        framework::H1<> theta{mh::regular(0, 180, static_cast<std::size_t>(180))};
+        framework::H1<> phi{mh::regular(-180, 180, static_cast<std::size_t>(360))};
+        framework::H1<> opening_angle{mh::regular(0, 180, static_cast<std::size_t>(180))};
+        framework::H2<> mass_vs_momentum{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(0.4, 1.2, static_cast<std::size_t>(100))};
+        std::map<std::string, std::unique_ptr<framework::H1<>>> mass_q2_bins;
     };
 
     RegionHistograms m_hist_ff;     // Forward-Forward
@@ -955,9 +952,9 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
     // Sigma scan histogram set
     struct ScanHistograms {
-        framework::ThreadLocalHistogram1D* mass_all = nullptr;
-        framework::ThreadLocalHistogram1D* mass_selected = nullptr;
-        std::map<std::string, framework::ThreadLocalHistogram1D*> mass_q2_bins;
+        framework::H1<> mass_all{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
+        framework::H1<> mass_selected{mh::regular(0, 1.2, static_cast<std::size_t>(200))};
+        std::map<std::string, std::unique_ptr<framework::H1<>>> mass_q2_bins;
     };
     std::map<std::string, ScanHistograms> m_sigma_scan_histograms;
 
@@ -1005,46 +1002,46 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
     }
 
     // Histograms - Rho0 candidates (atomic for thread-safety)
-    framework::ThreadLocalHistogram1D* h_pipim_mass_all = nullptr;
-    framework::ThreadLocalHistogram1D* h_pipim_mass_selected = nullptr;
-    framework::ThreadLocalHistogram1D* h_rho0_momentum = nullptr;
-    framework::ThreadLocalHistogram1D* h_rho0_theta = nullptr;
-    framework::ThreadLocalHistogram1D* h_rho0_phi = nullptr;
-    framework::ThreadLocalHistogram1D* h_opening_angle = nullptr;
-    framework::ThreadLocalHistogram2D* h_pipim_mass_vs_momentum = nullptr;
+    framework::H1<> h_pipim_mass_all{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
+    framework::H1<> h_pipim_mass_selected{mh::regular(0, 1.2, static_cast<std::size_t>(200))};
+    framework::H1<> h_rho0_momentum{mh::regular(0, 10, static_cast<std::size_t>(100))};
+    framework::H1<> h_rho0_theta{mh::regular(0, 180, static_cast<std::size_t>(180))};
+    framework::H1<> h_rho0_phi{mh::regular(-180, 180, static_cast<std::size_t>(360))};
+    framework::H1<> h_opening_angle{mh::regular(0, 180, static_cast<std::size_t>(180))};
+    framework::H2<> h_pipim_mass_vs_momentum{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(0.4, 1.2, static_cast<std::size_t>(100))};
 
     // Histograms - Kinematic variables (before cuts)
-    framework::ThreadLocalHistogram1D* h_zh = nullptr;
-    framework::ThreadLocalHistogram1D* h_lc = nullptr;
-    framework::ThreadLocalHistogram1D* h_t = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_vz_pim = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_vz_pip = nullptr;
+    framework::H1<> h_zh{mh::regular(0, 1.5, static_cast<std::size_t>(100))};
+    framework::H1<> h_lc{mh::regular(0, 5, static_cast<std::size_t>(100))};
+    framework::H1<> h_t{mh::regular(0, 2, static_cast<std::size_t>(100))};
+    framework::H1<> h_delta_vz_pim{mh::regular(-20, 20, static_cast<std::size_t>(100))};
+    framework::H1<> h_delta_vz_pip{mh::regular(-20, 20, static_cast<std::size_t>(100))};
 
     // Histograms - Kinematic variables (after cuts)
-    framework::ThreadLocalHistogram1D* h_zh_selected = nullptr;
-    framework::ThreadLocalHistogram1D* h_lc_selected = nullptr;
-    framework::ThreadLocalHistogram1D* h_t_selected = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_vz_pim_selected = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_vz_pip_selected = nullptr;
+    framework::H1<> h_zh_selected{mh::regular(0, 1.5, static_cast<std::size_t>(100))};
+    framework::H1<> h_lc_selected{mh::regular(0, 5, static_cast<std::size_t>(100))};
+    framework::H1<> h_t_selected{mh::regular(0, 2, static_cast<std::size_t>(100))};
+    framework::H1<> h_delta_vz_pim_selected{mh::regular(-20, 20, static_cast<std::size_t>(100))};
+    framework::H1<> h_delta_vz_pip_selected{mh::regular(-20, 20, static_cast<std::size_t>(100))};
 
     // N-1 histograms: cut variable distributions with all other cuts applied
-    framework::ThreadLocalHistogram1D* h_zh_nminus1 = nullptr;
-    framework::ThreadLocalHistogram1D* h_lc_nminus1 = nullptr;
-    framework::ThreadLocalHistogram1D* h_t_nminus1 = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_vz_pip_nminus1 = nullptr;
-    framework::ThreadLocalHistogram1D* h_delta_vz_pim_nminus1 = nullptr;
+    framework::H1<> h_zh_nminus1{mh::regular(0, 1.5, static_cast<std::size_t>(100))};
+    framework::H1<> h_lc_nminus1{mh::regular(0, 5, static_cast<std::size_t>(100))};
+    framework::H1<> h_t_nminus1{mh::regular(0, 2, static_cast<std::size_t>(100))};
+    framework::H1<> h_delta_vz_pip_nminus1{mh::regular(-20, 20, static_cast<std::size_t>(100))};
+    framework::H1<> h_delta_vz_pim_nminus1{mh::regular(-20, 20, static_cast<std::size_t>(100))};
     // N-1 histograms: invariant mass with all other cuts applied
-    framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_zh = nullptr;
-    framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_lc = nullptr;
-    framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_t = nullptr;
-    framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_delta_vz_pip = nullptr;
-    framework::ThreadLocalHistogram1D* h_pipim_mass_nminus1_delta_vz_pim = nullptr;
+    framework::H1<> h_pipim_mass_nminus1_zh{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
+    framework::H1<> h_pipim_mass_nminus1_lc{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
+    framework::H1<> h_pipim_mass_nminus1_t{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
+    framework::H1<> h_pipim_mass_nminus1_delta_vz_pip{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
+    framework::H1<> h_pipim_mass_nminus1_delta_vz_pim{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
 
     // Q²-binned invariant mass histograms
-    std::map<std::string, framework::ThreadLocalHistogram1D*> h_pipim_mass_q2_bins;
+    std::map<std::string, std::unique_ptr<framework::H1<>>> h_pipim_mass_q2_bins;
 
     // lc-binned invariant mass histograms
-    std::map<std::string, framework::ThreadLocalHistogram1D*> h_pipim_mass_lc_bins;
+    std::map<std::string, std::unique_ptr<framework::H1<>>> h_pipim_mass_lc_bins;
 
     // Q² bin edges: 1.0-2.0, 2.0-2.5, 2.5-3.0, 3.0-3.5, 3.5-4.5, 4.5-6 GeV²
     static constexpr std::array<std::pair<double, double>, 6> Q2_BINS = {{
@@ -1151,7 +1148,7 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
     template<typename BinArray>
     static auto fill_binned_histogram(
         const BinArray& bins, const std::string& prefix,
-        const std::map<std::string, framework::ThreadLocalHistogram1D*>& hist_map,
+        const std::map<std::string, std::unique_ptr<framework::H1<>>>& hist_map,
         double variable, double fill_value
     ) -> void {
         for (size_t i = 0; i < bins.size(); ++i) {
@@ -1226,37 +1223,36 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
     template<typename HistSvc>
     auto book_main_histograms(HistSvc* svc) -> void {
-        h_pipim_mass_all = svc->book_hist1D("/Rho0/pipim_mass_all", "All #pi^{+}#pi^{-} Invariant Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
-        h_pipim_mass_selected = svc->book_hist1D("/Rho0/pipim_mass_selected", "Selected #rho^{0} Candidate Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 1.2);
-        h_rho0_momentum = svc->book_hist1D("/Rho0/rho0_momentum", "#rho^{0} Momentum;p [GeV/c];Events", 100, 0, 10);
-        h_rho0_theta = svc->book_hist1D("/Rho0/rho0_theta", "#rho^{0} Theta;#theta [deg];Events", 180, 0, 180);
-        h_rho0_phi = svc->book_hist1D("/Rho0/rho0_phi", "#rho^{0} Phi;#phi [deg];Events", 360, -180, 180);
-        h_opening_angle = svc->book_hist1D("/Rho0/opening_angle", "#pi^{+}#pi^{-} Opening Angle;#theta_{#pi^{+}#pi^{-}} [deg];Events", 180, 0, 180);
+        svc->register_hist("/Rho0/pipim_mass_all", "All #pi^{+}#pi^{-} Invariant Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_all);
+        svc->register_hist("/Rho0/pipim_mass_selected", "Selected #rho^{0} Candidate Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_selected);
+        svc->register_hist("/Rho0/rho0_momentum", "#rho^{0} Momentum;p [GeV/c];Events", h_rho0_momentum);
+        svc->register_hist("/Rho0/rho0_theta", "#rho^{0} Theta;#theta [deg];Events", h_rho0_theta);
+        svc->register_hist("/Rho0/rho0_phi", "#rho^{0} Phi;#phi [deg];Events", h_rho0_phi);
+        svc->register_hist("/Rho0/opening_angle", "#pi^{+}#pi^{-} Opening Angle;#theta_{#pi^{+}#pi^{-}} [deg];Events", h_opening_angle);
 
-        h_pipim_mass_vs_momentum = svc->book_hist2D("/Rho0/pipim_mass_vs_momentum",
-            "#pi^{+}#pi^{-} Mass vs Momentum;p [GeV/c];M_{#pi^{+}#pi^{-}} [GeV/c^{2}]",
-            100, 0, 10, 100, 0.4, 1.2);
+        svc->register_hist("/Rho0/pipim_mass_vs_momentum", "#pi^{+}#pi^{-} Mass vs Momentum;p [GeV/c];M_{#pi^{+}#pi^{-}} [GeV/c^{2}]", h_pipim_mass_vs_momentum);
 
         // Kinematic variable histograms (before cuts)
-        h_zh = svc->book_hist1D("/Rho0/zh", "z_{h} (before cuts);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
-        h_lc = svc->book_hist1D("/Rho0/lc", "Coherence Length (before cuts);l_{c} [fm];Events", 100, 0, 5);
-        h_t = svc->book_hist1D("/Rho0/t", "-t (before cuts);-t [GeV^{2}];Events", 100, 0, 2);
-        h_delta_vz_pim = svc->book_hist1D("/Rho0/delta_vz_pim", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -20, 20);
-        h_delta_vz_pip = svc->book_hist1D("/Rho0/delta_vz_pip", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -20, 20);
+        svc->register_hist("/Rho0/zh", "z_{h} (before cuts);z_{h} = E_{#rho^{0}}/#nu;Events", h_zh);
+        svc->register_hist("/Rho0/lc", "Coherence Length (before cuts);l_{c} [fm];Events", h_lc);
+        svc->register_hist("/Rho0/t", "-t (before cuts);-t [GeV^{2}];Events", h_t);
+        svc->register_hist("/Rho0/delta_vz_pim", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", h_delta_vz_pim);
+        svc->register_hist("/Rho0/delta_vz_pip", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", h_delta_vz_pip);
 
         // Kinematic variable histograms (after cuts)
-        h_zh_selected = svc->book_hist1D("/Rho0/zh_selected", "z_{h} (after cuts);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
-        h_lc_selected = svc->book_hist1D("/Rho0/lc_selected", "Coherence Length (after cuts);l_{c} [fm];Events", 100, 0, 5);
-        h_t_selected = svc->book_hist1D("/Rho0/t_selected", "-t (after cuts);-t [GeV^{2}];Events", 100, 0, 2);
-        h_delta_vz_pim_selected = svc->book_hist1D("/Rho0/delta_vz_pim_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -20, 20);
-        h_delta_vz_pip_selected = svc->book_hist1D("/Rho0/delta_vz_pip_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -20, 20);
+        svc->register_hist("/Rho0/zh_selected", "z_{h} (after cuts);z_{h} = E_{#rho^{0}}/#nu;Events", h_zh_selected);
+        svc->register_hist("/Rho0/lc_selected", "Coherence Length (after cuts);l_{c} [fm];Events", h_lc_selected);
+        svc->register_hist("/Rho0/t_selected", "-t (after cuts);-t [GeV^{2}];Events", h_t_selected);
+        svc->register_hist("/Rho0/delta_vz_pim_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", h_delta_vz_pim_selected);
+        svc->register_hist("/Rho0/delta_vz_pip_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", h_delta_vz_pip_selected);
 
         // Q²-binned invariant mass histograms
         for (const auto& [q2_min, q2_max] : Q2_BINS) {
             std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
             std::string hist_path = fmt::format("/Rho0/Q2_bins/pipim_mass_{}", bin_name);
             std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", q2_min, q2_max);
-            h_pipim_mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+            h_pipim_mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, static_cast<std::size_t>(200)));
+            svc->register_hist(hist_path, title, *h_pipim_mass_q2_bins[bin_name]);
         }
 
         // lc-binned invariant mass histograms
@@ -1264,59 +1260,43 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
             std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", lc_min, lc_max);
             std::string hist_path = fmt::format("/Rho0/LC_bins/pipim_mass_{}", bin_name);
             std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
-            h_pipim_mass_lc_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+            h_pipim_mass_lc_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, static_cast<std::size_t>(200)));
+            svc->register_hist(hist_path, title, *h_pipim_mass_lc_bins[bin_name]);
         }
     }
 
     template<typename HistSvc>
     auto book_nminus1_histograms(HistSvc* svc) -> void {
-        h_zh_nminus1 = svc->book_hist1D("/Rho0/NMinus1/zh_nminus1",
-            "z_{h} (N-1);z_{h} = E_{#rho^{0}}/#nu;Events", 100, 0, 1.5);
-        h_lc_nminus1 = svc->book_hist1D("/Rho0/NMinus1/lc_nminus1",
-            "Coherence Length (N-1);l_{c} [fm];Events", 100, 0, 5);
-        h_t_nminus1 = svc->book_hist1D("/Rho0/NMinus1/t_nminus1",
-            "-t (N-1);-t [GeV^{2}];Events", 100, 0, 2);
-        h_delta_vz_pip_nminus1 = svc->book_hist1D("/Rho0/NMinus1/delta_vz_pip_nminus1",
-            "#Delta v_{z} #pi^{+} (N-1);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", 100, -20, 20);
-        h_delta_vz_pim_nminus1 = svc->book_hist1D("/Rho0/NMinus1/delta_vz_pim_nminus1",
-            "#Delta v_{z} #pi^{-} (N-1);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", 100, -20, 20);
+        svc->register_hist("/Rho0/NMinus1/zh_nminus1", "z_{h} (N-1);z_{h} = E_{#rho^{0}}/#nu;Events", h_zh_nminus1);
+        svc->register_hist("/Rho0/NMinus1/lc_nminus1", "Coherence Length (N-1);l_{c} [fm];Events", h_lc_nminus1);
+        svc->register_hist("/Rho0/NMinus1/t_nminus1", "-t (N-1);-t [GeV^{2}];Events", h_t_nminus1);
+        svc->register_hist("/Rho0/NMinus1/delta_vz_pip_nminus1", "#Delta v_{z} #pi^{+} (N-1);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", h_delta_vz_pip_nminus1);
+        svc->register_hist("/Rho0/NMinus1/delta_vz_pim_nminus1", "#Delta v_{z} #pi^{-} (N-1);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", h_delta_vz_pim_nminus1);
 
-        h_pipim_mass_nminus1_zh = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_zh",
-            "M_{#pi^{+}#pi^{-}} (all cuts except z_{h});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
-        h_pipim_mass_nminus1_lc = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_lc",
-            "M_{#pi^{+}#pi^{-}} (all cuts except l_{c});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
-        h_pipim_mass_nminus1_t = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_t",
-            "M_{#pi^{+}#pi^{-}} (all cuts except -t);M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
-        h_pipim_mass_nminus1_delta_vz_pip = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pip",
-            "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{+});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
-        h_pipim_mass_nminus1_delta_vz_pim = svc->book_hist1D("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pim",
-            "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{-});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 200, 0, 2.0);
+        svc->register_hist("/Rho0/NMinus1/pipim_mass_nminus1_zh", "M_{#pi^{+}#pi^{-}} (all cuts except z_{h});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_nminus1_zh);
+        svc->register_hist("/Rho0/NMinus1/pipim_mass_nminus1_lc", "M_{#pi^{+}#pi^{-}} (all cuts except l_{c});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_nminus1_lc);
+        svc->register_hist("/Rho0/NMinus1/pipim_mass_nminus1_t", "M_{#pi^{+}#pi^{-}} (all cuts except -t);M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_nminus1_t);
+        svc->register_hist("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pip", "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{+});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_nminus1_delta_vz_pip);
+        svc->register_hist("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pim", "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{-});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_nminus1_delta_vz_pim);
     }
 
     template<typename HistSvc>
     auto book_region_histograms(HistSvc* svc) -> void {
         auto book_region = [svc](RegionHistograms& h, const std::string& dir, const std::string& label) {
-            h.mass_all = svc->book_hist1D(dir + "/pipim_mass_all",
-                fmt::format("{} #pi^{{+}}#pi^{{-}} Invariant Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), 200, 0, 2.0);
-            h.mass_selected = svc->book_hist1D(dir + "/pipim_mass_selected",
-                fmt::format("{} Selected #rho^{{0}} Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), 200, 0, 1.2);
-            h.momentum = svc->book_hist1D(dir + "/rho0_momentum",
-                fmt::format("{} #rho^{{0}} Momentum;p [GeV/c];Events", label), 100, 0, 10);
-            h.theta = svc->book_hist1D(dir + "/rho0_theta",
-                fmt::format("{} #rho^{{0}} Theta;#theta [deg];Events", label), 180, 0, 180);
-            h.phi = svc->book_hist1D(dir + "/rho0_phi",
-                fmt::format("{} #rho^{{0}} Phi;#phi [deg];Events", label), 360, -180, 180);
-            h.opening_angle = svc->book_hist1D(dir + "/opening_angle",
-                fmt::format("{} #pi^{{+}}#pi^{{-}} Opening Angle;#theta_{{#pi^{{+}}#pi^{{-}}}} [deg];Events", label), 180, 0, 180);
-            h.mass_vs_momentum = svc->book_hist2D(dir + "/pipim_mass_vs_momentum",
-                fmt::format("{} #pi^{{+}}#pi^{{-}} Mass vs Momentum;p [GeV/c];M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}]", label),
-                100, 0, 10, 100, 0.4, 1.2);
+            svc->register_hist(dir + "/pipim_mass_all", fmt::format("{} #pi^{{+}}#pi^{{-}} Invariant Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), h.mass_all);
+            svc->register_hist(dir + "/pipim_mass_selected", fmt::format("{} Selected #rho^{{0}} Mass;M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label), h.mass_selected);
+            svc->register_hist(dir + "/rho0_momentum", fmt::format("{} #rho^{{0}} Momentum;p [GeV/c];Events", label), h.momentum);
+            svc->register_hist(dir + "/rho0_theta", fmt::format("{} #rho^{{0}} Theta;#theta [deg];Events", label), h.theta);
+            svc->register_hist(dir + "/rho0_phi", fmt::format("{} #rho^{{0}} Phi;#phi [deg];Events", label), h.phi);
+            svc->register_hist(dir + "/opening_angle", fmt::format("{} #pi^{{+}}#pi^{{-}} Opening Angle;#theta_{{#pi^{{+}}#pi^{{-}}}} [deg];Events", label), h.opening_angle);
+            svc->register_hist(dir + "/pipim_mass_vs_momentum", fmt::format("{} #pi^{{+}}#pi^{{-}} Mass vs Momentum;p [GeV/c];M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}]", label), h.mass_vs_momentum);
 
             for (const auto& [q2_min, q2_max] : Q2_BINS) {
                 std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
                 std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
                 std::string title = fmt::format("{} #pi^{{+}}#pi^{{-}} Mass ({:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label, q2_min, q2_max);
-                h.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+                h.mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, static_cast<std::size_t>(200)));
+                svc->register_hist(hist_path, title, *h.mass_q2_bins[bin_name]);
             }
         };
         book_region(m_hist_ff, "/Rho0/Forward", "FD-FD");
@@ -1330,25 +1310,20 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
             std::string label = format_sigma_label(sigma);
             std::string dir = fmt::format("/Rho0/SigmaScan/{}", label);
 
-            ScanHistograms sh;
-            sh.mass_all = svc->book_hist1D(
-                dir + "/pipim_mass_all",
-                fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f}#sigma);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", sigma),
-                200, 0, 2.0);
-            sh.mass_selected = svc->book_hist1D(
-                dir + "/pipim_mass_selected",
-                fmt::format("Selected #rho^{{0}} Mass ({:.1f}#sigma);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", sigma),
-                200, 0, 1.2);
+            // Construct in-place inside the map so that the histogram addresses
+            // we register with the service remain stable.
+            auto& sh = m_sigma_scan_histograms[label];
+            svc->register_hist(dir + "/pipim_mass_all", fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f}#sigma);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", sigma), sh.mass_all);
+            svc->register_hist(dir + "/pipim_mass_selected", fmt::format("Selected #rho^{{0}} Mass ({:.1f}#sigma);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", sigma), sh.mass_selected);
 
             for (const auto& [q2_min, q2_max] : Q2_BINS) {
                 std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
                 std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
                 std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f}#sigma, {:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
                     sigma, q2_min, q2_max);
-                sh.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+                sh.mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, static_cast<std::size_t>(200)));
+                svc->register_hist(hist_path, title, *sh.mass_q2_bins[bin_name]);
             }
-
-            m_sigma_scan_histograms[label] = sh;
         }
     }
 
@@ -1363,17 +1338,9 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
             const char* display = PION_CUT_DISPLAY_NAMES[i];
             std::string dir = fmt::format("/Rho0/PionCutImpact/{}", label);
 
-            ScanHistograms ph;
-            ph.mass_all = svc->book_hist1D(
-                dir + "/pipim_mass_all",
-                fmt::format("#pi^{{+}}#pi^{{-}} Mass ({});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", display),
-                200, 0, 2.0);
-            ph.mass_selected = svc->book_hist1D(
-                dir + "/pipim_mass_selected",
-                fmt::format("Selected #rho^{{0}} Mass ({});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", display),
-                200, 0, 1.2);
-
-            m_pion_cut_step_histograms[label] = ph;
+            auto& ph = m_pion_cut_step_histograms[label];
+            svc->register_hist(dir + "/pipim_mass_all", fmt::format("#pi^{{+}}#pi^{{-}} Mass ({});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", display), ph.mass_all);
+            svc->register_hist(dir + "/pipim_mass_selected", fmt::format("Selected #rho^{{0}} Mass ({});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", display), ph.mass_selected);
         }
     }
 
@@ -1395,17 +1362,11 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
                     ? fmt::format("{:.2f}", val)
                     : fmt::format("{:.2f} {}", val, unit);
 
-                ScanHistograms ch;
-                ch.mass_all = svc->book_hist1D(
-                    dir + "/pipim_mass_all",
-                    fmt::format("#pi^{{+}}#pi^{{-}} Mass ({} = {});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
-                        display_prefix, val_display),
-                    200, 0, 2.0);
-                ch.mass_selected = svc->book_hist1D(
-                    dir + "/pipim_mass_selected",
-                    fmt::format("Selected #rho^{{0}} Mass ({} = {});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
-                        display_prefix, val_display),
-                    200, 0, 1.2);
+                auto& ch = scan_map[label];
+                svc->register_hist(dir + "/pipim_mass_all", fmt::format("#pi^{{+}}#pi^{{-}} Mass ({} = {});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
+                        display_prefix, val_display), ch.mass_all);
+                svc->register_hist(dir + "/pipim_mass_selected", fmt::format("Selected #rho^{{0}} Mass ({} = {});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
+                        display_prefix, val_display), ch.mass_selected);
 
                 for (const auto& [q2_min, q2_max] : Q2_BINS) {
                     std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
@@ -1413,10 +1374,9 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
                     std::string title = fmt::format(
                         "#pi^{{+}}#pi^{{-}} Mass ({} = {}, {:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
                         display_prefix, val_display, q2_min, q2_max);
-                    ch.mass_q2_bins[bin_name] = svc->book_hist1D(hist_path, title, 200, 0.0, 1.4);
+                    ch.mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, static_cast<std::size_t>(200)));
+                    svc->register_hist(hist_path, title, *ch.mass_q2_bins[bin_name]);
                 }
-
-                scan_map[label] = ch;
             }
         };
 
@@ -1468,13 +1428,19 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
             ScanFitResult sr;
             sr.scan_value = val;
-            sr.total_entries = sh.mass_selected ? static_cast<double>(sh.mass_selected->entries()) : 0;
+            // Total fills are tracked via the underlying CountAccumulator on each bin.
+            std::uint64_t entries = 0;
+            for (std::size_t i = 0; i < sh.mass_selected.size(); ++i) {
+                entries += sh.mass_selected.at(i).n;
+            }
+            sr.total_entries = static_cast<double>(entries);
 
-            if (sh.mass_selected && sh.mass_selected->entries() > 100) {
-                auto root_hist = sh.mass_selected->to_root(
-                    fmt::format("{}_scan_{}_fit", def.name, label),
+            if (entries > 100) {
+                auto root_hist = std::unique_ptr<TH1D>(mh::to_root(
+                    sh.mass_selected,
+                    fmt::format("{}_scan_{}_fit", def.name, label).c_str(),
                     fmt::format("{} = {}", def.column_name,
-                        fmt::format(fmt::runtime(def.value_format), val)));
+                        fmt::format(fmt::runtime(def.value_format), val)).c_str()));
 
                 auto result = fit_histogram(root_hist.get(),
                     fmt::format("{} scan ({})", def.display_name,
@@ -1614,9 +1580,16 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
         double total_rho0_wide = 0.0;
         double total_rho0_wide_err_sq = 0.0;
 
+        // Helper: sum bin counts from an mh::Histogram with CountAccumulator.
+        auto entries_of = [](const auto& h) -> std::uint64_t {
+            std::uint64_t n = 0;
+            for (std::size_t i = 0; i < h.size(); ++i) n += h.at(i).n;
+            return n;
+        };
+
         // Fit the main selected mass histogram with both ranges
-        if (h_pipim_mass_selected->entries() > 100) {
-            auto root_hist = h_pipim_mass_selected->to_root("pipim_mass_selected_fit", "Selected Mass");
+        if (entries_of(h_pipim_mass_selected) > 100) {
+            auto root_hist = std::unique_ptr<TH1D>(mh::to_root(h_pipim_mass_selected, "pipim_mass_selected_fit", "Selected Mass"));
             auto [result_narrow, result_wide] = fit_histogram_compare_ranges(root_hist.get(), "All Q² (selected)");
             if (result_narrow.valid) fit_results_narrow["All"] = result_narrow;
             if (result_wide.valid) fit_results_wide["All"] = result_wide;
@@ -1624,8 +1597,8 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
         // Fit Q²-binned histograms with both ranges
         for (const auto& [bin_name, hist] : h_pipim_mass_q2_bins) {
-            if (hist && hist->entries() > 50) {
-                auto root_hist = hist->to_root(bin_name + "_fit", bin_name);
+            if (hist && entries_of(*hist) > 50) {
+                auto root_hist = std::unique_ptr<TH1D>(mh::to_root(*hist, (bin_name + "_fit").c_str(), bin_name.c_str()));
                 auto [result_narrow, result_wide] = fit_histogram_compare_ranges(root_hist.get(), bin_name);
                 if (result_narrow.valid) {
                     fit_results_narrow[bin_name] = result_narrow;
@@ -1653,8 +1626,8 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
         // Fit lc-binned histograms with both ranges
         for (const auto& [bin_name, hist] : h_pipim_mass_lc_bins) {
-            if (hist && hist->entries() > 50) {
-                auto root_hist = hist->to_root(bin_name + "_fit", bin_name);
+            if (hist && entries_of(*hist) > 50) {
+                auto root_hist = std::unique_ptr<TH1D>(mh::to_root(*hist, (bin_name + "_fit").c_str(), bin_name.c_str()));
                 auto [result_narrow, result_wide] = fit_histogram_compare_ranges(root_hist.get(), bin_name);
                 if (result_narrow.valid) {
                     fit_results_narrow[bin_name] = result_narrow;
@@ -1949,8 +1922,14 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
         double total_narrow = 0.0, total_narrow_err_sq = 0.0;
         double total_wide = 0.0, total_wide_err_sq = 0.0;
 
-        if (rh.mass_selected && rh.mass_selected->entries() > 100) {
-            auto root_hist = rh.mass_selected->to_root("mass_selected_fit", region_label);
+        auto entries_of = [](const auto& h) -> std::uint64_t {
+            std::uint64_t n = 0;
+            for (std::size_t i = 0; i < h.size(); ++i) n += h.at(i).n;
+            return n;
+        };
+
+        if (entries_of(rh.mass_selected) > 100) {
+            auto root_hist = std::unique_ptr<TH1D>(mh::to_root(rh.mass_selected, "mass_selected_fit", region_label.c_str()));
             auto [rn, rw] = fit_histogram_compare_ranges(root_hist.get(), region_label + " All Q²");
             if (rn.valid) results_narrow["All"] = rn;
             if (rw.valid) results_wide["All"] = rw;
@@ -1958,8 +1937,8 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
         // Fit Q²-binned histograms
         for (const auto& [bin_name, hist] : rh.mass_q2_bins) {
-            if (hist && hist->entries() > 50) {
-                auto root_hist = hist->to_root(bin_name + "_fit", bin_name);
+            if (hist && entries_of(*hist) > 50) {
+                auto root_hist = std::unique_ptr<TH1D>(mh::to_root(*hist, (bin_name + "_fit").c_str(), bin_name.c_str()));
                 auto [rn, rw] = fit_histogram_compare_ranges(root_hist.get(), region_label + " " + bin_name);
                 if (rn.valid) {
                     results_narrow[bin_name] = rn;

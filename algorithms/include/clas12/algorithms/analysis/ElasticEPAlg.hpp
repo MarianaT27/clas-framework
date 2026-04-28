@@ -11,7 +11,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -120,12 +120,12 @@ class ElasticEPAlg : public framework::Algorithm {
         m_cutflow.pass("Has Electron");
 
         double vz = electron.vz();
-        h_Vz_precut->fill(vz);
+        h_Vz_precut.fill(vz);
         if (m_enable_vz_cut.get() && (vz < m_Vz_min.get() || vz > m_Vz_max.get())) return StatusCode::FILTERED();
         m_cutflow.pass("Vz Cut");
 
-        h_W_precut->fill(kin.W);
-        h_Q2_precut->fill(kin.Q2);
+        h_W_precut.fill(kin.W);
+        h_Q2_precut.fill(kin.Q2);
         if (m_enable_w_cut.get() && (kin.W < m_W_min.get() || kin.W > m_W_max.get())) return StatusCode::FILTERED();
         m_cutflow.pass("W Cut");
 
@@ -136,7 +136,7 @@ class ElasticEPAlg : public framework::Algorithm {
         event.store_typed(framework::Keys::ElasticNu, kin.nu);
 
         fill_histograms(kin);
-        h_Vz->fill(vz);
+        h_Vz.fill(vz);
         if (m_ntuple) {
             auto& d = m_ntuple_writer.data();
             d.e_p = electron.p();
@@ -174,14 +174,14 @@ class ElasticEPAlg : public framework::Algorithm {
     framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService> m_ntuple;
 
-    framework::ThreadLocalHistogram1D* h_Q2 = nullptr;
-    framework::ThreadLocalHistogram1D* h_Q2_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_W = nullptr;
-    framework::ThreadLocalHistogram1D* h_W_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_nu = nullptr;
-    framework::ThreadLocalHistogram2D* h_p_e_vs_theta_e = nullptr;
-    framework::ThreadLocalHistogram1D* h_Vz_precut = nullptr;
-    framework::ThreadLocalHistogram1D* h_Vz = nullptr;
+    framework::H1<> h_Q2{mh::regular(0, 10, static_cast<std::size_t>(100))};
+    framework::H1<> h_Q2_precut{mh::regular(0, 10, static_cast<std::size_t>(100))};
+    framework::H1<> h_W{mh::regular(m_target_mass - 0.3, m_target_mass + 0.5, static_cast<std::size_t>(100))};
+    framework::H1<> h_W_precut{mh::regular(0, m_target_mass + 2.0, static_cast<std::size_t>(200))};
+    framework::H1<> h_nu{mh::regular(0, 11, static_cast<std::size_t>(100))};
+    framework::H2<> h_p_e_vs_theta_e{mh::regular(0, 45, static_cast<std::size_t>(90)), mh::regular(0, 11, static_cast<std::size_t>(100))};
+    framework::H1<> h_Vz_precut{mh::regular(-50, 30, static_cast<std::size_t>(200))};
+    framework::H1<> h_Vz{mh::regular(-50, 30, static_cast<std::size_t>(200))};
 
     struct ElasticEPNTupleData {
         double e_p = 0.0;
@@ -215,21 +215,21 @@ class ElasticEPAlg : public framework::Algorithm {
 
     auto book_histograms() -> void {
         std::string prefix = "/Elastic_" + get_target_name(m_config.target);
-        h_Q2 = m_hist->book_hist1D(prefix + "/Q2", "Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 10);
-        h_Q2_precut = m_hist->book_hist1D(prefix + "/Q2_precut", "Q^{2} (pre-cut);Q^{2} [GeV^{2}];Events", 100, 0, 10);
-        h_W = m_hist->book_hist1D(prefix + "/W", "W;W [GeV];Events", 100, m_target_mass - 0.3, m_target_mass + 0.5);
-        h_W_precut = m_hist->book_hist1D(prefix + "/W_precut", "W (pre-cut);W [GeV];Events", 200, 0, m_target_mass + 2.0);
-        h_nu = m_hist->book_hist1D(prefix + "/nu", "#nu;#nu [GeV];Events", 100, 0, 11);
-        h_p_e_vs_theta_e = m_hist->book_hist2D(prefix + "/p_e_vs_theta_e", "p_{e} vs #theta_{e};#theta_{e} [deg];p_{e} [GeV]", 90, 0, 45, 100, 0, 11);
-        h_Vz_precut = m_hist->book_hist1D(prefix + "/Vz_precut", "Vz (pre-cut);Vz [cm];Events", 200, -50, 30);
-        h_Vz = m_hist->book_hist1D(prefix + "/Vz", "Vz;Vz [cm];Events", 200, -50, 30);
+        m_hist->register_hist(prefix + "/Q2", "Q^{2};Q^{2} [GeV^{2}];Events", h_Q2);
+        m_hist->register_hist(prefix + "/Q2_precut", "Q^{2} (pre-cut);Q^{2} [GeV^{2}];Events", h_Q2_precut);
+        m_hist->register_hist(prefix + "/W", "W;W [GeV];Events", h_W);
+        m_hist->register_hist(prefix + "/W_precut", "W (pre-cut);W [GeV];Events", h_W_precut);
+        m_hist->register_hist(prefix + "/nu", "#nu;#nu [GeV];Events", h_nu);
+        m_hist->register_hist(prefix + "/p_e_vs_theta_e", "p_{e} vs #theta_{e};#theta_{e} [deg];p_{e} [GeV]", h_p_e_vs_theta_e);
+        m_hist->register_hist(prefix + "/Vz_precut", "Vz (pre-cut);Vz [cm];Events", h_Vz_precut);
+        m_hist->register_hist(prefix + "/Vz", "Vz;Vz [cm];Events", h_Vz);
     }
 
     auto fill_histograms(const ElasticKinematics& kin) -> void {
-        h_Q2->fill(kin.Q2);
-        h_W->fill(kin.W);
-        h_nu->fill(kin.nu);
-        h_p_e_vs_theta_e->fill(kin.theta_e * Constants::RAD_TO_DEG, kin.p_e);
+        h_Q2.fill(kin.Q2);
+        h_W.fill(kin.W);
+        h_nu.fill(kin.nu);
+        h_p_e_vs_theta_e.fill(kin.theta_e * Constants::RAD_TO_DEG, kin.p_e);
     }
 };
 

@@ -99,6 +99,14 @@ project_libs = []
 # HIPO4 library
 subdir('extern/hipo4')
 
+# mh — header-only histogram library at extern/mh/.
+# `MH_NO_MDSPAN` opts out of mh's optional `std::mdspan` view path, which is
+# C++23 only; the project is on cpp_std=c++20.
+mh_dep = declare_dependency(
+  include_directories: include_directories('extern'),
+  compile_args: ['-DMH_NO_MDSPAN'],
+)
+
 #══════════════════════════════════════════════════════════════════════════════#
 #                              ROOT DEPENDENCY                                  #
 #══════════════════════════════════════════════════════════════════════════════#

@@ -16,8 +16,8 @@
  *     plugs into the existing `Algorithm::require_service(...)`
  *     lambda that does `*target = svc<T>()`.
  *   - Forwards `operator->` and `operator*` to the wrapped pointer, so
- *     every existing call site `m_hist->book_hist1D(...)` keeps working
- *     with no source-level churn.
+ *     call sites `m_hist->register_hist(...)` keep working with no
+ *     source-level churn.
  *   - Converts to `bool` for nullability checks and exposes `.get()`
  *     as an escape hatch.
  *
@@ -45,7 +45,7 @@ public:
     }
 
     /// Forward method calls as if this were a pointer:
-    /// `m_hist->book_hist1D(...)` still works.
+    /// `m_hist->register_hist(...)` still works.
     auto operator->() const noexcept -> T* { return m_p; }
 
     /// Forward dereference for code that wants a reference.

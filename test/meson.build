@@ -92,26 +92,6 @@ test_bankdefs_compile = executable(
 
 test('BankDefs Compile Tests', test_bankdefs_compile)
 
-# Unit tests for column-oriented vectorised fill (Event::column<T> +
-# ThreadLocalHistogram::fill_span).
-test_column_fill = executable(
-  'test_column_fill',
-  'test_column_fill.cpp',
-  dependencies: test_deps,
-)
-
-test('Column Fill Tests', test_column_fill)
-
-# Concurrency + Accumulator concept tests for the per-worker
-# ThreadLocalHistogram.
-test_thread_local_histogram = executable(
-  'test_thread_local_histogram',
-  'test_thread_local_histogram.cpp',
-  dependencies: test_deps,
-)
-
-test('ThreadLocalHistogram Tests', test_thread_local_histogram)
-
 # Round-trip tests for the RNTuple-backed NTupleService: write
 # scalar / vector / multi-ntuple entries, close, reopen via
 # RNTupleReader, and verify the values match.

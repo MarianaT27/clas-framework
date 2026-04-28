@@ -7,7 +7,7 @@
 #include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Event.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 
@@ -42,7 +42,12 @@ class EventMonitor : public framework::Algorithm {
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::info(name(), "Initializing");
-        book_histograms();
+        m_hist->register_hist("/Monitor/particles_per_event",
+                              "Particles per Event;N_{particles};Events", h_particles_per_event);
+        m_hist->register_hist("/Monitor/electrons_per_event",
+                              "Electrons per Event;N_{e};Events", h_electrons_per_event);
+        m_hist->register_hist("/Monitor/processing_time",
+                              "Event Processing Time;Time [#mus];Events", h_processing_time);
         m_start_time = std::chrono::high_resolution_clock::now();
         return StatusCode::SUCCESS();
     }
@@ -61,37 +66,19 @@ class EventMonitor : public framework::Algorithm {
     }
 
    private:
-    static constexpr int PARTICLES_HIST_BINS = 50;
-    static constexpr int PARTICLES_HIST_MIN = 0;
-    static constexpr int PARTICLES_HIST_MAX = 50;
-
-    static constexpr int ELECTRONS_HIST_BINS = 10;
-    static constexpr int ELECTRONS_HIST_MIN = 0;
-    static constexpr int ELECTRONS_HIST_MAX = 10;
-
-    static constexpr int TIME_HIST_BINS = 100;
-    static constexpr int TIME_HIST_MIN = 0;
-    static constexpr int TIME_HIST_MAX = 1000;
-
-    auto book_histograms() -> void {
-        h_particles_per_event = m_hist->book_hist1D("/Monitor/particles_per_event", "Particles per Event;N_{particles};Events", PARTICLES_HIST_BINS, PARTICLES_HIST_MIN, PARTICLES_HIST_MAX);
-        h_electrons_per_event = m_hist->book_hist1D("/Monitor/electrons_per_event", "Electrons per Event;N_{e};Events", ELECTRONS_HIST_BINS, ELECTRONS_HIST_MIN, ELECTRONS_HIST_MAX);
-        h_processing_time = m_hist->book_hist1D("/Monitor/processing_time", "Event Processing Time;Time [#mus];Events", TIME_HIST_BINS, TIME_HIST_MIN, TIME_HIST_MAX);
-    }
-
     auto process_particle_statistics(framework::Event& event) -> void {
         auto& rec_particle = event.bank<bankdefs::REC_Particle>();
         const int n_particles = rec_particle.rows();
         m_total_particles.fetch_add(static_cast<size_t>(n_particles), std::memory_order_relaxed);
 
-        h_particles_per_event->fill(n_particles);
-        h_electrons_per_event->fill(static_cast<int>(event.electrons().size()));
+        h_particles_per_event.fill(static_cast<double>(n_particles));
+        h_electrons_per_event.fill(static_cast<double>(event.electrons().size()));
     }
 
     auto record_processing_time(const std::chrono::time_point<std::chrono::high_resolution_clock>& event_start) -> void {
         const auto event_end = std::chrono::high_resolution_clock::now();
         const auto event_duration = std::chrono::duration_cast<std::chrono::microseconds>(event_end - event_start);
-        h_processing_time->fill(event_duration.count());
+        h_processing_time.fill(static_cast<double>(event_duration.count()));
     }
 
     [[nodiscard]] auto calculate_event_rate(long duration_seconds) const -> double {
@@ -119,9 +106,9 @@ class EventMonitor : public framework::Algorithm {
 
     framework::ServiceRef<framework::HistogramService> m_hist;
 
-    framework::ThreadLocalHistogram1D* h_particles_per_event = nullptr;
-    framework::ThreadLocalHistogram1D* h_electrons_per_event = nullptr;
-    framework::ThreadLocalHistogram1D* h_processing_time = nullptr;
+    framework::H1<> h_particles_per_event{mh::regular(0.0, 50.0, 50)};
+    framework::H1<> h_electrons_per_event{mh::regular(0.0, 10.0, 10)};
+    framework::H1<> h_processing_time{mh::regular(0.0, 1000.0, 100)};
 
     std::atomic<size_t> m_events_processed{0};
     std::atomic<size_t> m_total_particles{0};

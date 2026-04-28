@@ -26,7 +26,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -126,7 +126,7 @@ class Pi0EventMixingAlg : public framework::Algorithm {
                     ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
                     double pT = std::sqrt(p_perp.Mag2());
 
-                    h_mgg_same_all->fill(mgg);
+                    h_mgg_same_all.fill(mgg);
                     int bin_4d = find_4d_bin(Q2, xB, z, pT);
                     if (bin_4d >= 0 && h_mgg_same.count(bin_4d)) h_mgg_same[bin_4d]->fill(mgg);
                     m_cutflow.pass("Same-event pairs");
@@ -150,7 +150,7 @@ class Pi0EventMixingAlg : public framework::Algorithm {
                     ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
                     double pT = std::sqrt(p_perp.Mag2());
 
-                    h_mgg_rotated_all->fill(mgg);
+                    h_mgg_rotated_all.fill(mgg);
                     int bin_4d = find_4d_bin(Q2, xB, z, pT);
                     if (bin_4d >= 0 && h_mgg_rotated.count(bin_4d)) h_mgg_rotated[bin_4d]->fill(mgg);
                     m_cutflow.pass("Rotated-bg pairs");
@@ -177,7 +177,7 @@ class Pi0EventMixingAlg : public framework::Algorithm {
                         ROOT::Math::XYZVector p_perp = pi0_3v - p_parallel * q_hat;
                         double pT = std::sqrt(p_perp.Mag2());
 
-                        h_mgg_mixed_all->fill(mgg);
+                        h_mgg_mixed_all.fill(mgg);
                         int bin_4d = find_4d_bin(Q2, xB, z, pT);
                         if (bin_4d >= 0 && h_mgg_mixed.count(bin_4d)) h_mgg_mixed[bin_4d]->fill(mgg);
                     }
@@ -254,13 +254,13 @@ class Pi0EventMixingAlg : public framework::Algorithm {
 
     static constexpr int N_MULT_BINS = 4;
 
-    std::map<int, framework::ThreadLocalHistogram1D*> h_mgg_same;
-    std::map<int, framework::ThreadLocalHistogram1D*> h_mgg_mixed;
-    std::map<int, framework::ThreadLocalHistogram1D*> h_mgg_rotated;
+    std::map<int, std::unique_ptr<framework::H1<>>> h_mgg_same;
+    std::map<int, std::unique_ptr<framework::H1<>>> h_mgg_mixed;
+    std::map<int, std::unique_ptr<framework::H1<>>> h_mgg_rotated;
 
-    framework::ThreadLocalHistogram1D* h_mgg_same_all = nullptr;
-    framework::ThreadLocalHistogram1D* h_mgg_mixed_all = nullptr;
-    framework::ThreadLocalHistogram1D* h_mgg_rotated_all = nullptr;
+    framework::H1<> h_mgg_same_all{mh::regular(0.0, 0.3, static_cast<std::size_t>(200))};
+    framework::H1<> h_mgg_mixed_all{mh::regular(0.0, 0.3, static_cast<std::size_t>(200))};
+    framework::H1<> h_mgg_rotated_all{mh::regular(0.0, 0.3, static_cast<std::size_t>(200))};
 
     static constexpr double SIDEBAND_LOW = 0.19;
     static constexpr double SIDEBAND_HIGH = 0.24;
@@ -353,10 +353,7 @@ class Pi0EventMixingAlg : public framework::Algorithm {
     auto book_histograms() -> void {
         auto* svc = m_hist.get();
         const std::string dir = "/Pi0EventMixing";
-
-        h_mgg_same_all = svc->book_hist1D(dir + "/mgg_same_all", "Same-event M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts", 200, 0.0, 0.3);
-        h_mgg_mixed_all = svc->book_hist1D(dir + "/mgg_mixed_all", "Mixed-event M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts", 200, 0.0, 0.3);
-        h_mgg_rotated_all = svc->book_hist1D(dir + "/mgg_rotated_all", "Rotated-bg M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts", 200, 0.0, 0.3);
+        svc->register_hist(dir + "/mgg_same_all", "Same-event M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts", h_mgg_same_all);        svc->register_hist(dir + "/mgg_mixed_all", "Mixed-event M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts", h_mgg_mixed_all);        svc->register_hist(dir + "/mgg_rotated_all", "Rotated-bg M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts", h_mgg_rotated_all);
 
         int n_Q2 = static_cast<int>(m_config.Q2_edges.size() - 1);
         int n_xB = static_cast<int>(m_config.xB_edges.size() - 1);
@@ -369,11 +366,11 @@ class Pi0EventMixingAlg : public framework::Algorithm {
 
             std::string title_same = fmt::format("Same M_{{#gamma#gamma}} Q^{{2}}#in[{:.1f},{:.1f}] x_{{B}}#in[{:.2f},{:.2f}] z#in[{:.2f},{:.2f}] p_{{T}}#in[{:.2f},{:.2f}];M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts", m_config.Q2_edges[iq], m_config.Q2_edges[iq + 1], m_config.xB_edges[ix], m_config.xB_edges[ix + 1], m_config.z_edges[iz], m_config.z_edges[iz + 1], m_config.pT_edges[ip], m_config.pT_edges[ip + 1]);
             std::string title_mixed = fmt::format("Mixed M_{{#gamma#gamma}} Q^{{2}}#in[{:.1f},{:.1f}] x_{{B}}#in[{:.2f},{:.2f}] z#in[{:.2f},{:.2f}] p_{{T}}#in[{:.2f},{:.2f}];M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts", m_config.Q2_edges[iq], m_config.Q2_edges[iq + 1], m_config.xB_edges[ix], m_config.xB_edges[ix + 1], m_config.z_edges[iz], m_config.z_edges[iz + 1], m_config.pT_edges[ip], m_config.pT_edges[ip + 1]);
-            std::string title_rotated = fmt::format("Rotated M_{{#gamma#gamma}} Q^{{2}}#in[{:.1f},{:.1f}] x_{{B}}#in[{:.2f},{:.2f}] z#in[{:.2f},{:.2f}] p_{{T}}#in[{:.2f},{:.2f}];M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts", m_config.Q2_edges[iq], m_config.Q2_edges[iq + 1], m_config.xB_edges[ix], m_config.xB_edges[ix + 1], m_config.z_edges[iz], m_config.z_edges[iz + 1], m_config.pT_edges[ip], m_config.pT_edges[ip + 1]);
+            std::string title_rotated = fmt::format("Rotated M_{{#gamma#gamma}} Q^{{2}}#in[{:.1f},{:.1f}] x_{{B}}#in[{:.2f},{:.2f}] z#in[{:.2f},{:.2f}] p_{{T}}#in[{:.2f},{:.2f}];M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts", m_config.Q2_edges[iq], m_config.Q2_edges[iq + 1], m_config.xB_edges[ix], m_config.xB_edges[ix + 1], m_config.z_edges[iz], m_config.z_edges[iz + 1], m_config.pT_edges[ip], m_config.pT_edges[ip + 1]);h_mgg_same[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, static_cast<std::size_t>(200)));
 
-            h_mgg_same[idx] = svc->book_hist1D(fmt::format("{}/same/mgg_same_bin{}", dir, idx), title_same, 200, 0.0, 0.3);
-            h_mgg_mixed[idx] = svc->book_hist1D(fmt::format("{}/mixed/mgg_mixed_bin{}", dir, idx), title_mixed, 200, 0.0, 0.3);
-            h_mgg_rotated[idx] = svc->book_hist1D(fmt::format("{}/rotated/mgg_rotated_bin{}", dir, idx), title_rotated, 200, 0.0, 0.3);
+            svc->register_hist(fmt::format("{}/same/mgg_same_bin{}", dir, idx), title_same, *h_mgg_same[idx]);h_mgg_mixed[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, static_cast<std::size_t>(200)));
+            svc->register_hist(fmt::format("{}/mixed/mgg_mixed_bin{}", dir, idx), title_mixed, *h_mgg_mixed[idx]);h_mgg_rotated[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, static_cast<std::size_t>(200)));
+            svc->register_hist(fmt::format("{}/rotated/mgg_rotated_bin{}", dir, idx), title_rotated, *h_mgg_rotated[idx]);
         }
 
         Log::info(name(), "Booked {} same + {} mixed + {} rotated histograms", total_bins, total_bins, total_bins);

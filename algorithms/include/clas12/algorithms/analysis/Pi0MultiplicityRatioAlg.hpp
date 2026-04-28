@@ -25,7 +25,7 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/core/ThreadLocalHistogram.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -91,9 +91,9 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
         const double nu = dis->nu;
 
         // Fill DIS normalization histograms (one entry per DIS event)
-        h_n_DIS_events->fill(0.5);
-        h_n_DIS_vs_Q2->fill(Q2);
-        h_n_DIS_vs_xB->fill(xB);
+        h_n_DIS_events.fill(0.5);
+        h_n_DIS_vs_Q2.fill(Q2);
+        h_n_DIS_vs_xB.fill(xB);
         // Fill per-Q2-bin normalization
         for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {
             if (Q2 >= m_config.Q2_edges[i] && Q2 < m_config.Q2_edges[i + 1]) {
@@ -160,14 +160,14 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
             double pi0_mass = pi0.mass();
 
             // Fill 1D distributions
-            h_z->fill(z);
-            h_pT2->fill(pT2);
-            h_phi_h->fill(phi_h);
-            h_pi0_mass->fill(pi0_mass);
+            h_z.fill(z);
+            h_pT2.fill(pT2);
+            h_phi_h.fill(phi_h);
+            h_pi0_mass.fill(pi0_mass);
             // Fill 2D distributions
-            h_z_vs_Q2->fill(Q2, z);
-            h_z_vs_pT2->fill(pT2, z);
-            h_pT2_vs_Q2->fill(Q2, pT2);
+            h_z_vs_Q2.fill(Q2, z);
+            h_z_vs_pT2.fill(pT2, z);
+            h_pT2_vs_Q2.fill(Q2, pT2);
             // Find bin indices once for all binned fills
             int iQ2 = -1, ixB = -1, iz = -1, ipT2 = -1;
             for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {
@@ -204,9 +204,9 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
                 double phi_h_rad = phi_h * M_PI / 180.0;
                 double idx = static_cast<double>(flat_4D_index(iQ2, ixB, iz, ipT2)) + 0.5;
                 h_counts_4D->fill(idx);
-                h_sum_pT2_4D->fill(idx, pT2);
-                h_sum_cosphi_4D->fill(idx, std::cos(phi_h_rad));
-                h_sum_sinphi_4D->fill(idx, std::sin(phi_h_rad));
+                h_sum_pT2_4D->fill_weighted(pT2, idx);
+                h_sum_cosphi_4D->fill_weighted(std::cos(phi_h_rad), idx);
+                h_sum_sinphi_4D->fill_weighted(std::sin(phi_h_rad), idx);
             }
         }
 
@@ -234,34 +234,36 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
     // --- Histograms ---
 
     // DIS normalization
-    framework::ThreadLocalHistogram1D* h_n_DIS_events = nullptr;
-    framework::ThreadLocalHistogram1D* h_n_DIS_vs_Q2 = nullptr;
-    framework::ThreadLocalHistogram1D* h_n_DIS_vs_xB = nullptr;
-    std::vector<framework::ThreadLocalHistogram1D*> h_n_DIS_Q2bin;
-    std::vector<framework::ThreadLocalHistogram1D*> h_n_DIS_xBbin;
+    framework::H1<> h_n_DIS_events{mh::regular(0, 1, static_cast<std::size_t>(1))};
+    framework::H1<> h_n_DIS_vs_Q2{mh::regular(0, 12, static_cast<std::size_t>(100))};
+    framework::H1<> h_n_DIS_vs_xB{mh::regular(0, 0.8, static_cast<std::size_t>(100))};
+    std::vector<std::unique_ptr<framework::H1<>>> h_n_DIS_Q2bin;
+    std::vector<std::unique_ptr<framework::H1<>>> h_n_DIS_xBbin;
 
     // 1D distributions
-    framework::ThreadLocalHistogram1D* h_z = nullptr;
-    framework::ThreadLocalHistogram1D* h_pT2 = nullptr;
-    framework::ThreadLocalHistogram1D* h_phi_h = nullptr;
-    framework::ThreadLocalHistogram1D* h_pi0_mass = nullptr;
+    framework::H1<> h_z{mh::regular(0, 1, static_cast<std::size_t>(100))};
+    framework::H1<> h_pT2{mh::regular(0, 2, static_cast<std::size_t>(100))};
+    framework::H1<> h_phi_h{mh::regular(-180, 180, static_cast<std::size_t>(72))};
+    framework::H1<> h_pi0_mass{mh::regular(0, 0.5, static_cast<std::size_t>(200))};
 
     // 2D distributions
-    framework::ThreadLocalHistogram2D* h_z_vs_Q2 = nullptr;
-    framework::ThreadLocalHistogram2D* h_z_vs_pT2 = nullptr;
-    framework::ThreadLocalHistogram2D* h_pT2_vs_Q2 = nullptr;
+    framework::H2<> h_z_vs_Q2{mh::regular(0, 12, static_cast<std::size_t>(100)), mh::regular(0, 1, static_cast<std::size_t>(100))};
+    framework::H2<> h_z_vs_pT2{mh::regular(0, 2, static_cast<std::size_t>(100)), mh::regular(0, 1, static_cast<std::size_t>(100))};
+    framework::H2<> h_pT2_vs_Q2{mh::regular(0, 12, static_cast<std::size_t>(100)), mh::regular(0, 2, static_cast<std::size_t>(100))};
 
     // Multiplicity per kinematic bin
-    std::vector<framework::ThreadLocalHistogram1D*> h_z_Q2bin;
-    std::vector<framework::ThreadLocalHistogram1D*> h_pT2_Q2bin;
-    std::vector<framework::ThreadLocalHistogram1D*> h_z_xBbin;
-    std::vector<framework::ThreadLocalHistogram1D*> h_pT2_zbin;
+    std::vector<std::unique_ptr<framework::H1<>>> h_z_Q2bin;
+    std::vector<std::unique_ptr<framework::H1<>>> h_pT2_Q2bin;
+    std::vector<std::unique_ptr<framework::H1<>>> h_z_xBbin;
+    std::vector<std::unique_ptr<framework::H1<>>> h_pT2_zbin;
 
-    // pT broadening and azimuthal moments in 4D bins (Q2, xB, z, pT2)
-    framework::ThreadLocalHistogram1D* h_counts_4D = nullptr;
-    framework::ThreadLocalHistogram1D* h_sum_pT2_4D = nullptr;
-    framework::ThreadLocalHistogram1D* h_sum_cosphi_4D = nullptr;
-    framework::ThreadLocalHistogram1D* h_sum_sinphi_4D = nullptr;
+    // pT broadening and azimuthal moments in 4D bins (Q2, xB, z, pT2). The
+    // bin count depends on the runtime config, so the histograms are
+    // heap-allocated in book_histograms() once we know the size.
+    std::unique_ptr<framework::H1<>> h_counts_4D;
+    std::unique_ptr<framework::H1<mh::WeightedAccumulator>> h_sum_pT2_4D;
+    std::unique_ptr<framework::H1<mh::WeightedAccumulator>> h_sum_cosphi_4D;
+    std::unique_ptr<framework::H1<mh::WeightedAccumulator>> h_sum_sinphi_4D;
 
     [[nodiscard]] auto flat_4D_index(int iQ2, int ixB, int iz, int ipT2) const -> int {
         int N_xB = static_cast<int>(m_config.xB_edges.size()) - 1;
@@ -280,81 +282,64 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
         {
 
             // DIS normalization
-            h_n_DIS_events = svc->book_hist1D(dir + "/n_DIS_events", "DIS Event Count;count;Events", 1, 0, 1);
-            h_n_DIS_vs_Q2 = svc->book_hist1D(dir + "/n_DIS_vs_Q2", "DIS Events vs Q^{2};Q^{2} [GeV^{2}];Events", 100, 0, 12);
-            h_n_DIS_vs_xB = svc->book_hist1D(dir + "/n_DIS_vs_xB", "DIS Events vs x_{B};x_{B};Events", 100, 0, 0.8);
-
+            svc->register_hist(dir + "/n_DIS_events", "DIS Event Count;count;Events", h_n_DIS_events);
+            svc->register_hist(dir + "/n_DIS_vs_Q2", "DIS Events vs Q^{2};Q^{2} [GeV^{2}];Events", h_n_DIS_vs_Q2);
+            svc->register_hist(dir + "/n_DIS_vs_xB", "DIS Events vs x_{B};x_{B};Events", h_n_DIS_vs_xB);
             // Per-Q2-bin DIS normalization
             h_n_DIS_Q2bin.resize(m_config.Q2_edges.size() - 1);
-            for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {
-                h_n_DIS_Q2bin[i] = svc->book_hist1D(
-                    fmt::format("{}/norm/n_DIS_Q2bin{}", dir, i),
-                    fmt::format("DIS Events Q^{{2}} [{:.1f}, {:.1f}];count;Events", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]),
-                    1, 0, 1);
+            for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {h_n_DIS_Q2bin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, static_cast<std::size_t>(1)));
+                svc->register_hist(fmt::format("{}/norm/n_DIS_Q2bin{}", dir, i), fmt::format("DIS Events Q^{{2}} [{:.1f}, {:.1f}];count;Events", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]), *h_n_DIS_Q2bin[i]);
             }
 
             // Per-xB-bin DIS normalization
             h_n_DIS_xBbin.resize(m_config.xB_edges.size() - 1);
-            for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {
-                h_n_DIS_xBbin[i] = svc->book_hist1D(
-                    fmt::format("{}/norm/n_DIS_xBbin{}", dir, i),
-                    fmt::format("DIS Events x_{{B}} [{:.2f}, {:.2f}];count;Events", m_config.xB_edges[i], m_config.xB_edges[i + 1]),
-                    1, 0, 1);
+            for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {h_n_DIS_xBbin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, static_cast<std::size_t>(1)));
+                svc->register_hist(fmt::format("{}/norm/n_DIS_xBbin{}", dir, i), fmt::format("DIS Events x_{{B}} [{:.2f}, {:.2f}];count;Events", m_config.xB_edges[i], m_config.xB_edges[i + 1]), *h_n_DIS_xBbin[i]);
             }
 
             // 1D pi0 distributions
-            h_z = svc->book_hist1D(dir + "/z", "#pi^{0} z = E_{#pi^{0}}/#nu;z;Counts", 100, 0, 1);
-            h_pT2 = svc->book_hist1D(dir + "/pT2", "#pi^{0} p_{T}^{2};p_{T}^{2} [GeV^{2}];Counts", 100, 0, 2);
-            h_phi_h = svc->book_hist1D(dir + "/phi_h", "#pi^{0} #phi_{h};#phi_{h} [deg];Counts", 72, -180, 180);
-            h_pi0_mass = svc->book_hist1D(dir + "/pi0_mass", "#pi^{0} Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Counts", 200, 0, 0.5);
-
+            svc->register_hist(dir + "/z", "#pi^{0} z = E_{#pi^{0}}/#nu;z;Counts", h_z);
+            svc->register_hist(dir + "/pT2", "#pi^{0} p_{T}^{2};p_{T}^{2} [GeV^{2}];Counts", h_pT2);
+            svc->register_hist(dir + "/phi_h", "#pi^{0} #phi_{h};#phi_{h} [deg];Counts", h_phi_h);
+            svc->register_hist(dir + "/pi0_mass", "#pi^{0} Invariant Mass;M_{#gamma#gamma} [GeV/c^{2}];Counts", h_pi0_mass);
             // 2D distributions
-            h_z_vs_Q2 = svc->book_hist2D(dir + "/z_vs_Q2", "z vs Q^{2};Q^{2} [GeV^{2}];z", 100, 0, 12, 100, 0, 1);
-            h_z_vs_pT2 = svc->book_hist2D(dir + "/z_vs_pT2", "z vs p_{T}^{2};p_{T}^{2} [GeV^{2}];z", 100, 0, 2, 100, 0, 1);
-            h_pT2_vs_Q2 = svc->book_hist2D(dir + "/pT2_vs_Q2", "p_{T}^{2} vs Q^{2};Q^{2} [GeV^{2}];p_{T}^{2} [GeV^{2}]", 100, 0, 12, 100, 0, 2);
-
+            svc->register_hist(dir + "/z_vs_Q2", "z vs Q^{2};Q^{2} [GeV^{2}];z", h_z_vs_Q2);
+            svc->register_hist(dir + "/z_vs_pT2", "z vs p_{T}^{2};p_{T}^{2} [GeV^{2}];z", h_z_vs_pT2);
+            svc->register_hist(dir + "/pT2_vs_Q2", "p_{T}^{2} vs Q^{2};Q^{2} [GeV^{2}];p_{T}^{2} [GeV^{2}]", h_pT2_vs_Q2);
             // Multiplicity: z per Q2 bin
             h_z_Q2bin.resize(m_config.Q2_edges.size() - 1);
             h_pT2_Q2bin.resize(m_config.Q2_edges.size() - 1);
-            for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {
-                h_z_Q2bin[i] = svc->book_hist1D(
-                    fmt::format("{}/z_Q2bin/z_Q2bin{}", dir, i),
-                    fmt::format("#pi^{{0}} z, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};z;Counts", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]),
-                    100, 0, 1);
-                h_pT2_Q2bin[i] = svc->book_hist1D(
-                    fmt::format("{}/pT2_Q2bin/pT2_Q2bin{}", dir, i),
-                    fmt::format("#pi^{{0}} p_{{T}}^{{2}}, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]),
-                    100, 0, 2);
+            for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {h_z_Q2bin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, static_cast<std::size_t>(100)));
+                svc->register_hist(fmt::format("{}/z_Q2bin/z_Q2bin{}", dir, i), fmt::format("#pi^{{0}} z, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};z;Counts", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]), *h_z_Q2bin[i]);h_pT2_Q2bin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 2, static_cast<std::size_t>(100)));
+                svc->register_hist(fmt::format("{}/pT2_Q2bin/pT2_Q2bin{}", dir, i), fmt::format("#pi^{{0}} p_{{T}}^{{2}}, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]), *h_pT2_Q2bin[i]);
             }
 
             // Multiplicity: z per xB bin
             h_z_xBbin.resize(m_config.xB_edges.size() - 1);
-            for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {
-                h_z_xBbin[i] = svc->book_hist1D(
-                    fmt::format("{}/z_xBbin/z_xBbin{}", dir, i),
-                    fmt::format("#pi^{{0}} z, x_{{B}} #in [{:.2f}, {:.2f}];z;Counts", m_config.xB_edges[i], m_config.xB_edges[i + 1]),
-                    100, 0, 1);
+            for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {h_z_xBbin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, static_cast<std::size_t>(100)));
+                svc->register_hist(fmt::format("{}/z_xBbin/z_xBbin{}", dir, i), fmt::format("#pi^{{0}} z, x_{{B}} #in [{:.2f}, {:.2f}];z;Counts", m_config.xB_edges[i], m_config.xB_edges[i + 1]), *h_z_xBbin[i]);
             }
 
             // Multiplicity: pT2 per z bin
             h_pT2_zbin.resize(m_config.z_edges.size() - 1);
-            for (size_t i = 0; i < m_config.z_edges.size() - 1; ++i) {
-                h_pT2_zbin[i] = svc->book_hist1D(
-                    fmt::format("{}/pT2_zbin/pT2_zbin{}", dir, i),
-                    fmt::format("#pi^{{0}} p_{{T}}^{{2}}, z #in [{:.1f}, {:.1f}];p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_config.z_edges[i], m_config.z_edges[i + 1]),
-                    100, 0, 2);
+            for (size_t i = 0; i < m_config.z_edges.size() - 1; ++i) {h_pT2_zbin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 2, static_cast<std::size_t>(100)));
+                svc->register_hist(fmt::format("{}/pT2_zbin/pT2_zbin{}", dir, i), fmt::format("#pi^{{0}} p_{{T}}^{{2}}, z #in [{:.1f}, {:.1f}];p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_config.z_edges[i], m_config.z_edges[i + 1]), *h_pT2_zbin[i]);
             }
 
-            // 4D flat-indexed histograms for pT broadening and azimuthal moments
+            // 4D flat-indexed histograms for pT broadening and azimuthal moments.
+            // The cosphi/sinphi/pT2 ones use WeightedAccumulator so that
+            // `fill_weighted(value, idx)` accumulates Σvalue per bin.
             int n4D = total_4D_bins();
-            h_counts_4D = svc->book_hist1D(dir + "/4D/counts",
-                "4D bin counts (Q^{2}, x_{B}, z, p_{T}^{2});flat bin;Counts", n4D, 0, n4D);
-            h_sum_pT2_4D = svc->book_hist1D(dir + "/4D/sum_pT2",
-                "#Sigma p_{T}^{2} per 4D bin;flat bin;#Sigma p_{T}^{2}", n4D, 0, n4D);
-            h_sum_cosphi_4D = svc->book_hist1D(dir + "/4D/sum_cosphi",
-                "#Sigma cos(#phi_{h}) per 4D bin;flat bin;#Sigma cos#phi_{h}", n4D, 0, n4D);
-            h_sum_sinphi_4D = svc->book_hist1D(dir + "/4D/sum_sinphi",
-                "#Sigma sin(#phi_{h}) per 4D bin;flat bin;#Sigma sin#phi_{h}", n4D, 0, n4D);
+            const auto axis_4d = mh::regular(0.0, static_cast<double>(n4D),
+                                             static_cast<std::size_t>(n4D));
+            h_counts_4D     = std::make_unique<framework::H1<>>(axis_4d);
+            h_sum_pT2_4D    = std::make_unique<framework::H1<mh::WeightedAccumulator>>(axis_4d);
+            h_sum_cosphi_4D = std::make_unique<framework::H1<mh::WeightedAccumulator>>(axis_4d);
+            h_sum_sinphi_4D = std::make_unique<framework::H1<mh::WeightedAccumulator>>(axis_4d);
+            svc->register_hist(dir + "/4D/counts", "4D bin counts (Q^{2}, x_{B}, z, p_{T}^{2});flat bin;Counts", *h_counts_4D);
+            svc->register_hist(dir + "/4D/sum_pT2", "#Sigma p_{T}^{2} per 4D bin;flat bin;#Sigma p_{T}^{2}", *h_sum_pT2_4D);
+            svc->register_hist(dir + "/4D/sum_cosphi", "#Sigma cos(#phi_{h}) per 4D bin;flat bin;#Sigma cos#phi_{h}", *h_sum_cosphi_4D);
+            svc->register_hist(dir + "/4D/sum_sinphi", "#Sigma sin(#phi_{h}) per 4D bin;flat bin;#Sigma sin#phi_{h}", *h_sum_sinphi_4D);
         }
     }
 };
