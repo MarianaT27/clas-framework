@@ -20,6 +20,34 @@ using framework::Log;
 /// Configuration for DiPionFilterAlg.
 struct DiPionFilterConfig {
     // Reserved for future tuning knobs that aren't user-tunable Properties.
+
+    double q2_min = 0.7;
+    double w_min = 1.7;
+    double pion_p_min = 0.3;
+    double pion_chi2pid_max = 10.0;
+    bool enable_histograms = true;
+    bool enable_q2_cut = true;
+    bool enable_w_cut = true;
+    bool enable_piplus_momentum_cut = true;
+    bool enable_piplus_chi2pid_cut = true;
+    bool enable_piminus_momentum_cut = true;
+    bool enable_piminus_chi2pid_cut = true;
+
+    static constexpr auto config_fields() {
+        using T = DiPionFilterConfig;
+        return std::make_tuple(
+            framework::field("q2_min", &T::q2_min),
+            framework::field("w_min", &T::w_min),
+            framework::field("pion_p_min", &T::pion_p_min),
+            framework::field("pion_chi2pid_max", &T::pion_chi2pid_max),
+            framework::field("enable_histograms", &T::enable_histograms),
+            framework::field("enable_q2_cut", &T::enable_q2_cut),
+            framework::field("enable_w_cut", &T::enable_w_cut),
+            framework::field("enable_piplus_momentum_cut", &T::enable_piplus_momentum_cut),
+            framework::field("enable_piplus_chi2pid_cut", &T::enable_piplus_chi2pid_cut),
+            framework::field("enable_piminus_momentum_cut", &T::enable_piminus_momentum_cut),
+            framework::field("enable_piminus_chi2pid_cut", &T::enable_piminus_chi2pid_cut));
+    }
 };
 
 /**
@@ -34,15 +62,16 @@ class DiPionFilterAlg : public framework::Algorithm {
     explicit DiPionFilterAlg(std::string name = "DiPionFilterAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Di-Pion Event Filter") {
         required_services(m_hipo_svc, m_hist_svc);
-        declare_properties(m_q2_min, m_w_min, m_pion_p_min, m_pion_chi2pid_max, m_enable_histograms, m_enable_q2_cut, m_enable_w_cut, m_enable_piplus_momentum_cut, m_enable_piplus_chi2pid_cut, m_enable_piminus_momentum_cut, m_enable_piminus_chi2pid_cut);
+        declare_config(m_config);
+        declare_histograms(h_Q2, h_W, h_piplus_p, h_piminus_p, h_piplus_chi2pid, h_piminus_chi2pid, h_Q2_vs_W);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::info(name(), "DIS cuts: Q2 > {} GeV^2, W > {} GeV", m_q2_min.get(), m_w_min.get());
-        Log::info(name(), "Pion cuts: p > {} GeV, |chi2pid| < {}", m_pion_p_min.get(), m_pion_chi2pid_max.get());
+        Log::info(name(), "DIS cuts: Q2 > {} GeV^2, W > {} GeV", m_config.q2_min, m_config.w_min);
+        Log::info(name(), "Pion cuts: p > {} GeV, |chi2pid| < {}", m_config.pion_p_min, m_config.pion_chi2pid_max);
 
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Has Electron");
@@ -55,7 +84,7 @@ class DiPionFilterAlg : public framework::Algorithm {
         m_cutflow.add_cut("pi- Momentum");
         m_cutflow.add_cut("pi- Chi2PID");
 
-        if (m_enable_histograms.get()) book_histograms();
+        if (m_config.enable_histograms) book_histograms();
 
         if (!m_hipo_svc->is_output_enabled()) {
             Log::warning(name(), "HIPO output file not configured");
@@ -75,10 +104,10 @@ class DiPionFilterAlg : public framework::Algorithm {
 
         physics::DISAnalysis::DISKinematics kin = physics::DISAnalysis::calculate_kinematics(electron);
 
-        if (m_enable_q2_cut.get() && kin.q2 < m_q2_min.get()) return StatusCode::FILTERED();
+        if (m_config.enable_q2_cut && kin.q2 < m_config.q2_min) return StatusCode::FILTERED();
         m_cutflow.pass("Q2 Cut");
 
-        if (m_enable_w_cut.get() && kin.w < m_w_min.get()) return StatusCode::FILTERED();
+        if (m_config.enable_w_cut && kin.w < m_config.w_min) return StatusCode::FILTERED();
         m_cutflow.pass("W Cut");
 
         const auto& pions_plus = event.particles(PIDs::PIPLUS);
@@ -87,15 +116,15 @@ class DiPionFilterAlg : public framework::Algorithm {
 
         std::vector<const Particle*> good_piplus;
         for (const auto& pi : pions_plus) {
-            if (m_enable_piplus_momentum_cut.get() && pi.p() < m_pion_p_min.get()) continue;
-            if (m_enable_piplus_chi2pid_cut.get() && std::abs(pi.chi2pid()) >= m_pion_chi2pid_max.get()) continue;
+            if (m_config.enable_piplus_momentum_cut && pi.p() < m_config.pion_p_min) continue;
+            if (m_config.enable_piplus_chi2pid_cut && std::abs(pi.chi2pid()) >= m_config.pion_chi2pid_max) continue;
             good_piplus.push_back(&pi);
         }
         if (good_piplus.empty()) {
-            bool any_pass_momentum = !m_enable_piplus_momentum_cut.get();
+            bool any_pass_momentum = !m_config.enable_piplus_momentum_cut;
             if (!any_pass_momentum) {
                 for (const auto& pi : pions_plus) {
-                    if (pi.p() >= m_pion_p_min.get()) {
+                    if (pi.p() >= m_config.pion_p_min) {
                         any_pass_momentum = true;
                         break;
                     }
@@ -114,15 +143,15 @@ class DiPionFilterAlg : public framework::Algorithm {
 
         std::vector<const Particle*> good_piminus;
         for (const auto& pi : pions_minus) {
-            if (m_enable_piminus_momentum_cut.get() && pi.p() < m_pion_p_min.get()) continue;
-            if (m_enable_piminus_chi2pid_cut.get() && std::abs(pi.chi2pid()) >= m_pion_chi2pid_max.get()) continue;
+            if (m_config.enable_piminus_momentum_cut && pi.p() < m_config.pion_p_min) continue;
+            if (m_config.enable_piminus_chi2pid_cut && std::abs(pi.chi2pid()) >= m_config.pion_chi2pid_max) continue;
             good_piminus.push_back(&pi);
         }
         if (good_piminus.empty()) {
-            bool any_pass_momentum = !m_enable_piminus_momentum_cut.get();
+            bool any_pass_momentum = !m_config.enable_piminus_momentum_cut;
             if (!any_pass_momentum) {
                 for (const auto& pi : pions_minus) {
-                    if (pi.p() >= m_pion_p_min.get()) {
+                    if (pi.p() >= m_config.pion_p_min) {
                         any_pass_momentum = true;
                         break;
                     }
@@ -135,7 +164,7 @@ class DiPionFilterAlg : public framework::Algorithm {
         m_cutflow.pass("pi- Momentum");
         m_cutflow.pass("pi- Chi2PID");
 
-        if (m_enable_histograms.get()) fill_histograms(electron, kin, *good_piplus.front(), *good_piminus.front());
+        if (m_config.enable_histograms) fill_histograms(electron, kin, *good_piplus.front(), *good_piminus.front());
 
         event.set_decision_typed(framework::Decisions::HasDiPionEvent, true);
         event.store_typed(framework::Keys::DiPionQ2, kin.q2);
@@ -156,39 +185,16 @@ class DiPionFilterAlg : public framework::Algorithm {
     Config m_config;
     framework::Cutflow m_cutflow;
 
-    framework::Property<double> m_q2_min{"q2_min", 0.7, "Minimum Q2 [GeV^2]"};
-    framework::Property<double> m_w_min{"w_min", 1.7, "Minimum W [GeV]"};
-    framework::Property<double> m_pion_p_min{"pion_p_min", 0.3, "Minimum pion momentum [GeV]"};
-    framework::Property<double> m_pion_chi2pid_max{"pion_chi2pid_max", 10.0, "Maximum |chi2pid| for pions"};
-    framework::Property<bool> m_enable_histograms{"enable_histograms", true, "Enable histogram output"};
-    framework::Property<bool> m_enable_q2_cut{"enable_q2_cut", true, "Enable Q2 cut"};
-    framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
-    framework::Property<bool> m_enable_piplus_momentum_cut{"enable_piplus_momentum_cut", true, "Enable pi+ momentum cut"};
-    framework::Property<bool> m_enable_piplus_chi2pid_cut{"enable_piplus_chi2pid_cut", true, "Enable pi+ chi2PID cut"};
-    framework::Property<bool> m_enable_piminus_momentum_cut{"enable_piminus_momentum_cut", true, "Enable pi- momentum cut"};
-    framework::Property<bool> m_enable_piminus_chi2pid_cut{"enable_piminus_chi2pid_cut", true, "Enable pi- chi2PID cut"};
-
-    framework::ServiceRef<framework::HipoFileService> m_hipo_svc;
+framework::ServiceRef<framework::HipoFileService> m_hipo_svc;
     framework::ServiceRef<framework::HistogramService> m_hist_svc;
 
-    framework::H1<> h_Q2{mh::regular(0.0, 12.0, 100)};
-    framework::H1<> h_W{mh::regular(0.0, 5.0, 100)};
-    framework::H1<> h_piplus_p{mh::regular(0.0, 6.0, 100)};
-    framework::H1<> h_piminus_p{mh::regular(0.0, 6.0, 100)};
-    framework::H1<> h_piplus_chi2pid{mh::regular(-15.0, 15.0, 100)};
-    framework::H1<> h_piminus_chi2pid{mh::regular(-15.0, 15.0, 100)};
-    framework::H2<> h_Q2_vs_W{mh::regular(1.0, 5.0, 100), mh::regular(0.0, 10.0, 100)};
-
-    auto book_histograms() -> void {
-        m_hist_svc->register_hist("/DiPion/Q2",                "Q^{2};Q^{2} [GeV^{2}];Counts",                  h_Q2);
-        m_hist_svc->register_hist("/DiPion/W",                 "W;W [GeV];Counts",                              h_W);
-        m_hist_svc->register_hist("/DiPion/piplus_p",          "#pi^{+} Momentum;Momentum [GeV/c];Counts",       h_piplus_p);
-        m_hist_svc->register_hist("/DiPion/piminus_p",         "#pi^{-} Momentum;Momentum [GeV/c];Counts",       h_piminus_p);
-        m_hist_svc->register_hist("/DiPion/piplus_chi2pid",    "#pi^{+} #chi^{2}_{PID};#chi^{2}_{PID};Events",   h_piplus_chi2pid);
-        m_hist_svc->register_hist("/DiPion/piminus_chi2pid",   "#pi^{-} #chi^{2}_{PID};#chi^{2}_{PID};Events",   h_piminus_chi2pid);
-        m_hist_svc->register_hist("/DiPion/Q2_vs_W",           "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]",             h_Q2_vs_W);
-    }
-
+    framework::Hist1<> h_Q2{"/DiPion/Q2", "Q^{2};Q^{2} [GeV^{2}];Counts", 0.0, 12.0, 100};
+    framework::Hist1<> h_W{"/DiPion/W", "W;W [GeV];Counts", 0.0, 5.0, 100};
+    framework::Hist1<> h_piplus_p{"/DiPion/piplus_p", "#pi^{+} Momentum;Momentum [GeV/c];Counts", 0.0, 6.0, 100};
+    framework::Hist1<> h_piminus_p{"/DiPion/piminus_p", "#pi^{-} Momentum;Momentum [GeV/c];Counts", 0.0, 6.0, 100};
+    framework::Hist1<> h_piplus_chi2pid{"/DiPion/piplus_chi2pid", "#pi^{+} #chi^{2}_{PID};#chi^{2}_{PID};Events", -15.0, 15.0, 100};
+    framework::Hist1<> h_piminus_chi2pid{"/DiPion/piminus_chi2pid", "#pi^{-} #chi^{2}_{PID};#chi^{2}_{PID};Events", -15.0, 15.0, 100};
+    framework::Hist2<> h_Q2_vs_W{"/DiPion/Q2_vs_W", "Q^{2} vs W;W [GeV];Q^{2} [GeV^{2}]", 1.0, 5.0, 100, 0.0, 10.0, 100};
     auto fill_histograms([[maybe_unused]] const Particle& electron, const physics::DISAnalysis::DISKinematics& kin, const Particle& piplus, const Particle& piminus) -> void {
         h_Q2.fill(kin.q2);
         h_W.fill(kin.w);

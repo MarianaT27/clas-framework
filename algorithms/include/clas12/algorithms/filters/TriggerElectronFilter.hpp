@@ -19,6 +19,20 @@ using framework::Log;
 struct TriggerElectronFilterConfig {
     Target target = Target::LD2;
     Polarity polarity = Polarity::Outbending;
+
+    bool enable_trigger_status_cut = true;
+    bool enable_chi2pid_cut = true;
+    bool enable_momentum_cut = true;
+    bool enable_vz_cut = true;
+
+    static constexpr auto config_fields() {
+        using T = TriggerElectronFilterConfig;
+        return std::make_tuple(
+            framework::field("enable_trigger_status_cut", &T::enable_trigger_status_cut),
+            framework::field("enable_chi2pid_cut", &T::enable_chi2pid_cut),
+            framework::field("enable_momentum_cut", &T::enable_momentum_cut),
+            framework::field("enable_vz_cut", &T::enable_vz_cut));
+    }
 };
 
 /**
@@ -37,7 +51,7 @@ class TriggerElectronFilter : public framework::Algorithm {
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Trigger Electron Filter") {
         required_services(m_electron_cuts);
         declare_banks("REC::Particle");
-        declare_properties(m_enable_trigger_status_cut, m_enable_chi2pid_cut, m_enable_momentum_cut, m_enable_vz_cut);
+        declare_config(m_config);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -74,7 +88,7 @@ class TriggerElectronFilter : public framework::Algorithm {
         m_cutflow.pass("Has Electron");
 
         auto trigger_e = event.find_trigger_electron({2000, 4000});
-        if (m_enable_trigger_status_cut.get() && !trigger_e.has_value()) {
+        if (m_config.enable_trigger_status_cut && !trigger_e.has_value()) {
             event.set_decision_typed(framework::Decisions::HasTriggerElectron, false);
             return StatusCode::FILTERED();
         }
@@ -82,19 +96,19 @@ class TriggerElectronFilter : public framework::Algorithm {
 
         auto electron = trigger_e.has_value() ? trigger_e.value() : electrons.front();
 
-        if (m_enable_chi2pid_cut.get() && !m_electron_cuts->pass_chi2pid_cut(electron.chi2pid())) {
+        if (m_config.enable_chi2pid_cut && !m_electron_cuts->pass_chi2pid_cut(electron.chi2pid())) {
             event.set_decision_typed(framework::Decisions::HasTriggerElectron, false);
             return StatusCode::FILTERED();
         }
         m_cutflow.pass("Chi2 PID");
 
-        if (m_enable_momentum_cut.get() && !m_electron_cuts->pass_momentum_cut(electron.p())) {
+        if (m_config.enable_momentum_cut && !m_electron_cuts->pass_momentum_cut(electron.p())) {
             event.set_decision_typed(framework::Decisions::HasTriggerElectron, false);
             return StatusCode::FILTERED();
         }
         m_cutflow.pass("Momentum");
 
-        if (m_enable_vz_cut.get() && !m_electron_cuts->pass_vz_cut(electron.vz(), m_config.target)) {
+        if (m_config.enable_vz_cut && !m_electron_cuts->pass_vz_cut(electron.vz(), m_config.target)) {
             event.set_decision_typed(framework::Decisions::HasTriggerElectron, false);
             return StatusCode::FILTERED();
         }
@@ -109,12 +123,7 @@ class TriggerElectronFilter : public framework::Algorithm {
     Config m_config;
     framework::Cutflow m_cutflow;
 
-    framework::Property<bool> m_enable_trigger_status_cut{"enable_trigger_status_cut", true, "Enable trigger status cut"};
-    framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable chi2 PID cut"};
-    framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
-    framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
-
-    framework::ServiceRef<framework::ElectronCutsService> m_electron_cuts;
+framework::ServiceRef<framework::ElectronCutsService> m_electron_cuts;
 };
 
 }  // namespace algorithms

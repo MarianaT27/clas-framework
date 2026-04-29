@@ -146,6 +146,44 @@ struct Rho0ReconstructionConfig {
     std::vector<double> zh_scan = {};
     std::vector<double> t_scan = {};
     std::vector<double> dvz_scan = {};
+
+    double zh_min = 0.9;
+    double lc_max = 1.0;
+    double t_min = 0.1;
+    double t_max = 0.5;
+    bool enable_delta_vz_pim_cut = true;
+    bool enable_delta_vz_pip_cut = true;
+    bool enable_zh_cut = true;
+    bool enable_lc_cut = true;
+    bool enable_t_cut = true;
+    bool enable_ntuple = true;
+    bool enable_fitting = true;
+    std::vector<double> sigma_scan_values = {};
+    std::vector<double> lc_scan_values = {};
+    std::vector<double> zh_scan_values = {};
+    std::vector<double> t_scan_values = {};
+    std::vector<double> dvz_scan_values = {};
+
+    static constexpr auto config_fields() {
+        using T = Rho0ReconstructionConfig;
+        return std::make_tuple(
+            framework::field("zh_min",                  &T::zh_min),
+            framework::field("lc_max",                  &T::lc_max),
+            framework::field("t_min",                   &T::t_min),
+            framework::field("t_max",                   &T::t_max),
+            framework::field("enable_delta_vz_pim_cut", &T::enable_delta_vz_pim_cut),
+            framework::field("enable_delta_vz_pip_cut", &T::enable_delta_vz_pip_cut),
+            framework::field("enable_zh_cut",           &T::enable_zh_cut),
+            framework::field("enable_lc_cut",           &T::enable_lc_cut),
+            framework::field("enable_t_cut",            &T::enable_t_cut),
+            framework::field("enable_ntuple",           &T::enable_ntuple),
+            framework::field("enable_fitting",          &T::enable_fitting),
+            framework::field("sigma_scan_values",       &T::sigma_scan_values),
+            framework::field("lc_scan_values",          &T::lc_scan_values),
+            framework::field("zh_scan_values",          &T::zh_scan_values),
+            framework::field("t_scan_values",           &T::t_scan_values),
+            framework::field("dvz_scan_values",         &T::dvz_scan_values));
+    }
 };
 
 class Rho0ReconstructionAlg : public framework::Algorithm {
@@ -159,15 +197,16 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
     explicit Rho0ReconstructionAlg(std::string name = "Rho0ReconstructionAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Rho0 Reconstruction"), m_candidate_cutflow("Rho0 Candidate Cuts") {
-        if (!m_config.sigma_scan.empty()) m_sigma_scan_values.set(m_config.sigma_scan);
-        if (!m_config.lc_scan.empty()) m_lc_scan_values.set(m_config.lc_scan);
-        if (!m_config.zh_scan.empty()) m_zh_scan_values.set(m_config.zh_scan);
-        if (!m_config.t_scan.empty()) m_t_scan_values.set(m_config.t_scan);
-        if (!m_config.dvz_scan.empty()) m_dvz_scan_values.set(m_config.dvz_scan);
+        if (!m_config.sigma_scan.empty()) m_config.sigma_scan_values = m_config.sigma_scan;
+        if (!m_config.lc_scan.empty())    m_config.lc_scan_values    = m_config.lc_scan;
+        if (!m_config.zh_scan.empty())    m_config.zh_scan_values    = m_config.zh_scan;
+        if (!m_config.t_scan.empty())     m_config.t_scan_values     = m_config.t_scan;
+        if (!m_config.dvz_scan.empty())   m_config.dvz_scan_values   = m_config.dvz_scan;
 
         required_services(m_hist_svc, m_ntuple_svc, m_output_svc);
         declare_banks("RUN::config");
-        declare_properties(m_zh_min, m_lc_max, m_t_min, m_t_max, m_enable_delta_vz_pim_cut, m_enable_delta_vz_pip_cut, m_enable_zh_cut, m_enable_lc_cut, m_enable_t_cut, m_enable_ntuple, m_enable_fitting, m_sigma_scan_values, m_lc_scan_values, m_zh_scan_values, m_t_scan_values, m_dvz_scan_values);
+        declare_config(m_config);
+        declare_histograms(h_pipim_mass_all, h_pipim_mass_selected, h_rho0_momentum, h_rho0_theta, h_rho0_phi, h_opening_angle, h_pipim_mass_vs_momentum, h_zh, h_lc, h_t, h_delta_vz_pim, h_delta_vz_pip, h_zh_selected, h_lc_selected, h_t_selected, h_delta_vz_pim_selected, h_delta_vz_pip_selected, h_zh_nminus1, h_lc_nminus1, h_t_nminus1, h_delta_vz_pip_nminus1, h_delta_vz_pim_nminus1, h_pipim_mass_nminus1_zh, h_pipim_mass_nminus1_lc, h_pipim_mass_nminus1_t, h_pipim_mass_nminus1_delta_vz_pip, h_pipim_mass_nminus1_delta_vz_pim);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -181,20 +220,20 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
         Log::blank();
 
         Log::subsection("Kinematic Cuts");
-        Log::config(name(), "zh min", fmt::format("{} ({})", m_zh_min.get(), m_enable_zh_cut.get() ? "enabled" : "disabled"));
-        Log::config(name(), "lc max", fmt::format("{} fm ({})", m_lc_max.get(), m_enable_lc_cut.get() ? "enabled" : "disabled"));
-        Log::config(name(), "-t range", fmt::format("[{}, {}] GeV² ({})", m_t_min.get(), m_t_max.get(), m_enable_t_cut.get() ? "enabled" : "disabled"));
+        Log::config(name(), "zh min", fmt::format("{} ({})", m_config.zh_min, m_config.enable_zh_cut ? "enabled" : "disabled"));
+        Log::config(name(), "lc max", fmt::format("{} fm ({})", m_config.lc_max, m_config.enable_lc_cut ? "enabled" : "disabled"));
+        Log::config(name(), "-t range", fmt::format("[{}, {}] GeV² ({})", m_config.t_min, m_config.t_max, m_config.enable_t_cut ? "enabled" : "disabled"));
         auto pip_vz = get_piplus_delta_vz_range();
         auto pim_vz = get_piminus_delta_vz_range();
-        Log::config(name(), "Δvz π⁺", fmt::format("[{:.2f}, {:.2f}] cm ({})", pip_vz.low, pip_vz.high, m_enable_delta_vz_pip_cut.get() ? "enabled" : "disabled"));
-        Log::config(name(), "Δvz π⁻", fmt::format("[{:.2f}, {:.2f}] cm ({})", pim_vz.low, pim_vz.high, m_enable_delta_vz_pim_cut.get() ? "enabled" : "disabled"));
+        Log::config(name(), "Δvz π⁺", fmt::format("[{:.2f}, {:.2f}] cm ({})", pip_vz.low, pip_vz.high, m_config.enable_delta_vz_pip_cut ? "enabled" : "disabled"));
+        Log::config(name(), "Δvz π⁻", fmt::format("[{:.2f}, {:.2f}] cm ({})", pim_vz.low, pim_vz.high, m_config.enable_delta_vz_pim_cut ? "enabled" : "disabled"));
         Log::blank();
 
         Log::subsection("Output Options");
-        Log::config(name(), "NTuple output", m_enable_ntuple.get() ? "enabled" : "disabled");
-        Log::config(name(), "BW+pol3 fitting", m_enable_fitting.get() ? "enabled" : "disabled");
-        if (!m_sigma_scan_values.get().empty()) {
-            Log::config(name(), "Sigma scan", fmt::format("[{}]", fmt::join(m_sigma_scan_values.get(), ", ")));
+        Log::config(name(), "NTuple output", m_config.enable_ntuple ? "enabled" : "disabled");
+        Log::config(name(), "BW+pol3 fitting", m_config.enable_fitting ? "enabled" : "disabled");
+        if (!m_config.sigma_scan_values.empty()) {
+            Log::config(name(), "Sigma scan", fmt::format("[{}]", fmt::join(m_config.sigma_scan_values, ", ")));
         }
         auto log_cut_scan = [this](const std::string& scan_label, const std::vector<double>& values) {
             if (!values.empty()) {
@@ -202,33 +241,33 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
                     fmt::format("[{}]", fmt::join(values, ", ")));
             }
         };
-        log_cut_scan("lc", m_lc_scan_values.get());
-        log_cut_scan("zh", m_zh_scan_values.get());
-        log_cut_scan("t", m_t_scan_values.get());
-        log_cut_scan("dvz", m_dvz_scan_values.get());
+        log_cut_scan("lc", m_config.lc_scan_values);
+        log_cut_scan("zh", m_config.zh_scan_values);
+        log_cut_scan("t", m_config.t_scan_values);
+        log_cut_scan("dvz", m_config.dvz_scan_values);
         Log::blank();
 
         // Populate cut scan registry
-        if (!m_lc_scan_values.get().empty()) {
-            m_cut_scan_defs.push_back({"lc", &m_lc_scan_values.get(),
+        if (!m_config.lc_scan_values.empty()) {
+            m_cut_scan_defs.push_back({"lc", &m_config.lc_scan_values,
                 [](const Rho0Candidate& c, double v, bool&, bool&, bool&, bool& lc, bool&) {
                     lc = c.lc < v;
                 }});
         }
-        if (!m_zh_scan_values.get().empty()) {
-            m_cut_scan_defs.push_back({"zh", &m_zh_scan_values.get(),
+        if (!m_config.zh_scan_values.empty()) {
+            m_cut_scan_defs.push_back({"zh", &m_config.zh_scan_values,
                 [](const Rho0Candidate& c, double v, bool&, bool&, bool& zh, bool&, bool&) {
                     zh = c.zh > v;
                 }});
         }
-        if (!m_t_scan_values.get().empty()) {
-            m_cut_scan_defs.push_back({"t", &m_t_scan_values.get(),
+        if (!m_config.t_scan_values.empty()) {
+            m_cut_scan_defs.push_back({"t", &m_config.t_scan_values,
                 [this](const Rho0Candidate& c, double v, bool&, bool&, bool&, bool&, bool& t) {
-                    t = (c.minus_t > m_t_min.get()) && (c.minus_t < v);
+                    t = (c.minus_t > m_config.t_min) && (c.minus_t < v);
                 }});
         }
-        if (!m_dvz_scan_values.get().empty()) {
-            m_cut_scan_defs.push_back({"dvz", &m_dvz_scan_values.get(),
+        if (!m_config.dvz_scan_values.empty()) {
+            m_cut_scan_defs.push_back({"dvz", &m_config.dvz_scan_values,
                 [this](const Rho0Candidate& c, double v, bool& dvz_pip, bool& dvz_pim, bool&, bool&, bool&) {
                     auto pip_range = get_delta_vz_range_nsigma(get_piplus_delta_vz_range(), v);
                     auto pim_range = get_delta_vz_range_nsigma(get_piminus_delta_vz_range(), v);
@@ -239,7 +278,7 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
         book_histograms();
 
-        if (m_enable_ntuple.get()) {
+        if (m_config.enable_ntuple) {
             if (m_ntuple_svc) { setup_ntuple(); }
         }
 
@@ -342,15 +381,15 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
         // Update candidate-level cutflow counters (sequential, short-circuit).
         for (const auto& cand : candidates) {
-            if (m_enable_delta_vz_pim_cut.get() && !cand.passes_delta_vz_pim) continue;
+            if (m_config.enable_delta_vz_pim_cut && !cand.passes_delta_vz_pim) continue;
             m_candidate_cutflow.pass("delta_vz_pim Cut");
-            if (m_enable_delta_vz_pip_cut.get() && !cand.passes_delta_vz_pip) continue;
+            if (m_config.enable_delta_vz_pip_cut && !cand.passes_delta_vz_pip) continue;
             m_candidate_cutflow.pass("delta_vz_pip Cut");
-            if (m_enable_zh_cut.get() && !cand.passes_zh) continue;
+            if (m_config.enable_zh_cut && !cand.passes_zh) continue;
             m_candidate_cutflow.pass("zh > 0.9");
-            if (m_enable_lc_cut.get() && !cand.passes_lc) continue;
+            if (m_config.enable_lc_cut && !cand.passes_lc) continue;
             m_candidate_cutflow.pass("lc < 1 fm");
-            if (m_enable_t_cut.get() && !cand.passes_t) continue;
+            if (m_config.enable_t_cut && !cand.passes_t) continue;
             m_candidate_cutflow.pass("0.1 < -t < 0.5");
         }
 
@@ -390,7 +429,7 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
         fill_ntuple(candidates, electron, *dis, n_passing);
 
         // Process sigma scan variations
-        for (double scan_sigma : m_sigma_scan_values.get()) {
+        for (double scan_sigma : m_config.sigma_scan_values) {
             std::string label = format_sigma_label(scan_sigma);
             auto sh_it = m_sigma_scan_histograms.find(label);
             if (sh_it == m_sigma_scan_histograms.end()) continue;
@@ -444,18 +483,18 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
         );
 
         // Perform BW + pol3 fitting if enabled
-        if (m_enable_fitting.get()) {
+        if (m_config.enable_fitting) {
             fit_invariant_mass_histograms();
         }
 
         // Scan analyses (sigma and cut scans)
-        if (m_enable_fitting.get()) {
+        if (m_config.enable_fitting) {
             // Sigma scan
-            if (!m_sigma_scan_values.get().empty()) {
+            if (!m_config.sigma_scan_values.empty()) {
                 fit_and_report_scan(
                     {"sigma", "Delta-t Sigma", "Sigma", "{:.1f}", 3.0,
                      "Rho0/SigmaScan", "sigma_scan_results", "sigma"},
-                    m_sigma_scan_values.get(), m_sigma_scan_histograms,
+                    m_config.sigma_scan_values, m_sigma_scan_histograms,
                     [](double v) { return format_sigma_label(v); });
             }
 
@@ -466,18 +505,18 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
                 double nominal_value;
             };
             std::vector<CutScanConfig> cut_scans;
-            if (!m_lc_scan_values.get().empty())
+            if (!m_config.lc_scan_values.empty())
                 cut_scans.push_back({"lc", "Coherence Length", "lc_max [fm]", "{:.2f}",
-                    m_lc_scan_values.get(), m_lc_max.get()});
-            if (!m_zh_scan_values.get().empty())
+                    m_config.lc_scan_values, m_config.lc_max});
+            if (!m_config.zh_scan_values.empty())
                 cut_scans.push_back({"zh", "Energy Fraction", "zh_min", "{:.2f}",
-                    m_zh_scan_values.get(), m_zh_min.get()});
-            if (!m_t_scan_values.get().empty())
+                    m_config.zh_scan_values, m_config.zh_min});
+            if (!m_config.t_scan_values.empty())
                 cut_scans.push_back({"t", "Momentum Transfer", "-t_max [GeV^2]", "{:.2f}",
-                    m_t_scan_values.get(), m_t_max.get()});
-            if (!m_dvz_scan_values.get().empty())
+                    m_config.t_scan_values, m_config.t_max});
+            if (!m_config.dvz_scan_values.empty())
                 cut_scans.push_back({"dvz", "Delta Vz", "N-sigma", "{:.2f}",
-                    m_dvz_scan_values.get(), 3.0});
+                    m_config.dvz_scan_values, 3.0});
 
             for (const auto& cs : cut_scans) {
                 auto scan_map_it = m_cut_scan_histograms.find(cs.name);
@@ -639,15 +678,15 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
                 // Apply cuts using target-specific and charge-specific ranges
                 cand.passes_delta_vz_pip = get_piplus_delta_vz_range().contains(cand.delta_vz_pip);
                 cand.passes_delta_vz_pim = get_piminus_delta_vz_range().contains(cand.delta_vz_pim);
-                cand.passes_zh = cand.zh > m_zh_min.get();
-                cand.passes_lc = cand.lc < m_lc_max.get();
-                cand.passes_t = (cand.minus_t > m_t_min.get()) && (cand.minus_t < m_t_max.get());
+                cand.passes_zh = cand.zh > m_config.zh_min;
+                cand.passes_lc = cand.lc < m_config.lc_max;
+                cand.passes_t = (cand.minus_t > m_config.t_min) && (cand.minus_t < m_config.t_max);
                 cand.passes_all_cuts =
-                    (!m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip) &&
-                    (!m_enable_delta_vz_pim_cut.get() || cand.passes_delta_vz_pim) &&
-                    (!m_enable_zh_cut.get() || cand.passes_zh) &&
-                    (!m_enable_lc_cut.get() || cand.passes_lc) &&
-                    (!m_enable_t_cut.get() || cand.passes_t);
+                    (!m_config.enable_delta_vz_pip_cut || cand.passes_delta_vz_pip) &&
+                    (!m_config.enable_delta_vz_pim_cut || cand.passes_delta_vz_pim) &&
+                    (!m_config.enable_zh_cut || cand.passes_zh) &&
+                    (!m_config.enable_lc_cut || cand.passes_lc) &&
+                    (!m_config.enable_t_cut || cand.passes_t);
 
                 candidates.push_back(std::move(cand));
             }
@@ -718,10 +757,10 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
     auto fill_lc_binned_histograms(const std::vector<Rho0Candidate>& candidates, double Q2) -> void {
         bool passes_Q2 = (Q2 > 1.0);
         for (const auto& cand : candidates) {
-            if ((!m_enable_delta_vz_pim_cut.get() || cand.passes_delta_vz_pim) &&
-                (!m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip) &&
-                (!m_enable_zh_cut.get() || cand.passes_zh) && passes_Q2 &&
-                (!m_enable_t_cut.get() || cand.passes_t)) {
+            if ((!m_config.enable_delta_vz_pim_cut || cand.passes_delta_vz_pim) &&
+                (!m_config.enable_delta_vz_pip_cut || cand.passes_delta_vz_pip) &&
+                (!m_config.enable_zh_cut || cand.passes_zh) && passes_Q2 &&
+                (!m_config.enable_t_cut || cand.passes_t)) {
                 fill_binned_histogram(LC_BINS, "LC", h_pipim_mass_lc_bins, cand.lc, cand.mass);
             }
         }
@@ -732,11 +771,11 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
      * Indices: 0=delta_vz_pim, 1=delta_vz_pip, 2=zh, 3=lc, 4=t
      */
     auto passes_all_except(const Rho0Candidate& c, int skip) const -> bool {
-        return (skip == 0 || !m_enable_delta_vz_pim_cut.get() || c.passes_delta_vz_pim) &&
-               (skip == 1 || !m_enable_delta_vz_pip_cut.get() || c.passes_delta_vz_pip) &&
-               (skip == 2 || !m_enable_zh_cut.get()           || c.passes_zh) &&
-               (skip == 3 || !m_enable_lc_cut.get()           || c.passes_lc) &&
-               (skip == 4 || !m_enable_t_cut.get()            || c.passes_t);
+        return (skip == 0 || !m_config.enable_delta_vz_pim_cut || c.passes_delta_vz_pim) &&
+               (skip == 1 || !m_config.enable_delta_vz_pip_cut || c.passes_delta_vz_pip) &&
+               (skip == 2 || !m_config.enable_zh_cut           || c.passes_zh) &&
+               (skip == 3 || !m_config.enable_lc_cut           || c.passes_lc) &&
+               (skip == 4 || !m_config.enable_t_cut            || c.passes_t);
     }
 
     /**
@@ -777,7 +816,7 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
      */
     auto fill_ntuple(const std::vector<Rho0Candidate>& candidates, const Particle& electron,
                      const framework::EventHelpers::DISVars& dis, size_t n_passing) -> void {
-        if (!m_ntuple_writer.is_initialized() || !m_enable_ntuple.get()) return;
+        if (!m_ntuple_writer.is_initialized() || !m_config.enable_ntuple) return;
 
         std::lock_guard<std::mutex> lock(m_ntuple_mutex);
         auto& nt = m_ntuple_writer.data();
@@ -846,24 +885,6 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
    private:
     Config m_config;
 
-    // Properties
-    framework::Property<double> m_zh_min{"zh_min", 0.9, "Minimum zh (energy fraction)"};
-    framework::Property<double> m_lc_max{"lc_max", 1.0, "Maximum coherence length [fm]"};
-    framework::Property<double> m_t_min{"t_min", 0.1, "Minimum -t [GeV²]"};
-    framework::Property<double> m_t_max{"t_max", 0.5, "Maximum -t [GeV²]"};
-    framework::Property<bool> m_enable_delta_vz_pim_cut{"enable_delta_vz_pim_cut", true, "Enable delta_vz pi- cut"};
-    framework::Property<bool> m_enable_delta_vz_pip_cut{"enable_delta_vz_pip_cut", true, "Enable delta_vz pi+ cut"};
-    framework::Property<bool> m_enable_zh_cut{"enable_zh_cut", true, "Enable zh cut"};
-    framework::Property<bool> m_enable_lc_cut{"enable_lc_cut", true, "Enable coherence length cut"};
-    framework::Property<bool> m_enable_t_cut{"enable_t_cut", true, "Enable -t cut"};
-    framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
-    framework::Property<bool> m_enable_fitting{"enable_fitting", true, "Enable BW+pol3 fitting in finalize"};
-    framework::Property<std::vector<double>> m_sigma_scan_values{"sigma_scan_values", {}, "Sigma values for delta_t scan (empty=disabled)"};
-    framework::Property<std::vector<double>> m_lc_scan_values{"lc_scan_values", {}, "lc_max values for coherence length scan (empty=disabled)"};
-    framework::Property<std::vector<double>> m_zh_scan_values{"zh_scan_values", {}, "zh_min values for energy fraction scan (empty=disabled)"};
-    framework::Property<std::vector<double>> m_t_scan_values{"t_scan_values", {}, "t_max values for momentum transfer scan (empty=disabled)"};
-    framework::Property<std::vector<double>> m_dvz_scan_values{"dvz_scan_values", {}, "N-sigma values for delta_vz scan (empty=disabled)"};
-
     /**
      * @brief Delta vz cut range structure
      */
@@ -931,13 +952,13 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
     // Region-specific histogram set (mass + kinematics)
     struct RegionHistograms {
-        framework::H1<> mass_all{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
-        framework::H1<> mass_selected{mh::regular(0, 1.2, static_cast<std::size_t>(200))};
-        framework::H1<> momentum{mh::regular(0, 10, static_cast<std::size_t>(100))};
-        framework::H1<> theta{mh::regular(0, 180, static_cast<std::size_t>(180))};
-        framework::H1<> phi{mh::regular(-180, 180, static_cast<std::size_t>(360))};
-        framework::H1<> opening_angle{mh::regular(0, 180, static_cast<std::size_t>(180))};
-        framework::H2<> mass_vs_momentum{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(0.4, 1.2, static_cast<std::size_t>(100))};
+        framework::H1<> mass_all{mh::regular(0, 2.0, 200)};
+        framework::H1<> mass_selected{mh::regular(0, 1.2, 200)};
+        framework::H1<> momentum{mh::regular(0, 10, 100)};
+        framework::H1<> theta{mh::regular(0, 180, 180)};
+        framework::H1<> phi{mh::regular(-180, 180, 360)};
+        framework::H1<> opening_angle{mh::regular(0, 180, 180)};
+        framework::H2<> mass_vs_momentum{mh::regular(0, 10, 100), mh::regular(0.4, 1.2, 100)};
         std::map<std::string, std::unique_ptr<framework::H1<>>> mass_q2_bins;
     };
 
@@ -952,8 +973,8 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
     // Sigma scan histogram set
     struct ScanHistograms {
-        framework::H1<> mass_all{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
-        framework::H1<> mass_selected{mh::regular(0, 1.2, static_cast<std::size_t>(200))};
+        framework::H1<> mass_all{mh::regular(0, 2.0, 200)};
+        framework::H1<> mass_selected{mh::regular(0, 1.2, 200)};
         std::map<std::string, std::unique_ptr<framework::H1<>>> mass_q2_bins;
     };
     std::map<std::string, ScanHistograms> m_sigma_scan_histograms;
@@ -1002,40 +1023,40 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
     }
 
     // Histograms - Rho0 candidates (atomic for thread-safety)
-    framework::H1<> h_pipim_mass_all{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
-    framework::H1<> h_pipim_mass_selected{mh::regular(0, 1.2, static_cast<std::size_t>(200))};
-    framework::H1<> h_rho0_momentum{mh::regular(0, 10, static_cast<std::size_t>(100))};
-    framework::H1<> h_rho0_theta{mh::regular(0, 180, static_cast<std::size_t>(180))};
-    framework::H1<> h_rho0_phi{mh::regular(-180, 180, static_cast<std::size_t>(360))};
-    framework::H1<> h_opening_angle{mh::regular(0, 180, static_cast<std::size_t>(180))};
-    framework::H2<> h_pipim_mass_vs_momentum{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(0.4, 1.2, static_cast<std::size_t>(100))};
+    framework::Hist1<> h_pipim_mass_all{"/Rho0/pipim_mass_all", "All #pi^{+}#pi^{-} Invariant Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 0, 2.0, 200};
+    framework::Hist1<> h_pipim_mass_selected{"/Rho0/pipim_mass_selected", "Selected #rho^{0} Candidate Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 0, 1.2, 200};
+    framework::Hist1<> h_rho0_momentum{"/Rho0/rho0_momentum", "#rho^{0} Momentum;p [GeV/c];Events", 0, 10, 100};
+    framework::Hist1<> h_rho0_theta{"/Rho0/rho0_theta", "#rho^{0} Theta;#theta [deg];Events", 0, 180, 180};
+    framework::Hist1<> h_rho0_phi{"/Rho0/rho0_phi", "#rho^{0} Phi;#phi [deg];Events", -180, 180, 360};
+    framework::Hist1<> h_opening_angle{"/Rho0/opening_angle", "#pi^{+}#pi^{-} Opening Angle;#theta_{#pi^{+}#pi^{-}} [deg];Events", 0, 180, 180};
+    framework::Hist2<> h_pipim_mass_vs_momentum{"/Rho0/pipim_mass_vs_momentum", "#pi^{+}#pi^{-} Mass vs Momentum;p [GeV/c];M_{#pi^{+}#pi^{-}} [GeV/c^{2}]", 0, 10, 100, 0.4, 1.2, 100};
 
     // Histograms - Kinematic variables (before cuts)
-    framework::H1<> h_zh{mh::regular(0, 1.5, static_cast<std::size_t>(100))};
-    framework::H1<> h_lc{mh::regular(0, 5, static_cast<std::size_t>(100))};
-    framework::H1<> h_t{mh::regular(0, 2, static_cast<std::size_t>(100))};
-    framework::H1<> h_delta_vz_pim{mh::regular(-20, 20, static_cast<std::size_t>(100))};
-    framework::H1<> h_delta_vz_pip{mh::regular(-20, 20, static_cast<std::size_t>(100))};
+    framework::Hist1<> h_zh{"/Rho0/zh", "z_{h} (before cuts);z_{h} = E_{#rho^{0}}/#nu;Events", 0, 1.5, 100};
+    framework::Hist1<> h_lc{"/Rho0/lc", "Coherence Length (before cuts);l_{c} [fm];Events", 0, 5, 100};
+    framework::Hist1<> h_t{"/Rho0/t", "-t (before cuts);-t [GeV^{2}];Events", 0, 2, 100};
+    framework::Hist1<> h_delta_vz_pim{"/Rho0/delta_vz_pim", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", -20, 20, 100};
+    framework::Hist1<> h_delta_vz_pip{"/Rho0/delta_vz_pip", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", -20, 20, 100};
 
     // Histograms - Kinematic variables (after cuts)
-    framework::H1<> h_zh_selected{mh::regular(0, 1.5, static_cast<std::size_t>(100))};
-    framework::H1<> h_lc_selected{mh::regular(0, 5, static_cast<std::size_t>(100))};
-    framework::H1<> h_t_selected{mh::regular(0, 2, static_cast<std::size_t>(100))};
-    framework::H1<> h_delta_vz_pim_selected{mh::regular(-20, 20, static_cast<std::size_t>(100))};
-    framework::H1<> h_delta_vz_pip_selected{mh::regular(-20, 20, static_cast<std::size_t>(100))};
+    framework::Hist1<> h_zh_selected{"/Rho0/zh_selected", "z_{h} (after cuts);z_{h} = E_{#rho^{0}}/#nu;Events", 0, 1.5, 100};
+    framework::Hist1<> h_lc_selected{"/Rho0/lc_selected", "Coherence Length (after cuts);l_{c} [fm];Events", 0, 5, 100};
+    framework::Hist1<> h_t_selected{"/Rho0/t_selected", "-t (after cuts);-t [GeV^{2}];Events", 0, 2, 100};
+    framework::Hist1<> h_delta_vz_pim_selected{"/Rho0/delta_vz_pim_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", -20, 20, 100};
+    framework::Hist1<> h_delta_vz_pip_selected{"/Rho0/delta_vz_pip_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", -20, 20, 100};
 
     // N-1 histograms: cut variable distributions with all other cuts applied
-    framework::H1<> h_zh_nminus1{mh::regular(0, 1.5, static_cast<std::size_t>(100))};
-    framework::H1<> h_lc_nminus1{mh::regular(0, 5, static_cast<std::size_t>(100))};
-    framework::H1<> h_t_nminus1{mh::regular(0, 2, static_cast<std::size_t>(100))};
-    framework::H1<> h_delta_vz_pip_nminus1{mh::regular(-20, 20, static_cast<std::size_t>(100))};
-    framework::H1<> h_delta_vz_pim_nminus1{mh::regular(-20, 20, static_cast<std::size_t>(100))};
+    framework::Hist1<> h_zh_nminus1{"/Rho0/NMinus1/zh_nminus1", "z_{h} (N-1);z_{h} = E_{#rho^{0}}/#nu;Events", 0, 1.5, 100};
+    framework::Hist1<> h_lc_nminus1{"/Rho0/NMinus1/lc_nminus1", "Coherence Length (N-1);l_{c} [fm];Events", 0, 5, 100};
+    framework::Hist1<> h_t_nminus1{"/Rho0/NMinus1/t_nminus1", "-t (N-1);-t [GeV^{2}];Events", 0, 2, 100};
+    framework::Hist1<> h_delta_vz_pip_nminus1{"/Rho0/NMinus1/delta_vz_pip_nminus1", "#Delta v_{z} #pi^{+} (N-1);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", -20, 20, 100};
+    framework::Hist1<> h_delta_vz_pim_nminus1{"/Rho0/NMinus1/delta_vz_pim_nminus1", "#Delta v_{z} #pi^{-} (N-1);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", -20, 20, 100};
     // N-1 histograms: invariant mass with all other cuts applied
-    framework::H1<> h_pipim_mass_nminus1_zh{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
-    framework::H1<> h_pipim_mass_nminus1_lc{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
-    framework::H1<> h_pipim_mass_nminus1_t{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
-    framework::H1<> h_pipim_mass_nminus1_delta_vz_pip{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
-    framework::H1<> h_pipim_mass_nminus1_delta_vz_pim{mh::regular(0, 2.0, static_cast<std::size_t>(200))};
+    framework::Hist1<> h_pipim_mass_nminus1_zh{"/Rho0/NMinus1/pipim_mass_nminus1_zh", "M_{#pi^{+}#pi^{-}} (all cuts except z_{h});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 0, 2.0, 200};
+    framework::Hist1<> h_pipim_mass_nminus1_lc{"/Rho0/NMinus1/pipim_mass_nminus1_lc", "M_{#pi^{+}#pi^{-}} (all cuts except l_{c});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 0, 2.0, 200};
+    framework::Hist1<> h_pipim_mass_nminus1_t{"/Rho0/NMinus1/pipim_mass_nminus1_t", "M_{#pi^{+}#pi^{-}} (all cuts except -t);M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 0, 2.0, 200};
+    framework::Hist1<> h_pipim_mass_nminus1_delta_vz_pip{"/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pip", "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{+});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 0, 2.0, 200};
+    framework::Hist1<> h_pipim_mass_nminus1_delta_vz_pim{"/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pim", "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{-});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", 0, 2.0, 200};
 
     // Q²-binned invariant mass histograms
     std::map<std::string, std::unique_ptr<framework::H1<>>> h_pipim_mass_q2_bins;
@@ -1198,11 +1219,11 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
      * The scanned cut uses the provided threshold value.
      */
     auto passes_cut_scan(const Rho0Candidate& cand, const CutScanDef& def, double scan_value) const -> bool {
-        bool dvz_pip = !m_enable_delta_vz_pip_cut.get() || cand.passes_delta_vz_pip;
-        bool dvz_pim = !m_enable_delta_vz_pim_cut.get() || cand.passes_delta_vz_pim;
-        bool zh = !m_enable_zh_cut.get() || cand.passes_zh;
-        bool lc = !m_enable_lc_cut.get() || cand.passes_lc;
-        bool t  = !m_enable_t_cut.get()  || cand.passes_t;
+        bool dvz_pip = !m_config.enable_delta_vz_pip_cut || cand.passes_delta_vz_pip;
+        bool dvz_pim = !m_config.enable_delta_vz_pim_cut || cand.passes_delta_vz_pim;
+        bool zh = !m_config.enable_zh_cut || cand.passes_zh;
+        bool lc = !m_config.enable_lc_cut || cand.passes_lc;
+        bool t  = !m_config.enable_t_cut  || cand.passes_t;
 
         def.apply(cand, scan_value, dvz_pip, dvz_pim, zh, lc, t);
 
@@ -1223,35 +1244,14 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
     template<typename HistSvc>
     auto book_main_histograms(HistSvc* svc) -> void {
-        svc->register_hist("/Rho0/pipim_mass_all", "All #pi^{+}#pi^{-} Invariant Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_all);
-        svc->register_hist("/Rho0/pipim_mass_selected", "Selected #rho^{0} Candidate Mass;M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_selected);
-        svc->register_hist("/Rho0/rho0_momentum", "#rho^{0} Momentum;p [GeV/c];Events", h_rho0_momentum);
-        svc->register_hist("/Rho0/rho0_theta", "#rho^{0} Theta;#theta [deg];Events", h_rho0_theta);
-        svc->register_hist("/Rho0/rho0_phi", "#rho^{0} Phi;#phi [deg];Events", h_rho0_phi);
-        svc->register_hist("/Rho0/opening_angle", "#pi^{+}#pi^{-} Opening Angle;#theta_{#pi^{+}#pi^{-}} [deg];Events", h_opening_angle);
-
-        svc->register_hist("/Rho0/pipim_mass_vs_momentum", "#pi^{+}#pi^{-} Mass vs Momentum;p [GeV/c];M_{#pi^{+}#pi^{-}} [GeV/c^{2}]", h_pipim_mass_vs_momentum);
-
         // Kinematic variable histograms (before cuts)
-        svc->register_hist("/Rho0/zh", "z_{h} (before cuts);z_{h} = E_{#rho^{0}}/#nu;Events", h_zh);
-        svc->register_hist("/Rho0/lc", "Coherence Length (before cuts);l_{c} [fm];Events", h_lc);
-        svc->register_hist("/Rho0/t", "-t (before cuts);-t [GeV^{2}];Events", h_t);
-        svc->register_hist("/Rho0/delta_vz_pim", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", h_delta_vz_pim);
-        svc->register_hist("/Rho0/delta_vz_pip", "#Delta v_{z} (before cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", h_delta_vz_pip);
-
         // Kinematic variable histograms (after cuts)
-        svc->register_hist("/Rho0/zh_selected", "z_{h} (after cuts);z_{h} = E_{#rho^{0}}/#nu;Events", h_zh_selected);
-        svc->register_hist("/Rho0/lc_selected", "Coherence Length (after cuts);l_{c} [fm];Events", h_lc_selected);
-        svc->register_hist("/Rho0/t_selected", "-t (after cuts);-t [GeV^{2}];Events", h_t_selected);
-        svc->register_hist("/Rho0/delta_vz_pim_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", h_delta_vz_pim_selected);
-        svc->register_hist("/Rho0/delta_vz_pip_selected", "#Delta v_{z} (after cuts);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", h_delta_vz_pip_selected);
-
         // Q²-binned invariant mass histograms
         for (const auto& [q2_min, q2_max] : Q2_BINS) {
             std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
             std::string hist_path = fmt::format("/Rho0/Q2_bins/pipim_mass_{}", bin_name);
             std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", q2_min, q2_max);
-            h_pipim_mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, static_cast<std::size_t>(200)));
+            h_pipim_mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, 200));
             svc->register_hist(hist_path, title, *h_pipim_mass_q2_bins[bin_name]);
         }
 
@@ -1260,24 +1260,13 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
             std::string bin_name = fmt::format("LC_{:.1f}_{:.1f}", lc_min, lc_max);
             std::string hist_path = fmt::format("/Rho0/LC_bins/pipim_mass_{}", bin_name);
             std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f} < l_{{c}} < {:.1f} fm);M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", lc_min, lc_max);
-            h_pipim_mass_lc_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, static_cast<std::size_t>(200)));
+            h_pipim_mass_lc_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, 200));
             svc->register_hist(hist_path, title, *h_pipim_mass_lc_bins[bin_name]);
         }
     }
 
     template<typename HistSvc>
     auto book_nminus1_histograms(HistSvc* svc) -> void {
-        svc->register_hist("/Rho0/NMinus1/zh_nminus1", "z_{h} (N-1);z_{h} = E_{#rho^{0}}/#nu;Events", h_zh_nminus1);
-        svc->register_hist("/Rho0/NMinus1/lc_nminus1", "Coherence Length (N-1);l_{c} [fm];Events", h_lc_nminus1);
-        svc->register_hist("/Rho0/NMinus1/t_nminus1", "-t (N-1);-t [GeV^{2}];Events", h_t_nminus1);
-        svc->register_hist("/Rho0/NMinus1/delta_vz_pip_nminus1", "#Delta v_{z} #pi^{+} (N-1);v_{z}^{e} - v_{z}^{#pi^{+}} [cm];Events", h_delta_vz_pip_nminus1);
-        svc->register_hist("/Rho0/NMinus1/delta_vz_pim_nminus1", "#Delta v_{z} #pi^{-} (N-1);v_{z}^{e} - v_{z}^{#pi^{-}} [cm];Events", h_delta_vz_pim_nminus1);
-
-        svc->register_hist("/Rho0/NMinus1/pipim_mass_nminus1_zh", "M_{#pi^{+}#pi^{-}} (all cuts except z_{h});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_nminus1_zh);
-        svc->register_hist("/Rho0/NMinus1/pipim_mass_nminus1_lc", "M_{#pi^{+}#pi^{-}} (all cuts except l_{c});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_nminus1_lc);
-        svc->register_hist("/Rho0/NMinus1/pipim_mass_nminus1_t", "M_{#pi^{+}#pi^{-}} (all cuts except -t);M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_nminus1_t);
-        svc->register_hist("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pip", "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{+});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_nminus1_delta_vz_pip);
-        svc->register_hist("/Rho0/NMinus1/pipim_mass_nminus1_delta_vz_pim", "M_{#pi^{+}#pi^{-}} (all cuts except #Delta v_{z} #pi^{-});M_{#pi^{+}#pi^{-}} [GeV/c^{2}];Events", h_pipim_mass_nminus1_delta_vz_pim);
     }
 
     template<typename HistSvc>
@@ -1295,7 +1284,7 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
                 std::string bin_name = fmt::format("Q2_{:.1f}_{:.1f}", q2_min, q2_max);
                 std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
                 std::string title = fmt::format("{} #pi^{{+}}#pi^{{-}} Mass ({:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events", label, q2_min, q2_max);
-                h.mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, static_cast<std::size_t>(200)));
+                h.mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, 200));
                 svc->register_hist(hist_path, title, *h.mass_q2_bins[bin_name]);
             }
         };
@@ -1306,7 +1295,7 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
 
     template<typename HistSvc>
     auto book_sigma_scan_histograms(HistSvc* svc) -> void {
-        for (double sigma : m_sigma_scan_values.get()) {
+        for (double sigma : m_config.sigma_scan_values) {
             std::string label = format_sigma_label(sigma);
             std::string dir = fmt::format("/Rho0/SigmaScan/{}", label);
 
@@ -1321,7 +1310,7 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
                 std::string hist_path = fmt::format("{}/Q2_bins/pipim_mass_{}", dir, bin_name);
                 std::string title = fmt::format("#pi^{{+}}#pi^{{-}} Mass ({:.1f}#sigma, {:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
                     sigma, q2_min, q2_max);
-                sh.mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, static_cast<std::size_t>(200)));
+                sh.mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, 200));
                 svc->register_hist(hist_path, title, *sh.mass_q2_bins[bin_name]);
             }
         }
@@ -1374,16 +1363,16 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
                     std::string title = fmt::format(
                         "#pi^{{+}}#pi^{{-}} Mass ({} = {}, {:.1f} < Q^{{2}} < {:.1f} GeV^{{2}});M_{{#pi^{{+}}#pi^{{-}}}} [GeV/c^{{2}}];Events",
                         display_prefix, val_display, q2_min, q2_max);
-                    ch.mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, static_cast<std::size_t>(200)));
+                    ch.mass_q2_bins[bin_name] = std::make_unique<framework::H1<>>(mh::regular(0.0, 1.4, 200));
                     svc->register_hist(hist_path, title, *ch.mass_q2_bins[bin_name]);
                 }
             }
         };
 
-        book_cut_scan("lc", m_lc_scan_values.get(), "l_{c}^{max}", "fm");
-        book_cut_scan("zh", m_zh_scan_values.get(), "z_{h}^{min}", "");
-        book_cut_scan("t", m_t_scan_values.get(), "-t^{max}", "GeV^{2}");
-        book_cut_scan("dvz", m_dvz_scan_values.get(), "#Delta v_{z}", "#sigma");
+        book_cut_scan("lc", m_config.lc_scan_values, "l_{c}^{max}", "fm");
+        book_cut_scan("zh", m_config.zh_scan_values, "z_{h}^{min}", "");
+        book_cut_scan("t", m_config.t_scan_values, "-t^{max}", "GeV^{2}");
+        book_cut_scan("dvz", m_config.dvz_scan_values, "#Delta v_{z}", "#sigma");
     }
     auto setup_ntuple() -> void {
         if (m_ntuple_svc) {
@@ -1588,8 +1577,8 @@ class Rho0ReconstructionAlg : public framework::Algorithm {
         };
 
         // Fit the main selected mass histogram with both ranges
-        if (entries_of(h_pipim_mass_selected) > 100) {
-            auto root_hist = std::unique_ptr<TH1D>(mh::to_root(h_pipim_mass_selected, "pipim_mass_selected_fit", "Selected Mass"));
+        if (entries_of(h_pipim_mass_selected.histogram()) > 100) {
+            auto root_hist = std::unique_ptr<TH1D>(mh::to_root(h_pipim_mass_selected.histogram(), "pipim_mass_selected_fit", "Selected Mass"));
             auto [result_narrow, result_wide] = fit_histogram_compare_ranges(root_hist.get(), "All Q² (selected)");
             if (result_narrow.valid) fit_results_narrow["All"] = result_narrow;
             if (result_wide.valid) fit_results_wide["All"] = result_wide;

@@ -215,4 +215,33 @@ private:
     return ApplicationBuilder(std::move(name));
 }
 
+// ============================================================================
+// Free-function shorthand for AnalysisRunner lambdas
+// ============================================================================
+//
+// Inside `[](auto& builder, const auto& config) { ... }`, calling
+// `builder.add_algorithm<T>(...)` requires the `.template` keyword because
+// `builder` is a dependent name. The free functions below sidestep that —
+// users can write:
+//
+//     framework::add_alg<MyAlg>(builder);
+//     framework::add_svc<MyService>(builder);
+//
+// instead of the more verbose:
+//
+//     builder.template add_algorithm<MyAlg>();
+//     builder.template add_service<MyService>();
+//
+// The free-function form also reads more naturally as a list of registrations.
+
+template <typename AlgT, typename... Args>
+auto add_alg(ApplicationBuilder& b, Args&&... args) -> ApplicationBuilder& {
+    return b.add_algorithm<AlgT>(std::forward<Args>(args)...);
+}
+
+template <typename ServiceT, typename... Args>
+auto add_svc(ApplicationBuilder& b, Args&&... args) -> ApplicationBuilder& {
+    return b.add_service<ServiceT>(std::forward<Args>(args)...);
+}
+
 }  // namespace framework

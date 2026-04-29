@@ -11,14 +11,12 @@
 auto main(int argc, char* argv[]) -> int {
     return framework::AnalysisRunner::run(
         argc, argv, "Electron Analysis", "electron_analysis",
-        [](auto& builder, const auto& config) {
-            algorithms::ElectronAnalysisConfig alg_config;
-            alg_config.target = config.target;
-            alg_config.polarity = config.polarity;
-
-            builder
-                .template add_service<framework::ElectronCutsService>()
-                .template add_algorithm<algorithms::EventMonitor>("EventMonitor")
-                .template add_algorithm<algorithms::ElectronAnalysisAlg>("ElectronAnalysis", alg_config);
+        [](auto& builder, const auto& /*config*/) {
+            // target/polarity flow from `[analysis]` in the TOML file directly
+            // into ElectronAnalysisConfig — see config_fields() in
+            // ElectronAnalysisAlg.hpp. No manual plumbing needed here.
+            framework::add_svc<framework::ElectronCutsService>(builder);
+            framework::add_alg<algorithms::EventMonitor>(builder, "EventMonitor");
+            framework::add_alg<algorithms::ElectronAnalysisAlg>(builder, "ElectronAnalysis");
         });
 }

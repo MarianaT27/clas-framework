@@ -42,6 +42,18 @@ struct Pi0MultiplicityRatioConfig {
     std::vector<double> xB_edges = {0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.7};
     std::vector<double> z_edges = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
     std::vector<double> pT2_edges = {0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0, 1.5};
+
+    double beam_energy = 10.53;
+
+    static constexpr auto config_fields() {
+        using T = Pi0MultiplicityRatioConfig;
+        return std::make_tuple(
+            framework::field("Q2_edges",    &T::Q2_edges),
+            framework::field("xB_edges",    &T::xB_edges),
+            framework::field("z_edges",     &T::z_edges),
+            framework::field("pT2_edges",   &T::pT2_edges),
+            framework::field("beam_energy", &T::beam_energy));
+    }
 };
 
 class Pi0MultiplicityRatioAlg : public framework::Algorithm {
@@ -52,14 +64,14 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
     explicit Pi0MultiplicityRatioAlg(std::string name = "Pi0MultiplicityRatio", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Pi0 Multiplicity") {
         required_services(m_hist);
-        declare_properties(m_beam_energy);
+        declare_config(m_config);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::info(name(), "Beam energy: {} GeV", m_beam_energy.get());
+        Log::info(name(), "Beam energy: {} GeV", m_config.beam_energy);
         Log::info(name(), "Q2 bins: {}", m_config.Q2_edges.size() - 1);
         Log::info(name(), "xB bins: {}", m_config.xB_edges.size() - 1);
         Log::info(name(), "z bins: {}", m_config.z_edges.size() - 1);
@@ -121,7 +133,7 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
         if (!electron_opt) return framework::StatusCode::SUCCESS();
 
         // Virtual photon 4-vector: q = beam - scattered_electron
-        ROOT::Math::PxPyPzEVector beam_4v(0.0, 0.0, m_beam_energy.get(), m_beam_energy.get());
+        ROOT::Math::PxPyPzEVector beam_4v(0.0, 0.0, m_config.beam_energy, m_config.beam_energy);
         ROOT::Math::PxPyPzEVector electron_4v = electron_opt->PxPyPzEVector();
         ROOT::Math::PxPyPzEVector q_4v = beam_4v - electron_4v;
 
@@ -145,7 +157,7 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
 
             // phi_h: azimuthal angle in virtual photon frame
             // Define coordinate system: z along q, y along q x beam (lepton plane normal)
-            ROOT::Math::XYZVector beam_3v(0.0, 0.0, m_beam_energy.get());
+            ROOT::Math::XYZVector beam_3v(0.0, 0.0, m_config.beam_energy);
             ROOT::Math::XYZVector y_hat = q_3v.Cross(beam_3v);
             double y_mag = std::sqrt(y_hat.Mag2());
             if (y_mag > 0) y_hat = y_hat / y_mag;
@@ -225,7 +237,6 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
    private:
     Config m_config;
 
-    framework::Property<double> m_beam_energy{"beam_energy", 10.53, "Beam energy [GeV]"};
 
     framework::ServiceRef<framework::HistogramService> m_hist;
 
@@ -234,22 +245,22 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
     // --- Histograms ---
 
     // DIS normalization
-    framework::H1<> h_n_DIS_events{mh::regular(0, 1, static_cast<std::size_t>(1))};
-    framework::H1<> h_n_DIS_vs_Q2{mh::regular(0, 12, static_cast<std::size_t>(100))};
-    framework::H1<> h_n_DIS_vs_xB{mh::regular(0, 0.8, static_cast<std::size_t>(100))};
+    framework::H1<> h_n_DIS_events{mh::regular(0, 1, 1)};
+    framework::H1<> h_n_DIS_vs_Q2{mh::regular(0, 12, 100)};
+    framework::H1<> h_n_DIS_vs_xB{mh::regular(0, 0.8, 100)};
     std::vector<std::unique_ptr<framework::H1<>>> h_n_DIS_Q2bin;
     std::vector<std::unique_ptr<framework::H1<>>> h_n_DIS_xBbin;
 
     // 1D distributions
-    framework::H1<> h_z{mh::regular(0, 1, static_cast<std::size_t>(100))};
-    framework::H1<> h_pT2{mh::regular(0, 2, static_cast<std::size_t>(100))};
-    framework::H1<> h_phi_h{mh::regular(-180, 180, static_cast<std::size_t>(72))};
-    framework::H1<> h_pi0_mass{mh::regular(0, 0.5, static_cast<std::size_t>(200))};
+    framework::H1<> h_z{mh::regular(0, 1, 100)};
+    framework::H1<> h_pT2{mh::regular(0, 2, 100)};
+    framework::H1<> h_phi_h{mh::regular(-180, 180, 72)};
+    framework::H1<> h_pi0_mass{mh::regular(0, 0.5, 200)};
 
     // 2D distributions
-    framework::H2<> h_z_vs_Q2{mh::regular(0, 12, static_cast<std::size_t>(100)), mh::regular(0, 1, static_cast<std::size_t>(100))};
-    framework::H2<> h_z_vs_pT2{mh::regular(0, 2, static_cast<std::size_t>(100)), mh::regular(0, 1, static_cast<std::size_t>(100))};
-    framework::H2<> h_pT2_vs_Q2{mh::regular(0, 12, static_cast<std::size_t>(100)), mh::regular(0, 2, static_cast<std::size_t>(100))};
+    framework::H2<> h_z_vs_Q2{mh::regular(0, 12, 100), mh::regular(0, 1, 100)};
+    framework::H2<> h_z_vs_pT2{mh::regular(0, 2, 100), mh::regular(0, 1, 100)};
+    framework::H2<> h_pT2_vs_Q2{mh::regular(0, 12, 100), mh::regular(0, 2, 100)};
 
     // Multiplicity per kinematic bin
     std::vector<std::unique_ptr<framework::H1<>>> h_z_Q2bin;
@@ -287,13 +298,13 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
             svc->register_hist(dir + "/n_DIS_vs_xB", "DIS Events vs x_{B};x_{B};Events", h_n_DIS_vs_xB);
             // Per-Q2-bin DIS normalization
             h_n_DIS_Q2bin.resize(m_config.Q2_edges.size() - 1);
-            for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {h_n_DIS_Q2bin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, static_cast<std::size_t>(1)));
+            for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {h_n_DIS_Q2bin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, 1));
                 svc->register_hist(fmt::format("{}/norm/n_DIS_Q2bin{}", dir, i), fmt::format("DIS Events Q^{{2}} [{:.1f}, {:.1f}];count;Events", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]), *h_n_DIS_Q2bin[i]);
             }
 
             // Per-xB-bin DIS normalization
             h_n_DIS_xBbin.resize(m_config.xB_edges.size() - 1);
-            for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {h_n_DIS_xBbin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, static_cast<std::size_t>(1)));
+            for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {h_n_DIS_xBbin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, 1));
                 svc->register_hist(fmt::format("{}/norm/n_DIS_xBbin{}", dir, i), fmt::format("DIS Events x_{{B}} [{:.2f}, {:.2f}];count;Events", m_config.xB_edges[i], m_config.xB_edges[i + 1]), *h_n_DIS_xBbin[i]);
             }
 
@@ -309,20 +320,20 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
             // Multiplicity: z per Q2 bin
             h_z_Q2bin.resize(m_config.Q2_edges.size() - 1);
             h_pT2_Q2bin.resize(m_config.Q2_edges.size() - 1);
-            for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {h_z_Q2bin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, static_cast<std::size_t>(100)));
-                svc->register_hist(fmt::format("{}/z_Q2bin/z_Q2bin{}", dir, i), fmt::format("#pi^{{0}} z, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};z;Counts", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]), *h_z_Q2bin[i]);h_pT2_Q2bin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 2, static_cast<std::size_t>(100)));
+            for (size_t i = 0; i < m_config.Q2_edges.size() - 1; ++i) {h_z_Q2bin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, 100));
+                svc->register_hist(fmt::format("{}/z_Q2bin/z_Q2bin{}", dir, i), fmt::format("#pi^{{0}} z, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};z;Counts", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]), *h_z_Q2bin[i]);h_pT2_Q2bin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 2, 100));
                 svc->register_hist(fmt::format("{}/pT2_Q2bin/pT2_Q2bin{}", dir, i), fmt::format("#pi^{{0}} p_{{T}}^{{2}}, Q^{{2}} #in [{:.1f}, {:.1f}] GeV^{{2}};p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_config.Q2_edges[i], m_config.Q2_edges[i + 1]), *h_pT2_Q2bin[i]);
             }
 
             // Multiplicity: z per xB bin
             h_z_xBbin.resize(m_config.xB_edges.size() - 1);
-            for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {h_z_xBbin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, static_cast<std::size_t>(100)));
+            for (size_t i = 0; i < m_config.xB_edges.size() - 1; ++i) {h_z_xBbin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 1, 100));
                 svc->register_hist(fmt::format("{}/z_xBbin/z_xBbin{}", dir, i), fmt::format("#pi^{{0}} z, x_{{B}} #in [{:.2f}, {:.2f}];z;Counts", m_config.xB_edges[i], m_config.xB_edges[i + 1]), *h_z_xBbin[i]);
             }
 
             // Multiplicity: pT2 per z bin
             h_pT2_zbin.resize(m_config.z_edges.size() - 1);
-            for (size_t i = 0; i < m_config.z_edges.size() - 1; ++i) {h_pT2_zbin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 2, static_cast<std::size_t>(100)));
+            for (size_t i = 0; i < m_config.z_edges.size() - 1; ++i) {h_pT2_zbin[i] = std::make_unique<framework::H1<>>(mh::regular(0, 2, 100));
                 svc->register_hist(fmt::format("{}/pT2_zbin/pT2_zbin{}", dir, i), fmt::format("#pi^{{0}} p_{{T}}^{{2}}, z #in [{:.1f}, {:.1f}];p_{{T}}^{{2}} [GeV^{{2}}];Counts", m_config.z_edges[i], m_config.z_edges[i + 1]), *h_pT2_zbin[i]);
             }
 
@@ -331,7 +342,7 @@ class Pi0MultiplicityRatioAlg : public framework::Algorithm {
             // `fill_weighted(value, idx)` accumulates Σvalue per bin.
             int n4D = total_4D_bins();
             const auto axis_4d = mh::regular(0.0, static_cast<double>(n4D),
-                                             static_cast<std::size_t>(n4D));
+                                             n4D);
             h_counts_4D     = std::make_unique<framework::H1<>>(axis_4d);
             h_sum_pT2_4D    = std::make_unique<framework::H1<mh::WeightedAccumulator>>(axis_4d);
             h_sum_cosphi_4D = std::make_unique<framework::H1<mh::WeightedAccumulator>>(axis_4d);

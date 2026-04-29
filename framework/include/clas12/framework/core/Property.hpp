@@ -22,6 +22,7 @@
 #include <fmt/ranges.h>
 #include <toml++/toml.hpp>
 
+#include <clas12/framework/core/Field.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 
 namespace framework {
@@ -419,6 +420,89 @@ private:
 };
 
 /**
+ * @brief Type-erased binding from a TOML key to a struct field.
+ *
+ * `declare_config(my_cfg)` walks `Config::config_fields()` and
+ * registers one of these per field. It writes through the pointer
+ * directly when the algorithm's TOML sub-table is loaded — no parallel
+ * `Property<T>` needed.
+ */
+template <typename T>
+class ConfigFieldBinding : public IPropertyBase {
+public:
+    ConfigFieldBinding(std::string name, T* target) noexcept
+        : m_name(std::move(name)), m_target(target) {}
+
+    [[nodiscard]] auto name() const -> const std::string& override { return m_name; }
+    [[nodiscard]] auto description() const -> const std::string& override {
+        static const std::string empty;
+        return empty;
+    }
+    [[nodiscard]] auto is_required() const -> bool override { return false; }
+    [[nodiscard]] auto was_set() const -> bool override { return m_was_set; }
+
+    auto configure_from_toml(const toml::node& node) -> StatusCode override {
+        if constexpr (std::is_same_v<T, bool>) {
+            if (auto val = node.as_boolean()) { *m_target = val->get(); m_was_set = true; return StatusCode::SUCCESS(); }
+        } else if constexpr (std::is_same_v<T, int>) {
+            if (auto val = node.as_integer()) { *m_target = static_cast<int>(val->get()); m_was_set = true; return StatusCode::SUCCESS(); }
+        } else if constexpr (std::is_same_v<T, int64_t>) {
+            if (auto val = node.as_integer()) { *m_target = val->get(); m_was_set = true; return StatusCode::SUCCESS(); }
+        } else if constexpr (std::is_same_v<T, double>) {
+            if (auto val = node.as_floating_point()) { *m_target = val->get(); m_was_set = true; return StatusCode::SUCCESS(); }
+            if (auto val = node.as_integer())        { *m_target = static_cast<double>(val->get()); m_was_set = true; return StatusCode::SUCCESS(); }
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            if (auto val = node.as_string()) { *m_target = std::string(val->get()); m_was_set = true; return StatusCode::SUCCESS(); }
+        } else if constexpr (std::is_same_v<T, std::vector<int>>) {
+            if (auto arr = node.as_array()) {
+                std::vector<int> values;
+                for (const auto& elem : *arr) {
+                    if (auto val = elem.as_integer()) values.push_back(static_cast<int>(val->get()));
+                    else return StatusCode::failure(fmt::format("Config field '{}': array element is not an integer", m_name));
+                }
+                *m_target = std::move(values); m_was_set = true; return StatusCode::SUCCESS();
+            }
+        } else if constexpr (std::is_same_v<T, std::vector<double>>) {
+            if (auto arr = node.as_array()) {
+                std::vector<double> values;
+                for (const auto& elem : *arr) {
+                    if (auto val = elem.as_floating_point()) values.push_back(val->get());
+                    else if (auto ival = elem.as_integer())  values.push_back(static_cast<double>(ival->get()));
+                    else return StatusCode::failure(fmt::format("Config field '{}': array element is not a number", m_name));
+                }
+                *m_target = std::move(values); m_was_set = true; return StatusCode::SUCCESS();
+            }
+        } else if constexpr (std::is_same_v<T, std::vector<std::string>>) {
+            if (auto arr = node.as_array()) {
+                std::vector<std::string> values;
+                for (const auto& elem : *arr) {
+                    if (auto val = elem.as_string()) values.push_back(std::string(val->get()));
+                    else return StatusCode::failure(fmt::format("Config field '{}': array element is not a string", m_name));
+                }
+                *m_target = std::move(values); m_was_set = true; return StatusCode::SUCCESS();
+            }
+        } else if constexpr (std::is_enum_v<T>) {
+            // Look up `parse_config_value(string_view, T&) -> bool` via ADL.
+            // Define one in the same namespace as the enum to opt in (see
+            // clas12/Target.hpp for examples covering Target/Polarity/RunGroup).
+            if (auto val = node.as_string()) {
+                T parsed{};
+                if (parse_config_value(std::string_view(val->get()), parsed)) {
+                    *m_target = parsed; m_was_set = true; return StatusCode::SUCCESS();
+                }
+                return StatusCode::failure(fmt::format("Config field '{}': value '{}' is not a valid enum entry", m_name, val->get()));
+            }
+        }
+        return StatusCode::failure(fmt::format("Config field '{}': type mismatch in TOML configuration", m_name));
+    }
+
+private:
+    std::string m_name;
+    T* m_target;
+    bool m_was_set = false;
+};
+
+/**
  * @brief Mixin for property declaration in algorithms
  *
  * PropertyMixin provides automatic property registration and TOML
@@ -465,6 +549,39 @@ public:
     auto declare_properties(Property<Args>&... properties) -> void {
         (declare_property(properties), ...);
     }
+
+    /**
+     * @brief Bind a Config struct's fields directly to TOML keys.
+     *
+     * The struct must expose a `static constexpr auto config_fields()`
+     * returning a tuple of `framework::field("name", &T::member)` entries.
+     * Each listed field is registered as if it were a Property — when the
+     * algorithm's TOML sub-table is applied, the value is written straight
+     * into the struct member with no intermediate Property<T>.
+     *
+     * Compile-time-only fields (e.g. enum settings) can simply be omitted
+     * from `config_fields()`.
+     */
+    template <typename Config>
+        requires HasStaticConfigFields<Config>
+    auto declare_config(Config& cfg) -> Config& {
+        std::apply(
+            [this, &cfg](const auto&... f) {
+                (this->register_config_field_(cfg, f), ...);
+            },
+            Config::config_fields());
+        return cfg;
+    }
+
+private:
+    template <typename Config, typename Member>
+    auto register_config_field_(Config& cfg, const Field<Config, Member>& f) -> void {
+        auto* target = &(cfg.*f.ptr);
+        m_properties[std::string(f.name)] =
+            std::make_unique<ConfigFieldBinding<Member>>(std::string(f.name), target);
+    }
+
+public:
 
     /**
      * @brief Configure all registered properties from a TOML table

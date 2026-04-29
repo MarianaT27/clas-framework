@@ -339,6 +339,23 @@ struct HadronTreeData {
 /// Configuration for AiPidHadronAlg.
 struct AiPidHadronConfig {
     std::string truth_mode = "rich";
+
+    bool enable_histograms = true;
+    double beam_energy = 10.53;
+    double mm_center = 0.9396;
+    double mm_width = 0.2;
+    bool enable_ntuple = false;
+
+    static constexpr auto config_fields() {
+        using T = AiPidHadronConfig;
+        return std::make_tuple(
+            framework::field("enable_histograms", &T::enable_histograms),
+            framework::field("truth_mode", &T::truth_mode),
+            framework::field("beam_energy", &T::beam_energy),
+            framework::field("mm_center", &T::mm_center),
+            framework::field("mm_width", &T::mm_width),
+            framework::field("enable_ntuple", &T::enable_ntuple));
+    }
 };
 
 class AiPidHadronAlg : public framework::Algorithm {
@@ -348,19 +365,18 @@ public:
 
     explicit AiPidHadronAlg(std::string name = "AiPidHadronAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config) {
-        if (!m_config.truth_mode.empty()) m_truth_mode.set(m_config.truth_mode);
         required_services(m_hist, m_ntuple_svc);
         declare_banks("REC::Particle", "RICH::Particle", "REC::Calorimeter", "REC::CaloExtras", "REC::Cherenkov", "REC::Scintillator", "REC::ScintExtras");
-        declare_properties(m_enable_histograms, m_enable_ntuple, m_truth_mode, m_beam_energy, m_mm_center, m_mm_width);
+        declare_config(m_config);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     auto on_initialize() -> StatusCode override {
-        framework::Log::info(name(), "Truth PID mode: {}", m_truth_mode.get());
+        framework::Log::info(name(), "Truth PID mode: {}", m_config.truth_mode);
 
-        if (m_truth_mode.get() == "rich") {
-            if (m_enable_histograms.get()) {
+        if (m_config.truth_mode == "rich") {
+            if (m_config.enable_histograms) {
                 book_histograms("/AiPidHadron/PiPlus",  h_piplus,  "#pi^{+}");
                 book_histograms("/AiPidHadron/PiMinus", h_piminus, "#pi^{-}");
                 book_histograms("/AiPidHadron/KPlus",   h_kplus,   "K^{+}");
@@ -380,12 +396,12 @@ public:
             init_cutflow(m_cutflow_piminus);
             init_cutflow(m_cutflow_kplus);
             init_cutflow(m_cutflow_kminus);
-        } else if (m_truth_mode.get() == "exclusive") {
+        } else if (m_config.truth_mode == "exclusive") {
             framework::Log::info(name(), "Exclusive mode: ed -> ep(n)pi+pi-");
-            framework::Log::info(name(), "  Beam energy: {} GeV", m_beam_energy.get());
-            framework::Log::info(name(), "  MM cut: {} +/- {} GeV", m_mm_center.get(), m_mm_width.get());
+            framework::Log::info(name(), "  Beam energy: {} GeV", m_config.beam_energy);
+            framework::Log::info(name(), "  MM cut: {} +/- {} GeV", m_config.mm_center, m_config.mm_width);
 
-            if (m_enable_histograms.get()) {
+            if (m_config.enable_histograms) {
                 book_exclusive_histograms();
             }
 
@@ -396,11 +412,11 @@ public:
             m_cutflow_exclusive.add_cut("Has meson pair");
             m_cutflow_exclusive.add_cut("Missing mass cut");
         } else {
-            framework::Log::error(name(), "Unknown truth_mode '{}'. Use 'rich' or 'exclusive'.", m_truth_mode.get());
+            framework::Log::error(name(), "Unknown truth_mode '{}'. Use 'rich' or 'exclusive'.", m_config.truth_mode);
             return framework::StatusCode::FAILURE();
         }
 
-        if (m_enable_ntuple.get()) {
+        if (m_config.enable_ntuple) {
             m_ntuple.init(m_ntuple_svc.get(), "rich_hadrons");
         }
 
@@ -408,7 +424,7 @@ public:
     }
 
     auto process(framework::Event& event) -> framework::StatusCode override {
-        if (m_truth_mode.get() == "exclusive") {
+        if (m_config.truth_mode == "exclusive") {
             return process_exclusive(event);
         }
         return process_rich(event);
@@ -419,7 +435,7 @@ public:
             framework::Log::info(name(), "N-tuple entries: {}", m_ntuple.service()->get_entries(m_ntuple.tree_name()));
         }
 
-        if (m_truth_mode.get() == "rich") {
+        if (m_config.truth_mode == "rich") {
             m_cutflow_piplus.print();
             m_cutflow_piminus.print();
             m_cutflow_kplus.print();
@@ -470,7 +486,7 @@ public:
                     {"REC PID", "Agree", "Disagree", "Total", "Rate"},
                     rows, fmt::format("Overall: {}/{} ({:.2f}%)", total_agree, grand_total, grand_rate));
             }
-        } else if (m_truth_mode.get() == "exclusive") {
+        } else if (m_config.truth_mode == "exclusive") {
             m_cutflow_exclusive.print();
 
             // Print exclusive PID summary table
@@ -498,16 +514,16 @@ public:
 private:
     // --- RICH vs REC PID comparison structs ---
     struct KinematicHistograms {
-        framework::H1<> p{mh::regular(0, 10, static_cast<std::size_t>(200))};
-        framework::H1<> theta{mh::regular(0, 40, static_cast<std::size_t>(200))};
-        framework::H1<> phi{mh::regular(-180, 180, static_cast<std::size_t>(200))};
-        framework::H1<> beta{mh::regular(0, 1.2, static_cast<std::size_t>(200))};
+        framework::H1<> p{mh::regular(0, 10, 200)};
+        framework::H1<> theta{mh::regular(0, 40, 200)};
+        framework::H1<> phi{mh::regular(-180, 180, 200)};
+        framework::H1<> beta{mh::regular(0, 1.2, 200)};
     };
 
     struct PidCompareHistograms {
         KinematicHistograms agree;
         KinematicHistograms disagree;
-        framework::H1<> rich_pid_dist{mh::regular(-400, 400, static_cast<std::size_t>(800))}; // RICH PID distribution for this REC species
+        framework::H1<> rich_pid_dist{mh::regular(-400, 400, 800)}; // RICH PID distribution for this REC species
     };
 
     struct PidAgreement {
@@ -527,10 +543,10 @@ private:
 
     // Per-particle cut variable histograms (forward declaration for use in methods and structs)
     struct ParticleCutHistograms {
-        framework::H1<> chi2pid{mh::regular(-10, 10, static_cast<std::size_t>(200))};
-        framework::H1<> p{mh::regular(0, 10, static_cast<std::size_t>(200))};
-        framework::H1<> vz{mh::regular(-30, 30, static_cast<std::size_t>(200))};
-        framework::H1<> delta_vz{mh::regular(-10, 10, static_cast<std::size_t>(200))};
+        framework::H1<> chi2pid{mh::regular(-10, 10, 200)};
+        framework::H1<> p{mh::regular(0, 10, 200)};
+        framework::H1<> vz{mh::regular(-30, 30, 200)};
+        framework::H1<> delta_vz{mh::regular(-10, 10, 200)};
     };
 
     // Exclusivity variables computed from four-momentum conservation
@@ -547,40 +563,21 @@ private:
 
     // Per-channel exclusivity histograms
     struct ExclusivityHistograms {
-        framework::H1<> missing_energy{mh::regular(-2.0, 4.0, static_cast<std::size_t>(300))};
-        framework::H1<> missing_p{mh::regular(0.0, 4.0, static_cast<std::size_t>(300))};
-        framework::H1<> missing_pt{mh::regular(0.0, 2.0, static_cast<std::size_t>(200))};
-        framework::H1<> missing_theta{mh::regular(0, 180, static_cast<std::size_t>(200))};
-        framework::H1<> missing_phi{mh::regular(-180, 180, static_cast<std::size_t>(200))};
+        framework::H1<> missing_energy{mh::regular(-2.0, 4.0, 300)};
+        framework::H1<> missing_p{mh::regular(0.0, 4.0, 300)};
+        framework::H1<> missing_pt{mh::regular(0.0, 2.0, 200)};
+        framework::H1<> missing_theta{mh::regular(0, 180, 200)};
+        framework::H1<> missing_phi{mh::regular(-180, 180, 200)};
         // Detected neutron (filled only when neutron found)
-        framework::H1<> n_detected{mh::regular(0, 10, static_cast<std::size_t>(10))};
-        framework::H1<> neutron_opening_angle{mh::regular(0, 180, static_cast<std::size_t>(200))};
-        framework::H1<> neutron_p{mh::regular(0, 4, static_cast<std::size_t>(200))};
-        framework::H1<> neutron_beta{mh::regular(0, 1.2, static_cast<std::size_t>(200))};
-        framework::H1<> mm_with_neutron{mh::regular(-1.0, 2.0, static_cast<std::size_t>(300))}; // MM(ed→epn+mesons)
+        framework::H1<> n_detected{mh::regular(0, 10, 10)};
+        framework::H1<> neutron_opening_angle{mh::regular(0, 180, 200)};
+        framework::H1<> neutron_p{mh::regular(0, 4, 200)};
+        framework::H1<> neutron_beta{mh::regular(0, 1.2, 200)};
+        framework::H1<> mm_with_neutron{mh::regular(-1.0, 2.0, 300)}; // MM(ed→epn+mesons)
     };
 
     // --- Properties ---
-    framework::Property<bool> m_enable_histograms{
-        "enable_histograms", true, "Enable histogram filling"
-    };
-    framework::Property<std::string> m_truth_mode{
-        "truth_mode", "rich", "Truth PID mode: 'rich' or 'exclusive'"
-    };
-    framework::Property<double> m_beam_energy{
-        "beam_energy", 10.53, "Beam energy [GeV]"
-    };
-    framework::Property<double> m_mm_center{
-        "mm_center", 0.9396, "Missing mass cut center [GeV] (neutron mass)"
-    };
-    framework::Property<double> m_mm_width{
-        "mm_width", 0.2, "Missing mass cut half-width [GeV]"
-    };
-    framework::Property<bool> m_enable_ntuple{
-        "enable_ntuple", false, "Enable N-tuple output"
-    };
-
-    // --- Services ---
+// --- Services ---
     Config m_config;
 
     framework::ServiceRef<framework::HistogramService> m_hist;
@@ -599,17 +596,17 @@ private:
     std::map<int, PidAgreement> m_pid_agreement;
 
     // RICH vs REC PID comparison histograms (Sector 1 only)
-    framework::H2<> h_rich_vs_rec_pid{mh::regular(0, 5, static_cast<std::size_t>(5)), mh::regular(0, 5, static_cast<std::size_t>(5))};
+    framework::H2<> h_rich_vs_rec_pid{mh::regular(0, 5, 5), mh::regular(0, 5, 5)};
     PidCompareHistograms h_cmp_piplus;
     PidCompareHistograms h_cmp_piminus;
     PidCompareHistograms h_cmp_kplus;
     PidCompareHistograms h_cmp_kminus;
 
     // Per-RICH-species REC PID distribution (Sector 1)
-    framework::H1<> h_rec_pid_for_rich_piplus{mh::regular(-400, 400, static_cast<std::size_t>(800))};
-    framework::H1<> h_rec_pid_for_rich_piminus{mh::regular(-400, 400, static_cast<std::size_t>(800))};
-    framework::H1<> h_rec_pid_for_rich_kplus{mh::regular(-400, 400, static_cast<std::size_t>(800))};
-    framework::H1<> h_rec_pid_for_rich_kminus{mh::regular(-400, 400, static_cast<std::size_t>(800))};
+    framework::H1<> h_rec_pid_for_rich_piplus{mh::regular(-400, 400, 800)};
+    framework::H1<> h_rec_pid_for_rich_piminus{mh::regular(-400, 400, 800)};
+    framework::H1<> h_rec_pid_for_rich_kplus{mh::regular(-400, 400, 800)};
+    framework::H1<> h_rec_pid_for_rich_kminus{mh::regular(-400, 400, 800)};
 
     // --- Exclusive mode members ---
     framework::Cutflow m_cutflow_exclusive{"Exclusive ed→ep(n)π⁺π⁻"};
@@ -679,7 +676,7 @@ private:
                             m_pid_agreement[rec_pid].disagree++;
                         }
                     }
-                    if (m_enable_histograms) {
+                    if (m_config.enable_histograms) {
                         fill_comparison(particle, rec_pid, best_pid);
                     }
                 }
@@ -751,12 +748,12 @@ private:
 
         // 3b. Fill hadron cut variable histograms (before quality cuts)
         const double e_vz = electron.vz();
-        if (m_enable_histograms) {
+        if (m_config.enable_histograms) {
             fill_all_cut_histograms(e_vz, protons, pions_plus, pions_minus, kaons_plus, kaons_minus);
         }
 
         // 4. Construct beam and deuterium target
-        const double beam_E = m_beam_energy.get();
+        const double beam_E = m_config.beam_energy;
         Particle beam(11, 0, -1, -1, Constants::ELECTRONMASS,
                               0, 0, beam_E, beam_E, 0, 0, 0, 0, 1.0, 0);
 
@@ -812,7 +809,7 @@ private:
                     }
 
                     // Apply missing mass cut: |MM - neutron_mass| < width
-                    if (std::abs(excl.missing_mass - m_mm_center.get()) > m_mm_width.get()) continue;
+                    if (std::abs(excl.missing_mass - m_config.mm_center) > m_config.mm_width) continue;
 
                     any_passed_mm = true;
 
@@ -881,7 +878,7 @@ private:
                         }
                     }
 
-                    if (std::abs(excl.missing_mass - m_mm_center.get()) > m_mm_width.get()) continue;
+                    if (std::abs(excl.missing_mass - m_config.mm_center) > m_config.mm_width) continue;
 
                     any_passed_mm = true;
 
@@ -1151,23 +1148,23 @@ private:
     // --- RICH mode histograms ---
     struct HadronHistograms {
         struct {
-            framework::H1<> p{mh::regular(0, 10, static_cast<std::size_t>(200))};
-            framework::H1<> theta{mh::regular(0, 40, static_cast<std::size_t>(200))};
-            framework::H1<> phi{mh::regular(-180, 180, static_cast<std::size_t>(200))};
-            framework::H1<> vz{mh::regular(-30, 30, static_cast<std::size_t>(200))};
-            framework::H1<> RQ{mh::regular(0, 1, static_cast<std::size_t>(200))};
-            framework::H1<> best_PID{mh::regular(-400, 400, static_cast<std::size_t>(800))};
-            framework::H1<> best_ntot{mh::regular(-400, 400, static_cast<std::size_t>(800))};
+            framework::H1<> p{mh::regular(0, 10, 200)};
+            framework::H1<> theta{mh::regular(0, 40, 200)};
+            framework::H1<> phi{mh::regular(-180, 180, 200)};
+            framework::H1<> vz{mh::regular(-30, 30, 200)};
+            framework::H1<> RQ{mh::regular(0, 1, 200)};
+            framework::H1<> best_PID{mh::regular(-400, 400, 800)};
+            framework::H1<> best_ntot{mh::regular(-400, 400, 800)};
         } precut;
 
         struct {
-            framework::H1<> p{mh::regular(0, 10, static_cast<std::size_t>(200))};
-            framework::H1<> theta{mh::regular(0, 40, static_cast<std::size_t>(200))};
-            framework::H1<> phi{mh::regular(-180, 180, static_cast<std::size_t>(200))};
-            framework::H1<> vz{mh::regular(-30, 15, static_cast<std::size_t>(200))};
-            framework::H1<> RQ{mh::regular(0, 1, static_cast<std::size_t>(200))};
-            framework::H1<> best_PID{mh::regular(-400, 400, static_cast<std::size_t>(800))};
-            framework::H1<> best_ntot{mh::regular(-400, 400, static_cast<std::size_t>(800))};
+            framework::H1<> p{mh::regular(0, 10, 200)};
+            framework::H1<> theta{mh::regular(0, 40, 200)};
+            framework::H1<> phi{mh::regular(-180, 180, 200)};
+            framework::H1<> vz{mh::regular(-30, 15, 200)};
+            framework::H1<> RQ{mh::regular(0, 1, 200)};
+            framework::H1<> best_PID{mh::regular(-400, 400, 800)};
+            framework::H1<> best_ntot{mh::regular(-400, 400, 800)};
         } postcut;
     };
 
@@ -1252,24 +1249,24 @@ private:
     // --- Exclusive mode histograms ---
     struct ExclusiveHistograms {
         // ed -> ep pi+ pi- (n)
-        framework::H1<> mm_all{mh::regular(0.0, 2.0, static_cast<std::size_t>(300))};
-        framework::H1<> mm_selected{mh::regular(0.0, 2.0, static_cast<std::size_t>(300))};
-        framework::H1<> mm_squared{mh::regular(-1.0, 3.0, static_cast<std::size_t>(300))};
-        framework::H1<> n_combinations{mh::regular(0, 20, static_cast<std::size_t>(20))};
-        framework::H1<> piplus_p{mh::regular(0, 3, static_cast<std::size_t>(200))};
-        framework::H1<> piplus_theta{mh::regular(0, 180, static_cast<std::size_t>(200))};
-        framework::H1<> piminus_p{mh::regular(0, 3, static_cast<std::size_t>(200))};
-        framework::H1<> piminus_theta{mh::regular(0, 180, static_cast<std::size_t>(200))};
+        framework::H1<> mm_all{mh::regular(0.0, 2.0, 300)};
+        framework::H1<> mm_selected{mh::regular(0.0, 2.0, 300)};
+        framework::H1<> mm_squared{mh::regular(-1.0, 3.0, 300)};
+        framework::H1<> n_combinations{mh::regular(0, 20, 20)};
+        framework::H1<> piplus_p{mh::regular(0, 3, 200)};
+        framework::H1<> piplus_theta{mh::regular(0, 180, 200)};
+        framework::H1<> piminus_p{mh::regular(0, 3, 200)};
+        framework::H1<> piminus_theta{mh::regular(0, 180, 200)};
 
         // ed -> ep K+ K- (n)
-        framework::H1<> kaon_mm_all{mh::regular(0.0, 2.0, static_cast<std::size_t>(300))};
-        framework::H1<> kaon_mm_selected{mh::regular(0.0, 2.0, static_cast<std::size_t>(300))};
-        framework::H1<> kaon_mm_squared{mh::regular(-1.0, 3.0, static_cast<std::size_t>(300))};
-        framework::H1<> kaon_n_combinations{mh::regular(0, 20, static_cast<std::size_t>(20))};
-        framework::H1<> kplus_p{mh::regular(0, 3, static_cast<std::size_t>(200))};
-        framework::H1<> kplus_theta{mh::regular(0, 180, static_cast<std::size_t>(200))};
-        framework::H1<> kminus_p{mh::regular(0, 3, static_cast<std::size_t>(200))};
-        framework::H1<> kminus_theta{mh::regular(0, 180, static_cast<std::size_t>(200))};
+        framework::H1<> kaon_mm_all{mh::regular(0.0, 2.0, 300)};
+        framework::H1<> kaon_mm_selected{mh::regular(0.0, 2.0, 300)};
+        framework::H1<> kaon_mm_squared{mh::regular(-1.0, 3.0, 300)};
+        framework::H1<> kaon_n_combinations{mh::regular(0, 20, 20)};
+        framework::H1<> kplus_p{mh::regular(0, 3, 200)};
+        framework::H1<> kplus_theta{mh::regular(0, 180, 200)};
+        framework::H1<> kminus_p{mh::regular(0, 3, 200)};
+        framework::H1<> kminus_theta{mh::regular(0, 180, 200)};
 
         // Exclusivity variables per channel
         ExclusivityHistograms pion_excl;

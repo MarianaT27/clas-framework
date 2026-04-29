@@ -30,6 +30,24 @@ using framework::Log;
 struct PionAnalysisConfig {
     Target target = Target::LD2;
     Polarity polarity = Polarity::Outbending;
+
+    double min_momentum = 0.3;
+    double min_calo_energy = 0.01;
+    bool enable_forward_detector_cut = true;
+    bool enable_momentum_cut = true;
+    bool enable_calorimeter_cut = true;
+    bool enable_dc_track_cut = true;
+
+    static constexpr auto config_fields() {
+        using T = PionAnalysisConfig;
+        return std::make_tuple(
+            framework::field("min_momentum", &T::min_momentum),
+            framework::field("min_calo_energy", &T::min_calo_energy),
+            framework::field("enable_forward_detector_cut", &T::enable_forward_detector_cut),
+            framework::field("enable_momentum_cut", &T::enable_momentum_cut),
+            framework::field("enable_calorimeter_cut", &T::enable_calorimeter_cut),
+            framework::field("enable_dc_track_cut", &T::enable_dc_track_cut));
+    }
 };
 
 /**
@@ -44,7 +62,7 @@ class PionAnalysisAlg : public framework::Algorithm {
         : Algorithm(std::move(name)), m_config(config), m_cutflow_piplus("π⁺ Analysis"), m_cutflow_piminus("π⁻ Analysis") {
         required_services(m_hist, m_ntuple);
         declare_banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Traj", "REC::Track", "REC::Scintillator");
-        declare_properties(m_min_momentum, m_min_calo_energy, m_enable_forward_detector_cut, m_enable_momentum_cut, m_enable_calorimeter_cut, m_enable_dc_track_cut);
+        declare_config(m_config);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -53,7 +71,7 @@ class PionAnalysisAlg : public framework::Algorithm {
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::info(name(), "Initializing pion analysis");
         Log::info(name(), "Target: {}, Polarity: {}", to_string(m_config.target), to_string(m_config.polarity));
-        Log::info(name(), "Min momentum: {} GeV, Min calo energy: {} GeV", m_min_momentum.get(), m_min_calo_energy.get());
+        Log::info(name(), "Min momentum: {} GeV, Min calo energy: {} GeV", m_config.min_momentum, m_config.min_calo_energy);
 
         for (auto* cf : {&m_cutflow_piplus, &m_cutflow_piminus}) {
             cf->add_cut("All Pions");
@@ -114,15 +132,7 @@ class PionAnalysisAlg : public framework::Algorithm {
     framework::Cutflow m_cutflow_piplus;
     framework::Cutflow m_cutflow_piminus;
 
-    framework::Property<double> m_min_momentum{"min_momentum", 0.3, "Minimum pion momentum [GeV]"};
-    framework::Property<double> m_min_calo_energy{"min_calo_energy", 0.01, "Minimum calorimeter energy [GeV]"};
-
-    framework::Property<bool> m_enable_forward_detector_cut{"enable_forward_detector_cut", true, "Enable forward detector cut"};
-    framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
-    framework::Property<bool> m_enable_calorimeter_cut{"enable_calorimeter_cut", true, "Enable calorimeter cut"};
-    framework::Property<bool> m_enable_dc_track_cut{"enable_dc_track_cut", true, "Enable DC track cut"};
-
-    framework::ServiceRef<framework::HistogramService> m_hist;
+framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService> m_ntuple;
 
     struct PionCandidate {
@@ -187,58 +197,58 @@ class PionAnalysisAlg : public framework::Algorithm {
     framework::NTupleWriter<PionNTupleData> m_ntuple_piminus;
 
     struct PionHistograms {
-        framework::H1<> p{mh::regular(0.0, 10.0, static_cast<std::size_t>(100))};
-        framework::H1<> theta{mh::regular(0.0, 40.0, static_cast<std::size_t>(180))};
-        framework::H1<> phi{mh::regular(-180.0, 180.0, static_cast<std::size_t>(360))};
-        framework::H1<> vz{mh::regular(-40.0, 40.0, static_cast<std::size_t>(200))};
-        framework::H1<> chi2pid{mh::regular(-10.0, 10.0, static_cast<std::size_t>(200))};
-        framework::H1<> beta{mh::regular(0.5, 1.1, static_cast<std::size_t>(100))};
+        framework::H1<> p{mh::regular(0.0, 10.0, 100)};
+        framework::H1<> theta{mh::regular(0.0, 40.0, 180)};
+        framework::H1<> phi{mh::regular(-180.0, 180.0, 360)};
+        framework::H1<> vz{mh::regular(-40.0, 40.0, 200)};
+        framework::H1<> chi2pid{mh::regular(-10.0, 10.0, 200)};
+        framework::H1<> beta{mh::regular(0.5, 1.1, 100)};
 
-        framework::H2<> vz_vs_phi{mh::regular(-180, 180, static_cast<std::size_t>(180)), mh::regular(-40, 40, static_cast<std::size_t>(100))};
-        framework::H2<> vz_vs_sector{mh::regular(0.5, 6.5, static_cast<std::size_t>(6)), mh::regular(-40, 40, static_cast<std::size_t>(100))};
-        framework::H2<> vz_vs_p_2d{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-40, 40, static_cast<std::size_t>(100))};
-        framework::H2<> vx_vs_vy{mh::regular(-2, 2, static_cast<std::size_t>(100)), mh::regular(-2, 2, static_cast<std::size_t>(100))};
-        framework::H1<> delta_vz{mh::regular(-20, 20, static_cast<std::size_t>(200))};
-        framework::H2<> delta_vz_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-20, 20, static_cast<std::size_t>(200))};
+        framework::H2<> vz_vs_phi{mh::regular(-180, 180, 180), mh::regular(-40, 40, 100)};
+        framework::H2<> vz_vs_sector{mh::regular(0.5, 6.5, 6), mh::regular(-40, 40, 100)};
+        framework::H2<> vz_vs_p_2d{mh::regular(0, 10, 100), mh::regular(-40, 40, 100)};
+        framework::H2<> vx_vs_vy{mh::regular(-2, 2, 100), mh::regular(-2, 2, 100)};
+        framework::H1<> delta_vz{mh::regular(-20, 20, 200)};
+        framework::H2<> delta_vz_vs_p{mh::regular(0, 10, 100), mh::regular(-20, 20, 200)};
 
-        framework::H1<> delta_t{mh::regular(-2, 2, static_cast<std::size_t>(200))};
-        framework::H2<> delta_t_vs_p_diag{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-2, 2, static_cast<std::size_t>(200))};
-        framework::H1<> tof_mass2{mh::regular(-0.2, 0.5, static_cast<std::size_t>(200))};
-        framework::H2<> tof_mass2_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-0.2, 0.5, static_cast<std::size_t>(200))};
-        framework::H1<> tof_path{mh::regular(0, 800, static_cast<std::size_t>(100))};
-        framework::H2<> tof_path_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(0, 800, static_cast<std::size_t>(100))};
-        framework::H2<> beta_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(0.5, 1.1, static_cast<std::size_t>(100))};
-        framework::H1<> beta_diff{mh::regular(-0.1, 0.1, static_cast<std::size_t>(200))};
-        framework::H2<> beta_diff_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-0.1, 0.1, static_cast<std::size_t>(200))};
+        framework::H1<> delta_t{mh::regular(-2, 2, 200)};
+        framework::H2<> delta_t_vs_p_diag{mh::regular(0, 10, 100), mh::regular(-2, 2, 200)};
+        framework::H1<> tof_mass2{mh::regular(-0.2, 0.5, 200)};
+        framework::H2<> tof_mass2_vs_p{mh::regular(0, 10, 100), mh::regular(-0.2, 0.5, 200)};
+        framework::H1<> tof_path{mh::regular(0, 800, 100)};
+        framework::H2<> tof_path_vs_p{mh::regular(0, 10, 100), mh::regular(0, 800, 100)};
+        framework::H2<> beta_vs_p{mh::regular(0, 10, 100), mh::regular(0.5, 1.1, 100)};
+        framework::H1<> beta_diff{mh::regular(-0.1, 0.1, 200)};
+        framework::H2<> beta_diff_vs_p{mh::regular(0, 10, 100), mh::regular(-0.1, 0.1, 200)};
 
-        framework::H2<> chi2pid_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-10, 10, static_cast<std::size_t>(100))};
-        framework::H2<> chi2pid_vs_theta{mh::regular(0, 45, static_cast<std::size_t>(90)), mh::regular(-10, 10, static_cast<std::size_t>(100))};
-        framework::H2<> chi2pid_vs_sector{mh::regular(0.5, 6.5, static_cast<std::size_t>(6)), mh::regular(-10, 10, static_cast<std::size_t>(100))};
+        framework::H2<> chi2pid_vs_p{mh::regular(0, 10, 100), mh::regular(-10, 10, 100)};
+        framework::H2<> chi2pid_vs_theta{mh::regular(0, 45, 90), mh::regular(-10, 10, 100)};
+        framework::H2<> chi2pid_vs_sector{mh::regular(0.5, 6.5, 6), mh::regular(-10, 10, 100)};
 
-        framework::H2<> phi_vs_theta{mh::regular(0, 45, static_cast<std::size_t>(90)), mh::regular(-180, 180, static_cast<std::size_t>(180))};
-        framework::H2<> p_vs_phi{mh::regular(-180, 180, static_cast<std::size_t>(180)), mh::regular(0, 10, static_cast<std::size_t>(100))};
-        framework::H2<> p_vs_theta_diag{mh::regular(0, 45, static_cast<std::size_t>(90)), mh::regular(0, 10, static_cast<std::size_t>(100))};
+        framework::H2<> phi_vs_theta{mh::regular(0, 45, 90), mh::regular(-180, 180, 180)};
+        framework::H2<> p_vs_phi{mh::regular(-180, 180, 180), mh::regular(0, 10, 100)};
+        framework::H2<> p_vs_theta_diag{mh::regular(0, 45, 90), mh::regular(0, 10, 100)};
 
-        framework::H1<> sf{mh::regular(0, 0.4, static_cast<std::size_t>(100))};
-        framework::H1<> lv{mh::regular(0, 500, static_cast<std::size_t>(100))};
-        framework::H1<> lw{mh::regular(0, 500, static_cast<std::size_t>(100))};
-        framework::H2<> sf_vs_lv{mh::regular(0, 70, static_cast<std::size_t>(200)), mh::regular(0, 0.4, static_cast<std::size_t>(200))};
-        framework::H2<> sf_vs_lw{mh::regular(0, 70, static_cast<std::size_t>(200)), mh::regular(0, 0.4, static_cast<std::size_t>(200))};
+        framework::H1<> sf{mh::regular(0, 0.4, 100)};
+        framework::H1<> lv{mh::regular(0, 500, 100)};
+        framework::H1<> lw{mh::regular(0, 500, 100)};
+        framework::H2<> sf_vs_lv{mh::regular(0, 70, 200), mh::regular(0, 0.4, 200)};
+        framework::H2<> sf_vs_lw{mh::regular(0, 70, 200), mh::regular(0, 0.4, 200)};
 
-        framework::H1<> chi2ndf{mh::regular(0, 20, static_cast<std::size_t>(100))};
-        framework::H1<> edge_r1{mh::regular(-10, 50, static_cast<std::size_t>(100))};
-        framework::H1<> edge_r2{mh::regular(-10, 50, static_cast<std::size_t>(100))};
-        framework::H1<> edge_r3{mh::regular(-10, 50, static_cast<std::size_t>(100))};
-        framework::H2<> chi2ndf_vs_edge_r1{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
-        framework::H2<> chi2ndf_vs_edge_r2{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
-        framework::H2<> chi2ndf_vs_edge_r3{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
+        framework::H1<> chi2ndf{mh::regular(0, 20, 100)};
+        framework::H1<> edge_r1{mh::regular(-10, 50, 100)};
+        framework::H1<> edge_r2{mh::regular(-10, 50, 100)};
+        framework::H1<> edge_r3{mh::regular(-10, 50, 100)};
+        framework::H2<> chi2ndf_vs_edge_r1{mh::regular(0, 50, 200), mh::regular(0, 100, 200)};
+        framework::H2<> chi2ndf_vs_edge_r2{mh::regular(0, 50, 200), mh::regular(0, 100, 200)};
+        framework::H2<> chi2ndf_vs_edge_r3{mh::regular(0, 50, 200), mh::regular(0, 100, 200)};
 
-        framework::H1<> edge_r1_precut{mh::regular(-10, 50, static_cast<std::size_t>(100))};
-        framework::H1<> edge_r2_precut{mh::regular(-10, 50, static_cast<std::size_t>(100))};
-        framework::H1<> edge_r3_precut{mh::regular(-10, 50, static_cast<std::size_t>(100))};
-        framework::H2<> chi2ndf_vs_edge_r1_precut{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
-        framework::H2<> chi2ndf_vs_edge_r2_precut{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
-        framework::H2<> chi2ndf_vs_edge_r3_precut{mh::regular(0, 50, static_cast<std::size_t>(200)), mh::regular(0, 100, static_cast<std::size_t>(200))};
+        framework::H1<> edge_r1_precut{mh::regular(-10, 50, 100)};
+        framework::H1<> edge_r2_precut{mh::regular(-10, 50, 100)};
+        framework::H1<> edge_r3_precut{mh::regular(-10, 50, 100)};
+        framework::H2<> chi2ndf_vs_edge_r1_precut{mh::regular(0, 50, 200), mh::regular(0, 100, 200)};
+        framework::H2<> chi2ndf_vs_edge_r2_precut{mh::regular(0, 50, 200), mh::regular(0, 100, 200)};
+        framework::H2<> chi2ndf_vs_edge_r3_precut{mh::regular(0, 50, 200), mh::regular(0, 100, 200)};
 
         framework::PerSectorHist2D<6> delta_t_vs_p_sector;
         framework::PerSectorHist2D<6> p_vs_theta_sector;
@@ -260,13 +270,13 @@ class PionAnalysisAlg : public framework::Algorithm {
 
     auto evaluate_cutflow(bool in_forward_detector, double p, double E_tot, bool has_dc, framework::Cutflow& cf) const -> bool {
         cf.pass("All Pions");
-        if (m_enable_forward_detector_cut.get() && !in_forward_detector) return false;
+        if (m_config.enable_forward_detector_cut && !in_forward_detector) return false;
         cf.pass("In the forward detector");
-        if (m_enable_momentum_cut.get() && p < m_min_momentum.get()) return false;
+        if (m_config.enable_momentum_cut && p < m_config.min_momentum) return false;
         cf.pass("Momentum > 0.3 GeV");
-        if (m_enable_calorimeter_cut.get() && E_tot <= m_min_calo_energy.get()) return false;
+        if (m_config.enable_calorimeter_cut && E_tot <= m_config.min_calo_energy) return false;
         cf.pass("Has Calorimeter");
-        if (m_enable_dc_track_cut.get() && !has_dc) return false;
+        if (m_config.enable_dc_track_cut && !has_dc) return false;
         cf.pass("Has DC Track");
         return true;
     }

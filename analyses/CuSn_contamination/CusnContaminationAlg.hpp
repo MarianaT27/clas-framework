@@ -29,6 +29,16 @@ using framework::Log;
 /// Configuration for CuSnContaminationAlg.
 struct CuSnContaminationConfig {
     // Reserved for future tuning knobs that aren't user-tunable Properties.
+
+    double example_cut = 1.0;
+    bool enable_histograms = true;
+
+    static constexpr auto config_fields() {
+        using T = CuSnContaminationConfig;
+        return std::make_tuple(
+            framework::field("example_cut", &T::example_cut),
+            framework::field("enable_histograms", &T::enable_histograms));
+    }
 };
 
 /**
@@ -43,14 +53,15 @@ class CuSnContaminationAlg : public framework::Algorithm {
         : Algorithm(std::move(name)), m_config(config) {
         required_services(m_hist);
         declare_optional_bank("MC::Particle");
-        declare_properties(m_example_cut, m_enable_histograms);
+        declare_config(m_config);
+        declare_histograms(h_p, h_phi, h_theta, h_vz, h_vz_Cu, h_vz_Sn, h_vz_CuSn, h_rec_vz_Cu, h_rec_vz_Sn, h_rec_vz_CuSn, h_vz_vs_theta, h_vz_vs_p);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        if (m_enable_histograms.get()) book_histograms();
+        if (m_config.enable_histograms) book_histograms();
         return StatusCode::SUCCESS();
     }
 
@@ -76,7 +87,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
                 }
             }
 
-            if (m_enable_histograms.get()) {
+            if (m_config.enable_histograms) {
                 h_p.fill(electron4VecP.P());
                 h_phi.fill(electron4VecP.Phi() * 180.0 / M_PI);
                 h_theta.fill(electron4VecP.Theta() * 180.0 / M_PI);
@@ -121,48 +132,28 @@ class CuSnContaminationAlg : public framework::Algorithm {
    private:
     Config m_config;
 
-    framework::Property<double> m_example_cut{"example_cut", 1.0, "Example cut threshold value"};
-    framework::Property<bool> m_enable_histograms{"enable_histograms", true, "Enable histogram filling"};
+framework::ServiceRef<framework::HistogramService> m_hist;
 
-    framework::ServiceRef<framework::HistogramService> m_hist;
-
-    framework::H1<> h_p{mh::regular(0.0, 10.0, 100)};
-    framework::H1<> h_phi{mh::regular(-180.0, 180.0, 100)};
-    framework::H1<> h_theta{mh::regular(0.0, 90.0, 100)};
-    framework::H1<> h_vz{mh::regular(-13.0, 0.0, 100)};
-    framework::H1<> h_vz_Cu{mh::regular(-13.0, 0.0, 100)};
-    framework::H1<> h_vz_Sn{mh::regular(-13.0, 0.0, 100)};
-    framework::H1<> h_vz_CuSn{mh::regular(-13.0, 0.0, 100)};
-
-    framework::H1<> h_rec_vz_Cu{mh::regular(-13.0, 0.0, 100)};
-    framework::H1<> h_rec_vz_Sn{mh::regular(-13.0, 0.0, 100)};
-    framework::H1<> h_rec_vz_CuSn{mh::regular(-13.0, 0.0, 100)};
-
+    framework::Hist1<> h_p{"/MC/Electron/p", "p;p;Events", 0.0, 10.0, 100};
+    framework::Hist1<> h_phi{"/MC/Electron/phi", "#phi;#phi;Events", -180.0, 180.0, 100};
+    framework::Hist1<> h_theta{"/MC/Electron/theta", "#theta;#theta;Events", 0.0, 90.0, 100};
+    framework::Hist1<> h_vz{"/MC/Electron/vz", "vz;vz;Events", -13.0, 0.0, 100};
+    framework::Hist1<> h_vz_Cu{"/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", -13.0, 0.0, 100};
+    framework::Hist1<> h_vz_Sn{"/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", -13.0, 0.0, 100};
+    framework::Hist1<> h_vz_CuSn{"/MC/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", -13.0, 0.0, 100};
+    framework::Hist1<> h_rec_vz_Cu{"/Data/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", -13.0, 0.0, 100};
+    framework::Hist1<> h_rec_vz_Sn{"/Data/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", -13.0, 0.0, 100};
+    framework::Hist1<> h_rec_vz_CuSn{"/Data/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", -13.0, 0.0, 100};
     static constexpr int N_P_BINS = 20;
     static constexpr std::array<double, N_P_BINS + 1> p_bin_edges = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0};
 
-    framework::H2<> h_vz_vs_theta{mh::regular(0.0, 40.0, 100), mh::regular(-13.0, 0.0, 100)};
-    framework::H2<> h_vz_vs_p{mh::regular(0.0, 10.0, 100), mh::regular(-13.0, 0.0, 100)};
+    framework::Hist2<> h_vz_vs_theta{"/MC/Electron/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100};
+    framework::Hist2<> h_vz_vs_p{"/MC/Electron/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 0.0, 10.0, 100, -13.0, 0.0, 100};
     // Variable-sized arrays of histograms need indirection: heap-allocate so
     // each slot has a stable address for register_hist.
     std::array<std::unique_ptr<framework::H2<>>, N_P_BINS> h_vz_vs_theta_pbin{};
 
     auto book_histograms() -> void {
-        m_hist->register_hist("/MC/Electron/p",       "p;p;Events",                 h_p);
-        m_hist->register_hist("/MC/Electron/phi",     "#phi;#phi;Events",           h_phi);
-        m_hist->register_hist("/MC/Electron/theta",   "#theta;#theta;Events",       h_theta);
-        m_hist->register_hist("/MC/Electron/vz",      "vz;vz;Events",               h_vz);
-        m_hist->register_hist("/MC/Electron/vz_Cu",   "vz_Cu;vz_Cu;Events",         h_vz_Cu);
-        m_hist->register_hist("/MC/Electron/vz_Sn",   "vz_Sn;vz_Sn;Events",         h_vz_Sn);
-        m_hist->register_hist("/MC/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events",     h_vz_CuSn);
-
-        m_hist->register_hist("/Data/Electron/vz_Cu",   "vz_Cu;vz_Cu;Events",       h_rec_vz_Cu);
-        m_hist->register_hist("/Data/Electron/vz_Sn",   "vz_Sn;vz_Sn;Events",       h_rec_vz_Sn);
-        m_hist->register_hist("/Data/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events",   h_rec_vz_CuSn);
-
-        m_hist->register_hist("/MC/Electron/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", h_vz_vs_theta);
-        m_hist->register_hist("/MC/Electron/vz_vs_p",     "vz vs p;p [GeV/c];vz [cm]",         h_vz_vs_p);
-
         for (int i = 0; i < N_P_BINS; ++i) {
             auto plo = std::to_string(static_cast<int>(p_bin_edges[i]));
             auto phi = std::to_string(static_cast<int>(p_bin_edges[i + 1]));

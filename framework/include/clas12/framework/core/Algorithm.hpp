@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <clas12/framework/core/Concepts.hpp>
+#include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
@@ -16,6 +17,7 @@
 #include <clas12/framework/core/ServiceRef.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
+#include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 
 namespace framework {
@@ -104,6 +106,7 @@ public:
         for (auto& retrieve : m_required_services) {
             if (!retrieve()) return StatusCode::FAILURE();
         }
+        for (auto& hook : m_hist_init_hooks)   hook();
         for (auto& hook : m_ntuple_init_hooks) hook();
 
         auto result = on_initialize();
@@ -241,6 +244,26 @@ protected:
             });
     }
 
+    /// Register a self-describing histogram (Hist1/Hist2/Hist3) with the
+    /// HistogramService at initialize time. The wrapper carries its path,
+    /// title, and binning at the declaration site, so call sites only need
+    /// `declare_histograms(h_p, h_theta, ...)` in the constructor — no
+    /// separate `book_histograms()` step required.
+    template <typename Hist>
+    void declare_histogram(Hist& h) {
+        m_hist_init_hooks.push_back([this, &h]() {
+            if (auto* s = this->svc<HistogramService>()) {
+                s->register_hist(h.path(), h.title(), h.histogram());
+            }
+        });
+    }
+
+    /// Variadic form: declare any number of histograms in one call.
+    template <typename... Hists>
+    void declare_histograms(Hists&... hs) {
+        (declare_histogram(hs), ...);
+    }
+
     void declare_bank(std::string_view bank_name) {
         m_required_banks.emplace_back(bank_name);
     }
@@ -306,6 +329,7 @@ private:
     std::vector<std::string> m_produced_keys;
     std::vector<std::function<bool()>> m_required_services;
     std::vector<std::function<void()>> m_ntuple_init_hooks;
+    std::vector<std::function<void()>> m_hist_init_hooks;
 };
 
 }  // namespace framework

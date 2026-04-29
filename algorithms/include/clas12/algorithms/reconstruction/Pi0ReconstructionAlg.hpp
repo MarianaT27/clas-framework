@@ -20,6 +20,14 @@ namespace algorithms {
 /// Configuration for Pi0ReconstructionAlg.
 struct Pi0ReconstructionConfig {
     double pi0_mass_window = 0.03;  // GeV (±30 MeV around 135 MeV)
+    double min_photon_energy = 0.1;
+
+    static constexpr auto config_fields() {
+        using T = Pi0ReconstructionConfig;
+        return std::make_tuple(
+            framework::field("pi0_mass_window",  &T::pi0_mass_window),
+            framework::field("min_photon_energy", &T::min_photon_energy));
+    }
 };
 
 /**
@@ -48,16 +56,12 @@ class Pi0ReconstructionAlg : public framework::Algorithm {
     auto find_best_pi0(const std::vector<Particle>& photons) const -> std::optional<std::tuple<Particle, Particle, double>>;
     auto find_all_unique_pi0_candidates(const std::vector<Particle>& photons) const -> std::optional<std::vector<std::tuple<Particle, Particle, double>>>;
 
-    auto pi0_mass_window() const -> double { return m_pi0_mass_window.get(); }
+    auto pi0_mass_window() const -> double { return m_config.pi0_mass_window; }
 
     static constexpr double PI0_MASS = Constants::PI0MASS;
 
    private:
     Config m_config;
-
-    framework::Property<double> m_min_photon_energy{"min_photon_energy", 0.1, "Minimum photon energy [GeV]"};
-    framework::Property<double> m_pi0_mass_window{"pi0_mass_window", 0.03, "Pi0 mass window [GeV]"};
-
     framework::Cutflow m_cutflow;
 };
 

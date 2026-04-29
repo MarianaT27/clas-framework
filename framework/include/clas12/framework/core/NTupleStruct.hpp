@@ -40,6 +40,7 @@
 #include <functional>
 #include <vector>
 
+#include <clas12/framework/core/Field.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 
 namespace framework {
@@ -68,20 +69,6 @@ namespace framework {
 // service at `init()` time via a single fold-expression call.  No
 // preprocessor, full type-checking, no 20-field limit.
 
-/// One binding between an N-tuple branch name and a struct member.
-template <typename T, typename Member>
-struct Field {
-    std::string_view name;
-    Member T::*      ptr;
-};
-
-/// Deduction helper so users write `field("e_p", &T::e_p)` without
-/// spelling the template arguments.
-template <typename T, typename Member>
-constexpr auto field(std::string_view name, Member T::* ptr) -> Field<T, Member> {
-    return Field<T, Member>{name, ptr};
-}
-
 /// Register every field listed in `fields` onto `svc` for `tree`, taking
 /// each branch's address from `data`.
 template <typename T, typename Svc, typename... Fs>
@@ -94,13 +81,6 @@ auto register_fields(Svc* svc, const std::string& tree, T& data,
         },
         fields);
 }
-
-/// C++20 `requires`-expression detector.  Unlike `std::void_t`-based
-/// SFINAE on `decltype(T::ntuple_fields())`, this does not try to deduce
-/// the return type of an `auto`-returning function during substitution,
-/// which is the path where clang silently drops the detection.
-template <typename T>
-concept HasStaticNTupleFields = requires { T::ntuple_fields(); };
 
 
 /**

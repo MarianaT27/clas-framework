@@ -94,6 +94,34 @@ inline auto string_to_rungroup(const std::string& str) -> RunGroup {
 }
 
 
+// =============================================================================
+// TOML configuration hooks
+// =============================================================================
+//
+// `framework::declare_config(...)` looks up a free `parse_config_value(sv, T&)`
+// for any enum field via ADL. Defining these in the same namespace as the
+// enums (here, the global namespace) lets them be picked up automatically.
+// `bool` return: `true` on successful parse (assigns out), `false` to emit a
+// type-mismatch error from the framework.
+
+#include <string_view>
+
+inline auto parse_config_value(std::string_view s, Target& out) -> bool {
+    auto t = string_to_target(std::string(s));
+    out = t;
+    return t != Target::Undefined;
+}
+
+inline auto parse_config_value(std::string_view s, Polarity& out) -> bool {
+    out = string_to_polarity(std::string(s));
+    return true;  // string_to_polarity defaults to Inbending if unknown
+}
+
+inline auto parse_config_value(std::string_view s, RunGroup& out) -> bool {
+    out = string_to_rungroup(std::string(s));
+    return true;
+}
+
 // fmt formatters for clas12 enums
 template <>
 struct fmt::formatter<Target> : fmt::formatter<std::string> {

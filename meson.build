@@ -3,7 +3,7 @@ project(
   'cpp',
   version: '2.0',
   default_options: [
-    'cpp_std=c++20',
+    'cpp_std=c++23',
     'warning_level=3',
     'buildtype=release',
     'strip=true',
@@ -100,8 +100,10 @@ project_libs = []
 subdir('extern/hipo4')
 
 # mh — header-only histogram library at extern/mh/.
-# `MH_NO_MDSPAN` opts out of mh's optional `std::mdspan` view path, which is
-# C++23 only; the project is on cpp_std=c++20.
+# MH_NO_MDSPAN forces mh::StaticStorage off mh's optional std::mdspan view.
+# Some C++23 stdlibs ship <mdspan> without putting std::mdspan/std::dextents
+# in std, which trips mh's __has_include gate. We don't use StaticStorage
+# anywhere, so disable the path unconditionally.
 mh_dep = declare_dependency(
   include_directories: include_directories('extern'),
   compile_args: ['-DMH_NO_MDSPAN'],

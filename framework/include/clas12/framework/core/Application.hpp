@@ -148,13 +148,29 @@ class Application {
         // any) BEFORE the algorithm's initialize() runs so on_initialize()
         // sees the configured Property values when it books histograms,
         // sets cuts, etc.
+        //
+        // `[analysis]` keys are merged into every per-algorithm sub-table
+        // as defaults — so settings like `target = "LD2"` set once in the
+        // analysis section are visible to any algorithm Config that lists
+        // that field. Per-algorithm overrides win on conflicts.
+        const toml::table* analysis_section = m_config
+            ? (*m_config)["analysis"].as_table()
+            : nullptr;
+
         for (auto& alg : m_algorithms) {
             alg->set_service_manager(&m_svc_mgr);
             Log::info("Application", "  - {}", alg->name());
 
             if (m_config) {
+                toml::table merged;
+                if (analysis_section) merged = *analysis_section;
                 if (auto sub = (*m_config)[alg->name()].as_table()) {
-                    auto cfg_sc = alg->configure_from_toml(*sub);
+                    for (auto&& [k, v] : *sub) {
+                        merged.insert_or_assign(k, v);
+                    }
+                }
+                if (!merged.empty()) {
+                    auto cfg_sc = alg->configure_from_toml(merged);
                     if (cfg_sc.is_failure()) {
                         Log::error("Application",
                             "Algorithm '{}' rejected TOML config: {}",

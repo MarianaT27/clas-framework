@@ -55,6 +55,26 @@ struct ElectronAnalysisConfig {
     double theta_bin_min = 5.0;
     double theta_bin_max = 40.0;
     double theta_bin_width = 5.0;
+
+    bool enable_chi2pid_cut = true;
+    bool enable_momentum_cut = true;
+    bool enable_vz_cut = true;
+    bool enable_sf_cut = true;
+    bool enable_pcal_fiducial_cut = true;
+    bool enable_dc_chi2ndf_cut = true;
+
+    static constexpr auto config_fields() {
+        using T = ElectronAnalysisConfig;
+        return std::make_tuple(
+            framework::field("target",                   &T::target),
+            framework::field("polarity",                 &T::polarity),
+            framework::field("enable_chi2pid_cut",       &T::enable_chi2pid_cut),
+            framework::field("enable_momentum_cut",      &T::enable_momentum_cut),
+            framework::field("enable_vz_cut",            &T::enable_vz_cut),
+            framework::field("enable_sf_cut",            &T::enable_sf_cut),
+            framework::field("enable_pcal_fiducial_cut", &T::enable_pcal_fiducial_cut),
+            framework::field("enable_dc_chi2ndf_cut",    &T::enable_dc_chi2ndf_cut));
+    }
 };
 
 class ElectronAnalysisAlg : public framework::Algorithm {
@@ -65,7 +85,14 @@ class ElectronAnalysisAlg : public framework::Algorithm {
     explicit ElectronAnalysisAlg(std::string name = "ElectronAnalysis", const Config& config = Config{}) : Algorithm(std::move(name)), m_config(config), m_target(m_config.target), m_polarity(m_config.polarity), m_cutflow("Electron Selection") {
         required_services(m_hist, m_ntuple, m_electron_cuts);
         declare_banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Cherenkov", "REC::Scintillator", "REC::Traj", "REC::Track");
-        declare_properties(m_enable_chi2pid_cut, m_enable_momentum_cut, m_enable_vz_cut, m_enable_sf_cut, m_enable_pcal_fiducial_cut, m_enable_dc_chi2ndf_cut);
+        declare_config(m_config);
+        declare_histograms(
+            h_electron.momentum, h_electron.theta, h_electron.phi, h_electron.vz,
+            h_electron.chi2pid, h_electron.p_vs_theta, h_electron.phi_vs_theta,
+            h_calorimeter.lu_vs_lv_pcal, h_calorimeter.lu_vs_lw_pcal,
+            h_calorimeter.lu_vs_lv_inner, h_calorimeter.lu_vs_lw_inner,
+            h_calorimeter.lu_vs_lv_outer, h_calorimeter.lu_vs_lw_outer,
+            h_electron_vz.vz_vs_theta, h_electron_vz.vz_vs_p, h_electron_vz.vz_vs_theta_vs_p);
     }
 
     /// Access configuration (const)
@@ -121,27 +148,27 @@ class ElectronAnalysisAlg : public framework::Algorithm {
 
         process_tracks({can.particle}, h_electron_tracks);
 
-        if (m_enable_chi2pid_cut.get() && !m_electron_cuts->pass_chi2pid_cut(electron.chi2pid())) return StatusCode::FILTERED();
+        if (m_config.enable_chi2pid_cut && !m_electron_cuts->pass_chi2pid_cut(electron.chi2pid())) return StatusCode::FILTERED();
         m_cutflow.pass("Chi2 PID");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("Chi2PID", can);
 
-        if (m_enable_momentum_cut.get() && !m_electron_cuts->pass_momentum_cut(electron.p())) return StatusCode::FILTERED();
+        if (m_config.enable_momentum_cut && !m_electron_cuts->pass_momentum_cut(electron.p())) return StatusCode::FILTERED();
         m_cutflow.pass("Momentum > 0.8 GeV");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("Momentum", can);
 
-        if (m_enable_vz_cut.get() && !m_electron_cuts->pass_vz_cut(electron.vz())) return StatusCode::FILTERED();
+        if (m_config.enable_vz_cut && !m_electron_cuts->pass_vz_cut(electron.vz())) return StatusCode::FILTERED();
         m_cutflow.pass("Vertex Z");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("VertexZ", can);
 
-        if (m_enable_sf_cut.get() && !m_electron_cuts->pass_sampling_fraction_cut(can.sampling_fraction, electron.p(), can.sector)) return StatusCode::FILTERED();
+        if (m_config.enable_sf_cut && !m_electron_cuts->pass_sampling_fraction_cut(can.sampling_fraction, electron.p(), can.sector)) return StatusCode::FILTERED();
         m_cutflow.pass("Sampling Fraction");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("SamplingFraction", can);
 
-        if (m_enable_pcal_fiducial_cut.get() && !m_electron_cuts->pass_pcal_fiducial_cut(can.calorimeter.pcal_lv, can.calorimeter.pcal_lw)) return StatusCode::FILTERED();
+        if (m_config.enable_pcal_fiducial_cut && !m_electron_cuts->pass_pcal_fiducial_cut(can.calorimeter.pcal_lv, can.calorimeter.pcal_lw)) return StatusCode::FILTERED();
         m_cutflow.pass("PCAL Fiducial");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("PCALFiducial", can);
 
-        if (m_enable_dc_chi2ndf_cut.get() && !m_electron_cuts->pass_dc_edge_cut(can.traj.region1_edge, can.traj.region2_edge, can.traj.region3_edge)) return StatusCode::FILTERED();
+        if (m_config.enable_dc_chi2ndf_cut && !m_electron_cuts->pass_dc_edge_cut(can.traj.region1_edge, can.traj.region2_edge, can.traj.region3_edge)) return StatusCode::FILTERED();
         m_cutflow.pass("DC Chi2/NDF");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("DCChi2", can);
 
@@ -188,14 +215,7 @@ class ElectronAnalysisAlg : public framework::Algorithm {
     framework::Cutflow m_cutflow;
 
     // Cut toggle properties
-    framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable Chi2 PID cut"};
-    framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
-    framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
-    framework::Property<bool> m_enable_sf_cut{"enable_sf_cut", true, "Enable sampling fraction cut"};
-    framework::Property<bool> m_enable_pcal_fiducial_cut{"enable_pcal_fiducial_cut", true, "Enable PCAL fiducial cut"};
-    framework::Property<bool> m_enable_dc_chi2ndf_cut{"enable_dc_chi2ndf_cut", true, "Enable DC Chi2/NDF cut"};
-
-    // Services (auto-resolved by required_services(...) in the constructor)
+// Services (auto-resolved by required_services(...) in the constructor)
     framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService> m_ntuple;
     framework::ServiceRef<framework::ElectronCutsService> m_electron_cuts;
@@ -252,24 +272,37 @@ class ElectronAnalysisAlg : public framework::Algorithm {
 
     framework::NTupleWriter<ElectronNTupleData> m_ntuple_electron;
 
-    // Histograms - organized by category (lock-free atomic)
+    // Histograms - organized by category (lock-free atomic, self-registering).
     struct {
-        framework::H1<> momentum{mh::regular(0, 12, static_cast<std::size_t>(120))};
-        framework::H1<> theta{mh::regular(0, 180, static_cast<std::size_t>(180))};
-        framework::H1<> phi{mh::regular(-180, 180, static_cast<std::size_t>(180))};
-        framework::H1<> vz{mh::regular(-20, 20, static_cast<std::size_t>(200))};
-        framework::H1<> chi2pid{mh::regular(-10, 10, static_cast<std::size_t>(200))};
-        framework::H2<> p_vs_theta{mh::regular(0, 180, static_cast<std::size_t>(180)), mh::regular(0, 12, static_cast<std::size_t>(120))};
-        framework::H2<> phi_vs_theta{mh::regular(0, 180, static_cast<std::size_t>(180)), mh::regular(-180, 180, static_cast<std::size_t>(180))};
+        framework::Hist1<> momentum{"/Electron/momentum",
+            "Electron Momentum;p [GeV/c];Events", 0, 12, 120};
+        framework::Hist1<> theta{"/Electron/theta",
+            "Electron #theta;#theta [deg];Events", 0, 180, 180};
+        framework::Hist1<> phi{"/Electron/phi",
+            "Electron #phi;#phi [deg];Events", -180, 180, 180};
+        framework::Hist1<> vz{"/Electron/vz",
+            "Electron v_{z};v_{z} [cm];Events", -20, 20, 200};
+        framework::Hist1<> chi2pid{"/Electron/chi2pid",
+            "Electron #chi^{2}_{PID};#chi^{2};Events", -10, 10, 200};
+        framework::Hist2<> p_vs_theta{"/Electron/p_vs_theta",
+            "p vs #theta;#theta [deg];p [GeV/c]", 0, 180, 180, 0, 12, 120};
+        framework::Hist2<> phi_vs_theta{"/Electron/phi_vs_theta",
+            "#phi vs #theta;#theta [deg];#phi [deg]", 0, 180, 180, -180, 180, 180};
     } h_electron;
 
     struct {
-        framework::H2<> lu_vs_lv_pcal{mh::regular(0, 500, static_cast<std::size_t>(100)), mh::regular(0, 500, static_cast<std::size_t>(100))};
-        framework::H2<> lu_vs_lw_pcal{mh::regular(0, 500, static_cast<std::size_t>(100)), mh::regular(0, 500, static_cast<std::size_t>(100))};
-        framework::H2<> lu_vs_lv_inner{mh::regular(0, 500, static_cast<std::size_t>(100)), mh::regular(0, 500, static_cast<std::size_t>(100))};
-        framework::H2<> lu_vs_lw_inner{mh::regular(0, 500, static_cast<std::size_t>(100)), mh::regular(0, 500, static_cast<std::size_t>(100))};
-        framework::H2<> lu_vs_lv_outer{mh::regular(0, 500, static_cast<std::size_t>(100)), mh::regular(0, 500, static_cast<std::size_t>(100))};
-        framework::H2<> lu_vs_lw_outer{mh::regular(0, 500, static_cast<std::size_t>(100)), mh::regular(0, 500, static_cast<std::size_t>(100))};
+        framework::Hist2<> lu_vs_lv_pcal{"/Calorimeter/lu_vs_lv_pcal",
+            "PCAL lu vs lv;lv;lu", 0, 500, 100, 0, 500, 100};
+        framework::Hist2<> lu_vs_lw_pcal{"/Calorimeter/lu_vs_lw_pcal",
+            "PCAL lu vs lw;lw;lu", 0, 500, 100, 0, 500, 100};
+        framework::Hist2<> lu_vs_lv_inner{"/Calorimeter/lu_vs_lv_inner",
+            "Inner EC lu vs lv;lv;lu", 0, 500, 100, 0, 500, 100};
+        framework::Hist2<> lu_vs_lw_inner{"/Calorimeter/lu_vs_lw_inner",
+            "Inner EC lu vs lw;lw;lu", 0, 500, 100, 0, 500, 100};
+        framework::Hist2<> lu_vs_lv_outer{"/Calorimeter/lu_vs_lv_outer",
+            "Outer EC lu vs lv;lv;lu", 0, 500, 100, 0, 500, 100};
+        framework::Hist2<> lu_vs_lw_outer{"/Calorimeter/lu_vs_lw_outer",
+            "Outer EC lu vs lw;lw;lu", 0, 500, 100, 0, 500, 100};
     } h_calorimeter;
 
     // DC chi2/ndf vs edge, sliced on momentum and on theta.
@@ -290,9 +323,13 @@ class ElectronAnalysisAlg : public framework::Algorithm {
     DcHistograms h_dc;
 
     struct {
-        framework::H2<> vz_vs_theta{mh::regular(0, 40, static_cast<std::size_t>(100)), mh::regular(-13, 0, static_cast<std::size_t>(100))};
-        framework::H2<> vz_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(-13, 0, static_cast<std::size_t>(100))};
-        framework::H3<> vz_vs_theta_vs_p{mh::regular(0, 10, static_cast<std::size_t>(20)), mh::regular(0, 40, static_cast<std::size_t>(100)), mh::regular(-13, 0, static_cast<std::size_t>(100))};
+        framework::Hist2<> vz_vs_theta{"/Electron/vz_vs_theta",
+            "Electron v_{z} vs #theta;#theta [deg];v_{z} [cm]", 0, 40, 100, -13, 0, 100};
+        framework::Hist2<> vz_vs_p{"/Electron/vz_vs_p",
+            "Electron v_{z} vs p;p [GeV/c];v_{z} [cm]", 0, 10, 100, -13, 0, 100};
+        framework::Hist3<> vz_vs_theta_vs_p{"/Electron/vz_vs_theta_vs_p",
+            "Electron v_{z} vs #theta vs p;p [GeV/c];#theta [deg];v_{z} [cm]",
+            0, 10, 20, 0, 40, 100, -13, 0, 100};
     } h_electron_vz;
 
     // Track histograms structure (for neg/pos tracks, pions, etc.)
@@ -328,33 +365,17 @@ class ElectronAnalysisAlg : public framework::Algorithm {
     // Histograms for each cut stage (lock-free atomic)
     struct CutStageHistograms {
         bool booked = false;
-        framework::H1<> momentum{mh::regular(0, 12, static_cast<std::size_t>(120))};
-        framework::H1<> theta{mh::regular(0, 180, static_cast<std::size_t>(180))};
-        framework::H1<> phi{mh::regular(-180, 180, static_cast<std::size_t>(180))};
-        framework::H1<> vz{mh::regular(-20, 20, static_cast<std::size_t>(200))};
-        framework::H2<> sampling_fraction{mh::regular(0, 12, static_cast<std::size_t>(120)), mh::regular(0, 0.5, static_cast<std::size_t>(100))};
-        framework::H1<> dc_edge_r1{mh::regular(0, 50, static_cast<std::size_t>(100))};
+        framework::H1<> momentum{mh::regular(0, 12, 120)};
+        framework::H1<> theta{mh::regular(0, 180, 180)};
+        framework::H1<> phi{mh::regular(-180, 180, 180)};
+        framework::H1<> vz{mh::regular(-20, 20, 200)};
+        framework::H2<> sampling_fraction{mh::regular(0, 12, 120), mh::regular(0, 0.5, 100)};
+        framework::H1<> dc_edge_r1{mh::regular(0, 50, 100)};
     };
 
     std::map<std::string, CutStageHistograms> m_cut_stage_histograms;
 
     auto book_histograms() -> void {
-        m_hist->register_hist("/Electron/momentum", "Electron Momentum;p [GeV/c];Events", h_electron.momentum);
-        m_hist->register_hist("/Electron/theta", "Electron #theta;#theta [deg];Events", h_electron.theta);
-        m_hist->register_hist("/Electron/phi", "Electron #phi;#phi [deg];Events", h_electron.phi);
-        m_hist->register_hist("/Electron/vz", "Electron v_{z};v_{z} [cm];Events", h_electron.vz);
-        m_hist->register_hist("/Electron/chi2pid", "Electron #chi^{2}_{PID};#chi^{2};Events", h_electron.chi2pid);
-        m_hist->register_hist("/Electron/p_vs_theta", "p vs #theta;#theta [deg];p [GeV/c]", h_electron.p_vs_theta);
-        m_hist->register_hist("/Electron/phi_vs_theta", "#phi vs #theta;#theta [deg];#phi [deg]", h_electron.phi_vs_theta);
-        m_hist->register_hist("/Electron/vz_vs_theta", "Electron v_{z} vs #theta;#theta [deg];v_{z} [cm]", h_electron_vz.vz_vs_theta);
-        m_hist->register_hist("/Electron/vz_vs_p", "Electron v_{z} vs p;p [GeV/c];v_{z} [cm]", h_electron_vz.vz_vs_p);
-        m_hist->register_hist("/Electron/vz_vs_theta_vs_p", "Electron v_{z} vs #theta vs p;p [GeV/c];#theta [deg];v_{z} [cm]", h_electron_vz.vz_vs_theta_vs_p);
-        m_hist->register_hist("/Calorimeter/lu_vs_lv_pcal", "PCAL lu vs lv;lv;lu", h_calorimeter.lu_vs_lv_pcal);
-        m_hist->register_hist("/Calorimeter/lu_vs_lw_pcal", "PCAL lu vs lw;lw;lu", h_calorimeter.lu_vs_lw_pcal);
-        m_hist->register_hist("/Calorimeter/lu_vs_lv_inner", "Inner EC lu vs lv;lv;lu", h_calorimeter.lu_vs_lv_inner);
-        m_hist->register_hist("/Calorimeter/lu_vs_lw_inner", "Inner EC lu vs lw;lw;lu", h_calorimeter.lu_vs_lw_inner);
-        m_hist->register_hist("/Calorimeter/lu_vs_lv_outer", "Outer EC lu vs lv;lv;lu", h_calorimeter.lu_vs_lv_outer);
-        m_hist->register_hist("/Calorimeter/lu_vs_lw_outer", "Outer EC lu vs lw;lw;lu", h_calorimeter.lu_vs_lw_outer);
         const int p_nbins = static_cast<int>((m_config.p_bin_max - m_config.p_bin_min) / m_config.p_bin_width);
         const int theta_nbins = static_cast<int>((m_config.theta_bin_max - m_config.theta_bin_min) / m_config.theta_bin_width);
 
@@ -362,7 +383,7 @@ class ElectronAnalysisAlg : public framework::Algorithm {
                               const std::string& path, const std::string& title,
                               int xn, double xlo, double xhi) {
             slot = std::make_unique<framework::H3<>>(
-                mh::regular(xlo, xhi, static_cast<std::size_t>(xn)),
+                mh::regular(xlo, xhi, xn),
                 mh::regular(0.0, 50.0, 200),  // edge
                 mh::regular(0.0, 10.0, 200)   // chi2/ndf
             );

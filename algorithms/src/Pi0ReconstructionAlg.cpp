@@ -13,15 +13,14 @@ using framework::Log;
 
 Pi0ReconstructionAlg::Pi0ReconstructionAlg(std::string name, const Config& config)
     : Algorithm(std::move(name)), m_config(config), m_cutflow("Pi0 Reconstruction") {
-    m_pi0_mass_window.set(m_config.pi0_mass_window);
-    declare_properties(m_min_photon_energy, m_pi0_mass_window);
+    declare_config(m_config);
 }
 
 auto Pi0ReconstructionAlg::select_photons(const std::vector<Particle>& photons) const -> std::vector<Particle> {
     std::vector<Particle> selected;
     selected.reserve(photons.size());
     for (const auto& photon : photons) {
-        if (photon.E() >= m_min_photon_energy.get()) selected.push_back(photon);
+        if (photon.E() >= m_config.min_photon_energy) selected.push_back(photon);
     }
     return selected;
 }
@@ -40,7 +39,7 @@ auto Pi0ReconstructionAlg::find_best_pi0(const std::vector<Particle>& photons) c
         for (size_t j = i + 1; j < photons.size(); ++j) {
             double mass = calculate_invariant_mass(photons[i], photons[j]);
             double mass_diff = std::abs(mass - PI0_MASS);
-            if (mass_diff < m_pi0_mass_window.get() && mass_diff < best_mass_diff) {
+            if (mass_diff < m_config.pi0_mass_window && mass_diff < best_mass_diff) {
                 best_mass_diff = mass_diff;
                 best = std::make_tuple(photons[i], photons[j], mass);
             }
@@ -67,7 +66,7 @@ auto Pi0ReconstructionAlg::find_all_unique_pi0_candidates(const std::vector<Part
                 if (used[j]) continue;
                 double mass = calculate_invariant_mass(photons[i], photons[j]);
                 double mass_diff = std::abs(mass - PI0_MASS);
-                if (mass_diff < m_pi0_mass_window.get() && mass_diff < best_mass_diff) {
+                if (mass_diff < m_config.pi0_mass_window && mass_diff < best_mass_diff) {
                     best_mass_diff = mass_diff;
                     best_i = i;
                     best_j = j;
@@ -89,7 +88,7 @@ auto Pi0ReconstructionAlg::find_all_unique_pi0_candidates(const std::vector<Part
 
 auto Pi0ReconstructionAlg::on_initialize() -> StatusCode {
     Log::subsection(fmt::format("{} Configuration", name()));
-    Log::info(name(), "Pi0 mass window: ±{} GeV", m_pi0_mass_window.get());
+    Log::info(name(), "Pi0 mass window: ±{} GeV", m_config.pi0_mass_window);
 
     m_cutflow.add_cut("All Events");
     m_cutflow.add_cut("Has Electron");

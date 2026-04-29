@@ -35,6 +35,7 @@ class EventMonitor : public framework::Algorithm {
         : Algorithm(std::move(name)), m_config(config) {
         required_services(m_hist);
         declare_banks("REC::Particle");
+        declare_histograms(h_particles_per_event, h_electrons_per_event, h_processing_time);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -42,12 +43,6 @@ class EventMonitor : public framework::Algorithm {
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::info(name(), "Initializing");
-        m_hist->register_hist("/Monitor/particles_per_event",
-                              "Particles per Event;N_{particles};Events", h_particles_per_event);
-        m_hist->register_hist("/Monitor/electrons_per_event",
-                              "Electrons per Event;N_{e};Events", h_electrons_per_event);
-        m_hist->register_hist("/Monitor/processing_time",
-                              "Event Processing Time;Time [#mus];Events", h_processing_time);
         m_start_time = std::chrono::high_resolution_clock::now();
         return StatusCode::SUCCESS();
     }
@@ -106,9 +101,12 @@ class EventMonitor : public framework::Algorithm {
 
     framework::ServiceRef<framework::HistogramService> m_hist;
 
-    framework::H1<> h_particles_per_event{mh::regular(0.0, 50.0, 50)};
-    framework::H1<> h_electrons_per_event{mh::regular(0.0, 10.0, 10)};
-    framework::H1<> h_processing_time{mh::regular(0.0, 1000.0, 100)};
+    framework::Hist1<> h_particles_per_event{"/Monitor/particles_per_event",
+        "Particles per Event;N_{particles};Events", 0.0, 50.0, 50};
+    framework::Hist1<> h_electrons_per_event{"/Monitor/electrons_per_event",
+        "Electrons per Event;N_{e};Events", 0.0, 10.0, 10};
+    framework::Hist1<> h_processing_time{"/Monitor/processing_time",
+        "Event Processing Time;Time [#mus];Events", 0.0, 1000.0, 100};
 
     std::atomic<size_t> m_events_processed{0};
     std::atomic<size_t> m_total_particles{0};

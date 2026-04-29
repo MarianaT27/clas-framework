@@ -12,6 +12,7 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
+#include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/Particle.hpp>
@@ -31,6 +32,26 @@ namespace ALERT_track_matching {
 /// Configuration for ALERT_track_matchingAlg.
 struct ALERT_track_matchingConfig {
     // Reserved for future tuning knobs that aren't user-tunable Properties.
+
+    double example_cut = 1.0;
+    bool enable_histograms = true;
+    double phi_cut = 30.0;
+    double delta_vz_cm_min = 12.38;
+    double delta_vz_cm_max = 37.26;
+    int ai_hit_id_offset = 1;
+    bool enable_ntuple = true;
+
+    static constexpr auto config_fields() {
+        using T = ALERT_track_matchingConfig;
+        return std::make_tuple(
+            framework::field("example_cut", &T::example_cut),
+            framework::field("enable_histograms", &T::enable_histograms),
+            framework::field("phi_cut", &T::phi_cut),
+            framework::field("delta_vz_cm_min", &T::delta_vz_cm_min),
+            framework::field("delta_vz_cm_max", &T::delta_vz_cm_max),
+            framework::field("ai_hit_id_offset", &T::ai_hit_id_offset),
+            framework::field("enable_ntuple", &T::enable_ntuple));
+    }
 };
 
 /**
@@ -45,7 +66,8 @@ public:
         : Algorithm(std::move(name)), m_config(config) {
         required_services(m_hist_svc, m_ntuple_svc);
         declare_banks("REC::Particle", "AHDC::track", "ALERT::ai:projections", "ATOF::hits");
-        declare_properties(m_example_cut, m_enable_histograms, m_phi_cut, m_delta_vz_cm_min, m_delta_vz_cm_max, m_enable_ntuple, m_ai_hit_id_offset);
+        declare_config(m_config);
+        declare_histograms(h_p, h_phi, h_theta, h_vz, h_vz_Cu, h_vz_Sn, h_delta_vz, h_delta_vz_cm, h_delta_phi, h_delta_phi_after_vz_cm_cut, h_n_predictions, h_best_delta_phi, h_n_good_atof_hits, h_matched_atof_hit_id, h_n_true_atof_hits, h_atof_electron_delta_phi_all, h_atof_electron_delta_phi_true, h_atof_electron_delta_phi_best, h_track_atof_dphi, h_best_track_atof_dphi, h_delta_component, h_delta_sector, h_ai_vs_true_component, h_ai_vs_true_layer, h_ai_vs_true_sector, h_track_phi_vs_atof_phi);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -62,8 +84,8 @@ public:
      * @return StatusCode SUCCESS to continue, FAILURE to abort
      */
     auto on_initialize() -> StatusCode override {
-        if (m_enable_histograms.get()) book_histograms();
-        if (m_enable_ntuple.get()) setup_ntuple();
+        // Histograms self-register at initialize time via declare_histograms().
+        if (m_config.enable_ntuple) m_writer.init(m_ntuple_svc.get(), "alert_track_matching");
 
         // Read the file analyses/ALERT_track_matching/atof_wedge_H2.data
         // Read the ATOF wedge H2 data file
@@ -208,12 +230,12 @@ public:
             h_delta_vz.fill(delta_vz);
             h_delta_vz_cm.fill(delta_vz_cm);
             // Fill delta_phi after delta Vz cm cut
-            if (delta_vz_cm >= m_delta_vz_cm_min && delta_vz_cm <= m_delta_vz_cm_max) {
+            if (delta_vz_cm >= m_config.delta_vz_cm_min && delta_vz_cm <= m_config.delta_vz_cm_max) {
                 h_delta_phi_after_vz_cm_cut.fill(delta_phi);
             }
 
             // Select tracks with delta_phi between 150 and 200 degrees and deltaVz within cm cut
-            if (delta_phi >= 150.0 && delta_phi <= 200.0 && delta_vz_cm >= m_delta_vz_cm_min && delta_vz_cm <= m_delta_vz_cm_max) {
+            if (delta_phi >= 150.0 && delta_phi <= 200.0 && delta_vz_cm >= m_config.delta_vz_cm_min && delta_vz_cm <= m_config.delta_vz_cm_max) {
                 matched_tracks.push_back(&track);
                 h_best_delta_phi.fill(delta_phi);
             }
@@ -236,7 +258,7 @@ public:
                 if (dphi > 180.0) dphi = 360.0 - dphi;
 
                 h_track_atof_dphi.fill(dphi);
-                if (dphi < best_phi_distance && dphi <= m_phi_cut) {
+                if (dphi < best_phi_distance && dphi <= m_config.phi_cut) {
                     best_phi_distance = dphi;
                     best_true_atof_hit_index = true_atof_hit_indices[i];
                 }
@@ -263,7 +285,7 @@ public:
             for (int i = 0; i < alert_projections.rows(); ++i) {
                 const int proj_trackid = alert_projections.trackid(i);
                 if (proj_trackid == matched_track->trackid) {
-                    matched_atof_hit_id = alert_projections.matched_atof_hit_id(i) - m_ai_hit_id_offset;
+                    matched_atof_hit_id = alert_projections.matched_atof_hit_id(i) - m_config.ai_hit_id_offset;
                     break;
                 }
             }
@@ -305,112 +327,104 @@ public:
         }  // end for matched_tracks
 
         // Fill NTuple with per-event data for Python analysis
-        if (m_enable_ntuple.get() && m_ntuple_svc) {
-            {
-                std::lock_guard<std::mutex> lock(m_ntuple_mutex);
+        if (m_writer.is_initialized()) {
+            std::lock_guard<std::mutex> lock(m_ntuple_mutex);
 
-                const auto* mt = matched_tracks.front();
-                double trk_phi = std::atan2(mt->py, mt->px) * 180.0 / M_PI;
-                double dphi_val = std::fmod(electron_phi - trk_phi, 360.0);
-                if (dphi_val < 0.0) dphi_val += 360.0;
+            auto& nt = m_writer.data();
+            const auto* mt = matched_tracks.front();
+            double trk_phi = std::atan2(mt->py, mt->px) * 180.0 / M_PI;
+            double dphi_val = std::fmod(electron_phi - trk_phi, 360.0);
+            if (dphi_val < 0.0) dphi_val += 360.0;
 
-                // Electron
-                m_nt_e_p     = elastic_electron.p();
-                m_nt_e_theta = elastic_electron.theta();
-                m_nt_e_phi   = elastic_electron.phi();
-                m_nt_e_vz    = electron_vz;  // already in mm
+            nt.e_p     = elastic_electron.p();
+            nt.e_theta = elastic_electron.theta();
+            nt.e_phi   = elastic_electron.phi();
+            nt.e_vz    = electron_vz;
 
-                // Track
-                m_nt_trackid             = mt->trackid;
-                m_nt_track_x             = mt->x;
-                m_nt_track_y             = mt->y;
-                m_nt_track_z             = mt->z;
-                m_nt_track_px            = mt->px;
-                m_nt_track_py            = mt->py;
-                m_nt_track_pz            = mt->pz;
-                m_nt_track_p_drift       = mt->p_drift;
-                m_nt_track_n_hits        = mt->n_hits;
-                m_nt_track_sum_adc       = mt->sum_adc;
-                m_nt_track_path          = mt->path;
-                m_nt_track_dEdx          = mt->dEdx;
-                m_nt_track_chi2          = mt->chi2;
-                m_nt_track_sum_residuals = mt->sum_residuals;
+            nt.trackid             = mt->trackid;
+            nt.track_x             = mt->x;
+            nt.track_y             = mt->y;
+            nt.track_z             = mt->z;
+            nt.track_px            = mt->px;
+            nt.track_py            = mt->py;
+            nt.track_pz            = mt->pz;
+            nt.track_p_drift       = mt->p_drift;
+            nt.track_n_hits        = mt->n_hits;
+            nt.track_sum_adc       = mt->sum_adc;
+            nt.track_path          = mt->path;
+            nt.track_dEdx          = mt->dEdx;
+            nt.track_chi2          = mt->chi2;
+            nt.track_sum_residuals = mt->sum_residuals;
 
-                // Matching
-                m_nt_delta_phi = dphi_val;
-                m_nt_delta_vz  = electron_vz - mt->z;
-                m_nt_track_phi = trk_phi;
+            nt.delta_phi = dphi_val;
+            nt.delta_vz  = electron_vz - mt->z;
+            nt.track_phi = trk_phi;
 
-                // Multiplicity
-                m_nt_n_tracks         = static_cast<int>(good_tracks.size());
-                m_nt_n_good_atof_hits = static_cast<int>(good_atof_hit_indices.size());
-                m_nt_n_true_atof_hits = static_cast<int>(true_atof_hit_indices.size());
-                m_nt_n_matched_tracks = static_cast<int>(matched_tracks.size());
+            nt.n_tracks         = static_cast<int>(good_tracks.size());
+            nt.n_good_atof_hits = static_cast<int>(good_atof_hit_indices.size());
+            nt.n_true_atof_hits = static_cast<int>(true_atof_hit_indices.size());
+            nt.n_matched_tracks = static_cast<int>(matched_tracks.size());
 
-                // True ATOF hit info
-                m_nt_has_true_atof_hit = (best_true_atof_hit_index >= 0) ? 1 : 0;
-                if (best_true_atof_hit_index >= 0) {
-                    m_nt_true_sector    = atof_hits.sector(best_true_atof_hit_index);
-                    m_nt_true_layer     = atof_hits.layer(best_true_atof_hit_index);
-                    m_nt_true_component = atof_hits.component(best_true_atof_hit_index);
-                    const float hx = atof_hits.x(best_true_atof_hit_index);
-                    const float hy = atof_hits.y(best_true_atof_hit_index);
-                    m_nt_true_atof_phi     = std::atan2(hy, hx) * 180.0 / M_PI;
-                    m_nt_best_phi_distance = best_phi_distance;
-                } else {
-                    m_nt_true_sector       = -1;
-                    m_nt_true_layer        = -1;
-                    m_nt_true_component    = -1;
-                    m_nt_true_atof_phi     = -999.0;
-                    m_nt_best_phi_distance = -1.0;
-                }
-
-                // AI ATOF hit info
-                int ai_hit_id = -1;
-                for (int i = 0; i < alert_projections.rows(); ++i) {
-                    if (alert_projections.trackid(i) == mt->trackid) {
-                        ai_hit_id = alert_projections.matched_atof_hit_id(i) - m_ai_hit_id_offset;
-                        break;
-                    }
-                }
-                m_nt_matched_atof_hit_id = ai_hit_id;
-                m_nt_has_ai_match = (ai_hit_id >= 0 && ai_hit_id < atof_hits.rows()) ? 1 : 0;
-
-                if (m_nt_has_ai_match) {
-                    m_nt_ai_sector    = atof_hits.sector(ai_hit_id);
-                    m_nt_ai_layer     = atof_hits.layer(ai_hit_id);
-                    m_nt_ai_component = atof_hits.component(ai_hit_id);
-                } else {
-                    m_nt_ai_sector    = -1;
-                    m_nt_ai_layer     = -1;
-                    m_nt_ai_component = -1;
-                }
-
-                // Efficiency flags
-                if (m_nt_has_true_atof_hit && m_nt_has_ai_match) {
-                    m_nt_is_sector_correct       = (m_nt_ai_sector == m_nt_true_sector) ? 1 : 0;
-                    m_nt_is_layer_correct        = (m_nt_ai_layer == m_nt_true_layer) ? 1 : 0;
-                    m_nt_is_component_correct    = (m_nt_ai_component == m_nt_true_component) ? 1 : 0;
-                    m_nt_is_component_off_by_one = (std::abs(m_nt_ai_component - m_nt_true_component) <= 1) ? 1 : 0;
-                    m_nt_is_wedge_correct        = (m_nt_ai_sector == m_nt_true_sector &&
-                                                    m_nt_ai_layer == m_nt_true_layer &&
-                                                    m_nt_ai_component == m_nt_true_component) ? 1 : 0;
-                    m_nt_is_wedge_off_by_one     = (m_nt_ai_sector == m_nt_true_sector &&
-                                                    m_nt_ai_layer == m_nt_true_layer &&
-                                                    std::abs(m_nt_ai_component - m_nt_true_component) <= 1) ? 1 : 0;
-                    m_nt_is_exact_match          = (ai_hit_id == best_true_atof_hit_index) ? 1 : 0;
-                } else {
-                    m_nt_is_sector_correct       = 0;
-                    m_nt_is_layer_correct        = 0;
-                    m_nt_is_component_correct    = 0;
-                    m_nt_is_component_off_by_one = 0;
-                    m_nt_is_wedge_correct        = 0;
-                    m_nt_is_wedge_off_by_one     = 0;
-                    m_nt_is_exact_match          = 0;
-                }
-
-                m_ntuple_svc->fill("alert_track_matching");
+            nt.has_true_atof_hit = (best_true_atof_hit_index >= 0) ? 1 : 0;
+            if (best_true_atof_hit_index >= 0) {
+                nt.true_sector    = atof_hits.sector(best_true_atof_hit_index);
+                nt.true_layer     = atof_hits.layer(best_true_atof_hit_index);
+                nt.true_component = atof_hits.component(best_true_atof_hit_index);
+                const float hx = atof_hits.x(best_true_atof_hit_index);
+                const float hy = atof_hits.y(best_true_atof_hit_index);
+                nt.true_atof_phi     = std::atan2(hy, hx) * 180.0 / M_PI;
+                nt.best_phi_distance = best_phi_distance;
+            } else {
+                nt.true_sector       = -1;
+                nt.true_layer        = -1;
+                nt.true_component    = -1;
+                nt.true_atof_phi     = -999.0;
+                nt.best_phi_distance = -1.0;
             }
+
+            int ai_hit_id = -1;
+            for (int i = 0; i < alert_projections.rows(); ++i) {
+                if (alert_projections.trackid(i) == mt->trackid) {
+                    ai_hit_id = alert_projections.matched_atof_hit_id(i) - m_config.ai_hit_id_offset;
+                    break;
+                }
+            }
+            nt.matched_atof_hit_id = ai_hit_id;
+            nt.has_ai_match = (ai_hit_id >= 0 && ai_hit_id < atof_hits.rows()) ? 1 : 0;
+
+            if (nt.has_ai_match) {
+                nt.ai_sector    = atof_hits.sector(ai_hit_id);
+                nt.ai_layer     = atof_hits.layer(ai_hit_id);
+                nt.ai_component = atof_hits.component(ai_hit_id);
+            } else {
+                nt.ai_sector    = -1;
+                nt.ai_layer     = -1;
+                nt.ai_component = -1;
+            }
+
+            if (nt.has_true_atof_hit && nt.has_ai_match) {
+                nt.is_sector_correct       = (nt.ai_sector == nt.true_sector) ? 1 : 0;
+                nt.is_layer_correct        = (nt.ai_layer == nt.true_layer) ? 1 : 0;
+                nt.is_component_correct    = (nt.ai_component == nt.true_component) ? 1 : 0;
+                nt.is_component_off_by_one = (std::abs(nt.ai_component - nt.true_component) <= 1) ? 1 : 0;
+                nt.is_wedge_correct        = (nt.ai_sector == nt.true_sector &&
+                                              nt.ai_layer == nt.true_layer &&
+                                              nt.ai_component == nt.true_component) ? 1 : 0;
+                nt.is_wedge_off_by_one     = (nt.ai_sector == nt.true_sector &&
+                                              nt.ai_layer == nt.true_layer &&
+                                              std::abs(nt.ai_component - nt.true_component) <= 1) ? 1 : 0;
+                nt.is_exact_match          = (ai_hit_id == best_true_atof_hit_index) ? 1 : 0;
+            } else {
+                nt.is_sector_correct       = 0;
+                nt.is_layer_correct        = 0;
+                nt.is_component_correct    = 0;
+                nt.is_component_off_by_one = 0;
+                nt.is_wedge_correct        = 0;
+                nt.is_wedge_off_by_one     = 0;
+                nt.is_exact_match          = 0;
+                }
+
+            m_writer.fill();
         }
 
         return framework::StatusCode::SUCCESS();
@@ -471,30 +485,7 @@ public:
 
 private:
     // Configurable properties
-    framework::Property<double> m_example_cut{
-        "example_cut", 1.0, "Example cut threshold value"
-    };
-    framework::Property<bool> m_enable_histograms{
-        "enable_histograms", true, "Enable histogram filling"
-    };
-    framework::Property<double> m_phi_cut{
-        "phi_cut", 30.0, "Phi matching tolerance in degrees"
-    };
-    framework::Property<double> m_delta_vz_cm_min{
-        "delta_vz_cm_min", 12.38, "Delta Vz minimum cut in cm"
-    };
-    framework::Property<double> m_delta_vz_cm_max{
-        "delta_vz_cm_max", 37.26, "Delta Vz maximum cut in cm"
-    };
-    framework::Property<int> m_ai_hit_id_offset{
-        "ai_hit_id_offset", 1, "Offset to subtract from AI matched_atof_hit_id (0 if 0-based, 1 if 1-based)"
-    };
-
-    framework::Property<bool> m_enable_ntuple{
-        "enable_ntuple", true, "Enable N-tuple output"
-    };
-
-    Config m_config;
+Config m_config;
 
     // Services
     framework::ServiceRef<framework::HistogramService> m_hist_svc;
@@ -504,163 +495,144 @@ private:
     mutable std::mutex m_ntuple_mutex;
 
     // Lock-free atomic histograms (managed by HistogramService)
-    framework::H1<> h_p{mh::regular(0, 10, static_cast<std::size_t>(100))};
-    framework::H1<> h_phi{mh::regular(-180, 180, static_cast<std::size_t>(100))};
-    framework::H1<> h_theta{mh::regular(0, 90, static_cast<std::size_t>(100))};
-    framework::H1<> h_vz{mh::regular(-30, 30, static_cast<std::size_t>(100))};
-    framework::H1<> h_vz_Cu{mh::regular(-30, 30, static_cast<std::size_t>(100))};
-    framework::H1<> h_vz_Sn{mh::regular(-30, 30, static_cast<std::size_t>(100))};
-    framework::H1<> h_delta_vz{mh::regular(-100, 100, static_cast<std::size_t>(200))};
-    framework::H1<> h_delta_vz_cm{mh::regular(-10, 50, static_cast<std::size_t>(200))};
-    framework::H1<> h_delta_phi{mh::regular(0, 360, static_cast<std::size_t>(360))};
-    framework::H1<> h_delta_phi_after_vz_cm_cut{mh::regular(0, 360, static_cast<std::size_t>(360))};
-    framework::H1<> h_n_predictions{mh::regular(0, 20, static_cast<std::size_t>(20))};
-    framework::H1<> h_best_delta_phi{mh::regular(150, 200, static_cast<std::size_t>(100))};
-    framework::H1<> h_n_good_atof_hits{mh::regular(0, 20, static_cast<std::size_t>(20))};
-    framework::H1<> h_matched_atof_hit_id{mh::regular(-1, 49, static_cast<std::size_t>(50))};
-
+    framework::Hist1<> h_p{"/MC/Electron/p", "p;p;Events", 0, 10, 100};
+    framework::Hist1<> h_phi{"/MC/Electron/phi", "#phi;#phi;Events", -180, 180, 100};
+    framework::Hist1<> h_theta{"/MC/Electron/theta", "#theta;#theta;Events", 0, 90, 100};
+    framework::Hist1<> h_vz{"/MC/Electron/vz", "vz;vz;Events", -30, 30, 100};
+    framework::Hist1<> h_vz_Cu{"/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", -30, 30, 100};
+    framework::Hist1<> h_vz_Sn{"/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", -30, 30, 100};
+    framework::Hist1<> h_delta_vz{"/ALERT/TrackMatching/delta_vz", "#DeltaVz (electron - track);#DeltaVz [mm];Events", -100, 100, 200};
+    framework::Hist1<> h_delta_vz_cm{"/ALERT/TrackMatching/delta_vz_cm", "#DeltaVz (electron - track);#DeltaVz [cm];Events", -10, 50, 200};
+    framework::Hist1<> h_delta_phi{"/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", 0, 360, 360};
+    framework::Hist1<> h_delta_phi_after_vz_cm_cut{"/ALERT/TrackMatching/delta_phi_after_vz_cm_cut", "#Delta#phi after #DeltaVz cut;#Delta#phi [deg];Events", 0, 360, 360};
+    framework::Hist1<> h_n_predictions{"/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", 0, 20, 20};
+    framework::Hist1<> h_best_delta_phi{"/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi (track-electron);#Delta#phi [deg];Events", 150, 200, 100};
+    framework::Hist1<> h_n_good_atof_hits{"/ALERT/TrackMatching/n_good_atof_hits", "N good ATOF hits;N hits;Events", 0, 20, 20};
+    framework::Hist1<> h_matched_atof_hit_id{"/ALERT/TrackMatching/matched_atof_hit_id", "Matched ATOF hit ID;Hit ID;Events", -1, 49, 50};
     // ATOF-electron delta_phi histograms
-    framework::H1<> h_atof_electron_delta_phi_all{mh::regular(0, 360, static_cast<std::size_t>(360))};   // all good ATOF hits
-    framework::H1<> h_atof_electron_delta_phi_true{mh::regular(150, 200, static_cast<std::size_t>(100))};  // true ATOF hits (passing delta_phi cut)
-    framework::H1<> h_atof_electron_delta_phi_best{mh::regular(150, 200, static_cast<std::size_t>(100))};  // best true ATOF hit
-    framework::H1<> h_n_true_atof_hits{mh::regular(0, 20, static_cast<std::size_t>(20))};
-
+    framework::Hist1<> h_atof_electron_delta_phi_all{"/ALERT/TrackMatching/atof_electron_delta_phi_all", "#Delta#phi(e, ATOF hit) all good;#Delta#phi [deg];Hits", 0, 360, 360};
+    framework::Hist1<> h_atof_electron_delta_phi_true{"/ALERT/TrackMatching/atof_electron_delta_phi_true", "#Delta#phi(e, ATOF hit) true;#Delta#phi [deg];Hits", 150, 200, 100};
+    framework::Hist1<> h_atof_electron_delta_phi_best{"/ALERT/TrackMatching/atof_electron_delta_phi_best", "Best #Delta#phi(e, ATOF hit);#Delta#phi [deg];Hits", 150, 200, 100};
+    framework::Hist1<> h_n_true_atof_hits{"/ALERT/TrackMatching/n_true_atof_hits", "N true ATOF hits;N hits;Events", 0, 20, 20};
     // Debug histograms
-    framework::H1<> h_track_atof_dphi{mh::regular(0, 180, static_cast<std::size_t>(100))};          // track-ATOF phi distance for all true hits
-    framework::H1<> h_best_track_atof_dphi{mh::regular(0, 60, static_cast<std::size_t>(100))};     // best track-ATOF phi distance (selected truth)
-    framework::H1<> h_delta_component{mh::regular(-20, 20, static_cast<std::size_t>(41))};          // AI component - true component
-    framework::H1<> h_delta_sector{mh::regular(-15, 15, static_cast<std::size_t>(31))};             // AI sector - true sector
-    framework::H2<> h_ai_vs_true_component{mh::regular(0, 20, static_cast<std::size_t>(20)), mh::regular(0, 20, static_cast<std::size_t>(20))};     // AI component vs true component
-    framework::H2<> h_ai_vs_true_layer{mh::regular(0, 10, static_cast<std::size_t>(10)), mh::regular(0, 10, static_cast<std::size_t>(10))};         // AI layer vs true layer
-    framework::H2<> h_ai_vs_true_sector{mh::regular(0, 15, static_cast<std::size_t>(15)), mh::regular(0, 15, static_cast<std::size_t>(15))};        // AI sector vs true sector
-    framework::H2<> h_track_phi_vs_atof_phi{mh::regular(-180, 180, static_cast<std::size_t>(72)), mh::regular(-180, 180, static_cast<std::size_t>(72))};    // track phi vs best true ATOF hit phi
+    framework::Hist1<> h_track_atof_dphi{"/ALERT/Debug/track_atof_dphi", "Track-ATOF #Delta#phi (all true hits);|#Delta#phi| [deg];Hits", 0, 180, 100};
+    framework::Hist1<> h_best_track_atof_dphi{"/ALERT/Debug/best_track_atof_dphi", "Best track-ATOF #Delta#phi (selected truth);|#Delta#phi| [deg];Events", 0, 60, 100};
+    framework::Hist1<> h_delta_component{"/ALERT/Debug/delta_component", "AI - true component;#Delta component;Events", -20, 20, 41};
+    framework::Hist1<> h_delta_sector{"/ALERT/Debug/delta_sector", "AI - true sector;#Delta sector;Events", -15, 15, 31};
+    framework::Hist2<> h_ai_vs_true_component{"/ALERT/Debug/ai_vs_true_component", "AI vs true component;True component;AI component", 0, 20, 20, 0, 20, 20};
+    framework::Hist2<> h_ai_vs_true_layer{"/ALERT/Debug/ai_vs_true_layer", "AI vs true layer;True layer;AI layer", 0, 10, 10, 0, 10, 10};
+    framework::Hist2<> h_ai_vs_true_sector{"/ALERT/Debug/ai_vs_true_sector", "AI vs true sector;True sector;AI sector", 0, 15, 15, 0, 15, 15};
+    framework::Hist2<> h_track_phi_vs_atof_phi{"/ALERT/Debug/track_phi_vs_atof_phi", "Track #phi vs best true ATOF #phi;True ATOF #phi [deg];Track #phi [deg]", -180, 180, 72, -180, 180, 72};
 
-    // NTuple branch variables
-    double m_nt_e_p = 0.0, m_nt_e_theta = 0.0, m_nt_e_phi = 0.0, m_nt_e_vz = 0.0;
+    // NTuple row type — branch names match the legacy register_branch list
+    // exactly, so downstream macros keep working.
+    struct AlertNTupleData {
+        double e_p = 0.0;
+        double e_theta = 0.0;
+        double e_phi = 0.0;
+        double e_vz = 0.0;
 
-    int    m_nt_trackid = 0;
-    double m_nt_track_x = 0.0, m_nt_track_y = 0.0, m_nt_track_z = 0.0;
-    double m_nt_track_px = 0.0, m_nt_track_py = 0.0, m_nt_track_pz = 0.0;
-    double m_nt_track_p_drift = 0.0;
-    int    m_nt_track_n_hits = 0, m_nt_track_sum_adc = 0;
-    double m_nt_track_path = 0.0, m_nt_track_dEdx = 0.0;
-    double m_nt_track_chi2 = 0.0, m_nt_track_sum_residuals = 0.0;
+        int    trackid = 0;
+        double track_x = 0.0;
+        double track_y = 0.0;
+        double track_z = 0.0;
+        double track_px = 0.0;
+        double track_py = 0.0;
+        double track_pz = 0.0;
+        double track_p_drift = 0.0;
+        int    track_n_hits = 0;
+        int    track_sum_adc = 0;
+        double track_path = 0.0;
+        double track_dEdx = 0.0;
+        double track_chi2 = 0.0;
+        double track_sum_residuals = 0.0;
 
-    double m_nt_delta_phi = 0.0, m_nt_delta_vz = 0.0, m_nt_track_phi = 0.0;
+        double delta_phi = 0.0;
+        double delta_vz = 0.0;
+        double track_phi = 0.0;
 
-    int    m_nt_true_sector = -1, m_nt_true_layer = -1, m_nt_true_component = -1;
-    double m_nt_true_atof_phi = 0.0, m_nt_best_phi_distance = -1.0;
+        int    true_sector = -1;
+        int    true_layer = -1;
+        int    true_component = -1;
+        double true_atof_phi = 0.0;
+        double best_phi_distance = -1.0;
 
-    int    m_nt_ai_sector = -1, m_nt_ai_layer = -1, m_nt_ai_component = -1;
-    int    m_nt_matched_atof_hit_id = -1;
+        int    ai_sector = -1;
+        int    ai_layer = -1;
+        int    ai_component = -1;
+        int    matched_atof_hit_id = -1;
 
-    int    m_nt_is_sector_correct = 0, m_nt_is_layer_correct = 0;
-    int    m_nt_is_component_correct = 0, m_nt_is_component_off_by_one = 0;
-    int    m_nt_is_wedge_correct = 0, m_nt_is_wedge_off_by_one = 0;
-    int    m_nt_is_exact_match = 0, m_nt_has_ai_match = 0, m_nt_has_true_atof_hit = 0;
+        int    is_sector_correct = 0;
+        int    is_layer_correct = 0;
+        int    is_component_correct = 0;
+        int    is_component_off_by_one = 0;
+        int    is_wedge_correct = 0;
+        int    is_wedge_off_by_one = 0;
+        int    is_exact_match = 0;
+        int    has_ai_match = 0;
+        int    has_true_atof_hit = 0;
 
-    int    m_nt_n_tracks = 0, m_nt_n_good_atof_hits = 0;
-    int    m_nt_n_true_atof_hits = 0, m_nt_n_matched_tracks = 0;
+        int    n_tracks = 0;
+        int    n_good_atof_hits = 0;
+        int    n_true_atof_hits = 0;
+        int    n_matched_tracks = 0;
 
-    // NOTE: This algorithm currently registers ~40 branches via the legacy
-    // svc->register_branch path. Migration to NTupleWriter<HadronTreeData>
-    // (with static ntuple_fields()) is mechanical and is deferred to keep
-    // this uniformization pass focused on constructor/service shape.
-    auto setup_ntuple() -> void {
-        if (!m_ntuple_svc) return;
-        auto* svc = m_ntuple_svc.get();
-        const std::string tree = "alert_track_matching";
+        static constexpr auto ntuple_fields() {
+            using T = AlertNTupleData;
+            return std::make_tuple(
+                framework::field("e_p",     &T::e_p),
+                framework::field("e_theta", &T::e_theta),
+                framework::field("e_phi",   &T::e_phi),
+                framework::field("e_vz",    &T::e_vz),
 
-        // Electron
-        svc->register_branch(tree, "e_p",     &m_nt_e_p);
-        svc->register_branch(tree, "e_theta", &m_nt_e_theta);
-        svc->register_branch(tree, "e_phi",   &m_nt_e_phi);
-        svc->register_branch(tree, "e_vz",    &m_nt_e_vz);
+                framework::field("trackid",             &T::trackid),
+                framework::field("track_x",             &T::track_x),
+                framework::field("track_y",             &T::track_y),
+                framework::field("track_z",             &T::track_z),
+                framework::field("track_px",            &T::track_px),
+                framework::field("track_py",            &T::track_py),
+                framework::field("track_pz",            &T::track_pz),
+                framework::field("track_p_drift",       &T::track_p_drift),
+                framework::field("track_n_hits",        &T::track_n_hits),
+                framework::field("track_sum_adc",       &T::track_sum_adc),
+                framework::field("track_path",          &T::track_path),
+                framework::field("track_dEdx",          &T::track_dEdx),
+                framework::field("track_chi2",          &T::track_chi2),
+                framework::field("track_sum_residuals", &T::track_sum_residuals),
 
-        // Track
-        svc->register_branch(tree, "trackid",             &m_nt_trackid);
-        svc->register_branch(tree, "track_x",             &m_nt_track_x);
-        svc->register_branch(tree, "track_y",             &m_nt_track_y);
-        svc->register_branch(tree, "track_z",             &m_nt_track_z);
-        svc->register_branch(tree, "track_px",            &m_nt_track_px);
-        svc->register_branch(tree, "track_py",            &m_nt_track_py);
-        svc->register_branch(tree, "track_pz",            &m_nt_track_pz);
-        svc->register_branch(tree, "track_p_drift",       &m_nt_track_p_drift);
-        svc->register_branch(tree, "track_n_hits",        &m_nt_track_n_hits);
-        svc->register_branch(tree, "track_sum_adc",       &m_nt_track_sum_adc);
-        svc->register_branch(tree, "track_path",          &m_nt_track_path);
-        svc->register_branch(tree, "track_dEdx",          &m_nt_track_dEdx);
-        svc->register_branch(tree, "track_chi2",          &m_nt_track_chi2);
-        svc->register_branch(tree, "track_sum_residuals", &m_nt_track_sum_residuals);
+                framework::field("delta_phi", &T::delta_phi),
+                framework::field("delta_vz",  &T::delta_vz),
+                framework::field("track_phi", &T::track_phi),
 
-        // Matching
-        svc->register_branch(tree, "delta_phi",  &m_nt_delta_phi);
-        svc->register_branch(tree, "delta_vz",   &m_nt_delta_vz);
-        svc->register_branch(tree, "track_phi",  &m_nt_track_phi);
+                framework::field("true_sector",       &T::true_sector),
+                framework::field("true_layer",        &T::true_layer),
+                framework::field("true_component",    &T::true_component),
+                framework::field("true_atof_phi",     &T::true_atof_phi),
+                framework::field("best_phi_distance", &T::best_phi_distance),
 
-        // True ATOF hit
-        svc->register_branch(tree, "true_sector",       &m_nt_true_sector);
-        svc->register_branch(tree, "true_layer",        &m_nt_true_layer);
-        svc->register_branch(tree, "true_component",    &m_nt_true_component);
-        svc->register_branch(tree, "true_atof_phi",     &m_nt_true_atof_phi);
-        svc->register_branch(tree, "best_phi_distance", &m_nt_best_phi_distance);
+                framework::field("ai_sector",           &T::ai_sector),
+                framework::field("ai_layer",            &T::ai_layer),
+                framework::field("ai_component",        &T::ai_component),
+                framework::field("matched_atof_hit_id", &T::matched_atof_hit_id),
 
-        // AI ATOF hit
-        svc->register_branch(tree, "ai_sector",           &m_nt_ai_sector);
-        svc->register_branch(tree, "ai_layer",            &m_nt_ai_layer);
-        svc->register_branch(tree, "ai_component",        &m_nt_ai_component);
-        svc->register_branch(tree, "matched_atof_hit_id", &m_nt_matched_atof_hit_id);
+                framework::field("is_sector_correct",       &T::is_sector_correct),
+                framework::field("is_layer_correct",        &T::is_layer_correct),
+                framework::field("is_component_correct",    &T::is_component_correct),
+                framework::field("is_component_off_by_one", &T::is_component_off_by_one),
+                framework::field("is_wedge_correct",        &T::is_wedge_correct),
+                framework::field("is_wedge_off_by_one",     &T::is_wedge_off_by_one),
+                framework::field("is_exact_match",          &T::is_exact_match),
+                framework::field("has_ai_match",            &T::has_ai_match),
+                framework::field("has_true_atof_hit",       &T::has_true_atof_hit),
 
-        // Efficiency flags
-        svc->register_branch(tree, "is_sector_correct",       &m_nt_is_sector_correct);
-        svc->register_branch(tree, "is_layer_correct",        &m_nt_is_layer_correct);
-        svc->register_branch(tree, "is_component_correct",    &m_nt_is_component_correct);
-        svc->register_branch(tree, "is_component_off_by_one", &m_nt_is_component_off_by_one);
-        svc->register_branch(tree, "is_wedge_correct",        &m_nt_is_wedge_correct);
-        svc->register_branch(tree, "is_wedge_off_by_one",     &m_nt_is_wedge_off_by_one);
-        svc->register_branch(tree, "is_exact_match",          &m_nt_is_exact_match);
-        svc->register_branch(tree, "has_ai_match",            &m_nt_has_ai_match);
-        svc->register_branch(tree, "has_true_atof_hit",       &m_nt_has_true_atof_hit);
+                framework::field("n_tracks",         &T::n_tracks),
+                framework::field("n_good_atof_hits", &T::n_good_atof_hits),
+                framework::field("n_true_atof_hits", &T::n_true_atof_hits),
+                framework::field("n_matched_tracks", &T::n_matched_tracks));
+        }
+    };
 
-        // Multiplicity
-        svc->register_branch(tree, "n_tracks",          &m_nt_n_tracks);
-        svc->register_branch(tree, "n_good_atof_hits",  &m_nt_n_good_atof_hits);
-        svc->register_branch(tree, "n_true_atof_hits",  &m_nt_n_true_atof_hits);
-        svc->register_branch(tree, "n_matched_tracks",  &m_nt_n_matched_tracks);
-    }
-
-    auto book_histograms() -> void {
-        // Use lock-free atomic histograms for parallel accumulation
-        auto* svc = m_hist_svc.get();
-        svc->register_hist("/MC/Electron/p", "p;p;Events", h_p);
-        svc->register_hist("/MC/Electron/phi", "#phi;#phi;Events", h_phi);
-        svc->register_hist("/MC/Electron/theta", "#theta;#theta;Events", h_theta);
-        svc->register_hist("/MC/Electron/vz", "vz;vz;Events", h_vz);
-        svc->register_hist("/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", h_vz_Cu);
-        svc->register_hist("/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", h_vz_Sn);
-        svc->register_hist("/ALERT/TrackMatching/delta_vz", "#DeltaVz (electron - track);#DeltaVz [mm];Events", h_delta_vz);
-        svc->register_hist("/ALERT/TrackMatching/delta_vz_cm", "#DeltaVz (electron - track);#DeltaVz [cm];Events", h_delta_vz_cm);
-        svc->register_hist("/ALERT/TrackMatching/delta_phi", "#Delta#phi;#Delta#phi [deg];Events", h_delta_phi);
-        svc->register_hist("/ALERT/TrackMatching/delta_phi_after_vz_cm_cut", "#Delta#phi after #DeltaVz cut;#Delta#phi [deg];Events", h_delta_phi_after_vz_cm_cut);
-        svc->register_hist("/ALERT/TrackMatching/n_predictions", "N tracks;N tracks;Events", h_n_predictions);
-        svc->register_hist("/ALERT/TrackMatching/best_delta_phi", "Best #Delta#phi (track-electron);#Delta#phi [deg];Events", h_best_delta_phi);
-        svc->register_hist("/ALERT/TrackMatching/n_good_atof_hits", "N good ATOF hits;N hits;Events", h_n_good_atof_hits);
-        svc->register_hist("/ALERT/TrackMatching/matched_atof_hit_id", "Matched ATOF hit ID;Hit ID;Events", h_matched_atof_hit_id);
-        // ATOF-electron delta_phi histograms
-        svc->register_hist("/ALERT/TrackMatching/atof_electron_delta_phi_all", "#Delta#phi(e, ATOF hit) all good;#Delta#phi [deg];Hits", h_atof_electron_delta_phi_all);
-        svc->register_hist("/ALERT/TrackMatching/atof_electron_delta_phi_true", "#Delta#phi(e, ATOF hit) true;#Delta#phi [deg];Hits", h_atof_electron_delta_phi_true);
-        svc->register_hist("/ALERT/TrackMatching/atof_electron_delta_phi_best", "Best #Delta#phi(e, ATOF hit);#Delta#phi [deg];Hits", h_atof_electron_delta_phi_best);
-        svc->register_hist("/ALERT/TrackMatching/n_true_atof_hits", "N true ATOF hits;N hits;Events", h_n_true_atof_hits);
-        // Debug histograms
-        svc->register_hist("/ALERT/Debug/track_atof_dphi", "Track-ATOF #Delta#phi (all true hits);|#Delta#phi| [deg];Hits", h_track_atof_dphi);
-        svc->register_hist("/ALERT/Debug/best_track_atof_dphi", "Best track-ATOF #Delta#phi (selected truth);|#Delta#phi| [deg];Events", h_best_track_atof_dphi);
-        svc->register_hist("/ALERT/Debug/delta_component", "AI - true component;#Delta component;Events", h_delta_component);
-        svc->register_hist("/ALERT/Debug/delta_sector", "AI - true sector;#Delta sector;Events", h_delta_sector);
-        svc->register_hist("/ALERT/Debug/ai_vs_true_component", "AI vs true component;True component;AI component", h_ai_vs_true_component);
-        svc->register_hist("/ALERT/Debug/ai_vs_true_layer", "AI vs true layer;True layer;AI layer", h_ai_vs_true_layer);
-        svc->register_hist("/ALERT/Debug/ai_vs_true_sector", "AI vs true sector;True sector;AI sector", h_ai_vs_true_sector);
-        svc->register_hist("/ALERT/Debug/track_phi_vs_atof_phi", "Track #phi vs best true ATOF #phi;True ATOF #phi [deg];Track #phi [deg]", h_track_phi_vs_atof_phi);
-    }
+    framework::NTupleWriter<AlertNTupleData> m_writer;
 
     struct ATOFWedgeH2Data {
         int sector, layer, component, order;

@@ -44,6 +44,21 @@ struct Pi0EventMixingConfig {
     std::vector<double> pT_edges = {0.0, 0.15, 0.30, 0.50};
     std::vector<double> W_edges = {2.0, 2.5, 3.0, 3.5, 4.0, 5.0};
     std::vector<double> nu_edges = {2.0, 4.0, 5.5, 7.0, 9.0, 11.0};
+
+    double beam_energy = 10.53;
+
+    static constexpr auto config_fields() {
+        using T = Pi0EventMixingConfig;
+        return std::make_tuple(
+            framework::field("max_pool_events", &T::max_pool_events),
+            framework::field("Q2_edges",        &T::Q2_edges),
+            framework::field("xB_edges",        &T::xB_edges),
+            framework::field("z_edges",         &T::z_edges),
+            framework::field("pT_edges",        &T::pT_edges),
+            framework::field("W_edges",         &T::W_edges),
+            framework::field("nu_edges",        &T::nu_edges),
+            framework::field("beam_energy",     &T::beam_energy));
+    }
 };
 
 class Pi0EventMixingAlg : public framework::Algorithm {
@@ -53,17 +68,16 @@ class Pi0EventMixingAlg : public framework::Algorithm {
 
     explicit Pi0EventMixingAlg(std::string name = "Pi0EventMixing", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Pi0 Event Mixing") {
-        m_max_pool_events.set(m_config.max_pool_events);
         required_services(m_hist);
-        declare_properties(m_max_pool_events, m_beam_energy);
+        declare_config(m_config);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::info(name(), "Max pool events: {}", m_max_pool_events.get());
-        Log::info(name(), "Beam energy: {} GeV", m_beam_energy.get());
+        Log::info(name(), "Max pool events: {}", m_config.max_pool_events);
+        Log::info(name(), "Beam energy: {} GeV", m_config.beam_energy);
         Log::info(name(), "Pool bins (Q2 x xB x W x mult): {} x {} x {} x {} = {}", m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1, m_config.W_edges.size() - 1, N_MULT_BINS, (m_config.Q2_edges.size() - 1) * (m_config.xB_edges.size() - 1) * (m_config.W_edges.size() - 1) * N_MULT_BINS);
         Log::info(name(), "4D bins total: {}", (m_config.Q2_edges.size() - 1) * (m_config.xB_edges.size() - 1) * (m_config.z_edges.size() - 1) * (m_config.pT_edges.size() - 1));
 
@@ -102,7 +116,7 @@ class Pi0EventMixingAlg : public framework::Algorithm {
         auto electron_opt = framework::EventHelpers::get_selected_electron(event);
         if (!electron_opt) return StatusCode::SUCCESS();
 
-        ROOT::Math::PxPyPzEVector beam_4v(0.0, 0.0, m_beam_energy.get(), m_beam_energy.get());
+        ROOT::Math::PxPyPzEVector beam_4v(0.0, 0.0, m_config.beam_energy, m_config.beam_energy);
         ROOT::Math::PxPyPzEVector electron_4v = electron_opt->PxPyPzEVector();
         ROOT::Math::PxPyPzEVector q_4v = beam_4v - electron_4v;
         auto q_3v = q_4v.Vect();
@@ -191,7 +205,7 @@ class Pi0EventMixingAlg : public framework::Algorithm {
             auto& pool = m_photon_pools[pool_bin];
             pool.photons.insert(pool.photons.end(), photons.begin(), photons.end());
             pool.event_sizes.push_back(photons.size());
-            while (static_cast<int>(pool.event_sizes.size()) > m_max_pool_events.get()) {
+            while (static_cast<int>(pool.event_sizes.size()) > m_config.max_pool_events) {
                 size_t n = pool.event_sizes.front();
                 pool.photons.erase(pool.photons.begin(), pool.photons.begin() + static_cast<ptrdiff_t>(n));
                 pool.event_sizes.pop_front();
@@ -238,8 +252,6 @@ class Pi0EventMixingAlg : public framework::Algorithm {
    private:
     Config m_config;
 
-    framework::Property<int> m_max_pool_events{"max_pool_events", 100, "Max events per DIS bin"};
-    framework::Property<double> m_beam_energy{"beam_energy", 10.53, "Beam energy [GeV]"};
 
     framework::ServiceRef<framework::HistogramService> m_hist;
 
@@ -258,9 +270,9 @@ class Pi0EventMixingAlg : public framework::Algorithm {
     std::map<int, std::unique_ptr<framework::H1<>>> h_mgg_mixed;
     std::map<int, std::unique_ptr<framework::H1<>>> h_mgg_rotated;
 
-    framework::H1<> h_mgg_same_all{mh::regular(0.0, 0.3, static_cast<std::size_t>(200))};
-    framework::H1<> h_mgg_mixed_all{mh::regular(0.0, 0.3, static_cast<std::size_t>(200))};
-    framework::H1<> h_mgg_rotated_all{mh::regular(0.0, 0.3, static_cast<std::size_t>(200))};
+    framework::H1<> h_mgg_same_all{mh::regular(0.0, 0.3, 200)};
+    framework::H1<> h_mgg_mixed_all{mh::regular(0.0, 0.3, 200)};
+    framework::H1<> h_mgg_rotated_all{mh::regular(0.0, 0.3, 200)};
 
     static constexpr double SIDEBAND_LOW = 0.19;
     static constexpr double SIDEBAND_HIGH = 0.24;
@@ -366,10 +378,10 @@ class Pi0EventMixingAlg : public framework::Algorithm {
 
             std::string title_same = fmt::format("Same M_{{#gamma#gamma}} Q^{{2}}#in[{:.1f},{:.1f}] x_{{B}}#in[{:.2f},{:.2f}] z#in[{:.2f},{:.2f}] p_{{T}}#in[{:.2f},{:.2f}];M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts", m_config.Q2_edges[iq], m_config.Q2_edges[iq + 1], m_config.xB_edges[ix], m_config.xB_edges[ix + 1], m_config.z_edges[iz], m_config.z_edges[iz + 1], m_config.pT_edges[ip], m_config.pT_edges[ip + 1]);
             std::string title_mixed = fmt::format("Mixed M_{{#gamma#gamma}} Q^{{2}}#in[{:.1f},{:.1f}] x_{{B}}#in[{:.2f},{:.2f}] z#in[{:.2f},{:.2f}] p_{{T}}#in[{:.2f},{:.2f}];M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts", m_config.Q2_edges[iq], m_config.Q2_edges[iq + 1], m_config.xB_edges[ix], m_config.xB_edges[ix + 1], m_config.z_edges[iz], m_config.z_edges[iz + 1], m_config.pT_edges[ip], m_config.pT_edges[ip + 1]);
-            std::string title_rotated = fmt::format("Rotated M_{{#gamma#gamma}} Q^{{2}}#in[{:.1f},{:.1f}] x_{{B}}#in[{:.2f},{:.2f}] z#in[{:.2f},{:.2f}] p_{{T}}#in[{:.2f},{:.2f}];M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts", m_config.Q2_edges[iq], m_config.Q2_edges[iq + 1], m_config.xB_edges[ix], m_config.xB_edges[ix + 1], m_config.z_edges[iz], m_config.z_edges[iz + 1], m_config.pT_edges[ip], m_config.pT_edges[ip + 1]);h_mgg_same[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, static_cast<std::size_t>(200)));
+            std::string title_rotated = fmt::format("Rotated M_{{#gamma#gamma}} Q^{{2}}#in[{:.1f},{:.1f}] x_{{B}}#in[{:.2f},{:.2f}] z#in[{:.2f},{:.2f}] p_{{T}}#in[{:.2f},{:.2f}];M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts", m_config.Q2_edges[iq], m_config.Q2_edges[iq + 1], m_config.xB_edges[ix], m_config.xB_edges[ix + 1], m_config.z_edges[iz], m_config.z_edges[iz + 1], m_config.pT_edges[ip], m_config.pT_edges[ip + 1]);h_mgg_same[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, 200));
 
-            svc->register_hist(fmt::format("{}/same/mgg_same_bin{}", dir, idx), title_same, *h_mgg_same[idx]);h_mgg_mixed[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, static_cast<std::size_t>(200)));
-            svc->register_hist(fmt::format("{}/mixed/mgg_mixed_bin{}", dir, idx), title_mixed, *h_mgg_mixed[idx]);h_mgg_rotated[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, static_cast<std::size_t>(200)));
+            svc->register_hist(fmt::format("{}/same/mgg_same_bin{}", dir, idx), title_same, *h_mgg_same[idx]);h_mgg_mixed[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, 200));
+            svc->register_hist(fmt::format("{}/mixed/mgg_mixed_bin{}", dir, idx), title_mixed, *h_mgg_mixed[idx]);h_mgg_rotated[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, 200));
             svc->register_hist(fmt::format("{}/rotated/mgg_rotated_bin{}", dir, idx), title_rotated, *h_mgg_rotated[idx]);
         }
 

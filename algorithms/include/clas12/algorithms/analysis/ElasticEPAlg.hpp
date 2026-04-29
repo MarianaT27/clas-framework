@@ -65,6 +65,25 @@ struct ElasticKinematics {
 struct ElasticEPConfig {
     NuclearTarget target = NuclearTarget::Proton;
     double beam_energy = 10.6;
+
+    double W_min = 1.6;
+    double W_max = 2.0;
+    double Vz_min = -30.0;
+    double Vz_max = 10.0;
+    bool enable_vz_cut = true;
+    bool enable_w_cut = true;
+
+    static constexpr auto config_fields() {
+        using T = ElasticEPConfig;
+        return std::make_tuple(
+            framework::field("beam_energy", &T::beam_energy),
+            framework::field("W_min", &T::W_min),
+            framework::field("W_max", &T::W_max),
+            framework::field("Vz_min", &T::Vz_min),
+            framework::field("Vz_max", &T::Vz_max),
+            framework::field("enable_vz_cut", &T::enable_vz_cut),
+            framework::field("enable_w_cut", &T::enable_w_cut));
+    }
 };
 
 /**
@@ -77,9 +96,8 @@ class ElasticEPAlg : public framework::Algorithm {
 
     explicit ElasticEPAlg(std::string name = "ElasticEPAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_target_mass(get_target_mass(config.target)), m_cutflow("Elastic e-" + get_target_name(config.target) + " Selection (W-only)") {
-        m_beam_energy.set(m_config.beam_energy);
         required_services(m_hist, m_ntuple);
-        declare_properties(m_beam_energy, m_W_min, m_W_max, m_Vz_min, m_Vz_max, m_enable_vz_cut, m_enable_w_cut);
+        declare_config(m_config);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -87,10 +105,10 @@ class ElasticEPAlg : public framework::Algorithm {
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::info(name(), "Initializing elastic e-{} algorithm (W-only selection)", get_target_name(m_config.target));
-        Log::info(name(), "  Beam energy: {} GeV", m_beam_energy.get());
+        Log::info(name(), "  Beam energy: {} GeV", m_config.beam_energy);
         Log::info(name(), "  Target mass: {} GeV", m_target_mass);
-        Log::info(name(), "  W cut: [{}, {}] GeV", m_W_min.get(), m_W_max.get());
-        Log::info(name(), "  Vz cut: [{}, {}] cm", m_Vz_min.get(), m_Vz_max.get());
+        Log::info(name(), "  W cut: [{}, {}] GeV", m_config.W_min, m_config.W_max);
+        Log::info(name(), "  Vz cut: [{}, {}] cm", m_config.Vz_min, m_config.Vz_max);
 
         book_histograms();
         m_ntuple_writer.init(m_ntuple.get(), "elastic_electron");
@@ -121,12 +139,12 @@ class ElasticEPAlg : public framework::Algorithm {
 
         double vz = electron.vz();
         h_Vz_precut.fill(vz);
-        if (m_enable_vz_cut.get() && (vz < m_Vz_min.get() || vz > m_Vz_max.get())) return StatusCode::FILTERED();
+        if (m_config.enable_vz_cut && (vz < m_config.Vz_min || vz > m_config.Vz_max)) return StatusCode::FILTERED();
         m_cutflow.pass("Vz Cut");
 
         h_W_precut.fill(kin.W);
         h_Q2_precut.fill(kin.Q2);
-        if (m_enable_w_cut.get() && (kin.W < m_W_min.get() || kin.W > m_W_max.get())) return StatusCode::FILTERED();
+        if (m_config.enable_w_cut && (kin.W < m_config.W_min || kin.W > m_config.W_max)) return StatusCode::FILTERED();
         m_cutflow.pass("W Cut");
 
         event.set_decision_typed(framework::Decisions::HasElasticElectron, true);
@@ -163,25 +181,17 @@ class ElasticEPAlg : public framework::Algorithm {
     double m_target_mass;
     framework::Cutflow m_cutflow;
 
-    framework::Property<double> m_beam_energy{"beam_energy", 2.2, "Beam energy [GeV]"};
-    framework::Property<double> m_W_min{"W_min", 1.6, "Minimum W [GeV]"};
-    framework::Property<double> m_W_max{"W_max", 2.0, "Maximum W [GeV]"};
-    framework::Property<double> m_Vz_min{"Vz_min", -30.0, "Minimum Vz [cm]"};
-    framework::Property<double> m_Vz_max{"Vz_max", 10.0, "Maximum Vz [cm]"};
-    framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
-    framework::Property<bool> m_enable_w_cut{"enable_w_cut", true, "Enable W cut"};
-
-    framework::ServiceRef<framework::HistogramService> m_hist;
+framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService> m_ntuple;
 
-    framework::H1<> h_Q2{mh::regular(0, 10, static_cast<std::size_t>(100))};
-    framework::H1<> h_Q2_precut{mh::regular(0, 10, static_cast<std::size_t>(100))};
-    framework::H1<> h_W{mh::regular(m_target_mass - 0.3, m_target_mass + 0.5, static_cast<std::size_t>(100))};
-    framework::H1<> h_W_precut{mh::regular(0, m_target_mass + 2.0, static_cast<std::size_t>(200))};
-    framework::H1<> h_nu{mh::regular(0, 11, static_cast<std::size_t>(100))};
-    framework::H2<> h_p_e_vs_theta_e{mh::regular(0, 45, static_cast<std::size_t>(90)), mh::regular(0, 11, static_cast<std::size_t>(100))};
-    framework::H1<> h_Vz_precut{mh::regular(-50, 30, static_cast<std::size_t>(200))};
-    framework::H1<> h_Vz{mh::regular(-50, 30, static_cast<std::size_t>(200))};
+    framework::H1<> h_Q2{mh::regular(0, 10, 100)};
+    framework::H1<> h_Q2_precut{mh::regular(0, 10, 100)};
+    framework::H1<> h_W{mh::regular(m_target_mass - 0.3, m_target_mass + 0.5, 100)};
+    framework::H1<> h_W_precut{mh::regular(0, m_target_mass + 2.0, 200)};
+    framework::H1<> h_nu{mh::regular(0, 11, 100)};
+    framework::H2<> h_p_e_vs_theta_e{mh::regular(0, 45, 90), mh::regular(0, 11, 100)};
+    framework::H1<> h_Vz_precut{mh::regular(-50, 30, 200)};
+    framework::H1<> h_Vz{mh::regular(-50, 30, 200)};
 
     struct ElasticEPNTupleData {
         double e_p = 0.0;
@@ -202,7 +212,7 @@ class ElasticEPAlg : public framework::Algorithm {
     auto calculate_kinematics(const Particle& electron) -> ElasticKinematics {
         ElasticKinematics kin;
         const double M = m_target_mass;
-        const double Eb = m_beam_energy.get();
+        const double Eb = m_config.beam_energy;
         kin.p_e = electron.p();
         kin.theta_e = electron.theta();
         kin.phi_e = electron.phi();

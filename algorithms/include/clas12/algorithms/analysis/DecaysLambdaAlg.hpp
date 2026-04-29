@@ -80,6 +80,30 @@ struct DecaysDaughter {
 /// Configuration for DecaysLambdaAlg.
 struct DecaysLambdaConfig {
     // Reserved for future tuning knobs that aren't user-tunable Properties.
+
+    double mass_window = 0.1;
+    double min_momentum = 0.0;
+    double min_decay_length = 0.0;
+    double min_vertex_detach = -1000.0;
+    double max_vertex_detach = 0.0;
+    bool enable_mass_window_cut = true;
+    bool enable_momentum_cut = true;
+    bool enable_decay_length_cut = true;
+    bool enable_vertex_detach_cut = true;
+
+    static constexpr auto config_fields() {
+        using T = DecaysLambdaConfig;
+        return std::make_tuple(
+            framework::field("mass_window", &T::mass_window),
+            framework::field("min_momentum", &T::min_momentum),
+            framework::field("min_decay_length", &T::min_decay_length),
+            framework::field("min_vertex_detach", &T::min_vertex_detach),
+            framework::field("max_vertex_detach", &T::max_vertex_detach),
+            framework::field("enable_mass_window_cut", &T::enable_mass_window_cut),
+            framework::field("enable_momentum_cut", &T::enable_momentum_cut),
+            framework::field("enable_decay_length_cut", &T::enable_decay_length_cut),
+            framework::field("enable_vertex_detach_cut", &T::enable_vertex_detach_cut));
+    }
 };
 
 /**
@@ -94,7 +118,8 @@ class DecaysLambdaAlg : public framework::Algorithm {
         : Algorithm(std::move(name)), m_config(config), m_cutflow("DECAYS Lambda Analysis") {
         required_services(m_hist, m_ntuple);
         declare_banks("DECAYS::Particle");
-        declare_properties(m_mass_window, m_min_momentum, m_min_decay_length, m_min_vertex_detach, m_max_vertex_detach, m_enable_mass_window_cut, m_enable_momentum_cut, m_enable_decay_length_cut, m_enable_vertex_detach_cut);
+        declare_config(m_config);
+        declare_histograms(h_n_lambdas, h_mass_nocuts, h_mass_selected, h_umass, h_momentum, h_theta, h_phi, h_decay_length, h_decay_vz, h_origin_vz, h_r, h_ndau, h_proton_p, h_pion_p, h_mass_vs_p, h_decay_vz_vs_origin_vz, h_vertex_detach, h_vertex_detach_precut, h_vertex_detach_xy);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -102,13 +127,12 @@ class DecaysLambdaAlg : public framework::Algorithm {
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::info(name(), "Initializing DECAYS Lambda analysis algorithm");
-        Log::info(name(), "  Mass window: {} GeV", m_mass_window.get());
-        Log::info(name(), "  Min momentum: {} GeV", m_min_momentum.get());
-        Log::info(name(), "  Min decay length: {} cm", m_min_decay_length.get());
-        Log::info(name(), "  Min vertex detach: {} cm", m_min_vertex_detach.get());
-        Log::info(name(), "  Max vertex detach: {} cm", m_max_vertex_detach.get());
+        Log::info(name(), "  Mass window: {} GeV", m_config.mass_window);
+        Log::info(name(), "  Min momentum: {} GeV", m_config.min_momentum);
+        Log::info(name(), "  Min decay length: {} cm", m_config.min_decay_length);
+        Log::info(name(), "  Min vertex detach: {} cm", m_config.min_vertex_detach);
+        Log::info(name(), "  Max vertex detach: {} cm", m_config.max_vertex_detach);
 
-        book_histograms();
         m_ntuple_writer.init(m_ntuple.get(), "decays_lambda");
         Log::info(name(), "N-tuple branches registered for DECAYS Lambda analysis");
 
@@ -202,19 +226,19 @@ class DecaysLambdaAlg : public framework::Algorithm {
 
         for (const auto& lambda : lambdas) {
             h_vertex_detach_precut.fill(lambda.vertex_detach_z());
-            if (m_enable_mass_window_cut.get() && std::abs(lambda.mass - LAMBDA_MASS_PDG) > m_mass_window.get()) continue;
+            if (m_config.enable_mass_window_cut && std::abs(lambda.mass - LAMBDA_MASS_PDG) > m_config.mass_window) continue;
             passed_mass = true;
 
-            if (m_enable_momentum_cut.get() && lambda.momentum() < m_min_momentum.get()) continue;
+            if (m_config.enable_momentum_cut && lambda.momentum() < m_config.min_momentum) continue;
             passed_momentum = true;
 
-            if (m_enable_decay_length_cut.get() && m_min_decay_length.get() > 0 && lambda.decay_length() < m_min_decay_length.get()) continue;
+            if (m_config.enable_decay_length_cut && m_config.min_decay_length > 0 && lambda.decay_length() < m_config.min_decay_length) continue;
             passed_decay_length = true;
 
-            if (m_enable_vertex_detach_cut.get() && m_min_vertex_detach.get() > -999) {
+            if (m_config.enable_vertex_detach_cut && m_config.min_vertex_detach > -999) {
                 double detach = lambda.vertex_detach_z();
-                if (detach < m_min_vertex_detach.get()) continue;
-                if (m_max_vertex_detach.get() > 0 && detach > m_max_vertex_detach.get()) continue;
+                if (detach < m_config.min_vertex_detach) continue;
+                if (m_config.max_vertex_detach > 0 && detach > m_config.max_vertex_detach) continue;
             }
             passed_vertex_detach = true;
 
@@ -255,40 +279,30 @@ class DecaysLambdaAlg : public framework::Algorithm {
    private:
     Config m_config;
 
-    framework::Property<double> m_mass_window{"mass_window", 0.1, "Mass window around PDG mass [GeV]"};
-    framework::Property<double> m_min_momentum{"min_momentum", 0.0, "Minimum Lambda momentum [GeV]"};
-    framework::Property<double> m_min_decay_length{"min_decay_length", 0.0, "Minimum decay length [cm], 0=disabled"};
-    framework::Property<double> m_min_vertex_detach{"min_vertex_detach", -1000.0, "Minimum z displacement [cm], -1000=disabled"};
-    framework::Property<double> m_max_vertex_detach{"max_vertex_detach", 0.0, "Maximum z displacement [cm], 0=no limit"};
-    framework::Property<bool> m_enable_mass_window_cut{"enable_mass_window_cut", true, "Enable mass window cut"};
-    framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
-    framework::Property<bool> m_enable_decay_length_cut{"enable_decay_length_cut", true, "Enable decay length cut"};
-    framework::Property<bool> m_enable_vertex_detach_cut{"enable_vertex_detach_cut", true, "Enable vertex detachment cut"};
-    framework::Cutflow m_cutflow;
+framework::Cutflow m_cutflow;
 
     framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService> m_ntuple;
 
-    framework::H1<> h_n_lambdas{mh::regular(0, 10, static_cast<std::size_t>(10))};
-    framework::H1<> h_mass_nocuts{mh::regular(1.0, 1.3, static_cast<std::size_t>(200))};
-    framework::H1<> h_mass_selected{mh::regular(1.0, 1.3, static_cast<std::size_t>(200))};
-    framework::H1<> h_umass{mh::regular(1.0, 1.3, static_cast<std::size_t>(200))};
-    framework::H1<> h_momentum{mh::regular(0, 10, static_cast<std::size_t>(100))};
-    framework::H1<> h_theta{mh::regular(0, 90, static_cast<std::size_t>(90))};
-    framework::H1<> h_phi{mh::regular(-180, 180, static_cast<std::size_t>(180))};
-    framework::H1<> h_decay_length{mh::regular(0, 50, static_cast<std::size_t>(100))};
-    framework::H1<> h_decay_vz{mh::regular(-30, 30, static_cast<std::size_t>(200))};
-    framework::H1<> h_origin_vz{mh::regular(-30, 30, static_cast<std::size_t>(200))};
-    framework::H1<> h_r{mh::regular(0, 20, static_cast<std::size_t>(100))};
-    framework::H1<> h_ndau{mh::regular(0, 5, static_cast<std::size_t>(5))};
-    framework::H1<> h_proton_p{mh::regular(0, 5, static_cast<std::size_t>(100))};
-    framework::H1<> h_pion_p{mh::regular(0, 3, static_cast<std::size_t>(100))};
-    framework::H2<> h_mass_vs_p{mh::regular(0, 10, static_cast<std::size_t>(100)), mh::regular(1.0, 1.3, static_cast<std::size_t>(100))};
-    framework::H2<> h_decay_vz_vs_origin_vz{mh::regular(-30, 30, static_cast<std::size_t>(100)), mh::regular(-30, 30, static_cast<std::size_t>(100))};
-    framework::H1<> h_vertex_detach{mh::regular(-20, 40, static_cast<std::size_t>(200))};
-    framework::H1<> h_vertex_detach_precut{mh::regular(-20, 40, static_cast<std::size_t>(200))};
-    framework::H1<> h_vertex_detach_xy{mh::regular(0, 20, static_cast<std::size_t>(100))};
-
+    framework::Hist1<> h_n_lambdas{"/DecaysLambda/n_lambdas", "Number of #Lambda per event;N_{#Lambda};Events", 0, 10, 10};
+    framework::Hist1<> h_mass_nocuts{"/DecaysLambda/mass_nocuts", "#Lambda mass (no cuts);M [GeV];Events", 1.0, 1.3, 200};
+    framework::Hist1<> h_mass_selected{"/DecaysLambda/mass_selected", "#Lambda mass (selected);M [GeV];Events", 1.0, 1.3, 200};
+    framework::Hist1<> h_umass{"/DecaysLambda/umass", "#Lambda unmeasured mass;M [GeV];Events", 1.0, 1.3, 200};
+    framework::Hist1<> h_momentum{"/DecaysLambda/momentum", "#Lambda momentum;p [GeV];Events", 0, 10, 100};
+    framework::Hist1<> h_theta{"/DecaysLambda/theta", "#Lambda #theta;#theta [deg];Events", 0, 90, 90};
+    framework::Hist1<> h_phi{"/DecaysLambda/phi", "#Lambda #phi;#phi [deg];Events", -180, 180, 180};
+    framework::Hist1<> h_decay_length{"/DecaysLambda/decay_length", "#Lambda decay length;L [cm];Events", 0, 50, 100};
+    framework::Hist1<> h_decay_vz{"/DecaysLambda/decay_vz", "#Lambda decay vertex z;v_{z} [cm];Events", -30, 30, 200};
+    framework::Hist1<> h_origin_vz{"/DecaysLambda/origin_vz", "#Lambda origin vertex z;ov_{z} [cm];Events", -30, 30, 200};
+    framework::Hist1<> h_r{"/DecaysLambda/r", "#Lambda decay radius;r [cm];Events", 0, 20, 100};
+    framework::Hist1<> h_ndau{"/DecaysLambda/ndau", "Number of daughters;N_{dau};Events", 0, 5, 5};
+    framework::Hist1<> h_proton_p{"/DecaysLambda/proton_p", "Proton momentum;p [GeV];Events", 0, 5, 100};
+    framework::Hist1<> h_pion_p{"/DecaysLambda/pion_p", "#pi^{-} momentum;p [GeV];Events", 0, 3, 100};
+    framework::Hist2<> h_mass_vs_p{"/DecaysLambda/mass_vs_p", "#Lambda mass vs momentum;p [GeV];M [GeV]", 0, 10, 100, 1.0, 1.3, 100};
+    framework::Hist2<> h_decay_vz_vs_origin_vz{"/DecaysLambda/decay_vz_vs_origin_vz", "Decay vs origin vertex z;ov_{z} [cm];v_{z} [cm]", -30, 30, 100, -30, 30, 100};
+    framework::Hist1<> h_vertex_detach{"/DecaysLambda/vertex_detach", "Vertex detachment (v_{z} - ov_{z});#Deltaz [cm];Events", -20, 40, 200};
+    framework::Hist1<> h_vertex_detach_precut{"/DecaysLambda/vertex_detach_precut", "Vertex detachment (pre-cut);#Deltaz [cm];Events", -20, 40, 200};
+    framework::Hist1<> h_vertex_detach_xy{"/DecaysLambda/vertex_detach_xy", "Transverse vertex detachment;#Deltar_{xy} [cm];Events", 0, 20, 100};
     struct DecaysLambdaNTupleData {
         std::vector<double> mass;
         std::vector<double> umass;
@@ -309,28 +323,6 @@ class DecaysLambdaAlg : public framework::Algorithm {
     };
 
     framework::NTupleWriter<DecaysLambdaNTupleData> m_ntuple_writer;
-
-    auto book_histograms() -> void {
-        m_hist->register_hist("/DecaysLambda/n_lambdas", "Number of #Lambda per event;N_{#Lambda};Events", h_n_lambdas);
-        m_hist->register_hist("/DecaysLambda/mass_nocuts", "#Lambda mass (no cuts);M [GeV];Events", h_mass_nocuts);
-        m_hist->register_hist("/DecaysLambda/mass_selected", "#Lambda mass (selected);M [GeV];Events", h_mass_selected);
-        m_hist->register_hist("/DecaysLambda/umass", "#Lambda unmeasured mass;M [GeV];Events", h_umass);
-        m_hist->register_hist("/DecaysLambda/momentum", "#Lambda momentum;p [GeV];Events", h_momentum);
-        m_hist->register_hist("/DecaysLambda/theta", "#Lambda #theta;#theta [deg];Events", h_theta);
-        m_hist->register_hist("/DecaysLambda/phi", "#Lambda #phi;#phi [deg];Events", h_phi);
-        m_hist->register_hist("/DecaysLambda/decay_length", "#Lambda decay length;L [cm];Events", h_decay_length);
-        m_hist->register_hist("/DecaysLambda/decay_vz", "#Lambda decay vertex z;v_{z} [cm];Events", h_decay_vz);
-        m_hist->register_hist("/DecaysLambda/origin_vz", "#Lambda origin vertex z;ov_{z} [cm];Events", h_origin_vz);
-        m_hist->register_hist("/DecaysLambda/r", "#Lambda decay radius;r [cm];Events", h_r);
-        m_hist->register_hist("/DecaysLambda/ndau", "Number of daughters;N_{dau};Events", h_ndau);
-        m_hist->register_hist("/DecaysLambda/proton_p", "Proton momentum;p [GeV];Events", h_proton_p);
-        m_hist->register_hist("/DecaysLambda/pion_p", "#pi^{-} momentum;p [GeV];Events", h_pion_p);
-        m_hist->register_hist("/DecaysLambda/mass_vs_p", "#Lambda mass vs momentum;p [GeV];M [GeV]", h_mass_vs_p);
-        m_hist->register_hist("/DecaysLambda/decay_vz_vs_origin_vz", "Decay vs origin vertex z;ov_{z} [cm];v_{z} [cm]", h_decay_vz_vs_origin_vz);
-        m_hist->register_hist("/DecaysLambda/vertex_detach", "Vertex detachment (v_{z} - ov_{z});#Deltaz [cm];Events", h_vertex_detach);
-        m_hist->register_hist("/DecaysLambda/vertex_detach_precut", "Vertex detachment (pre-cut);#Deltaz [cm];Events", h_vertex_detach_precut);
-        m_hist->register_hist("/DecaysLambda/vertex_detach_xy", "Transverse vertex detachment;#Deltar_{xy} [cm];Events", h_vertex_detach_xy);
-    }
 
     auto fill_lambda_histograms(const DecaysLambda& lambda, const std::vector<DecaysDaughter>& daughters) -> void {
         h_mass_selected.fill(lambda.mass);

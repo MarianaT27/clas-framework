@@ -37,9 +37,45 @@ namespace algorithms {
 using framework::Log;
 
 /// Configuration for ElectronSelectionAlg.
+///
+/// Compile-time fields (target, polarity) are passed to the constructor.
+/// Tunable fields are loaded from the algorithm's TOML sub-table by
+/// `declare_config(...)` and listed in `config_fields()`.
 struct ElectronSelectionConfig {
     Target target = Target::LD2;
     Polarity polarity = Polarity::Outbending;
+
+    bool enable_ntuple = true;
+    bool enable_chi2pid_cut = true;
+    bool enable_momentum_cut = true;
+    bool enable_vz_cut = true;
+    bool enable_sf_cut = true;
+    bool enable_pcal_fiducial_cut = true;
+    bool enable_dc_edge_cut = true;
+    double pcal_lv_min = 9.0;
+    double pcal_lw_min = 9.0;
+    double dc_r1_edge_min = 1.68;
+    double dc_r2_edge_min = 2.0;
+    double dc_r3_edge_min = 8.75;
+
+    static constexpr auto config_fields() {
+        using T = ElectronSelectionConfig;
+        return std::make_tuple(
+            framework::field("target",                   &T::target),
+            framework::field("polarity",                 &T::polarity),
+            framework::field("enable_ntuple",            &T::enable_ntuple),
+            framework::field("enable_chi2pid_cut",       &T::enable_chi2pid_cut),
+            framework::field("enable_momentum_cut",      &T::enable_momentum_cut),
+            framework::field("enable_vz_cut",            &T::enable_vz_cut),
+            framework::field("enable_sf_cut",            &T::enable_sf_cut),
+            framework::field("enable_pcal_fiducial_cut", &T::enable_pcal_fiducial_cut),
+            framework::field("enable_dc_edge_cut",       &T::enable_dc_edge_cut),
+            framework::field("pcal_lv_min",              &T::pcal_lv_min),
+            framework::field("pcal_lw_min",              &T::pcal_lw_min),
+            framework::field("dc_r1_edge_min",           &T::dc_r1_edge_min),
+            framework::field("dc_r2_edge_min",           &T::dc_r2_edge_min),
+            framework::field("dc_r3_edge_min",           &T::dc_r3_edge_min));
+    }
 };
 
 /**
@@ -54,7 +90,7 @@ class ElectronSelectionAlg : public framework::Algorithm {
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Electron Selection") {
         required_services(m_hist, m_ntuple_svc, m_electron_cuts);
         declare_banks("REC::Particle", "REC::Calorimeter", "REC::Traj");
-        declare_properties(m_enable_ntuple, m_enable_chi2pid_cut, m_enable_momentum_cut, m_enable_vz_cut, m_enable_sf_cut, m_enable_pcal_fiducial_cut, m_enable_dc_edge_cut, m_pcal_lv_min, m_pcal_lw_min, m_dc_r1_edge_min, m_dc_r2_edge_min, m_dc_r3_edge_min);
+        declare_config(m_config);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -63,7 +99,7 @@ class ElectronSelectionAlg : public framework::Algorithm {
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::info(name(), "Target: {}", to_string(m_config.target));
         Log::info(name(), "Polarity: {}", to_string(m_config.polarity));
-        Log::info(name(), "NTuple output: {}", m_enable_ntuple.get() ? "enabled" : "disabled");
+        Log::info(name(), "NTuple output: {}", m_config.enable_ntuple ? "enabled" : "disabled");
 
         m_electron_cuts->set_target(m_config.target);
         m_electron_cuts->set_polarity(m_config.polarity);
@@ -105,29 +141,29 @@ class ElectronSelectionAlg : public framework::Algorithm {
 
         h_before.fill(electron, calorimeter, sampling_fraction);
 
-        if (m_enable_chi2pid_cut.get() && !m_electron_cuts->pass_chi2pid_cut(electron.chi2pid())) return StatusCode::FILTERED();
+        if (m_config.enable_chi2pid_cut && !m_electron_cuts->pass_chi2pid_cut(electron.chi2pid())) return StatusCode::FILTERED();
         m_cutflow.pass("Chi2 PID");
 
-        if (m_enable_momentum_cut.get() && !m_electron_cuts->pass_momentum_cut(electron.p())) return StatusCode::FILTERED();
+        if (m_config.enable_momentum_cut && !m_electron_cuts->pass_momentum_cut(electron.p())) return StatusCode::FILTERED();
         m_cutflow.pass("Momentum > 0.8 GeV");
 
-        if (m_enable_vz_cut.get() && !m_electron_cuts->pass_vz_cut(electron.vz())) return StatusCode::FILTERED();
+        if (m_config.enable_vz_cut && !m_electron_cuts->pass_vz_cut(electron.vz())) return StatusCode::FILTERED();
         m_cutflow.pass("Vertex Z");
 
-        if (m_enable_sf_cut.get() && !m_electron_cuts->pass_sampling_fraction_cut(sampling_fraction, electron.p(), calorimeter.pcal_sector)) return StatusCode::FILTERED();
+        if (m_config.enable_sf_cut && !m_electron_cuts->pass_sampling_fraction_cut(sampling_fraction, electron.p(), calorimeter.pcal_sector)) return StatusCode::FILTERED();
         m_cutflow.pass("Sampling Fraction");
 
-        if (m_enable_pcal_fiducial_cut.get() && !m_electron_cuts->pass_pcal_fiducial_cut(calorimeter.pcal_lv, calorimeter.pcal_lw)) return StatusCode::FILTERED();
+        if (m_config.enable_pcal_fiducial_cut && !m_electron_cuts->pass_pcal_fiducial_cut(calorimeter.pcal_lv, calorimeter.pcal_lw)) return StatusCode::FILTERED();
         m_cutflow.pass("PCAL Fiducial");
 
-        if (m_enable_dc_edge_cut.get() && !m_electron_cuts->pass_dc_edge_cut(traj.region1_edge, traj.region2_edge, traj.region3_edge)) return StatusCode::FILTERED();
+        if (m_config.enable_dc_edge_cut && !m_electron_cuts->pass_dc_edge_cut(traj.region1_edge, traj.region2_edge, traj.region3_edge)) return StatusCode::FILTERED();
         m_cutflow.pass("DC R1 Edge");
         m_cutflow.pass("DC R2 Edge");
         m_cutflow.pass("DC R3 Edge");
 
         h_after.fill(electron, calorimeter, sampling_fraction);
 
-        if (m_enable_ntuple.get()) {
+        if (m_config.enable_ntuple) {
             m_ntuple.data().e_p = electron.p();
             m_ntuple.data().e_theta = electron.theta();
             m_ntuple.data().e_phi = electron.phi();
@@ -146,7 +182,7 @@ class ElectronSelectionAlg : public framework::Algorithm {
     auto on_finalize() -> StatusCode override {
         Log::subsection(fmt::format("{} Summary", name()));
 
-        if (m_enable_ntuple.get() && m_ntuple_svc) {
+        if (m_config.enable_ntuple && m_ntuple_svc) {
             auto entries = m_ntuple_svc->get_entries("electron_kinematics");
             Log::stat(name(), "N-tuple entries", entries);
         }
@@ -162,41 +198,28 @@ class ElectronSelectionAlg : public framework::Algorithm {
     Config m_config;
     framework::Cutflow m_cutflow;
 
-    framework::Property<bool> m_enable_ntuple{"enable_ntuple", true, "Enable N-tuple output"};
-    framework::Property<bool> m_enable_chi2pid_cut{"enable_chi2pid_cut", true, "Enable chi2 PID cut"};
-    framework::Property<bool> m_enable_momentum_cut{"enable_momentum_cut", true, "Enable momentum cut"};
-    framework::Property<bool> m_enable_vz_cut{"enable_vz_cut", true, "Enable vertex Z cut"};
-    framework::Property<bool> m_enable_sf_cut{"enable_sf_cut", true, "Enable sampling fraction cut"};
-    framework::Property<bool> m_enable_pcal_fiducial_cut{"enable_pcal_fiducial_cut", true, "Enable PCAL fiducial cut"};
-    framework::Property<bool> m_enable_dc_edge_cut{"enable_dc_edge_cut", true, "Enable DC edge cut"};
-    framework::Property<double> m_pcal_lv_min{"pcal_lv_min", 9.0, "PCAL lv minimum [cm]"};
-    framework::Property<double> m_pcal_lw_min{"pcal_lw_min", 9.0, "PCAL lw minimum [cm]"};
-    framework::Property<double> m_dc_r1_edge_min{"dc_r1_edge_min", 1.68, "DC R1 edge minimum [cm]"};
-    framework::Property<double> m_dc_r2_edge_min{"dc_r2_edge_min", 2.0, "DC R2 edge minimum [cm]"};
-    framework::Property<double> m_dc_r3_edge_min{"dc_r3_edge_min", 8.75, "DC R3 edge minimum [cm]"};
-
     framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService> m_ntuple_svc;
     framework::ServiceRef<framework::ElectronCutsService> m_electron_cuts;
 
     struct StageHistograms {
-        framework::H1<> p{mh::regular(0.0, 12.0, static_cast<std::size_t>(100))};
-        framework::H1<> theta{mh::regular(0.0, 45.0, static_cast<std::size_t>(90))};
-        framework::H1<> phi{mh::regular(-180.0, 180.0, static_cast<std::size_t>(360))};
-        framework::H1<> pt{mh::regular(0.0, 4.0, static_cast<std::size_t>(100))};
-        framework::H1<> sector{mh::regular(0.5, 7.5, static_cast<std::size_t>(7))};
-        framework::H1<> vz{mh::regular(-40.0, 40.0, static_cast<std::size_t>(200))};
-        framework::H1<> vx{mh::regular(-2.0, 2.0, static_cast<std::size_t>(100))};
-        framework::H1<> vy{mh::regular(-2.0, 2.0, static_cast<std::size_t>(100))};
-        framework::H1<> chi2pid{mh::regular(-10.0, 10.0, static_cast<std::size_t>(200))};
-        framework::H1<> pcal_lv{mh::regular(0.0, 450.0, static_cast<std::size_t>(100))};
-        framework::H1<> pcal_lw{mh::regular(0.0, 450.0, static_cast<std::size_t>(100))};
-        framework::H2<> sf_vs_p{mh::regular(0.0, 12.0, static_cast<std::size_t>(100)), mh::regular(0.0, 0.5, static_cast<std::size_t>(100))};
-        framework::H2<> chi2pid_vs_p{mh::regular(0.0, 12.0, static_cast<std::size_t>(100)), mh::regular(-10.0, 10.0, static_cast<std::size_t>(200))};
-        framework::H2<> vz_vs_phi{mh::regular(-180.0, 180.0, static_cast<std::size_t>(180)), mh::regular(-40.0, 40.0, static_cast<std::size_t>(100))};
-        framework::H2<> vz_vs_theta{mh::regular(0.0, 45.0, static_cast<std::size_t>(90)), mh::regular(-40.0, 40.0, static_cast<std::size_t>(100))};
-        framework::H2<> theta_vs_phi{mh::regular(-180.0, 180.0, static_cast<std::size_t>(180)), mh::regular(0.0, 45.0, static_cast<std::size_t>(90))};
-        framework::H2<> p_vs_theta{mh::regular(0.0, 45.0, static_cast<std::size_t>(90)), mh::regular(0.0, 12.0, static_cast<std::size_t>(100))};
+        framework::H1<> p{mh::regular(0.0, 12.0, 100)};
+        framework::H1<> theta{mh::regular(0.0, 45.0, 90)};
+        framework::H1<> phi{mh::regular(-180.0, 180.0, 360)};
+        framework::H1<> pt{mh::regular(0.0, 4.0, 100)};
+        framework::H1<> sector{mh::regular(0.5, 7.5, 7)};
+        framework::H1<> vz{mh::regular(-40.0, 40.0, 200)};
+        framework::H1<> vx{mh::regular(-2.0, 2.0, 100)};
+        framework::H1<> vy{mh::regular(-2.0, 2.0, 100)};
+        framework::H1<> chi2pid{mh::regular(-10.0, 10.0, 200)};
+        framework::H1<> pcal_lv{mh::regular(0.0, 450.0, 100)};
+        framework::H1<> pcal_lw{mh::regular(0.0, 450.0, 100)};
+        framework::H2<> sf_vs_p{mh::regular(0.0, 12.0, 100), mh::regular(0.0, 0.5, 100)};
+        framework::H2<> chi2pid_vs_p{mh::regular(0.0, 12.0, 100), mh::regular(-10.0, 10.0, 200)};
+        framework::H2<> vz_vs_phi{mh::regular(-180.0, 180.0, 180), mh::regular(-40.0, 40.0, 100)};
+        framework::H2<> vz_vs_theta{mh::regular(0.0, 45.0, 90), mh::regular(-40.0, 40.0, 100)};
+        framework::H2<> theta_vs_phi{mh::regular(-180.0, 180.0, 180), mh::regular(0.0, 45.0, 90)};
+        framework::H2<> p_vs_theta{mh::regular(0.0, 45.0, 90), mh::regular(0.0, 12.0, 100)};
 
         auto book(framework::HistogramService* svc, const std::string& dir) -> void {
             svc->register_hist(dir + "/p", "Electron Momentum;p [GeV/c];Events", p);
