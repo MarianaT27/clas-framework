@@ -30,7 +30,10 @@ log_dir         = "/volatile/clas12/users/me/electron_analysis/logs"
 
 [farm.swif2]
 workflow   = "electron_analysis_LD2_outbending"
-site       = "jlab"
+# `site` is only for cross-site workflows that move data between JLab and an
+# external compute facility (and require globus + login config). Leave unset
+# for normal in-house submission on the JLab ifarm.
+# site     = ""
 account    = "clas12"
 partition  = "production"
 cores      = 8

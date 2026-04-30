@@ -49,7 +49,10 @@ log_dir         = "/volatile/clas12/users/me/electron_analysis/logs"
 
 [farm.swif2]
 workflow   = "electron_analysis_LD2_outbending"
-site       = "jlab"
+# `site` is only for cross-site workflows that move data between JLab and an
+# external compute facility (those require globus + login config). Leave it
+# unset for normal in-house JLab submission.
+# site     = ""
 account    = "clas12"
 partition  = "production"
 cores      = 8
@@ -119,7 +122,7 @@ script with one `swif2 add-job` block per chunk:
 #!/usr/bin/env bash
 set -euo pipefail
 
-swif2 create -workflow 'electron_analysis_LD2_outbending' -site 'jlab'
+swif2 create -workflow 'electron_analysis_LD2_outbending'
 
 # job 0
 swif2 add-job -workflow 'electron_analysis_LD2_outbending' \

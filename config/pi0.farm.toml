@@ -19,7 +19,7 @@ log_dir    = "/volatile/clas12/users/me/pi0/logs"
 
 [farm.swif2]
 workflow   = "pi0_pass1_recon"
-site       = "jlab"
+# `site` is only for cross-site workflows; leave unset for in-house JLab jobs.
 account    = "clas12"
 partition  = "production"
 cores      = 8

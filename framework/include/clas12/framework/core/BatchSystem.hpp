@@ -50,7 +50,12 @@ public:
     /// workflow.
     struct Swif2JobConfig {
         std::string workflow;
-        std::string site       = "jlab";
+
+        // Empty by default. Only set this for cross-site workflows that
+        // move data between JLab and an external compute facility — those
+        // require `swif2 create -site SITENAME` plus globus/login config.
+        // For normal in-house JLab submission, leave it empty.
+        std::string site;
         std::string account;
         std::string partition;
         std::string constraint;
