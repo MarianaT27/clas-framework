@@ -110,10 +110,11 @@ TEST(BatchSynthesis, Swif2AddJobIncludesInputsOutputsAndShell) {
     cfg.ram_gb     = 8;
     cfg.disk_gb    = 20;
     cfg.time       = "06:00:00";  // converted to seconds for SWIF2
-    cfg.executable = "/work/clas12/me/builddir/electron_analysis";
-    cfg.modules    = {"gcc/13.2.0", "root/6.36.04"};
-    cfg.env        = {{"ROOT_HIST", "0"}};
-    cfg.tags       = {{"stream", "electron"}};
+    cfg.executable          = "/work/clas12/me/builddir/electron_analysis";
+    cfg.modules             = {"gcc/13.2.0", "root/6.36.04"};
+    cfg.env                 = {{"ROOT_HIST", "0"}};
+    cfg.tags                = {{"stream", "electron"}};
+    cfg.wrapper_script_path = "/abs/path/test_wf_wrapper.sh";
 
     BatchSystem::JobSpec job;
     job.job_name      = "test_wf_job_0";
@@ -152,14 +153,31 @@ TEST(BatchSynthesis, Swif2AddJobIncludesInputsOutputsAndShell) {
     EXPECT_NE(cmd.find("-output 'result.root' '/volatile/clas12/me/test_wf/job_0/result.root'"), std::string::npos);
     EXPECT_NE(cmd.find("-output 'log.txt' '/volatile/clas12/me/test_wf/logs/test_wf_job_0.log'"), std::string::npos);
 
-    // Inline shell block: modules, env, executable invocation against
-    // the staged TOML.
-    EXPECT_NE(cmd.find("module load gcc/13.2.0"), std::string::npos);
-    EXPECT_NE(cmd.find("module load root/6.36.04"), std::string::npos);
-    EXPECT_NE(cmd.find("export OMP_NUM_THREADS=${SWIF2_JOB_CORES:-4}"), std::string::npos);
-    EXPECT_NE(cmd.find("export ROOT_HIST=0"), std::string::npos);
-    EXPECT_NE(cmd.find("/work/clas12/me/builddir/electron_analysis --config job.toml"),
+    // Wrapper staging + command. Module loads / env / executable now live
+    // in the wrapper script; the add-job line just runs `bash wrapper.sh`.
+    EXPECT_NE(cmd.find("-input wrapper.sh '/abs/path/test_wf_wrapper.sh'"), std::string::npos);
+    EXPECT_NE(cmd.find("bash wrapper.sh"), std::string::npos);
+    EXPECT_EQ(cmd.find("-shell"),          std::string::npos);
+}
+
+TEST(BatchSynthesis, WrapperScriptCarriesModulesEnvAndExecutable) {
+    BatchSystem::Swif2JobConfig cfg;
+    cfg.workflow   = "wrap_demo";
+    cfg.cores      = 4;
+    cfg.executable = "/work/clas12/me/builddir/electron_analysis";
+    cfg.modules    = {"gcc/13.2.0", "root/6.36.04"};
+    cfg.env        = {{"ROOT_HIST", "0"}};
+
+    const auto sh = BatchSystem::synthesize_wrapper_script(cfg);
+    EXPECT_NE(sh.find("#!/usr/bin/env bash"),     std::string::npos);
+    EXPECT_NE(sh.find("set -euo pipefail"),       std::string::npos);
+    EXPECT_NE(sh.find("module load gcc/13.2.0"),  std::string::npos);
+    EXPECT_NE(sh.find("module load root/6.36.04"), std::string::npos);
+    EXPECT_NE(sh.find("export OMP_NUM_THREADS=${SWIF2_JOB_CORES:-4}"), std::string::npos);
+    EXPECT_NE(sh.find("export ROOT_HIST=0"),      std::string::npos);
+    EXPECT_NE(sh.find("/work/clas12/me/builddir/electron_analysis --config job.toml"),
               std::string::npos);
+    EXPECT_NE(sh.find("tee log.txt"),             std::string::npos);
 }
 
 // =============================================================================

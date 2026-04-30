@@ -325,6 +325,17 @@ int main(int argc, char* argv[]) {
     const fs::path scripts_dir = fs::absolute("./batch_scripts");
     fs::create_directories(scripts_dir);
 
+    // Wrapper script — identical for every job of a workflow. Gets staged
+    // into each job as `wrapper.sh` via SWIF2 -input.
+    const fs::path wrapper_path = scripts_dir / fmt::format("{}_wrapper.sh", farm.swif2.workflow);
+    farm.swif2.wrapper_script_path = wrapper_path.string();
+    const std::string wrapper = BatchSystem::synthesize_wrapper_script(farm.swif2);
+    if (!BatchSystem::write_file(wrapper_path.string(), wrapper)) {
+        Log::error("batch", "Failed to write {}", wrapper_path.string());
+        return EXIT_FAILURE;
+    }
+    BatchSystem::make_executable(wrapper_path.string());
+
     std::vector<BatchSystem::JobSpec> jobs;
     jobs.reserve(chunks.size());
     for (std::size_t i = 0; i < chunks.size(); ++i) {

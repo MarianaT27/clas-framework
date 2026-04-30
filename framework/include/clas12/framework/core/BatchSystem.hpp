@@ -85,6 +85,11 @@ public:
         // Where per-job ROOT files / logs land on /volatile or /work.
         std::string output_dir;
         std::string log_dir;
+
+        // Filesystem path to the wrapper bash script that every job runs
+        // (staged in as `wrapper.sh`). Set by the submitter after writing
+        // the wrapper to disk; consumed by `swif2_add_job_command`.
+        std::string wrapper_script_path;
     };
 
     /// One unit of work in the workflow.
@@ -198,14 +203,37 @@ public:
         // The per-job TOML itself is staged in as `job.toml`.
         s << " \\\n    -input job.toml " << shell_quote(job.job_toml_path);
 
+        // The shared wrapper script (module loads + executable invocation)
+        // is staged in as `wrapper.sh`. It's identical across all jobs of a
+        // workflow, so it lives in one file and gets pulled into every job.
+        if (!cfg.wrapper_script_path.empty()) {
+            s << " \\\n    -input wrapper.sh " << shell_quote(cfg.wrapper_script_path);
+        }
+
         for (const auto& [local, dest] : job.outputs) {
             s << " \\\n    -output " << shell_quote(local) << " " << shell_quote(dest);
         }
 
-        // Build the inline shell block. SWIF2 makes `$SWIF2_JOB_CORES`
-        // available in the job; we reuse it for OMP_NUM_THREADS so the
-        // analysis matches whatever the scheduler granted.
+        // Command to run. SWIF2 expects the command + args as positionals
+        // *after* all option flags — there is no `-shell` switch.
+        s << " \\\n    bash wrapper.sh";
+        return s.str();
+    }
+
+    // ========================================================================
+    // Wrapper script
+    // ========================================================================
+
+    /// Render the per-workflow wrapper script that every job runs as
+    /// `bash wrapper.sh`. Module loads + env exports + the analysis
+    /// invocation against the staged `job.toml`. SWIF2 publishes
+    /// `$SWIF2_JOB_CORES` inside the job, so we tie OMP to that.
+    static auto synthesize_wrapper_script(const Swif2JobConfig& cfg) -> std::string {
         std::ostringstream sh;
+        sh << "#!/usr/bin/env bash\n"
+           << "# Auto-generated wrapper for SWIF2 jobs of workflow '"
+           << cfg.workflow << "'.\n"
+           << "set -euo pipefail\n";
         for (const auto& m : cfg.modules) {
             sh << "module load " << m << "\n";
         }
@@ -214,9 +242,7 @@ public:
             sh << "export " << k << "=" << v << "\n";
         }
         sh << cfg.executable << " --config job.toml 2>&1 | tee log.txt\n";
-
-        s << " \\\n    -shell " << shell_quote(sh.str());
-        return s.str();
+        return sh.str();
     }
 
     // ========================================================================
