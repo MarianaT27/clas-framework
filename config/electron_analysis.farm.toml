@@ -1,0 +1,50 @@
+# Farm submission for electron_analysis on the JLab cluster (SWIF2).
+#
+# Run with:
+#   ./builddir/batch config/electron_analysis.farm.toml          # dry-run
+#   ./builddir/batch config/electron_analysis.farm.toml --submit # submit
+#
+# Schema:
+#   [farm]              run-control + I/O paths
+#   [farm.swif2]        SWIF2 / scheduler resource ask
+#   [farm.swif2.modules] modules loaded at the top of every job's shell
+#   [farm.swif2.tags]   key/value labels propagated via `swif2 add-job -tag`
+#   [farm.env]          extra environment exports inside the job
+#
+# The batch tool synthesizes a per-job TOML (under batch_scripts/) that
+# inherits everything from `analysis_config` and overrides only
+# `[run].input` / `[run].output` / `[run].num_threads`. SWIF2 stages the
+# input HIPO files from /mss into the job's PWD as `input_*.hipo` and
+# copies `result.root` and `log.txt` back to `output_dir` / `log_dir`.
+
+[farm]
+analysis_config = "config/electron_analysis.toml"
+executable      = "builddir/electron_analysis"
+files_per_job   = 10
+
+# Scanned recursively for *.hipo. May also be an array of explicit files.
+inputs          = "/mss/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/"
+
+output_dir      = "/volatile/clas12/users/me/electron_analysis"
+log_dir         = "/volatile/clas12/users/me/electron_analysis/logs"
+
+[farm.swif2]
+workflow   = "electron_analysis_LD2_outbending"
+site       = "jlab"
+account    = "clas12"
+partition  = "production"
+cores      = 8
+ram_gb     = 16
+disk_gb    = 50
+time       = "12:00:00"
+
+[farm.swif2.modules]
+load = ["gcc/13.2.0", "root/6.36.04"]
+
+[farm.swif2.tags]
+stream  = "electron"
+target  = "LD2"
+polarity = "Outbending"
+
+[farm.env]
+ROOT_HIST = "0"

@@ -1,0 +1,38 @@
+# Farm submission for the pi0 analysis on the JLab cluster (SWIF2).
+#
+# Run with:
+#   ./builddir/batch config/pi0.farm.toml          # dry-run
+#   ./builddir/batch config/pi0.farm.toml --submit # submit
+
+[farm]
+analysis_config = "config/pi0.toml"
+executable      = "builddir/pi0"
+files_per_job   = 5
+
+inputs = [
+    "/mss/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/",
+    "/mss/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/",
+]
+
+output_dir = "/volatile/clas12/users/me/pi0"
+log_dir    = "/volatile/clas12/users/me/pi0/logs"
+
+[farm.swif2]
+workflow   = "pi0_pass1_recon"
+site       = "jlab"
+account    = "clas12"
+partition  = "production"
+cores      = 8
+ram_gb     = 24            # pi0 chain (selection + reco + multiplicity) is heavier
+disk_gb    = 100
+time       = "16:00:00"
+
+[farm.swif2.modules]
+load = ["gcc/13.2.0", "root/6.36.04"]
+
+[farm.swif2.tags]
+stream = "pi0"
+pass   = "pass1"
+
+[farm.env]
+ROOT_HIST = "0"

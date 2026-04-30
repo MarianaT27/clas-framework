@@ -1,14 +1,17 @@
 /**
  * @file batch.cpp
- * @brief Generic batch job submission for any CLAS12 analysis
+ * @brief SWIF2-based farm submission for CLAS12 analyses.
  *
- * Submits any analysis executable to HPC clusters (SLURM).
- * Decoupled from specific analyses - works with any executable that accepts --input.
+ * Reads a farm TOML that points at an analysis TOML and declares SWIF2
+ * resources + JLab paths, slices the input file list, synthesizes a per-job
+ * TOML for each chunk (overriding `[run].input`/`[run].output`), and emits
+ * a `batch_scripts/<workflow>.swif2.sh` that creates the workflow, adds one
+ * job per chunk with explicit `-input` / `-output` staging, and runs it.
  *
  * Usage:
- *   ./batch --executable=./pi0 --target=LD2 --polarity=Outbending
- *   ./batch --executable=./electron_analysis --config=my_config.json
- *   ./batch --executable=./lambda --data-dir=/path/to/data --system=slurm
+ *   ./batch <farm.toml>                # dry-run: synthesize scripts, do not submit
+ *   ./batch <farm.toml> --submit       # actually run the swif2 script
+ *   ./batch <farm.toml> --print-job 0  # print the synthesized TOML for job 0
  */
 
 #include <cstdlib>
@@ -16,477 +19,404 @@
 #include <filesystem>
 #include <fmt/format.h>
 #include <fstream>
+#include <iostream>
+#include <map>
+#include <optional>
 #include <string>
+#include <vector>
+
+#include <toml++/toml.hpp>
 
 #include <clas12/FileUtils.hpp>
-#include <clas12/Runs.hpp>
-#include <clas12/StringUtils.hpp>
-#include <clas12/Target.hpp>
 #include <clas12/framework/core/BatchSystem.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 
 namespace fs = std::filesystem;
+using framework::Log;
+using framework::BatchSystem;
 
-//──────────────────────────────────────────────────────────────────────────────
-// Configuration from JSON
-//──────────────────────────────────────────────────────────────────────────────
+// =============================================================================
+// Farm TOML model
+// =============================================================================
+//
+// One in-memory mirror of the farm TOML, populated by parse_farm_toml.
+// Field names align with the TOML schema documented in
+// docs/mkdocs/user-guide/batch-system.md.
 
-struct BatchConfig {
-    // Job identification
-    std::string job_name;
+struct FarmConfig {
+    // [farm]
+    std::string analysis_config;
     std::string executable;
-    std::string system = "slurm";
+    int         files_per_job = 10;
+    std::vector<std::string> input_sources;   // /mss/, /cache/, file paths, dirs
+    std::string output_dir;
+    std::string log_dir;
 
-    // Data source
-    std::string data_dir;
-    std::vector<std::string> input_files;
-
-    // Resources
-    int files_per_job = 10;
-    int num_threads = 8;
-    int memory_gb = 16;
-    std::string time_limit = "12:00:00";
-    std::string partition = "production";
-
-    // Output
-    std::string output_dir = "./output";
-    std::string log_dir = "./logs";
-
-    // Environment
-    std::vector<std::string> modules;
-    std::vector<std::string> env_vars;
-
-    // Analysis-specific arguments (passed through to executable)
-    std::vector<std::string> extra_args;
-
-    // Notifications
-    std::string email;
-    bool dry_run = true;
+    // [farm.swif2]
+    BatchSystem::Swif2JobConfig swif2;
 };
 
-auto load_config_from_json(const std::string& path) -> std::optional<BatchConfig> {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        framework::Log::error("Batch", "Cannot open config file: {}", path);
+// =============================================================================
+// Parsing
+// =============================================================================
+
+/// Read either a TOML string or array-of-strings into a vector. Both forms
+/// are accepted everywhere a path-list is expected.
+static auto parse_string_list(const toml::node_view<const toml::node>& node)
+    -> std::vector<std::string>
+{
+    std::vector<std::string> out;
+    if (auto arr = node.as_array()) {
+        for (const auto& el : *arr) {
+            if (auto s = el.value<std::string>()) out.push_back(*s);
+        }
+    } else if (auto s = node.value<std::string>()) {
+        out.push_back(*s);
+    }
+    return out;
+}
+
+static auto parse_farm_toml(const std::string& path) -> std::optional<FarmConfig> {
+    toml::table tbl;
+    try {
+        tbl = toml::parse_file(path);
+    } catch (const toml::parse_error& e) {
+        Log::error("batch", "Failed to parse {}: {}", path, e.description());
         return std::nullopt;
     }
 
-    // Simple JSON parsing (for production, use nlohmann/json or similar)
-    std::string content((std::istreambuf_iterator<char>(file)),
-                        std::istreambuf_iterator<char>());
+    const auto* farm = tbl["farm"].as_table();
+    if (!farm) {
+        Log::error("batch", "{} missing required [farm] section", path);
+        return std::nullopt;
+    }
 
-    BatchConfig cfg;
+    FarmConfig cfg;
 
-    // Extract string values
-    auto extract_string = [&](const std::string& key) -> std::string {
-        auto pos = content.find("\"" + key + "\"");
-        if (pos == std::string::npos) return "";
-        pos = content.find(":", pos);
-        if (pos == std::string::npos) return "";
-        auto start = content.find("\"", pos);
-        if (start == std::string::npos) return "";
-        auto end = content.find("\"", start + 1);
-        if (end == std::string::npos) return "";
-        return content.substr(start + 1, end - start - 1);
-    };
+    if (auto v = (*farm)["analysis_config"].value<std::string>()) cfg.analysis_config = *v;
+    if (auto v = (*farm)["executable"].value<std::string>())      cfg.executable      = *v;
+    if (auto v = (*farm)["files_per_job"].value<int64_t>())       cfg.files_per_job   = static_cast<int>(*v);
+    if (auto v = (*farm)["output_dir"].value<std::string>())      cfg.output_dir      = *v;
+    if (auto v = (*farm)["log_dir"].value<std::string>())         cfg.log_dir         = *v;
 
-    auto extract_int = [&](const std::string& key, int default_val) -> int {
-        auto pos = content.find("\"" + key + "\"");
-        if (pos == std::string::npos) return default_val;
-        pos = content.find(":", pos);
-        if (pos == std::string::npos) return default_val;
-        // Skip whitespace
-        pos++;
-        while (pos < content.size() && std::isspace(content[pos])) pos++;
-        try {
-            return std::stoi(content.substr(pos));
-        } catch (...) {
-            return default_val;
+    cfg.input_sources = parse_string_list((*farm)["inputs"]);
+
+    // [farm.swif2]
+    auto& s = cfg.swif2;
+    s.executable           = cfg.executable;
+    s.analysis_config_path = cfg.analysis_config;
+    s.output_dir           = cfg.output_dir;
+    s.log_dir              = cfg.log_dir;
+
+    if (const auto* swif2 = (*farm)["swif2"].as_table()) {
+        if (auto v = (*swif2)["workflow"].value<std::string>())   s.workflow   = *v;
+        if (auto v = (*swif2)["site"].value<std::string>())       s.site       = *v;
+        if (auto v = (*swif2)["account"].value<std::string>())    s.account    = *v;
+        if (auto v = (*swif2)["partition"].value<std::string>())  s.partition  = *v;
+        if (auto v = (*swif2)["constraint"].value<std::string>()) s.constraint = *v;
+        if (auto v = (*swif2)["cores"].value<int64_t>())          s.cores      = static_cast<int>(*v);
+        if (auto v = (*swif2)["ram_gb"].value<int64_t>())         s.ram_gb     = static_cast<int>(*v);
+        if (auto v = (*swif2)["disk_gb"].value<int64_t>())        s.disk_gb    = static_cast<int>(*v);
+        if (auto v = (*swif2)["time"].value<std::string>())       s.time       = *v;
+
+        if (const auto* tags = (*swif2)["tags"].as_table()) {
+            for (auto&& [k, val] : *tags) {
+                if (auto sv = val.value<std::string>()) s.tags.emplace(std::string(k.str()), *sv);
+            }
         }
-    };
+        if (const auto* mods = (*swif2)["modules"].as_table()) {
+            s.modules = parse_string_list((*mods)["load"]);
+        }
+    }
 
-    cfg.job_name = extract_string("job_name");
-    cfg.executable = extract_string("executable");
-    cfg.system = extract_string("system");
-    cfg.data_dir = extract_string("data_dir");
-    cfg.output_dir = extract_string("output_dir");
-    cfg.log_dir = extract_string("log_dir");
-    cfg.time_limit = extract_string("time_limit");
-    cfg.partition = extract_string("partition");
-    cfg.email = extract_string("email");
-
-    cfg.files_per_job = extract_int("files_per_job", 10);
-    cfg.num_threads = extract_int("n_cores", 8);
-    cfg.memory_gb = extract_int("memory_gb", 16);
+    if (const auto* env = (*farm)["env"].as_table()) {
+        for (auto&& [k, val] : *env) {
+            if (auto sv = val.value<std::string>()) s.env.emplace(std::string(k.str()), *sv);
+        }
+    }
 
     return cfg;
 }
 
-//──────────────────────────────────────────────────────────────────────────────
-// Data directory resolution
-//──────────────────────────────────────────────────────────────────────────────
+// =============================================================================
+// Input expansion
+// =============================================================================
 
-auto resolve_data_directory(Target target, Polarity polarity) -> std::string {
-    // RG-D data paths at JLab
-    if (polarity == Polarity::Outbending) {
-        switch (target) {
-            case Target::LD2:
-                return "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/train/SIDIS/";
-            case Target::CxC:
-                return "/cache/clas12/rg-d/production/pass1/recon/CxC/dst/train/SIDIS/";
-            case Target::CuSn:
-                return "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS/";
-            default:
-                return "";
+/// Expand `[farm].inputs` entries to a flat list of HIPO file paths.
+/// Directories are scanned recursively for `.hipo`; explicit files are
+/// returned verbatim.
+static auto expand_inputs(const std::vector<std::string>& sources)
+    -> std::vector<std::string>
+{
+    std::vector<std::string> out;
+    for (const auto& src : sources) {
+        if (fs::is_directory(src)) {
+            auto more = FileUtils::read_recursive_hipo_files(src);
+            out.insert(out.end(), more.begin(), more.end());
+        } else {
+            out.push_back(src);
         }
-    } else {
-        // Inbending
-        return "/cache/hallb/scratch/rg-d/production/skim_pass0v11/";
     }
+    return out;
 }
 
-//──────────────────────────────────────────────────────────────────────────────
-// Batch system conversion
-//──────────────────────────────────────────────────────────────────────────────
+// =============================================================================
+// Job synthesis
+// =============================================================================
 
-auto parse_batch_system(const std::string& name) -> std::optional<framework::BatchSystem::System> {
-    if (name == "slurm") return framework::BatchSystem::System::SLURM;
-    if (name == "local") return framework::BatchSystem::System::Local;
-    return std::nullopt;
+/// Build a single JobSpec for chunk index `idx`, writing the synthesized
+/// per-job TOML to `<scripts_dir>/<workflow>_job_<idx>.toml` along the way.
+///
+/// Local SWIF2-staged names follow `input_<j>.hipo` and `result.root`,
+/// matching the names baked into the per-job TOML.
+static auto build_job(
+    const FarmConfig&               farm,
+    std::size_t                     idx,
+    const std::vector<std::string>& chunk,
+    const fs::path&                 scripts_dir
+) -> std::optional<BatchSystem::JobSpec> {
+    const std::string job_name = fmt::format("{}_job_{}", farm.swif2.workflow, idx);
+
+    std::vector<std::string> local_input_names;
+    BatchSystem::JobSpec     job;
+    job.job_name = job_name;
+
+    for (std::size_t j = 0; j < chunk.size(); ++j) {
+        // Preserve the source extension so SWIF2 stages a file with the
+        // right name; downstream HIPO readers don't actually care.
+        std::string ext = fs::path(chunk[j]).extension().string();
+        if (ext.empty()) ext = ".hipo";
+        std::string local = fmt::format("input_{}{}", j, ext);
+        local_input_names.push_back(local);
+        job.inputs.emplace_back(local, chunk[j]);
+    }
+
+    const std::string local_output = "result.root";
+    const std::string dest_output  = fmt::format("{}/{}/{}", farm.output_dir, job_name, local_output);
+    const std::string dest_log     = fmt::format("{}/{}.log", farm.log_dir, job_name);
+    job.outputs.emplace_back(local_output, dest_output);
+    job.outputs.emplace_back("log.txt",    dest_log);
+
+    // Synthesize the per-job TOML.
+    std::string toml_text;
+    try {
+        toml_text = BatchSystem::synthesize_job_toml(
+            farm.analysis_config,
+            local_input_names,
+            local_output,
+            farm.swif2.cores
+        );
+    } catch (const std::exception& e) {
+        Log::error("batch", "Failed to synthesize TOML for {}: {}", job_name, e.what());
+        return std::nullopt;
+    }
+
+    const fs::path toml_path = scripts_dir / fmt::format("{}.toml", job_name);
+    if (!BatchSystem::write_file(toml_path.string(), toml_text)) {
+        Log::error("batch", "Failed to write {}", toml_path.string());
+        return std::nullopt;
+    }
+    job.job_toml_path = fs::absolute(toml_path).string();
+    return job;
 }
 
-//──────────────────────────────────────────────────────────────────────────────
+// =============================================================================
 // Main
-//──────────────────────────────────────────────────────────────────────────────
+// =============================================================================
 
 int main(int argc, char* argv[]) {
-    cxxopts::Options options("batch", "Generic batch job submission for CLAS12 analyses");
-
+    cxxopts::Options options("batch", "SWIF2-based farm submission for CLAS12 analyses");
     options.add_options()
-        // Required
-        ("executable", "Path to analysis executable", cxxopts::value<std::string>())
-
-        // Data source (one of these or target and polarity)
-        ("config", "JSON configuration file", cxxopts::value<std::string>()->default_value(""))
-        ("data-dir", "Data directory with .hipo files", cxxopts::value<std::string>()->default_value(""))
-        ("target", "Target type (LD2, CxC, CuSn)", cxxopts::value<std::string>()->default_value(""))
-        ("polarity", "Magnetic field polarity (Inbending, Outbending)", cxxopts::value<std::string>()->default_value(""))
-
-        // Job configuration
-        ("job-name", "Job name prefix", cxxopts::value<std::string>()->default_value(""))
-        ("system", "Batch system (slurm, local)", cxxopts::value<std::string>()->default_value("slurm"))
-        ("files-per-job", "Input files per job", cxxopts::value<int>()->default_value("10"))
-        ("num-threads", "Threads per job", cxxopts::value<int>()->default_value("8"))
-        ("memory", "Memory per job (GB)", cxxopts::value<int>()->default_value("16"))
-        ("time", "Time limit (HH:MM:SS)", cxxopts::value<std::string>()->default_value("12:00:00"))
-        ("partition", "SLURM partition", cxxopts::value<std::string>()->default_value("production"))
-
-        // Output
-        ("output-dir", "Output directory", cxxopts::value<std::string>()->default_value("./output"))
-        ("log-dir", "Log directory", cxxopts::value<std::string>()->default_value("./logs"))
-
-        // Notifications
-        ("email", "Email for notifications", cxxopts::value<std::string>()->default_value(""))
-
-        // Control
-        ("submit", "Actually submit jobs (default: dry-run)", cxxopts::value<bool>()->default_value("false"))
-        ("extra-args", "Extra arguments for executable (comma-separated)", cxxopts::value<std::string>()->default_value(""))
-
-        ("h,help", "Show help");
-
-    options.parse_positional({"executable"});
-    options.positional_help("<executable>");
+        ("farm-toml",     "Path to the farm TOML (positional, required)",
+            cxxopts::value<std::string>())
+        ("submit",        "Actually run the swif2 script (default: dry-run)",
+            cxxopts::value<bool>()->default_value("false"))
+        ("files-per-job", "Override [farm].files_per_job",
+            cxxopts::value<int>())
+        ("workflow",      "Override [farm.swif2].workflow",
+            cxxopts::value<std::string>())
+        ("max-jobs",      "Synthesize at most N jobs (for testing)",
+            cxxopts::value<int>())
+        ("print-job",     "Print the synthesized TOML for job N and exit",
+            cxxopts::value<int>())
+        ("h,help",        "Show help");
+    options.parse_positional({"farm-toml"});
+    options.positional_help("<farm.toml>");
 
     auto args = options.parse(argc, argv);
 
-    if (args.count("help") || !args.count("executable")) {
+    if (args.count("help") || !args.count("farm-toml")) {
         fmt::print("{}\n", options.help());
-        fmt::print("\nExamples:\n");
-        fmt::print("  # Submit pi0 analysis for LD2 outbending\n");
-        fmt::print("  ./batch ./pi0 --target=LD2 --polarity=Outbending\n");
-        fmt::print("\n");
-        fmt::print("  # Submit electron analysis with custom data directory\n");
-        fmt::print("  ./batch ./electron_analysis --data-dir=/path/to/data\n");
-        fmt::print("\n");
-        fmt::print("  # Use JSON config file\n");
-        fmt::print("  ./batch ./lambda --config=config/batch_job.json\n");
-        fmt::print("\n");
-        fmt::print("  # Run locally with extra arguments\n");
-        fmt::print("  ./batch ./improved --system=local --extra-args=\"--max-events=100000\"\n");
-        fmt::print("\n");
+        fmt::print(
+            "\nExample:\n"
+            "  ./batch config/electron_analysis.farm.toml          # dry-run\n"
+            "  ./batch config/electron_analysis.farm.toml --submit # submit\n\n");
         return args.count("help") ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Build configuration
-    // ─────────────────────────────────────────────────────────────────────────
+    const std::string farm_toml_path = args["farm-toml"].as<std::string>();
 
-    BatchConfig cfg;
+    auto farm_opt = parse_farm_toml(farm_toml_path);
+    if (!farm_opt) return EXIT_FAILURE;
+    FarmConfig farm = *farm_opt;
 
-    // Load from JSON if provided
-    std::string config_file = args["config"].as<std::string>();
-    if (!config_file.empty()) {
-        auto loaded = load_config_from_json(config_file);
-        if (!loaded) return EXIT_FAILURE;
-        cfg = *loaded;
-        fmt::print("Loaded configuration from: {}\n", config_file);
-    }
+    // CLI overrides — applied after TOML so they win on conflicts.
+    if (args.count("files-per-job")) farm.files_per_job  = args["files-per-job"].as<int>();
+    if (args.count("workflow"))      farm.swif2.workflow = args["workflow"].as<std::string>();
 
-    // Override with command-line arguments
-    cfg.executable = args["executable"].as<std::string>();
+    // ---- Validation ---------------------------------------------------------
 
-    if (!args["job-name"].as<std::string>().empty()) {
-        cfg.job_name = args["job-name"].as<std::string>();
+    if (farm.swif2.workflow.empty()) {
+        Log::error("batch", "[farm.swif2].workflow is required");
+        return EXIT_FAILURE;
     }
-    if (!args["data-dir"].as<std::string>().empty()) {
-        cfg.data_dir = args["data-dir"].as<std::string>();
+    if (farm.analysis_config.empty()) {
+        Log::error("batch", "[farm].analysis_config is required");
+        return EXIT_FAILURE;
     }
-    if (!args["system"].as<std::string>().empty()) {
-        cfg.system = args["system"].as<std::string>();
+    if (!fs::exists(farm.analysis_config)) {
+        Log::error("batch", "Analysis TOML not found: {}", farm.analysis_config);
+        return EXIT_FAILURE;
     }
-    if (args["files-per-job"].as<int>() != 10) {
-        cfg.files_per_job = args["files-per-job"].as<int>();
+    if (farm.executable.empty()) {
+        Log::error("batch", "[farm].executable is required");
+        return EXIT_FAILURE;
     }
-    if (args["num-threads"].as<int>() != 8) {
-        cfg.num_threads = args["num-threads"].as<int>();
-    }
-    if (args["memory"].as<int>() != 16) {
-        cfg.memory_gb = args["memory"].as<int>();
-    }
-    if (args["time"].as<std::string>() != "12:00:00") {
-        cfg.time_limit = args["time"].as<std::string>();
-    }
-    if (args["partition"].as<std::string>() != "production") {
-        cfg.partition = args["partition"].as<std::string>();
-    }
-    if (!args["output-dir"].as<std::string>().empty()) {
-        cfg.output_dir = args["output-dir"].as<std::string>();
-    }
-    if (!args["log-dir"].as<std::string>().empty()) {
-        cfg.log_dir = args["log-dir"].as<std::string>();
-    }
-    if (!args["email"].as<std::string>().empty()) {
-        cfg.email = args["email"].as<std::string>();
-    }
-
-    cfg.dry_run = !args["submit"].as<bool>();
-
-    // Parse extra arguments
-    std::string extra_args_str = args["extra-args"].as<std::string>();
-    if (!extra_args_str.empty()) {
-        // Split by comma
-        size_t pos = 0;
-        while ((pos = extra_args_str.find(',')) != std::string::npos) {
-            cfg.extra_args.push_back(extra_args_str.substr(0, pos));
-            extra_args_str.erase(0, pos + 1);
-        }
-        if (!extra_args_str.empty()) {
-            cfg.extra_args.push_back(extra_args_str);
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Resolve data directory
-    // ─────────────────────────────────────────────────────────────────────────
-
-    std::string target_str = args["target"].as<std::string>();
-    std::string polarity_str = args["polarity"].as<std::string>();
-
-    Target target = Target::LD2;
-    Polarity polarity = Polarity::Outbending;
-
-    if (!target_str.empty() && !polarity_str.empty()) {
-        target = string_to_target(target_str);
-        polarity = string_to_polarity(polarity_str);
-
-        if (cfg.data_dir.empty()) {
-            cfg.data_dir = resolve_data_directory(target, polarity);
-        }
-
-        // Add target/polarity to extra args for the analysis
-        cfg.extra_args.push_back(fmt::format("--target={}", target_str));
-        cfg.extra_args.push_back(fmt::format("--polarity={}", polarity_str));
-    }
-
-    if (cfg.data_dir.empty()) {
-        framework::Log::error("Batch", "No data source specified. Use --data-dir, --target/--polarity, or --config");
+    if (farm.output_dir.empty() || farm.log_dir.empty()) {
+        Log::error("batch", "[farm].output_dir and [farm].log_dir are required");
         return EXIT_FAILURE;
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Validate executable
-    // ─────────────────────────────────────────────────────────────────────────
-
-    if (!fs::exists(cfg.executable)) {
-        framework::Log::error("Batch", "Executable not found: {}", cfg.executable);
-        return EXIT_FAILURE;
-    }
-
-    // Generate job name from executable if not set
-    if (cfg.job_name.empty()) {
-        cfg.job_name = fs::path(cfg.executable).stem().string();
-        if (!target_str.empty()) {
-            cfg.job_name += "_" + target_str;
-        }
-        if (!polarity_str.empty()) {
-            cfg.job_name += "_" + polarity_str;
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Read input files
-    // ─────────────────────────────────────────────────────────────────────────
-
-    fmt::print("Reading input files from: {}\n", cfg.data_dir);
-    std::vector<std::string> input_files = FileUtils::read_recursive_hipo_files(cfg.data_dir);
-
-    if (input_files.empty()) {
-        framework::Log::error("Batch", "No .hipo files found in {}", cfg.data_dir);
-        return EXIT_FAILURE;
-    }
-
-    fmt::print("Found {} input files\n", input_files.size());
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Parse batch system
-    // ─────────────────────────────────────────────────────────────────────────
-
-    auto batch_system = parse_batch_system(cfg.system);
-    if (!batch_system) {
-        framework::Log::error("Batch", "Unknown batch system '{}'. Valid options: slurm, local", cfg.system);
-        return EXIT_FAILURE;
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Build job configuration
-    // ─────────────────────────────────────────────────────────────────────────
-
-    framework::BatchSystem::JobConfig job_config;
-    job_config.job_name = cfg.job_name;
-    job_config.output_dir = cfg.output_dir;
-    job_config.log_dir = cfg.log_dir;
-    job_config.n_cores = cfg.num_threads;
-    job_config.memory_gb = cfg.memory_gb;
-    job_config.time_limit = cfg.time_limit;
-    job_config.partition = cfg.partition;
-    job_config.queue = cfg.partition;
-    job_config.input_files = input_files;
-    job_config.files_per_job = cfg.files_per_job;
-    job_config.executable = cfg.executable;
-    job_config.email = cfg.email;
-    job_config.email_on_end = !cfg.email.empty();
-    job_config.email_on_fail = !cfg.email.empty();
-
-    // Add thread count to extra args
-    cfg.extra_args.push_back(fmt::format("--num_threads={}", cfg.num_threads));
-    job_config.extra_args = cfg.extra_args;
-
-    // Default JLab modules
-    job_config.modules = {"gcc/13.2.0", "cmake/3.29.0", "root/6.36.04"};
-    job_config.env_vars = {
-        "OMP_NUM_THREADS=" + std::to_string(cfg.num_threads),
-        "ROOT_HIST=0"
-    };
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Print summary
-    // ─────────────────────────────────────────────────────────────────────────
-
-    size_t num_jobs = (input_files.size() + cfg.files_per_job - 1) / cfg.files_per_job;
-
-    fmt::print("\n");
-    fmt::print("═══════════════════════════════════════════════════════════════\n");
-    fmt::print("  Batch Job Configuration\n");
-    fmt::print("═══════════════════════════════════════════════════════════════\n");
-    fmt::print("  Job name:        {}\n", cfg.job_name);
-    fmt::print("  Executable:      {}\n", cfg.executable);
-    fmt::print("  Batch system:    {}\n", framework::BatchSystem::system_name(*batch_system));
-    fmt::print("  Data directory:  {}\n", cfg.data_dir);
-    fmt::print("  Total files:     {}\n", input_files.size());
-    fmt::print("  Files per job:   {}\n", cfg.files_per_job);
-    fmt::print("  Number of jobs:  {}\n", num_jobs);
-    fmt::print("  Threads/job:     {}\n", cfg.num_threads);
-    fmt::print("  Memory/job:      {} GB\n", cfg.memory_gb);
-    fmt::print("  Time limit:      {}\n", cfg.time_limit);
-    fmt::print("  Partition:       {}\n", cfg.partition);
-    fmt::print("  Output dir:      {}\n", cfg.output_dir);
-    fmt::print("  Log dir:         {}\n", cfg.log_dir);
-    if (!cfg.email.empty()) {
-        fmt::print("  Email:           {}\n", cfg.email);
-    }
-    if (!cfg.extra_args.empty()) {
-        fmt::print("  Extra args:      ");
-        for (const auto& arg : cfg.extra_args) fmt::print("{} ", arg);
-        fmt::print("\n");
-    }
-    fmt::print("═══════════════════════════════════════════════════════════════\n");
-    fmt::print("\n");
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Generate batch scripts
-    // ─────────────────────────────────────────────────────────────────────────
-
-    fmt::print("Generating batch submission scripts...\n");
-    auto job_ids = framework::BatchSystem::submit_jobs(job_config, *batch_system);
-
-    if (job_ids.empty()) {
-        framework::Log::error("Batch", "Failed to generate batch scripts");
-        return EXIT_FAILURE;
-    }
-
-    fmt::print("Successfully generated {} job scripts in ./batch_scripts/\n", job_ids.size());
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Submit or show instructions
-    // ─────────────────────────────────────────────────────────────────────────
-
-    if (cfg.dry_run) {
-        fmt::print("\n");
-        fmt::print("DRY RUN MODE - Scripts generated but not submitted\n");
-        fmt::print("\n");
-        fmt::print("To submit jobs:\n");
-
-        switch (*batch_system) {
-            case framework::BatchSystem::System::SLURM:
-                fmt::print("  for script in batch_scripts/*.slurm; do sbatch $script; done\n");
-                break;
-            case framework::BatchSystem::System::Local:
-                fmt::print("  for script in batch_scripts/*.sh; do bash $script & done\n");
-                break;
-        }
-
-        fmt::print("\nOr re-run with --submit to submit automatically.\n");
+    // Make the executable an absolute path so the SWIF2 job (which runs
+    // in a fresh CWD on a worker node) can find it.
+    if (fs::exists(farm.executable)) {
+        farm.executable = fs::absolute(farm.executable).string();
+        farm.swif2.executable = farm.executable;
     } else {
-        fmt::print("\nSubmitting jobs...\n");
+        Log::warning("batch",
+            "Executable '{}' not found at submission host — assuming it exists on the worker node",
+            farm.executable);
+    }
 
-        std::string glob;
-        std::string monitor;
-        switch (*batch_system) {
-            case framework::BatchSystem::System::SLURM:
-                glob = "batch_scripts/*.slurm";
-                monitor = "squeue -u $USER";
-                break;
-            case framework::BatchSystem::System::Local:
-                glob = "batch_scripts/*.sh";
-                monitor = fmt::format("ps aux | grep {}", cfg.job_name);
-                break;
+    // ---- Input expansion ----------------------------------------------------
+
+    if (farm.input_sources.empty()) {
+        Log::error("batch", "[farm].inputs is empty");
+        return EXIT_FAILURE;
+    }
+    auto inputs = expand_inputs(farm.input_sources);
+    if (inputs.empty()) {
+        Log::error("batch", "No HIPO files found under [farm].inputs");
+        return EXIT_FAILURE;
+    }
+
+    // ---- Slice into jobs ----------------------------------------------------
+
+    auto chunks = BatchSystem::split_input_files(inputs, farm.files_per_job);
+    if (args.count("max-jobs")) {
+        const int n = args["max-jobs"].as<int>();
+        if (n >= 0 && static_cast<std::size_t>(n) < chunks.size()) {
+            chunks.resize(static_cast<std::size_t>(n));
         }
+    }
 
-        const std::string cmd = (*batch_system == framework::BatchSystem::System::SLURM)
-            ? fmt::format("for script in {}; do sbatch \"$script\"; done", glob)
-            : fmt::format("for script in {}; do bash \"$script\" & done", glob);
+    // ---- Synthesize per-job TOMLs + JobSpecs --------------------------------
 
-        const int rc = std::system(cmd.c_str());
-        if (rc != 0) {
-            framework::Log::error("Batch", "Submission command exited with status {}", rc);
+    const fs::path scripts_dir = fs::absolute("./batch_scripts");
+    fs::create_directories(scripts_dir);
+
+    std::vector<BatchSystem::JobSpec> jobs;
+    jobs.reserve(chunks.size());
+    for (std::size_t i = 0; i < chunks.size(); ++i) {
+        auto job = build_job(farm, i, chunks[i], scripts_dir);
+        if (!job) return EXIT_FAILURE;
+        jobs.push_back(std::move(*job));
+    }
+
+    // ---- --print-job N ------------------------------------------------------
+
+    if (args.count("print-job")) {
+        const int n = args["print-job"].as<int>();
+        if (n < 0 || static_cast<std::size_t>(n) >= jobs.size()) {
+            Log::error("batch", "--print-job={} out of range (have {} jobs)", n, jobs.size());
             return EXIT_FAILURE;
         }
-        fmt::print("Submitted. Monitor with:\n  {}\n", monitor);
+        std::ifstream in(jobs[static_cast<std::size_t>(n)].job_toml_path);
+        std::cout << in.rdbuf();
+        return EXIT_SUCCESS;
     }
 
-    fmt::print("\nTo merge output ROOT files after jobs complete:\n");
-    fmt::print("  hadd -f merged_{}.root {}/*/*.root\n", cfg.job_name, cfg.output_dir);
-    fmt::print("\n");
+    // ---- Workflow script ----------------------------------------------------
 
+    const std::string script = BatchSystem::synthesize_workflow_script(farm.swif2, jobs);
+    const fs::path script_path = scripts_dir / fmt::format("{}.swif2.sh", farm.swif2.workflow);
+    if (!BatchSystem::write_file(script_path.string(), script)) {
+        Log::error("batch", "Failed to write {}", script_path.string());
+        return EXIT_FAILURE;
+    }
+    BatchSystem::make_executable(script_path.string());
+
+    // ---- Summary ------------------------------------------------------------
+
+    fmt::print(
+        "\n══════════════════════════════════════════════════════════════════\n"
+        "  Workflow:        {}\n"
+        "  Analysis TOML:   {}\n"
+        "  Executable:      {}\n"
+        "  Inputs found:    {}\n"
+        "  Files per job:   {}\n"
+        "  Jobs:            {}\n"
+        "  Per-job TOMLs:   {}/{}_job_*.toml\n"
+        "  Workflow script: {}\n"
+        "══════════════════════════════════════════════════════════════════\n\n",
+        farm.swif2.workflow,
+        farm.analysis_config,
+        farm.executable,
+        inputs.size(),
+        farm.files_per_job,
+        jobs.size(),
+        scripts_dir.string(),
+        farm.swif2.workflow,
+        script_path.string()
+    );
+
+    if (!jobs.empty()) {
+        fmt::print("Sample synthesized TOML ({}):\n", jobs.front().job_toml_path);
+        fmt::print("──────────────────────────────────────────────────────────────────\n");
+        std::ifstream in(jobs.front().job_toml_path);
+        std::cout << in.rdbuf();
+        fmt::print("──────────────────────────────────────────────────────────────────\n\n");
+    }
+
+    // ---- Submit or print instructions --------------------------------------
+
+    const bool do_submit = args["submit"].as<bool>();
+    if (!do_submit) {
+        fmt::print(
+            "Dry-run only. To submit:\n"
+            "    ./batch {} --submit\n"
+            "or run the script directly:\n"
+            "    bash {}\n\n",
+            farm_toml_path,
+            script_path.string()
+        );
+        return EXIT_SUCCESS;
+    }
+
+    fmt::print("Running swif2 workflow script...\n");
+    int rc = BatchSystem::submit_workflow(script_path.string());
+    if (rc != 0) {
+        Log::error("batch", "swif2 script exited with status {}", rc);
+        return EXIT_FAILURE;
+    }
+    fmt::print(
+        "\nSubmitted. Monitor with:\n"
+        "    swif2 status -workflow {}\n"
+        "    swif2 list-jobs -workflow {} -display all\n\n"
+        "When jobs finish, merge outputs with:\n"
+        "    hadd -f merged_{}.root {}/*/result.root\n\n",
+        farm.swif2.workflow, farm.swif2.workflow,
+        farm.swif2.workflow, farm.output_dir
+    );
     return EXIT_SUCCESS;
 }

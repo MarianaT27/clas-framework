@@ -1,302 +1,320 @@
 #pragma once
 
+/**
+ * @file BatchSystem.hpp
+ * @brief SWIF2-based farm submission with per-job TOML synthesis.
+ *
+ * The submission flow is:
+ *
+ *   1. The user writes a "farm TOML" (see config/electron_analysis.farm.toml).
+ *      It points at the analysis TOML, names the SWIF2 workflow, and
+ *      declares input source and output destination on JLab paths.
+ *
+ *   2. For each chunk of `files_per_job` inputs, this module synthesises a
+ *      *per-job* TOML that inherits from the analysis TOML and overrides
+ *      `[run].input` (local SWIF2-staged names), `[run].output`, and
+ *      `[run].num_threads`.
+ *
+ *   3. The module emits one `swif2 add-job ...` command per chunk, with
+ *      `-input <local> <source>` lines mapping local names to /mss or
+ *      /cache paths and `-output <local> <dest>` lines mapping the
+ *      analysis output back to /volatile or /work.
+ *
+ *   4. All those commands plus the framing `swif2 create` / `swif2 run`
+ *      go into a single shell script under `batch_scripts/`. Dry-run
+ *      keeps the script on disk; `--submit` executes it.
+ *
+ * The job script itself just runs `executable --config job.toml` against
+ * the staged local files — no /mss vs /cache branching, no manual cp glue.
+ */
+
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
-#include <optional>
+#include <map>
+#include <sstream>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
+
+#include <fmt/format.h>
+#include <toml++/toml.hpp>
 
 namespace framework {
 
-/**
- * @brief Batch job system for HPC clusters
- *
- * Provides tools for:
- * - Job submission to SLURM
- * - Input file splitting
- * - Job configuration
- * - Status monitoring
- * - Result merging
- */
 class BatchSystem {
-   public:
-    /**
-     * @brief Supported batch systems
-     */
-    enum class System {
-        SLURM,  // Simple Linux Utility for Resource Management
-        Local   // Local execution (for testing)
-    };
+public:
+    /// One job's SWIF2 / scheduler resource ask. Populated from
+    /// `[farm.swif2]` plus CLI overrides; shared across all jobs of a
+    /// workflow.
+    struct Swif2JobConfig {
+        std::string workflow;
+        std::string site       = "jlab";
+        std::string account;
+        std::string partition;
+        std::string constraint;
+        int         cores      = 1;
+        int         ram_gb     = 4;
+        int         disk_gb    = 10;
+        std::string time       = "12:00:00";
 
-    /**
-     * @brief Job configuration
-     */
-    struct JobConfig {
-        // Job identification
-        std::string job_name = "clas12_analysis";
-        std::string output_dir = "./output";
-        std::string log_dir = "./logs";
+        // KEY=VALUE labels propagated to every job via -tag.
+        std::map<std::string, std::string> tags;
 
-        // Resource requirements
-        int n_cores = 1;
-        int memory_gb = 4;
-        std::string time_limit = "24:00:00";  // HH:MM:SS
-        std::string partition = "default";
-        std::string queue = "default";
+        // `module load` lines emitted at the top of each job's shell.
+        std::vector<std::string> modules;
 
-        // Job array settings
-        bool use_job_array = true;
-        int max_concurrent_jobs = 100;
+        // Extra environment exports.
+        std::map<std::string, std::string> env;
 
-        // Input/output
-        std::vector<std::string> input_files;
-        int files_per_job = 10;
+        // Path to the analysis executable as visible from the job's PWD
+        // (typically an absolute path on /work or /home).
         std::string executable;
-        std::vector<std::string> extra_args;
 
-        // Environment
-        std::string module_setup = "source /etc/profile.d/modules.sh\nmodule use /cvmfs/oasis.opensciencegrid.org/jlab/hallb/clas12/sw/modulefiles";
-        std::vector<std::string> env_vars;
-        std::vector<std::string> modules;  // For module load commands
+        // The base analysis TOML. Read once, used as the template for every
+        // synthesized per-job TOML.
+        std::string analysis_config_path;
 
-        // Email notifications
-        std::string email;
-        bool email_on_start = false;
-        bool email_on_end = true;
-        bool email_on_fail = true;
+        // Where per-job ROOT files / logs land on /volatile or /work.
+        std::string output_dir;
+        std::string log_dir;
     };
 
-    /**
-     * @brief Job status
-     */
-    struct JobStatus {
-        std::string job_id;
-        std::string state;  // PENDING, RUNNING, COMPLETED, FAILED, etc.
-        int tasks_total = 0;
-        int tasks_completed = 0;
-        int tasks_running = 0;
-        int tasks_failed = 0;
-        std::string submit_time;
-        std::string start_time;
-        std::string end_time;
+    /// One unit of work in the workflow.
+    struct JobSpec {
+        std::string job_name;
+
+        /// (local_name, source_path) pairs for SWIF2 -input.
+        /// `local_name` matches a string in the synthesized per-job TOML's
+        /// `[run].input`; `source_path` is a /mss or /cache path.
+        std::vector<std::pair<std::string, std::string>> inputs;
+
+        /// (local_name, dest_path) pairs for SWIF2 -output. Always at least
+        /// `(<analysis_output_local>, <output_dir>/<job_name>/<analysis_output_local>)`
+        /// and `("log.txt", <log_dir>/<job_name>.log)`.
+        std::vector<std::pair<std::string, std::string>> outputs;
+
+        /// Path on the submitting host to the per-job TOML. Staged into the
+        /// job as `job.toml`.
+        std::string job_toml_path;
     };
 
-    /**
-     * @brief Split input files into chunks for parallel processing
-     */
+    // ========================================================================
+    // Input slicing
+    // ========================================================================
+
+    /// Split a flat input list into `files_per_job`-sized chunks.
     static auto split_input_files(
         const std::vector<std::string>& input_files,
-        int files_per_job) -> std::vector<std::vector<std::string>> {
+        int files_per_job
+    ) -> std::vector<std::vector<std::string>> {
         std::vector<std::vector<std::string>> chunks;
-
-        for (size_t i = 0; i < input_files.size(); i += files_per_job) {
-            size_t end = std::min(i + files_per_job, input_files.size());
-            std::vector<std::string> chunk(
-                input_files.begin() + i,
-                input_files.begin() + end);
-            chunks.push_back(chunk);
+        if (files_per_job <= 0) files_per_job = 1;
+        for (std::size_t i = 0; i < input_files.size(); i += static_cast<std::size_t>(files_per_job)) {
+            std::size_t end = std::min(i + static_cast<std::size_t>(files_per_job), input_files.size());
+            chunks.emplace_back(input_files.begin() + i, input_files.begin() + end);
         }
-
         return chunks;
     }
 
-    /**
-     * @brief Generate SLURM submission script
-     */
-    static auto generate_slurm_script(
-        const JobConfig& config,
-        int job_index,
-        const std::vector<std::string>& input_chunk) -> std::string {
-        std::ostringstream script;
+    // ========================================================================
+    // Per-job TOML synthesis
+    // ========================================================================
 
-        // SLURM directives
-        script << "#!/usr/bin/bash\n";
-        script << "#SBATCH --job-name=" << config.job_name << "_" << job_index << "\n";
-        script << "#SBATCH --output=" << config.log_dir << "/" << config.job_name << "_" << job_index << "_%j.out\n";
-        script << "#SBATCH --error=" << config.log_dir << "/" << config.job_name << "_" << job_index << "_%j.err\n";
-        script << "#SBATCH --ntasks=1\n";
-        script << "#SBATCH --cpus-per-task=" << config.n_cores << "\n";
-        script << "#SBATCH --mem=" << config.memory_gb << "G\n";
-        script << "#SBATCH --time=" << config.time_limit << "\n";
+    /// Load the base analysis TOML and override `[run].input`, `[run].output`,
+    /// and `[run].num_threads` for one chunked job. Returns the serialized
+    /// TOML text, ready to write to `batch_scripts/<workflow>_job_N.toml`.
+    ///
+    /// `local_input_names` are the SWIF2-staged filenames (e.g.
+    /// `"input_0.hipo"`), NOT the original /mss source paths.
+    /// `local_output_name` is the filename the analysis writes to in its
+    /// CWD before SWIF2 copies it back out (e.g. `"result.root"`).
+    static auto synthesize_job_toml(
+        const std::string&              base_analysis_toml_path,
+        const std::vector<std::string>& local_input_names,
+        const std::string&              local_output_name,
+        int                             num_threads
+    ) -> std::string {
+        auto base = toml::parse_file(base_analysis_toml_path);
 
-        if (!config.partition.empty()) {
-            script << "#SBATCH --partition=" << config.partition << "\n";
+        toml::array inputs;
+        for (const auto& n : local_input_names) inputs.push_back(n);
+
+        toml::table* run_tbl = base["run"].as_table();
+        toml::table  fresh_run;
+        if (!run_tbl) {
+            base.insert("run", fresh_run);
+            run_tbl = base["run"].as_table();
         }
+        run_tbl->insert_or_assign("input",       std::move(inputs));
+        run_tbl->insert_or_assign("output",      local_output_name);
+        run_tbl->insert_or_assign("num_threads", static_cast<int64_t>(num_threads));
 
-        // Email notifications
-        if (!config.email.empty()) {
-            script << "#SBATCH --mail-user=" << config.email << "\n";
-            std::string mail_type;
-            if (config.email_on_start) mail_type += "BEGIN,";
-            if (config.email_on_end) mail_type += "END,";
-            if (config.email_on_fail) mail_type += "FAIL,";
-            if (!mail_type.empty()) {
-                mail_type.pop_back();  // Remove trailing comma
-                script << "#SBATCH --mail-type=" << mail_type << "\n";
-            }
-        }
-
-        script << "\n";
-
-        // Setup module environment
-        if (!config.module_setup.empty()) script << config.module_setup << "\n";
-
-        // Load modules
-        for (const auto& module : config.modules) {
-            script << "module load " << module << "\n";
-        }
-
-        // Environment variables
-        for (const auto& env : config.env_vars) {
-            script << "export " << env << "\n";
-        }
-
-        script << "\n";
-
-        // Job info
-        script << "echo \"Job started at: $(date)\"\n";
-        script << "echo \"Running on node: $(hostname)\"\n";
-        script << "echo \"Job ID: $SLURM_JOB_ID\"\n";
-        script << "echo \"Number of cores: $SLURM_CPUS_PER_TASK\"\n";
-        script << "\n";
-
-        // Create output directory
-        std::string output_subdir = config.output_dir + "/job_" + std::to_string(job_index);
-        script << "mkdir -p " << output_subdir << "\n";
-        script << "cd " << output_subdir << "\n";
-        script << "\n";
-
-        // Build comma-separated input file list
-        std::string input_list;
-        for (size_t i = 0; i < input_chunk.size(); ++i) {
-            if (i > 0) input_list += ",";
-            input_list += input_chunk[i];
-        }
-
-        // Run analysis with all input files
-        script << "echo \"Processing " << input_chunk.size() << " files\"\n";
-        script << config.executable;
-        script << " --input=" << input_list;
-
-        // Add extra arguments
-        for (const auto& arg : config.extra_args) {
-            script << " " << arg;
-        }
-
-        script << "\n";
-        script << "if [ $? -ne 0 ]; then\n";
-        script << "    echo \"ERROR: Analysis failed\"\n";
-        script << "    exit 1\n";
-        script << "fi\n";
-        script << "\n";
-
-        script << "echo \"Job completed at: $(date)\"\n";
-
-        return script.str();
+        std::ostringstream os;
+        os << base;
+        return os.str();
     }
 
-    /**
-     * @brief Write script to file
-     */
-    static auto write_script(
-        const std::string& filename,
-        const std::string& content) -> bool {
+    // ========================================================================
+    // Per-job SWIF2 invocation
+    // ========================================================================
+
+    /// Render one `swif2 add-job ...` command line. The shell block
+    /// invokes `<executable> --config job.toml` and tees output to
+    /// `log.txt` (which itself is a SWIF2 -output, so it lands in the
+    /// log_dir alongside the result).
+    static auto swif2_add_job_command(
+        const Swif2JobConfig& cfg,
+        const JobSpec&        job
+    ) -> std::string {
+        std::ostringstream s;
+        s << "swif2 add-job"
+          << " -workflow " << shell_quote(cfg.workflow)
+          << " -name "     << shell_quote(job.job_name);
+
+        if (!cfg.account.empty())    s << " -account "    << shell_quote(cfg.account);
+        if (!cfg.partition.empty())  s << " -partition "  << shell_quote(cfg.partition);
+        if (!cfg.constraint.empty()) s << " -constraint " << shell_quote(cfg.constraint);
+
+        s << " -cores " << cfg.cores
+          << " -ram "   << cfg.ram_gb  << "G"
+          << " -disk "  << cfg.disk_gb << "G"
+          << " -time "  << shell_quote(cfg.time);
+
+        for (const auto& [k, v] : cfg.tags) {
+            s << " -tag " << shell_quote(k) << " " << shell_quote(v);
+        }
+
+        for (const auto& [local, source] : job.inputs) {
+            s << " \\\n    -input " << shell_quote(local) << " " << shell_quote(source);
+        }
+        // The per-job TOML itself is staged in as `job.toml`.
+        s << " \\\n    -input job.toml " << shell_quote(job.job_toml_path);
+
+        for (const auto& [local, dest] : job.outputs) {
+            s << " \\\n    -output " << shell_quote(local) << " " << shell_quote(dest);
+        }
+
+        // Build the inline shell block. SWIF2 makes `$SWIF2_JOB_CORES`
+        // available in the job; we reuse it for OMP_NUM_THREADS so the
+        // analysis matches whatever the scheduler granted.
+        std::ostringstream sh;
+        for (const auto& m : cfg.modules) {
+            sh << "module load " << m << "\n";
+        }
+        sh << "export OMP_NUM_THREADS=${SWIF2_JOB_CORES:-" << cfg.cores << "}\n";
+        for (const auto& [k, v] : cfg.env) {
+            sh << "export " << k << "=" << v << "\n";
+        }
+        sh << cfg.executable << " --config job.toml 2>&1 | tee log.txt\n";
+
+        s << " \\\n    -shell " << shell_quote(sh.str());
+        return s.str();
+    }
+
+    // ========================================================================
+    // Workflow-level script synthesis
+    // ========================================================================
+
+    /// Render the complete `batch_scripts/<workflow>.swif2.sh`: prelude
+    /// that creates the output/log directories (so SWIF2's `-output` copies
+    /// have a valid destination), `swif2 create`, N `swif2 add-job` blocks,
+    /// then `swif2 run`. Per-job subdirectories under `output_dir` are also
+    /// created up-front so all destination paths exist on the submission
+    /// host before the workflow starts.
+    static auto synthesize_workflow_script(
+        const Swif2JobConfig&        cfg,
+        const std::vector<JobSpec>&  jobs
+    ) -> std::string {
+        std::ostringstream s;
+        s << "#!/usr/bin/env bash\n"
+          << "# Auto-generated by `batch`. Do not edit; regenerate from the farm TOML.\n"
+          << "set -euo pipefail\n\n";
+
+        s << "# Ensure output/log destinations exist before SWIF2 copies into them.\n";
+        if (!cfg.output_dir.empty()) {
+            s << "mkdir -p " << shell_quote(cfg.output_dir) << "\n";
+        }
+        if (!cfg.log_dir.empty()) {
+            s << "mkdir -p " << shell_quote(cfg.log_dir) << "\n";
+        }
+        // Per-job subdirectories — `-output result.root <output_dir>/<name>/result.root`
+        // needs the parent to exist.
+        if (!cfg.output_dir.empty() && !jobs.empty()) {
+            for (const auto& job : jobs) {
+                s << "mkdir -p " << shell_quote(cfg.output_dir + "/" + job.job_name) << "\n";
+            }
+        }
+        s << "\n";
+
+        s << "swif2 create -workflow " << shell_quote(cfg.workflow);
+        if (!cfg.site.empty()) s << " -site " << shell_quote(cfg.site);
+        s << "\n\n";
+
+        for (std::size_t i = 0; i < jobs.size(); ++i) {
+            s << "# job " << i << "\n";
+            s << swif2_add_job_command(cfg, jobs[i]) << "\n\n";
+        }
+
+        s << "swif2 run -workflow " << shell_quote(cfg.workflow) << "\n";
+        return s.str();
+    }
+
+    // ========================================================================
+    // I/O helpers
+    // ========================================================================
+
+    /// Write text to a file, creating parent directories as needed. Returns
+    /// false on filesystem error.
+    static auto write_file(
+        const std::string& path,
+        const std::string& content
+    ) -> bool {
         try {
-            std::filesystem::create_directories(
-                std::filesystem::path(filename).parent_path());
-
-            std::ofstream file(filename);
-            if (!file.is_open()) return false;
-
-            file << content;
-            file.close();
-
-            // Make executable
-            std::filesystem::permissions(
-                filename,
-                std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec,
-                std::filesystem::perm_options::add);
-
+            namespace fs = std::filesystem;
+            auto parent = fs::path(path).parent_path();
+            if (!parent.empty()) fs::create_directories(parent);
+            std::ofstream out(path);
+            if (!out) return false;
+            out << content;
             return true;
-        } catch (const std::exception& e) {
+        } catch (const std::exception&) {
             return false;
         }
     }
 
-    /**
-     * @brief Submit jobs to batch system
-     */
-    static auto submit_jobs(
-        const JobConfig& config,
-        System system = System::SLURM) -> std::vector<std::string> {
-        // Split input files
-        auto chunks = split_input_files(config.input_files, config.files_per_job);
-
-        // Convert paths to absolute paths
-        auto abs_output_dir = std::filesystem::absolute(config.output_dir).string();
-        auto abs_log_dir = std::filesystem::absolute(config.log_dir).string();
-        auto abs_executable = std::filesystem::absolute(config.executable).string();
-        auto abs_batch_dir = std::filesystem::absolute("./batch_scripts").string();
-
-        // Create a config copy with absolute paths
-        JobConfig abs_config = config;
-        abs_config.output_dir = abs_output_dir;
-        abs_config.log_dir = abs_log_dir;
-        abs_config.executable = abs_executable;
-
-        // Create directories
-        std::filesystem::create_directories(abs_output_dir);
-        std::filesystem::create_directories(abs_log_dir);
-        std::filesystem::create_directories(abs_batch_dir);
-
-        std::vector<std::string> job_ids;
-
-        // Generate and submit scripts for each chunk
-        for (size_t i = 0; i < chunks.size(); ++i) {
-            std::string script_content;
-            std::string script_file;
-            std::string submit_command;
-
-            switch (system) {
-                case System::SLURM:
-                    script_content = generate_slurm_script(abs_config, i, chunks[i]);
-                    script_file = abs_batch_dir + "/job_" + std::to_string(i) + ".slurm";
-                    submit_command = "sbatch " + script_file;
-                    break;
-
-                case System::Local:
-                    // For local execution, just save the script
-                    script_content = generate_slurm_script(abs_config, i, chunks[i]);
-                    script_file = abs_batch_dir + "/job_" + std::to_string(i) + ".sh";
-                    submit_command = "bash " + script_file;
-                    break;
-            }
-
-            // Write script
-            if (!write_script(script_file, script_content)) {
-                continue;
-            }
-
-            // Note: Actual submission would use system() call
-            // For safety, we just generate the scripts
-            job_ids.push_back("job_" + std::to_string(i));
+    /// Make a file executable (chmod +x).
+    static auto make_executable(const std::string& path) -> void {
+        namespace fs = std::filesystem;
+        try {
+            fs::permissions(path,
+                fs::perms::owner_exec | fs::perms::group_exec | fs::perms::others_exec,
+                fs::perm_options::add);
+        } catch (const std::exception&) {
+            // best effort
         }
-
-        return job_ids;
     }
 
-    /**
-     * @brief Get system name as string
-     */
-    static auto system_name(System sys) -> std::string {
-        switch (sys) {
-            case System::SLURM:
-                return "SLURM";
-            case System::Local:
-                return "Local";
-            default:
-                return "Unknown";
+    /// Run the workflow shell script with `bash` and return its exit code.
+    static auto submit_workflow(const std::string& script_path) -> int {
+        const std::string cmd = "bash " + shell_quote(script_path);
+        return std::system(cmd.c_str());
+    }
+
+private:
+    /// Single-quote a shell argument, escaping embedded single quotes.
+    /// Result is suitable for `sh`/`bash` direct interpolation.
+    static auto shell_quote(std::string_view s) -> std::string {
+        std::string out;
+        out.reserve(s.size() + 2);
+        out += '\'';
+        for (char c : s) {
+            if (c == '\'') out += "'\\''";
+            else           out += c;
         }
+        out += '\'';
+        return out;
     }
 };
 

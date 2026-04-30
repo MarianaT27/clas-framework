@@ -111,3 +111,12 @@ test_electron_cuts_service = executable(
 )
 
 test('ElectronCutsService Tests', test_electron_cuts_service)
+
+# Round-trip tests for SWIF2 per-job TOML synthesis (BatchSystem.hpp).
+test_batch_synthesis = executable(
+  'test_batch_synthesis',
+  'test_batch_synthesis.cpp',
+  dependencies: test_deps + [toml_dep],
+)
+
+test('Batch Synthesis Tests', test_batch_synthesis)
