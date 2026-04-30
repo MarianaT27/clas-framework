@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 #include <toml++/toml.hpp>
 
+#include <clas12/StringUtils.hpp>
 #include <clas12/framework/core/BatchSystem.hpp>
 
 namespace fs = std::filesystem;
@@ -178,6 +179,56 @@ TEST(BatchSynthesis, WrapperScriptCarriesModulesEnvAndExecutable) {
     EXPECT_NE(sh.find("/work/clas12/me/builddir/electron_analysis --config job.toml"),
               std::string::npos);
     EXPECT_NE(sh.find("tee log.txt"),             std::string::npos);
+}
+
+// =============================================================================
+// StringUtils::expand_braces
+// =============================================================================
+
+TEST(BraceExpand, NoBracesIsIdentity) {
+    auto r = StringUtils::expand_braces("/mss/clas12/runs");
+    ASSERT_EQ(r.size(), 1u);
+    EXPECT_EQ(r[0], "/mss/clas12/runs");
+}
+
+TEST(BraceExpand, SingleGroupExpandsToSiblings) {
+    auto r = StringUtils::expand_braces("/mss/.../recon/{018944,018945,018946}");
+    ASSERT_EQ(r.size(), 3u);
+    EXPECT_EQ(r[0], "/mss/.../recon/018944");
+    EXPECT_EQ(r[1], "/mss/.../recon/018945");
+    EXPECT_EQ(r[2], "/mss/.../recon/018946");
+}
+
+TEST(BraceExpand, MultipleGroupsCartesianProduct) {
+    auto r = StringUtils::expand_braces("/run/{a,b}/{x,y}");
+    ASSERT_EQ(r.size(), 4u);
+    EXPECT_EQ(r[0], "/run/a/x");
+    EXPECT_EQ(r[1], "/run/a/y");
+    EXPECT_EQ(r[2], "/run/b/x");
+    EXPECT_EQ(r[3], "/run/b/y");
+}
+
+TEST(BraceExpand, NestedBracesViaRecursion) {
+    auto r = StringUtils::expand_braces("/p/{a,{b,c}}");
+    // Expected expansion order: 'a', then the nested {b,c}.
+    ASSERT_EQ(r.size(), 3u);
+    EXPECT_EQ(r[0], "/p/a");
+    EXPECT_EQ(r[1], "/p/b");
+    EXPECT_EQ(r[2], "/p/c");
+}
+
+TEST(BraceExpand, UnmatchedOpenBraceLeftAsIs) {
+    auto r = StringUtils::expand_braces("/p/{a,b");
+    ASSERT_EQ(r.size(), 1u);
+    EXPECT_EQ(r[0], "/p/{a,b");
+}
+
+TEST(BraceExpand, EmptyBraceProducesEmptyOption) {
+    // `{,a}` -> ["", "a"] when concatenated with surrounding text.
+    auto r = StringUtils::expand_braces("/p/{,a}");
+    ASSERT_EQ(r.size(), 2u);
+    EXPECT_EQ(r[0], "/p/");
+    EXPECT_EQ(r[1], "/p/a");
 }
 
 // =============================================================================

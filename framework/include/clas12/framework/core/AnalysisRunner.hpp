@@ -289,16 +289,24 @@ private:
         return cfg;
     }
 
-    /// `[run].input` may be either a single string (path or directory)
-    /// or an array of strings. Directories are recursively expanded
-    /// to a list of `.hipo` files. Comma-separated strings are split.
+    /// `[run].input` may be either a single string (path or directory) or
+    /// an array of strings. Three convenience expansions are applied:
+    ///
+    ///   1. Brace-expansion `{a,b,c}` (StringUtils::expand_braces) lets
+    ///      analysts write `/mss/.../recon/{018944,018945,018946}` to mean
+    ///      three sibling paths.
+    ///   2. A path that resolves to a directory is recursively scanned for
+    ///      `.hipo` files (FileUtils::read_recursive_hipo_files).
+    ///   3. A comma-separated string is split into its parts.
+    ///
+    /// Anything else is treated as a literal file path and passed through.
     [[nodiscard]] static auto parse_input(const toml::table* run_tbl)
         -> std::vector<std::string>
     {
         std::vector<std::string> out;
         if (!run_tbl) return out;
 
-        auto add_one = [&](const std::string& s) {
+        auto add_resolved = [&](const std::string& s) {
             if (s.empty()) return;
             if (std::filesystem::is_directory(s)) {
                 auto more = FileUtils::read_recursive_hipo_files(s);
@@ -309,6 +317,12 @@ private:
                 }
             } else {
                 out.push_back(s);
+            }
+        };
+
+        auto add_one = [&](const std::string& raw) {
+            for (auto& expanded : StringUtils::expand_braces(raw)) {
+                add_resolved(expanded);
             }
         };
 

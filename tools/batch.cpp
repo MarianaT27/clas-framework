@@ -28,6 +28,7 @@
 #include <toml++/toml.hpp>
 
 #include <clas12/FileUtils.hpp>
+#include <clas12/StringUtils.hpp>
 #include <clas12/framework/core/BatchSystem.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 
@@ -143,18 +144,23 @@ static auto parse_farm_toml(const std::string& path) -> std::optional<FarmConfig
 // =============================================================================
 
 /// Expand `[farm].inputs` entries to a flat list of HIPO file paths.
-/// Directories are scanned recursively for `.hipo`; explicit files are
-/// returned verbatim.
+///
+/// Each entry first goes through brace-expansion
+/// (e.g. `/mss/.../recon/{018944,018945}` -> two paths), then each result
+/// is dereferenced: directories are scanned recursively for `.hipo`,
+/// explicit files are returned verbatim.
 static auto expand_inputs(const std::vector<std::string>& sources)
     -> std::vector<std::string>
 {
     std::vector<std::string> out;
-    for (const auto& src : sources) {
-        if (fs::is_directory(src)) {
-            auto more = FileUtils::read_recursive_hipo_files(src);
-            out.insert(out.end(), more.begin(), more.end());
-        } else {
-            out.push_back(src);
+    for (const auto& raw : sources) {
+        for (auto& src : StringUtils::expand_braces(raw)) {
+            if (fs::is_directory(src)) {
+                auto more = FileUtils::read_recursive_hipo_files(src);
+                out.insert(out.end(), more.begin(), more.end());
+            } else {
+                out.push_back(std::move(src));
+            }
         }
     }
     return out;
