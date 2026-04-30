@@ -143,27 +143,38 @@ static auto parse_farm_toml(const std::string& path) -> std::optional<FarmConfig
 // Input expansion
 // =============================================================================
 
-/// Expand `[farm].inputs` entries to a flat list of HIPO file paths.
+/// Resolved view of `[farm].inputs`: the post-brace-expansion sources we
+/// actually scanned, plus the final flat HIPO file list.
+struct ResolvedInputs {
+    std::vector<std::string> sources;  ///< after brace expansion, before scan
+    std::vector<std::string> files;    ///< final flat list of .hipo files
+};
+
+/// Expand `[farm].inputs` to a final flat list of HIPO files.
 ///
-/// Each entry first goes through brace-expansion
-/// (e.g. `/mss/.../recon/{018944,018945}` -> two paths), then each result
-/// is dereferenced: directories are scanned recursively for `.hipo`,
-/// explicit files are returned verbatim.
-static auto expand_inputs(const std::vector<std::string>& sources)
-    -> std::vector<std::string>
+/// Each raw entry first goes through brace expansion (e.g.
+/// `/mss/.../recon/{018944,018945}` -> two paths). Then each expanded
+/// result is dereferenced: directories are scanned recursively for `.hipo`,
+/// explicit files are returned verbatim. Both intermediate and final lists
+/// are returned so the dry-run summary can show the user exactly which
+/// directories were reached.
+static auto expand_inputs(const std::vector<std::string>& raw_sources)
+    -> ResolvedInputs
 {
-    std::vector<std::string> out;
-    for (const auto& raw : sources) {
-        for (auto& src : StringUtils::expand_braces(raw)) {
+    ResolvedInputs r;
+    for (const auto& raw : raw_sources) {
+        auto expanded = StringUtils::expand_braces(raw);
+        for (auto& src : expanded) {
+            r.sources.push_back(src);
             if (fs::is_directory(src)) {
                 auto more = FileUtils::read_recursive_hipo_files(src);
-                out.insert(out.end(), more.begin(), more.end());
+                r.files.insert(r.files.end(), more.begin(), more.end());
             } else {
-                out.push_back(std::move(src));
+                r.files.push_back(std::move(src));
             }
         }
     }
-    return out;
+    return r;
 }
 
 // =============================================================================
@@ -310,7 +321,8 @@ int main(int argc, char* argv[]) {
         Log::error("batch", "[farm].inputs is empty");
         return EXIT_FAILURE;
     }
-    auto inputs = expand_inputs(farm.input_sources);
+    auto resolved = expand_inputs(farm.input_sources);
+    auto& inputs = resolved.files;
     if (inputs.empty()) {
         Log::error("batch", "No HIPO files found under [farm].inputs");
         return EXIT_FAILURE;
@@ -396,6 +408,36 @@ int main(int argc, char* argv[]) {
         farm.swif2.workflow,
         script_path.string()
     );
+
+    // Show the post-brace-expansion source list (what we actually scanned)
+    // and a small sample of the resolved files. Makes brace-expansion +
+    // recursive-scan results visible at a glance.
+    fmt::print("[farm].inputs after brace expansion ({} source path{}):\n",
+               resolved.sources.size(),
+               resolved.sources.size() == 1 ? "" : "s");
+    {
+        const std::size_t cap = 8;
+        for (std::size_t i = 0; i < std::min(cap, resolved.sources.size()); ++i) {
+            fmt::print("  {}\n", resolved.sources[i]);
+        }
+        if (resolved.sources.size() > cap) {
+            fmt::print("  ... ({} more)\n", resolved.sources.size() - cap);
+        }
+    }
+    fmt::print("Sample of resolved HIPO files:\n");
+    {
+        const std::size_t cap = 3;
+        for (std::size_t i = 0; i < std::min(cap, inputs.size()); ++i) {
+            fmt::print("  {}\n", inputs[i]);
+        }
+        if (inputs.size() > 2 * cap) {
+            fmt::print("  ... ({} more) ...\n", inputs.size() - 2 * cap);
+            for (std::size_t i = inputs.size() - cap; i < inputs.size(); ++i) {
+                fmt::print("  {}\n", inputs[i]);
+            }
+        }
+    }
+    fmt::print("\n");
 
     if (!jobs.empty()) {
         fmt::print("Sample synthesized TOML ({}):\n", jobs.front().job_toml_path);
