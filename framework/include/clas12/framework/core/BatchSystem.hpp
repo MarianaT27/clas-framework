@@ -29,6 +29,7 @@
  */
 
 #include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -185,7 +186,7 @@ public:
         s << " -cores " << cfg.cores
           << " -ram "   << cfg.ram_gb  << "G"
           << " -disk "  << cfg.disk_gb << "G"
-          << " -time "  << shell_quote(cfg.time);
+          << " -time "  << shell_quote(format_swif2_time(cfg.time));
 
         for (const auto& [k, v] : cfg.tags) {
             s << " -tag " << shell_quote(k) << " " << shell_quote(v);
@@ -305,6 +306,43 @@ public:
     static auto submit_workflow(const std::string& script_path) -> int {
         const std::string cmd = "bash " + shell_quote(script_path);
         return std::system(cmd.c_str());
+    }
+
+    /// Convert a time-limit string into a SWIF2-acceptable form.
+    ///
+    /// SWIF2 expects either an integer with a unit suffix (`12h`, `720m`,
+    /// `43200s`) or seconds with no suffix. Users typically write
+    /// `HH:MM:SS` (the SLURM/PBS convention), so we accept that and
+    /// convert. Anything that already parses as a SWIF2 form is passed
+    /// through unchanged.
+    ///
+    /// Public so the unit tests can exercise the conversion directly.
+    static auto format_swif2_time(std::string_view s) -> std::string {
+        // Already a SWIF2 form: `<int><suffix>` with suffix in {s,m,h,d}.
+        // Or pure-integer (= seconds).
+        if (s.empty()) return std::string{s};
+        if (s.find(':') == std::string_view::npos) return std::string{s};
+
+        // HH:MM:SS or HH:MM. Anything else is rejected (bubble up the
+        // original to give a clear SWIF2 error rather than guessing).
+        long h = 0, m = 0, sec = 0;
+        int matched = 0;
+        const char* cstr = s.data();
+        // Limited use of sscanf so we don't need to copy into std::string;
+        // s is null-terminated in practice (TOML strings are), and we tolerate
+        // the trailing characters by checking matched count.
+        // NOTE: this assumes s is null-terminated; both call sites pass
+        // strings stored in toml::table or std::string.
+        if (std::string_view(s).find_first_not_of("0123456789:") != std::string_view::npos) {
+            return std::string{s};
+        }
+        std::string buf{s};
+        matched = std::sscanf(buf.c_str(), "%ld:%ld:%ld", &h, &m, &sec);
+        if (matched < 2) return buf;  // fall through; let SWIF2 complain
+        if (matched == 2) sec = 0;    // HH:MM treated as HH:MM:00
+
+        const long total_seconds = h * 3600 + m * 60 + sec;
+        return std::to_string(total_seconds) + "s";
     }
 
 private:

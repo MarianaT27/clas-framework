@@ -109,7 +109,7 @@ TEST(BatchSynthesis, Swif2AddJobIncludesInputsOutputsAndShell) {
     cfg.cores      = 4;
     cfg.ram_gb     = 8;
     cfg.disk_gb    = 20;
-    cfg.time       = "06:00:00";
+    cfg.time       = "06:00:00";  // converted to seconds for SWIF2
     cfg.executable = "/work/clas12/me/builddir/electron_analysis";
     cfg.modules    = {"gcc/13.2.0", "root/6.36.04"};
     cfg.env        = {{"ROOT_HIST", "0"}};
@@ -137,6 +137,8 @@ TEST(BatchSynthesis, Swif2AddJobIncludesInputsOutputsAndShell) {
     EXPECT_NE(cmd.find("-cores 4"), std::string::npos);
     EXPECT_NE(cmd.find("-ram 8G"), std::string::npos);
     EXPECT_NE(cmd.find("-disk 20G"), std::string::npos);
+    // 06:00:00 must be converted into a SWIF2-acceptable form (seconds).
+    EXPECT_NE(cmd.find("-time '21600s'"), std::string::npos);
 
     // Tags
     EXPECT_NE(cmd.find("-tag 'stream' 'electron'"), std::string::npos);
@@ -158,6 +160,31 @@ TEST(BatchSynthesis, Swif2AddJobIncludesInputsOutputsAndShell) {
     EXPECT_NE(cmd.find("export ROOT_HIST=0"), std::string::npos);
     EXPECT_NE(cmd.find("/work/clas12/me/builddir/electron_analysis --config job.toml"),
               std::string::npos);
+}
+
+// =============================================================================
+// format_swif2_time
+// =============================================================================
+
+TEST(BatchSynthesis, FormatSwif2TimeConvertsHHMMSSToSeconds) {
+    EXPECT_EQ(BatchSystem::format_swif2_time("12:00:00"), "43200s");
+    EXPECT_EQ(BatchSystem::format_swif2_time("06:00:00"), "21600s");
+    EXPECT_EQ(BatchSystem::format_swif2_time("00:30:00"), "1800s");
+    EXPECT_EQ(BatchSystem::format_swif2_time("01:02:03"), "3723s");
+}
+
+TEST(BatchSynthesis, FormatSwif2TimeAcceptsHHMM) {
+    // HH:MM (no seconds) treated as HH:MM:00.
+    EXPECT_EQ(BatchSystem::format_swif2_time("00:30"), "1800s");
+}
+
+TEST(BatchSynthesis, FormatSwif2TimePassesNativeFormsThrough) {
+    // Already-SWIF2 forms must be returned unchanged.
+    EXPECT_EQ(BatchSystem::format_swif2_time("12h"),    "12h");
+    EXPECT_EQ(BatchSystem::format_swif2_time("720m"),   "720m");
+    EXPECT_EQ(BatchSystem::format_swif2_time("43200s"), "43200s");
+    EXPECT_EQ(BatchSystem::format_swif2_time("43200"),  "43200");
+    EXPECT_EQ(BatchSystem::format_swif2_time(""),       "");
 }
 
 // =============================================================================
