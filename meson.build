@@ -104,9 +104,19 @@ subdir('extern/hipo4')
 # Some C++23 stdlibs ship <mdspan> without putting std::mdspan/std::dextents
 # in std, which trips mh's __has_include gate. We don't use StaticStorage
 # anywhere, so disable the path unconditionally.
+#
+# `mh::AtomicStorage<WeightedAccumulator>` does 128-bit (16-byte) atomic
+# loads/CAS on the {sum_w, sum_w2} pair. On Linux/GCC those dispatch to
+# libatomic intrinsics (__atomic_load_16, __atomic_compare_exchange_16);
+# Apple libc++ inlines them so macOS builds don't need the explicit link.
+# `find_library('atomic', required: false)` returns a no-op dependency on
+# macOS, so threading it through mh_dep is a one-liner that works on both
+# platforms.
+atomic_dep = cpp.find_library('atomic', required: false)
 mh_dep = declare_dependency(
   include_directories: include_directories('extern'),
   compile_args: ['-DMH_NO_MDSPAN'],
+  dependencies: [atomic_dep],
 )
 
 #══════════════════════════════════════════════════════════════════════════════#
