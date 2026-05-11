@@ -31,6 +31,21 @@ polarity    = "Outbending"
 beam_energy = 10.53
 version     = "2.0"
 
+# hipo::chain I/O tuning. Leaving every key at 0 reproduces the legacy
+# synchronous read path (one fread per record, no cache). Recommended
+# starting point for ifarm / XRootD: prefetch_depth = 4,
+# record_cache_bytes = "128MB", io_threads = 2. record_cache_bytes
+# accepts a plain int (bytes) or a string with "KB" / "MB" / "GB".
+# bank_filter is an optional whitelist of bank names that the chain
+# parses on the consumer side (it doesn't change the network bytes,
+# only the CPU spent decoding banks the analysis doesn't need).
+[IO]
+prefetch_depth     = 0
+record_cache_bytes = 0
+io_threads         = 0
+network_read_chunk = 0
+# bank_filter = ["REC::Particle", "REC::Event", "REC::Calorimeter"]
+
 # EventMonitor has no configurable properties today; the empty section is
 # tolerated (the framework only warns about *unknown* algorithm sections).
 [EventMonitor]

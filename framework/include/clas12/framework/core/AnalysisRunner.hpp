@@ -73,8 +73,64 @@
 #include <clas12/Target.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
 #include <clas12/framework/services/WorkflowVisualizationService.hpp>
+#include <ioOptions.h>
 
 namespace framework {
+
+/**
+ * @brief Parse a `[IO]` TOML table into a hipo::IOOptions.
+ *
+ * Recognised keys (all optional):
+ *   * prefetch_depth     (int)   default 0 = legacy synchronous reads
+ *   * record_cache_bytes (int)   default 0 = no LRU record cache
+ *                                accepts a plain int (bytes) or any of
+ *                                "<N>KB" / "<N>MB" / "<N>GB" when given
+ *                                as a string.
+ *   * io_threads         (int)   default 0 = auto (1 local / 2 remote)
+ *   * network_read_chunk (int)   default 0 = backend-picked
+ *   * bank_filter        (array of strings)  CPU-side bank whitelist
+ *
+ * Unrecognised keys are silently ignored so old / new TOMLs co-exist.
+ */
+inline auto io_options_from_toml(const toml::table& root) -> hipo::IOOptions {
+    hipo::IOOptions opts;
+    const auto* io = root["IO"].as_table();
+    if (!io) return opts;
+
+    if (auto v = (*io)["prefetch_depth"].value<int64_t>())     opts.prefetch_depth = static_cast<int>(*v);
+    if (auto v = (*io)["io_threads"].value<int64_t>())         opts.io_threads     = static_cast<int>(*v);
+    if (auto v = (*io)["network_read_chunk"].value<int64_t>()) opts.network_read_chunk = static_cast<int>(*v);
+
+    // record_cache_bytes accepts either a plain integer count of bytes
+    // or a string with a "KB" / "MB" / "GB" suffix for ergonomic configs.
+    if (auto v = (*io)["record_cache_bytes"].value<int64_t>()) {
+        opts.record_cache_bytes = static_cast<std::size_t>(*v);
+    } else if (auto s = (*io)["record_cache_bytes"].value<std::string>()) {
+        std::string text = *s;
+        std::size_t mul = 1;
+        auto ends_with = [&](std::string_view suf) {
+            return text.size() >= suf.size() &&
+                   std::equal(suf.rbegin(), suf.rend(), text.rbegin(),
+                              [](char a, char b){ return std::tolower(a) == std::tolower(b); });
+        };
+        if (ends_with("kb"))      { mul = 1024ULL;                   text.resize(text.size() - 2); }
+        else if (ends_with("mb")) { mul = 1024ULL * 1024;            text.resize(text.size() - 2); }
+        else if (ends_with("gb")) { mul = 1024ULL * 1024 * 1024;     text.resize(text.size() - 2); }
+        try {
+            opts.record_cache_bytes = static_cast<std::size_t>(std::stoll(text)) * mul;
+        } catch (...) {
+            // ignore malformed entry; leaves the cache disabled
+        }
+    }
+
+    if (auto arr = (*io)["bank_filter"].as_array()) {
+        for (auto& el : *arr) {
+            if (auto s = el.value<std::string>()) opts.bank_filter.push_back(*s);
+        }
+    }
+
+    return opts;
+}
 
 /**
  * @brief Run-control + analysis-level config parsed from the TOML file.
@@ -161,6 +217,10 @@ public:
             .with_beam_energy(config->beam_energy)
             .with_target(to_string(config->target))
             .with_config(config->config_table);
+
+        if (config->config_table) {
+            builder.with_io_options(io_options_from_toml(*config->config_table));
+        }
 
         configure_fn(builder, *config);
 
