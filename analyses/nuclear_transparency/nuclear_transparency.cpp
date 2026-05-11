@@ -17,6 +17,7 @@
 #include <clas12/algorithms/reconstruction/Rho0ReconstructionAlg.hpp>
 #include <clas12/framework/services/DecayTreeFitterService.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
+#include <clas12/framework/services/VzCorrectorService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 #include <clas12/StringUtils.hpp>
 
@@ -54,12 +55,13 @@ auto main(int argc, char* argv[]) -> int {
             }
 
             builder
+                .template add_service<framework::VzCorrectorService>(framework::VzCorrectorService::Config{.target = config.target, .polarity = config.polarity})
                 .template add_service<framework::ElectronCutsService>()
                 .template add_service<framework::DecayTreeFitterService>()
                 .template add_algorithm<algorithms::EventMonitor>("EventMonitor")
                 .template add_algorithm<algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity})
                 .template add_algorithm<algorithms::DISSelectionAlg>("DISSelection", algorithms::DISSelectionConfig{.dis_region = physics::DISAnalysis::KinematicRegion{.q2_min = 1.0, .w_min = 2.0}})
-                .template add_algorithm<algorithms::PionSelectionAlg>("PionSelection", algorithms::PionSelectionConfig{.target = config.target, .sigma_scan = sigma_scan})
+                .template add_algorithm<algorithms::PionSelectionAlg>("PionSelection", algorithms::PionSelectionConfig{.target = config.target, .polarity = config.polarity, .sigma_scan = sigma_scan})
                 .template add_algorithm<algorithms::Rho0ReconstructionAlg>("Rho0Reconstruction", algorithms::Rho0ReconstructionConfig{.target = config.target, .sigma_scan = sigma_scan, .lc_scan = lc_scan, .zh_scan = zh_scan, .t_scan = t_scan, .dvz_scan = dvz_scan});
         });
 }

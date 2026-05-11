@@ -20,6 +20,7 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
+#include <clas12/framework/services/VzCorrectorService.hpp>
 
 namespace algorithms {
 
@@ -28,6 +29,7 @@ using framework::Log;
 /// Configuration for PionSelectionAlg.
 struct PionSelectionConfig {
     Target target = Target::LD2;
+    Polarity polarity = Polarity::Outbending;
     std::vector<double> sigma_scan = {};  ///< Override `sigma_scan_values` if non-empty.
 
     double chi2pid_min = -10.0;
@@ -48,6 +50,7 @@ struct PionSelectionConfig {
     static constexpr auto config_fields() {
         using T = PionSelectionConfig;
         return std::make_tuple(
+            framework::field("polarity",                   &T::polarity),
             framework::field("chi2pid_min",                &T::chi2pid_min),
             framework::field("chi2pid_max",                &T::chi2pid_max),
             framework::field("momentum_min",               &T::momentum_min),
@@ -148,7 +151,7 @@ class PionSelectionAlg : public framework::Algorithm {
     explicit PionSelectionAlg(std::string name = "PionSelection", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow_piplus("π⁺ Selection"), m_cutflow_piminus("π⁻ Selection") {
         if (!m_config.sigma_scan.empty()) m_config.sigma_scan_values = m_config.sigma_scan;
-        required_services(m_hist, m_ntuple);
+        required_services(m_hist, m_ntuple, m_vz_corrector);
         declare_banks("REC::Event", "REC::Particle", "REC::Scintillator", "REC::Calorimeter", "REC::Traj");
         declare_config(m_config);
     }
@@ -286,8 +289,9 @@ class PionSelectionAlg : public framework::Algorithm {
     std::atomic<size_t> m_piminus_central{0};
     std::atomic<size_t> m_piminus_other{0};
 
-    framework::ServiceRef<framework::HistogramService> m_hist;
-    framework::ServiceRef<framework::NTupleService> m_ntuple;
+    framework::ServiceRef<framework::HistogramService>    m_hist;
+    framework::ServiceRef<framework::NTupleService>       m_ntuple;
+    framework::ServiceRef<framework::VzCorrectorService>  m_vz_corrector;
 
     framework::NTupleWriter<PionNTupleData> m_ntuple_piplus;
     framework::NTupleWriter<PionNTupleData> m_ntuple_piminus;
@@ -468,7 +472,7 @@ class PionSelectionAlg : public framework::Algorithm {
             cand.passes_dc_fiducial = pass_dc_fiducial_cut(traj, is_piplus);
             cand.passes_chi2pid = pass_chi2pid_cut(cand.chi2pid);
             cand.passes_momentum = pass_momentum_cut(cand.p);
-            cand.passes_vz = pass_vz_cut(cand.vz, is_piplus);
+            cand.passes_vz = pass_vz_cut(cand, is_piplus);
             cand.passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t, is_piplus);
 
             candidates.push_back(std::move(cand));
@@ -668,9 +672,17 @@ class PionSelectionAlg : public framework::Algorithm {
         return p > m_config.momentum_min && p < m_config.momentum_max;
     }
 
-    auto pass_vz_cut(double vz, bool is_piplus) -> bool {
+    auto pass_vz_cut(const PionCandidate& cand, bool is_piplus) const -> bool {
+        // Forward-detector tracks with a valid sector go through the
+        // per-event Voigt correction (or the legacy LD2 window when the
+        // corrector is configured for LD2).
+        if (cand.is_forward_detector && cand.sector >= 1 && cand.sector <= 6 && m_vz_corrector) {
+            return m_vz_corrector->pass_vz_cut(cand.vz, cand.p, cand.theta, cand.phi, cand.sector);
+        }
+        // Central or unknown detector region: fall back to the legacy
+        // hard-coded ranges (they're already tuned per species).
         auto vz_range = is_piplus ? get_piplus_vz_range() : get_piminus_vz_range();
-        return vz_range.contains(vz);
+        return vz_range.contains(cand.vz);
     }
 
     auto pass_delta_t_cut(const double p, const double delta_t, bool is_piplus, double n_sigma) -> bool {

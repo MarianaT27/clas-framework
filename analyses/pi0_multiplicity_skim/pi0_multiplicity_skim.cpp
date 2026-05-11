@@ -19,6 +19,7 @@
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
 #include <clas12/framework/services/PhotonCutsService.hpp>
+#include <clas12/framework/services/VzCorrectorService.hpp>
 #include <clas12/framework/services/HipoFileService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
@@ -86,6 +87,7 @@ auto main(int argc, char* argv[]) -> int {
             }
 
             builder
+                .template add_service<framework::VzCorrectorService>(framework::VzCorrectorService::Config{.target = config.target, .polarity = config.polarity})
                 .template add_service<framework::ElectronCutsService>()
                 .template add_service<framework::PhotonCutsService>()
                 .template add_algorithm<algorithms::EventMonitor>("EventMonitor")

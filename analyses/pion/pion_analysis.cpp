@@ -3,6 +3,7 @@
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
 #include <clas12/algorithms/analysis/PionAnalysisAlg.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
+#include <clas12/framework/services/VzCorrectorService.hpp>
 
 auto main(int argc, char* argv[]) -> int {
     return framework::AnalysisRunner::run(
@@ -13,6 +14,7 @@ auto main(int argc, char* argv[]) -> int {
             electron_config.polarity = config.polarity;
 
             builder
+                .template add_service<framework::VzCorrectorService>(framework::VzCorrectorService::Config{.target = config.target, .polarity = config.polarity})
                 .template add_service<framework::ElectronCutsService>()
                 .template add_algorithm<algorithms::EventMonitor>("EventMonitor")
                 .template add_algorithm<algorithms::ElectronAnalysisAlg>("ElectronAnalysis", electron_config)

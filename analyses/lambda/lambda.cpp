@@ -12,6 +12,7 @@
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
 #include <clas12/algorithms/reconstruction/LambdaReconstructionAlg.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
+#include <clas12/framework/services/VzCorrectorService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
 auto main(int argc, char* argv[]) -> int {
@@ -25,6 +26,7 @@ auto main(int argc, char* argv[]) -> int {
             // from the [LambdaReconstruction] section of the TOML
             // automatically — no manual configure_from_toml() needed.
             builder
+                .template add_service<framework::VzCorrectorService>(framework::VzCorrectorService::Config{.target = config.target, .polarity = config.polarity})
                 .template add_service<framework::ElectronCutsService>()
                 .template add_algorithm<algorithms::EventMonitor>("EventMonitor")
                 .template add_algorithm<algorithms::ElectronSelectionAlg>(

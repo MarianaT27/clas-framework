@@ -9,6 +9,7 @@
 #include <clas12/algorithms/selection/DISSelectionAlg.hpp>
 #include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
 #include <clas12/framework/services/ElectronCutsService.hpp>
+#include <clas12/framework/services/VzCorrectorService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
 #include "AiPidHadronAlg.hpp"
@@ -26,6 +27,7 @@ auto main(int argc, char* argv[]) -> int {
                     truth_mode = *v;
             }
             builder
+                .template add_service<framework::VzCorrectorService>(framework::VzCorrectorService::Config{.target = config.target, .polarity = config.polarity})
                 .template add_service<framework::ElectronCutsService>()
                 .template add_algorithm<algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", algorithms::ElectronSelectionConfig{.target = config.target, .polarity = config.polarity})
                 .template add_algorithm<algorithms::DISSelectionAlg>("DISSelection", algorithms::DISSelectionConfig{.dis_region = physics::DISAnalysis::high_q2_region()})

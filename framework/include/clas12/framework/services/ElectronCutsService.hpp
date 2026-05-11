@@ -9,11 +9,13 @@
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/services/SamplingFractionService.hpp>
+#include <clas12/framework/services/VzCorrectorService.hpp>
 
 namespace framework {
 
 // Forward declarations
 class SamplingFractionService;
+class VzCorrectorService;
 
 /**
  * @brief Service for electron selection cuts in CLAS12 analysis
@@ -175,6 +177,7 @@ class ElectronCutsService : public Service {
         // framework retrieves it (and enforces topological ordering) before
         // Service::initialize() hands control to on_initialize().
         require_service(m_sf_service);
+        require_service(m_vz_corrector);
     }
 
     auto finalize() -> StatusCode override {
@@ -283,7 +286,7 @@ class ElectronCutsService : public Service {
         return p > m_config.min_electron_momentum;
     }
 
-    // Vertex Z Cut
+    // Vertex Z Cut — legacy fixed-range overloads, kept for back-compat.
     [[nodiscard]] auto pass_vz_cut(double vz) const -> bool {
         return get_vz_range(m_config.target).contains(vz);
     }
@@ -291,6 +294,20 @@ class ElectronCutsService : public Service {
     [[nodiscard]] auto pass_vz_cut(double vz, Target target) const -> bool {
         return get_vz_range(target).contains(vz);
     }
+
+    /// Vertex Z cut using the per-event correction and Voigt +/- n_sigma_eff
+    /// windows (CuSn / CxC) or the legacy fixed range (LD2). Delegates to
+    /// VzCorrectorService, which is configured with the analysis-wide
+    /// target and polarity at startup.
+    [[nodiscard]] auto pass_vz_cut(double vz, double p, double theta_deg,
+                                   double phi_deg, int sector) const -> bool {
+        return m_vz_corrector
+            ? m_vz_corrector->pass_vz_cut(vz, p, theta_deg, phi_deg, sector)
+            : get_vz_range(m_config.target).contains(vz);
+    }
+
+    /// Access the underlying corrector service (e.g. to log the active variant).
+    [[nodiscard]] auto vz_corrector() const -> VzCorrectorService* { return m_vz_corrector; }
 
     // PCAL Fiducial Cuts
     [[nodiscard]] auto pass_pcal_v_cut(double v) const -> bool {
@@ -411,6 +428,7 @@ class ElectronCutsService : public Service {
    private:
     Config m_config;
     SamplingFractionService* m_sf_service = nullptr;
+    VzCorrectorService*      m_vz_corrector = nullptr;
 };
 
 }  // namespace framework

@@ -147,7 +147,7 @@ class ElectronSelectionAlg : public framework::Algorithm {
         if (m_config.enable_momentum_cut && !m_electron_cuts->pass_momentum_cut(electron.p())) return StatusCode::FILTERED();
         m_cutflow.pass("Momentum > 0.8 GeV");
 
-        if (m_config.enable_vz_cut && !m_electron_cuts->pass_vz_cut(electron.vz())) return StatusCode::FILTERED();
+        if (m_config.enable_vz_cut && !m_electron_cuts->pass_vz_cut(electron.vz(), electron.p(), electron.theta(), electron.phi(), calorimeter.pcal_sector)) return StatusCode::FILTERED();
         m_cutflow.pass("Vertex Z");
 
         if (m_config.enable_sf_cut && !m_electron_cuts->pass_sampling_fraction_cut(sampling_fraction, electron.p(), calorimeter.pcal_sector)) return StatusCode::FILTERED();
