@@ -351,11 +351,20 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     /// When m_config.mix_pool_subsample is 0 (or >= pool size), every photon
     /// is returned. Otherwise a random subset of pool events is drawn and
     /// their photons concatenated. Called under shared_lock on m_pool_mutex.
-    auto sample_pool_photon_indices(const PhotonPool& pool) const -> std::vector<size_t> {
+    ///
+    /// Scratch buffers are thread_local so worker threads don't hit the
+    /// heap on every photon-rich event. Returned by const reference; the
+    /// reference is only valid until the next call from the same thread.
+    auto sample_pool_photon_indices(const PhotonPool& pool) const -> const std::vector<size_t>& {
+        thread_local std::vector<size_t> indices;
+        thread_local std::vector<size_t> offsets;
+        thread_local std::vector<size_t> event_idx;
+        thread_local std::mt19937 rng{std::random_device{}()};
+
+        indices.clear();
+
         const auto& event_sizes = pool.event_sizes;
         const size_t n_events = event_sizes.size();
-
-        std::vector<size_t> indices;
         if (n_events == 0) return indices;
 
         const int requested = m_config.mix_pool_subsample;
@@ -368,18 +377,17 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         }
 
         // Cumulative photon offsets for each event in the pool.
-        std::vector<size_t> offsets(n_events);
+        offsets.resize(n_events);
         size_t cum = 0;
         for (size_t i = 0; i < n_events; ++i) {
             offsets[i] = cum;
             cum += event_sizes[i];
         }
 
-        // Random subset of event indices (Fisher-Yates over the first
-        // `requested` slots).
-        std::vector<size_t> event_idx(n_events);
+        // Random subset of event indices (partial Fisher-Yates over the
+        // first `requested` slots).
+        event_idx.resize(n_events);
         std::iota(event_idx.begin(), event_idx.end(), size_t{0});
-        thread_local std::mt19937 rng{std::random_device{}()};
         for (size_t k = 0; k < static_cast<size_t>(requested); ++k) {
             std::uniform_int_distribution<size_t> dist(k, n_events - 1);
             std::swap(event_idx[k], event_idx[dist(rng)]);
@@ -609,7 +617,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             if (pool_it != m_photon_pools.end() && !pool_it->second.event_sizes.empty()) {
                 const auto& pool      = pool_it->second;
                 const auto& pool_phot = pool.photons;
-                const auto pool_idx   = sample_pool_photon_indices(pool);
+                const auto& pool_idx  = sample_pool_photon_indices(pool);
 
                 for (size_t i = 0; i < photons.size(); ++i) {
                     auto g1_4v = photons[i].PxPyPzEVector();
