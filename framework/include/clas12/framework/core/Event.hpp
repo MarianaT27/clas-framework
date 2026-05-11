@@ -413,14 +413,14 @@ class Event {
      * @return std::optional<T> The data if decision passes and data exists
      *
      * @code
-     * // BEFORE: 3-4 lines repeated everywhere
+     * // BEFORE: 3 lines repeated everywhere
      * if (!event.passes_decision_typed(Decisions::HasGoodDISElectron)) return FILTERED();
-     * auto electrons_opt = event.retrieve_typed(Keys::SelectedElectrons);
-     * if (!electrons_opt || electrons_opt->empty()) return FILTERED();
+     * auto electron_opt = event.retrieve_typed(Keys::TriggerElectron);
+     * if (!electron_opt) return FILTERED();
      *
      * // AFTER: 1-2 lines
-     * auto electrons = event.require_if(Decisions::HasGoodDISElectron, Keys::SelectedElectrons);
-     * if (!electrons) return FILTERED();
+     * auto electron = event.require_if(Decisions::HasGoodDISElectron, Keys::TriggerElectron);
+     * if (!electron) return FILTERED();
      * @endcode
      */
     template <typename T>

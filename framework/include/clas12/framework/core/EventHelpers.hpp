@@ -9,11 +9,10 @@
  *
  * Example:
  * @code
- * // BEFORE: 4 lines repeated in every algorithm
+ * // BEFORE: 3 lines repeated in every algorithm
  * if (!event.passes_decision_typed(Decisions::HasGoodDISElectron)) return FILTERED();
- * auto electrons_opt = event.retrieve_typed(Keys::SelectedElectrons);
- * if (!electrons_opt || electrons_opt->empty()) return FILTERED();
- * const auto& electron = electrons_opt->front();
+ * auto electron_opt = event.retrieve_typed(Keys::TriggerElectron);
+ * if (!electron_opt) return FILTERED();
  *
  * // AFTER: 2 lines
  * auto electron_opt = framework::EventHelpers::get_dis_electron(event);
@@ -33,27 +32,23 @@
 namespace framework::EventHelpers {
 
 /**
- * @brief Retrieve the selected electron (checks HasGoodElectron decision)
- * @return Copy of the first selected electron, or nullopt
+ * @brief Retrieve the trigger electron (checks HasGoodElectron decision)
+ * @return Copy of the trigger electron, or nullopt
  */
 inline auto get_selected_electron(Event& event)
     -> std::optional<Particle> {
     if (!event.passes_decision_typed(Decisions::HasGoodElectron)) return std::nullopt;
-    auto electrons_opt = event.retrieve_typed(Keys::SelectedElectrons);
-    if (!electrons_opt || electrons_opt->empty()) return std::nullopt;
-    return electrons_opt->front();
+    return event.retrieve_typed(Keys::TriggerElectron);
 }
 
 /**
- * @brief Retrieve the DIS electron (checks HasGoodDISElectron decision)
- * @return Copy of the first selected electron, or nullopt
+ * @brief Retrieve the trigger electron (checks HasGoodDISElectron decision)
+ * @return Copy of the trigger electron, or nullopt
  */
 inline auto get_dis_electron(Event& event)
     -> std::optional<Particle> {
     if (!event.passes_decision_typed(Decisions::HasGoodDISElectron)) return std::nullopt;
-    auto electrons_opt = event.retrieve_typed(Keys::SelectedElectrons);
-    if (!electrons_opt || electrons_opt->empty()) return std::nullopt;
-    return electrons_opt->front();
+    return event.retrieve_typed(Keys::TriggerElectron);
 }
 
 /**
