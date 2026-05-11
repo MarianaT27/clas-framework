@@ -602,32 +602,41 @@ class PionSelectionAlg : public framework::Algorithm {
         return selected;
     }
 
-    static auto second_order_poly(double x, double a, double b, double c) -> double {
-        return a * x * x + b * x + c;
+    static auto delta_t_mean(double p, double a, double b, double c) -> double {
+        return a * p * p + b * p + c;
+    }
+
+    // σ(p) = sqrt(σ0² + (k/p)²) + c_σ·p — physically motivated timing-resolution model:
+    // σ0 is the intrinsic detector resolution, (k/p) the multiple-scattering /
+    // nuclear-interaction contribution that dominates at low momentum, and c_σ·p
+    // a small linear high-p term.
+    static auto delta_t_sigma(double p, double sigma0, double k, double c_sigma) -> double {
+        const double inv_p = k / p;
+        return std::sqrt(sigma0 * sigma0 + inv_p * inv_p) + c_sigma * p;
     }
 
     struct DeltaTCoefficients {
-        std::array<double, 3> mean;
-        std::array<double, 3> sigma;
+        std::array<double, 3> mean;   // (a_μ, b_μ, c_μ)
+        std::array<double, 3> sigma;  // (σ0, k, c_σ)
     };
 
     auto get_piplus_delta_t_coefficients() const -> DeltaTCoefficients {
         switch (m_config.target) {
-            case Target::LD2: return {{0.000922, -0.010435, 0.046222}, {0.002655, -0.021940, 0.114758}};
-            case Target::CxC: return {{-0.000063, -0.004623, 0.039045}, {0.001879, -0.017147, 0.108605}};
-            case Target::Cu: return {{0.001801, -0.015591, 0.051889}, {0.003742, -0.027802, 0.120968}};
-            case Target::Sn: return {{-0.000403, -0.001866, 0.031458}, {0.001510, -0.014369, 0.104379}};
-            default: return {{0.000922, -0.010435, 0.046222}, {0.002655, -0.021940, 0.114758}};
+            case Target::LD2: return {{ 0.000944, -0.010445,  0.046100}, {0.076738, 0.054354, -0.000929}};
+            case Target::CxC: return {{ 0.001103, -0.011081,  0.046219}, {0.075224, 0.054430, -0.000447}};
+            case Target::Cu:  return {{ 0.001381, -0.013593,  0.049945}, {0.072581, 0.059173,  0.000113}};
+            case Target::Sn:  return {{ 0.001150, -0.010677,  0.041478}, {0.076579, 0.050554, -0.000595}};
+            default:          return {{ 0.000944, -0.010445,  0.046100}, {0.076738, 0.054354, -0.000929}};
         }
     }
 
     auto get_piminus_delta_t_coefficients() const -> DeltaTCoefficients {
         switch (m_config.target) {
-            case Target::LD2: return {{-0.001635, 0.009566, -0.025434}, {0.012220, -0.089536, 0.229427}};
-            case Target::CxC: return {{-0.001694, 0.009962, -0.025835}, {0.012632, -0.092243, 0.232097}};
-            case Target::Cu: return {{-0.001349, 0.007585, -0.022235}, {0.013710, -0.095575, 0.233176}};
-            case Target::Sn: return {{-0.001719, 0.010436, -0.029489}, {0.015162, -0.104777, 0.245153}};
-            default: return {{-0.001635, 0.009566, -0.025434}, {0.012220, -0.089536, 0.229427}};
+            case Target::LD2: return {{-0.001640,  0.009816, -0.025958}, {0.080510, 0.118046, -0.001205}};
+            case Target::CxC: return {{-0.001866,  0.010890, -0.026872}, {0.078231, 0.118102, -0.000447}};
+            case Target::Cu:  return {{-0.001433,  0.008117, -0.022846}, {0.076203, 0.117692,  0.000187}};
+            case Target::Sn:  return {{-0.001777,  0.010759, -0.029889}, {0.075510, 0.120755,  0.000220}};
+            default:          return {{-0.001640,  0.009816, -0.025958}, {0.080510, 0.118046, -0.001205}};
         }
     }
 
@@ -687,9 +696,9 @@ class PionSelectionAlg : public framework::Algorithm {
 
     auto pass_delta_t_cut(const double p, const double delta_t, bool is_piplus, double n_sigma) -> bool {
         auto coeffs = is_piplus ? get_piplus_delta_t_coefficients() : get_piminus_delta_t_coefficients();
-        double mean = second_order_poly(p, coeffs.mean[0], coeffs.mean[1], coeffs.mean[2]);
-        double sigma = second_order_poly(p, coeffs.sigma[0], coeffs.sigma[1], coeffs.sigma[2]);
-        double cut_low = mean - n_sigma * sigma;
+        double mean  = delta_t_mean (p, coeffs.mean[0],  coeffs.mean[1],  coeffs.mean[2]);
+        double sigma = delta_t_sigma(p, coeffs.sigma[0], coeffs.sigma[1], coeffs.sigma[2]);
+        double cut_low  = mean - n_sigma * sigma;
         double cut_high = mean + n_sigma * sigma;
         return cut_low < delta_t && delta_t < cut_high;
     }
