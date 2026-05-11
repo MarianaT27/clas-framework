@@ -85,7 +85,11 @@ struct Pi0AnalysisConfig {
 };
 
 struct Pi0PairNTupleData {
-    int     pair_type = 0;   // 0 = same-event, 1 = mixed-event
+    // 0 = same-event. Mixed-event pairs are intentionally not written to
+    // the TTree (kept in /Pi0EventMixing histograms only) — see the
+    // process_photon_pairs comment. The field stays for forward
+    // compatibility in case mixed rows are reinstated.
+    int     pair_type = 0;
     long    event_id  = 0;
     int     n_photons = 0;
 
@@ -563,7 +567,11 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             }
         }
 
-        // Mixed-event pairs: current event photons against pool photons
+        // Mixed-event pairs: current event photons against pool photons.
+        // Histogram-only (no TTree row): the per-pair fill rate here dwarfs
+        // every other path, so writing it to the RNTuple serialises every
+        // worker thread on NTupleService's mutex. The /Pi0EventMixing
+        // mgg_mixed* histograms preserve all the binned background info.
         if (pool_bin >= 0 && !photons.empty()) {
             std::shared_lock lock(m_pool_mutex);
             auto pool_it = m_photon_pools.find(pool_bin);
@@ -584,10 +592,6 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                             auto it = h_mgg_mixed.find(bin_4d);
                             if (it != h_mgg_mixed.end()) it->second->fill(k.mgg);
                         }
-
-                        local_rows.push_back(make_row(/*pair_type=*/1, event_id, n_photons,
-                                                      Q2, xB, nu, W, y, pi0_4v, k,
-                                                      iQ2, ixB));
                     }
                 }
                 m_cutflow.pass("Mixed-event pairs");
