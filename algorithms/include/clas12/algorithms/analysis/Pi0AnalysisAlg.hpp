@@ -9,20 +9,16 @@
  *   - DIS-binned multiplicity histograms (Q2, xB, z, pT2, phi_h, 4D moments),
  *     filled from Keys::Pi0Candidates (mass-window pi0s).
  *   - Same-event and mixed-event m_gg histograms, filled from raw
- *     Keys::SelectedPhotons_Pi0 with a per-bin photon pool. Mixed-event
- *     pool sampling is bounded by Config::mix_pool_subsample.
+ *     Keys::SelectedPhotons_Pi0 with a per-bin photon pool.
  *   - A flat per-pair TTree ("pi0_pairs") containing the same-event
  *     signal rows (mixed pairs stay in histograms only — see process()).
  */
 
-#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <deque>
 #include <map>
 #include <mutex>
-#include <numeric>
-#include <random>
 #include <shared_mutex>
 #include <string>
 #include <vector>
@@ -54,12 +50,6 @@ using framework::Log;
 
 struct Pi0AnalysisConfig {
     int max_pool_events = 50;
-    /// Number of pool events to mix against per current event. 0 = use the
-    /// full pool (legacy behaviour); a small value (e.g. 10) caps the
-    /// O(n_photons * pool_size) inner loop without sacrificing long-run
-    /// background statistics, since every current event sees a different
-    /// random subset.
-    int mix_pool_subsample = 10;
 
     std::vector<double> Q2_edges  = {1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 11.0};
     std::vector<double> xB_edges  = {0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.7};
@@ -80,18 +70,17 @@ struct Pi0AnalysisConfig {
     static constexpr auto config_fields() {
         using T = Pi0AnalysisConfig;
         return std::make_tuple(
-            framework::field("max_pool_events",    &T::max_pool_events),
-            framework::field("mix_pool_subsample", &T::mix_pool_subsample),
-            framework::field("Q2_edges",           &T::Q2_edges),
-            framework::field("xB_edges",           &T::xB_edges),
-            framework::field("z_edges",            &T::z_edges),
-            framework::field("pT2_edges",          &T::pT2_edges),
-            framework::field("z_mix_edges",        &T::z_mix_edges),
-            framework::field("pT_mix_edges",       &T::pT_mix_edges),
-            framework::field("W_edges",            &T::W_edges),
-            framework::field("nu_edges",           &T::nu_edges),
-            framework::field("enable_ntuple",      &T::enable_ntuple),
-            framework::field("beam_energy",        &T::beam_energy));
+            framework::field("max_pool_events", &T::max_pool_events),
+            framework::field("Q2_edges",        &T::Q2_edges),
+            framework::field("xB_edges",        &T::xB_edges),
+            framework::field("z_edges",         &T::z_edges),
+            framework::field("pT2_edges",       &T::pT2_edges),
+            framework::field("z_mix_edges",     &T::z_mix_edges),
+            framework::field("pT_mix_edges",    &T::pT_mix_edges),
+            framework::field("W_edges",         &T::W_edges),
+            framework::field("nu_edges",        &T::nu_edges),
+            framework::field("enable_ntuple",   &T::enable_ntuple),
+            framework::field("beam_energy",     &T::beam_energy));
     }
 };
 
@@ -175,7 +164,6 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::info(name(), "Beam energy: {} GeV", m_config.beam_energy);
         Log::info(name(), "Max pool events: {}", m_config.max_pool_events);
-        Log::info(name(), "Mix pool subsample: {} (0 = full pool)", m_config.mix_pool_subsample);
         Log::info(name(), "Multiplicity 4D bins (Q2 x xB x z x pT2): {} x {} x {} x {} = {}",
                   m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1,
                   m_config.z_edges.size() - 1, m_config.pT2_edges.size() - 1, total_mult_4D_bins());
@@ -347,62 +335,6 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     std::map<int, std::unique_ptr<framework::H1<>>> h_mgg_mixed;
 
     // -------- Helpers ---------------------------------------------------------
-    /// Pick the list of pool-photon indices to mix the current event against.
-    /// When m_config.mix_pool_subsample is 0 (or >= pool size), every photon
-    /// is returned. Otherwise a random subset of pool events is drawn and
-    /// their photons concatenated. Called under shared_lock on m_pool_mutex.
-    ///
-    /// Scratch buffers are thread_local so worker threads don't hit the
-    /// heap on every photon-rich event. Returned by const reference; the
-    /// reference is only valid until the next call from the same thread.
-    auto sample_pool_photon_indices(const PhotonPool& pool) const -> const std::vector<size_t>& {
-        thread_local std::vector<size_t> indices;
-        thread_local std::vector<size_t> offsets;
-        thread_local std::vector<size_t> event_idx;
-        thread_local std::mt19937 rng{std::random_device{}()};
-
-        indices.clear();
-
-        const auto& event_sizes = pool.event_sizes;
-        const size_t n_events = event_sizes.size();
-        if (n_events == 0) return indices;
-
-        const int requested = m_config.mix_pool_subsample;
-        const bool use_all = (requested <= 0) || (static_cast<size_t>(requested) >= n_events);
-
-        if (use_all) {
-            indices.resize(pool.photons.size());
-            std::iota(indices.begin(), indices.end(), size_t{0});
-            return indices;
-        }
-
-        // Cumulative photon offsets for each event in the pool.
-        offsets.resize(n_events);
-        size_t cum = 0;
-        for (size_t i = 0; i < n_events; ++i) {
-            offsets[i] = cum;
-            cum += event_sizes[i];
-        }
-
-        // Random subset of event indices (partial Fisher-Yates over the
-        // first `requested` slots).
-        event_idx.resize(n_events);
-        std::iota(event_idx.begin(), event_idx.end(), size_t{0});
-        for (size_t k = 0; k < static_cast<size_t>(requested); ++k) {
-            std::uniform_int_distribution<size_t> dist(k, n_events - 1);
-            std::swap(event_idx[k], event_idx[dist(rng)]);
-        }
-
-        indices.reserve(static_cast<size_t>(requested) * 4);
-        for (size_t k = 0; k < static_cast<size_t>(requested); ++k) {
-            const size_t e = event_idx[k];
-            const size_t start = offsets[e];
-            const size_t end = start + event_sizes[e];
-            for (size_t j = start; j < end; ++j) indices.push_back(j);
-        }
-        return indices;
-    }
-
     static auto min_photon_opening_angle(double momentum) -> double {
         return MIN_PHOTON_ANGLE_A * std::exp(-MIN_PHOTON_ANGLE_B * momentum) + MIN_PHOTON_ANGLE_OFFSET;
     }
@@ -605,24 +537,21 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             }
         }
 
-        // Mixed-event pairs: current event photons against a random subset of
-        // pool events (capped by m_config.mix_pool_subsample; 0 = full pool).
-        // Histogram-only (no TTree row): the per-pair fill rate here dwarfs
-        // every other path, so writing it to the RNTuple serialises every
-        // worker thread on NTupleService's mutex. The /Pi0EventMixing
-        // mgg_mixed* histograms preserve all the binned background info.
+        // Mixed-event pairs: current event photons against the entire
+        // photon pool. Histogram-only (no TTree row): the per-pair fill
+        // rate here dwarfs every other path, so writing it to the RNTuple
+        // serialises every worker thread on NTupleService's mutex. The
+        // /Pi0EventMixing mgg_mixed* histograms preserve all the binned
+        // background info.
         if (pool_bin >= 0 && !photons.empty()) {
             std::shared_lock lock(m_pool_mutex);
             auto pool_it = m_photon_pools.find(pool_bin);
-            if (pool_it != m_photon_pools.end() && !pool_it->second.event_sizes.empty()) {
-                const auto& pool      = pool_it->second;
-                const auto& pool_phot = pool.photons;
-                const auto& pool_idx  = sample_pool_photon_indices(pool);
-
+            if (pool_it != m_photon_pools.end() && !pool_it->second.photons.empty()) {
+                const auto& pool_photons = pool_it->second.photons;
                 for (size_t i = 0; i < photons.size(); ++i) {
-                    auto g1_4v = photons[i].PxPyPzEVector();
-                    for (size_t j : pool_idx) {
-                        auto g2_4v = pool_phot[j].PxPyPzEVector();
+                    for (size_t j = 0; j < pool_photons.size(); ++j) {
+                        auto g1_4v = photons[i].PxPyPzEVector();
+                        auto g2_4v = pool_photons[j].PxPyPzEVector();
                         if (!validate_photon_pair(electron_4v, g1_4v, g2_4v, /*is_mixed=*/true)) continue;
 
                         auto pi0_4v = g1_4v + g2_4v;
