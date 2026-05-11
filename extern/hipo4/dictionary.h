@@ -1,159 +1,179 @@
-#pragma once
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
 
-#include <functional>
+/*
+ * File:   dictionary.h
+ * Author: gavalian
+ *
+ * Created on April 27, 2017, 10:01 AM
+ */
+
+#ifndef DICTIONARY_H
+#define DICTIONARY_H
+
+#include <cstdlib>
+#include <iostream>
+#include <map>
 #include <string>
-#include <string_view>
 #include <vector>
 
-#include "result.h"
-#include "schema.h"
+#include "hipoexceptions.h"
 
 namespace hipo {
 
-/**
- * @brief A collection of schemas that defines the structure of a HIPO file.
- *
- * A dictionary maps schema names to schema objects and supports lookup by
- * name, by positional index, and by group number. It is populated either
- * by adding individual schema objects or by parsing schema definition
- * strings (single or batch).
- *
- * When reading a HIPO file, the reader extracts the dictionary record from
- * the file header and uses parse_all() to reconstruct the full set of
- * schemas. When writing, the writer serializes the dictionary back into
- * the file header.
- *
- * Name lookups use a sorted (name, index) table for O(log N) binary search.
- *
- * Example:
- * @code
- *   dictionary dict;
- *   dict.parse("event::particle/100/1{pid/S,px/F,py/F,pz/F}").value_or_throw();
- *   auto& s = dict.find("event::particle").value().get();
- * @endcode
- *
- * @see schema for individual bank structure definitions
- * @see reader for how dictionaries are loaded from files
- * @see writer for how dictionaries are written to files
- */
-class dictionary {
-public:
-    /** @brief Default-construct an empty dictionary. */
-    dictionary() = default;
+  typedef struct schemaEntry_t {
+    std::string  name;
+    std::string  type;
+    int          typeId{};
+    int          typeSize{};
+    int          offset{};
+  } schemaEntry_t;
 
-    /**
-     * @brief Find a schema by name.
-     * @param name The schema name to look up (e.g. "event::particle").
-     * @return A const reference to the schema (wrapped in reference_wrapper),
-     *         or error_code::schema_not_found if no schema with that name exists.
-     */
-    result<std::reference_wrapper<const schema>> find(std::string_view name) const noexcept;
+  enum Type {
+    kByte   = 1,
+    kShort  = 2,
+    kInt    = 3,
+    kFloat  = 4,
+    kDouble = 5,
+    kLong   = 8
+  };
 
-    /**
-     * @brief Check whether a schema with the given name exists in this dictionary.
-     * @param name The schema name to check.
-     * @return True if the dictionary contains a schema with this name.
-     */
-    bool contains(std::string_view name) const noexcept;
 
-    /**
-     * @brief Add a schema to the dictionary.
-     *
-     * Inserts the schema and updates the internal sorted lookup table.
-     * If a schema with the same name already exists, the behavior depends
-     * on the implementation (typically replaces the existing entry).
-     *
-     * @param s The schema to add (moved into the dictionary).
-     */
-    void add(schema s);
+/// @brief Schema definition for a HIPO bank.
+///
+/// Defines the column names, types, and layout for a bank. Each column
+/// has a name, a type (B=byte, S=short, I=int, F=float, D=double, L=long),
+/// and an offset computed from the column order.
+///
+/// @code
+/// hipo::schema s("REC::Particle", 300, 1);
+/// s.parse("pid/I,px/F,py/F,pz/F");
+/// int col = s.getEntryOrder("pid"); // returns column index
+/// @endcode
+class schema {
+  private:
 
-    /**
-     * @brief Parse a single schema definition string and add it to the dictionary.
-     *
-     * The string should be in the format "name/group/item{col/type,...}".
-     *
-     * @param schema_string The schema definition to parse.
-     * @return ok() on success, or an error_code if parsing fails.
-     */
-    result<void> parse(std::string_view schema_string);
+    std::map<std::string, int>    schemaEntriesMap;
+    std::vector<schemaEntry_t>    schemaEntries;
 
-    /**
-     * @brief Parse multiple schema definitions from a text block.
-     *
-     * Each line in the text is treated as a separate schema definition
-     * string. Blank lines and lines that fail to parse are handled
-     * according to the implementation.
-     *
-     * @param dict_text Multi-line text containing one schema definition per line.
-     * @return ok() on success, or the first error_code encountered.
-     */
-    result<void> parse_all(std::string_view dict_text);
+    int         groupid{};
+    int         itemid{};
+    int         rowLength{};
+    mutable int         warningCount{10};
+    
+    std::string schemaName;
 
-    /**
-     * @brief Merge schemas from another dictionary into this one.
-     *
-     * Schemas already present in this dictionary (by name) are skipped.
-     * If a schema with the same name exists but has a different layout
-     * (different columns or types), returns error_code::schema_inconsistent.
-     *
-     * @param other The dictionary to merge from.
-     * @return ok() on success, or error_code::schema_inconsistent on conflict.
-     */
-    result<void> merge(const dictionary& other);
 
-    /**
-     * @brief Return a list of all schema names in the dictionary.
-     * @return Vector of schema name strings.
-     */
-    std::vector<std::string> schema_names() const;
+    int  getTypeSize(int id);
+    int  getTypeByString(std::string &typeName);
 
-    /** @brief Return the number of schemas in the dictionary. */
-    int size() const noexcept { return static_cast<int>(m_schemas.size()); }
+    
+  public:
 
-    /** @brief Return an iterator to the first schema. */
-    auto begin() const noexcept { return m_schemas.begin(); }
+    schema(){ groupid = 0; itemid = 0; rowLength = 0;}
+    schema(const char *name, int __group,int __item){
+      schemaName = name; groupid = __group; itemid = __item;
+    }
+    schema(const schema &s) {
+      schemaName    = s.schemaName;
+      schemaEntries = s.schemaEntries;
+      schemaEntriesMap = s.schemaEntriesMap;
+      groupid       = s.groupid;
+      itemid        = s.itemid;
+      }
 
-    /** @brief Return an iterator past the last schema. */
-    auto end()   const noexcept { return m_schemas.end(); }
+    virtual ~schema()= default;
 
-    /**
-     * @brief Access a schema by positional index.
-     * @param index Zero-based index into the schema list.
-     * @return Const reference to the schema at the given position.
-     * @note No bounds checking. Passing an out-of-range index is undefined behavior.
-     */
-    const schema& operator[](int index) const noexcept { return m_schemas[index]; }
+    void  parse(const std::string& schString);
+    std::string   getName() const { return schemaName;}
+    int   getGroup(){ return groupid;}
+    int   getItem(){ return itemid;}
+    int   getSizeForRows(int rows);
+     
+    int  getRowLength()  const noexcept{
+      const auto nentries = schemaEntries.size()-1;
+      const auto &sch=schemaEntries[nentries];
+      return sch.offset + sch.typeSize;
+    }
 
-    /**
-     * @brief Find all schemas that share a given group number.
-     * @param group The group number to search for.
-     * @return Vector of const references to matching schemas (may be empty).
-     */
-    std::vector<std::reference_wrapper<const schema>> find_by_group(int group) const;
+    int   getEntryOrder(const char *name) const;
 
-    /**
-     * @brief Validate all schemas and check for duplicate (group, item) pairs.
-     *
-     * Calls schema::validate() on each schema, then checks that no two
-     * schemas share the same (group, item) identifier.
-     *
-     * @return ok() on success, or the first error_code encountered.
-     */
-    result<void> validate() const;
+    bool  exists(const char *name) const{
+      if(schemaEntriesMap.count(name)) return true;
+      return false;
+    }
+    
+    int   getOffset(int item, int order, int rows) const  {
+      const auto &sch=schemaEntries[item];
+      return  rows*sch.offset + order*sch.typeSize;
+    }
 
-    /**
-     * @brief Print all schemas to stdout for debugging.
-     *
-     * Outputs each schema's name, group, item, and column definitions
-     * in a human-readable format.
-     */
-    void show() const;
+    int   getOffset(const char *name, int order, int rows) const  {
+      int item = schemaEntriesMap.at(name);
+      return getOffset(item,order,rows);  
+    }
+    
+    int   getEntryType(int item) const noexcept {
+      return schemaEntries[item].typeId;
+    }
+    int   getEntryType(const char *name) const noexcept {
+      auto item = getEntryOrder(name);
+      if(item >= 0)
+        return schemaEntries[item].typeId;
+      else
+        return -1;
+    }
 
-private:
-    /** @brief Ordered list of all schemas in this dictionary. */
-    std::vector<schema>                          m_schemas;
-    /** @brief Sorted (name, index) pairs for O(log N) name lookup. */
-    std::vector<std::pair<std::string, int>>     m_lookup; // sorted name -> index
+    std::string getEntryName(int item)  const noexcept { return schemaEntries[item].name;}
+    int   getEntries() const noexcept { return schemaEntries.size();}
+    void  show();
+
+    std::string  getSchemaString();
+    std::string  getSchemaStringJson();
+    
+    void operator = (const schema &D ) {
+         schemaName = D.schemaName;
+         groupid    = D.groupid;
+         itemid     = D.itemid;
+         schemaEntries = D.schemaEntries;
+         schemaEntriesMap = D.schemaEntriesMap;
+    }
 };
+ 
+ inline int  schema::getEntryOrder(const char *name) const  {
+   if(exists(name))
+     return schemaEntriesMap.at(name);//at needed for const function
+   
+   if(warningCount>0 ) { warningCount--; std::cout<<"Warning , hipo::schema getEntryOrder(const char *name) item :" <<name<<" not found, for bank "<<schemaName<<" data for this item is not valid "<<std::endl;
+   }
+   return -1;
+ }
+ 
+ 
+ /// @brief Collection of schema definitions, typically read from a HIPO file header.
+ class dictionary {
+  private:
+    std::map<std::string,schema> factory;
+  public:
+    dictionary()= default;;
+    virtual ~dictionary()= default;;
 
-} // namespace hipo
+    std::vector<std::string> getSchemaList();
+    void    addSchema(schema sc){ factory[sc.getName()] = sc;}
+    bool    hasSchema(const char *name) { return (factory.count(name)!=0);}
+    schema &getSchema(const char *name){
+      if(factory.count(name)==0){
+        throw hipo::schema_error(std::string("hipo::dictionary: schema '") + name + "' does not exist");
+      }
+      return factory[name];
+    }
+    bool    parse(const char *schemaString);
+    void    show();
+  };
+
+}
+
+#endif /* NODE_H */

@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `RTPC::KFtracks` (group 21900, item 23).
 /// Kalman Fitter track info
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,138 +40,99 @@ class RTPC_KFtracks {
 
     RTPC_KFtracks() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_trkID;
-            hipo::column_handle h_px;
-            hipo::column_handle h_py;
-            hipo::column_handle h_pz;
-            hipo::column_handle h_vz;
-            hipo::column_handle h_dEdx;
-            hipo::column_handle h_p_drift;
+            int i_trkID = -1;
+            int i_px = -1;
+            int i_py = -1;
+            int i_pz = -1;
+            int i_vz = -1;
+            int i_dEdx = -1;
+            int i_p_drift = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("trkID"); h) cache.h_trkID = *h;
-            else cache.h_trkID = {};
-            if (auto h = schema.get_handle("px"); h) cache.h_px = *h;
-            else cache.h_px = {};
-            if (auto h = schema.get_handle("py"); h) cache.h_py = *h;
-            else cache.h_py = {};
-            if (auto h = schema.get_handle("pz"); h) cache.h_pz = *h;
-            else cache.h_pz = {};
-            if (auto h = schema.get_handle("vz"); h) cache.h_vz = *h;
-            else cache.h_vz = {};
-            if (auto h = schema.get_handle("dEdx"); h) cache.h_dEdx = *h;
-            else cache.h_dEdx = {};
-            if (auto h = schema.get_handle("p_drift"); h) cache.h_p_drift = *h;
-            else cache.h_p_drift = {};
+            cache.i_trkID = schema.exists("trkID") ? schema.getEntryOrder("trkID") : -1;
+            cache.i_px = schema.exists("px") ? schema.getEntryOrder("px") : -1;
+            cache.i_py = schema.exists("py") ? schema.getEntryOrder("py") : -1;
+            cache.i_pz = schema.exists("pz") ? schema.getEntryOrder("pz") : -1;
+            cache.i_vz = schema.exists("vz") ? schema.getEntryOrder("vz") : -1;
+            cache.i_dEdx = schema.exists("dEdx") ? schema.getEntryOrder("dEdx") : -1;
+            cache.i_p_drift = schema.exists("p_drift") ? schema.getEntryOrder("p_drift") : -1;
         }
-        h_trkID = cache.h_trkID;
-        h_px = cache.h_px;
-        h_py = cache.h_py;
-        h_pz = cache.h_pz;
-        h_vz = cache.h_vz;
-        h_dEdx = cache.h_dEdx;
-        h_p_drift = cache.h_p_drift;
+        i_trkID = cache.i_trkID;
+        i_px = cache.i_px;
+        i_py = cache.i_py;
+        i_pz = cache.i_pz;
+        i_vz = cache.i_vz;
+        i_dEdx = cache.i_dEdx;
+        i_p_drift = cache.i_p_drift;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// trkID: Track ID of the hit
     [[nodiscard]] int trkID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_trkID, row));
+        return static_cast<int>(m_view->getInt(i_trkID, row));
     }
     /// px: X component of the momentum (GeV)
     [[nodiscard]] float px(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_px, row));
+        return static_cast<float>(m_view->getFloat(i_px, row));
     }
     /// py: Y component of the momentum (GeV)
     [[nodiscard]] float py(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_py, row));
+        return static_cast<float>(m_view->getFloat(i_py, row));
     }
     /// pz: Z component of the momentum (GeV)
     [[nodiscard]] float pz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_pz, row));
+        return static_cast<float>(m_view->getFloat(i_pz, row));
     }
     /// vz: Z component of the reconstructed vertex (cm)
     [[nodiscard]] float vz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_vz, row));
+        return static_cast<float>(m_view->getFloat(i_vz, row));
     }
     /// dEdx: dEdx for the Track (MeV/mm)
     [[nodiscard]] float dEdx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_dEdx, row));
+        return static_cast<float>(m_view->getFloat(i_dEdx, row));
     }
     /// p_drift: Momentum in the drift region (GeV)
     [[nodiscard]] float p_drift(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_p_drift, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// trkID column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> trkID_col() const noexcept {
-        return m_view.column<int32_t>(h_trkID);
-    }
-    /// px column as a contiguous span.
-    [[nodiscard]] std::span<const float> px_col() const noexcept {
-        return m_view.column<float>(h_px);
-    }
-    /// py column as a contiguous span.
-    [[nodiscard]] std::span<const float> py_col() const noexcept {
-        return m_view.column<float>(h_py);
-    }
-    /// pz column as a contiguous span.
-    [[nodiscard]] std::span<const float> pz_col() const noexcept {
-        return m_view.column<float>(h_pz);
-    }
-    /// vz column as a contiguous span.
-    [[nodiscard]] std::span<const float> vz_col() const noexcept {
-        return m_view.column<float>(h_vz);
-    }
-    /// dEdx column as a contiguous span.
-    [[nodiscard]] std::span<const float> dEdx_col() const noexcept {
-        return m_view.column<float>(h_dEdx);
-    }
-    /// p_drift column as a contiguous span.
-    [[nodiscard]] std::span<const float> p_drift_col() const noexcept {
-        return m_view.column<float>(h_p_drift);
+        return static_cast<float>(m_view->getFloat(i_p_drift, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_trkID{};
-    hipo::column_handle h_px{};
-    hipo::column_handle h_py{};
-    hipo::column_handle h_pz{};
-    hipo::column_handle h_vz{};
-    hipo::column_handle h_dEdx{};
-    hipo::column_handle h_p_drift{};
+    const hipo::bank* m_view = nullptr;
+    int i_trkID = -1;
+    int i_px = -1;
+    int i_py = -1;
+    int i_pz = -1;
+    int i_vz = -1;
+    int i_dEdx = -1;
+    int i_p_drift = -1;
 
     friend class Row;
 };

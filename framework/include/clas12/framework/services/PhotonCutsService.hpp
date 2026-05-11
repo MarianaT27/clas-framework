@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Math/VectorUtil.h>
-#include <bank_view.h>
+#include <bank.h>
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/models/RGA_inbending_pass1.hpp>
@@ -110,16 +110,16 @@ class PhotonCutsService : public Service {
      * @return Vector of good photon particles
      */
     auto select_photons_with_AI(
-        const hipo::bank_view& RUN_config,
-        const hipo::bank_view& REC_Particle,
-        const hipo::bank_view& REC_Calorimeter) const -> std::vector<Particle> {
+        const hipo::bank& RUN_config,
+        const hipo::bank& REC_Particle,
+        const hipo::bank& REC_Calorimeter) const -> std::vector<Particle> {
 
-        int run_number = RUN_config.get<int32_t>("run", 0);
+        int run_number = RUN_config.getInt("run", 0);
         std::vector<int> good_photon_rows;
         auto calo_map = get_calo_map(REC_Calorimeter);
 
-        for (int i = 0; i < REC_Particle.rows(); i++) {
-            int pid = REC_Particle.get<int32_t>("pid", i);
+        for (int i = 0; i < REC_Particle.getRows(); i++) {
+            int pid = REC_Particle.getInt("pid", i);
             if (pid == 22) {
                 if (filter_photon(REC_Particle, calo_map, i, run_number, m_pass)) {
                     good_photon_rows.push_back(i);
@@ -130,19 +130,19 @@ class PhotonCutsService : public Service {
         // Build particle objects for good photons
         std::vector<Particle> good_photons;
         for (const auto& row : good_photon_rows) {
-            int pid = REC_Particle.get<int32_t>("pid", row);
-            int status = static_cast<int>(REC_Particle.get<int16_t>("status", row));
-            int charge = static_cast<int>(REC_Particle.get<int8_t>("charge", row));
+            int pid = REC_Particle.getInt("pid", row);
+            int status = REC_Particle.getShort("status", row);
+            int charge = REC_Particle.getByte("charge", row);
 
-            double px = static_cast<double>(REC_Particle.get<float>("px", row));
-            double py = static_cast<double>(REC_Particle.get<float>("py", row));
-            double pz = static_cast<double>(REC_Particle.get<float>("pz", row));
-            double vx = static_cast<double>(REC_Particle.get<float>("vx", row));
-            double vy = static_cast<double>(REC_Particle.get<float>("vy", row));
-            double vz = static_cast<double>(REC_Particle.get<float>("vz", row));
-            double vt = static_cast<double>(REC_Particle.get<float>("vt", row));
-            double beta = static_cast<double>(REC_Particle.get<float>("beta", row));
-            double chi2pid = static_cast<double>(REC_Particle.get<float>("chi2pid", row));
+            double px = static_cast<double>(REC_Particle.getFloat("px", row));
+            double py = static_cast<double>(REC_Particle.getFloat("py", row));
+            double pz = static_cast<double>(REC_Particle.getFloat("pz", row));
+            double vx = static_cast<double>(REC_Particle.getFloat("vx", row));
+            double vy = static_cast<double>(REC_Particle.getFloat("vy", row));
+            double vz = static_cast<double>(REC_Particle.getFloat("vz", row));
+            double vt = static_cast<double>(REC_Particle.getFloat("vt", row));
+            double beta = static_cast<double>(REC_Particle.getFloat("beta", row));
+            double chi2pid = static_cast<double>(REC_Particle.getFloat("chi2pid", row));
             double E = physics::ParticleUtils::compute_energy(px, py, pz, pid);
 
             good_photons.emplace_back(pid, status, row, charge, 0, px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
@@ -194,18 +194,18 @@ class PhotonCutsService : public Service {
     // Internal Helper Functions
     // ============================================================================
 
-    static auto get_calo_map(const hipo::bank_view& bank) -> std::map<int, CaloRowData> {
+    static auto get_calo_map(const hipo::bank& bank) -> std::map<int, CaloRowData> {
         std::map<int, CaloRowData> calo_map;
 
-        for (int row = 0; row < bank.rows(); row++) {
-            auto pindex = bank.get<int16_t>("pindex", row);
-            auto x = bank.get<float>("x", row);
-            auto y = bank.get<float>("y", row);
-            auto z = bank.get<float>("z", row);
-            auto m2u = bank.get<float>("m2u", row);
-            auto m2v = bank.get<float>("m2v", row);
-            auto layer = static_cast<int>(bank.get<int8_t>("layer", row));
-            auto e = bank.get<float>("energy", row);
+        for (int row = 0; row < bank.getRows(); row++) {
+            auto pindex = bank.getShort("pindex", row);
+            auto x = bank.getFloat("x", row);
+            auto y = bank.getFloat("y", row);
+            auto z = bank.getFloat("z", row);
+            auto m2u = bank.getFloat("m2u", row);
+            auto m2v = bank.getFloat("m2v", row);
+            auto layer = static_cast<int>(bank.getByte("layer", row));
+            auto e = bank.getFloat("energy", row);
 
             if (calo_map.find(pindex) == calo_map.end()) {
                 calo_map[pindex] = CaloRowData();
@@ -280,7 +280,7 @@ class PhotonCutsService : public Service {
     }
 
     auto filter_photon(
-        const hipo::bank_view& particle_bank,
+        const hipo::bank& particle_bank,
         const std::map<int, CaloRowData>& calo_map,
         int row,
         int runnum,

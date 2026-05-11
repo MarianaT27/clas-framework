@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `nn::dchits` (group 4200, item 2).
 /// index if the track hits in DC tdc bank.
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,79 +40,65 @@ class nn_dchits {
 
     nn_dchits() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_index;
+            int i_id = -1;
+            int i_index = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("index"); h) cache.h_index = *h;
-            else cache.h_index = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_index = schema.exists("index") ? schema.getEntryOrder("index") : -1;
         }
-        h_id = cache.h_id;
-        h_index = cache.h_index;
+        i_id = cache.i_id;
+        i_index = cache.i_index;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: track id
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_id, row));
+        return static_cast<int>(m_view->getByte(i_id, row));
     }
     /// index: index of the row for DC::tdc bank
     [[nodiscard]] int index(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_index, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> id_col() const noexcept {
-        return m_view.column<int8_t>(h_id);
-    }
-    /// index column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> index_col() const noexcept {
-        return m_view.column<int16_t>(h_index);
+        return static_cast<int>(m_view->getShort(i_index, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
     // -------------------------------------------------------------------
-    // Link-column handles (used by PindexLinker-style helpers to
-    // read the whole index column as a typed span in one shot)
+    // Link-column item indices (used by PindexLinker to scan the
+    // pindex/index column without re-resolving by name per call)
     // -------------------------------------------------------------------
-    [[nodiscard]] hipo::column_handle index_handle() const noexcept { return h_index; }
+    [[nodiscard]] int index_handle() const noexcept { return i_index; }
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_index{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_index = -1;
 
     friend class Row;
 };

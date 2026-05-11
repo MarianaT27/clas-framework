@@ -72,15 +72,15 @@ class CuSnContaminationAlg : public framework::Algorithm {
             const auto& MC_particles = event.get_bank("MC::Particle");
             ROOT::Math::PxPyPzE4D electron4VecP;
             ROOT::Math::XYZVector electron3VecV;
-            for (int i = 0; i < MC_particles.rows(); ++i) {
-                int pid = MC_particles.get<int32_t>("pid", i);
+            for (int i = 0; i < MC_particles.getRows(); ++i) {
+                int pid = MC_particles.getInt("pid", i);
                 if (pid == 11) {
-                    double px = static_cast<double>(MC_particles.get<float>("px", i));
-                    double py = static_cast<double>(MC_particles.get<float>("py", i));
-                    double pz = static_cast<double>(MC_particles.get<float>("pz", i));
-                    double vx = static_cast<double>(MC_particles.get<float>("vx", i));
-                    double vy = static_cast<double>(MC_particles.get<float>("vy", i));
-                    double vz = static_cast<double>(MC_particles.get<float>("vz", i));
+                    double px = static_cast<double>(MC_particles.getFloat("px", i));
+                    double py = static_cast<double>(MC_particles.getFloat("py", i));
+                    double pz = static_cast<double>(MC_particles.getFloat("pz", i));
+                    double vx = static_cast<double>(MC_particles.getFloat("vx", i));
+                    double vy = static_cast<double>(MC_particles.getFloat("vy", i));
+                    double vz = static_cast<double>(MC_particles.getFloat("vz", i));
                     double E = std::sqrt(px * px + py * py + pz * pz + 0.000511 * 0.000511);
                     electron4VecP = ROOT::Math::PxPyPzE4D(px, py, pz, E);
                     electron3VecV = ROOT::Math::XYZVector(vx, vy, vz);

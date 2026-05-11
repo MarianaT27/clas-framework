@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `RECFT::Event` (group 300, item 41).
 /// Event Header Bank, shadowing REC::Event with FT-based start time
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,73 +40,59 @@ class RECFT_Event {
 
     RECFT_Event() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_category;
-            hipo::column_handle h_startTime;
+            int i_category = -1;
+            int i_startTime = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("category"); h) cache.h_category = *h;
-            else cache.h_category = {};
-            if (auto h = schema.get_handle("startTime"); h) cache.h_startTime = *h;
-            else cache.h_startTime = {};
+            cache.i_category = schema.exists("category") ? schema.getEntryOrder("category") : -1;
+            cache.i_startTime = schema.exists("startTime") ? schema.getEntryOrder("startTime") : -1;
         }
-        h_category = cache.h_category;
-        h_startTime = cache.h_startTime;
+        i_category = cache.i_category;
+        i_startTime = cache.i_startTime;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// category: Undefined
     [[nodiscard]] int64_t category(int row) const noexcept {
-        return static_cast<int64_t>(m_view.get<int64_t>(h_category, row));
+        return static_cast<int64_t>(m_view->getLong(i_category, row));
     }
     /// startTime: Event Start Time (ns)
     [[nodiscard]] float startTime(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_startTime, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// category column as a contiguous span.
-    [[nodiscard]] std::span<const int64_t> category_col() const noexcept {
-        return m_view.column<int64_t>(h_category);
-    }
-    /// startTime column as a contiguous span.
-    [[nodiscard]] std::span<const float> startTime_col() const noexcept {
-        return m_view.column<float>(h_startTime);
+        return static_cast<float>(m_view->getFloat(i_startTime, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_category{};
-    hipo::column_handle h_startTime{};
+    const hipo::bank* m_view = nullptr;
+    int i_category = -1;
+    int i_startTime = -1;
 
     friend class Row;
 };

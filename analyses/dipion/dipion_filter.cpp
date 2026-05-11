@@ -56,7 +56,7 @@ public:
 
         // Write the raw event data directly — preserves the original format
         // (EVIO-style events as produced by CLAS12 reconstruction)
-        auto raw = event.get_bank_view_set().raw_event_data();
+        const auto& raw = event.get_raw_event_buffer();
         if (raw.empty()) return framework::StatusCode::SUCCESS();
 
         m_hipo_svc->write_event(raw);

@@ -1,6 +1,7 @@
 #pragma once
 
-#include <bank_view.h>
+#include <bank.h>
+#include <chain.h>
 #include <clas12/Detectors.hpp>
 #include <clas12/PIDs.hpp>
 #include <clas12/Particle.hpp>
@@ -19,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -67,11 +69,15 @@ inline constexpr int kMaxBankTypes = 64;
 class Event {
    public:
     /**
-     * @brief Construct an Event from a HIPO bank view set
-     * @param banks Reference to the bank view set for this event
+     * @brief Construct an Event from the per-callback chain wrapper.
+     *
+     * The Event borrows the `hipo::chain_event` for the lifetime of the
+     * lambda invocation. Banks read by `get_bank(name)` are pulled from
+     * the wrapper lazily and cached for the rest of the event so repeated
+     * lookups don't re-decode the record.
      */
-    explicit Event(hipo::bank_view_set& banks)
-        : m_banks(banks) {}
+    explicit Event(hipo::chain_event& evt)
+        : m_chain_event(&evt) {}
 
     /**
      * @brief Get all particles (lazy loading)
@@ -211,26 +217,31 @@ class Event {
     }
 
     /**
-     * @brief Get the underlying bank view set (e.g., for event serialization)
-     * @return const hipo::bank_view_set& Reference to the bank view set
+     * @brief Raw event buffer (for HIPO event-writer style passthrough).
+     *
+     * Used by the skim / filter analyses that replay passing events to a
+     * downstream HIPO file via HipoFileService::write_event. Returns the
+     * underlying hipo::event byte buffer; safe across the algorithm chain
+     * because the chain_event the framework holds owns it for the
+     * duration of the user lambda.
      */
-    auto get_bank_view_set() const -> const hipo::bank_view_set& {
-        return m_banks;
+    auto get_raw_event_buffer() const -> const std::vector<char>& {
+        return m_chain_event->raw()->getEventBuffer();
     }
 
     /**
-     * @brief Get a HIPO bank view by name
+     * @brief Get a HIPO bank by name, cached for the rest of this event.
      *
-     * Returns an empty bank_view (0 rows) if the bank was not declared by any
-     * algorithm — so optional banks remain safe to access unconditionally.
-     *
-     * @param bank_name Name of the bank (e.g., "REC::Particle")
-     * @return const hipo::bank_view& Reference to the bank view
+     * Returns a `hipo::bank` with 0 rows when the bank is absent from
+     * either the dictionary or this particular event — so optional banks
+     * remain safe to access unconditionally.
      */
-    auto get_bank(const std::string& bank_name) -> const hipo::bank_view& {
-        static const hipo::bank_view empty{};
-        auto r = m_banks.get(bank_name);
-        return r.has_value() ? r->get() : empty;
+    auto get_bank(const std::string& bank_name) -> const hipo::bank& {
+        auto it = m_raw_bank_cache.find(bank_name);
+        if (it == m_raw_bank_cache.end()) {
+            it = m_raw_bank_cache.emplace(bank_name, read_bank(bank_name)).first;
+        }
+        return it->second;
     }
 
     /**
@@ -240,7 +251,7 @@ class Event {
      *
      * @tparam Names Variadic string types for bank names
      * @param names Bank names (e.g., "REC::Particle", "REC::Calorimeter")
-     * @return std::tuple of const bank_view references
+     * @return std::tuple of const hipo::bank references
      *
      * Example usage:
      * @code
@@ -266,8 +277,7 @@ class Event {
      * @return true if bank exists and has rows
      */
     auto has_bank(const std::string& bank_name) -> bool {
-        auto r = m_banks.get(bank_name);
-        return r.has_value() && r->get().rows() > 0;
+        return get_bank(bank_name).getRows() > 0;
     }
 
     /**
@@ -454,7 +464,7 @@ class Event {
     // bank<T>() and rows_for_pindex<T>() provide a per-event cache of
     // bound generated wrappers (bankdefs::REC_Calorimeter, etc.)
     // and their associated PindexLinker instances. The first call for a
-    // given bank type binds the wrapper from m_banks and builds the
+    // given bank type binds the wrapper from the chain_event and builds the
     // linker; subsequent calls reuse both.
     //
     // Event is freshly stack-constructed per HIPO record in Application,
@@ -467,7 +477,7 @@ class Event {
      *
      * The wrapper type T must be one of the classes generated under
      * bankdefs (e.g. REC_Calorimeter). bind() is called with the
-     * hipo::bank_view looked up by T::bank_name on the first access, and
+     * hipo::bank looked up by T::bank_name on the first access, and
      * the bound wrapper is stashed for subsequent calls.
      *
      * @tparam T Generated bank wrapper type.
@@ -480,14 +490,10 @@ class Event {
             slot.emplace();
             T bound;
             // Generated readers (e.g. read_Calorimeter_bank) call bank<T>()
-            // for sibling banks that the algorithm did not declare. Use the
-            // checked accessor and fall back to an empty bank_view so the
-            // wrapper's valid()/rows() return false instead of asserting.
-            // T::bank_name is a constexpr string_view; bank_view_set::get
-            // already accepts string_view, so no temporary std::string.
-            static const hipo::bank_view empty{};
-            auto r = m_banks.get(T::bank_name);
-            bound.bind(r.has_value() ? r->get() : empty);
+            // for sibling banks that the algorithm did not declare. Reading
+            // through get_bank() gives us a 0-row hipo::bank in that case,
+            // so the wrapper's row count reports zero instead of asserting.
+            bound.bind(get_bank(std::string(T::bank_name)));
             slot->wrapper = std::move(bound);
         }
         return std::any_cast<T&>(slot->wrapper);
@@ -586,7 +592,11 @@ class Event {
         return s_empty;
     }
 
-    hipo::bank_view_set& m_banks;
+    hipo::chain_event* m_chain_event{nullptr};
+    /// Lazy cache of raw HIPO banks (one per bank name). Populated on first
+    /// `get_bank(name)` for the event; never invalidated because the Event
+    /// is freshly stack-constructed per record in Application::run().
+    std::unordered_map<std::string, hipo::bank> m_raw_bank_cache;
     ParticleMap m_particles;
     /// Charge-indexed view of REC::Particle, slot index = charge + 1 so
     /// charges -1/0/+1 map to slots 0/1/2. Built in the same single pass
@@ -619,8 +629,23 @@ class Event {
      * For an event with N particles this replaces 11*N schema binary
      * searches with 11 + N typed reads through a pre-resolved handle.
      */
+    /// Fetch a HIPO bank from the underlying chain_event by name. Returns a
+    /// 0-row bank if the dictionary doesn't contain the schema, so callers
+    /// can probe optional banks without checking dictionary membership.
+    auto read_bank(const std::string& bank_name) const -> hipo::bank {
+        if (!m_chain_event) return hipo::bank{};
+        // chain_event::getBank throws when the dictionary is missing the
+        // schema; treating that as "no rows" matches the legacy semantics
+        // of bank_view_set::get on an unknown name.
+        try {
+            return m_chain_event->getBank(bank_name);
+        } catch (const std::exception&) {
+            return hipo::bank{};
+        }
+    }
+
     auto load_particles() -> void {
-        const auto& REC_Particle = m_banks["REC::Particle"];
+        const auto& REC_Particle = get_bank("REC::Particle");
 
         // Initialize particle vectors for common types
         static constexpr std::array<PIDs, 9> target_types = {
@@ -634,41 +659,39 @@ class Event {
             m_particles[type] = std::vector<Particle>();
         }
 
-        const int n_rows = REC_Particle.rows();
+        const int n_rows = REC_Particle.getRows();
         if (n_rows == 0) {
             m_particles_loaded = true;
             return;
         }
 
-        // Resolve every column handle once up front. Anything missing
-        // leaves the handle invalid; subsequent get<T>() calls on an
-        // invalid handle return garbage, so we early-out if pid itself is
-        // missing (which would mean we're not looking at a REC::Particle).
-        const auto& schema = REC_Particle.get_schema();
-        auto resolve = [&](std::string_view name) -> hipo::column_handle {
-            auto h = schema.get_handle(name);
-            return h ? *h : hipo::column_handle{};
+        // Resolve every column index once up front via getEntryOrder.
+        // -1 means the column is missing from this schema (legacy code
+        // tolerated that for everything but pid).
+        auto& schema = const_cast<hipo::bank&>(REC_Particle).getSchema();
+        auto resolve = [&](const char* name) -> int {
+            return schema.exists(name) ? schema.getEntryOrder(name) : -1;
         };
 
-        const auto h_pid     = resolve("pid");
-        if (!h_pid.valid()) {
+        const int i_pid = resolve("pid");
+        if (i_pid < 0) {
             m_particles_loaded = true;
             return;
         }
-        const auto h_status  = resolve("status");
-        const auto h_charge  = resolve("charge");
-        const auto h_px      = resolve("px");
-        const auto h_py      = resolve("py");
-        const auto h_pz      = resolve("pz");
-        const auto h_vx      = resolve("vx");
-        const auto h_vy      = resolve("vy");
-        const auto h_vz      = resolve("vz");
-        const auto h_vt      = resolve("vt");
-        const auto h_beta    = resolve("beta");
-        const auto h_chi2pid = resolve("chi2pid");
+        const int i_status  = resolve("status");
+        const int i_charge  = resolve("charge");
+        const int i_px      = resolve("px");
+        const int i_py      = resolve("py");
+        const int i_pz      = resolve("pz");
+        const int i_vx      = resolve("vx");
+        const int i_vy      = resolve("vy");
+        const int i_vz      = resolve("vz");
+        const int i_vt      = resolve("vt");
+        const int i_beta    = resolve("beta");
+        const int i_chi2pid = resolve("chi2pid");
 
         for (int i = 0; i < n_rows; ++i) {
-            const int pid = REC_Particle.get<int32_t>(h_pid, i);
+            const int pid = REC_Particle.getInt(i_pid, i);
 
             // Find matching particle type. target_types is small (9) and
             // sorted by selection frequency; linear scan is faster than a
@@ -684,17 +707,17 @@ class Event {
             }
             if (!found) continue;
 
-            const int status  = static_cast<int>(REC_Particle.get<int16_t>(h_status, i));
-            const int charge  = static_cast<int>(REC_Particle.get<int8_t>(h_charge, i));
-            const double px   = static_cast<double>(REC_Particle.get<float>(h_px, i));
-            const double py   = static_cast<double>(REC_Particle.get<float>(h_py, i));
-            const double pz   = static_cast<double>(REC_Particle.get<float>(h_pz, i));
-            const double vx   = static_cast<double>(REC_Particle.get<float>(h_vx, i));
-            const double vy   = static_cast<double>(REC_Particle.get<float>(h_vy, i));
-            const double vz   = static_cast<double>(REC_Particle.get<float>(h_vz, i));
-            const double vt   = static_cast<double>(REC_Particle.get<float>(h_vt, i));
-            const double beta = static_cast<double>(REC_Particle.get<float>(h_beta, i));
-            const double chi2pid = static_cast<double>(REC_Particle.get<float>(h_chi2pid, i));
+            const int status  = i_status  >= 0 ? REC_Particle.getShort(i_status, i) : 0;
+            const int charge  = i_charge  >= 0 ? REC_Particle.getByte(i_charge, i)  : 0;
+            const double px   = i_px      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_px, i))   : 0.0;
+            const double py   = i_py      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_py, i))   : 0.0;
+            const double pz   = i_pz      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_pz, i))   : 0.0;
+            const double vx   = i_vx      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_vx, i))   : 0.0;
+            const double vy   = i_vy      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_vy, i))   : 0.0;
+            const double vz   = i_vz      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_vz, i))   : 0.0;
+            const double vt   = i_vt      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_vt, i))   : 0.0;
+            const double beta = i_beta    >= 0 ? static_cast<double>(REC_Particle.getFloat(i_beta, i)) : 0.0;
+            const double chi2pid = i_chi2pid >= 0 ? static_cast<double>(REC_Particle.getFloat(i_chi2pid, i)) : 0.0;
 
             const double mass = physics::ParticleUtils::get_mass(pid);
             const double E = physics::ParticleUtils::compute_energy(px, py, pz, pid);
@@ -717,9 +740,9 @@ class Event {
     }
 
     auto load_event_info() -> void {
-        const auto& REC_Event = m_banks["REC::Event"];
-        if (REC_Event.rows() > 0) {
-            m_start_time = static_cast<double>(REC_Event.get<float>("startTime", 0));
+        const auto& REC_Event = get_bank("REC::Event");
+        if (REC_Event.getRows() > 0) {
+            m_start_time = static_cast<double>(REC_Event.getFloat("startTime", 0));
         }
     }
 };

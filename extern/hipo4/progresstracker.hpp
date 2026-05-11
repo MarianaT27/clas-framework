@@ -13,18 +13,18 @@
 #include <string_view>
 #include <thread>
 
-/**
- * @brief Thread-safe progress tracker with visual progress bar.
- *
- * Features:
- * - Lock-free increment operations for performance
- * - Background thread for periodic display updates
- * - Real-time ETA calculation
- * - Smooth sub-character progress rendering with color gradients
- * - Automatic time formatting
- * - ANSI color-coded output with gradient effects
- * - Move-only semantics for safety
- */
+namespace detail {
+/// @brief Returns the global recursive mutex used to synchronize stdout access.
+/// A recursive mutex is used to allow nested locking from the same thread.
+inline std::recursive_mutex& get_stdout_mutex() {
+    static std::recursive_mutex s_stdout_mutex;
+    return s_stdout_mutex;
+}
+}  // namespace detail
+
+/// 
+///  @brief Thread-safe progress tracker with visual progress bar.
+///
 class ProgressTracker {
    public:
     struct Config {
@@ -40,12 +40,12 @@ class ProgressTracker {
             : bar_width(50), show_eta(true), show_rate(true), use_colors(true), use_gradient(true), label("Processing"), update_interval(100) {}
     };
 
-    /**
-     * @brief Constructs a progress tracker.
-     * @param total Total number of items to track
-     * @param config Display configuration
-     * @throws std::invalid_argument if total is 0
-     */
+    ///
+    ///  @brief Constructs a progress tracker.
+    ///  @param total Total number of items to track
+    ///  @param config Display configuration
+    ///  @throws std::invalid_argument if total is 0
+    ///
     explicit ProgressTracker(std::size_t total, Config config = {});
 
     ~ProgressTracker() noexcept;
@@ -56,61 +56,61 @@ class ProgressTracker {
     ProgressTracker(ProgressTracker&&) noexcept;
     ProgressTracker& operator=(ProgressTracker&&) noexcept;
 
-    /**
-     * @brief Increments the progress counter (thread-safe, no immediate display update).
-     */
+    ///
+    ///  @brief Increments the progress counter (thread-safe, no immediate display update).
+    ///
     auto increment() noexcept -> void;
 
-    /**
-     * @brief Adds multiple items to progress (thread-safe, no immediate display update).
-     */
+    ///
+    ///  @brief Adds multiple items to progress (thread-safe, no immediate display update).
+    ///
     auto add(std::size_t count) noexcept -> void;
 
-    /**
-     * @brief Gets current progress count (thread-safe).
-     */
+    ///
+    ///  @brief Gets current progress count (thread-safe).
+    ///
     [[nodiscard]] auto get_processed() const noexcept -> std::size_t {
         return m_processed.load(std::memory_order_acquire);
     }
 
-    /**
-     * @brief Gets total item count (thread-safe).
-     */
+    ///
+    ///  @brief Gets total item count (thread-safe).
+    ///
     [[nodiscard]] auto get_total() const noexcept -> std::size_t {
         return m_total;
     }
 
-    /**
-     * @brief Gets current progress ratio [0.0, 1.0] (thread-safe).
-     */
+    ///
+    ///  @brief Gets current progress ratio [0.0, 1.0] (thread-safe).
+    ///
     [[nodiscard]] auto get_progress() const noexcept -> double;
 
-    /**
-     * @brief Starts the background update thread and shows initial display.
-     */
+    ///
+    /// @brief Starts the background update thread and shows initial display.
+    ///
     auto start() noexcept -> void;
 
-    /**
-     * @brief Stops the update thread and displays final completion message.
-     */
+    ///
+    /// @brief Stops the update thread and displays final completion message.
+    ///
     auto finish() noexcept -> void;
 
-    /**
-     * @brief Clears the current progress line.
-     */
+    ///
+    /// @brief Clears the current progress line.
+    ///
     static auto clear_line() noexcept -> void;
 
-    /**
-     * @brief Formats a duration given in seconds into a human-readable string.
-     *
-     * Converts the provided std::chrono::seconds duration into a string representation,
-     * typically in the format "HH:MM:SS" or similar, for display purposes.
-     *
-     * @param duration The duration to format, expressed as std::chrono::seconds.
-     * @return A std::string containing the formatted duration.
-     *
-     * @note This function does not throw exceptions.
-     */
+    ///
+    /// @brief Formats a duration given in seconds into a human-readable string.
+    ///
+    /// Converts the provided std::chrono::seconds duration into a string representation,
+    /// typically in the format "HH:MM:SS" or similar, for display purposes.
+    ///
+    /// @param duration The duration to format, expressed as std::chrono::seconds.
+    /// @return A std::string containing the formatted duration.
+    ///
+    /// @note This function does not throw exceptions.
+    ///
     [[nodiscard]] static auto format_duration(std::chrono::seconds duration) noexcept -> std::string;
 
    private:
@@ -143,12 +143,13 @@ class ProgressTracker {
         static constexpr std::string_view BG_MAGENTA = "\033[45m";
     };
 
-    // Progress bar character (Rich/pip style)
-    static constexpr std::string_view BAR_CHAR = "\u2501";  // ━
+    // Progress bar block characters (8 levels of granularity)
+    static constexpr std::array<std::string_view, 9> BLOCK_CHARS = {
+        " ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"};
 
     // Spinner animation characters
     static constexpr std::array<std::string_view, 10> SPINNER_CHARS = {
-        "\u280b", "\u2819", "\u2839", "\u2838", "\u283c", "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"};
+        "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
 
     auto update_display() noexcept -> void;
     auto render_bar(double progress) const noexcept -> void;
@@ -156,7 +157,6 @@ class ProgressTracker {
     auto stop_update_thread() noexcept -> void;
 
     [[nodiscard]] static auto format_number(std::size_t num) noexcept -> std::string;
-    [[nodiscard]] static auto format_duration_clock(std::chrono::seconds duration) noexcept -> std::string;
     [[nodiscard]] auto get_elapsed() const noexcept -> std::chrono::seconds;
     [[nodiscard]] auto calculate_eta() const noexcept -> std::chrono::seconds;
     [[nodiscard]] auto calculate_rate() const noexcept -> double;
@@ -175,23 +175,23 @@ class ProgressTracker {
     std::thread m_update_thread;
 };
 
-ProgressTracker::ProgressTracker(std::size_t total, Config config)
+inline ProgressTracker::ProgressTracker(std::size_t total, Config config)
     : m_total{total}, m_start_time{std::chrono::steady_clock::now()}, m_config{config} {
     if (total == 0) throw std::invalid_argument("ProgressTracker: total must be greater than 0");
 }
 
-ProgressTracker::~ProgressTracker() noexcept {
+inline ProgressTracker::~ProgressTracker() noexcept {
     stop_update_thread();
     if (!m_finished) clear_line();
 }
 
-ProgressTracker::ProgressTracker(ProgressTracker&& other) noexcept
+inline ProgressTracker::ProgressTracker(ProgressTracker&& other) noexcept
     : m_total{other.m_total}, m_processed{other.m_processed.load(std::memory_order_acquire)}, m_start_time{other.m_start_time}, m_config{other.m_config}, m_finished{other.m_finished} {
     other.stop_update_thread();
     other.m_finished = true;
 }
 
-ProgressTracker& ProgressTracker::operator=(ProgressTracker&& other) noexcept {
+inline ProgressTracker& ProgressTracker::operator=(ProgressTracker&& other) noexcept {
     if (this != &other) {
         stop_update_thread();
         if (!m_finished) clear_line();
@@ -208,31 +208,31 @@ ProgressTracker& ProgressTracker::operator=(ProgressTracker&& other) noexcept {
     return *this;
 }
 
-auto ProgressTracker::increment() noexcept -> void {
+inline auto ProgressTracker::increment() noexcept -> void {
     m_processed.fetch_add(1, std::memory_order_acq_rel);
 }
 
-auto ProgressTracker::add(std::size_t count) noexcept -> void {
+inline auto ProgressTracker::add(std::size_t count) noexcept -> void {
     m_processed.fetch_add(count, std::memory_order_acq_rel);
 }
 
-auto ProgressTracker::get_progress() const noexcept -> double {
+inline auto ProgressTracker::get_progress() const noexcept -> double {
     const auto current = m_processed.load(std::memory_order_acquire);
     return m_total > 0 ? static_cast<double>(current) / static_cast<double>(m_total) : 0.0;
 }
 
-auto ProgressTracker::get_elapsed() const noexcept -> std::chrono::seconds {
+inline auto ProgressTracker::get_elapsed() const noexcept -> std::chrono::seconds {
     const auto elapsed = std::chrono::steady_clock::now() - m_start_time;
     return std::chrono::duration_cast<std::chrono::seconds>(elapsed);
 }
 
-auto ProgressTracker::calculate_rate() const noexcept -> double {
+inline auto ProgressTracker::calculate_rate() const noexcept -> double {
     const auto elapsed = get_elapsed().count();
     const auto current = m_processed.load(std::memory_order_acquire);
     return elapsed > 0 ? static_cast<double>(current) / static_cast<double>(elapsed) : 0.0;
 }
 
-auto ProgressTracker::calculate_eta() const noexcept -> std::chrono::seconds {
+inline auto ProgressTracker::calculate_eta() const noexcept -> std::chrono::seconds {
     const auto current = m_processed.load(std::memory_order_acquire);
     const auto rate = calculate_rate();
 
@@ -243,7 +243,7 @@ auto ProgressTracker::calculate_eta() const noexcept -> std::chrono::seconds {
     return std::chrono::seconds{0};
 }
 
-auto ProgressTracker::format_duration(std::chrono::seconds duration) noexcept -> std::string {
+inline auto ProgressTracker::format_duration(std::chrono::seconds duration) noexcept -> std::string {
     const auto m_totalseconds = duration.count();
 
     if (m_totalseconds < 60) return fmt::format("{}s", m_totalseconds);
@@ -258,25 +258,14 @@ auto ProgressTracker::format_duration(std::chrono::seconds duration) noexcept ->
     return fmt::format("{}h {:02d}m", hours, minutes);
 }
 
-auto ProgressTracker::format_duration_clock(std::chrono::seconds duration) noexcept -> std::string {
-    const auto total_seconds = duration.count();
-    const auto hours = total_seconds / 3600;
-    const auto minutes = (total_seconds % 3600) / 60;
-    const auto seconds = total_seconds % 60;
-
-    if (hours > 0) {
-        return fmt::format("{}:{:02d}:{:02d}", hours, minutes, seconds);
-    }
-    return fmt::format("{}:{:02d}", minutes, seconds);
-}
-
-auto ProgressTracker::format_number(std::size_t num) noexcept -> std::string {
+inline auto ProgressTracker::format_number(std::size_t num) noexcept -> std::string {
     if (num < 1000) return fmt::format("{}", num);
     if (num < 1000000) return fmt::format("{:.1f}k", num / 1000.0);
     return fmt::format("{:.1f}M", num / 1000000.0);
 }
 
-auto ProgressTracker::clear_line() noexcept -> void {
+inline auto ProgressTracker::clear_line() noexcept -> void {
+    std::lock_guard lock{detail::get_stdout_mutex()};
     try {
         fmt::print("{}", AnsiCodes::CLEAR_LINE);
         std::cout.flush();
@@ -284,38 +273,58 @@ auto ProgressTracker::clear_line() noexcept -> void {
     }
 }
 
-auto ProgressTracker::get_progress_color() const noexcept -> std::string_view {
-    if (!m_config.use_colors) return "";
-    return AnsiCodes::GREEN;
+inline auto ProgressTracker::get_progress_color() const noexcept -> std::string_view {
+    if (!m_config.use_colors || !m_config.use_gradient) return AnsiCodes::GREEN;
+    return AnsiCodes::BRIGHT_GREEN;
 }
 
-auto ProgressTracker::render_bar(double progress) const noexcept -> void {
+inline auto ProgressTracker::render_bar(double progress) const noexcept -> void {
+    std::lock_guard lock{detail::get_stdout_mutex()};
     try {
-        const auto colors = m_config.use_colors;
+        const auto& colors = m_config.use_colors;
         progress = std::clamp(progress, 0.0, 1.0);
 
-        const auto filled_count = static_cast<std::size_t>(m_config.bar_width * progress);
-        const auto unfilled_count = m_config.bar_width - filled_count;
+        const auto filled_width = m_config.bar_width * progress;
+        const auto full_blocks = static_cast<std::size_t>(filled_width);
+        const auto remainder = filled_width - static_cast<double>(full_blocks);
+        const auto partial_block_idx = static_cast<std::size_t>(remainder * 8.0);
 
-        // Filled portion (magenta in-progress, green when complete)
-        if (colors) fmt::print("{}", get_progress_color());
-        for (std::size_t i = 0; i < filled_count; ++i) {
-            fmt::print("{}", BAR_CHAR);
-        }
-        if (colors) fmt::print("{}", AnsiCodes::RESET);
-
-        // Unfilled portion (dim)
+        // Left bracket with color
         if (colors) fmt::print("{}", AnsiCodes::DIM);
-        for (std::size_t i = 0; i < unfilled_count; ++i) {
-            fmt::print("{}", BAR_CHAR);
-        }
+        fmt::print("╢");
         if (colors) fmt::print("{}", AnsiCodes::RESET);
+
+        // Render progress bar with gradient
+        for (std::size_t i = 0; i < m_config.bar_width; ++i) {
+            if (i < full_blocks) {
+                if (colors) {
+                    fmt::print("{}", get_progress_color());
+                }
+                fmt::print("{}", BLOCK_CHARS[8]);
+            } else if (i == full_blocks) {
+                if (colors) {
+                    fmt::print("{}", get_progress_color());
+                }
+                fmt::print("{}", BLOCK_CHARS[partial_block_idx]);
+            } else {
+                if (colors) fmt::print("{}", AnsiCodes::DIM);
+                fmt::print("░");
+            }
+        }
+
+        if (colors) fmt::print("{}", AnsiCodes::RESET);
+
+        // Right bracket
+        if (colors) fmt::print("{}", AnsiCodes::DIM);
+        fmt::print("╟");
+        if (colors) fmt::print("{}", AnsiCodes::RESET);
+        fmt::print(" ");
 
     } catch (...) {
     }
 }
 
-auto ProgressTracker::update_display() noexcept -> void {
+inline auto ProgressTracker::update_display() noexcept -> void {
     std::lock_guard lock{m_display_mutex};
 
     if (m_finished) return;
@@ -324,7 +333,10 @@ auto ProgressTracker::update_display() noexcept -> void {
         const auto current = m_processed.load(std::memory_order_acquire);
         const auto progress = get_progress();
         const auto elapsed = get_elapsed();
-        const auto colors = m_config.use_colors;
+        const auto& colors = m_config.use_colors;
+
+        // Lock stdout mutex for all print operations
+        std::lock_guard stdout_lock{detail::get_stdout_mutex()};
 
         clear_line();
 
@@ -337,7 +349,7 @@ auto ProgressTracker::update_display() noexcept -> void {
             fmt::print(" ");
         } else {
             if (colors) fmt::print("{}", AnsiCodes::BRIGHT_GREEN);
-            fmt::print("\u2713");
+            fmt::print("✓");
             if (colors) fmt::print("{}", AnsiCodes::RESET);
             fmt::print(" ");
         }
@@ -347,57 +359,79 @@ auto ProgressTracker::update_display() noexcept -> void {
             if (colors) fmt::print("{}", AnsiCodes::BOLD);
             fmt::print("{}", m_config.label);
             if (colors) fmt::print("{}", AnsiCodes::RESET);
-            fmt::print("  ");
+            fmt::print(" ");
         }
 
-        // Progress bar
         render_bar(progress);
-        fmt::print("  ");
 
-        // Percentage
-        if (colors) {
-            if (progress >= 1.0) {
-                fmt::print("{}{}", AnsiCodes::GREEN, AnsiCodes::BOLD);
-            } else {
-                fmt::print("{}", get_progress_color());
+        // Percentage with enhanced styling
+        if (progress >= 1.0) {
+            if (colors) fmt::print("{}{}", AnsiCodes::BRIGHT_GREEN, AnsiCodes::BOLD);
+            fmt::print("100%");
+            if (colors) fmt::print("{}", AnsiCodes::RESET);
+        } else {
+            if (colors) fmt::print("{}", get_progress_color());
+            fmt::print("{:>3.0f}%", progress * 100.0);
+            if (colors) fmt::print("{}", AnsiCodes::RESET);
+        }
+
+        // Count with dividers
+        fmt::print(" ");
+        if (colors) fmt::print("{}", AnsiCodes::DIM);
+        fmt::print("│");
+        if (colors) fmt::print("{}", AnsiCodes::RESET);
+        fmt::print(" ");
+
+        if (colors) fmt::print("{}", AnsiCodes::BRIGHT_WHITE);
+        fmt::print("{}", format_number(current));
+        if (colors) fmt::print("{}", AnsiCodes::RESET);
+
+        if (colors) fmt::print("{}", AnsiCodes::DIM);
+        fmt::print("/");
+        if (colors) fmt::print("{}", AnsiCodes::RESET);
+
+        if (colors) fmt::print("{}", AnsiCodes::BRIGHT_CYAN);
+        fmt::print("{}", format_number(m_total));
+        if (colors) fmt::print("{}", AnsiCodes::RESET);
+
+        // Elapsed time
+        fmt::print(" ");
+        if (colors) fmt::print("{}", AnsiCodes::DIM);
+        fmt::print("│ ⏱");
+        if (colors) fmt::print("{}", AnsiCodes::RESET);
+        fmt::print(" ");
+        if (colors) fmt::print("{}", AnsiCodes::MAGENTA);
+        fmt::print("{}", format_duration(elapsed));
+        if (colors) fmt::print("{}", AnsiCodes::RESET);
+
+        // ETA
+        if (m_config.show_eta && current < m_total) {
+            const auto eta = calculate_eta();
+            if (eta.count() > 0) {
+                fmt::print(" ");
+                if (colors) fmt::print("{}", AnsiCodes::DIM);
+                fmt::print("│ ⏳");
+                if (colors) fmt::print("{}", AnsiCodes::RESET);
+                fmt::print(" ");
+                if (colors) fmt::print("{}", AnsiCodes::YELLOW);
+                fmt::print("{}", format_duration(eta));
+                if (colors) fmt::print("{}", AnsiCodes::RESET);
             }
         }
-        fmt::print("{:>3.0f}%", progress * 100.0);
-        if (colors) fmt::print("{}", AnsiCodes::RESET);
-
-        // Count
-        fmt::print("  ");
-        if (colors) fmt::print("{}", AnsiCodes::BRIGHT_WHITE);
-        fmt::print("{}/{}", format_number(current), format_number(m_total));
-        if (colors) fmt::print("{}", AnsiCodes::RESET);
 
         // Rate
         if (m_config.show_rate) {
             const auto rate = calculate_rate();
             if (rate > 0.0) {
-                fmt::print("  ");
-                if (colors) fmt::print("{}", AnsiCodes::BRIGHT_WHITE);
+                fmt::print(" ");
+                if (colors) fmt::print("{}", AnsiCodes::DIM);
+                fmt::print("│ ⚡");
+                if (colors) fmt::print("{}", AnsiCodes::RESET);
+                fmt::print(" ");
+                if (colors) fmt::print("{}", AnsiCodes::BRIGHT_MAGENTA);
                 fmt::print("{:.1f}/s", rate);
                 if (colors) fmt::print("{}", AnsiCodes::RESET);
             }
-        }
-
-        // ETA or elapsed
-        if (current < m_total) {
-            if (m_config.show_eta) {
-                const auto eta = calculate_eta();
-                if (eta.count() > 0) {
-                    fmt::print("  ");
-                    if (colors) fmt::print("{}", AnsiCodes::CYAN);
-                    fmt::print("eta {}", format_duration_clock(eta));
-                    if (colors) fmt::print("{}", AnsiCodes::RESET);
-                }
-            }
-        } else {
-            fmt::print("  ");
-            if (colors) fmt::print("{}", AnsiCodes::GREEN);
-            fmt::print("{}", format_duration_clock(elapsed));
-            if (colors) fmt::print("{}", AnsiCodes::RESET);
         }
 
         std::cout.flush();
@@ -406,7 +440,7 @@ auto ProgressTracker::update_display() noexcept -> void {
     }
 }
 
-auto ProgressTracker::update_loop() noexcept -> void {
+inline auto ProgressTracker::update_loop() noexcept -> void {
     while (!m_should_stop.load(std::memory_order_acquire)) {
         update_display();
         if (m_processed.load(std::memory_order_acquire) >= m_total) break;
@@ -416,7 +450,7 @@ auto ProgressTracker::update_loop() noexcept -> void {
     update_display();
 }
 
-auto ProgressTracker::start() noexcept -> void {
+inline auto ProgressTracker::start() noexcept -> void {
     if (!m_update_thread.joinable() && !m_finished) {
         m_should_stop.store(false, std::memory_order_release);
         update_display();
@@ -424,14 +458,14 @@ auto ProgressTracker::start() noexcept -> void {
     }
 }
 
-auto ProgressTracker::stop_update_thread() noexcept -> void {
+inline auto ProgressTracker::stop_update_thread() noexcept -> void {
     if (m_update_thread.joinable()) {
         m_should_stop.store(true, std::memory_order_release);
         m_update_thread.join();
     }
 }
 
-auto ProgressTracker::finish() noexcept -> void {
+inline auto ProgressTracker::finish() noexcept -> void {
     stop_update_thread();
 
     std::lock_guard lock{m_display_mutex};
@@ -441,56 +475,29 @@ auto ProgressTracker::finish() noexcept -> void {
 
     try {
         const auto elapsed = get_elapsed();
-        const auto colors = m_config.use_colors;
-        const auto rate = calculate_rate();
+        const auto& colors = m_config.use_colors;
+
+        // Lock stdout mutex for all print operations
+        std::lock_guard stdout_lock{detail::get_stdout_mutex()};
 
         clear_line();
 
-        // Checkmark
+        // Completion line
         if (colors) fmt::print("{}", AnsiCodes::BRIGHT_GREEN);
-        fmt::print("\u2713");
-        if (colors) fmt::print("{}", AnsiCodes::RESET);
-        fmt::print(" ");
-
-        // Label
-        if (!m_config.label.empty()) {
-            if (colors) fmt::print("{}", AnsiCodes::BOLD);
-            fmt::print("{}", m_config.label);
-            if (colors) fmt::print("{}", AnsiCodes::RESET);
-            fmt::print("  ");
-        }
-
-        // Full green bar
-        if (colors) fmt::print("{}", AnsiCodes::GREEN);
-        for (std::size_t i = 0; i < m_config.bar_width; ++i) {
-            fmt::print("{}", BAR_CHAR);
-        }
+        fmt::print(" {} Complete!   │   ", m_config.label);
         if (colors) fmt::print("{}", AnsiCodes::RESET);
 
-        // 100%
-        fmt::print("  ");
-        if (colors) fmt::print("{}{}", AnsiCodes::GREEN, AnsiCodes::BOLD);
-        fmt::print("100%");
+        // Files processed
+        fmt::print(" Items: ");
+        if (colors) fmt::print("{}", AnsiCodes::BRIGHT_CYAN);
+        fmt::print("{}", format_number(m_total));
         if (colors) fmt::print("{}", AnsiCodes::RESET);
+        fmt::print("  │  ");
 
-        // Count
-        fmt::print("  ");
-        if (colors) fmt::print("{}", AnsiCodes::BRIGHT_WHITE);
-        fmt::print("{}/{}", format_number(m_total), format_number(m_total));
-        if (colors) fmt::print("{}", AnsiCodes::RESET);
-
-        // Final rate
-        if (m_config.show_rate && rate > 0.0) {
-            fmt::print("  ");
-            if (colors) fmt::print("{}", AnsiCodes::BRIGHT_WHITE);
-            fmt::print("{:.1f}/s", rate);
-            if (colors) fmt::print("{}", AnsiCodes::RESET);
-        }
-
-        // Total elapsed
-        fmt::print("  ");
-        if (colors) fmt::print("{}", AnsiCodes::GREEN);
-        fmt::print("{}", format_duration_clock(elapsed));
+        // Time elapsed
+        fmt::print("⏱  Time: ");
+        if (colors) fmt::print("{}", AnsiCodes::MAGENTA);
+        fmt::print("{}", format_duration(elapsed));
         if (colors) fmt::print("{}", AnsiCodes::RESET);
 
         fmt::print("\n");

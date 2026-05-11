@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `REC::Track` (group 300, item 36).
 /// Track information for Particles bank
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,172 +40,123 @@ class REC_Track {
 
     REC_Track() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_index;
-            hipo::column_handle h_pindex;
-            hipo::column_handle h_detector;
-            hipo::column_handle h_sector;
-            hipo::column_handle h_status;
-            hipo::column_handle h_q;
-            hipo::column_handle h_chi2;
-            hipo::column_handle h_NDF;
-            hipo::column_handle h_hbindex;
+            int i_index = -1;
+            int i_pindex = -1;
+            int i_detector = -1;
+            int i_sector = -1;
+            int i_status = -1;
+            int i_q = -1;
+            int i_chi2 = -1;
+            int i_NDF = -1;
+            int i_hbindex = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("index"); h) cache.h_index = *h;
-            else cache.h_index = {};
-            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
-            else cache.h_pindex = {};
-            if (auto h = schema.get_handle("detector"); h) cache.h_detector = *h;
-            else cache.h_detector = {};
-            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
-            else cache.h_sector = {};
-            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
-            else cache.h_status = {};
-            if (auto h = schema.get_handle("q"); h) cache.h_q = *h;
-            else cache.h_q = {};
-            if (auto h = schema.get_handle("chi2"); h) cache.h_chi2 = *h;
-            else cache.h_chi2 = {};
-            if (auto h = schema.get_handle("NDF"); h) cache.h_NDF = *h;
-            else cache.h_NDF = {};
-            if (auto h = schema.get_handle("hbindex"); h) cache.h_hbindex = *h;
-            else cache.h_hbindex = {};
+            cache.i_index = schema.exists("index") ? schema.getEntryOrder("index") : -1;
+            cache.i_pindex = schema.exists("pindex") ? schema.getEntryOrder("pindex") : -1;
+            cache.i_detector = schema.exists("detector") ? schema.getEntryOrder("detector") : -1;
+            cache.i_sector = schema.exists("sector") ? schema.getEntryOrder("sector") : -1;
+            cache.i_status = schema.exists("status") ? schema.getEntryOrder("status") : -1;
+            cache.i_q = schema.exists("q") ? schema.getEntryOrder("q") : -1;
+            cache.i_chi2 = schema.exists("chi2") ? schema.getEntryOrder("chi2") : -1;
+            cache.i_NDF = schema.exists("NDF") ? schema.getEntryOrder("NDF") : -1;
+            cache.i_hbindex = schema.exists("hbindex") ? schema.getEntryOrder("hbindex") : -1;
         }
-        h_index = cache.h_index;
-        h_pindex = cache.h_pindex;
-        h_detector = cache.h_detector;
-        h_sector = cache.h_sector;
-        h_status = cache.h_status;
-        h_q = cache.h_q;
-        h_chi2 = cache.h_chi2;
-        h_NDF = cache.h_NDF;
-        h_hbindex = cache.h_hbindex;
+        i_index = cache.i_index;
+        i_pindex = cache.i_pindex;
+        i_detector = cache.i_detector;
+        i_sector = cache.i_sector;
+        i_status = cache.i_status;
+        i_q = cache.i_q;
+        i_chi2 = cache.i_chi2;
+        i_NDF = cache.i_NDF;
+        i_hbindex = cache.i_hbindex;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// index: index of the track in the specific detector bank
     [[nodiscard]] int index(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_index, row));
+        return static_cast<int>(m_view->getShort(i_index, row));
     }
     /// pindex: row number in the particle bank hit is associated with
     [[nodiscard]] int pindex(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_pindex, row));
+        return static_cast<int>(m_view->getShort(i_pindex, row));
     }
     /// detector: Detector ID, as defined in org.jlab.detector.base.DetectorType
     [[nodiscard]] int detector(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_detector, row));
+        return static_cast<int>(m_view->getByte(i_detector, row));
     }
     /// sector: Sector of the track
     [[nodiscard]] int sector(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+        return static_cast<int>(m_view->getByte(i_sector, row));
     }
     /// status: status of the track
     [[nodiscard]] int status(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_status, row));
+        return static_cast<int>(m_view->getShort(i_status, row));
     }
     /// q: charge of the track
     [[nodiscard]] int q(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_q, row));
+        return static_cast<int>(m_view->getByte(i_q, row));
     }
     /// chi2: Chi2 (or quality) track fitting
     [[nodiscard]] float chi2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_chi2, row));
+        return static_cast<float>(m_view->getFloat(i_chi2, row));
     }
     /// NDF: number of degrees of freedom in track fitting
     [[nodiscard]] int NDF(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_NDF, row));
+        return static_cast<int>(m_view->getShort(i_NDF, row));
     }
     /// hbindex: row number of corresponding track in RECHB::Track
     [[nodiscard]] int hbindex(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_hbindex, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// index column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> index_col() const noexcept {
-        return m_view.column<int16_t>(h_index);
-    }
-    /// pindex column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> pindex_col() const noexcept {
-        return m_view.column<int16_t>(h_pindex);
-    }
-    /// detector column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> detector_col() const noexcept {
-        return m_view.column<int8_t>(h_detector);
-    }
-    /// sector column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
-        return m_view.column<int8_t>(h_sector);
-    }
-    /// status column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> status_col() const noexcept {
-        return m_view.column<int16_t>(h_status);
-    }
-    /// q column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> q_col() const noexcept {
-        return m_view.column<int8_t>(h_q);
-    }
-    /// chi2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> chi2_col() const noexcept {
-        return m_view.column<float>(h_chi2);
-    }
-    /// NDF column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> NDF_col() const noexcept {
-        return m_view.column<int16_t>(h_NDF);
-    }
-    /// hbindex column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> hbindex_col() const noexcept {
-        return m_view.column<int16_t>(h_hbindex);
+        return static_cast<int>(m_view->getShort(i_hbindex, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
     // -------------------------------------------------------------------
-    // Link-column handles (used by PindexLinker-style helpers to
-    // read the whole index column as a typed span in one shot)
+    // Link-column item indices (used by PindexLinker to scan the
+    // pindex/index column without re-resolving by name per call)
     // -------------------------------------------------------------------
-    [[nodiscard]] hipo::column_handle index_handle() const noexcept { return h_index; }
-    [[nodiscard]] hipo::column_handle pindex_handle() const noexcept { return h_pindex; }
-    [[nodiscard]] hipo::column_handle hbindex_handle() const noexcept { return h_hbindex; }
+    [[nodiscard]] int index_handle() const noexcept { return i_index; }
+    [[nodiscard]] int pindex_handle() const noexcept { return i_pindex; }
+    [[nodiscard]] int hbindex_handle() const noexcept { return i_hbindex; }
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_index{};
-    hipo::column_handle h_pindex{};
-    hipo::column_handle h_detector{};
-    hipo::column_handle h_sector{};
-    hipo::column_handle h_status{};
-    hipo::column_handle h_q{};
-    hipo::column_handle h_chi2{};
-    hipo::column_handle h_NDF{};
-    hipo::column_handle h_hbindex{};
+    const hipo::bank* m_view = nullptr;
+    int i_index = -1;
+    int i_pindex = -1;
+    int i_detector = -1;
+    int i_sector = -1;
+    int i_status = -1;
+    int i_q = -1;
+    int i_chi2 = -1;
+    int i_NDF = -1;
+    int i_hbindex = -1;
 
     friend class Row;
 };

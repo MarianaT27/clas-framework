@@ -17,9 +17,9 @@
  *
  * PindexLinker does two things differently:
  *
- * 1. **Reads the entire link column as a typed span once** using the
- *    column_handle already exposed by generated bank wrappers. There is no
- *    per-row string lookup and no per-row get<T>() dispatch.
+ * 1. **Resolves the link column index once** via the integer item index
+ *    already cached by every generated bank wrapper. Per-row reads go
+ *    through `bank.getInt(item, row)` (no string lookup, no dispatch).
  *
  * 2. **Stores the reverse map in a sorted flat array**, indexed by a prefix-
  *    sum table. Lookup by particle index is O(log N) bounds + walk, with no
@@ -31,7 +31,7 @@
  *   calo.bind(event.get_bank("REC::Calorimeter"));
  *
  *   framework::PindexLinker link;
- *   link.build(calo.view(), calo.pindex_handle());
+ *   link.build(calo.view(), calo.pindex_handle());  // bank&, item_index
  *
  *   for (int row : link.rows_for(pindex)) {
  *       auto hit = calo.row(row);
@@ -50,8 +50,7 @@
 #include <span>
 #include <vector>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace framework {
 
@@ -64,59 +63,53 @@ namespace framework {
  */
 class PindexLinker {
    public:
-    /// Build the reverse index from a bank_view and a pre-resolved handle.
-    /// The handle must refer to a column whose native type is int8/16/32.
-    auto build(const hipo::bank_view& view, hipo::column_handle link_handle) -> void {
+    /// Build the reverse index from a hipo::bank and a pre-resolved column
+    /// index (the integer returned by `schema.getEntryOrder(name)`).
+    /// The column must be of an integer type (byte/short/int) — bank::getInt
+    /// promotes all three to int without truncation.
+    auto build(const hipo::bank& bank, int link_item) -> void {
         m_rows.clear();
         m_offsets.clear();
         m_min_key = 0;
 
-        const int n_rows = view.rows();
-        if (n_rows <= 0 || !link_handle.valid() || !view.valid()) {
+        const int n_rows = bank.getRows();
+        if (n_rows <= 0 || link_item < 0) {
             return;
         }
 
-        // visit_column dispatches on the column's actual type so we never
-        // call get<T>() with the wrong size. The visitor gets a typed span,
-        // reads every link value once, then materialises the reverse map.
-        view.visit_column(link_handle, [this, n_rows](auto col) {
-            using value_t = std::remove_cv_t<typename decltype(col)::value_type>;
+        // Pass 1: find key range.
+        int key_min = 0;
+        int key_max = -1;
+        for (int r = 0; r < n_rows; ++r) {
+            const int key = bank.getInt(link_item, r);
+            if (r == 0 || key < key_min) key_min = key;
+            if (r == 0 || key > key_max) key_max = key;
+        }
+        if (key_max < key_min) return;  // no rows
 
-            // Pass 1: find key range.
-            int key_min = 0;
-            int key_max = -1;
-            for (int r = 0; r < n_rows; ++r) {
-                const int key = static_cast<int>(col[r]);
-                if (r == 0 || key < key_min) key_min = key;
-                if (r == 0 || key > key_max) key_max = key;
-            }
-            if (key_max < key_min) return;  // no rows
+        m_min_key = key_min;
+        const int n_buckets = key_max - key_min + 1;
 
-            m_min_key = key_min;
-            const int n_buckets = key_max - key_min + 1;
+        // Pass 2: count per bucket.
+        m_offsets.assign(n_buckets + 1, 0);
+        for (int r = 0; r < n_rows; ++r) {
+            const int key = bank.getInt(link_item, r);
+            m_offsets[key - key_min + 1]++;
+        }
+        // Prefix sum -> bucket offsets.
+        for (int i = 1; i <= n_buckets; ++i) {
+            m_offsets[i] += m_offsets[i - 1];
+        }
 
-            // Pass 2: count per bucket.
-            m_offsets.assign(n_buckets + 1, 0);
-            for (int r = 0; r < n_rows; ++r) {
-                const int key = static_cast<int>(col[r]);
-                m_offsets[key - key_min + 1]++;
-            }
-            // Prefix sum -> bucket offsets.
-            for (int i = 1; i <= n_buckets; ++i) {
-                m_offsets[i] += m_offsets[i - 1];
-            }
-
-            // Pass 3: scatter row indices into flat m_rows using a cursor
-            // starting at each bucket's offset.
-            m_rows.resize(n_rows);
-            std::vector<int> cursor(m_offsets.begin(), m_offsets.begin() + n_buckets);
-            for (int r = 0; r < n_rows; ++r) {
-                const int key = static_cast<int>(col[r]);
-                const int b = key - key_min;
-                m_rows[cursor[b]++] = r;
-            }
-            (void)sizeof(value_t);  // suppress unused-type warning for trivial ints
-        });
+        // Pass 3: scatter row indices into flat m_rows using a cursor
+        // starting at each bucket's offset.
+        m_rows.resize(n_rows);
+        std::vector<int> cursor(m_offsets.begin(), m_offsets.begin() + n_buckets);
+        for (int r = 0; r < n_rows; ++r) {
+            const int key = bank.getInt(link_item, r);
+            const int b = key - key_min;
+            m_rows[cursor[b]++] = r;
+        }
     }
 
     /// Returns the contiguous run of row indices whose link column equals `key`.

@@ -47,12 +47,12 @@ import sys
 # public return type: for integer columns we widen to `int` so callers see a
 # consistent signed 32-bit type. For floats we keep float/double distinct.
 TYPE_MAP = {
-    "B": {"storage": "int8_t",  "public": "int",     "span": "int8_t",  "kind": "int"},
-    "S": {"storage": "int16_t", "public": "int",     "span": "int16_t", "kind": "int"},
-    "I": {"storage": "int32_t", "public": "int",     "span": "int32_t", "kind": "int"},
-    "L": {"storage": "int64_t", "public": "int64_t", "span": "int64_t", "kind": "int"},
-    "F": {"storage": "float",   "public": "float",   "span": "float",   "kind": "float"},
-    "D": {"storage": "double",  "public": "double",  "span": "double",  "kind": "float"},
+    "B": {"storage": "int8_t",  "public": "int",     "getter": "getByte",   "kind": "int"},
+    "S": {"storage": "int16_t", "public": "int",     "getter": "getShort",  "kind": "int"},
+    "I": {"storage": "int32_t", "public": "int",     "getter": "getInt",    "kind": "int"},
+    "L": {"storage": "int64_t", "public": "int64_t", "getter": "getLong",   "kind": "int"},
+    "F": {"storage": "float",   "public": "float",   "getter": "getFloat",  "kind": "float"},
+    "D": {"storage": "double",  "public": "double",  "getter": "getDouble", "kind": "float"},
 }
 
 # C++ reserved / problematic names that can appear in HIPO columns. Append
@@ -230,17 +230,15 @@ HEADER_TEMPLATE = """\
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
-namespace clas12::bankdefs {{
+namespace bankdefs {{
 
 """
 
-FOOTER = "}  // namespace clas12::bankdefs\n"
+FOOTER = "}  // namespace bankdefs\n"
 
 
 def emit_column_info(entries):
@@ -257,7 +255,7 @@ def emit_column_info(entries):
             "cxx_name": sanitize_member(raw),
             "storage": t["storage"],
             "public":  t["public"],
-            "span":    t["span"],
+            "getter":  t["getter"],
             "kind":    t["kind"],
             "info":    e.get("info", "").replace('"', r'\"'),
             "is_link": is_link_column(raw),
@@ -280,8 +278,8 @@ def gen_header(bank_def: dict, source_file: str) -> str:
     if info:
         lines.append(f"/// {info}")
     lines.append("///")
-    lines.append("/// Bind the wrapper to a `hipo::bank_view` once, then access columns")
-    lines.append("/// via zero-cost handle-based getters.")
+    lines.append("/// Bind the wrapper to a `hipo::bank` once, then access columns")
+    lines.append("/// via cached item-index getters (no per-call name lookup).")
     lines.append("///")
     lines.append("/// Example:")
     lines.append("/// @code")
@@ -304,61 +302,49 @@ def gen_header(bank_def: dict, source_file: str) -> str:
     lines.append("")
     lines.append(f"    {cls}() = default;")
     lines.append("")
-    lines.append("    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:")
-    lines.append("    /// the first bind() in a thread resolves every column handle by name; all")
-    lines.append("    /// subsequent bind()s for the same schema hit the cache and copy 25-30")
-    lines.append("    /// trivially-copyable column_handle words.")
-    lines.append("    /// Returns false if the view is not valid.")
-    lines.append("    bool bind(const hipo::bank_view& view) noexcept {")
-    lines.append("        m_view = view;")
-    lines.append("        if (!view.valid()) return false;")
-    lines.append("        const auto& schema = view.get_schema();")
-    lines.append("        struct HandleCache {")
+    lines.append("    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:")
+    lines.append("    /// the first bind() in a thread resolves every column name to its item")
+    lines.append("    /// index via schema.getEntryOrder(); subsequent bind()s for the same")
+    lines.append("    /// schema hit the cache. Returns true on success.")
+    lines.append("    bool bind(const hipo::bank& view) noexcept {")
+    lines.append("        m_view = &view;")
+    lines.append("        // const_cast is OK: hipo::bank::getSchema() lacks a const overload")
+    lines.append("        // but only reads schemaEntriesMap; we never mutate the bank here.")
+    lines.append("        auto& schema = const_cast<hipo::bank&>(view).getSchema();")
+    lines.append("        struct ItemCache {")
     lines.append("            const hipo::schema* schema_ptr = nullptr;")
     for c in cols:
-        lines.append(f"            hipo::column_handle h_{c['cxx_name']};")
+        lines.append(f"            int i_{c['cxx_name']} = -1;")
     lines.append("        };")
-    lines.append("        static thread_local HandleCache cache;")
+    lines.append("        static thread_local ItemCache cache;")
     lines.append("        if (cache.schema_ptr != &schema) {")
     lines.append("            cache.schema_ptr = &schema;")
     for c in cols:
-        lines.append(f"            if (auto h = schema.get_handle(\"{c['raw_name']}\"); h) cache.h_{c['cxx_name']} = *h;")
-        lines.append(f"            else cache.h_{c['cxx_name']} = {{}};")
+        lines.append(f"            cache.i_{c['cxx_name']} = schema.exists(\"{c['raw_name']}\") ? schema.getEntryOrder(\"{c['raw_name']}\") : -1;")
     lines.append("        }")
     for c in cols:
-        lines.append(f"        h_{c['cxx_name']} = cache.h_{c['cxx_name']};")
+        lines.append(f"        i_{c['cxx_name']} = cache.i_{c['cxx_name']};")
     lines.append("        return true;")
     lines.append("    }")
     lines.append("")
-    lines.append("    /// Current row count of the bound bank view.")
-    lines.append("    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }")
+    lines.append("    /// Current row count of the bound bank (0 if unbound).")
+    lines.append("    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }")
     lines.append("")
-    lines.append("    /// True if bind() has been called with a valid view.")
-    lines.append("    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }")
+    lines.append("    /// True if bind() has been called.")
+    lines.append("    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }")
     lines.append("")
-    lines.append("    /// Access the underlying bank_view (for advanced use).")
-    lines.append("    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }")
+    lines.append("    /// Access the underlying hipo::bank (for advanced use).")
+    lines.append("    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }")
     lines.append("")
 
     # Scalar getters
     lines.append("    // -------------------------------------------------------------------")
-    lines.append("    // Per-row scalar getters (handle-based, zero string lookup)")
+    lines.append("    // Per-row scalar getters (item-index based, no string lookup)")
     lines.append("    // -------------------------------------------------------------------")
     for c in cols:
         lines.append(f"    /// {c['raw_name']}: {c['info']}")
         lines.append(f"    [[nodiscard]] {c['public']} {c['cxx_name']}(int row) const noexcept {{")
-        lines.append(f"        return static_cast<{c['public']}>(m_view.get<{c['storage']}>(h_{c['cxx_name']}, row));")
-        lines.append("    }")
-    lines.append("")
-
-    # Column span getters
-    lines.append("    // -------------------------------------------------------------------")
-    lines.append("    // Whole-column span accessors (SIMD-friendly, zero-copy)")
-    lines.append("    // -------------------------------------------------------------------")
-    for c in cols:
-        lines.append(f"    /// {c['raw_name']} column as a contiguous span.")
-        lines.append(f"    [[nodiscard]] std::span<const {c['span']}> {c['cxx_name']}_col() const noexcept {{")
-        lines.append(f"        return m_view.column<{c['span']}>(h_{c['cxx_name']});")
+        lines.append(f"        return static_cast<{c['public']}>(m_view->{c['getter']}(i_{c['cxx_name']}, row));")
         lines.append("    }")
     lines.append("")
 
@@ -367,21 +353,21 @@ def gen_header(bank_def: dict, source_file: str) -> str:
     lines.append("    [[nodiscard]] Row row(int index) const noexcept;")
     lines.append("")
 
-    # Link column handles (public for PindexLinker-style helpers)
+    # Link column item indices (public for PindexLinker-style helpers)
     link_cols = [c for c in cols if c["is_link"]]
     if link_cols:
         lines.append("    // -------------------------------------------------------------------")
-        lines.append("    // Link-column handles (used by PindexLinker-style helpers to")
-        lines.append("    // read the whole index column as a typed span in one shot)")
+        lines.append("    // Link-column item indices (used by PindexLinker to scan the")
+        lines.append("    // pindex/index column without re-resolving by name per call)")
         lines.append("    // -------------------------------------------------------------------")
         for c in link_cols:
-            lines.append(f"    [[nodiscard]] hipo::column_handle {c['cxx_name']}_handle() const noexcept {{ return h_{c['cxx_name']}; }}")
+            lines.append(f"    [[nodiscard]] int {c['cxx_name']}_handle() const noexcept {{ return i_{c['cxx_name']}; }}")
         lines.append("")
 
     lines.append(" private:")
-    lines.append("    hipo::bank_view m_view{};")
+    lines.append("    const hipo::bank* m_view = nullptr;")
     for c in cols:
-        lines.append(f"    hipo::column_handle h_{c['cxx_name']}{{}};")
+        lines.append(f"    int i_{c['cxx_name']} = -1;")
     lines.append("")
     lines.append("    friend class Row;")
     lines.append("};")
@@ -461,10 +447,10 @@ def gen_row_struct_and_reader(bank_def: dict) -> list[str]:
     def emit_reader(fn_suffix: str, key_name: str, rows_call: str, doc: str):
         fn_name = f"read_{cls}_rows{fn_suffix}"
         lines.append(f"/// {doc}")
-        lines.append(f"inline auto {fn_name}(clas12::framework::Event& event, int {key_name})")
+        lines.append(f"inline auto {fn_name}(framework::Event& event, int {key_name})")
         lines.append(f"    -> std::vector<{struct_name}> {{")
         lines.append(f"    std::vector<{struct_name}> result;")
-        lines.append(f"    for (auto r : event.{rows_call}<clas12::bankdefs::{cls}>({key_name})) {{")
+        lines.append(f"    for (auto r : event.{rows_call}<bankdefs::{cls}>({key_name})) {{")
         lines.append(f"        {struct_name} s;")
         for c in cols:
             lines.append(f"        s.{c['cxx_name']} = r.{c['cxx_name']}();")
@@ -561,20 +547,20 @@ def gen_physics_view(bank_def: dict, cfg: dict, banks_by_name: dict) -> list[str
         legacy_suffix = view_name.removesuffix("Bank")
         fn_name = f"read_{legacy_suffix}_bank"
     lines.append(f"/// Strategy: {strategy}. See PHYSICS_VIEWS in scripts/gen_bankdefs.py.")
-    lines.append(f"inline auto {fn_name}(clas12::framework::Event& event, int pindex)")
+    lines.append(f"inline auto {fn_name}(framework::Event& event, int pindex)")
     lines.append(f"    -> {view_name} {{")
     lines.append(f"    {view_name} result;")
 
     if strategy == "first_matching":
         f_col, f_val = cfg["filter"]
-        lines.append(f"    for (auto r : event.rows_for_pindex<clas12::bankdefs::{cls}>(pindex)) {{")
-        lines.append(f"        if (r.{f_col}() != clas12::{f_val}) continue;")
+        lines.append(f"    for (auto r : event.rows_for_pindex<bankdefs::{cls}>(pindex)) {{")
+        lines.append(f"        if (r.{f_col}() != {f_val}) continue;")
         lines.extend(_assign_columns("result", "r", cols))
         lines.append("        break;")
         lines.append("    }")
 
     elif strategy == "first_row":
-        lines.append(f"    for (auto r : event.rows_for_pindex<clas12::bankdefs::{cls}>(pindex)) {{")
+        lines.append(f"    for (auto r : event.rows_for_pindex<bankdefs::{cls}>(pindex)) {{")
         lines.extend(_assign_columns("result", "r", cols))
         lines.append("        break;")
         lines.append("    }")
@@ -582,14 +568,14 @@ def gen_physics_view(bank_def: dict, cfg: dict, banks_by_name: dict) -> list[str
     elif strategy == "best_by_priority":
         f_col, f_val       = cfg["filter"]
         p_col, p_values    = cfg["priority"]
-        lines.append(f"    std::optional<clas12::bankdefs::{cls}::Row> best;")
+        lines.append(f"    std::optional<bankdefs::{cls}::Row> best;")
         lines.append("    int best_rank = -1;")
-        lines.append(f"    for (auto r : event.rows_for_pindex<clas12::bankdefs::{cls}>(pindex)) {{")
-        lines.append(f"        if (r.{f_col}() != clas12::{f_val}) continue;")
+        lines.append(f"    for (auto r : event.rows_for_pindex<bankdefs::{cls}>(pindex)) {{")
+        lines.append(f"        if (r.{f_col}() != {f_val}) continue;")
         lines.append("        int rank;")
         lines.append(f"        switch (r.{p_col}()) {{")
         for i, v in enumerate(p_values):
-            lines.append(f"            case clas12::{v}: rank = {i}; break;")
+            lines.append(f"            case {v}: rank = {i}; break;")
         lines.append("            default: continue;")
         lines.append("        }")
         lines.append("        if (best_rank == -1 || rank < best_rank) {")
@@ -600,7 +586,7 @@ def gen_physics_view(bank_def: dict, cfg: dict, banks_by_name: dict) -> list[str
         lines.append("    if (!best.has_value()) return result;")
         lines.extend(_assign_columns("result", "(*best)", cols, indent=4))
         if extras_bank:
-            lines.append(f"    auto& extras = event.bank<clas12::bankdefs::{extras_cls}>();")
+            lines.append(f"    auto& extras = event.bank<bankdefs::{extras_cls}>();")
             lines.append("    const int best_row = best->row_index();")
             lines.append("    if (extras.valid() && best_row < extras.rows()) {")
             lines.append("        auto er = extras.row(best_row);")
@@ -611,14 +597,14 @@ def gen_physics_view(bank_def: dict, cfg: dict, banks_by_name: dict) -> list[str
         f_col, f_val     = cfg["filter"]
         d_col, d_table   = cfg["dispatch"]
         if extras_bank:
-            lines.append(f"    auto& extras = event.bank<clas12::bankdefs::{extras_cls}>();")
+            lines.append(f"    auto& extras = event.bank<bankdefs::{extras_cls}>();")
             lines.append("    const bool has_extras = extras.valid();")
             lines.append("    const int extras_rows = extras.rows();")
-        lines.append(f"    for (auto r : event.rows_for_pindex<clas12::bankdefs::{cls}>(pindex)) {{")
-        lines.append(f"        if (r.{f_col}() != clas12::{f_val}) continue;")
+        lines.append(f"    for (auto r : event.rows_for_pindex<bankdefs::{cls}>(pindex)) {{")
+        lines.append(f"        if (r.{f_col}() != {f_val}) continue;")
         lines.append(f"        switch (r.{d_col}()) {{")
         for val, prefix in d_table:
-            lines.append(f"            case clas12::{val}: {{")
+            lines.append(f"            case {val}: {{")
             for c in cols:
                 lines.append(f"                result.{prefix}{c['cxx_name']} = r.{c['cxx_name']}();")
             if extras_bank:
@@ -652,7 +638,7 @@ def gen_generated_readers_header(all_bank_defs: list[dict], banks_by_name: dict)
     lines.append("// Auto-generated by scripts/gen_bankdefs.py - do not edit by hand.")
     lines.append("//")
     lines.append("// Contents:")
-    lines.append("//   1. `clas12::bankdefs::<Bank>Row` + `read_<Bank>_rows(Event&, int pindex)`")
+    lines.append("//   1. `bankdefs::<Bank>Row` + `read_<Bank>_rows(Event&, int pindex)`")
     lines.append("//      for every bank that has a `pindex` column, and additionally")
     lines.append("//      `read_<Bank>_rows_by_index(Event&, int key)` for every bank that has")
     lines.append("//      an `index` column (for sibling-row joins like FMT::Tracks.index ->")
@@ -687,22 +673,20 @@ def gen_generated_readers_header(all_bank_defs: list[dict], banks_by_name: dict)
             lines.append(f"#include <clas12/bankdefs/{bank_to_filename(extras)}>")
     lines.append("")
 
-    # ---- generic row structs + readers (clas12::bankdefs) -------------------
-    lines.append("namespace clas12::bankdefs {")
+    # ---- generic row structs + readers (bankdefs) -------------------
+    lines.append("namespace bankdefs {")
     lines.append("")
     for b in linkable_banks:
         lines.extend(gen_row_struct_and_reader(b))
-    lines.append("}  // namespace clas12::bankdefs")
+    lines.append("}  // namespace bankdefs")
     lines.append("")
 
-    # ---- physics views (clas12) ---------------------------------------------
-    lines.append("namespace clas12 {")
+    # ---- physics views (global scope to match the legacy Banks.hpp shim) ----
     lines.append("")
     for bank_name, cfg in PHYSICS_VIEWS.items():
         if bank_name not in banks_by_name:
             raise ValueError(f"PHYSICS_VIEWS references unknown bank {bank_name!r}")
         lines.extend(gen_physics_view(banks_by_name[bank_name], cfg, banks_by_name))
-    lines.append("}  // namespace clas12")
     lines.append("")
     return "\n".join(lines)
 

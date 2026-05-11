@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `FTTRK::clusters` (group 21300, item 22).
 /// Reconstructed clusters in FT tracker
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,151 +40,107 @@ class FTTRK_clusters {
 
     FTTRK_clusters() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_size;
-            hipo::column_handle h_id;
-            hipo::column_handle h_sector;
-            hipo::column_handle h_layer;
-            hipo::column_handle h_energy;
-            hipo::column_handle h_maxEnergy;
-            hipo::column_handle h_seed;
-            hipo::column_handle h_centroid;
+            int i_size = -1;
+            int i_id = -1;
+            int i_sector = -1;
+            int i_layer = -1;
+            int i_energy = -1;
+            int i_maxEnergy = -1;
+            int i_seed = -1;
+            int i_centroid = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("size"); h) cache.h_size = *h;
-            else cache.h_size = {};
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
-            else cache.h_sector = {};
-            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
-            else cache.h_layer = {};
-            if (auto h = schema.get_handle("energy"); h) cache.h_energy = *h;
-            else cache.h_energy = {};
-            if (auto h = schema.get_handle("maxEnergy"); h) cache.h_maxEnergy = *h;
-            else cache.h_maxEnergy = {};
-            if (auto h = schema.get_handle("seed"); h) cache.h_seed = *h;
-            else cache.h_seed = {};
-            if (auto h = schema.get_handle("centroid"); h) cache.h_centroid = *h;
-            else cache.h_centroid = {};
+            cache.i_size = schema.exists("size") ? schema.getEntryOrder("size") : -1;
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_sector = schema.exists("sector") ? schema.getEntryOrder("sector") : -1;
+            cache.i_layer = schema.exists("layer") ? schema.getEntryOrder("layer") : -1;
+            cache.i_energy = schema.exists("energy") ? schema.getEntryOrder("energy") : -1;
+            cache.i_maxEnergy = schema.exists("maxEnergy") ? schema.getEntryOrder("maxEnergy") : -1;
+            cache.i_seed = schema.exists("seed") ? schema.getEntryOrder("seed") : -1;
+            cache.i_centroid = schema.exists("centroid") ? schema.getEntryOrder("centroid") : -1;
         }
-        h_size = cache.h_size;
-        h_id = cache.h_id;
-        h_sector = cache.h_sector;
-        h_layer = cache.h_layer;
-        h_energy = cache.h_energy;
-        h_maxEnergy = cache.h_maxEnergy;
-        h_seed = cache.h_seed;
-        h_centroid = cache.h_centroid;
+        i_size = cache.i_size;
+        i_id = cache.i_id;
+        i_sector = cache.i_sector;
+        i_layer = cache.i_layer;
+        i_energy = cache.i_energy;
+        i_maxEnergy = cache.i_maxEnergy;
+        i_seed = cache.i_seed;
+        i_centroid = cache.i_centroid;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// size: Cluster size
     [[nodiscard]] int size(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_size, row));
+        return static_cast<int>(m_view->getShort(i_size, row));
     }
     /// id: Cluster ID
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+        return static_cast<int>(m_view->getShort(i_id, row));
     }
     /// sector: Cluster sector
     [[nodiscard]] int sector(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+        return static_cast<int>(m_view->getByte(i_sector, row));
     }
     /// layer: Cluster layer
     [[nodiscard]] int layer(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_layer, row));
+        return static_cast<int>(m_view->getByte(i_layer, row));
     }
     /// energy: Cluster total energy
     [[nodiscard]] float energy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_energy, row));
+        return static_cast<float>(m_view->getFloat(i_energy, row));
     }
     /// maxEnergy: Seed energy
     [[nodiscard]] float maxEnergy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_maxEnergy, row));
+        return static_cast<float>(m_view->getFloat(i_maxEnergy, row));
     }
     /// seed: Seed strip
     [[nodiscard]] int seed(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_seed, row));
+        return static_cast<int>(m_view->getShort(i_seed, row));
     }
     /// centroid: Centroid strip number
     [[nodiscard]] float centroid(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_centroid, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// size column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> size_col() const noexcept {
-        return m_view.column<int16_t>(h_size);
-    }
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
-        return m_view.column<int16_t>(h_id);
-    }
-    /// sector column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
-        return m_view.column<int8_t>(h_sector);
-    }
-    /// layer column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> layer_col() const noexcept {
-        return m_view.column<int8_t>(h_layer);
-    }
-    /// energy column as a contiguous span.
-    [[nodiscard]] std::span<const float> energy_col() const noexcept {
-        return m_view.column<float>(h_energy);
-    }
-    /// maxEnergy column as a contiguous span.
-    [[nodiscard]] std::span<const float> maxEnergy_col() const noexcept {
-        return m_view.column<float>(h_maxEnergy);
-    }
-    /// seed column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> seed_col() const noexcept {
-        return m_view.column<int16_t>(h_seed);
-    }
-    /// centroid column as a contiguous span.
-    [[nodiscard]] std::span<const float> centroid_col() const noexcept {
-        return m_view.column<float>(h_centroid);
+        return static_cast<float>(m_view->getFloat(i_centroid, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_size{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_sector{};
-    hipo::column_handle h_layer{};
-    hipo::column_handle h_energy{};
-    hipo::column_handle h_maxEnergy{};
-    hipo::column_handle h_seed{};
-    hipo::column_handle h_centroid{};
+    const hipo::bank* m_view = nullptr;
+    int i_size = -1;
+    int i_id = -1;
+    int i_sector = -1;
+    int i_layer = -1;
+    int i_energy = -1;
+    int i_maxEnergy = -1;
+    int i_seed = -1;
+    int i_centroid = -1;
 
     friend class Row;
 };

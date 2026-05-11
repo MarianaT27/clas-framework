@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `ALERT::ai:prepid` (group 23000, item 33).
 /// ALERT AI-assisted PrePID to be used for Kalman Filter
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,151 +40,107 @@ class ALERT_ai_prepid {
 
     ALERT_ai_prepid() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_trackid;
-            hipo::column_handle h_clusterid;
-            hipo::column_handle h_prepid;
-            hipo::column_handle h_p2212;
-            hipo::column_handle h_p45;
-            hipo::column_handle h_p46;
-            hipo::column_handle h_p47;
-            hipo::column_handle h_p49;
+            int i_trackid = -1;
+            int i_clusterid = -1;
+            int i_prepid = -1;
+            int i_p2212 = -1;
+            int i_p45 = -1;
+            int i_p46 = -1;
+            int i_p47 = -1;
+            int i_p49 = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("trackid"); h) cache.h_trackid = *h;
-            else cache.h_trackid = {};
-            if (auto h = schema.get_handle("clusterid"); h) cache.h_clusterid = *h;
-            else cache.h_clusterid = {};
-            if (auto h = schema.get_handle("prepid"); h) cache.h_prepid = *h;
-            else cache.h_prepid = {};
-            if (auto h = schema.get_handle("p2212"); h) cache.h_p2212 = *h;
-            else cache.h_p2212 = {};
-            if (auto h = schema.get_handle("p45"); h) cache.h_p45 = *h;
-            else cache.h_p45 = {};
-            if (auto h = schema.get_handle("p46"); h) cache.h_p46 = *h;
-            else cache.h_p46 = {};
-            if (auto h = schema.get_handle("p47"); h) cache.h_p47 = *h;
-            else cache.h_p47 = {};
-            if (auto h = schema.get_handle("p49"); h) cache.h_p49 = *h;
-            else cache.h_p49 = {};
+            cache.i_trackid = schema.exists("trackid") ? schema.getEntryOrder("trackid") : -1;
+            cache.i_clusterid = schema.exists("clusterid") ? schema.getEntryOrder("clusterid") : -1;
+            cache.i_prepid = schema.exists("prepid") ? schema.getEntryOrder("prepid") : -1;
+            cache.i_p2212 = schema.exists("p2212") ? schema.getEntryOrder("p2212") : -1;
+            cache.i_p45 = schema.exists("p45") ? schema.getEntryOrder("p45") : -1;
+            cache.i_p46 = schema.exists("p46") ? schema.getEntryOrder("p46") : -1;
+            cache.i_p47 = schema.exists("p47") ? schema.getEntryOrder("p47") : -1;
+            cache.i_p49 = schema.exists("p49") ? schema.getEntryOrder("p49") : -1;
         }
-        h_trackid = cache.h_trackid;
-        h_clusterid = cache.h_clusterid;
-        h_prepid = cache.h_prepid;
-        h_p2212 = cache.h_p2212;
-        h_p45 = cache.h_p45;
-        h_p46 = cache.h_p46;
-        h_p47 = cache.h_p47;
-        h_p49 = cache.h_p49;
+        i_trackid = cache.i_trackid;
+        i_clusterid = cache.i_clusterid;
+        i_prepid = cache.i_prepid;
+        i_p2212 = cache.i_p2212;
+        i_p45 = cache.i_p45;
+        i_p46 = cache.i_p46;
+        i_p47 = cache.i_p47;
+        i_p49 = cache.i_p49;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// trackid: AHDC trackid
     [[nodiscard]] int trackid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_trackid, row));
+        return static_cast<int>(m_view->getInt(i_trackid, row));
     }
     /// clusterid: ATOF cluster id
     [[nodiscard]] int clusterid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_clusterid, row));
+        return static_cast<int>(m_view->getInt(i_clusterid, row));
     }
     /// prepid: argmax PID
     [[nodiscard]] int prepid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_prepid, row));
+        return static_cast<int>(m_view->getInt(i_prepid, row));
     }
     /// p2212: P(pid=2212)
     [[nodiscard]] float p2212(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_p2212, row));
+        return static_cast<float>(m_view->getFloat(i_p2212, row));
     }
     /// p45: P(pid=45)
     [[nodiscard]] float p45(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_p45, row));
+        return static_cast<float>(m_view->getFloat(i_p45, row));
     }
     /// p46: P(pid=46)
     [[nodiscard]] float p46(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_p46, row));
+        return static_cast<float>(m_view->getFloat(i_p46, row));
     }
     /// p47: P(pid=47)
     [[nodiscard]] float p47(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_p47, row));
+        return static_cast<float>(m_view->getFloat(i_p47, row));
     }
     /// p49: P(pid=49)
     [[nodiscard]] float p49(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_p49, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// trackid column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> trackid_col() const noexcept {
-        return m_view.column<int32_t>(h_trackid);
-    }
-    /// clusterid column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> clusterid_col() const noexcept {
-        return m_view.column<int32_t>(h_clusterid);
-    }
-    /// prepid column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> prepid_col() const noexcept {
-        return m_view.column<int32_t>(h_prepid);
-    }
-    /// p2212 column as a contiguous span.
-    [[nodiscard]] std::span<const float> p2212_col() const noexcept {
-        return m_view.column<float>(h_p2212);
-    }
-    /// p45 column as a contiguous span.
-    [[nodiscard]] std::span<const float> p45_col() const noexcept {
-        return m_view.column<float>(h_p45);
-    }
-    /// p46 column as a contiguous span.
-    [[nodiscard]] std::span<const float> p46_col() const noexcept {
-        return m_view.column<float>(h_p46);
-    }
-    /// p47 column as a contiguous span.
-    [[nodiscard]] std::span<const float> p47_col() const noexcept {
-        return m_view.column<float>(h_p47);
-    }
-    /// p49 column as a contiguous span.
-    [[nodiscard]] std::span<const float> p49_col() const noexcept {
-        return m_view.column<float>(h_p49);
+        return static_cast<float>(m_view->getFloat(i_p49, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_trackid{};
-    hipo::column_handle h_clusterid{};
-    hipo::column_handle h_prepid{};
-    hipo::column_handle h_p2212{};
-    hipo::column_handle h_p45{};
-    hipo::column_handle h_p46{};
-    hipo::column_handle h_p47{};
-    hipo::column_handle h_p49{};
+    const hipo::bank* m_view = nullptr;
+    int i_trackid = -1;
+    int i_clusterid = -1;
+    int i_prepid = -1;
+    int i_p2212 = -1;
+    int i_p45 = -1;
+    int i_p46 = -1;
+    int i_p47 = -1;
+    int i_p49 = -1;
 
     friend class Row;
 };

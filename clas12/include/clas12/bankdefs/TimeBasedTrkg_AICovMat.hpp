@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `TimeBasedTrkg::AICovMat` (group 20600, item 77).
 /// reconstructed track covariance matrix in lab frame
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,528 +40,339 @@ class TimeBasedTrkg_AICovMat {
 
     TimeBasedTrkg_AICovMat() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_C11;
-            hipo::column_handle h_C12;
-            hipo::column_handle h_C13;
-            hipo::column_handle h_C14;
-            hipo::column_handle h_C15;
-            hipo::column_handle h_C16;
-            hipo::column_handle h_C21;
-            hipo::column_handle h_C22;
-            hipo::column_handle h_C23;
-            hipo::column_handle h_C24;
-            hipo::column_handle h_C25;
-            hipo::column_handle h_C26;
-            hipo::column_handle h_C31;
-            hipo::column_handle h_C32;
-            hipo::column_handle h_C33;
-            hipo::column_handle h_C34;
-            hipo::column_handle h_C35;
-            hipo::column_handle h_C36;
-            hipo::column_handle h_C41;
-            hipo::column_handle h_C42;
-            hipo::column_handle h_C43;
-            hipo::column_handle h_C44;
-            hipo::column_handle h_C45;
-            hipo::column_handle h_C46;
-            hipo::column_handle h_C51;
-            hipo::column_handle h_C52;
-            hipo::column_handle h_C53;
-            hipo::column_handle h_C54;
-            hipo::column_handle h_C55;
-            hipo::column_handle h_C56;
-            hipo::column_handle h_C61;
-            hipo::column_handle h_C62;
-            hipo::column_handle h_C63;
-            hipo::column_handle h_C64;
-            hipo::column_handle h_C65;
-            hipo::column_handle h_C66;
+            int i_id = -1;
+            int i_C11 = -1;
+            int i_C12 = -1;
+            int i_C13 = -1;
+            int i_C14 = -1;
+            int i_C15 = -1;
+            int i_C16 = -1;
+            int i_C21 = -1;
+            int i_C22 = -1;
+            int i_C23 = -1;
+            int i_C24 = -1;
+            int i_C25 = -1;
+            int i_C26 = -1;
+            int i_C31 = -1;
+            int i_C32 = -1;
+            int i_C33 = -1;
+            int i_C34 = -1;
+            int i_C35 = -1;
+            int i_C36 = -1;
+            int i_C41 = -1;
+            int i_C42 = -1;
+            int i_C43 = -1;
+            int i_C44 = -1;
+            int i_C45 = -1;
+            int i_C46 = -1;
+            int i_C51 = -1;
+            int i_C52 = -1;
+            int i_C53 = -1;
+            int i_C54 = -1;
+            int i_C55 = -1;
+            int i_C56 = -1;
+            int i_C61 = -1;
+            int i_C62 = -1;
+            int i_C63 = -1;
+            int i_C64 = -1;
+            int i_C65 = -1;
+            int i_C66 = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("C11"); h) cache.h_C11 = *h;
-            else cache.h_C11 = {};
-            if (auto h = schema.get_handle("C12"); h) cache.h_C12 = *h;
-            else cache.h_C12 = {};
-            if (auto h = schema.get_handle("C13"); h) cache.h_C13 = *h;
-            else cache.h_C13 = {};
-            if (auto h = schema.get_handle("C14"); h) cache.h_C14 = *h;
-            else cache.h_C14 = {};
-            if (auto h = schema.get_handle("C15"); h) cache.h_C15 = *h;
-            else cache.h_C15 = {};
-            if (auto h = schema.get_handle("C16"); h) cache.h_C16 = *h;
-            else cache.h_C16 = {};
-            if (auto h = schema.get_handle("C21"); h) cache.h_C21 = *h;
-            else cache.h_C21 = {};
-            if (auto h = schema.get_handle("C22"); h) cache.h_C22 = *h;
-            else cache.h_C22 = {};
-            if (auto h = schema.get_handle("C23"); h) cache.h_C23 = *h;
-            else cache.h_C23 = {};
-            if (auto h = schema.get_handle("C24"); h) cache.h_C24 = *h;
-            else cache.h_C24 = {};
-            if (auto h = schema.get_handle("C25"); h) cache.h_C25 = *h;
-            else cache.h_C25 = {};
-            if (auto h = schema.get_handle("C26"); h) cache.h_C26 = *h;
-            else cache.h_C26 = {};
-            if (auto h = schema.get_handle("C31"); h) cache.h_C31 = *h;
-            else cache.h_C31 = {};
-            if (auto h = schema.get_handle("C32"); h) cache.h_C32 = *h;
-            else cache.h_C32 = {};
-            if (auto h = schema.get_handle("C33"); h) cache.h_C33 = *h;
-            else cache.h_C33 = {};
-            if (auto h = schema.get_handle("C34"); h) cache.h_C34 = *h;
-            else cache.h_C34 = {};
-            if (auto h = schema.get_handle("C35"); h) cache.h_C35 = *h;
-            else cache.h_C35 = {};
-            if (auto h = schema.get_handle("C36"); h) cache.h_C36 = *h;
-            else cache.h_C36 = {};
-            if (auto h = schema.get_handle("C41"); h) cache.h_C41 = *h;
-            else cache.h_C41 = {};
-            if (auto h = schema.get_handle("C42"); h) cache.h_C42 = *h;
-            else cache.h_C42 = {};
-            if (auto h = schema.get_handle("C43"); h) cache.h_C43 = *h;
-            else cache.h_C43 = {};
-            if (auto h = schema.get_handle("C44"); h) cache.h_C44 = *h;
-            else cache.h_C44 = {};
-            if (auto h = schema.get_handle("C45"); h) cache.h_C45 = *h;
-            else cache.h_C45 = {};
-            if (auto h = schema.get_handle("C46"); h) cache.h_C46 = *h;
-            else cache.h_C46 = {};
-            if (auto h = schema.get_handle("C51"); h) cache.h_C51 = *h;
-            else cache.h_C51 = {};
-            if (auto h = schema.get_handle("C52"); h) cache.h_C52 = *h;
-            else cache.h_C52 = {};
-            if (auto h = schema.get_handle("C53"); h) cache.h_C53 = *h;
-            else cache.h_C53 = {};
-            if (auto h = schema.get_handle("C54"); h) cache.h_C54 = *h;
-            else cache.h_C54 = {};
-            if (auto h = schema.get_handle("C55"); h) cache.h_C55 = *h;
-            else cache.h_C55 = {};
-            if (auto h = schema.get_handle("C56"); h) cache.h_C56 = *h;
-            else cache.h_C56 = {};
-            if (auto h = schema.get_handle("C61"); h) cache.h_C61 = *h;
-            else cache.h_C61 = {};
-            if (auto h = schema.get_handle("C62"); h) cache.h_C62 = *h;
-            else cache.h_C62 = {};
-            if (auto h = schema.get_handle("C63"); h) cache.h_C63 = *h;
-            else cache.h_C63 = {};
-            if (auto h = schema.get_handle("C64"); h) cache.h_C64 = *h;
-            else cache.h_C64 = {};
-            if (auto h = schema.get_handle("C65"); h) cache.h_C65 = *h;
-            else cache.h_C65 = {};
-            if (auto h = schema.get_handle("C66"); h) cache.h_C66 = *h;
-            else cache.h_C66 = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_C11 = schema.exists("C11") ? schema.getEntryOrder("C11") : -1;
+            cache.i_C12 = schema.exists("C12") ? schema.getEntryOrder("C12") : -1;
+            cache.i_C13 = schema.exists("C13") ? schema.getEntryOrder("C13") : -1;
+            cache.i_C14 = schema.exists("C14") ? schema.getEntryOrder("C14") : -1;
+            cache.i_C15 = schema.exists("C15") ? schema.getEntryOrder("C15") : -1;
+            cache.i_C16 = schema.exists("C16") ? schema.getEntryOrder("C16") : -1;
+            cache.i_C21 = schema.exists("C21") ? schema.getEntryOrder("C21") : -1;
+            cache.i_C22 = schema.exists("C22") ? schema.getEntryOrder("C22") : -1;
+            cache.i_C23 = schema.exists("C23") ? schema.getEntryOrder("C23") : -1;
+            cache.i_C24 = schema.exists("C24") ? schema.getEntryOrder("C24") : -1;
+            cache.i_C25 = schema.exists("C25") ? schema.getEntryOrder("C25") : -1;
+            cache.i_C26 = schema.exists("C26") ? schema.getEntryOrder("C26") : -1;
+            cache.i_C31 = schema.exists("C31") ? schema.getEntryOrder("C31") : -1;
+            cache.i_C32 = schema.exists("C32") ? schema.getEntryOrder("C32") : -1;
+            cache.i_C33 = schema.exists("C33") ? schema.getEntryOrder("C33") : -1;
+            cache.i_C34 = schema.exists("C34") ? schema.getEntryOrder("C34") : -1;
+            cache.i_C35 = schema.exists("C35") ? schema.getEntryOrder("C35") : -1;
+            cache.i_C36 = schema.exists("C36") ? schema.getEntryOrder("C36") : -1;
+            cache.i_C41 = schema.exists("C41") ? schema.getEntryOrder("C41") : -1;
+            cache.i_C42 = schema.exists("C42") ? schema.getEntryOrder("C42") : -1;
+            cache.i_C43 = schema.exists("C43") ? schema.getEntryOrder("C43") : -1;
+            cache.i_C44 = schema.exists("C44") ? schema.getEntryOrder("C44") : -1;
+            cache.i_C45 = schema.exists("C45") ? schema.getEntryOrder("C45") : -1;
+            cache.i_C46 = schema.exists("C46") ? schema.getEntryOrder("C46") : -1;
+            cache.i_C51 = schema.exists("C51") ? schema.getEntryOrder("C51") : -1;
+            cache.i_C52 = schema.exists("C52") ? schema.getEntryOrder("C52") : -1;
+            cache.i_C53 = schema.exists("C53") ? schema.getEntryOrder("C53") : -1;
+            cache.i_C54 = schema.exists("C54") ? schema.getEntryOrder("C54") : -1;
+            cache.i_C55 = schema.exists("C55") ? schema.getEntryOrder("C55") : -1;
+            cache.i_C56 = schema.exists("C56") ? schema.getEntryOrder("C56") : -1;
+            cache.i_C61 = schema.exists("C61") ? schema.getEntryOrder("C61") : -1;
+            cache.i_C62 = schema.exists("C62") ? schema.getEntryOrder("C62") : -1;
+            cache.i_C63 = schema.exists("C63") ? schema.getEntryOrder("C63") : -1;
+            cache.i_C64 = schema.exists("C64") ? schema.getEntryOrder("C64") : -1;
+            cache.i_C65 = schema.exists("C65") ? schema.getEntryOrder("C65") : -1;
+            cache.i_C66 = schema.exists("C66") ? schema.getEntryOrder("C66") : -1;
         }
-        h_id = cache.h_id;
-        h_C11 = cache.h_C11;
-        h_C12 = cache.h_C12;
-        h_C13 = cache.h_C13;
-        h_C14 = cache.h_C14;
-        h_C15 = cache.h_C15;
-        h_C16 = cache.h_C16;
-        h_C21 = cache.h_C21;
-        h_C22 = cache.h_C22;
-        h_C23 = cache.h_C23;
-        h_C24 = cache.h_C24;
-        h_C25 = cache.h_C25;
-        h_C26 = cache.h_C26;
-        h_C31 = cache.h_C31;
-        h_C32 = cache.h_C32;
-        h_C33 = cache.h_C33;
-        h_C34 = cache.h_C34;
-        h_C35 = cache.h_C35;
-        h_C36 = cache.h_C36;
-        h_C41 = cache.h_C41;
-        h_C42 = cache.h_C42;
-        h_C43 = cache.h_C43;
-        h_C44 = cache.h_C44;
-        h_C45 = cache.h_C45;
-        h_C46 = cache.h_C46;
-        h_C51 = cache.h_C51;
-        h_C52 = cache.h_C52;
-        h_C53 = cache.h_C53;
-        h_C54 = cache.h_C54;
-        h_C55 = cache.h_C55;
-        h_C56 = cache.h_C56;
-        h_C61 = cache.h_C61;
-        h_C62 = cache.h_C62;
-        h_C63 = cache.h_C63;
-        h_C64 = cache.h_C64;
-        h_C65 = cache.h_C65;
-        h_C66 = cache.h_C66;
+        i_id = cache.i_id;
+        i_C11 = cache.i_C11;
+        i_C12 = cache.i_C12;
+        i_C13 = cache.i_C13;
+        i_C14 = cache.i_C14;
+        i_C15 = cache.i_C15;
+        i_C16 = cache.i_C16;
+        i_C21 = cache.i_C21;
+        i_C22 = cache.i_C22;
+        i_C23 = cache.i_C23;
+        i_C24 = cache.i_C24;
+        i_C25 = cache.i_C25;
+        i_C26 = cache.i_C26;
+        i_C31 = cache.i_C31;
+        i_C32 = cache.i_C32;
+        i_C33 = cache.i_C33;
+        i_C34 = cache.i_C34;
+        i_C35 = cache.i_C35;
+        i_C36 = cache.i_C36;
+        i_C41 = cache.i_C41;
+        i_C42 = cache.i_C42;
+        i_C43 = cache.i_C43;
+        i_C44 = cache.i_C44;
+        i_C45 = cache.i_C45;
+        i_C46 = cache.i_C46;
+        i_C51 = cache.i_C51;
+        i_C52 = cache.i_C52;
+        i_C53 = cache.i_C53;
+        i_C54 = cache.i_C54;
+        i_C55 = cache.i_C55;
+        i_C56 = cache.i_C56;
+        i_C61 = cache.i_C61;
+        i_C62 = cache.i_C62;
+        i_C63 = cache.i_C63;
+        i_C64 = cache.i_C64;
+        i_C65 = cache.i_C65;
+        i_C66 = cache.i_C66;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: id of the track
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+        return static_cast<int>(m_view->getShort(i_id, row));
     }
     /// C11: var(x) at vertex in lab frame
     [[nodiscard]] float C11(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C11, row));
+        return static_cast<float>(m_view->getFloat(i_C11, row));
     }
     /// C12: cov(x, y) at vertex in lab frame
     [[nodiscard]] float C12(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C12, row));
+        return static_cast<float>(m_view->getFloat(i_C12, row));
     }
     /// C13: cov(x, z) at vertex in lab frame
     [[nodiscard]] float C13(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C13, row));
+        return static_cast<float>(m_view->getFloat(i_C13, row));
     }
     /// C14: cov(x, p_theta) at vertex in lab frame
     [[nodiscard]] float C14(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C14, row));
+        return static_cast<float>(m_view->getFloat(i_C14, row));
     }
     /// C15: cov(x, p_phi) at vertex in lab frame
     [[nodiscard]] float C15(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C15, row));
+        return static_cast<float>(m_view->getFloat(i_C15, row));
     }
     /// C16: cov(x, p) at vertex in lab frame
     [[nodiscard]] float C16(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C16, row));
+        return static_cast<float>(m_view->getFloat(i_C16, row));
     }
     /// C21: cov(y, x) at vertex in lab frame
     [[nodiscard]] float C21(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C21, row));
+        return static_cast<float>(m_view->getFloat(i_C21, row));
     }
     /// C22: var(y) at vertex in lab frame
     [[nodiscard]] float C22(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C22, row));
+        return static_cast<float>(m_view->getFloat(i_C22, row));
     }
     /// C23: cov(y, z) at vertex in lab frame
     [[nodiscard]] float C23(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C23, row));
+        return static_cast<float>(m_view->getFloat(i_C23, row));
     }
     /// C24: cov(y, p_theta) at vertex in lab frame
     [[nodiscard]] float C24(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C24, row));
+        return static_cast<float>(m_view->getFloat(i_C24, row));
     }
     /// C25: cov(y, p_phi) at vertex in lab frame
     [[nodiscard]] float C25(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C25, row));
+        return static_cast<float>(m_view->getFloat(i_C25, row));
     }
     /// C26: cov(y, p) at vertex in lab frame
     [[nodiscard]] float C26(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C26, row));
+        return static_cast<float>(m_view->getFloat(i_C26, row));
     }
     /// C31: cov(z, x) at vertex in lab frame
     [[nodiscard]] float C31(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C31, row));
+        return static_cast<float>(m_view->getFloat(i_C31, row));
     }
     /// C32: cov(z, y) at vertex in lab frame
     [[nodiscard]] float C32(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C32, row));
+        return static_cast<float>(m_view->getFloat(i_C32, row));
     }
     /// C33: var(z) at vertex in lab frame
     [[nodiscard]] float C33(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C33, row));
+        return static_cast<float>(m_view->getFloat(i_C33, row));
     }
     /// C34: cov(z, p_theta) at vertex in lab frame
     [[nodiscard]] float C34(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C34, row));
+        return static_cast<float>(m_view->getFloat(i_C34, row));
     }
     /// C35: cov(z, p_phi) at vertex in lab frame
     [[nodiscard]] float C35(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C35, row));
+        return static_cast<float>(m_view->getFloat(i_C35, row));
     }
     /// C36: cov(z, p) at vertex in lab frame
     [[nodiscard]] float C36(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C36, row));
+        return static_cast<float>(m_view->getFloat(i_C36, row));
     }
     /// C41: cov(p_theta, x) at vertex in lab frame
     [[nodiscard]] float C41(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C41, row));
+        return static_cast<float>(m_view->getFloat(i_C41, row));
     }
     /// C42: cov(p_theta, y) at vertex in lab frame
     [[nodiscard]] float C42(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C42, row));
+        return static_cast<float>(m_view->getFloat(i_C42, row));
     }
     /// C43: cov(p_theta, z) at vertex in lab frame
     [[nodiscard]] float C43(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C43, row));
+        return static_cast<float>(m_view->getFloat(i_C43, row));
     }
     /// C44: var(p_theta) at vertex in lab frame
     [[nodiscard]] float C44(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C44, row));
+        return static_cast<float>(m_view->getFloat(i_C44, row));
     }
     /// C45: cov(p_theta, p_phi) at vertex in lab frame
     [[nodiscard]] float C45(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C45, row));
+        return static_cast<float>(m_view->getFloat(i_C45, row));
     }
     /// C46: cov(p_theta, p) at vertex in lab frame
     [[nodiscard]] float C46(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C46, row));
+        return static_cast<float>(m_view->getFloat(i_C46, row));
     }
     /// C51: cov(p_phi, x) at vertex in lab frame
     [[nodiscard]] float C51(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C51, row));
+        return static_cast<float>(m_view->getFloat(i_C51, row));
     }
     /// C52: cov(p_phi, y) at vertex in lab frame
     [[nodiscard]] float C52(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C52, row));
+        return static_cast<float>(m_view->getFloat(i_C52, row));
     }
     /// C53: cov(p_phi, z) at vertex in lab frame
     [[nodiscard]] float C53(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C53, row));
+        return static_cast<float>(m_view->getFloat(i_C53, row));
     }
     /// C54: cov(p_phi, p_theta) at vertex in lab frame
     [[nodiscard]] float C54(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C54, row));
+        return static_cast<float>(m_view->getFloat(i_C54, row));
     }
     /// C55: var(p_phi) at vertex in lab frame
     [[nodiscard]] float C55(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C55, row));
+        return static_cast<float>(m_view->getFloat(i_C55, row));
     }
     /// C56: cov(p_phi, p) at vertex in lab frame
     [[nodiscard]] float C56(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C56, row));
+        return static_cast<float>(m_view->getFloat(i_C56, row));
     }
     /// C61: cov(p, x) at vertex in lab frame
     [[nodiscard]] float C61(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C61, row));
+        return static_cast<float>(m_view->getFloat(i_C61, row));
     }
     /// C62: cov(p, y) at vertex in lab frame
     [[nodiscard]] float C62(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C62, row));
+        return static_cast<float>(m_view->getFloat(i_C62, row));
     }
     /// C63: cov(p, z) at vertex in lab frame
     [[nodiscard]] float C63(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C63, row));
+        return static_cast<float>(m_view->getFloat(i_C63, row));
     }
     /// C64: cov(p, p_theta) at vertex in lab frame
     [[nodiscard]] float C64(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C64, row));
+        return static_cast<float>(m_view->getFloat(i_C64, row));
     }
     /// C65: cov(p, p_phi) at vertex in lab frame
     [[nodiscard]] float C65(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C65, row));
+        return static_cast<float>(m_view->getFloat(i_C65, row));
     }
     /// C66: var(p) at vertex in lab frame
     [[nodiscard]] float C66(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_C66, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
-        return m_view.column<int16_t>(h_id);
-    }
-    /// C11 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C11_col() const noexcept {
-        return m_view.column<float>(h_C11);
-    }
-    /// C12 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C12_col() const noexcept {
-        return m_view.column<float>(h_C12);
-    }
-    /// C13 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C13_col() const noexcept {
-        return m_view.column<float>(h_C13);
-    }
-    /// C14 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C14_col() const noexcept {
-        return m_view.column<float>(h_C14);
-    }
-    /// C15 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C15_col() const noexcept {
-        return m_view.column<float>(h_C15);
-    }
-    /// C16 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C16_col() const noexcept {
-        return m_view.column<float>(h_C16);
-    }
-    /// C21 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C21_col() const noexcept {
-        return m_view.column<float>(h_C21);
-    }
-    /// C22 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C22_col() const noexcept {
-        return m_view.column<float>(h_C22);
-    }
-    /// C23 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C23_col() const noexcept {
-        return m_view.column<float>(h_C23);
-    }
-    /// C24 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C24_col() const noexcept {
-        return m_view.column<float>(h_C24);
-    }
-    /// C25 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C25_col() const noexcept {
-        return m_view.column<float>(h_C25);
-    }
-    /// C26 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C26_col() const noexcept {
-        return m_view.column<float>(h_C26);
-    }
-    /// C31 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C31_col() const noexcept {
-        return m_view.column<float>(h_C31);
-    }
-    /// C32 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C32_col() const noexcept {
-        return m_view.column<float>(h_C32);
-    }
-    /// C33 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C33_col() const noexcept {
-        return m_view.column<float>(h_C33);
-    }
-    /// C34 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C34_col() const noexcept {
-        return m_view.column<float>(h_C34);
-    }
-    /// C35 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C35_col() const noexcept {
-        return m_view.column<float>(h_C35);
-    }
-    /// C36 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C36_col() const noexcept {
-        return m_view.column<float>(h_C36);
-    }
-    /// C41 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C41_col() const noexcept {
-        return m_view.column<float>(h_C41);
-    }
-    /// C42 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C42_col() const noexcept {
-        return m_view.column<float>(h_C42);
-    }
-    /// C43 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C43_col() const noexcept {
-        return m_view.column<float>(h_C43);
-    }
-    /// C44 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C44_col() const noexcept {
-        return m_view.column<float>(h_C44);
-    }
-    /// C45 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C45_col() const noexcept {
-        return m_view.column<float>(h_C45);
-    }
-    /// C46 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C46_col() const noexcept {
-        return m_view.column<float>(h_C46);
-    }
-    /// C51 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C51_col() const noexcept {
-        return m_view.column<float>(h_C51);
-    }
-    /// C52 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C52_col() const noexcept {
-        return m_view.column<float>(h_C52);
-    }
-    /// C53 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C53_col() const noexcept {
-        return m_view.column<float>(h_C53);
-    }
-    /// C54 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C54_col() const noexcept {
-        return m_view.column<float>(h_C54);
-    }
-    /// C55 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C55_col() const noexcept {
-        return m_view.column<float>(h_C55);
-    }
-    /// C56 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C56_col() const noexcept {
-        return m_view.column<float>(h_C56);
-    }
-    /// C61 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C61_col() const noexcept {
-        return m_view.column<float>(h_C61);
-    }
-    /// C62 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C62_col() const noexcept {
-        return m_view.column<float>(h_C62);
-    }
-    /// C63 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C63_col() const noexcept {
-        return m_view.column<float>(h_C63);
-    }
-    /// C64 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C64_col() const noexcept {
-        return m_view.column<float>(h_C64);
-    }
-    /// C65 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C65_col() const noexcept {
-        return m_view.column<float>(h_C65);
-    }
-    /// C66 column as a contiguous span.
-    [[nodiscard]] std::span<const float> C66_col() const noexcept {
-        return m_view.column<float>(h_C66);
+        return static_cast<float>(m_view->getFloat(i_C66, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_C11{};
-    hipo::column_handle h_C12{};
-    hipo::column_handle h_C13{};
-    hipo::column_handle h_C14{};
-    hipo::column_handle h_C15{};
-    hipo::column_handle h_C16{};
-    hipo::column_handle h_C21{};
-    hipo::column_handle h_C22{};
-    hipo::column_handle h_C23{};
-    hipo::column_handle h_C24{};
-    hipo::column_handle h_C25{};
-    hipo::column_handle h_C26{};
-    hipo::column_handle h_C31{};
-    hipo::column_handle h_C32{};
-    hipo::column_handle h_C33{};
-    hipo::column_handle h_C34{};
-    hipo::column_handle h_C35{};
-    hipo::column_handle h_C36{};
-    hipo::column_handle h_C41{};
-    hipo::column_handle h_C42{};
-    hipo::column_handle h_C43{};
-    hipo::column_handle h_C44{};
-    hipo::column_handle h_C45{};
-    hipo::column_handle h_C46{};
-    hipo::column_handle h_C51{};
-    hipo::column_handle h_C52{};
-    hipo::column_handle h_C53{};
-    hipo::column_handle h_C54{};
-    hipo::column_handle h_C55{};
-    hipo::column_handle h_C56{};
-    hipo::column_handle h_C61{};
-    hipo::column_handle h_C62{};
-    hipo::column_handle h_C63{};
-    hipo::column_handle h_C64{};
-    hipo::column_handle h_C65{};
-    hipo::column_handle h_C66{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_C11 = -1;
+    int i_C12 = -1;
+    int i_C13 = -1;
+    int i_C14 = -1;
+    int i_C15 = -1;
+    int i_C16 = -1;
+    int i_C21 = -1;
+    int i_C22 = -1;
+    int i_C23 = -1;
+    int i_C24 = -1;
+    int i_C25 = -1;
+    int i_C26 = -1;
+    int i_C31 = -1;
+    int i_C32 = -1;
+    int i_C33 = -1;
+    int i_C34 = -1;
+    int i_C35 = -1;
+    int i_C36 = -1;
+    int i_C41 = -1;
+    int i_C42 = -1;
+    int i_C43 = -1;
+    int i_C44 = -1;
+    int i_C45 = -1;
+    int i_C46 = -1;
+    int i_C51 = -1;
+    int i_C52 = -1;
+    int i_C53 = -1;
+    int i_C54 = -1;
+    int i_C55 = -1;
+    int i_C56 = -1;
+    int i_C61 = -1;
+    int i_C62 = -1;
+    int i_C63 = -1;
+    int i_C64 = -1;
+    int i_C65 = -1;
+    int i_C66 = -1;
 
     friend class Row;
 };

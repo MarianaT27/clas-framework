@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `ALERT::projections` (group 23000, item 31).
 /// Track Projections to ATOF
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,203 +40,139 @@ class ALERT_projections {
 
     ALERT_projections() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_trackid;
-            hipo::column_handle h_x_at_bar;
-            hipo::column_handle h_y_at_bar;
-            hipo::column_handle h_z_at_bar;
-            hipo::column_handle h_l_at_bar;
-            hipo::column_handle h_l_in_bar;
-            hipo::column_handle h_x_at_wedge;
-            hipo::column_handle h_y_at_wedge;
-            hipo::column_handle h_z_at_wedge;
-            hipo::column_handle h_l_at_wedge;
-            hipo::column_handle h_l_in_wedge;
+            int i_id = -1;
+            int i_trackid = -1;
+            int i_x_at_bar = -1;
+            int i_y_at_bar = -1;
+            int i_z_at_bar = -1;
+            int i_l_at_bar = -1;
+            int i_l_in_bar = -1;
+            int i_x_at_wedge = -1;
+            int i_y_at_wedge = -1;
+            int i_z_at_wedge = -1;
+            int i_l_at_wedge = -1;
+            int i_l_in_wedge = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("trackid"); h) cache.h_trackid = *h;
-            else cache.h_trackid = {};
-            if (auto h = schema.get_handle("x_at_bar"); h) cache.h_x_at_bar = *h;
-            else cache.h_x_at_bar = {};
-            if (auto h = schema.get_handle("y_at_bar"); h) cache.h_y_at_bar = *h;
-            else cache.h_y_at_bar = {};
-            if (auto h = schema.get_handle("z_at_bar"); h) cache.h_z_at_bar = *h;
-            else cache.h_z_at_bar = {};
-            if (auto h = schema.get_handle("l_at_bar"); h) cache.h_l_at_bar = *h;
-            else cache.h_l_at_bar = {};
-            if (auto h = schema.get_handle("l_in_bar"); h) cache.h_l_in_bar = *h;
-            else cache.h_l_in_bar = {};
-            if (auto h = schema.get_handle("x_at_wedge"); h) cache.h_x_at_wedge = *h;
-            else cache.h_x_at_wedge = {};
-            if (auto h = schema.get_handle("y_at_wedge"); h) cache.h_y_at_wedge = *h;
-            else cache.h_y_at_wedge = {};
-            if (auto h = schema.get_handle("z_at_wedge"); h) cache.h_z_at_wedge = *h;
-            else cache.h_z_at_wedge = {};
-            if (auto h = schema.get_handle("l_at_wedge"); h) cache.h_l_at_wedge = *h;
-            else cache.h_l_at_wedge = {};
-            if (auto h = schema.get_handle("l_in_wedge"); h) cache.h_l_in_wedge = *h;
-            else cache.h_l_in_wedge = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_trackid = schema.exists("trackid") ? schema.getEntryOrder("trackid") : -1;
+            cache.i_x_at_bar = schema.exists("x_at_bar") ? schema.getEntryOrder("x_at_bar") : -1;
+            cache.i_y_at_bar = schema.exists("y_at_bar") ? schema.getEntryOrder("y_at_bar") : -1;
+            cache.i_z_at_bar = schema.exists("z_at_bar") ? schema.getEntryOrder("z_at_bar") : -1;
+            cache.i_l_at_bar = schema.exists("l_at_bar") ? schema.getEntryOrder("l_at_bar") : -1;
+            cache.i_l_in_bar = schema.exists("l_in_bar") ? schema.getEntryOrder("l_in_bar") : -1;
+            cache.i_x_at_wedge = schema.exists("x_at_wedge") ? schema.getEntryOrder("x_at_wedge") : -1;
+            cache.i_y_at_wedge = schema.exists("y_at_wedge") ? schema.getEntryOrder("y_at_wedge") : -1;
+            cache.i_z_at_wedge = schema.exists("z_at_wedge") ? schema.getEntryOrder("z_at_wedge") : -1;
+            cache.i_l_at_wedge = schema.exists("l_at_wedge") ? schema.getEntryOrder("l_at_wedge") : -1;
+            cache.i_l_in_wedge = schema.exists("l_in_wedge") ? schema.getEntryOrder("l_in_wedge") : -1;
         }
-        h_id = cache.h_id;
-        h_trackid = cache.h_trackid;
-        h_x_at_bar = cache.h_x_at_bar;
-        h_y_at_bar = cache.h_y_at_bar;
-        h_z_at_bar = cache.h_z_at_bar;
-        h_l_at_bar = cache.h_l_at_bar;
-        h_l_in_bar = cache.h_l_in_bar;
-        h_x_at_wedge = cache.h_x_at_wedge;
-        h_y_at_wedge = cache.h_y_at_wedge;
-        h_z_at_wedge = cache.h_z_at_wedge;
-        h_l_at_wedge = cache.h_l_at_wedge;
-        h_l_in_wedge = cache.h_l_in_wedge;
+        i_id = cache.i_id;
+        i_trackid = cache.i_trackid;
+        i_x_at_bar = cache.i_x_at_bar;
+        i_y_at_bar = cache.i_y_at_bar;
+        i_z_at_bar = cache.i_z_at_bar;
+        i_l_at_bar = cache.i_l_at_bar;
+        i_l_in_bar = cache.i_l_in_bar;
+        i_x_at_wedge = cache.i_x_at_wedge;
+        i_y_at_wedge = cache.i_y_at_wedge;
+        i_z_at_wedge = cache.i_z_at_wedge;
+        i_l_at_wedge = cache.i_l_at_wedge;
+        i_l_in_wedge = cache.i_l_in_wedge;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: projection id
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+        return static_cast<int>(m_view->getShort(i_id, row));
     }
     /// trackid: id of the track that was projected
     [[nodiscard]] int trackid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_trackid, row));
+        return static_cast<int>(m_view->getShort(i_trackid, row));
     }
     /// x_at_bar: x position at atof bar (middle surface) in mm
     [[nodiscard]] float x_at_bar(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x_at_bar, row));
+        return static_cast<float>(m_view->getFloat(i_x_at_bar, row));
     }
     /// y_at_bar: y position at atof bar (middle surface) in mm
     [[nodiscard]] float y_at_bar(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y_at_bar, row));
+        return static_cast<float>(m_view->getFloat(i_y_at_bar, row));
     }
     /// z_at_bar: z position at atof bar (middle surface) in mm
     [[nodiscard]] float z_at_bar(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_z_at_bar, row));
+        return static_cast<float>(m_view->getFloat(i_z_at_bar, row));
     }
     /// l_at_bar: path length at atof bar (inner surface) in mm
     [[nodiscard]] float l_at_bar(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_l_at_bar, row));
+        return static_cast<float>(m_view->getFloat(i_l_at_bar, row));
     }
     /// l_in_bar: path length inside atof bar in mm
     [[nodiscard]] float l_in_bar(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_l_in_bar, row));
+        return static_cast<float>(m_view->getFloat(i_l_in_bar, row));
     }
     /// x_at_wedge: x position at atof wedge (middle surface) in mm
     [[nodiscard]] float x_at_wedge(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x_at_wedge, row));
+        return static_cast<float>(m_view->getFloat(i_x_at_wedge, row));
     }
     /// y_at_wedge: y position at atof wedge (middle surface) in mm
     [[nodiscard]] float y_at_wedge(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y_at_wedge, row));
+        return static_cast<float>(m_view->getFloat(i_y_at_wedge, row));
     }
     /// z_at_wedge: z position at atof wedge (middle surface) in mm
     [[nodiscard]] float z_at_wedge(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_z_at_wedge, row));
+        return static_cast<float>(m_view->getFloat(i_z_at_wedge, row));
     }
     /// l_at_wedge: path length at atof wedge (inner surface) in mm
     [[nodiscard]] float l_at_wedge(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_l_at_wedge, row));
+        return static_cast<float>(m_view->getFloat(i_l_at_wedge, row));
     }
     /// l_in_wedge: path length inside atof wedge in mm
     [[nodiscard]] float l_in_wedge(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_l_in_wedge, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
-        return m_view.column<int16_t>(h_id);
-    }
-    /// trackid column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> trackid_col() const noexcept {
-        return m_view.column<int16_t>(h_trackid);
-    }
-    /// x_at_bar column as a contiguous span.
-    [[nodiscard]] std::span<const float> x_at_bar_col() const noexcept {
-        return m_view.column<float>(h_x_at_bar);
-    }
-    /// y_at_bar column as a contiguous span.
-    [[nodiscard]] std::span<const float> y_at_bar_col() const noexcept {
-        return m_view.column<float>(h_y_at_bar);
-    }
-    /// z_at_bar column as a contiguous span.
-    [[nodiscard]] std::span<const float> z_at_bar_col() const noexcept {
-        return m_view.column<float>(h_z_at_bar);
-    }
-    /// l_at_bar column as a contiguous span.
-    [[nodiscard]] std::span<const float> l_at_bar_col() const noexcept {
-        return m_view.column<float>(h_l_at_bar);
-    }
-    /// l_in_bar column as a contiguous span.
-    [[nodiscard]] std::span<const float> l_in_bar_col() const noexcept {
-        return m_view.column<float>(h_l_in_bar);
-    }
-    /// x_at_wedge column as a contiguous span.
-    [[nodiscard]] std::span<const float> x_at_wedge_col() const noexcept {
-        return m_view.column<float>(h_x_at_wedge);
-    }
-    /// y_at_wedge column as a contiguous span.
-    [[nodiscard]] std::span<const float> y_at_wedge_col() const noexcept {
-        return m_view.column<float>(h_y_at_wedge);
-    }
-    /// z_at_wedge column as a contiguous span.
-    [[nodiscard]] std::span<const float> z_at_wedge_col() const noexcept {
-        return m_view.column<float>(h_z_at_wedge);
-    }
-    /// l_at_wedge column as a contiguous span.
-    [[nodiscard]] std::span<const float> l_at_wedge_col() const noexcept {
-        return m_view.column<float>(h_l_at_wedge);
-    }
-    /// l_in_wedge column as a contiguous span.
-    [[nodiscard]] std::span<const float> l_in_wedge_col() const noexcept {
-        return m_view.column<float>(h_l_in_wedge);
+        return static_cast<float>(m_view->getFloat(i_l_in_wedge, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_trackid{};
-    hipo::column_handle h_x_at_bar{};
-    hipo::column_handle h_y_at_bar{};
-    hipo::column_handle h_z_at_bar{};
-    hipo::column_handle h_l_at_bar{};
-    hipo::column_handle h_l_in_bar{};
-    hipo::column_handle h_x_at_wedge{};
-    hipo::column_handle h_y_at_wedge{};
-    hipo::column_handle h_z_at_wedge{};
-    hipo::column_handle h_l_at_wedge{};
-    hipo::column_handle h_l_in_wedge{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_trackid = -1;
+    int i_x_at_bar = -1;
+    int i_y_at_bar = -1;
+    int i_z_at_bar = -1;
+    int i_l_at_bar = -1;
+    int i_l_in_bar = -1;
+    int i_x_at_wedge = -1;
+    int i_y_at_wedge = -1;
+    int i_z_at_wedge = -1;
+    int i_l_at_wedge = -1;
+    int i_l_in_wedge = -1;
 
     friend class Row;
 };

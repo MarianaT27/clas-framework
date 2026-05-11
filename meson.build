@@ -96,9 +96,6 @@ zlib_dep    = dependency('zlib')
 thread_dep  = dependency('threads')
 project_libs = []
 
-# HIPO4 library
-subdir('extern/hipo4')
-
 # mh — header-only histogram library at extern/mh/.
 # MH_NO_MDSPAN forces mh::StaticStorage off mh's optional std::mdspan view.
 # Some C++23 stdlibs ship <mdspan> without putting std::mdspan/std::dextents
@@ -129,6 +126,17 @@ root_dep = declare_dependency(
   ),
   link_args: run_command('root-config', '--libs', check: true).stdout().strip().split(),
 )
+
+# Alias for the casing used by extern/hipo4/meson.build.
+ROOT_dep = root_dep
+
+# HIPO4 library — needs root_dep above for the optional datastreamROOT path
+# (root:// / http:// / https:// / davix:// over TFile::Open).
+subdir('extern/hipo4')
+
+# Alias for downstream meson.build files that still reference the legacy
+# `hipo4_dep` name (extern/hipo4/meson.build declares it as `hipo_dep`).
+hipo4_dep = hipo_dep
 
 #══════════════════════════════════════════════════════════════════════════════#
 #                              CORE LIBRARIES                                   #

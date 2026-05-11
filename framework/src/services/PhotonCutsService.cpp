@@ -3,16 +3,16 @@
 namespace framework {
 
 auto PhotonCutsService::filter_photon(
-    const hipo::bank_view& particle_bank,
+    const hipo::bank& particle_bank,
     const std::map<int, CaloRowData>& calo_map,
     int row,
     int runnum,
     int pass) const -> bool {
 
     // Set variables native to the photon we are classifying
-    double gPx = static_cast<double>(particle_bank.get<float>("px", row));
-    double gPy = static_cast<double>(particle_bank.get<float>("py", row));
-    double gPz = static_cast<double>(particle_bank.get<float>("pz", row));
+    double gPx = static_cast<double>(particle_bank.getFloat("px", row));
+    double gPy = static_cast<double>(particle_bank.getFloat("py", row));
+    double gPz = static_cast<double>(particle_bank.getFloat("pz", row));
 
     // Set ML features intrinsic to the photon of interest
     double gE = std::sqrt(gPx * gPx + gPy * gPy + gPz * gPz);
@@ -63,7 +63,7 @@ auto PhotonCutsService::filter_photon(
     ROOT::Math::XYZVector vPOI = get_particle_calo_vector(calo_POI);
 
     // Build nearest neighbor event structure
-    for (int inner_row = 0; inner_row < particle_bank.rows(); inner_row++) {
+    for (int inner_row = 0; inner_row < particle_bank.getRows(); inner_row++) {
         if (inner_row == row) continue;
 
         auto inner_calo_it = calo_map.find(inner_row);
@@ -71,14 +71,14 @@ auto PhotonCutsService::filter_photon(
 
         const auto& calo_PART = inner_calo_it->second;
 
-        auto pid = particle_bank.get<int32_t>("pid", inner_row);
+        auto pid = particle_bank.getInt("pid", inner_row);
         auto mass = physics::ParticleUtils::get_mass(pid);
 
         if (std::isnan(mass)) continue;
 
-        auto px = particle_bank.get<float>("px", inner_row);
-        auto py = particle_bank.get<float>("py", inner_row);
-        auto pz = particle_bank.get<float>("pz", inner_row);
+        auto px = particle_bank.getFloat("px", inner_row);
+        auto py = particle_bank.getFloat("py", inner_row);
+        auto pz = particle_bank.getFloat("pz", inner_row);
         auto p = std::sqrt(px * px + py * py + pz * pz);
         auto E = std::sqrt(p * p + mass * mass);
         auto th = std::acos(pz / p);

@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `MC::Event` (group 40, item 1).
 /// Lund header bank for the generated event
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,177 +40,123 @@ class MC_Event {
 
     MC_Event() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_npart;
-            hipo::column_handle h_atarget;
-            hipo::column_handle h_ztarget;
-            hipo::column_handle h_ptarget;
-            hipo::column_handle h_pbeam;
-            hipo::column_handle h_btype;
-            hipo::column_handle h_ebeam;
-            hipo::column_handle h_targetid;
-            hipo::column_handle h_processid;
-            hipo::column_handle h_weight;
+            int i_npart = -1;
+            int i_atarget = -1;
+            int i_ztarget = -1;
+            int i_ptarget = -1;
+            int i_pbeam = -1;
+            int i_btype = -1;
+            int i_ebeam = -1;
+            int i_targetid = -1;
+            int i_processid = -1;
+            int i_weight = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("npart"); h) cache.h_npart = *h;
-            else cache.h_npart = {};
-            if (auto h = schema.get_handle("atarget"); h) cache.h_atarget = *h;
-            else cache.h_atarget = {};
-            if (auto h = schema.get_handle("ztarget"); h) cache.h_ztarget = *h;
-            else cache.h_ztarget = {};
-            if (auto h = schema.get_handle("ptarget"); h) cache.h_ptarget = *h;
-            else cache.h_ptarget = {};
-            if (auto h = schema.get_handle("pbeam"); h) cache.h_pbeam = *h;
-            else cache.h_pbeam = {};
-            if (auto h = schema.get_handle("btype"); h) cache.h_btype = *h;
-            else cache.h_btype = {};
-            if (auto h = schema.get_handle("ebeam"); h) cache.h_ebeam = *h;
-            else cache.h_ebeam = {};
-            if (auto h = schema.get_handle("targetid"); h) cache.h_targetid = *h;
-            else cache.h_targetid = {};
-            if (auto h = schema.get_handle("processid"); h) cache.h_processid = *h;
-            else cache.h_processid = {};
-            if (auto h = schema.get_handle("weight"); h) cache.h_weight = *h;
-            else cache.h_weight = {};
+            cache.i_npart = schema.exists("npart") ? schema.getEntryOrder("npart") : -1;
+            cache.i_atarget = schema.exists("atarget") ? schema.getEntryOrder("atarget") : -1;
+            cache.i_ztarget = schema.exists("ztarget") ? schema.getEntryOrder("ztarget") : -1;
+            cache.i_ptarget = schema.exists("ptarget") ? schema.getEntryOrder("ptarget") : -1;
+            cache.i_pbeam = schema.exists("pbeam") ? schema.getEntryOrder("pbeam") : -1;
+            cache.i_btype = schema.exists("btype") ? schema.getEntryOrder("btype") : -1;
+            cache.i_ebeam = schema.exists("ebeam") ? schema.getEntryOrder("ebeam") : -1;
+            cache.i_targetid = schema.exists("targetid") ? schema.getEntryOrder("targetid") : -1;
+            cache.i_processid = schema.exists("processid") ? schema.getEntryOrder("processid") : -1;
+            cache.i_weight = schema.exists("weight") ? schema.getEntryOrder("weight") : -1;
         }
-        h_npart = cache.h_npart;
-        h_atarget = cache.h_atarget;
-        h_ztarget = cache.h_ztarget;
-        h_ptarget = cache.h_ptarget;
-        h_pbeam = cache.h_pbeam;
-        h_btype = cache.h_btype;
-        h_ebeam = cache.h_ebeam;
-        h_targetid = cache.h_targetid;
-        h_processid = cache.h_processid;
-        h_weight = cache.h_weight;
+        i_npart = cache.i_npart;
+        i_atarget = cache.i_atarget;
+        i_ztarget = cache.i_ztarget;
+        i_ptarget = cache.i_ptarget;
+        i_pbeam = cache.i_pbeam;
+        i_btype = cache.i_btype;
+        i_ebeam = cache.i_ebeam;
+        i_targetid = cache.i_targetid;
+        i_processid = cache.i_processid;
+        i_weight = cache.i_weight;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// npart: number of particles in the event (User Defined)
     [[nodiscard]] int npart(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_npart, row));
+        return static_cast<int>(m_view->getShort(i_npart, row));
     }
     /// atarget: Mass number of the target (User Defined)
     [[nodiscard]] int atarget(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_atarget, row));
+        return static_cast<int>(m_view->getShort(i_atarget, row));
     }
     /// ztarget: Atomic number oif the target (User Defined)
     [[nodiscard]] int ztarget(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_ztarget, row));
+        return static_cast<int>(m_view->getShort(i_ztarget, row));
     }
     /// ptarget: Target polarization (User Defined)
     [[nodiscard]] float ptarget(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_ptarget, row));
+        return static_cast<float>(m_view->getFloat(i_ptarget, row));
     }
     /// pbeam: Beam polarization
     [[nodiscard]] float pbeam(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_pbeam, row));
+        return static_cast<float>(m_view->getFloat(i_pbeam, row));
     }
     /// btype: Beam type (User Defined)
     [[nodiscard]] int btype(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_btype, row));
+        return static_cast<int>(m_view->getShort(i_btype, row));
     }
     /// ebeam: Beam energy (GeV) (User Defined)
     [[nodiscard]] float ebeam(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_ebeam, row));
+        return static_cast<float>(m_view->getFloat(i_ebeam, row));
     }
     /// targetid: Interacted nucleon ID (proton=2212, neutron=2112 (User Defined)
     [[nodiscard]] int targetid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_targetid, row));
+        return static_cast<int>(m_view->getShort(i_targetid, row));
     }
     /// processid: Process ID (User Defined)
     [[nodiscard]] int processid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_processid, row));
+        return static_cast<int>(m_view->getShort(i_processid, row));
     }
     /// weight: Event weight (User Defined)
     [[nodiscard]] float weight(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_weight, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// npart column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> npart_col() const noexcept {
-        return m_view.column<int16_t>(h_npart);
-    }
-    /// atarget column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> atarget_col() const noexcept {
-        return m_view.column<int16_t>(h_atarget);
-    }
-    /// ztarget column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> ztarget_col() const noexcept {
-        return m_view.column<int16_t>(h_ztarget);
-    }
-    /// ptarget column as a contiguous span.
-    [[nodiscard]] std::span<const float> ptarget_col() const noexcept {
-        return m_view.column<float>(h_ptarget);
-    }
-    /// pbeam column as a contiguous span.
-    [[nodiscard]] std::span<const float> pbeam_col() const noexcept {
-        return m_view.column<float>(h_pbeam);
-    }
-    /// btype column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> btype_col() const noexcept {
-        return m_view.column<int16_t>(h_btype);
-    }
-    /// ebeam column as a contiguous span.
-    [[nodiscard]] std::span<const float> ebeam_col() const noexcept {
-        return m_view.column<float>(h_ebeam);
-    }
-    /// targetid column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> targetid_col() const noexcept {
-        return m_view.column<int16_t>(h_targetid);
-    }
-    /// processid column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> processid_col() const noexcept {
-        return m_view.column<int16_t>(h_processid);
-    }
-    /// weight column as a contiguous span.
-    [[nodiscard]] std::span<const float> weight_col() const noexcept {
-        return m_view.column<float>(h_weight);
+        return static_cast<float>(m_view->getFloat(i_weight, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_npart{};
-    hipo::column_handle h_atarget{};
-    hipo::column_handle h_ztarget{};
-    hipo::column_handle h_ptarget{};
-    hipo::column_handle h_pbeam{};
-    hipo::column_handle h_btype{};
-    hipo::column_handle h_ebeam{};
-    hipo::column_handle h_targetid{};
-    hipo::column_handle h_processid{};
-    hipo::column_handle h_weight{};
+    const hipo::bank* m_view = nullptr;
+    int i_npart = -1;
+    int i_atarget = -1;
+    int i_ztarget = -1;
+    int i_ptarget = -1;
+    int i_pbeam = -1;
+    int i_btype = -1;
+    int i_ebeam = -1;
+    int i_targetid = -1;
+    int i_processid = -1;
+    int i_weight = -1;
 
     friend class Row;
 };

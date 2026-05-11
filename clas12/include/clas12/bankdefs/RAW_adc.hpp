@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `RAW::adc` (group 20000, item 11).
 /// ADC bank for untranslated signals
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,138 +40,99 @@ class RAW_adc {
 
     RAW_adc() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_crate;
-            hipo::column_handle h_slot;
-            hipo::column_handle h_channel;
-            hipo::column_handle h_order;
-            hipo::column_handle h_ADC;
-            hipo::column_handle h_time;
-            hipo::column_handle h_ped;
+            int i_crate = -1;
+            int i_slot = -1;
+            int i_channel = -1;
+            int i_order = -1;
+            int i_ADC = -1;
+            int i_time = -1;
+            int i_ped = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("crate"); h) cache.h_crate = *h;
-            else cache.h_crate = {};
-            if (auto h = schema.get_handle("slot"); h) cache.h_slot = *h;
-            else cache.h_slot = {};
-            if (auto h = schema.get_handle("channel"); h) cache.h_channel = *h;
-            else cache.h_channel = {};
-            if (auto h = schema.get_handle("order"); h) cache.h_order = *h;
-            else cache.h_order = {};
-            if (auto h = schema.get_handle("ADC"); h) cache.h_ADC = *h;
-            else cache.h_ADC = {};
-            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
-            else cache.h_time = {};
-            if (auto h = schema.get_handle("ped"); h) cache.h_ped = *h;
-            else cache.h_ped = {};
+            cache.i_crate = schema.exists("crate") ? schema.getEntryOrder("crate") : -1;
+            cache.i_slot = schema.exists("slot") ? schema.getEntryOrder("slot") : -1;
+            cache.i_channel = schema.exists("channel") ? schema.getEntryOrder("channel") : -1;
+            cache.i_order = schema.exists("order") ? schema.getEntryOrder("order") : -1;
+            cache.i_ADC = schema.exists("ADC") ? schema.getEntryOrder("ADC") : -1;
+            cache.i_time = schema.exists("time") ? schema.getEntryOrder("time") : -1;
+            cache.i_ped = schema.exists("ped") ? schema.getEntryOrder("ped") : -1;
         }
-        h_crate = cache.h_crate;
-        h_slot = cache.h_slot;
-        h_channel = cache.h_channel;
-        h_order = cache.h_order;
-        h_ADC = cache.h_ADC;
-        h_time = cache.h_time;
-        h_ped = cache.h_ped;
+        i_crate = cache.i_crate;
+        i_slot = cache.i_slot;
+        i_channel = cache.i_channel;
+        i_order = cache.i_order;
+        i_ADC = cache.i_ADC;
+        i_time = cache.i_time;
+        i_ped = cache.i_ped;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// crate: crate id
     [[nodiscard]] int crate(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_crate, row));
+        return static_cast<int>(m_view->getByte(i_crate, row));
     }
     /// slot: slot id
     [[nodiscard]] int slot(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_slot, row));
+        return static_cast<int>(m_view->getByte(i_slot, row));
     }
     /// channel: channel id
     [[nodiscard]] int channel(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_channel, row));
+        return static_cast<int>(m_view->getShort(i_channel, row));
     }
     /// order: order: 0 - ADCL , 1 - ADCR
     [[nodiscard]] int order(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_order, row));
+        return static_cast<int>(m_view->getByte(i_order, row));
     }
     /// ADC: ADC integral from pulse fit
     [[nodiscard]] int ADC(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_ADC, row));
+        return static_cast<int>(m_view->getInt(i_ADC, row));
     }
     /// time: time from pulse fit
     [[nodiscard]] float time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_time, row));
+        return static_cast<float>(m_view->getFloat(i_time, row));
     }
     /// ped: pedestal from pulse analysis
     [[nodiscard]] int ped(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_ped, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// crate column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> crate_col() const noexcept {
-        return m_view.column<int8_t>(h_crate);
-    }
-    /// slot column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> slot_col() const noexcept {
-        return m_view.column<int8_t>(h_slot);
-    }
-    /// channel column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> channel_col() const noexcept {
-        return m_view.column<int16_t>(h_channel);
-    }
-    /// order column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> order_col() const noexcept {
-        return m_view.column<int8_t>(h_order);
-    }
-    /// ADC column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> ADC_col() const noexcept {
-        return m_view.column<int32_t>(h_ADC);
-    }
-    /// time column as a contiguous span.
-    [[nodiscard]] std::span<const float> time_col() const noexcept {
-        return m_view.column<float>(h_time);
-    }
-    /// ped column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> ped_col() const noexcept {
-        return m_view.column<int16_t>(h_ped);
+        return static_cast<int>(m_view->getShort(i_ped, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_crate{};
-    hipo::column_handle h_slot{};
-    hipo::column_handle h_channel{};
-    hipo::column_handle h_order{};
-    hipo::column_handle h_ADC{};
-    hipo::column_handle h_time{};
-    hipo::column_handle h_ped{};
+    const hipo::bank* m_view = nullptr;
+    int i_crate = -1;
+    int i_slot = -1;
+    int i_channel = -1;
+    int i_order = -1;
+    int i_ADC = -1;
+    int i_time = -1;
+    int i_ped = -1;
 
     friend class Row;
 };

@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `AHDC::docaclusters` (group 23000, item 126).
 /// Doca-refined cluster space points
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,125 +40,91 @@ class AHDC_docaclusters {
 
     AHDC_docaclusters() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_x;
-            hipo::column_handle h_y;
-            hipo::column_handle h_z;
-            hipo::column_handle h_weight;
-            hipo::column_handle h_pattern;
-            hipo::column_handle h_idx;
+            int i_x = -1;
+            int i_y = -1;
+            int i_z = -1;
+            int i_weight = -1;
+            int i_pattern = -1;
+            int i_idx = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
-            else cache.h_x = {};
-            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
-            else cache.h_y = {};
-            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
-            else cache.h_z = {};
-            if (auto h = schema.get_handle("weight"); h) cache.h_weight = *h;
-            else cache.h_weight = {};
-            if (auto h = schema.get_handle("pattern"); h) cache.h_pattern = *h;
-            else cache.h_pattern = {};
-            if (auto h = schema.get_handle("idx"); h) cache.h_idx = *h;
-            else cache.h_idx = {};
+            cache.i_x = schema.exists("x") ? schema.getEntryOrder("x") : -1;
+            cache.i_y = schema.exists("y") ? schema.getEntryOrder("y") : -1;
+            cache.i_z = schema.exists("z") ? schema.getEntryOrder("z") : -1;
+            cache.i_weight = schema.exists("weight") ? schema.getEntryOrder("weight") : -1;
+            cache.i_pattern = schema.exists("pattern") ? schema.getEntryOrder("pattern") : -1;
+            cache.i_idx = schema.exists("idx") ? schema.getEntryOrder("idx") : -1;
         }
-        h_x = cache.h_x;
-        h_y = cache.h_y;
-        h_z = cache.h_z;
-        h_weight = cache.h_weight;
-        h_pattern = cache.h_pattern;
-        h_idx = cache.h_idx;
+        i_x = cache.i_x;
+        i_y = cache.i_y;
+        i_z = cache.i_z;
+        i_weight = cache.i_weight;
+        i_pattern = cache.i_pattern;
+        i_idx = cache.i_idx;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// x: refined x (mm)
     [[nodiscard]] float x(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x, row));
+        return static_cast<float>(m_view->getFloat(i_x, row));
     }
     /// y: refined y (mm)
     [[nodiscard]] float y(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y, row));
+        return static_cast<float>(m_view->getFloat(i_y, row));
     }
     /// z: refined z (mm)
     [[nodiscard]] float z(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_z, row));
+        return static_cast<float>(m_view->getFloat(i_z, row));
     }
     /// weight: refined point weight
     [[nodiscard]] float weight(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_weight, row));
+        return static_cast<float>(m_view->getFloat(i_weight, row));
     }
     /// pattern: hit pattern: 11,12,21,22
     [[nodiscard]] int pattern(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_pattern, row));
+        return static_cast<int>(m_view->getInt(i_pattern, row));
     }
     /// idx: index of original AHDC::clusters row
     [[nodiscard]] int idx(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_idx, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// x column as a contiguous span.
-    [[nodiscard]] std::span<const float> x_col() const noexcept {
-        return m_view.column<float>(h_x);
-    }
-    /// y column as a contiguous span.
-    [[nodiscard]] std::span<const float> y_col() const noexcept {
-        return m_view.column<float>(h_y);
-    }
-    /// z column as a contiguous span.
-    [[nodiscard]] std::span<const float> z_col() const noexcept {
-        return m_view.column<float>(h_z);
-    }
-    /// weight column as a contiguous span.
-    [[nodiscard]] std::span<const float> weight_col() const noexcept {
-        return m_view.column<float>(h_weight);
-    }
-    /// pattern column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> pattern_col() const noexcept {
-        return m_view.column<int32_t>(h_pattern);
-    }
-    /// idx column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> idx_col() const noexcept {
-        return m_view.column<int32_t>(h_idx);
+        return static_cast<int>(m_view->getInt(i_idx, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_x{};
-    hipo::column_handle h_y{};
-    hipo::column_handle h_z{};
-    hipo::column_handle h_weight{};
-    hipo::column_handle h_pattern{};
-    hipo::column_handle h_idx{};
+    const hipo::bank* m_view = nullptr;
+    int i_x = -1;
+    int i_y = -1;
+    int i_z = -1;
+    int i_weight = -1;
+    int i_pattern = -1;
+    int i_idx = -1;
 
     friend class Row;
 };

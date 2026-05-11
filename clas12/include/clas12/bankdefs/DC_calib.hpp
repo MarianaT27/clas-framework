@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `DC::calib` (group 20600, item 55).
 /// reconstructed hits using DC timing information
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,424 +40,275 @@ class DC_calib {
 
     DC_calib() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_status;
-            hipo::column_handle h_sector;
-            hipo::column_handle h_superlayer;
-            hipo::column_handle h_layer;
-            hipo::column_handle h_wire;
-            hipo::column_handle h_TDC;
-            hipo::column_handle h_jitter;
-            hipo::column_handle h_doca;
-            hipo::column_handle h_docaError;
-            hipo::column_handle h_trkDoca;
-            hipo::column_handle h_timeResidual;
-            hipo::column_handle h_fitResidual;
-            hipo::column_handle h_DAFWeight;
-            hipo::column_handle h_LR;
-            hipo::column_handle h_X;
-            hipo::column_handle h_Z;
-            hipo::column_handle h_B;
-            hipo::column_handle h_Alpha;
-            hipo::column_handle h_TProp;
-            hipo::column_handle h_TFlight;
-            hipo::column_handle h_T0;
-            hipo::column_handle h_TStart;
-            hipo::column_handle h_dDoca;
-            hipo::column_handle h_clusterID;
-            hipo::column_handle h_trkID;
-            hipo::column_handle h_time;
-            hipo::column_handle h_beta;
-            hipo::column_handle h_tBeta;
+            int i_id = -1;
+            int i_status = -1;
+            int i_sector = -1;
+            int i_superlayer = -1;
+            int i_layer = -1;
+            int i_wire = -1;
+            int i_TDC = -1;
+            int i_jitter = -1;
+            int i_doca = -1;
+            int i_docaError = -1;
+            int i_trkDoca = -1;
+            int i_timeResidual = -1;
+            int i_fitResidual = -1;
+            int i_DAFWeight = -1;
+            int i_LR = -1;
+            int i_X = -1;
+            int i_Z = -1;
+            int i_B = -1;
+            int i_Alpha = -1;
+            int i_TProp = -1;
+            int i_TFlight = -1;
+            int i_T0 = -1;
+            int i_TStart = -1;
+            int i_dDoca = -1;
+            int i_clusterID = -1;
+            int i_trkID = -1;
+            int i_time = -1;
+            int i_beta = -1;
+            int i_tBeta = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
-            else cache.h_status = {};
-            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
-            else cache.h_sector = {};
-            if (auto h = schema.get_handle("superlayer"); h) cache.h_superlayer = *h;
-            else cache.h_superlayer = {};
-            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
-            else cache.h_layer = {};
-            if (auto h = schema.get_handle("wire"); h) cache.h_wire = *h;
-            else cache.h_wire = {};
-            if (auto h = schema.get_handle("TDC"); h) cache.h_TDC = *h;
-            else cache.h_TDC = {};
-            if (auto h = schema.get_handle("jitter"); h) cache.h_jitter = *h;
-            else cache.h_jitter = {};
-            if (auto h = schema.get_handle("doca"); h) cache.h_doca = *h;
-            else cache.h_doca = {};
-            if (auto h = schema.get_handle("docaError"); h) cache.h_docaError = *h;
-            else cache.h_docaError = {};
-            if (auto h = schema.get_handle("trkDoca"); h) cache.h_trkDoca = *h;
-            else cache.h_trkDoca = {};
-            if (auto h = schema.get_handle("timeResidual"); h) cache.h_timeResidual = *h;
-            else cache.h_timeResidual = {};
-            if (auto h = schema.get_handle("fitResidual"); h) cache.h_fitResidual = *h;
-            else cache.h_fitResidual = {};
-            if (auto h = schema.get_handle("DAFWeight"); h) cache.h_DAFWeight = *h;
-            else cache.h_DAFWeight = {};
-            if (auto h = schema.get_handle("LR"); h) cache.h_LR = *h;
-            else cache.h_LR = {};
-            if (auto h = schema.get_handle("X"); h) cache.h_X = *h;
-            else cache.h_X = {};
-            if (auto h = schema.get_handle("Z"); h) cache.h_Z = *h;
-            else cache.h_Z = {};
-            if (auto h = schema.get_handle("B"); h) cache.h_B = *h;
-            else cache.h_B = {};
-            if (auto h = schema.get_handle("Alpha"); h) cache.h_Alpha = *h;
-            else cache.h_Alpha = {};
-            if (auto h = schema.get_handle("TProp"); h) cache.h_TProp = *h;
-            else cache.h_TProp = {};
-            if (auto h = schema.get_handle("TFlight"); h) cache.h_TFlight = *h;
-            else cache.h_TFlight = {};
-            if (auto h = schema.get_handle("T0"); h) cache.h_T0 = *h;
-            else cache.h_T0 = {};
-            if (auto h = schema.get_handle("TStart"); h) cache.h_TStart = *h;
-            else cache.h_TStart = {};
-            if (auto h = schema.get_handle("dDoca"); h) cache.h_dDoca = *h;
-            else cache.h_dDoca = {};
-            if (auto h = schema.get_handle("clusterID"); h) cache.h_clusterID = *h;
-            else cache.h_clusterID = {};
-            if (auto h = schema.get_handle("trkID"); h) cache.h_trkID = *h;
-            else cache.h_trkID = {};
-            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
-            else cache.h_time = {};
-            if (auto h = schema.get_handle("beta"); h) cache.h_beta = *h;
-            else cache.h_beta = {};
-            if (auto h = schema.get_handle("tBeta"); h) cache.h_tBeta = *h;
-            else cache.h_tBeta = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_status = schema.exists("status") ? schema.getEntryOrder("status") : -1;
+            cache.i_sector = schema.exists("sector") ? schema.getEntryOrder("sector") : -1;
+            cache.i_superlayer = schema.exists("superlayer") ? schema.getEntryOrder("superlayer") : -1;
+            cache.i_layer = schema.exists("layer") ? schema.getEntryOrder("layer") : -1;
+            cache.i_wire = schema.exists("wire") ? schema.getEntryOrder("wire") : -1;
+            cache.i_TDC = schema.exists("TDC") ? schema.getEntryOrder("TDC") : -1;
+            cache.i_jitter = schema.exists("jitter") ? schema.getEntryOrder("jitter") : -1;
+            cache.i_doca = schema.exists("doca") ? schema.getEntryOrder("doca") : -1;
+            cache.i_docaError = schema.exists("docaError") ? schema.getEntryOrder("docaError") : -1;
+            cache.i_trkDoca = schema.exists("trkDoca") ? schema.getEntryOrder("trkDoca") : -1;
+            cache.i_timeResidual = schema.exists("timeResidual") ? schema.getEntryOrder("timeResidual") : -1;
+            cache.i_fitResidual = schema.exists("fitResidual") ? schema.getEntryOrder("fitResidual") : -1;
+            cache.i_DAFWeight = schema.exists("DAFWeight") ? schema.getEntryOrder("DAFWeight") : -1;
+            cache.i_LR = schema.exists("LR") ? schema.getEntryOrder("LR") : -1;
+            cache.i_X = schema.exists("X") ? schema.getEntryOrder("X") : -1;
+            cache.i_Z = schema.exists("Z") ? schema.getEntryOrder("Z") : -1;
+            cache.i_B = schema.exists("B") ? schema.getEntryOrder("B") : -1;
+            cache.i_Alpha = schema.exists("Alpha") ? schema.getEntryOrder("Alpha") : -1;
+            cache.i_TProp = schema.exists("TProp") ? schema.getEntryOrder("TProp") : -1;
+            cache.i_TFlight = schema.exists("TFlight") ? schema.getEntryOrder("TFlight") : -1;
+            cache.i_T0 = schema.exists("T0") ? schema.getEntryOrder("T0") : -1;
+            cache.i_TStart = schema.exists("TStart") ? schema.getEntryOrder("TStart") : -1;
+            cache.i_dDoca = schema.exists("dDoca") ? schema.getEntryOrder("dDoca") : -1;
+            cache.i_clusterID = schema.exists("clusterID") ? schema.getEntryOrder("clusterID") : -1;
+            cache.i_trkID = schema.exists("trkID") ? schema.getEntryOrder("trkID") : -1;
+            cache.i_time = schema.exists("time") ? schema.getEntryOrder("time") : -1;
+            cache.i_beta = schema.exists("beta") ? schema.getEntryOrder("beta") : -1;
+            cache.i_tBeta = schema.exists("tBeta") ? schema.getEntryOrder("tBeta") : -1;
         }
-        h_id = cache.h_id;
-        h_status = cache.h_status;
-        h_sector = cache.h_sector;
-        h_superlayer = cache.h_superlayer;
-        h_layer = cache.h_layer;
-        h_wire = cache.h_wire;
-        h_TDC = cache.h_TDC;
-        h_jitter = cache.h_jitter;
-        h_doca = cache.h_doca;
-        h_docaError = cache.h_docaError;
-        h_trkDoca = cache.h_trkDoca;
-        h_timeResidual = cache.h_timeResidual;
-        h_fitResidual = cache.h_fitResidual;
-        h_DAFWeight = cache.h_DAFWeight;
-        h_LR = cache.h_LR;
-        h_X = cache.h_X;
-        h_Z = cache.h_Z;
-        h_B = cache.h_B;
-        h_Alpha = cache.h_Alpha;
-        h_TProp = cache.h_TProp;
-        h_TFlight = cache.h_TFlight;
-        h_T0 = cache.h_T0;
-        h_TStart = cache.h_TStart;
-        h_dDoca = cache.h_dDoca;
-        h_clusterID = cache.h_clusterID;
-        h_trkID = cache.h_trkID;
-        h_time = cache.h_time;
-        h_beta = cache.h_beta;
-        h_tBeta = cache.h_tBeta;
+        i_id = cache.i_id;
+        i_status = cache.i_status;
+        i_sector = cache.i_sector;
+        i_superlayer = cache.i_superlayer;
+        i_layer = cache.i_layer;
+        i_wire = cache.i_wire;
+        i_TDC = cache.i_TDC;
+        i_jitter = cache.i_jitter;
+        i_doca = cache.i_doca;
+        i_docaError = cache.i_docaError;
+        i_trkDoca = cache.i_trkDoca;
+        i_timeResidual = cache.i_timeResidual;
+        i_fitResidual = cache.i_fitResidual;
+        i_DAFWeight = cache.i_DAFWeight;
+        i_LR = cache.i_LR;
+        i_X = cache.i_X;
+        i_Z = cache.i_Z;
+        i_B = cache.i_B;
+        i_Alpha = cache.i_Alpha;
+        i_TProp = cache.i_TProp;
+        i_TFlight = cache.i_TFlight;
+        i_T0 = cache.i_T0;
+        i_TStart = cache.i_TStart;
+        i_dDoca = cache.i_dDoca;
+        i_clusterID = cache.i_clusterID;
+        i_trkID = cache.i_trkID;
+        i_time = cache.i_time;
+        i_beta = cache.i_beta;
+        i_tBeta = cache.i_tBeta;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: id of the hit
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+        return static_cast<int>(m_view->getShort(i_id, row));
     }
     /// status: id of the hit
     [[nodiscard]] int status(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_status, row));
+        return static_cast<int>(m_view->getShort(i_status, row));
     }
     /// sector: DC sector
     [[nodiscard]] int sector(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+        return static_cast<int>(m_view->getByte(i_sector, row));
     }
     /// superlayer: DC superlayer (1...6)
     [[nodiscard]] int superlayer(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_superlayer, row));
+        return static_cast<int>(m_view->getByte(i_superlayer, row));
     }
     /// layer: DC layer in superlayer (1...6)
     [[nodiscard]] int layer(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_layer, row));
+        return static_cast<int>(m_view->getByte(i_layer, row));
     }
     /// wire: wire id of DC
     [[nodiscard]] int wire(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_wire, row));
+        return static_cast<int>(m_view->getShort(i_wire, row));
     }
     /// TDC: raw time of the hit
     [[nodiscard]] int TDC(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_TDC, row));
+        return static_cast<int>(m_view->getInt(i_TDC, row));
     }
     /// jitter: time jitter (ns)
     [[nodiscard]] int jitter(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_jitter, row));
+        return static_cast<int>(m_view->getByte(i_jitter, row));
     }
     /// doca: doca of the hit calculated from TDC (in cm)
     [[nodiscard]] float doca(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_doca, row));
+        return static_cast<float>(m_view->getFloat(i_doca, row));
     }
     /// docaError: uncertainty on doca of the hit calculated from TDC (in cm)
     [[nodiscard]] float docaError(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_docaError, row));
+        return static_cast<float>(m_view->getFloat(i_docaError, row));
     }
     /// trkDoca: track doca of the hit (in cm)
     [[nodiscard]] float trkDoca(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_trkDoca, row));
+        return static_cast<float>(m_view->getFloat(i_trkDoca, row));
     }
     /// timeResidual: time residual of the hit (in cm)
     [[nodiscard]] float timeResidual(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_timeResidual, row));
+        return static_cast<float>(m_view->getFloat(i_timeResidual, row));
     }
     /// fitResidual: fit residual of the hit (in cm, from KF)
     [[nodiscard]] float fitResidual(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_fitResidual, row));
+        return static_cast<float>(m_view->getFloat(i_fitResidual, row));
     }
     /// DAFWeight: Weight by DAF; the 1st bit of status indicates that a hit is belong to single or double
     [[nodiscard]] float DAFWeight(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_DAFWeight, row));
+        return static_cast<float>(m_view->getFloat(i_DAFWeight, row));
     }
     /// LR: Left/Right ambiguity of the hit
     [[nodiscard]] int LR(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_LR, row));
+        return static_cast<int>(m_view->getByte(i_LR, row));
     }
     /// X: wire x-coordinate  in tilted-sector
     [[nodiscard]] float X(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_X, row));
+        return static_cast<float>(m_view->getFloat(i_X, row));
     }
     /// Z: wire z-coordinate  in tilted-sector
     [[nodiscard]] float Z(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_Z, row));
+        return static_cast<float>(m_view->getFloat(i_Z, row));
     }
     /// B: B-field intensity at hit position in tilted-sector system
     [[nodiscard]] float B(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_B, row));
+        return static_cast<float>(m_view->getFloat(i_B, row));
     }
     /// Alpha: local angle (degr.) in tilted-sector system
     [[nodiscard]] float Alpha(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_Alpha, row));
+        return static_cast<float>(m_view->getFloat(i_Alpha, row));
     }
     /// TProp: t propagation along the wire (ns)
     [[nodiscard]] float TProp(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_TProp, row));
+        return static_cast<float>(m_view->getFloat(i_TProp, row));
     }
     /// TFlight: time of flight correction (ns)
     [[nodiscard]] float TFlight(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_TFlight, row));
+        return static_cast<float>(m_view->getFloat(i_TFlight, row));
     }
     /// T0: T0 (ns)
     [[nodiscard]] float T0(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_T0, row));
+        return static_cast<float>(m_view->getFloat(i_T0, row));
     }
     /// TStart: event start time used (ns)
     [[nodiscard]] float TStart(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_TStart, row));
+        return static_cast<float>(m_view->getFloat(i_TStart, row));
     }
     /// dDoca: delta Doca correction (cm)
     [[nodiscard]] float dDoca(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_dDoca, row));
+        return static_cast<float>(m_view->getFloat(i_dDoca, row));
     }
     /// clusterID: ID of associated cluster
     [[nodiscard]] int clusterID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_clusterID, row));
+        return static_cast<int>(m_view->getShort(i_clusterID, row));
     }
     /// trkID: ID of associated track
     [[nodiscard]] int trkID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_trkID, row));
+        return static_cast<int>(m_view->getByte(i_trkID, row));
     }
     /// time: time used in tracking (ns)
     [[nodiscard]] float time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_time, row));
+        return static_cast<float>(m_view->getFloat(i_time, row));
     }
     /// beta: beta used in tracking
     [[nodiscard]] float beta(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_beta, row));
+        return static_cast<float>(m_view->getFloat(i_beta, row));
     }
     /// tBeta: beta-dependent time correction used in tracking
     [[nodiscard]] float tBeta(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_tBeta, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
-        return m_view.column<int16_t>(h_id);
-    }
-    /// status column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> status_col() const noexcept {
-        return m_view.column<int16_t>(h_status);
-    }
-    /// sector column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
-        return m_view.column<int8_t>(h_sector);
-    }
-    /// superlayer column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> superlayer_col() const noexcept {
-        return m_view.column<int8_t>(h_superlayer);
-    }
-    /// layer column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> layer_col() const noexcept {
-        return m_view.column<int8_t>(h_layer);
-    }
-    /// wire column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> wire_col() const noexcept {
-        return m_view.column<int16_t>(h_wire);
-    }
-    /// TDC column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> TDC_col() const noexcept {
-        return m_view.column<int32_t>(h_TDC);
-    }
-    /// jitter column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> jitter_col() const noexcept {
-        return m_view.column<int8_t>(h_jitter);
-    }
-    /// doca column as a contiguous span.
-    [[nodiscard]] std::span<const float> doca_col() const noexcept {
-        return m_view.column<float>(h_doca);
-    }
-    /// docaError column as a contiguous span.
-    [[nodiscard]] std::span<const float> docaError_col() const noexcept {
-        return m_view.column<float>(h_docaError);
-    }
-    /// trkDoca column as a contiguous span.
-    [[nodiscard]] std::span<const float> trkDoca_col() const noexcept {
-        return m_view.column<float>(h_trkDoca);
-    }
-    /// timeResidual column as a contiguous span.
-    [[nodiscard]] std::span<const float> timeResidual_col() const noexcept {
-        return m_view.column<float>(h_timeResidual);
-    }
-    /// fitResidual column as a contiguous span.
-    [[nodiscard]] std::span<const float> fitResidual_col() const noexcept {
-        return m_view.column<float>(h_fitResidual);
-    }
-    /// DAFWeight column as a contiguous span.
-    [[nodiscard]] std::span<const float> DAFWeight_col() const noexcept {
-        return m_view.column<float>(h_DAFWeight);
-    }
-    /// LR column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> LR_col() const noexcept {
-        return m_view.column<int8_t>(h_LR);
-    }
-    /// X column as a contiguous span.
-    [[nodiscard]] std::span<const float> X_col() const noexcept {
-        return m_view.column<float>(h_X);
-    }
-    /// Z column as a contiguous span.
-    [[nodiscard]] std::span<const float> Z_col() const noexcept {
-        return m_view.column<float>(h_Z);
-    }
-    /// B column as a contiguous span.
-    [[nodiscard]] std::span<const float> B_col() const noexcept {
-        return m_view.column<float>(h_B);
-    }
-    /// Alpha column as a contiguous span.
-    [[nodiscard]] std::span<const float> Alpha_col() const noexcept {
-        return m_view.column<float>(h_Alpha);
-    }
-    /// TProp column as a contiguous span.
-    [[nodiscard]] std::span<const float> TProp_col() const noexcept {
-        return m_view.column<float>(h_TProp);
-    }
-    /// TFlight column as a contiguous span.
-    [[nodiscard]] std::span<const float> TFlight_col() const noexcept {
-        return m_view.column<float>(h_TFlight);
-    }
-    /// T0 column as a contiguous span.
-    [[nodiscard]] std::span<const float> T0_col() const noexcept {
-        return m_view.column<float>(h_T0);
-    }
-    /// TStart column as a contiguous span.
-    [[nodiscard]] std::span<const float> TStart_col() const noexcept {
-        return m_view.column<float>(h_TStart);
-    }
-    /// dDoca column as a contiguous span.
-    [[nodiscard]] std::span<const float> dDoca_col() const noexcept {
-        return m_view.column<float>(h_dDoca);
-    }
-    /// clusterID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> clusterID_col() const noexcept {
-        return m_view.column<int16_t>(h_clusterID);
-    }
-    /// trkID column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> trkID_col() const noexcept {
-        return m_view.column<int8_t>(h_trkID);
-    }
-    /// time column as a contiguous span.
-    [[nodiscard]] std::span<const float> time_col() const noexcept {
-        return m_view.column<float>(h_time);
-    }
-    /// beta column as a contiguous span.
-    [[nodiscard]] std::span<const float> beta_col() const noexcept {
-        return m_view.column<float>(h_beta);
-    }
-    /// tBeta column as a contiguous span.
-    [[nodiscard]] std::span<const float> tBeta_col() const noexcept {
-        return m_view.column<float>(h_tBeta);
+        return static_cast<float>(m_view->getFloat(i_tBeta, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_status{};
-    hipo::column_handle h_sector{};
-    hipo::column_handle h_superlayer{};
-    hipo::column_handle h_layer{};
-    hipo::column_handle h_wire{};
-    hipo::column_handle h_TDC{};
-    hipo::column_handle h_jitter{};
-    hipo::column_handle h_doca{};
-    hipo::column_handle h_docaError{};
-    hipo::column_handle h_trkDoca{};
-    hipo::column_handle h_timeResidual{};
-    hipo::column_handle h_fitResidual{};
-    hipo::column_handle h_DAFWeight{};
-    hipo::column_handle h_LR{};
-    hipo::column_handle h_X{};
-    hipo::column_handle h_Z{};
-    hipo::column_handle h_B{};
-    hipo::column_handle h_Alpha{};
-    hipo::column_handle h_TProp{};
-    hipo::column_handle h_TFlight{};
-    hipo::column_handle h_T0{};
-    hipo::column_handle h_TStart{};
-    hipo::column_handle h_dDoca{};
-    hipo::column_handle h_clusterID{};
-    hipo::column_handle h_trkID{};
-    hipo::column_handle h_time{};
-    hipo::column_handle h_beta{};
-    hipo::column_handle h_tBeta{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_status = -1;
+    int i_sector = -1;
+    int i_superlayer = -1;
+    int i_layer = -1;
+    int i_wire = -1;
+    int i_TDC = -1;
+    int i_jitter = -1;
+    int i_doca = -1;
+    int i_docaError = -1;
+    int i_trkDoca = -1;
+    int i_timeResidual = -1;
+    int i_fitResidual = -1;
+    int i_DAFWeight = -1;
+    int i_LR = -1;
+    int i_X = -1;
+    int i_Z = -1;
+    int i_B = -1;
+    int i_Alpha = -1;
+    int i_TProp = -1;
+    int i_TFlight = -1;
+    int i_T0 = -1;
+    int i_TStart = -1;
+    int i_dDoca = -1;
+    int i_clusterID = -1;
+    int i_trkID = -1;
+    int i_time = -1;
+    int i_beta = -1;
+    int i_tBeta = -1;
 
     friend class Row;
 };

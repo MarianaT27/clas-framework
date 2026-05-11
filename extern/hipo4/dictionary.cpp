@@ -1,184 +1,147 @@
-#include "dictionary.h"
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
 
-#include <algorithm>
-#include <charconv>
-#include <fmt/format.h>
+#include "dictionary.h"
+#include "utils.h"
+#include <cstdlib>
 
 namespace hipo {
 
-namespace {
+  void  schema::parse(const std::string& schString){
+    std::vector<std::string>  entries;
+    std::vector<std::string>  entry;
+    hipo::utils::tokenize(schString, entries, ",");
+    int offset = 0;
+    for(size_t i = 0; i < entries.size(); i++){
+      entry.clear();
+      hipo::utils::tokenize(entries[i],entry, "/");
+      schemaEntry_t e;
+      e.name = hipo::utils::trim(entry[0]);
+      e.type = hipo::utils::trim(entry[1]);
+      e.typeId = getTypeByString(e.type);
+      e.typeSize = getTypeSize(e.typeId);
+      e.offset   = offset;
+      offset += e.typeSize;
+      schemaEntries.push_back(e);
+      schemaEntriesMap[e.name] = i;
+   }
+  }
 
-std::string_view trim(std::string_view sv) noexcept {
-    auto start = sv.find_first_not_of(" \t\n\r\f\v");
-    if (start == std::string_view::npos) return {};
-    auto end = sv.find_last_not_of(" \t\n\r\f\v");
-    return sv.substr(start, end - start + 1);
-}
+  int   schema::getTypeByString(std::string &typeName){
+      if(typeName=="B"){
+        return kByte;
+      } else if(typeName=="S") {
+        return kShort;
+      } else if(typeName=="I") {
+        return kInt;
+      } else if(typeName=="F") {
+        return kFloat;
+      } else if(typeName=="D") {
+        return kDouble;
+      } else if(typeName=="L") {
+        return kLong;
+      }
+      return -1;
+  }
 
-// Extract content between nth occurrence of {start} and {end}
-std::string_view extract_braced(std::string_view sv, int occurrence) noexcept {
-    int count = 0;
-    for (size_t i = 0; i < sv.size(); ++i) {
-        if (sv[i] == '{') {
-            if (count == occurrence) {
-                auto end = sv.find('}', i + 1);
-                if (end == std::string_view::npos) return {};
-                return sv.substr(i + 1, end - i - 1);
-            }
-            ++count;
-        }
+  int  schema::getTypeSize(int id){
+    switch(id){
+      case kByte:   return 1;
+      case kShort:  return 2;
+      case kInt:    return 4;
+      case kFloat:  return 4;
+      case kDouble: return 8;
+      case kLong:   return 8;
+      default:      return 0;
     }
-    return {};
-}
+    return 0;
+  }
 
-} // anonymous namespace
-
-result<std::reference_wrapper<const schema>> dictionary::find(std::string_view name) const noexcept {
-    auto it = std::lower_bound(m_lookup.begin(), m_lookup.end(), name,
-        [](auto const& pair, std::string_view sv) { return pair.first < sv; });
-    if (it != m_lookup.end() && it->first == name)
-        return std::cref(m_schemas[it->second]);
-    return unexpected(error_code::schema_not_found);
-}
-
-bool dictionary::contains(std::string_view name) const noexcept {
-    return find(name).has_value();
-}
-
-void dictionary::add(schema s) {
-    std::string name_str(s.name());
-    m_schemas.push_back(std::move(s));
-    int idx = static_cast<int>(m_schemas.size()) - 1;
-
-    auto it = std::lower_bound(m_lookup.begin(), m_lookup.end(), name_str,
-        [](auto const& pair, std::string const& sv) { return pair.first < sv; });
-    m_lookup.emplace(it, std::move(name_str), idx);
-}
-
-result<void> dictionary::parse(std::string_view schema_string) {
-    // Format: {name/group/item}{col1/T,col2/T,...}
-    auto head = extract_braced(schema_string, 0);
-    auto body = extract_braced(schema_string, 1);
-    if (head.empty() || body.empty())
-        return unexpected(error_code::dictionary_parse_failed);
-
-    // Parse head: name/group/item
-    auto slash1 = head.find('/');
-    if (slash1 == std::string_view::npos)
-        return unexpected(error_code::dictionary_parse_failed);
-    auto slash2 = head.find('/', slash1 + 1);
-    if (slash2 == std::string_view::npos)
-        return unexpected(error_code::dictionary_parse_failed);
-
-    auto name = trim(head.substr(0, slash1));
-    auto group_str = trim(head.substr(slash1 + 1, slash2 - slash1 - 1));
-    auto item_str = trim(head.substr(slash2 + 1));
-
-    int group = 0, item_id = 0;
-    auto [p1, ec1] = std::from_chars(group_str.data(), group_str.data() + group_str.size(), group);
-    auto [p2, ec2] = std::from_chars(item_str.data(), item_str.data() + item_str.size(), item_id);
-    if (ec1 != std::errc{} || ec2 != std::errc{})
-        return unexpected(error_code::dictionary_parse_failed);
-
-    auto sc = schema::parse(name, group, item_id, body);
-    if (!sc)
-        return unexpected(sc.error());
-
-    add(std::move(*sc));
-    return ok();
-}
-
-result<void> dictionary::parse_all(std::string_view dict_text) {
-    // Dictionary text contains multiple schema strings, each in {head}{body} format
-    // separated by newlines
-    size_t pos = 0;
-    while (pos < dict_text.size()) {
-        // Skip whitespace / newlines
-        pos = dict_text.find('{', pos);
-        if (pos == std::string_view::npos) break;
-
-        // Find matching closing } for head
-        auto head_end = dict_text.find('}', pos);
-        if (head_end == std::string_view::npos) break;
-
-        // Find opening { for body
-        auto body_start = dict_text.find('{', head_end + 1);
-        if (body_start == std::string_view::npos) break;
-
-        // Find closing } for body
-        auto body_end = dict_text.find('}', body_start);
-        if (body_end == std::string_view::npos) break;
-
-        auto schema_str = dict_text.substr(pos, body_end - pos + 1);
-        auto res = parse(schema_str);
-        if (!res)
-            return res;
-
-        pos = body_end + 1;
+  void  schema::show(){
+    printf("schema : %14s , group = %6d, item = %3d\n",
+       schemaName.c_str(),groupid,itemid);
+    for(auto & schemaEntrie : schemaEntries){
+      printf("%16s : (%3s) %5d %5d , offset = %3d --> [%s]\n",
+         schemaEntrie.name.c_str(),schemaEntrie.type.c_str(),
+         schemaEntrie.typeId,schemaEntrie.typeSize, schemaEntrie.offset,
+         schemaEntrie.name.c_str()
+         );
     }
-    return ok();
-}
+  }
 
-std::vector<std::string> dictionary::schema_names() const {
-    std::vector<std::string> names;
-    names.reserve(m_schemas.size());
-    for (auto const& s : m_schemas)
-        names.emplace_back(s.name());
-    return names;
-}
 
-std::vector<std::reference_wrapper<const schema>> dictionary::find_by_group(int group) const {
-    std::vector<std::reference_wrapper<const schema>> results;
-    for (auto const& s : m_schemas) {
-        if (s.group() == group)
-            results.push_back(std::cref(s));
+  int   schema::getSizeForRows(int rows){
+    int nentries = schemaEntries.size();
+    int offset   = getOffset(nentries-1,rows-1,rows) + schemaEntries[nentries-1].typeSize;
+    return offset;
+  }
+
+  std::string  schema::getSchemaString(){
+    char parts[256];
+    std::string result;
+    snprintf(parts,256,"{%s/%d/%d}{",schemaName.c_str(),groupid,itemid);
+    result.append(parts);
+    for(size_t loop = 0; loop < schemaEntries.size(); loop++){
+      snprintf(parts,256,"%s/%s",schemaEntries[loop].name.c_str(), schemaEntries[loop].type.c_str());
+      if(loop!=0) result.append(",");
+      result.append(parts);
     }
-    return results;
-}
+    result.append("}");
+    return result;
+  }
 
-void dictionary::show() const {
-    for (auto const& s : m_schemas) {
-        fmt::print("{:>24s} : {:5d} {:5d} {:5d}\n",
-                   s.name(), s.group(), s.item(), s.entries());
+  std::string  schema::getSchemaStringJson(){
+     char parts[256];
+    std::string result;
+    snprintf(parts,256,"{ \"name\": \"%s\", \"group\": %d, \"item\": %d, \"info\": \" \",",
+               schemaName.c_str(),groupid,itemid);
+    result.append(parts);
+    result.append("\"entries\": [ ");
+    for(size_t loop = 0; loop < schemaEntries.size(); loop++){
+      snprintf(parts,256,"{\"name\":\"%s\", \"type\":\"%s\", \"info\":\" \"}",
+       schemaEntries[loop].name.c_str(), schemaEntries[loop].type.c_str());
+      if(loop!=0) result.append(",");
+      result.append(parts);
     }
-}
+    result.append("] }");
+    return result;
+  }
 
-result<void> dictionary::validate() const {
-    for (auto const& s : m_schemas) {
-        auto res = s.validate();
-        if (!res) return res;
-    }
-    // Check for duplicate (group, item) pairs
-    for (size_t i = 0; i < m_schemas.size(); ++i) {
-        for (size_t j = i + 1; j < m_schemas.size(); ++j) {
-            if (m_schemas[i].group() == m_schemas[j].group() &&
-                m_schemas[i].item()  == m_schemas[j].item())
-                return unexpected(error_code::schema_inconsistent);
-        }
-    }
-    return ok();
-}
 
-result<void> dictionary::merge(const dictionary& other) {
-    for (auto const& s : other) {
-        auto existing = find(s.name());
-        if (existing) {
-            auto const& e = existing->get();
-            if (e.group() != s.group() || e.item() != s.item())
-                return unexpected(error_code::schema_inconsistent);
-            if (e.entries() != s.entries())
-                return unexpected(error_code::schema_inconsistent);
-            for (int c = 0; c < e.entries(); ++c) {
-                if (e.entry(c).name != s.entry(c).name ||
-                    e.entry(c).type != s.entry(c).type)
-                    return unexpected(error_code::schema_inconsistent);
-            }
-            // Identical schema already present -- skip
-        } else {
-            add(s);
-        }
+  //=============================================
+  // Implementation of dictionary class
+  //=============================================
+  std::vector<std::string> dictionary::getSchemaList(){
+    std::map<std::string, schema>::iterator it;
+    std::vector<std::string> vec;
+    for ( it = factory.begin(); it != factory.end(); it++ ){
+        vec.push_back(it->first);
     }
-    return ok();
-}
+    return vec;
+  }
 
-} // namespace hipo
+  bool    dictionary::parse(const char *schemaString){
+    std::vector<std::string> tokens;
+    std::string schemahead = hipo::utils::substring(schemaString,"{","}",0);
+    hipo::utils::tokenize(schemahead, tokens, "/");
+    int group = std::atoi(tokens[1].c_str());
+    int  item = std::atoi(tokens[2].c_str());
+    hipo::schema  schema (tokens[0].c_str(),group,item);
+    std::string schemabody = hipo::utils::substring(schemaString,"{","}",1);
+    schema.parse(schemabody.c_str());
+    addSchema(schema);
+    return true;
+  }
+
+  void    dictionary::show(){
+    std::vector<std::string> list = getSchemaList();
+    for(auto & i : list){
+      schema sc = getSchema(i.c_str());
+      printf("%24s : %5d %5d %5d\n", sc.getName().c_str(),
+        sc.getGroup(), sc.getItem(),sc.getEntries());
+    }
+  }
+}

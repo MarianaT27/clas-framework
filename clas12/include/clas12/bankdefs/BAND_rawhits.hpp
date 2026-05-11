@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `BAND::rawhits` (group 22100, item 22).
 /// single PMT hits from BAND
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,203 +40,139 @@ class BAND_rawhits {
 
     BAND_rawhits() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_sector;
-            hipo::column_handle h_layer;
-            hipo::column_handle h_component;
-            hipo::column_handle h_side;
-            hipo::column_handle h_adc;
-            hipo::column_handle h_ampl;
-            hipo::column_handle h_time;
-            hipo::column_handle h_timeFadc;
-            hipo::column_handle h_timeCorr;
-            hipo::column_handle h_indexTdc;
-            hipo::column_handle h_indexAdc;
+            int i_id = -1;
+            int i_sector = -1;
+            int i_layer = -1;
+            int i_component = -1;
+            int i_side = -1;
+            int i_adc = -1;
+            int i_ampl = -1;
+            int i_time = -1;
+            int i_timeFadc = -1;
+            int i_timeCorr = -1;
+            int i_indexTdc = -1;
+            int i_indexAdc = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
-            else cache.h_sector = {};
-            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
-            else cache.h_layer = {};
-            if (auto h = schema.get_handle("component"); h) cache.h_component = *h;
-            else cache.h_component = {};
-            if (auto h = schema.get_handle("side"); h) cache.h_side = *h;
-            else cache.h_side = {};
-            if (auto h = schema.get_handle("adc"); h) cache.h_adc = *h;
-            else cache.h_adc = {};
-            if (auto h = schema.get_handle("ampl"); h) cache.h_ampl = *h;
-            else cache.h_ampl = {};
-            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
-            else cache.h_time = {};
-            if (auto h = schema.get_handle("timeFadc"); h) cache.h_timeFadc = *h;
-            else cache.h_timeFadc = {};
-            if (auto h = schema.get_handle("timeCorr"); h) cache.h_timeCorr = *h;
-            else cache.h_timeCorr = {};
-            if (auto h = schema.get_handle("indexTdc"); h) cache.h_indexTdc = *h;
-            else cache.h_indexTdc = {};
-            if (auto h = schema.get_handle("indexAdc"); h) cache.h_indexAdc = *h;
-            else cache.h_indexAdc = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_sector = schema.exists("sector") ? schema.getEntryOrder("sector") : -1;
+            cache.i_layer = schema.exists("layer") ? schema.getEntryOrder("layer") : -1;
+            cache.i_component = schema.exists("component") ? schema.getEntryOrder("component") : -1;
+            cache.i_side = schema.exists("side") ? schema.getEntryOrder("side") : -1;
+            cache.i_adc = schema.exists("adc") ? schema.getEntryOrder("adc") : -1;
+            cache.i_ampl = schema.exists("ampl") ? schema.getEntryOrder("ampl") : -1;
+            cache.i_time = schema.exists("time") ? schema.getEntryOrder("time") : -1;
+            cache.i_timeFadc = schema.exists("timeFadc") ? schema.getEntryOrder("timeFadc") : -1;
+            cache.i_timeCorr = schema.exists("timeCorr") ? schema.getEntryOrder("timeCorr") : -1;
+            cache.i_indexTdc = schema.exists("indexTdc") ? schema.getEntryOrder("indexTdc") : -1;
+            cache.i_indexAdc = schema.exists("indexAdc") ? schema.getEntryOrder("indexAdc") : -1;
         }
-        h_id = cache.h_id;
-        h_sector = cache.h_sector;
-        h_layer = cache.h_layer;
-        h_component = cache.h_component;
-        h_side = cache.h_side;
-        h_adc = cache.h_adc;
-        h_ampl = cache.h_ampl;
-        h_time = cache.h_time;
-        h_timeFadc = cache.h_timeFadc;
-        h_timeCorr = cache.h_timeCorr;
-        h_indexTdc = cache.h_indexTdc;
-        h_indexAdc = cache.h_indexAdc;
+        i_id = cache.i_id;
+        i_sector = cache.i_sector;
+        i_layer = cache.i_layer;
+        i_component = cache.i_component;
+        i_side = cache.i_side;
+        i_adc = cache.i_adc;
+        i_ampl = cache.i_ampl;
+        i_time = cache.i_time;
+        i_timeFadc = cache.i_timeFadc;
+        i_timeCorr = cache.i_timeCorr;
+        i_indexTdc = cache.i_indexTdc;
+        i_indexAdc = cache.i_indexAdc;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: id of the coincidence hit
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+        return static_cast<int>(m_view->getShort(i_id, row));
     }
     /// sector: sector of BAND
     [[nodiscard]] int sector(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+        return static_cast<int>(m_view->getByte(i_sector, row));
     }
     /// layer: layer or column id of BAND
     [[nodiscard]] int layer(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_layer, row));
+        return static_cast<int>(m_view->getByte(i_layer, row));
     }
     /// component: paddle or row id of BAND
     [[nodiscard]] int component(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_component, row));
+        return static_cast<int>(m_view->getShort(i_component, row));
     }
     /// side: side of bar (L = 0 and R = 1)
     [[nodiscard]] int side(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_side, row));
+        return static_cast<int>(m_view->getShort(i_side, row));
     }
     /// adc: Raw ADC from FADC
     [[nodiscard]] float adc(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_adc, row));
+        return static_cast<float>(m_view->getFloat(i_adc, row));
     }
     /// ampl: ADC ampl from FADC
     [[nodiscard]] float ampl(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_ampl, row));
+        return static_cast<float>(m_view->getFloat(i_ampl, row));
     }
     /// time: Raw Time (ns) from TDC
     [[nodiscard]] float time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_time, row));
+        return static_cast<float>(m_view->getFloat(i_time, row));
     }
     /// timeFadc: Raw Time (ns) from FADC
     [[nodiscard]] float timeFadc(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_timeFadc, row));
+        return static_cast<float>(m_view->getFloat(i_timeFadc, row));
     }
     /// timeCorr: Raw Time (ns) from TDC corrected for trigger phase
     [[nodiscard]] float timeCorr(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_timeCorr, row));
+        return static_cast<float>(m_view->getFloat(i_timeCorr, row));
     }
     /// indexTdc: index to raw information in BAND::TDC bank
     [[nodiscard]] int indexTdc(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_indexTdc, row));
+        return static_cast<int>(m_view->getShort(i_indexTdc, row));
     }
     /// indexAdc: index to raw information in BAND::ADC bank
     [[nodiscard]] int indexAdc(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_indexAdc, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
-        return m_view.column<int16_t>(h_id);
-    }
-    /// sector column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
-        return m_view.column<int8_t>(h_sector);
-    }
-    /// layer column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> layer_col() const noexcept {
-        return m_view.column<int8_t>(h_layer);
-    }
-    /// component column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> component_col() const noexcept {
-        return m_view.column<int16_t>(h_component);
-    }
-    /// side column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> side_col() const noexcept {
-        return m_view.column<int16_t>(h_side);
-    }
-    /// adc column as a contiguous span.
-    [[nodiscard]] std::span<const float> adc_col() const noexcept {
-        return m_view.column<float>(h_adc);
-    }
-    /// ampl column as a contiguous span.
-    [[nodiscard]] std::span<const float> ampl_col() const noexcept {
-        return m_view.column<float>(h_ampl);
-    }
-    /// time column as a contiguous span.
-    [[nodiscard]] std::span<const float> time_col() const noexcept {
-        return m_view.column<float>(h_time);
-    }
-    /// timeFadc column as a contiguous span.
-    [[nodiscard]] std::span<const float> timeFadc_col() const noexcept {
-        return m_view.column<float>(h_timeFadc);
-    }
-    /// timeCorr column as a contiguous span.
-    [[nodiscard]] std::span<const float> timeCorr_col() const noexcept {
-        return m_view.column<float>(h_timeCorr);
-    }
-    /// indexTdc column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> indexTdc_col() const noexcept {
-        return m_view.column<int16_t>(h_indexTdc);
-    }
-    /// indexAdc column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> indexAdc_col() const noexcept {
-        return m_view.column<int16_t>(h_indexAdc);
+        return static_cast<int>(m_view->getShort(i_indexAdc, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_sector{};
-    hipo::column_handle h_layer{};
-    hipo::column_handle h_component{};
-    hipo::column_handle h_side{};
-    hipo::column_handle h_adc{};
-    hipo::column_handle h_ampl{};
-    hipo::column_handle h_time{};
-    hipo::column_handle h_timeFadc{};
-    hipo::column_handle h_timeCorr{};
-    hipo::column_handle h_indexTdc{};
-    hipo::column_handle h_indexAdc{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_sector = -1;
+    int i_layer = -1;
+    int i_component = -1;
+    int i_side = -1;
+    int i_adc = -1;
+    int i_ampl = -1;
+    int i_time = -1;
+    int i_timeFadc = -1;
+    int i_timeCorr = -1;
+    int i_indexTdc = -1;
+    int i_indexAdc = -1;
 
     friend class Row;
 };

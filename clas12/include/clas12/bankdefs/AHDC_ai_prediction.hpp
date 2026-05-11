@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `AHDC::ai:prediction` (group 23000, item 30).
 /// Prediction given by AI
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,190 +40,131 @@ class AHDC_ai_prediction {
 
     AHDC_ai_prediction() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_x1;
-            hipo::column_handle h_y1;
-            hipo::column_handle h_x2;
-            hipo::column_handle h_y2;
-            hipo::column_handle h_x3;
-            hipo::column_handle h_y3;
-            hipo::column_handle h_x4;
-            hipo::column_handle h_y4;
-            hipo::column_handle h_x5;
-            hipo::column_handle h_y5;
-            hipo::column_handle h_pred;
+            int i_x1 = -1;
+            int i_y1 = -1;
+            int i_x2 = -1;
+            int i_y2 = -1;
+            int i_x3 = -1;
+            int i_y3 = -1;
+            int i_x4 = -1;
+            int i_y4 = -1;
+            int i_x5 = -1;
+            int i_y5 = -1;
+            int i_pred = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("x1"); h) cache.h_x1 = *h;
-            else cache.h_x1 = {};
-            if (auto h = schema.get_handle("y1"); h) cache.h_y1 = *h;
-            else cache.h_y1 = {};
-            if (auto h = schema.get_handle("x2"); h) cache.h_x2 = *h;
-            else cache.h_x2 = {};
-            if (auto h = schema.get_handle("y2"); h) cache.h_y2 = *h;
-            else cache.h_y2 = {};
-            if (auto h = schema.get_handle("x3"); h) cache.h_x3 = *h;
-            else cache.h_x3 = {};
-            if (auto h = schema.get_handle("y3"); h) cache.h_y3 = *h;
-            else cache.h_y3 = {};
-            if (auto h = schema.get_handle("x4"); h) cache.h_x4 = *h;
-            else cache.h_x4 = {};
-            if (auto h = schema.get_handle("y4"); h) cache.h_y4 = *h;
-            else cache.h_y4 = {};
-            if (auto h = schema.get_handle("x5"); h) cache.h_x5 = *h;
-            else cache.h_x5 = {};
-            if (auto h = schema.get_handle("y5"); h) cache.h_y5 = *h;
-            else cache.h_y5 = {};
-            if (auto h = schema.get_handle("pred"); h) cache.h_pred = *h;
-            else cache.h_pred = {};
+            cache.i_x1 = schema.exists("x1") ? schema.getEntryOrder("x1") : -1;
+            cache.i_y1 = schema.exists("y1") ? schema.getEntryOrder("y1") : -1;
+            cache.i_x2 = schema.exists("x2") ? schema.getEntryOrder("x2") : -1;
+            cache.i_y2 = schema.exists("y2") ? schema.getEntryOrder("y2") : -1;
+            cache.i_x3 = schema.exists("x3") ? schema.getEntryOrder("x3") : -1;
+            cache.i_y3 = schema.exists("y3") ? schema.getEntryOrder("y3") : -1;
+            cache.i_x4 = schema.exists("x4") ? schema.getEntryOrder("x4") : -1;
+            cache.i_y4 = schema.exists("y4") ? schema.getEntryOrder("y4") : -1;
+            cache.i_x5 = schema.exists("x5") ? schema.getEntryOrder("x5") : -1;
+            cache.i_y5 = schema.exists("y5") ? schema.getEntryOrder("y5") : -1;
+            cache.i_pred = schema.exists("pred") ? schema.getEntryOrder("pred") : -1;
         }
-        h_x1 = cache.h_x1;
-        h_y1 = cache.h_y1;
-        h_x2 = cache.h_x2;
-        h_y2 = cache.h_y2;
-        h_x3 = cache.h_x3;
-        h_y3 = cache.h_y3;
-        h_x4 = cache.h_x4;
-        h_y4 = cache.h_y4;
-        h_x5 = cache.h_x5;
-        h_y5 = cache.h_y5;
-        h_pred = cache.h_pred;
+        i_x1 = cache.i_x1;
+        i_y1 = cache.i_y1;
+        i_x2 = cache.i_x2;
+        i_y2 = cache.i_y2;
+        i_x3 = cache.i_x3;
+        i_y3 = cache.i_y3;
+        i_x4 = cache.i_x4;
+        i_y4 = cache.i_y4;
+        i_x5 = cache.i_x5;
+        i_y5 = cache.i_y5;
+        i_pred = cache.i_pred;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// x1: X1 position of the 1th superprecluster (mm)
     [[nodiscard]] float x1(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x1, row));
+        return static_cast<float>(m_view->getFloat(i_x1, row));
     }
     /// y1: Y1 position of the 1th superprecluster (mm)
     [[nodiscard]] float y1(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y1, row));
+        return static_cast<float>(m_view->getFloat(i_y1, row));
     }
     /// x2: X2 position of the 2nd superprecluster (mm)
     [[nodiscard]] float x2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x2, row));
+        return static_cast<float>(m_view->getFloat(i_x2, row));
     }
     /// y2: Y2 position of the 2nd superprecluster (mm)
     [[nodiscard]] float y2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y2, row));
+        return static_cast<float>(m_view->getFloat(i_y2, row));
     }
     /// x3: X3 position of the 3rd superprecluster (mm)
     [[nodiscard]] float x3(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x3, row));
+        return static_cast<float>(m_view->getFloat(i_x3, row));
     }
     /// y3: Y3 position of the 3rd superprecluster (mm)
     [[nodiscard]] float y3(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y3, row));
+        return static_cast<float>(m_view->getFloat(i_y3, row));
     }
     /// x4: X4 position of the 4th superprecluster (mm)
     [[nodiscard]] float x4(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x4, row));
+        return static_cast<float>(m_view->getFloat(i_x4, row));
     }
     /// y4: Y4 position of the 4th superprecluster (mm)
     [[nodiscard]] float y4(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y4, row));
+        return static_cast<float>(m_view->getFloat(i_y4, row));
     }
     /// x5: X5 position of the 5th superprecluster (mm)
     [[nodiscard]] float x5(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x5, row));
+        return static_cast<float>(m_view->getFloat(i_x5, row));
     }
     /// y5: Y5 position of the 5th superprecluster (mm)
     [[nodiscard]] float y5(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y5, row));
+        return static_cast<float>(m_view->getFloat(i_y5, row));
     }
     /// pred: Prediction of the model: 0 mean bad track; 1 mean good track
     [[nodiscard]] float pred(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_pred, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// x1 column as a contiguous span.
-    [[nodiscard]] std::span<const float> x1_col() const noexcept {
-        return m_view.column<float>(h_x1);
-    }
-    /// y1 column as a contiguous span.
-    [[nodiscard]] std::span<const float> y1_col() const noexcept {
-        return m_view.column<float>(h_y1);
-    }
-    /// x2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> x2_col() const noexcept {
-        return m_view.column<float>(h_x2);
-    }
-    /// y2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> y2_col() const noexcept {
-        return m_view.column<float>(h_y2);
-    }
-    /// x3 column as a contiguous span.
-    [[nodiscard]] std::span<const float> x3_col() const noexcept {
-        return m_view.column<float>(h_x3);
-    }
-    /// y3 column as a contiguous span.
-    [[nodiscard]] std::span<const float> y3_col() const noexcept {
-        return m_view.column<float>(h_y3);
-    }
-    /// x4 column as a contiguous span.
-    [[nodiscard]] std::span<const float> x4_col() const noexcept {
-        return m_view.column<float>(h_x4);
-    }
-    /// y4 column as a contiguous span.
-    [[nodiscard]] std::span<const float> y4_col() const noexcept {
-        return m_view.column<float>(h_y4);
-    }
-    /// x5 column as a contiguous span.
-    [[nodiscard]] std::span<const float> x5_col() const noexcept {
-        return m_view.column<float>(h_x5);
-    }
-    /// y5 column as a contiguous span.
-    [[nodiscard]] std::span<const float> y5_col() const noexcept {
-        return m_view.column<float>(h_y5);
-    }
-    /// pred column as a contiguous span.
-    [[nodiscard]] std::span<const float> pred_col() const noexcept {
-        return m_view.column<float>(h_pred);
+        return static_cast<float>(m_view->getFloat(i_pred, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_x1{};
-    hipo::column_handle h_y1{};
-    hipo::column_handle h_x2{};
-    hipo::column_handle h_y2{};
-    hipo::column_handle h_x3{};
-    hipo::column_handle h_y3{};
-    hipo::column_handle h_x4{};
-    hipo::column_handle h_y4{};
-    hipo::column_handle h_x5{};
-    hipo::column_handle h_y5{};
-    hipo::column_handle h_pred{};
+    const hipo::bank* m_view = nullptr;
+    int i_x1 = -1;
+    int i_y1 = -1;
+    int i_x2 = -1;
+    int i_y2 = -1;
+    int i_x3 = -1;
+    int i_y3 = -1;
+    int i_x4 = -1;
+    int i_y4 = -1;
+    int i_x5 = -1;
+    int i_y5 = -1;
+    int i_pred = -1;
 
     friend class Row;
 };

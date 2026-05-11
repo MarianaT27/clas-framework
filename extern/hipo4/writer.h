@@ -1,185 +1,171 @@
-#pragma once
+//******************************************************************************
+//*       ██╗  ██╗██╗██████╗  ██████╗     ██╗  ██╗    ██████╗                  *
+//*       ██║  ██║██║██╔══██╗██╔═══██╗    ██║  ██║   ██╔═████╗                 *
+//*       ███████║██║██████╔╝██║   ██║    ███████║   ██║██╔██║                 *
+//*       ██╔══██║██║██╔═══╝ ██║   ██║    ╚════██║   ████╔╝██║                 *
+//*       ██║  ██║██║██║     ╚██████╔╝         ██║██╗╚██████╔╝                 *
+//*       ╚═╝  ╚═╝╚═╝╚═╝      ╚═════╝          ╚═╝╚═╝ ╚═════╝                  *
+//************************ Jefferson National Lab (2017) ***********************
+/*
+ *   Copyright (c) 2017.  Jefferson Lab (JLab). All rights reserved. Permission
+ *   to use, copy, modify, and distribute  this software and its documentation
+ *   for educational, research, and not-for-profit purposes, without fee and
+ *   without a signed licensing agreement.
+ *
+ *   IN NO EVENT SHALL JLAB BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL
+ *   INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING
+ *   OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF JLAB HAS
+ *   BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ *   JLAB SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ *   THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ *   PURPOSE. THE HIPO DATA FORMAT SOFTWARE AND ACCOMPANYING DOCUMENTATION, IF
+ *   ANY, PROVIDED HEREUNDER IS PROVIDED "AS IS". JLAB HAS NO OBLIGATION TO
+ *   PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+ *
+ *   This software was developed under the United States Government license.
+ *   For more information contact author at gavalian@jlab.org
+ *   Department of Experimental Nuclear Physics, Jefferson Lab.
+ */
+/*
+ *This sowftware was developed at Jefferson National Laboratory.
+ */
+ /**
+  * <pre>
+  *
+  * FILE HEADER STRUCTURE ( 56 bytes, 14 integers (32 bit) )
+  *
+  *    +----------------------------------+
+  *  1 |              ID                  | // HIPO: 0x43455248, Evio: 0x4556494F
+  *    +----------------------------------+
+  *  2 +          File Number             | // split file #
+  *    +----------------------------------+
+  *  3 +         Header Length            | // 14 (words)
+  *    +----------------------------------+
+  *  4 +      Record (Index) Count        |
+  *    +----------------------------------+
+  *  5 +      Index Array Length          | // bytes
+  *    +-----------------------+----------+
+  *  6 +       Bit Info        | Version  | // version (8 bits)
+  *    +-----------------------+----------+
+  *  7 +      User Header Length          | // bytes
+  *    +----------------------------------+
+  *  8 +          Magic Number            | // 0xc0da0100
+  *    +----------------------------------+
+  *  9 +          User Register           |
+  *    +--                              --+
+  * 10 +                                  |
+  *    +----------------------------------+
+  * 11 +         Trailer Position         | // File offset to trailer head (64 bits).
+  *    +--                              --+ // 0 = no offset available or no trailer exists.
+  * 12 +                                  |
+  *    +----------------------------------+
+  * 13 +          User Integer 1          |
+  *    +----------------------------------+
+  * 14 +          User Integer 2          |
+  *    +----------------------------------+
+  *
+  * -------------------
+  *   Bit Info Word
+  * -------------------
+  *     0-7  = version
+  *     8    = true if dictionary is included (relevant for first record only)
+  *     9    = true if this file has "first" event (in every split file)
+  *    10    = File trailer with index array exists
+  *    11-19 = reserved
+  *    20-21 = pad 1
+  *    22-23 = pad 2
+  *    24-25 = pad 3 (always 0)
+  *    26-27 = reserved
+  *    28-31 = general header type: 1 = Evio file
+  *                                 2 = Evio extended file
+  *                                 5 = HIPO file
+  *                                 6 = HIPO extended file
+  *
+  * </pre>
+  *
+  * @version 6.0
+  * @since 6.0 9/6/17
+  */
+/*
+ * File:   writer.h
+ * Author: gavalian
+ *
+ * Created on April 11, 2017, 2:07 PM
+ */
 
-#include <functional>
-#include <string>
-#include <string_view>
+#ifndef HIPOWRITER_H
+#define HIPOWRITER_H
+
+
+#include <iostream>
 #include <vector>
-
-#include "column_stats.h"
-#include "dictionary.h"
-#include "event_builder.h"
-#include "file_sink.h"
-#include "record_builder.h"
-#include "result.h"
+#include <fstream>
+#include <stdio.h>
+#include <stdlib.h>
+#include <memory>
+#include <climits>
+#include "recordbuilder.h"
+#include "reader.h"
 
 namespace hipo {
 
-/**
- * @brief Options controlling how a writer creates a HIPO file.
- *
- * @see writer::open
- */
-struct writer_options {
-    compression_type compression        = compression_type::lz4;   /**< @brief Compression algorithm for data records. */
-    int              max_events         = 100000;                  /**< @brief Maximum events per record before automatic flush. */
-    int              max_record_bytes   = 2 * 1024 * 1024;        /**< @brief Maximum uncompressed record size in bytes before automatic flush. */
-    bool             collect_statistics = false;                   /**< @brief Opt-in per-column min/max statistics collection. */
-};
+  typedef struct {
+    int  uniqueid;
+    int  filenumber;
+    int  headerLength; // in words (usually 14)
+    int  recordCount;
+    int  indexArrayLength; // in bytes
+    int  bitInfoVersion;
+    int  userHeaderLength;
+    int  magicNumber;
+    long userRegister;
+    long trailerPosition;
+    int  userIntegerOne;
+    int  userIntegerTwo;
+  } hipoFileHeader_t;
 
-/**
- * @brief Callback signature invoked after each record is flushed to disk.
- *
- * Parameters: (record_index, file_position, record_bytes, event_count).
- */
-using record_callback = std::function<void(int, int64_t, int, int)>;
-
-/**
- * @brief Sequential writer for HIPO files.
- *
- * Accumulates events into records using a record_builder, compresses and
- * flushes them to disk via a file_sink, and writes a trailer with the
- * record index table on close. Optionally collects per-column min/max
- * statistics that are stored in the trailer for downstream pruning.
- *
- * Typical usage:
- * @code
- * hipo::writer w;
- * w.set_dictionary(dict);
- * auto res = w.open("output.hipo");
- * // ... add events ...
- * w.close();
- * @endcode
- *
- * @note NOT thread-safe. A single writer must not be accessed from
- *       multiple threads concurrently.
- *
- * @see event_builder, record_builder, file_sink
- */
+  /**
+* READER index class is used to construct entire events
+* sequence from all records, and provides ability to canAdvance
+* through events where record number is automatically calculated
+* and triggers reading of the next record when events in the current
+* record are exhausted.
+*/
 class writer {
-public:
-    writer() = default;
-    ~writer();
+  
+  private:
+    std::ofstream         outputStream;
+    hipo::recordbuilder   recordBuilder;
+    hipo::dictionary      writerDictionary;
+    std::vector<hipo::recordInfo_t>   writerRecordInfo;
+    std::map<std::string,std::string> userConfig;
+    
+    std::map<int,hipo::recordbuilder> extendedBuilder;
 
-    writer(writer&&) = default;
-    writer& operator=(writer&&) = default;
-    writer(const writer&) = delete;
-    writer& operator=(const writer&) = delete;
+    void writeIndexTable();
+    int  verbose = 0;
+  
+  public:
 
-    /**
-     * @brief Set the schema dictionary to be written into the file header.
-     *
-     * Must be called before open(). The dictionary is serialised into the
-     * first record's user header.
-     *
-     * @param dict The dictionary containing all schemas for this file.
-     */
-    void set_dictionary(const dictionary& dict);
+     writer(){};
+     virtual ~writer(){};
 
-    /**
-     * @brief Return a mutable reference to the internal dictionary.
-     * @return Reference to the dictionary.
-     */
-    dictionary& get_dictionary() noexcept { return m_dict; }
-
-    /**
-     * @brief Open a file for writing.
-     *
-     * Writes the file header and the dictionary record. The writer is
-     * ready to accept events after a successful open.
-     *
-     * @param path Filesystem path of the output file (created or truncated).
-     * @param opts Writer options (compression, flush thresholds, statistics).
-     * @return result<void> indicating success or an I/O error.
-     */
-    result<void> open(std::string_view path, writer_options opts = {});
-
-    /**
-     * @brief Add a pre-built event to the current record.
-     *
-     * If the record exceeds its size or event-count thresholds, it is
-     * automatically flushed to disk before the new event is added.
-     *
-     * @param ev The event_builder holding the serialised event data.
-     * @return result<void> indicating success or an I/O error on flush.
-     */
-    result<void> add_event(const event_builder& ev);
-
-    /**
-     * @brief Add a raw event buffer to the current record.
-     *
-     * Overload accepting a pre-serialised event as a span of bytes.
-     *
-     * @param event_data Raw serialised event bytes.
-     * @return result<void> indicating success or an I/O error on flush.
-     */
-    result<void> add_event(std::span<const char> event_data);
-
-    /**
-     * @brief Flush the current record to disk immediately.
-     * @return result<void> indicating success or an I/O error.
-     */
-    result<void> flush();
-
-    /**
-     * @brief Close the file.
-     *
-     * Flushes remaining events, writes the trailer containing the record
-     * index table (and optional statistics), and patches the file header
-     * with the trailer position.
-     *
-     * @return result<void> indicating success or an I/O error.
-     */
-    result<void> close();
-
-    /**
-     * @brief Set user word one in the file header.
-     * @param w The 64-bit value to store.
-     */
-    void set_user_word_one(int64_t w) noexcept;
-
-    /**
-     * @brief Set user word two in the file header.
-     * @param w The 64-bit value to store.
-     */
-    void set_user_word_two(int64_t w) noexcept;
-
-    /**
-     * @brief Register a callback invoked after each record is flushed to disk.
-     * @param cb Callback with signature void(int record_index, int64_t file_position, int record_bytes, int event_count).
-     */
-    void on_record_written(record_callback cb) { m_on_record_written = std::move(cb); }
-
-    /**
-     * @brief Check whether the writer currently has a file open.
-     * @return True if open() succeeded and close() has not been called.
-     */
-    bool is_open() const noexcept { return m_is_open; }
-
-    /**
-     * @brief Access per-record column statistics.
-     *
-     * Only populated when writer_options::collect_statistics is true.
-     *
-     * @return A const reference to the vector of record_column_stats.
-     */
-    const std::vector<record_column_stats>& record_stats() const noexcept { return m_record_stats; }
-
-private:
-    result<void> write_record();
-    result<void> write_index_table();
-    result<void> write_stats_table();
-
-    dictionary                          m_dict;
-    file_sink                           m_sink;
-    record_builder                      m_builder;
-    writer_options                      m_opts;
-    std::vector<record_info>            m_record_infos;
-    record_callback                     m_on_record_written;
-    bool                                m_is_open = false;
-
-    // Per-column statistics (opt-in)
-    column_stats_tracker                m_stats_tracker;
-    std::vector<record_column_stats>    m_record_stats;
+     void addEvent(hipo::event &hevent);
+     void addEvent(std::vector<char> &vec, int size = -1);
+     void addUserConfig(std::string key, std::string value){ userConfig[key] = value;}
+     void addUserConfig(const char *key, const char *value){ userConfig[std::string(key)] = std::string(value);}
+     void writeRecord(recordbuilder &builder);
+     void open(const char *filename);
+     void close();
+     void showSummary();
+     void addDictionary(hipo::dictionary &dict);
+     hipo::dictionary &getDictionary(){ return writerDictionary;}
+     void setUserIntegerOne(long userIntOne);
+     void setUserIntegerTwo(long userIntTwo);
+     void flush();
+     void setVerbose(int level){ verbose = level;}
 };
 
-} // namespace hipo
+};
+#endif /* HIPOFILE_H */

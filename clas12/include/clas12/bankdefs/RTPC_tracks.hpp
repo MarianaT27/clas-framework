@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `RTPC::tracks` (group 21900, item 22).
 /// reconstructed track info
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,385 +40,251 @@ class RTPC_tracks {
 
     RTPC_tracks() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_trkID;
-            hipo::column_handle h_px;
-            hipo::column_handle h_py;
-            hipo::column_handle h_pz;
-            hipo::column_handle h_vz;
-            hipo::column_handle h_theta;
-            hipo::column_handle h_phi;
-            hipo::column_handle h_nhits;
-            hipo::column_handle h_path;
-            hipo::column_handle h_adcsum;
-            hipo::column_handle h_dedx;
-            hipo::column_handle h_r_helix;
-            hipo::column_handle h_x_helix;
-            hipo::column_handle h_y_helix;
-            hipo::column_handle h_chi2_helix;
-            hipo::column_handle h_min_row;
-            hipo::column_handle h_min_col;
-            hipo::column_handle h_max_row;
-            hipo::column_handle h_max_col;
-            hipo::column_handle h_min_time;
-            hipo::column_handle h_max_time;
-            hipo::column_handle h_min_radius;
-            hipo::column_handle h_max_radius;
-            hipo::column_handle h_min_phi;
-            hipo::column_handle h_max_phi;
-            hipo::column_handle h_tdiff;
+            int i_trkID = -1;
+            int i_px = -1;
+            int i_py = -1;
+            int i_pz = -1;
+            int i_vz = -1;
+            int i_theta = -1;
+            int i_phi = -1;
+            int i_nhits = -1;
+            int i_path = -1;
+            int i_adcsum = -1;
+            int i_dedx = -1;
+            int i_r_helix = -1;
+            int i_x_helix = -1;
+            int i_y_helix = -1;
+            int i_chi2_helix = -1;
+            int i_min_row = -1;
+            int i_min_col = -1;
+            int i_max_row = -1;
+            int i_max_col = -1;
+            int i_min_time = -1;
+            int i_max_time = -1;
+            int i_min_radius = -1;
+            int i_max_radius = -1;
+            int i_min_phi = -1;
+            int i_max_phi = -1;
+            int i_tdiff = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("trkID"); h) cache.h_trkID = *h;
-            else cache.h_trkID = {};
-            if (auto h = schema.get_handle("px"); h) cache.h_px = *h;
-            else cache.h_px = {};
-            if (auto h = schema.get_handle("py"); h) cache.h_py = *h;
-            else cache.h_py = {};
-            if (auto h = schema.get_handle("pz"); h) cache.h_pz = *h;
-            else cache.h_pz = {};
-            if (auto h = schema.get_handle("vz"); h) cache.h_vz = *h;
-            else cache.h_vz = {};
-            if (auto h = schema.get_handle("theta"); h) cache.h_theta = *h;
-            else cache.h_theta = {};
-            if (auto h = schema.get_handle("phi"); h) cache.h_phi = *h;
-            else cache.h_phi = {};
-            if (auto h = schema.get_handle("nhits"); h) cache.h_nhits = *h;
-            else cache.h_nhits = {};
-            if (auto h = schema.get_handle("path"); h) cache.h_path = *h;
-            else cache.h_path = {};
-            if (auto h = schema.get_handle("adcsum"); h) cache.h_adcsum = *h;
-            else cache.h_adcsum = {};
-            if (auto h = schema.get_handle("dedx"); h) cache.h_dedx = *h;
-            else cache.h_dedx = {};
-            if (auto h = schema.get_handle("r_helix"); h) cache.h_r_helix = *h;
-            else cache.h_r_helix = {};
-            if (auto h = schema.get_handle("x_helix"); h) cache.h_x_helix = *h;
-            else cache.h_x_helix = {};
-            if (auto h = schema.get_handle("y_helix"); h) cache.h_y_helix = *h;
-            else cache.h_y_helix = {};
-            if (auto h = schema.get_handle("chi2_helix"); h) cache.h_chi2_helix = *h;
-            else cache.h_chi2_helix = {};
-            if (auto h = schema.get_handle("min_row"); h) cache.h_min_row = *h;
-            else cache.h_min_row = {};
-            if (auto h = schema.get_handle("min_col"); h) cache.h_min_col = *h;
-            else cache.h_min_col = {};
-            if (auto h = schema.get_handle("max_row"); h) cache.h_max_row = *h;
-            else cache.h_max_row = {};
-            if (auto h = schema.get_handle("max_col"); h) cache.h_max_col = *h;
-            else cache.h_max_col = {};
-            if (auto h = schema.get_handle("min_time"); h) cache.h_min_time = *h;
-            else cache.h_min_time = {};
-            if (auto h = schema.get_handle("max_time"); h) cache.h_max_time = *h;
-            else cache.h_max_time = {};
-            if (auto h = schema.get_handle("min_radius"); h) cache.h_min_radius = *h;
-            else cache.h_min_radius = {};
-            if (auto h = schema.get_handle("max_radius"); h) cache.h_max_radius = *h;
-            else cache.h_max_radius = {};
-            if (auto h = schema.get_handle("min_phi"); h) cache.h_min_phi = *h;
-            else cache.h_min_phi = {};
-            if (auto h = schema.get_handle("max_phi"); h) cache.h_max_phi = *h;
-            else cache.h_max_phi = {};
-            if (auto h = schema.get_handle("tdiff"); h) cache.h_tdiff = *h;
-            else cache.h_tdiff = {};
+            cache.i_trkID = schema.exists("trkID") ? schema.getEntryOrder("trkID") : -1;
+            cache.i_px = schema.exists("px") ? schema.getEntryOrder("px") : -1;
+            cache.i_py = schema.exists("py") ? schema.getEntryOrder("py") : -1;
+            cache.i_pz = schema.exists("pz") ? schema.getEntryOrder("pz") : -1;
+            cache.i_vz = schema.exists("vz") ? schema.getEntryOrder("vz") : -1;
+            cache.i_theta = schema.exists("theta") ? schema.getEntryOrder("theta") : -1;
+            cache.i_phi = schema.exists("phi") ? schema.getEntryOrder("phi") : -1;
+            cache.i_nhits = schema.exists("nhits") ? schema.getEntryOrder("nhits") : -1;
+            cache.i_path = schema.exists("path") ? schema.getEntryOrder("path") : -1;
+            cache.i_adcsum = schema.exists("adcsum") ? schema.getEntryOrder("adcsum") : -1;
+            cache.i_dedx = schema.exists("dedx") ? schema.getEntryOrder("dedx") : -1;
+            cache.i_r_helix = schema.exists("r_helix") ? schema.getEntryOrder("r_helix") : -1;
+            cache.i_x_helix = schema.exists("x_helix") ? schema.getEntryOrder("x_helix") : -1;
+            cache.i_y_helix = schema.exists("y_helix") ? schema.getEntryOrder("y_helix") : -1;
+            cache.i_chi2_helix = schema.exists("chi2_helix") ? schema.getEntryOrder("chi2_helix") : -1;
+            cache.i_min_row = schema.exists("min_row") ? schema.getEntryOrder("min_row") : -1;
+            cache.i_min_col = schema.exists("min_col") ? schema.getEntryOrder("min_col") : -1;
+            cache.i_max_row = schema.exists("max_row") ? schema.getEntryOrder("max_row") : -1;
+            cache.i_max_col = schema.exists("max_col") ? schema.getEntryOrder("max_col") : -1;
+            cache.i_min_time = schema.exists("min_time") ? schema.getEntryOrder("min_time") : -1;
+            cache.i_max_time = schema.exists("max_time") ? schema.getEntryOrder("max_time") : -1;
+            cache.i_min_radius = schema.exists("min_radius") ? schema.getEntryOrder("min_radius") : -1;
+            cache.i_max_radius = schema.exists("max_radius") ? schema.getEntryOrder("max_radius") : -1;
+            cache.i_min_phi = schema.exists("min_phi") ? schema.getEntryOrder("min_phi") : -1;
+            cache.i_max_phi = schema.exists("max_phi") ? schema.getEntryOrder("max_phi") : -1;
+            cache.i_tdiff = schema.exists("tdiff") ? schema.getEntryOrder("tdiff") : -1;
         }
-        h_trkID = cache.h_trkID;
-        h_px = cache.h_px;
-        h_py = cache.h_py;
-        h_pz = cache.h_pz;
-        h_vz = cache.h_vz;
-        h_theta = cache.h_theta;
-        h_phi = cache.h_phi;
-        h_nhits = cache.h_nhits;
-        h_path = cache.h_path;
-        h_adcsum = cache.h_adcsum;
-        h_dedx = cache.h_dedx;
-        h_r_helix = cache.h_r_helix;
-        h_x_helix = cache.h_x_helix;
-        h_y_helix = cache.h_y_helix;
-        h_chi2_helix = cache.h_chi2_helix;
-        h_min_row = cache.h_min_row;
-        h_min_col = cache.h_min_col;
-        h_max_row = cache.h_max_row;
-        h_max_col = cache.h_max_col;
-        h_min_time = cache.h_min_time;
-        h_max_time = cache.h_max_time;
-        h_min_radius = cache.h_min_radius;
-        h_max_radius = cache.h_max_radius;
-        h_min_phi = cache.h_min_phi;
-        h_max_phi = cache.h_max_phi;
-        h_tdiff = cache.h_tdiff;
+        i_trkID = cache.i_trkID;
+        i_px = cache.i_px;
+        i_py = cache.i_py;
+        i_pz = cache.i_pz;
+        i_vz = cache.i_vz;
+        i_theta = cache.i_theta;
+        i_phi = cache.i_phi;
+        i_nhits = cache.i_nhits;
+        i_path = cache.i_path;
+        i_adcsum = cache.i_adcsum;
+        i_dedx = cache.i_dedx;
+        i_r_helix = cache.i_r_helix;
+        i_x_helix = cache.i_x_helix;
+        i_y_helix = cache.i_y_helix;
+        i_chi2_helix = cache.i_chi2_helix;
+        i_min_row = cache.i_min_row;
+        i_min_col = cache.i_min_col;
+        i_max_row = cache.i_max_row;
+        i_max_col = cache.i_max_col;
+        i_min_time = cache.i_min_time;
+        i_max_time = cache.i_max_time;
+        i_min_radius = cache.i_min_radius;
+        i_max_radius = cache.i_max_radius;
+        i_min_phi = cache.i_min_phi;
+        i_max_phi = cache.i_max_phi;
+        i_tdiff = cache.i_tdiff;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// trkID: Track ID of the hit
     [[nodiscard]] int trkID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_trkID, row));
+        return static_cast<int>(m_view->getInt(i_trkID, row));
     }
     /// px: X component of the momentum (GeV)
     [[nodiscard]] float px(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_px, row));
+        return static_cast<float>(m_view->getFloat(i_px, row));
     }
     /// py: Y component of the momentum (GeV)
     [[nodiscard]] float py(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_py, row));
+        return static_cast<float>(m_view->getFloat(i_py, row));
     }
     /// pz: Z component of the momentum (GeV)
     [[nodiscard]] float pz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_pz, row));
+        return static_cast<float>(m_view->getFloat(i_pz, row));
     }
     /// vz: Z component of the reconstructed vertex (cm)
     [[nodiscard]] float vz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_vz, row));
+        return static_cast<float>(m_view->getFloat(i_vz, row));
     }
     /// theta: Theta from the Helix fit of the track (deg)
     [[nodiscard]] float theta(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_theta, row));
+        return static_cast<float>(m_view->getFloat(i_theta, row));
     }
     /// phi: Phi from the Helix fit of the track (deg)
     [[nodiscard]] float phi(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_phi, row));
+        return static_cast<float>(m_view->getFloat(i_phi, row));
     }
     /// nhits: Number of hits in the track
     [[nodiscard]] int nhits(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_nhits, row));
+        return static_cast<int>(m_view->getInt(i_nhits, row));
     }
     /// path: Length of the Track (mm)
     [[nodiscard]] float path(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_path, row));
+        return static_cast<float>(m_view->getFloat(i_path, row));
     }
     /// adcsum: Total ADC sum of the Track
     [[nodiscard]] float adcsum(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_adcsum, row));
+        return static_cast<float>(m_view->getFloat(i_adcsum, row));
     }
     /// dedx: dEdx for the Track (MeV/mm)
     [[nodiscard]] float dedx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_dedx, row));
+        return static_cast<float>(m_view->getFloat(i_dedx, row));
     }
     /// r_helix: Radius of the helix fit (mm)
     [[nodiscard]] float r_helix(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_r_helix, row));
+        return static_cast<float>(m_view->getFloat(i_r_helix, row));
     }
     /// x_helix: X-coordinate of the center of helix fit (mm)
     [[nodiscard]] float x_helix(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x_helix, row));
+        return static_cast<float>(m_view->getFloat(i_x_helix, row));
     }
     /// y_helix: Y-coordinate of the center of helix fit (mm)
     [[nodiscard]] float y_helix(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y_helix, row));
+        return static_cast<float>(m_view->getFloat(i_y_helix, row));
     }
     /// chi2_helix: Chi squared of the helix fit
     [[nodiscard]] float chi2_helix(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_chi2_helix, row));
+        return static_cast<float>(m_view->getFloat(i_chi2_helix, row));
     }
     /// min_row: Pad row of hit with smallest time
     [[nodiscard]] float min_row(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_min_row, row));
+        return static_cast<float>(m_view->getFloat(i_min_row, row));
     }
     /// min_col: Pad col of hit with smallest time
     [[nodiscard]] float min_col(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_min_col, row));
+        return static_cast<float>(m_view->getFloat(i_min_col, row));
     }
     /// max_row: Pad row of hit with largest time
     [[nodiscard]] float max_row(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_max_row, row));
+        return static_cast<float>(m_view->getFloat(i_max_row, row));
     }
     /// max_col: Pad col of hit with largest time
     [[nodiscard]] float max_col(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_max_col, row));
+        return static_cast<float>(m_view->getFloat(i_max_col, row));
     }
     /// min_time: Smallest time in track not shifted (ns)
     [[nodiscard]] float min_time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_min_time, row));
+        return static_cast<float>(m_view->getFloat(i_min_time, row));
     }
     /// max_time: Largest time in track not shifted (ns)
     [[nodiscard]] float max_time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_max_time, row));
+        return static_cast<float>(m_view->getFloat(i_max_time, row));
     }
     /// min_radius: Smallest reconstructed radius (mm)
     [[nodiscard]] float min_radius(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_min_radius, row));
+        return static_cast<float>(m_view->getFloat(i_min_radius, row));
     }
     /// max_radius: Largest reconstructed radius (mm)
     [[nodiscard]] float max_radius(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_max_radius, row));
+        return static_cast<float>(m_view->getFloat(i_max_radius, row));
     }
     /// min_phi: Smallest reconstructed phi (rad)
     [[nodiscard]] float min_phi(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_min_phi, row));
+        return static_cast<float>(m_view->getFloat(i_min_phi, row));
     }
     /// max_phi: Largest reconstructed phi (rad)
     [[nodiscard]] float max_phi(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_max_phi, row));
+        return static_cast<float>(m_view->getFloat(i_max_phi, row));
     }
     /// tdiff: Time shift (ns)
     [[nodiscard]] float tdiff(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_tdiff, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// trkID column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> trkID_col() const noexcept {
-        return m_view.column<int32_t>(h_trkID);
-    }
-    /// px column as a contiguous span.
-    [[nodiscard]] std::span<const float> px_col() const noexcept {
-        return m_view.column<float>(h_px);
-    }
-    /// py column as a contiguous span.
-    [[nodiscard]] std::span<const float> py_col() const noexcept {
-        return m_view.column<float>(h_py);
-    }
-    /// pz column as a contiguous span.
-    [[nodiscard]] std::span<const float> pz_col() const noexcept {
-        return m_view.column<float>(h_pz);
-    }
-    /// vz column as a contiguous span.
-    [[nodiscard]] std::span<const float> vz_col() const noexcept {
-        return m_view.column<float>(h_vz);
-    }
-    /// theta column as a contiguous span.
-    [[nodiscard]] std::span<const float> theta_col() const noexcept {
-        return m_view.column<float>(h_theta);
-    }
-    /// phi column as a contiguous span.
-    [[nodiscard]] std::span<const float> phi_col() const noexcept {
-        return m_view.column<float>(h_phi);
-    }
-    /// nhits column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> nhits_col() const noexcept {
-        return m_view.column<int32_t>(h_nhits);
-    }
-    /// path column as a contiguous span.
-    [[nodiscard]] std::span<const float> path_col() const noexcept {
-        return m_view.column<float>(h_path);
-    }
-    /// adcsum column as a contiguous span.
-    [[nodiscard]] std::span<const float> adcsum_col() const noexcept {
-        return m_view.column<float>(h_adcsum);
-    }
-    /// dedx column as a contiguous span.
-    [[nodiscard]] std::span<const float> dedx_col() const noexcept {
-        return m_view.column<float>(h_dedx);
-    }
-    /// r_helix column as a contiguous span.
-    [[nodiscard]] std::span<const float> r_helix_col() const noexcept {
-        return m_view.column<float>(h_r_helix);
-    }
-    /// x_helix column as a contiguous span.
-    [[nodiscard]] std::span<const float> x_helix_col() const noexcept {
-        return m_view.column<float>(h_x_helix);
-    }
-    /// y_helix column as a contiguous span.
-    [[nodiscard]] std::span<const float> y_helix_col() const noexcept {
-        return m_view.column<float>(h_y_helix);
-    }
-    /// chi2_helix column as a contiguous span.
-    [[nodiscard]] std::span<const float> chi2_helix_col() const noexcept {
-        return m_view.column<float>(h_chi2_helix);
-    }
-    /// min_row column as a contiguous span.
-    [[nodiscard]] std::span<const float> min_row_col() const noexcept {
-        return m_view.column<float>(h_min_row);
-    }
-    /// min_col column as a contiguous span.
-    [[nodiscard]] std::span<const float> min_col_col() const noexcept {
-        return m_view.column<float>(h_min_col);
-    }
-    /// max_row column as a contiguous span.
-    [[nodiscard]] std::span<const float> max_row_col() const noexcept {
-        return m_view.column<float>(h_max_row);
-    }
-    /// max_col column as a contiguous span.
-    [[nodiscard]] std::span<const float> max_col_col() const noexcept {
-        return m_view.column<float>(h_max_col);
-    }
-    /// min_time column as a contiguous span.
-    [[nodiscard]] std::span<const float> min_time_col() const noexcept {
-        return m_view.column<float>(h_min_time);
-    }
-    /// max_time column as a contiguous span.
-    [[nodiscard]] std::span<const float> max_time_col() const noexcept {
-        return m_view.column<float>(h_max_time);
-    }
-    /// min_radius column as a contiguous span.
-    [[nodiscard]] std::span<const float> min_radius_col() const noexcept {
-        return m_view.column<float>(h_min_radius);
-    }
-    /// max_radius column as a contiguous span.
-    [[nodiscard]] std::span<const float> max_radius_col() const noexcept {
-        return m_view.column<float>(h_max_radius);
-    }
-    /// min_phi column as a contiguous span.
-    [[nodiscard]] std::span<const float> min_phi_col() const noexcept {
-        return m_view.column<float>(h_min_phi);
-    }
-    /// max_phi column as a contiguous span.
-    [[nodiscard]] std::span<const float> max_phi_col() const noexcept {
-        return m_view.column<float>(h_max_phi);
-    }
-    /// tdiff column as a contiguous span.
-    [[nodiscard]] std::span<const float> tdiff_col() const noexcept {
-        return m_view.column<float>(h_tdiff);
+        return static_cast<float>(m_view->getFloat(i_tdiff, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_trkID{};
-    hipo::column_handle h_px{};
-    hipo::column_handle h_py{};
-    hipo::column_handle h_pz{};
-    hipo::column_handle h_vz{};
-    hipo::column_handle h_theta{};
-    hipo::column_handle h_phi{};
-    hipo::column_handle h_nhits{};
-    hipo::column_handle h_path{};
-    hipo::column_handle h_adcsum{};
-    hipo::column_handle h_dedx{};
-    hipo::column_handle h_r_helix{};
-    hipo::column_handle h_x_helix{};
-    hipo::column_handle h_y_helix{};
-    hipo::column_handle h_chi2_helix{};
-    hipo::column_handle h_min_row{};
-    hipo::column_handle h_min_col{};
-    hipo::column_handle h_max_row{};
-    hipo::column_handle h_max_col{};
-    hipo::column_handle h_min_time{};
-    hipo::column_handle h_max_time{};
-    hipo::column_handle h_min_radius{};
-    hipo::column_handle h_max_radius{};
-    hipo::column_handle h_min_phi{};
-    hipo::column_handle h_max_phi{};
-    hipo::column_handle h_tdiff{};
+    const hipo::bank* m_view = nullptr;
+    int i_trkID = -1;
+    int i_px = -1;
+    int i_py = -1;
+    int i_pz = -1;
+    int i_vz = -1;
+    int i_theta = -1;
+    int i_phi = -1;
+    int i_nhits = -1;
+    int i_path = -1;
+    int i_adcsum = -1;
+    int i_dedx = -1;
+    int i_r_helix = -1;
+    int i_x_helix = -1;
+    int i_y_helix = -1;
+    int i_chi2_helix = -1;
+    int i_min_row = -1;
+    int i_min_col = -1;
+    int i_max_row = -1;
+    int i_max_col = -1;
+    int i_min_time = -1;
+    int i_max_time = -1;
+    int i_min_radius = -1;
+    int i_max_radius = -1;
+    int i_min_phi = -1;
+    int i_max_phi = -1;
+    int i_tdiff = -1;
 
     friend class Row;
 };

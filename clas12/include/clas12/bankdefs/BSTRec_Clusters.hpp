@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `BSTRec::Clusters` (group 20200, item 22).
 /// first pass reconstructed BST clusters
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,528 +40,339 @@ class BSTRec_Clusters {
 
     BSTRec_Clusters() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_ID;
-            hipo::column_handle h_sector;
-            hipo::column_handle h_layer;
-            hipo::column_handle h_size;
-            hipo::column_handle h_ETot;
-            hipo::column_handle h_time;
-            hipo::column_handle h_seedE;
-            hipo::column_handle h_seedStrip;
-            hipo::column_handle h_centroid;
-            hipo::column_handle h_centroidError;
-            hipo::column_handle h_centroidResidual;
-            hipo::column_handle h_seedResidual;
-            hipo::column_handle h_Hit1_ID;
-            hipo::column_handle h_Hit2_ID;
-            hipo::column_handle h_Hit3_ID;
-            hipo::column_handle h_Hit4_ID;
-            hipo::column_handle h_Hit5_ID;
-            hipo::column_handle h_trkID;
-            hipo::column_handle h_x1;
-            hipo::column_handle h_y1;
-            hipo::column_handle h_z1;
-            hipo::column_handle h_x2;
-            hipo::column_handle h_y2;
-            hipo::column_handle h_z2;
-            hipo::column_handle h_cx;
-            hipo::column_handle h_cy;
-            hipo::column_handle h_cz;
-            hipo::column_handle h_lx;
-            hipo::column_handle h_ly;
-            hipo::column_handle h_lz;
-            hipo::column_handle h_sx;
-            hipo::column_handle h_sy;
-            hipo::column_handle h_sz;
-            hipo::column_handle h_nx;
-            hipo::column_handle h_ny;
-            hipo::column_handle h_nz;
-            hipo::column_handle h_e;
+            int i_ID = -1;
+            int i_sector = -1;
+            int i_layer = -1;
+            int i_size = -1;
+            int i_ETot = -1;
+            int i_time = -1;
+            int i_seedE = -1;
+            int i_seedStrip = -1;
+            int i_centroid = -1;
+            int i_centroidError = -1;
+            int i_centroidResidual = -1;
+            int i_seedResidual = -1;
+            int i_Hit1_ID = -1;
+            int i_Hit2_ID = -1;
+            int i_Hit3_ID = -1;
+            int i_Hit4_ID = -1;
+            int i_Hit5_ID = -1;
+            int i_trkID = -1;
+            int i_x1 = -1;
+            int i_y1 = -1;
+            int i_z1 = -1;
+            int i_x2 = -1;
+            int i_y2 = -1;
+            int i_z2 = -1;
+            int i_cx = -1;
+            int i_cy = -1;
+            int i_cz = -1;
+            int i_lx = -1;
+            int i_ly = -1;
+            int i_lz = -1;
+            int i_sx = -1;
+            int i_sy = -1;
+            int i_sz = -1;
+            int i_nx = -1;
+            int i_ny = -1;
+            int i_nz = -1;
+            int i_e = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("ID"); h) cache.h_ID = *h;
-            else cache.h_ID = {};
-            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
-            else cache.h_sector = {};
-            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
-            else cache.h_layer = {};
-            if (auto h = schema.get_handle("size"); h) cache.h_size = *h;
-            else cache.h_size = {};
-            if (auto h = schema.get_handle("ETot"); h) cache.h_ETot = *h;
-            else cache.h_ETot = {};
-            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
-            else cache.h_time = {};
-            if (auto h = schema.get_handle("seedE"); h) cache.h_seedE = *h;
-            else cache.h_seedE = {};
-            if (auto h = schema.get_handle("seedStrip"); h) cache.h_seedStrip = *h;
-            else cache.h_seedStrip = {};
-            if (auto h = schema.get_handle("centroid"); h) cache.h_centroid = *h;
-            else cache.h_centroid = {};
-            if (auto h = schema.get_handle("centroidError"); h) cache.h_centroidError = *h;
-            else cache.h_centroidError = {};
-            if (auto h = schema.get_handle("centroidResidual"); h) cache.h_centroidResidual = *h;
-            else cache.h_centroidResidual = {};
-            if (auto h = schema.get_handle("seedResidual"); h) cache.h_seedResidual = *h;
-            else cache.h_seedResidual = {};
-            if (auto h = schema.get_handle("Hit1_ID"); h) cache.h_Hit1_ID = *h;
-            else cache.h_Hit1_ID = {};
-            if (auto h = schema.get_handle("Hit2_ID"); h) cache.h_Hit2_ID = *h;
-            else cache.h_Hit2_ID = {};
-            if (auto h = schema.get_handle("Hit3_ID"); h) cache.h_Hit3_ID = *h;
-            else cache.h_Hit3_ID = {};
-            if (auto h = schema.get_handle("Hit4_ID"); h) cache.h_Hit4_ID = *h;
-            else cache.h_Hit4_ID = {};
-            if (auto h = schema.get_handle("Hit5_ID"); h) cache.h_Hit5_ID = *h;
-            else cache.h_Hit5_ID = {};
-            if (auto h = schema.get_handle("trkID"); h) cache.h_trkID = *h;
-            else cache.h_trkID = {};
-            if (auto h = schema.get_handle("x1"); h) cache.h_x1 = *h;
-            else cache.h_x1 = {};
-            if (auto h = schema.get_handle("y1"); h) cache.h_y1 = *h;
-            else cache.h_y1 = {};
-            if (auto h = schema.get_handle("z1"); h) cache.h_z1 = *h;
-            else cache.h_z1 = {};
-            if (auto h = schema.get_handle("x2"); h) cache.h_x2 = *h;
-            else cache.h_x2 = {};
-            if (auto h = schema.get_handle("y2"); h) cache.h_y2 = *h;
-            else cache.h_y2 = {};
-            if (auto h = schema.get_handle("z2"); h) cache.h_z2 = *h;
-            else cache.h_z2 = {};
-            if (auto h = schema.get_handle("cx"); h) cache.h_cx = *h;
-            else cache.h_cx = {};
-            if (auto h = schema.get_handle("cy"); h) cache.h_cy = *h;
-            else cache.h_cy = {};
-            if (auto h = schema.get_handle("cz"); h) cache.h_cz = *h;
-            else cache.h_cz = {};
-            if (auto h = schema.get_handle("lx"); h) cache.h_lx = *h;
-            else cache.h_lx = {};
-            if (auto h = schema.get_handle("ly"); h) cache.h_ly = *h;
-            else cache.h_ly = {};
-            if (auto h = schema.get_handle("lz"); h) cache.h_lz = *h;
-            else cache.h_lz = {};
-            if (auto h = schema.get_handle("sx"); h) cache.h_sx = *h;
-            else cache.h_sx = {};
-            if (auto h = schema.get_handle("sy"); h) cache.h_sy = *h;
-            else cache.h_sy = {};
-            if (auto h = schema.get_handle("sz"); h) cache.h_sz = *h;
-            else cache.h_sz = {};
-            if (auto h = schema.get_handle("nx"); h) cache.h_nx = *h;
-            else cache.h_nx = {};
-            if (auto h = schema.get_handle("ny"); h) cache.h_ny = *h;
-            else cache.h_ny = {};
-            if (auto h = schema.get_handle("nz"); h) cache.h_nz = *h;
-            else cache.h_nz = {};
-            if (auto h = schema.get_handle("e"); h) cache.h_e = *h;
-            else cache.h_e = {};
+            cache.i_ID = schema.exists("ID") ? schema.getEntryOrder("ID") : -1;
+            cache.i_sector = schema.exists("sector") ? schema.getEntryOrder("sector") : -1;
+            cache.i_layer = schema.exists("layer") ? schema.getEntryOrder("layer") : -1;
+            cache.i_size = schema.exists("size") ? schema.getEntryOrder("size") : -1;
+            cache.i_ETot = schema.exists("ETot") ? schema.getEntryOrder("ETot") : -1;
+            cache.i_time = schema.exists("time") ? schema.getEntryOrder("time") : -1;
+            cache.i_seedE = schema.exists("seedE") ? schema.getEntryOrder("seedE") : -1;
+            cache.i_seedStrip = schema.exists("seedStrip") ? schema.getEntryOrder("seedStrip") : -1;
+            cache.i_centroid = schema.exists("centroid") ? schema.getEntryOrder("centroid") : -1;
+            cache.i_centroidError = schema.exists("centroidError") ? schema.getEntryOrder("centroidError") : -1;
+            cache.i_centroidResidual = schema.exists("centroidResidual") ? schema.getEntryOrder("centroidResidual") : -1;
+            cache.i_seedResidual = schema.exists("seedResidual") ? schema.getEntryOrder("seedResidual") : -1;
+            cache.i_Hit1_ID = schema.exists("Hit1_ID") ? schema.getEntryOrder("Hit1_ID") : -1;
+            cache.i_Hit2_ID = schema.exists("Hit2_ID") ? schema.getEntryOrder("Hit2_ID") : -1;
+            cache.i_Hit3_ID = schema.exists("Hit3_ID") ? schema.getEntryOrder("Hit3_ID") : -1;
+            cache.i_Hit4_ID = schema.exists("Hit4_ID") ? schema.getEntryOrder("Hit4_ID") : -1;
+            cache.i_Hit5_ID = schema.exists("Hit5_ID") ? schema.getEntryOrder("Hit5_ID") : -1;
+            cache.i_trkID = schema.exists("trkID") ? schema.getEntryOrder("trkID") : -1;
+            cache.i_x1 = schema.exists("x1") ? schema.getEntryOrder("x1") : -1;
+            cache.i_y1 = schema.exists("y1") ? schema.getEntryOrder("y1") : -1;
+            cache.i_z1 = schema.exists("z1") ? schema.getEntryOrder("z1") : -1;
+            cache.i_x2 = schema.exists("x2") ? schema.getEntryOrder("x2") : -1;
+            cache.i_y2 = schema.exists("y2") ? schema.getEntryOrder("y2") : -1;
+            cache.i_z2 = schema.exists("z2") ? schema.getEntryOrder("z2") : -1;
+            cache.i_cx = schema.exists("cx") ? schema.getEntryOrder("cx") : -1;
+            cache.i_cy = schema.exists("cy") ? schema.getEntryOrder("cy") : -1;
+            cache.i_cz = schema.exists("cz") ? schema.getEntryOrder("cz") : -1;
+            cache.i_lx = schema.exists("lx") ? schema.getEntryOrder("lx") : -1;
+            cache.i_ly = schema.exists("ly") ? schema.getEntryOrder("ly") : -1;
+            cache.i_lz = schema.exists("lz") ? schema.getEntryOrder("lz") : -1;
+            cache.i_sx = schema.exists("sx") ? schema.getEntryOrder("sx") : -1;
+            cache.i_sy = schema.exists("sy") ? schema.getEntryOrder("sy") : -1;
+            cache.i_sz = schema.exists("sz") ? schema.getEntryOrder("sz") : -1;
+            cache.i_nx = schema.exists("nx") ? schema.getEntryOrder("nx") : -1;
+            cache.i_ny = schema.exists("ny") ? schema.getEntryOrder("ny") : -1;
+            cache.i_nz = schema.exists("nz") ? schema.getEntryOrder("nz") : -1;
+            cache.i_e = schema.exists("e") ? schema.getEntryOrder("e") : -1;
         }
-        h_ID = cache.h_ID;
-        h_sector = cache.h_sector;
-        h_layer = cache.h_layer;
-        h_size = cache.h_size;
-        h_ETot = cache.h_ETot;
-        h_time = cache.h_time;
-        h_seedE = cache.h_seedE;
-        h_seedStrip = cache.h_seedStrip;
-        h_centroid = cache.h_centroid;
-        h_centroidError = cache.h_centroidError;
-        h_centroidResidual = cache.h_centroidResidual;
-        h_seedResidual = cache.h_seedResidual;
-        h_Hit1_ID = cache.h_Hit1_ID;
-        h_Hit2_ID = cache.h_Hit2_ID;
-        h_Hit3_ID = cache.h_Hit3_ID;
-        h_Hit4_ID = cache.h_Hit4_ID;
-        h_Hit5_ID = cache.h_Hit5_ID;
-        h_trkID = cache.h_trkID;
-        h_x1 = cache.h_x1;
-        h_y1 = cache.h_y1;
-        h_z1 = cache.h_z1;
-        h_x2 = cache.h_x2;
-        h_y2 = cache.h_y2;
-        h_z2 = cache.h_z2;
-        h_cx = cache.h_cx;
-        h_cy = cache.h_cy;
-        h_cz = cache.h_cz;
-        h_lx = cache.h_lx;
-        h_ly = cache.h_ly;
-        h_lz = cache.h_lz;
-        h_sx = cache.h_sx;
-        h_sy = cache.h_sy;
-        h_sz = cache.h_sz;
-        h_nx = cache.h_nx;
-        h_ny = cache.h_ny;
-        h_nz = cache.h_nz;
-        h_e = cache.h_e;
+        i_ID = cache.i_ID;
+        i_sector = cache.i_sector;
+        i_layer = cache.i_layer;
+        i_size = cache.i_size;
+        i_ETot = cache.i_ETot;
+        i_time = cache.i_time;
+        i_seedE = cache.i_seedE;
+        i_seedStrip = cache.i_seedStrip;
+        i_centroid = cache.i_centroid;
+        i_centroidError = cache.i_centroidError;
+        i_centroidResidual = cache.i_centroidResidual;
+        i_seedResidual = cache.i_seedResidual;
+        i_Hit1_ID = cache.i_Hit1_ID;
+        i_Hit2_ID = cache.i_Hit2_ID;
+        i_Hit3_ID = cache.i_Hit3_ID;
+        i_Hit4_ID = cache.i_Hit4_ID;
+        i_Hit5_ID = cache.i_Hit5_ID;
+        i_trkID = cache.i_trkID;
+        i_x1 = cache.i_x1;
+        i_y1 = cache.i_y1;
+        i_z1 = cache.i_z1;
+        i_x2 = cache.i_x2;
+        i_y2 = cache.i_y2;
+        i_z2 = cache.i_z2;
+        i_cx = cache.i_cx;
+        i_cy = cache.i_cy;
+        i_cz = cache.i_cz;
+        i_lx = cache.i_lx;
+        i_ly = cache.i_ly;
+        i_lz = cache.i_lz;
+        i_sx = cache.i_sx;
+        i_sy = cache.i_sy;
+        i_sz = cache.i_sz;
+        i_nx = cache.i_nx;
+        i_ny = cache.i_ny;
+        i_nz = cache.i_nz;
+        i_e = cache.i_e;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// ID: ID
     [[nodiscard]] int ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_ID, row));
+        return static_cast<int>(m_view->getShort(i_ID, row));
     }
     /// sector: sector
     [[nodiscard]] int sector(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+        return static_cast<int>(m_view->getByte(i_sector, row));
     }
     /// layer: layer
     [[nodiscard]] int layer(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_layer, row));
+        return static_cast<int>(m_view->getByte(i_layer, row));
     }
     /// size: cluster size
     [[nodiscard]] int size(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_size, row));
+        return static_cast<int>(m_view->getShort(i_size, row));
     }
     /// ETot: cluster total energy
     [[nodiscard]] float ETot(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_ETot, row));
+        return static_cast<float>(m_view->getFloat(i_ETot, row));
     }
     /// time: cluster time
     [[nodiscard]] float time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_time, row));
+        return static_cast<float>(m_view->getFloat(i_time, row));
     }
     /// seedE: energy of the seed 
     [[nodiscard]] float seedE(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_seedE, row));
+        return static_cast<float>(m_view->getFloat(i_seedE, row));
     }
     /// seedStrip: seed strip
     [[nodiscard]] int seedStrip(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_seedStrip, row));
+        return static_cast<int>(m_view->getShort(i_seedStrip, row));
     }
     /// centroid: centroid strip number
     [[nodiscard]] float centroid(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_centroid, row));
+        return static_cast<float>(m_view->getFloat(i_centroid, row));
     }
     /// centroidError: centroid spatial error
     [[nodiscard]] float centroidError(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_centroidError, row));
+        return static_cast<float>(m_view->getFloat(i_centroidError, row));
     }
     /// centroidResidual: centroid residual
     [[nodiscard]] float centroidResidual(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_centroidResidual, row));
+        return static_cast<float>(m_view->getFloat(i_centroidResidual, row));
     }
     /// seedResidual: seed residual
     [[nodiscard]] float seedResidual(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_seedResidual, row));
+        return static_cast<float>(m_view->getFloat(i_seedResidual, row));
     }
     /// Hit1_ID: Index of hit 1 in cluster
     [[nodiscard]] int Hit1_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Hit1_ID, row));
+        return static_cast<int>(m_view->getShort(i_Hit1_ID, row));
     }
     /// Hit2_ID: Index of hit 2 in cluster
     [[nodiscard]] int Hit2_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Hit2_ID, row));
+        return static_cast<int>(m_view->getShort(i_Hit2_ID, row));
     }
     /// Hit3_ID: Index of hit 3 in cluster
     [[nodiscard]] int Hit3_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Hit3_ID, row));
+        return static_cast<int>(m_view->getShort(i_Hit3_ID, row));
     }
     /// Hit4_ID: Index of hit 4 in cluster
     [[nodiscard]] int Hit4_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Hit4_ID, row));
+        return static_cast<int>(m_view->getShort(i_Hit4_ID, row));
     }
     /// Hit5_ID: Index of hit 5 in cluster
     [[nodiscard]] int Hit5_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Hit5_ID, row));
+        return static_cast<int>(m_view->getShort(i_Hit5_ID, row));
     }
     /// trkID: associated track ID
     [[nodiscard]] int trkID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_trkID, row));
+        return static_cast<int>(m_view->getShort(i_trkID, row));
     }
     /// x1: cluster first end point x
     [[nodiscard]] float x1(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x1, row));
+        return static_cast<float>(m_view->getFloat(i_x1, row));
     }
     /// y1: cluster first end point y
     [[nodiscard]] float y1(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y1, row));
+        return static_cast<float>(m_view->getFloat(i_y1, row));
     }
     /// z1: cluster first end point z
     [[nodiscard]] float z1(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_z1, row));
+        return static_cast<float>(m_view->getFloat(i_z1, row));
     }
     /// x2: cluster second end point x
     [[nodiscard]] float x2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x2, row));
+        return static_cast<float>(m_view->getFloat(i_x2, row));
     }
     /// y2: cluster second end point y
     [[nodiscard]] float y2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y2, row));
+        return static_cast<float>(m_view->getFloat(i_y2, row));
     }
     /// z2: cluster second end point z
     [[nodiscard]] float z2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_z2, row));
+        return static_cast<float>(m_view->getFloat(i_z2, row));
     }
     /// cx: bmt-C cluster arc center x
     [[nodiscard]] float cx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cx, row));
+        return static_cast<float>(m_view->getFloat(i_cx, row));
     }
     /// cy: bmt-C cluster arc center y
     [[nodiscard]] float cy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cy, row));
+        return static_cast<float>(m_view->getFloat(i_cy, row));
     }
     /// cz: bmt-C cluster arc center z
     [[nodiscard]] float cz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cz, row));
+        return static_cast<float>(m_view->getFloat(i_cz, row));
     }
     /// lx: vector x comp  along cluster pseudo-strip direction
     [[nodiscard]] float lx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_lx, row));
+        return static_cast<float>(m_view->getFloat(i_lx, row));
     }
     /// ly: vector y comp  along cluster pseudo-strip direction
     [[nodiscard]] float ly(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_ly, row));
+        return static_cast<float>(m_view->getFloat(i_ly, row));
     }
     /// lz: vector z comp  along cluster pseudo-strip direction
     [[nodiscard]] float lz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_lz, row));
+        return static_cast<float>(m_view->getFloat(i_lz, row));
     }
     /// sx: vector x comp perpendicular to cluster pseudo-strip direction in the module plane
     [[nodiscard]] float sx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_sx, row));
+        return static_cast<float>(m_view->getFloat(i_sx, row));
     }
     /// sy: vector y comp perpendicular to cluster pseudo-strip direction in the module plane
     [[nodiscard]] float sy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_sy, row));
+        return static_cast<float>(m_view->getFloat(i_sy, row));
     }
     /// sz: vector z comp perpendicular to cluster pseudo-strip direction in the module plane
     [[nodiscard]] float sz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_sz, row));
+        return static_cast<float>(m_view->getFloat(i_sz, row));
     }
     /// nx: vector x comp normal to the cluster module plane
     [[nodiscard]] float nx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_nx, row));
+        return static_cast<float>(m_view->getFloat(i_nx, row));
     }
     /// ny: vector y comp normal to the cluster module plane
     [[nodiscard]] float ny(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_ny, row));
+        return static_cast<float>(m_view->getFloat(i_ny, row));
     }
     /// nz: vector z comp normal to the cluster module plane
     [[nodiscard]] float nz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_nz, row));
+        return static_cast<float>(m_view->getFloat(i_nz, row));
     }
     /// e: cluster spacial uncertainty
     [[nodiscard]] float e(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_e, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> ID_col() const noexcept {
-        return m_view.column<int16_t>(h_ID);
-    }
-    /// sector column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
-        return m_view.column<int8_t>(h_sector);
-    }
-    /// layer column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> layer_col() const noexcept {
-        return m_view.column<int8_t>(h_layer);
-    }
-    /// size column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> size_col() const noexcept {
-        return m_view.column<int16_t>(h_size);
-    }
-    /// ETot column as a contiguous span.
-    [[nodiscard]] std::span<const float> ETot_col() const noexcept {
-        return m_view.column<float>(h_ETot);
-    }
-    /// time column as a contiguous span.
-    [[nodiscard]] std::span<const float> time_col() const noexcept {
-        return m_view.column<float>(h_time);
-    }
-    /// seedE column as a contiguous span.
-    [[nodiscard]] std::span<const float> seedE_col() const noexcept {
-        return m_view.column<float>(h_seedE);
-    }
-    /// seedStrip column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> seedStrip_col() const noexcept {
-        return m_view.column<int16_t>(h_seedStrip);
-    }
-    /// centroid column as a contiguous span.
-    [[nodiscard]] std::span<const float> centroid_col() const noexcept {
-        return m_view.column<float>(h_centroid);
-    }
-    /// centroidError column as a contiguous span.
-    [[nodiscard]] std::span<const float> centroidError_col() const noexcept {
-        return m_view.column<float>(h_centroidError);
-    }
-    /// centroidResidual column as a contiguous span.
-    [[nodiscard]] std::span<const float> centroidResidual_col() const noexcept {
-        return m_view.column<float>(h_centroidResidual);
-    }
-    /// seedResidual column as a contiguous span.
-    [[nodiscard]] std::span<const float> seedResidual_col() const noexcept {
-        return m_view.column<float>(h_seedResidual);
-    }
-    /// Hit1_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Hit1_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Hit1_ID);
-    }
-    /// Hit2_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Hit2_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Hit2_ID);
-    }
-    /// Hit3_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Hit3_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Hit3_ID);
-    }
-    /// Hit4_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Hit4_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Hit4_ID);
-    }
-    /// Hit5_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Hit5_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Hit5_ID);
-    }
-    /// trkID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> trkID_col() const noexcept {
-        return m_view.column<int16_t>(h_trkID);
-    }
-    /// x1 column as a contiguous span.
-    [[nodiscard]] std::span<const float> x1_col() const noexcept {
-        return m_view.column<float>(h_x1);
-    }
-    /// y1 column as a contiguous span.
-    [[nodiscard]] std::span<const float> y1_col() const noexcept {
-        return m_view.column<float>(h_y1);
-    }
-    /// z1 column as a contiguous span.
-    [[nodiscard]] std::span<const float> z1_col() const noexcept {
-        return m_view.column<float>(h_z1);
-    }
-    /// x2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> x2_col() const noexcept {
-        return m_view.column<float>(h_x2);
-    }
-    /// y2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> y2_col() const noexcept {
-        return m_view.column<float>(h_y2);
-    }
-    /// z2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> z2_col() const noexcept {
-        return m_view.column<float>(h_z2);
-    }
-    /// cx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cx_col() const noexcept {
-        return m_view.column<float>(h_cx);
-    }
-    /// cy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cy_col() const noexcept {
-        return m_view.column<float>(h_cy);
-    }
-    /// cz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cz_col() const noexcept {
-        return m_view.column<float>(h_cz);
-    }
-    /// lx column as a contiguous span.
-    [[nodiscard]] std::span<const float> lx_col() const noexcept {
-        return m_view.column<float>(h_lx);
-    }
-    /// ly column as a contiguous span.
-    [[nodiscard]] std::span<const float> ly_col() const noexcept {
-        return m_view.column<float>(h_ly);
-    }
-    /// lz column as a contiguous span.
-    [[nodiscard]] std::span<const float> lz_col() const noexcept {
-        return m_view.column<float>(h_lz);
-    }
-    /// sx column as a contiguous span.
-    [[nodiscard]] std::span<const float> sx_col() const noexcept {
-        return m_view.column<float>(h_sx);
-    }
-    /// sy column as a contiguous span.
-    [[nodiscard]] std::span<const float> sy_col() const noexcept {
-        return m_view.column<float>(h_sy);
-    }
-    /// sz column as a contiguous span.
-    [[nodiscard]] std::span<const float> sz_col() const noexcept {
-        return m_view.column<float>(h_sz);
-    }
-    /// nx column as a contiguous span.
-    [[nodiscard]] std::span<const float> nx_col() const noexcept {
-        return m_view.column<float>(h_nx);
-    }
-    /// ny column as a contiguous span.
-    [[nodiscard]] std::span<const float> ny_col() const noexcept {
-        return m_view.column<float>(h_ny);
-    }
-    /// nz column as a contiguous span.
-    [[nodiscard]] std::span<const float> nz_col() const noexcept {
-        return m_view.column<float>(h_nz);
-    }
-    /// e column as a contiguous span.
-    [[nodiscard]] std::span<const float> e_col() const noexcept {
-        return m_view.column<float>(h_e);
+        return static_cast<float>(m_view->getFloat(i_e, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_ID{};
-    hipo::column_handle h_sector{};
-    hipo::column_handle h_layer{};
-    hipo::column_handle h_size{};
-    hipo::column_handle h_ETot{};
-    hipo::column_handle h_time{};
-    hipo::column_handle h_seedE{};
-    hipo::column_handle h_seedStrip{};
-    hipo::column_handle h_centroid{};
-    hipo::column_handle h_centroidError{};
-    hipo::column_handle h_centroidResidual{};
-    hipo::column_handle h_seedResidual{};
-    hipo::column_handle h_Hit1_ID{};
-    hipo::column_handle h_Hit2_ID{};
-    hipo::column_handle h_Hit3_ID{};
-    hipo::column_handle h_Hit4_ID{};
-    hipo::column_handle h_Hit5_ID{};
-    hipo::column_handle h_trkID{};
-    hipo::column_handle h_x1{};
-    hipo::column_handle h_y1{};
-    hipo::column_handle h_z1{};
-    hipo::column_handle h_x2{};
-    hipo::column_handle h_y2{};
-    hipo::column_handle h_z2{};
-    hipo::column_handle h_cx{};
-    hipo::column_handle h_cy{};
-    hipo::column_handle h_cz{};
-    hipo::column_handle h_lx{};
-    hipo::column_handle h_ly{};
-    hipo::column_handle h_lz{};
-    hipo::column_handle h_sx{};
-    hipo::column_handle h_sy{};
-    hipo::column_handle h_sz{};
-    hipo::column_handle h_nx{};
-    hipo::column_handle h_ny{};
-    hipo::column_handle h_nz{};
-    hipo::column_handle h_e{};
+    const hipo::bank* m_view = nullptr;
+    int i_ID = -1;
+    int i_sector = -1;
+    int i_layer = -1;
+    int i_size = -1;
+    int i_ETot = -1;
+    int i_time = -1;
+    int i_seedE = -1;
+    int i_seedStrip = -1;
+    int i_centroid = -1;
+    int i_centroidError = -1;
+    int i_centroidResidual = -1;
+    int i_seedResidual = -1;
+    int i_Hit1_ID = -1;
+    int i_Hit2_ID = -1;
+    int i_Hit3_ID = -1;
+    int i_Hit4_ID = -1;
+    int i_Hit5_ID = -1;
+    int i_trkID = -1;
+    int i_x1 = -1;
+    int i_y1 = -1;
+    int i_z1 = -1;
+    int i_x2 = -1;
+    int i_y2 = -1;
+    int i_z2 = -1;
+    int i_cx = -1;
+    int i_cy = -1;
+    int i_cz = -1;
+    int i_lx = -1;
+    int i_ly = -1;
+    int i_lz = -1;
+    int i_sx = -1;
+    int i_sy = -1;
+    int i_sz = -1;
+    int i_nx = -1;
+    int i_ny = -1;
+    int i_nz = -1;
+    int i_e = -1;
 
     friend class Row;
 };

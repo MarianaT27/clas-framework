@@ -13,6 +13,8 @@
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <chain.h>
+#include <reader.h>
+#include <dictionary.h>
 
 namespace framework {
 
@@ -218,24 +220,21 @@ class Application {
             return StatusCode::FAILURE();
         }
 
-        // Create HIPO chain for parallel processing
-        hipo::chain chain({.threads = m_num_threads, .show_progress = true});
-        for (const auto& file : m_input_files) {
-            chain.add(file);
-        }
-        auto open_result = chain.open();
-        if (!open_result) {
-            Log::error("Application", "Failed to open HIPO chain");
-            return StatusCode::FAILURE();
+        // Probe the schema dictionary from the first input file so we can
+        // catch missing required banks up-front. The chain's own dictionary
+        // is built lazily; a one-shot reader open is cheaper than waiting
+        // for the first worker to fail.
+        hipo::dictionary dict;
+        {
+            hipo::reader probe;
+            probe.open(m_input_files.front().c_str());
+            probe.readDictionary(dict);
         }
 
-        // Collect only the banks that algorithms actually need, probing the
-        // chain's schema dictionary so we catch missing banks up-front instead
-        // of letting hipo::bank_view_set::bind() silently kill worker threads.
         std::set<std::string> unique_banks;
         for (auto& alg : m_algorithms) {
             for (auto& bank : alg->required_banks()) {
-                if (!chain.dict().contains(bank)) {
+                if (!dict.hasSchema(bank.c_str())) {
                     Log::error("Application",
                         "Required bank '{}' (algorithm '{}') not found in input dictionary",
                         bank, alg->name());
@@ -246,7 +245,7 @@ class Application {
         }
         for (auto& alg : m_algorithms) {
             for (auto& bank : alg->optional_banks()) {
-                if (chain.dict().contains(bank)) {
+                if (dict.hasSchema(bank.c_str())) {
                     unique_banks.insert(bank);
                 } else {
                     Log::warning("Application",
@@ -259,6 +258,14 @@ class Application {
         unique_banks.insert("REC::Particle");
         auto all_required_banks = std::vector<std::string>(unique_banks.begin(), unique_banks.end());
 
+        // Create HIPO chain for parallel processing. Positional ctor
+        // (threads, show_progress, verbose) — the new chain API doesn't take
+        // a designated-initializer struct.
+        hipo::chain chain(m_num_threads, /*progress=*/true, /*verbose=*/false);
+        for (const auto& file : m_input_files) {
+            chain.add(file);
+        }
+
         Log::info("Application", "");
         Log::info("Application", "Starting event processing...");
         Log::info("Application", "  Input files: {}", m_input_files.size());
@@ -267,9 +274,9 @@ class Application {
         Log::info("Application", "  Threads: {}", m_num_threads);
 
         // Process events
-        chain.process([this](hipo::bank_view_set& banks, int file_idx, int64_t evt_idx) {
-            // Create Event wrapper
-            Event event(banks);
+        chain.process([this](hipo::chain_event& chain_evt, int file_idx, long evt_idx) {
+            // Create Event wrapper around the chain's per-callback view
+            Event event(chain_evt);
             event.set_event_number(evt_idx);
             event.set_file_index(file_idx);
 
@@ -296,7 +303,8 @@ class Application {
                     break;
                 }
             }
-        }, all_required_banks, m_percentage);
+        }, m_percentage);
+        (void)all_required_banks;  // kept around for the dictionary probe / future banklist pre-binding
 
         if (m_exception_count > 0) {
             fmt::print("WARNING: {} exception(s) caught during event processing\n", m_exception_count.load());

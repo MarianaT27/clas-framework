@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `RECHBAI::CaloExtras` (group 400, item 24).
 /// Calorimeter Cluster Parameters
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,255 +40,171 @@ class RECHBAI_CaloExtras {
 
     RECHBAI_CaloExtras() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_dbstU;
-            hipo::column_handle h_dbstV;
-            hipo::column_handle h_dbstW;
-            hipo::column_handle h_rawEU;
-            hipo::column_handle h_rawEV;
-            hipo::column_handle h_rawEW;
-            hipo::column_handle h_recEU;
-            hipo::column_handle h_recEV;
-            hipo::column_handle h_recEW;
-            hipo::column_handle h_recDTU;
-            hipo::column_handle h_recDTV;
-            hipo::column_handle h_recDTW;
-            hipo::column_handle h_recFTU;
-            hipo::column_handle h_recFTV;
-            hipo::column_handle h_recFTW;
-            hipo::column_handle h_size;
+            int i_dbstU = -1;
+            int i_dbstV = -1;
+            int i_dbstW = -1;
+            int i_rawEU = -1;
+            int i_rawEV = -1;
+            int i_rawEW = -1;
+            int i_recEU = -1;
+            int i_recEV = -1;
+            int i_recEW = -1;
+            int i_recDTU = -1;
+            int i_recDTV = -1;
+            int i_recDTW = -1;
+            int i_recFTU = -1;
+            int i_recFTV = -1;
+            int i_recFTW = -1;
+            int i_size = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("dbstU"); h) cache.h_dbstU = *h;
-            else cache.h_dbstU = {};
-            if (auto h = schema.get_handle("dbstV"); h) cache.h_dbstV = *h;
-            else cache.h_dbstV = {};
-            if (auto h = schema.get_handle("dbstW"); h) cache.h_dbstW = *h;
-            else cache.h_dbstW = {};
-            if (auto h = schema.get_handle("rawEU"); h) cache.h_rawEU = *h;
-            else cache.h_rawEU = {};
-            if (auto h = schema.get_handle("rawEV"); h) cache.h_rawEV = *h;
-            else cache.h_rawEV = {};
-            if (auto h = schema.get_handle("rawEW"); h) cache.h_rawEW = *h;
-            else cache.h_rawEW = {};
-            if (auto h = schema.get_handle("recEU"); h) cache.h_recEU = *h;
-            else cache.h_recEU = {};
-            if (auto h = schema.get_handle("recEV"); h) cache.h_recEV = *h;
-            else cache.h_recEV = {};
-            if (auto h = schema.get_handle("recEW"); h) cache.h_recEW = *h;
-            else cache.h_recEW = {};
-            if (auto h = schema.get_handle("recDTU"); h) cache.h_recDTU = *h;
-            else cache.h_recDTU = {};
-            if (auto h = schema.get_handle("recDTV"); h) cache.h_recDTV = *h;
-            else cache.h_recDTV = {};
-            if (auto h = schema.get_handle("recDTW"); h) cache.h_recDTW = *h;
-            else cache.h_recDTW = {};
-            if (auto h = schema.get_handle("recFTU"); h) cache.h_recFTU = *h;
-            else cache.h_recFTU = {};
-            if (auto h = schema.get_handle("recFTV"); h) cache.h_recFTV = *h;
-            else cache.h_recFTV = {};
-            if (auto h = schema.get_handle("recFTW"); h) cache.h_recFTW = *h;
-            else cache.h_recFTW = {};
-            if (auto h = schema.get_handle("size"); h) cache.h_size = *h;
-            else cache.h_size = {};
+            cache.i_dbstU = schema.exists("dbstU") ? schema.getEntryOrder("dbstU") : -1;
+            cache.i_dbstV = schema.exists("dbstV") ? schema.getEntryOrder("dbstV") : -1;
+            cache.i_dbstW = schema.exists("dbstW") ? schema.getEntryOrder("dbstW") : -1;
+            cache.i_rawEU = schema.exists("rawEU") ? schema.getEntryOrder("rawEU") : -1;
+            cache.i_rawEV = schema.exists("rawEV") ? schema.getEntryOrder("rawEV") : -1;
+            cache.i_rawEW = schema.exists("rawEW") ? schema.getEntryOrder("rawEW") : -1;
+            cache.i_recEU = schema.exists("recEU") ? schema.getEntryOrder("recEU") : -1;
+            cache.i_recEV = schema.exists("recEV") ? schema.getEntryOrder("recEV") : -1;
+            cache.i_recEW = schema.exists("recEW") ? schema.getEntryOrder("recEW") : -1;
+            cache.i_recDTU = schema.exists("recDTU") ? schema.getEntryOrder("recDTU") : -1;
+            cache.i_recDTV = schema.exists("recDTV") ? schema.getEntryOrder("recDTV") : -1;
+            cache.i_recDTW = schema.exists("recDTW") ? schema.getEntryOrder("recDTW") : -1;
+            cache.i_recFTU = schema.exists("recFTU") ? schema.getEntryOrder("recFTU") : -1;
+            cache.i_recFTV = schema.exists("recFTV") ? schema.getEntryOrder("recFTV") : -1;
+            cache.i_recFTW = schema.exists("recFTW") ? schema.getEntryOrder("recFTW") : -1;
+            cache.i_size = schema.exists("size") ? schema.getEntryOrder("size") : -1;
         }
-        h_dbstU = cache.h_dbstU;
-        h_dbstV = cache.h_dbstV;
-        h_dbstW = cache.h_dbstW;
-        h_rawEU = cache.h_rawEU;
-        h_rawEV = cache.h_rawEV;
-        h_rawEW = cache.h_rawEW;
-        h_recEU = cache.h_recEU;
-        h_recEV = cache.h_recEV;
-        h_recEW = cache.h_recEW;
-        h_recDTU = cache.h_recDTU;
-        h_recDTV = cache.h_recDTV;
-        h_recDTW = cache.h_recDTW;
-        h_recFTU = cache.h_recFTU;
-        h_recFTV = cache.h_recFTV;
-        h_recFTW = cache.h_recFTW;
-        h_size = cache.h_size;
+        i_dbstU = cache.i_dbstU;
+        i_dbstV = cache.i_dbstV;
+        i_dbstW = cache.i_dbstW;
+        i_rawEU = cache.i_rawEU;
+        i_rawEV = cache.i_rawEV;
+        i_rawEW = cache.i_rawEW;
+        i_recEU = cache.i_recEU;
+        i_recEV = cache.i_recEV;
+        i_recEW = cache.i_recEW;
+        i_recDTU = cache.i_recDTU;
+        i_recDTV = cache.i_recDTV;
+        i_recDTW = cache.i_recDTW;
+        i_recFTU = cache.i_recFTU;
+        i_recFTV = cache.i_recFTV;
+        i_recFTW = cache.i_recFTW;
+        i_size = cache.i_size;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// dbstU: DB status + U strip*10
     [[nodiscard]] int dbstU(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_dbstU, row));
+        return static_cast<int>(m_view->getShort(i_dbstU, row));
     }
     /// dbstV: DB status + V strip*10
     [[nodiscard]] int dbstV(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_dbstV, row));
+        return static_cast<int>(m_view->getShort(i_dbstV, row));
     }
     /// dbstW: DB status + W strip*10
     [[nodiscard]] int dbstW(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_dbstW, row));
+        return static_cast<int>(m_view->getShort(i_dbstW, row));
     }
     /// rawEU: raw U peak energy
     [[nodiscard]] float rawEU(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_rawEU, row));
+        return static_cast<float>(m_view->getFloat(i_rawEU, row));
     }
     /// rawEV: raw V peak energy
     [[nodiscard]] float rawEV(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_rawEV, row));
+        return static_cast<float>(m_view->getFloat(i_rawEV, row));
     }
     /// rawEW: raw W peak energy
     [[nodiscard]] float rawEW(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_rawEW, row));
+        return static_cast<float>(m_view->getFloat(i_rawEW, row));
     }
     /// recEU: recon U peak energy (GeV)
     [[nodiscard]] float recEU(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_recEU, row));
+        return static_cast<float>(m_view->getFloat(i_recEU, row));
     }
     /// recEV: recon V peak energy (GeV)
     [[nodiscard]] float recEV(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_recEV, row));
+        return static_cast<float>(m_view->getFloat(i_recEV, row));
     }
     /// recEW: recon W peak energy (GeV)
     [[nodiscard]] float recEW(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_recEW, row));
+        return static_cast<float>(m_view->getFloat(i_recEW, row));
     }
     /// recDTU: recon U peak TDC time (ns)
     [[nodiscard]] float recDTU(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_recDTU, row));
+        return static_cast<float>(m_view->getFloat(i_recDTU, row));
     }
     /// recDTV: recon V peak TDC time (ns)
     [[nodiscard]] float recDTV(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_recDTV, row));
+        return static_cast<float>(m_view->getFloat(i_recDTV, row));
     }
     /// recDTW: recon W peak TDC time (ns)
     [[nodiscard]] float recDTW(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_recDTW, row));
+        return static_cast<float>(m_view->getFloat(i_recDTW, row));
     }
     /// recFTU: recon U peak FADC time (ns)
     [[nodiscard]] float recFTU(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_recFTU, row));
+        return static_cast<float>(m_view->getFloat(i_recFTU, row));
     }
     /// recFTV: recon V peak FADC time (ns)
     [[nodiscard]] float recFTV(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_recFTV, row));
+        return static_cast<float>(m_view->getFloat(i_recFTV, row));
     }
     /// recFTW: recon W peak FADC time (ns)
     [[nodiscard]] float recFTW(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_recFTW, row));
+        return static_cast<float>(m_view->getFloat(i_recFTW, row));
     }
     /// size: cluster size
     [[nodiscard]] float size(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_size, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// dbstU column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> dbstU_col() const noexcept {
-        return m_view.column<int16_t>(h_dbstU);
-    }
-    /// dbstV column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> dbstV_col() const noexcept {
-        return m_view.column<int16_t>(h_dbstV);
-    }
-    /// dbstW column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> dbstW_col() const noexcept {
-        return m_view.column<int16_t>(h_dbstW);
-    }
-    /// rawEU column as a contiguous span.
-    [[nodiscard]] std::span<const float> rawEU_col() const noexcept {
-        return m_view.column<float>(h_rawEU);
-    }
-    /// rawEV column as a contiguous span.
-    [[nodiscard]] std::span<const float> rawEV_col() const noexcept {
-        return m_view.column<float>(h_rawEV);
-    }
-    /// rawEW column as a contiguous span.
-    [[nodiscard]] std::span<const float> rawEW_col() const noexcept {
-        return m_view.column<float>(h_rawEW);
-    }
-    /// recEU column as a contiguous span.
-    [[nodiscard]] std::span<const float> recEU_col() const noexcept {
-        return m_view.column<float>(h_recEU);
-    }
-    /// recEV column as a contiguous span.
-    [[nodiscard]] std::span<const float> recEV_col() const noexcept {
-        return m_view.column<float>(h_recEV);
-    }
-    /// recEW column as a contiguous span.
-    [[nodiscard]] std::span<const float> recEW_col() const noexcept {
-        return m_view.column<float>(h_recEW);
-    }
-    /// recDTU column as a contiguous span.
-    [[nodiscard]] std::span<const float> recDTU_col() const noexcept {
-        return m_view.column<float>(h_recDTU);
-    }
-    /// recDTV column as a contiguous span.
-    [[nodiscard]] std::span<const float> recDTV_col() const noexcept {
-        return m_view.column<float>(h_recDTV);
-    }
-    /// recDTW column as a contiguous span.
-    [[nodiscard]] std::span<const float> recDTW_col() const noexcept {
-        return m_view.column<float>(h_recDTW);
-    }
-    /// recFTU column as a contiguous span.
-    [[nodiscard]] std::span<const float> recFTU_col() const noexcept {
-        return m_view.column<float>(h_recFTU);
-    }
-    /// recFTV column as a contiguous span.
-    [[nodiscard]] std::span<const float> recFTV_col() const noexcept {
-        return m_view.column<float>(h_recFTV);
-    }
-    /// recFTW column as a contiguous span.
-    [[nodiscard]] std::span<const float> recFTW_col() const noexcept {
-        return m_view.column<float>(h_recFTW);
-    }
-    /// size column as a contiguous span.
-    [[nodiscard]] std::span<const float> size_col() const noexcept {
-        return m_view.column<float>(h_size);
+        return static_cast<float>(m_view->getFloat(i_size, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_dbstU{};
-    hipo::column_handle h_dbstV{};
-    hipo::column_handle h_dbstW{};
-    hipo::column_handle h_rawEU{};
-    hipo::column_handle h_rawEV{};
-    hipo::column_handle h_rawEW{};
-    hipo::column_handle h_recEU{};
-    hipo::column_handle h_recEV{};
-    hipo::column_handle h_recEW{};
-    hipo::column_handle h_recDTU{};
-    hipo::column_handle h_recDTV{};
-    hipo::column_handle h_recDTW{};
-    hipo::column_handle h_recFTU{};
-    hipo::column_handle h_recFTV{};
-    hipo::column_handle h_recFTW{};
-    hipo::column_handle h_size{};
+    const hipo::bank* m_view = nullptr;
+    int i_dbstU = -1;
+    int i_dbstV = -1;
+    int i_dbstW = -1;
+    int i_rawEU = -1;
+    int i_rawEV = -1;
+    int i_rawEW = -1;
+    int i_recEU = -1;
+    int i_recEV = -1;
+    int i_recEW = -1;
+    int i_recDTU = -1;
+    int i_recDTV = -1;
+    int i_recDTW = -1;
+    int i_recFTU = -1;
+    int i_recFTV = -1;
+    int i_recFTW = -1;
+    int i_size = -1;
 
     friend class Row;
 };

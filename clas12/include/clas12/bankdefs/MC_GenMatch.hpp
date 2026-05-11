@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `MC::GenMatch` (group 40, item 6).
 /// MC::Particle -> REC::Particle matching
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,145 +40,106 @@ class MC_GenMatch {
 
     MC_GenMatch() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_mcindex;
-            hipo::column_handle h_pindex;
-            hipo::column_handle h_mclayer1;
-            hipo::column_handle h_mclayer2;
-            hipo::column_handle h_player1;
-            hipo::column_handle h_player2;
-            hipo::column_handle h_quality;
+            int i_mcindex = -1;
+            int i_pindex = -1;
+            int i_mclayer1 = -1;
+            int i_mclayer2 = -1;
+            int i_player1 = -1;
+            int i_player2 = -1;
+            int i_quality = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("mcindex"); h) cache.h_mcindex = *h;
-            else cache.h_mcindex = {};
-            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
-            else cache.h_pindex = {};
-            if (auto h = schema.get_handle("mclayer1"); h) cache.h_mclayer1 = *h;
-            else cache.h_mclayer1 = {};
-            if (auto h = schema.get_handle("mclayer2"); h) cache.h_mclayer2 = *h;
-            else cache.h_mclayer2 = {};
-            if (auto h = schema.get_handle("player1"); h) cache.h_player1 = *h;
-            else cache.h_player1 = {};
-            if (auto h = schema.get_handle("player2"); h) cache.h_player2 = *h;
-            else cache.h_player2 = {};
-            if (auto h = schema.get_handle("quality"); h) cache.h_quality = *h;
-            else cache.h_quality = {};
+            cache.i_mcindex = schema.exists("mcindex") ? schema.getEntryOrder("mcindex") : -1;
+            cache.i_pindex = schema.exists("pindex") ? schema.getEntryOrder("pindex") : -1;
+            cache.i_mclayer1 = schema.exists("mclayer1") ? schema.getEntryOrder("mclayer1") : -1;
+            cache.i_mclayer2 = schema.exists("mclayer2") ? schema.getEntryOrder("mclayer2") : -1;
+            cache.i_player1 = schema.exists("player1") ? schema.getEntryOrder("player1") : -1;
+            cache.i_player2 = schema.exists("player2") ? schema.getEntryOrder("player2") : -1;
+            cache.i_quality = schema.exists("quality") ? schema.getEntryOrder("quality") : -1;
         }
-        h_mcindex = cache.h_mcindex;
-        h_pindex = cache.h_pindex;
-        h_mclayer1 = cache.h_mclayer1;
-        h_mclayer2 = cache.h_mclayer2;
-        h_player1 = cache.h_player1;
-        h_player2 = cache.h_player2;
-        h_quality = cache.h_quality;
+        i_mcindex = cache.i_mcindex;
+        i_pindex = cache.i_pindex;
+        i_mclayer1 = cache.i_mclayer1;
+        i_mclayer2 = cache.i_mclayer2;
+        i_player1 = cache.i_player1;
+        i_player2 = cache.i_player2;
+        i_quality = cache.i_quality;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// mcindex: MC::Particle index
     [[nodiscard]] int mcindex(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_mcindex, row));
+        return static_cast<int>(m_view->getShort(i_mcindex, row));
     }
     /// pindex: REC::Particle index
     [[nodiscard]] int pindex(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_pindex, row));
+        return static_cast<int>(m_view->getShort(i_pindex, row));
     }
     /// mclayer1: layers from the 1st set of detectors hit by MC particle
     [[nodiscard]] int64_t mclayer1(int row) const noexcept {
-        return static_cast<int64_t>(m_view.get<int64_t>(h_mclayer1, row));
+        return static_cast<int64_t>(m_view->getLong(i_mclayer1, row));
     }
     /// mclayer2: layers from the 2nd set of detectors hit by MC particle
     [[nodiscard]] int64_t mclayer2(int row) const noexcept {
-        return static_cast<int64_t>(m_view.get<int64_t>(h_mclayer2, row));
+        return static_cast<int64_t>(m_view->getLong(i_mclayer2, row));
     }
     /// player1: layers from the 1st set of detectors hit by Recon particle
     [[nodiscard]] int64_t player1(int row) const noexcept {
-        return static_cast<int64_t>(m_view.get<int64_t>(h_player1, row));
+        return static_cast<int64_t>(m_view->getLong(i_player1, row));
     }
     /// player2: layers from the 2nd set of detectors hit by Recon particle
     [[nodiscard]] int64_t player2(int row) const noexcept {
-        return static_cast<int64_t>(m_view.get<int64_t>(h_player2, row));
+        return static_cast<int64_t>(m_view->getLong(i_player2, row));
     }
     /// quality: matching quality parameter
     [[nodiscard]] float quality(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_quality, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// mcindex column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> mcindex_col() const noexcept {
-        return m_view.column<int16_t>(h_mcindex);
-    }
-    /// pindex column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> pindex_col() const noexcept {
-        return m_view.column<int16_t>(h_pindex);
-    }
-    /// mclayer1 column as a contiguous span.
-    [[nodiscard]] std::span<const int64_t> mclayer1_col() const noexcept {
-        return m_view.column<int64_t>(h_mclayer1);
-    }
-    /// mclayer2 column as a contiguous span.
-    [[nodiscard]] std::span<const int64_t> mclayer2_col() const noexcept {
-        return m_view.column<int64_t>(h_mclayer2);
-    }
-    /// player1 column as a contiguous span.
-    [[nodiscard]] std::span<const int64_t> player1_col() const noexcept {
-        return m_view.column<int64_t>(h_player1);
-    }
-    /// player2 column as a contiguous span.
-    [[nodiscard]] std::span<const int64_t> player2_col() const noexcept {
-        return m_view.column<int64_t>(h_player2);
-    }
-    /// quality column as a contiguous span.
-    [[nodiscard]] std::span<const float> quality_col() const noexcept {
-        return m_view.column<float>(h_quality);
+        return static_cast<float>(m_view->getFloat(i_quality, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
     // -------------------------------------------------------------------
-    // Link-column handles (used by PindexLinker-style helpers to
-    // read the whole index column as a typed span in one shot)
+    // Link-column item indices (used by PindexLinker to scan the
+    // pindex/index column without re-resolving by name per call)
     // -------------------------------------------------------------------
-    [[nodiscard]] hipo::column_handle mcindex_handle() const noexcept { return h_mcindex; }
-    [[nodiscard]] hipo::column_handle pindex_handle() const noexcept { return h_pindex; }
+    [[nodiscard]] int mcindex_handle() const noexcept { return i_mcindex; }
+    [[nodiscard]] int pindex_handle() const noexcept { return i_pindex; }
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_mcindex{};
-    hipo::column_handle h_pindex{};
-    hipo::column_handle h_mclayer1{};
-    hipo::column_handle h_mclayer2{};
-    hipo::column_handle h_player1{};
-    hipo::column_handle h_player2{};
-    hipo::column_handle h_quality{};
+    const hipo::bank* m_view = nullptr;
+    int i_mcindex = -1;
+    int i_pindex = -1;
+    int i_mclayer1 = -1;
+    int i_mclayer2 = -1;
+    int i_player1 = -1;
+    int i_player2 = -1;
+    int i_quality = -1;
 
     friend class Row;
 };

@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `DC::doca` (group 20600, item 14).
 /// Drift Chamber DOCA bank
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,112 +40,83 @@ class DC_doca {
 
     DC_doca() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_LR;
-            hipo::column_handle h_doca;
-            hipo::column_handle h_sdoca;
-            hipo::column_handle h_time;
-            hipo::column_handle h_stime;
+            int i_LR = -1;
+            int i_doca = -1;
+            int i_sdoca = -1;
+            int i_time = -1;
+            int i_stime = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("LR"); h) cache.h_LR = *h;
-            else cache.h_LR = {};
-            if (auto h = schema.get_handle("doca"); h) cache.h_doca = *h;
-            else cache.h_doca = {};
-            if (auto h = schema.get_handle("sdoca"); h) cache.h_sdoca = *h;
-            else cache.h_sdoca = {};
-            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
-            else cache.h_time = {};
-            if (auto h = schema.get_handle("stime"); h) cache.h_stime = *h;
-            else cache.h_stime = {};
+            cache.i_LR = schema.exists("LR") ? schema.getEntryOrder("LR") : -1;
+            cache.i_doca = schema.exists("doca") ? schema.getEntryOrder("doca") : -1;
+            cache.i_sdoca = schema.exists("sdoca") ? schema.getEntryOrder("sdoca") : -1;
+            cache.i_time = schema.exists("time") ? schema.getEntryOrder("time") : -1;
+            cache.i_stime = schema.exists("stime") ? schema.getEntryOrder("stime") : -1;
         }
-        h_LR = cache.h_LR;
-        h_doca = cache.h_doca;
-        h_sdoca = cache.h_sdoca;
-        h_time = cache.h_time;
-        h_stime = cache.h_stime;
+        i_LR = cache.i_LR;
+        i_doca = cache.i_doca;
+        i_sdoca = cache.i_sdoca;
+        i_time = cache.i_time;
+        i_stime = cache.i_stime;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// LR: left right ambiguity
     [[nodiscard]] int LR(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_LR, row));
+        return static_cast<int>(m_view->getByte(i_LR, row));
     }
     /// doca: doca for the hit
     [[nodiscard]] float doca(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_doca, row));
+        return static_cast<float>(m_view->getFloat(i_doca, row));
     }
     /// sdoca: smeared doca
     [[nodiscard]] float sdoca(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_sdoca, row));
+        return static_cast<float>(m_view->getFloat(i_sdoca, row));
     }
     /// time: time for the hit
     [[nodiscard]] float time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_time, row));
+        return static_cast<float>(m_view->getFloat(i_time, row));
     }
     /// stime: smeared time
     [[nodiscard]] float stime(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_stime, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// LR column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> LR_col() const noexcept {
-        return m_view.column<int8_t>(h_LR);
-    }
-    /// doca column as a contiguous span.
-    [[nodiscard]] std::span<const float> doca_col() const noexcept {
-        return m_view.column<float>(h_doca);
-    }
-    /// sdoca column as a contiguous span.
-    [[nodiscard]] std::span<const float> sdoca_col() const noexcept {
-        return m_view.column<float>(h_sdoca);
-    }
-    /// time column as a contiguous span.
-    [[nodiscard]] std::span<const float> time_col() const noexcept {
-        return m_view.column<float>(h_time);
-    }
-    /// stime column as a contiguous span.
-    [[nodiscard]] std::span<const float> stime_col() const noexcept {
-        return m_view.column<float>(h_stime);
+        return static_cast<float>(m_view->getFloat(i_stime, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_LR{};
-    hipo::column_handle h_doca{};
-    hipo::column_handle h_sdoca{};
-    hipo::column_handle h_time{};
-    hipo::column_handle h_stime{};
+    const hipo::bank* m_view = nullptr;
+    int i_LR = -1;
+    int i_doca = -1;
+    int i_sdoca = -1;
+    int i_time = -1;
+    int i_stime = -1;
 
     friend class Row;
 };

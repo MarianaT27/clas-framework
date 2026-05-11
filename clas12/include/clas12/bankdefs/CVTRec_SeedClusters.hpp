@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `CVTRec::SeedClusters` (group 20500, item 44).
 /// Ids of clusters on track for 12 layers of CVT
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,229 +40,155 @@ class CVTRec_SeedClusters {
 
     CVTRec_SeedClusters() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_Clus1_ID;
-            hipo::column_handle h_Clus2_ID;
-            hipo::column_handle h_Clus3_ID;
-            hipo::column_handle h_Clus4_ID;
-            hipo::column_handle h_Clus5_ID;
-            hipo::column_handle h_Clus6_ID;
-            hipo::column_handle h_Clus7_ID;
-            hipo::column_handle h_Clus8_ID;
-            hipo::column_handle h_Clus9_ID;
-            hipo::column_handle h_Clus10_ID;
-            hipo::column_handle h_Clus11_ID;
-            hipo::column_handle h_Clus12_ID;
-            hipo::column_handle h_prob;
+            int i_id = -1;
+            int i_Clus1_ID = -1;
+            int i_Clus2_ID = -1;
+            int i_Clus3_ID = -1;
+            int i_Clus4_ID = -1;
+            int i_Clus5_ID = -1;
+            int i_Clus6_ID = -1;
+            int i_Clus7_ID = -1;
+            int i_Clus8_ID = -1;
+            int i_Clus9_ID = -1;
+            int i_Clus10_ID = -1;
+            int i_Clus11_ID = -1;
+            int i_Clus12_ID = -1;
+            int i_prob = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("Clus1_ID"); h) cache.h_Clus1_ID = *h;
-            else cache.h_Clus1_ID = {};
-            if (auto h = schema.get_handle("Clus2_ID"); h) cache.h_Clus2_ID = *h;
-            else cache.h_Clus2_ID = {};
-            if (auto h = schema.get_handle("Clus3_ID"); h) cache.h_Clus3_ID = *h;
-            else cache.h_Clus3_ID = {};
-            if (auto h = schema.get_handle("Clus4_ID"); h) cache.h_Clus4_ID = *h;
-            else cache.h_Clus4_ID = {};
-            if (auto h = schema.get_handle("Clus5_ID"); h) cache.h_Clus5_ID = *h;
-            else cache.h_Clus5_ID = {};
-            if (auto h = schema.get_handle("Clus6_ID"); h) cache.h_Clus6_ID = *h;
-            else cache.h_Clus6_ID = {};
-            if (auto h = schema.get_handle("Clus7_ID"); h) cache.h_Clus7_ID = *h;
-            else cache.h_Clus7_ID = {};
-            if (auto h = schema.get_handle("Clus8_ID"); h) cache.h_Clus8_ID = *h;
-            else cache.h_Clus8_ID = {};
-            if (auto h = schema.get_handle("Clus9_ID"); h) cache.h_Clus9_ID = *h;
-            else cache.h_Clus9_ID = {};
-            if (auto h = schema.get_handle("Clus10_ID"); h) cache.h_Clus10_ID = *h;
-            else cache.h_Clus10_ID = {};
-            if (auto h = schema.get_handle("Clus11_ID"); h) cache.h_Clus11_ID = *h;
-            else cache.h_Clus11_ID = {};
-            if (auto h = schema.get_handle("Clus12_ID"); h) cache.h_Clus12_ID = *h;
-            else cache.h_Clus12_ID = {};
-            if (auto h = schema.get_handle("prob"); h) cache.h_prob = *h;
-            else cache.h_prob = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_Clus1_ID = schema.exists("Clus1_ID") ? schema.getEntryOrder("Clus1_ID") : -1;
+            cache.i_Clus2_ID = schema.exists("Clus2_ID") ? schema.getEntryOrder("Clus2_ID") : -1;
+            cache.i_Clus3_ID = schema.exists("Clus3_ID") ? schema.getEntryOrder("Clus3_ID") : -1;
+            cache.i_Clus4_ID = schema.exists("Clus4_ID") ? schema.getEntryOrder("Clus4_ID") : -1;
+            cache.i_Clus5_ID = schema.exists("Clus5_ID") ? schema.getEntryOrder("Clus5_ID") : -1;
+            cache.i_Clus6_ID = schema.exists("Clus6_ID") ? schema.getEntryOrder("Clus6_ID") : -1;
+            cache.i_Clus7_ID = schema.exists("Clus7_ID") ? schema.getEntryOrder("Clus7_ID") : -1;
+            cache.i_Clus8_ID = schema.exists("Clus8_ID") ? schema.getEntryOrder("Clus8_ID") : -1;
+            cache.i_Clus9_ID = schema.exists("Clus9_ID") ? schema.getEntryOrder("Clus9_ID") : -1;
+            cache.i_Clus10_ID = schema.exists("Clus10_ID") ? schema.getEntryOrder("Clus10_ID") : -1;
+            cache.i_Clus11_ID = schema.exists("Clus11_ID") ? schema.getEntryOrder("Clus11_ID") : -1;
+            cache.i_Clus12_ID = schema.exists("Clus12_ID") ? schema.getEntryOrder("Clus12_ID") : -1;
+            cache.i_prob = schema.exists("prob") ? schema.getEntryOrder("prob") : -1;
         }
-        h_id = cache.h_id;
-        h_Clus1_ID = cache.h_Clus1_ID;
-        h_Clus2_ID = cache.h_Clus2_ID;
-        h_Clus3_ID = cache.h_Clus3_ID;
-        h_Clus4_ID = cache.h_Clus4_ID;
-        h_Clus5_ID = cache.h_Clus5_ID;
-        h_Clus6_ID = cache.h_Clus6_ID;
-        h_Clus7_ID = cache.h_Clus7_ID;
-        h_Clus8_ID = cache.h_Clus8_ID;
-        h_Clus9_ID = cache.h_Clus9_ID;
-        h_Clus10_ID = cache.h_Clus10_ID;
-        h_Clus11_ID = cache.h_Clus11_ID;
-        h_Clus12_ID = cache.h_Clus12_ID;
-        h_prob = cache.h_prob;
+        i_id = cache.i_id;
+        i_Clus1_ID = cache.i_Clus1_ID;
+        i_Clus2_ID = cache.i_Clus2_ID;
+        i_Clus3_ID = cache.i_Clus3_ID;
+        i_Clus4_ID = cache.i_Clus4_ID;
+        i_Clus5_ID = cache.i_Clus5_ID;
+        i_Clus6_ID = cache.i_Clus6_ID;
+        i_Clus7_ID = cache.i_Clus7_ID;
+        i_Clus8_ID = cache.i_Clus8_ID;
+        i_Clus9_ID = cache.i_Clus9_ID;
+        i_Clus10_ID = cache.i_Clus10_ID;
+        i_Clus11_ID = cache.i_Clus11_ID;
+        i_Clus12_ID = cache.i_Clus12_ID;
+        i_prob = cache.i_prob;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: id of the track
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+        return static_cast<int>(m_view->getShort(i_id, row));
     }
     /// Clus1_ID: ID of cluster on track in layer 1
     [[nodiscard]] int Clus1_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus1_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus1_ID, row));
     }
     /// Clus2_ID: ID of cluster on track in layer 2
     [[nodiscard]] int Clus2_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus2_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus2_ID, row));
     }
     /// Clus3_ID: ID of cluster on track in layer 3
     [[nodiscard]] int Clus3_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus3_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus3_ID, row));
     }
     /// Clus4_ID: ID of cluster on track in layer 4
     [[nodiscard]] int Clus4_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus4_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus4_ID, row));
     }
     /// Clus5_ID: ID of cluster on track in layer 5
     [[nodiscard]] int Clus5_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus5_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus5_ID, row));
     }
     /// Clus6_ID: ID of cluster on track in layer 6
     [[nodiscard]] int Clus6_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus6_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus6_ID, row));
     }
     /// Clus7_ID: ID of cluster on track in layer 7
     [[nodiscard]] int Clus7_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus7_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus7_ID, row));
     }
     /// Clus8_ID: ID of cluster on track in layer 8
     [[nodiscard]] int Clus8_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus8_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus8_ID, row));
     }
     /// Clus9_ID: ID of cluster on track in layer 9
     [[nodiscard]] int Clus9_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus9_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus9_ID, row));
     }
     /// Clus10_ID: ID of cluster on track in layer 10
     [[nodiscard]] int Clus10_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus10_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus10_ID, row));
     }
     /// Clus11_ID: ID of cluster on track in layer 11
     [[nodiscard]] int Clus11_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus11_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus11_ID, row));
     }
     /// Clus12_ID: ID of cluster on track in layer 12
     [[nodiscard]] int Clus12_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Clus12_ID, row));
+        return static_cast<int>(m_view->getShort(i_Clus12_ID, row));
     }
     /// prob: AI seed probability
     [[nodiscard]] float prob(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_prob, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
-        return m_view.column<int16_t>(h_id);
-    }
-    /// Clus1_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus1_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus1_ID);
-    }
-    /// Clus2_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus2_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus2_ID);
-    }
-    /// Clus3_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus3_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus3_ID);
-    }
-    /// Clus4_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus4_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus4_ID);
-    }
-    /// Clus5_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus5_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus5_ID);
-    }
-    /// Clus6_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus6_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus6_ID);
-    }
-    /// Clus7_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus7_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus7_ID);
-    }
-    /// Clus8_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus8_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus8_ID);
-    }
-    /// Clus9_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus9_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus9_ID);
-    }
-    /// Clus10_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus10_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus10_ID);
-    }
-    /// Clus11_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus11_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus11_ID);
-    }
-    /// Clus12_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Clus12_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Clus12_ID);
-    }
-    /// prob column as a contiguous span.
-    [[nodiscard]] std::span<const float> prob_col() const noexcept {
-        return m_view.column<float>(h_prob);
+        return static_cast<float>(m_view->getFloat(i_prob, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_Clus1_ID{};
-    hipo::column_handle h_Clus2_ID{};
-    hipo::column_handle h_Clus3_ID{};
-    hipo::column_handle h_Clus4_ID{};
-    hipo::column_handle h_Clus5_ID{};
-    hipo::column_handle h_Clus6_ID{};
-    hipo::column_handle h_Clus7_ID{};
-    hipo::column_handle h_Clus8_ID{};
-    hipo::column_handle h_Clus9_ID{};
-    hipo::column_handle h_Clus10_ID{};
-    hipo::column_handle h_Clus11_ID{};
-    hipo::column_handle h_Clus12_ID{};
-    hipo::column_handle h_prob{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_Clus1_ID = -1;
+    int i_Clus2_ID = -1;
+    int i_Clus3_ID = -1;
+    int i_Clus4_ID = -1;
+    int i_Clus5_ID = -1;
+    int i_Clus6_ID = -1;
+    int i_Clus7_ID = -1;
+    int i_Clus8_ID = -1;
+    int i_Clus9_ID = -1;
+    int i_Clus10_ID = -1;
+    int i_Clus11_ID = -1;
+    int i_Clus12_ID = -1;
+    int i_prob = -1;
 
     friend class Row;
 };

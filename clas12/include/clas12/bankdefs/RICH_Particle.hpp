@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `RICH::Particle` (group 21800, item 37).
 /// Reconstructed Cherenov information per track
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,327 +40,218 @@ class RICH_Particle {
 
     RICH_Particle() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_hindex;
-            hipo::column_handle h_pindex;
-            hipo::column_handle h_emilay;
-            hipo::column_handle h_emico;
-            hipo::column_handle h_enico;
-            hipo::column_handle h_emqua;
-            hipo::column_handle h_mchi2;
-            hipo::column_handle h_mass;
-            hipo::column_handle h_best_PID;
-            hipo::column_handle h_RQ;
-            hipo::column_handle h_ReQ;
-            hipo::column_handle h_el_logl;
-            hipo::column_handle h_pi_logl;
-            hipo::column_handle h_k_logl;
-            hipo::column_handle h_pr_logl;
-            hipo::column_handle h_best_ch;
-            hipo::column_handle h_best_c2;
-            hipo::column_handle h_best_RL;
-            hipo::column_handle h_best_ntot;
-            hipo::column_handle h_best_mass;
+            int i_id = -1;
+            int i_hindex = -1;
+            int i_pindex = -1;
+            int i_emilay = -1;
+            int i_emico = -1;
+            int i_enico = -1;
+            int i_emqua = -1;
+            int i_mchi2 = -1;
+            int i_mass = -1;
+            int i_best_PID = -1;
+            int i_RQ = -1;
+            int i_ReQ = -1;
+            int i_el_logl = -1;
+            int i_pi_logl = -1;
+            int i_k_logl = -1;
+            int i_pr_logl = -1;
+            int i_best_ch = -1;
+            int i_best_c2 = -1;
+            int i_best_RL = -1;
+            int i_best_ntot = -1;
+            int i_best_mass = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("hindex"); h) cache.h_hindex = *h;
-            else cache.h_hindex = {};
-            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
-            else cache.h_pindex = {};
-            if (auto h = schema.get_handle("emilay"); h) cache.h_emilay = *h;
-            else cache.h_emilay = {};
-            if (auto h = schema.get_handle("emico"); h) cache.h_emico = *h;
-            else cache.h_emico = {};
-            if (auto h = schema.get_handle("enico"); h) cache.h_enico = *h;
-            else cache.h_enico = {};
-            if (auto h = schema.get_handle("emqua"); h) cache.h_emqua = *h;
-            else cache.h_emqua = {};
-            if (auto h = schema.get_handle("mchi2"); h) cache.h_mchi2 = *h;
-            else cache.h_mchi2 = {};
-            if (auto h = schema.get_handle("mass"); h) cache.h_mass = *h;
-            else cache.h_mass = {};
-            if (auto h = schema.get_handle("best_PID"); h) cache.h_best_PID = *h;
-            else cache.h_best_PID = {};
-            if (auto h = schema.get_handle("RQ"); h) cache.h_RQ = *h;
-            else cache.h_RQ = {};
-            if (auto h = schema.get_handle("ReQ"); h) cache.h_ReQ = *h;
-            else cache.h_ReQ = {};
-            if (auto h = schema.get_handle("el_logl"); h) cache.h_el_logl = *h;
-            else cache.h_el_logl = {};
-            if (auto h = schema.get_handle("pi_logl"); h) cache.h_pi_logl = *h;
-            else cache.h_pi_logl = {};
-            if (auto h = schema.get_handle("k_logl"); h) cache.h_k_logl = *h;
-            else cache.h_k_logl = {};
-            if (auto h = schema.get_handle("pr_logl"); h) cache.h_pr_logl = *h;
-            else cache.h_pr_logl = {};
-            if (auto h = schema.get_handle("best_ch"); h) cache.h_best_ch = *h;
-            else cache.h_best_ch = {};
-            if (auto h = schema.get_handle("best_c2"); h) cache.h_best_c2 = *h;
-            else cache.h_best_c2 = {};
-            if (auto h = schema.get_handle("best_RL"); h) cache.h_best_RL = *h;
-            else cache.h_best_RL = {};
-            if (auto h = schema.get_handle("best_ntot"); h) cache.h_best_ntot = *h;
-            else cache.h_best_ntot = {};
-            if (auto h = schema.get_handle("best_mass"); h) cache.h_best_mass = *h;
-            else cache.h_best_mass = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_hindex = schema.exists("hindex") ? schema.getEntryOrder("hindex") : -1;
+            cache.i_pindex = schema.exists("pindex") ? schema.getEntryOrder("pindex") : -1;
+            cache.i_emilay = schema.exists("emilay") ? schema.getEntryOrder("emilay") : -1;
+            cache.i_emico = schema.exists("emico") ? schema.getEntryOrder("emico") : -1;
+            cache.i_enico = schema.exists("enico") ? schema.getEntryOrder("enico") : -1;
+            cache.i_emqua = schema.exists("emqua") ? schema.getEntryOrder("emqua") : -1;
+            cache.i_mchi2 = schema.exists("mchi2") ? schema.getEntryOrder("mchi2") : -1;
+            cache.i_mass = schema.exists("mass") ? schema.getEntryOrder("mass") : -1;
+            cache.i_best_PID = schema.exists("best_PID") ? schema.getEntryOrder("best_PID") : -1;
+            cache.i_RQ = schema.exists("RQ") ? schema.getEntryOrder("RQ") : -1;
+            cache.i_ReQ = schema.exists("ReQ") ? schema.getEntryOrder("ReQ") : -1;
+            cache.i_el_logl = schema.exists("el_logl") ? schema.getEntryOrder("el_logl") : -1;
+            cache.i_pi_logl = schema.exists("pi_logl") ? schema.getEntryOrder("pi_logl") : -1;
+            cache.i_k_logl = schema.exists("k_logl") ? schema.getEntryOrder("k_logl") : -1;
+            cache.i_pr_logl = schema.exists("pr_logl") ? schema.getEntryOrder("pr_logl") : -1;
+            cache.i_best_ch = schema.exists("best_ch") ? schema.getEntryOrder("best_ch") : -1;
+            cache.i_best_c2 = schema.exists("best_c2") ? schema.getEntryOrder("best_c2") : -1;
+            cache.i_best_RL = schema.exists("best_RL") ? schema.getEntryOrder("best_RL") : -1;
+            cache.i_best_ntot = schema.exists("best_ntot") ? schema.getEntryOrder("best_ntot") : -1;
+            cache.i_best_mass = schema.exists("best_mass") ? schema.getEntryOrder("best_mass") : -1;
         }
-        h_id = cache.h_id;
-        h_hindex = cache.h_hindex;
-        h_pindex = cache.h_pindex;
-        h_emilay = cache.h_emilay;
-        h_emico = cache.h_emico;
-        h_enico = cache.h_enico;
-        h_emqua = cache.h_emqua;
-        h_mchi2 = cache.h_mchi2;
-        h_mass = cache.h_mass;
-        h_best_PID = cache.h_best_PID;
-        h_RQ = cache.h_RQ;
-        h_ReQ = cache.h_ReQ;
-        h_el_logl = cache.h_el_logl;
-        h_pi_logl = cache.h_pi_logl;
-        h_k_logl = cache.h_k_logl;
-        h_pr_logl = cache.h_pr_logl;
-        h_best_ch = cache.h_best_ch;
-        h_best_c2 = cache.h_best_c2;
-        h_best_RL = cache.h_best_RL;
-        h_best_ntot = cache.h_best_ntot;
-        h_best_mass = cache.h_best_mass;
+        i_id = cache.i_id;
+        i_hindex = cache.i_hindex;
+        i_pindex = cache.i_pindex;
+        i_emilay = cache.i_emilay;
+        i_emico = cache.i_emico;
+        i_enico = cache.i_enico;
+        i_emqua = cache.i_emqua;
+        i_mchi2 = cache.i_mchi2;
+        i_mass = cache.i_mass;
+        i_best_PID = cache.i_best_PID;
+        i_RQ = cache.i_RQ;
+        i_ReQ = cache.i_ReQ;
+        i_el_logl = cache.i_el_logl;
+        i_pi_logl = cache.i_pi_logl;
+        i_k_logl = cache.i_k_logl;
+        i_pr_logl = cache.i_pr_logl;
+        i_best_ch = cache.i_best_ch;
+        i_best_c2 = cache.i_best_c2;
+        i_best_RL = cache.i_best_RL;
+        i_best_ntot = cache.i_best_ntot;
+        i_best_mass = cache.i_best_mass;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: id
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_id, row));
+        return static_cast<int>(m_view->getByte(i_id, row));
     }
     /// hindex: related row in the RICH::clusters bank (if any)
     [[nodiscard]] int hindex(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_hindex, row));
+        return static_cast<int>(m_view->getShort(i_hindex, row));
     }
     /// pindex: related row in the REC::Particle bank
     [[nodiscard]] int pindex(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_pindex, row));
+        return static_cast<int>(m_view->getByte(i_pindex, row));
     }
     /// emilay: aerogel layer of photon emission
     [[nodiscard]] int emilay(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_emilay, row));
+        return static_cast<int>(m_view->getByte(i_emilay, row));
     }
     /// emico: aerogel component of photon emission
     [[nodiscard]] int emico(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_emico, row));
+        return static_cast<int>(m_view->getByte(i_emico, row));
     }
     /// enico: aerogel component of photon entrance point
     [[nodiscard]] int enico(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_enico, row));
+        return static_cast<int>(m_view->getByte(i_enico, row));
     }
     /// emqua: aerogel quadrant of photon emission
     [[nodiscard]] int emqua(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_emqua, row));
+        return static_cast<int>(m_view->getShort(i_emqua, row));
     }
     /// mchi2: track-cluster matching chi2 (if any)
     [[nodiscard]] float mchi2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_mchi2, row));
+        return static_cast<float>(m_view->getFloat(i_mchi2, row));
     }
     /// mass: reconstructed mass for best hypo
     [[nodiscard]] float mass(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_mass, row));
+        return static_cast<float>(m_view->getFloat(i_mass, row));
     }
     /// best_PID: most probable PID choice
     [[nodiscard]] int best_PID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_best_PID, row));
+        return static_cast<int>(m_view->getShort(i_best_PID, row));
     }
     /// RQ: goodness of hadron choice parameter (1=anambiguos, 0=random)
     [[nodiscard]] float RQ(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_RQ, row));
+        return static_cast<float>(m_view->getFloat(i_RQ, row));
     }
     /// ReQ: goodness of elecgtron choice parameter (1=anambiguos, 0=random)
     [[nodiscard]] float ReQ(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_ReQ, row));
+        return static_cast<float>(m_view->getFloat(i_ReQ, row));
     }
     /// el_logl: probability to be an electron
     [[nodiscard]] float el_logl(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_el_logl, row));
+        return static_cast<float>(m_view->getFloat(i_el_logl, row));
     }
     /// pi_logl: probability to be an pion
     [[nodiscard]] float pi_logl(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_pi_logl, row));
+        return static_cast<float>(m_view->getFloat(i_pi_logl, row));
     }
     /// k_logl: probability to be an kaon
     [[nodiscard]] float k_logl(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_k_logl, row));
+        return static_cast<float>(m_view->getFloat(i_k_logl, row));
     }
     /// pr_logl: probability to be an proton
     [[nodiscard]] float pr_logl(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_pr_logl, row));
+        return static_cast<float>(m_view->getFloat(i_pr_logl, row));
     }
     /// best_ch: Average etaC for best hypothesis
     [[nodiscard]] float best_ch(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_best_ch, row));
+        return static_cast<float>(m_view->getFloat(i_best_ch, row));
     }
     /// best_c2: chi2 for best hypothesis
     [[nodiscard]] float best_c2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_best_c2, row));
+        return static_cast<float>(m_view->getFloat(i_best_c2, row));
     }
     /// best_RL: Likelihood ratio for best hypothesis
     [[nodiscard]] float best_RL(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_best_RL, row));
+        return static_cast<float>(m_view->getFloat(i_best_RL, row));
     }
     /// best_ntot: Number of photon used for likelihood
     [[nodiscard]] float best_ntot(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_best_ntot, row));
+        return static_cast<float>(m_view->getFloat(i_best_ntot, row));
     }
     /// best_mass: Reconstructed mass for best hypothesis
     [[nodiscard]] float best_mass(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_best_mass, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> id_col() const noexcept {
-        return m_view.column<int8_t>(h_id);
-    }
-    /// hindex column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> hindex_col() const noexcept {
-        return m_view.column<int16_t>(h_hindex);
-    }
-    /// pindex column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> pindex_col() const noexcept {
-        return m_view.column<int8_t>(h_pindex);
-    }
-    /// emilay column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> emilay_col() const noexcept {
-        return m_view.column<int8_t>(h_emilay);
-    }
-    /// emico column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> emico_col() const noexcept {
-        return m_view.column<int8_t>(h_emico);
-    }
-    /// enico column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> enico_col() const noexcept {
-        return m_view.column<int8_t>(h_enico);
-    }
-    /// emqua column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> emqua_col() const noexcept {
-        return m_view.column<int16_t>(h_emqua);
-    }
-    /// mchi2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> mchi2_col() const noexcept {
-        return m_view.column<float>(h_mchi2);
-    }
-    /// mass column as a contiguous span.
-    [[nodiscard]] std::span<const float> mass_col() const noexcept {
-        return m_view.column<float>(h_mass);
-    }
-    /// best_PID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> best_PID_col() const noexcept {
-        return m_view.column<int16_t>(h_best_PID);
-    }
-    /// RQ column as a contiguous span.
-    [[nodiscard]] std::span<const float> RQ_col() const noexcept {
-        return m_view.column<float>(h_RQ);
-    }
-    /// ReQ column as a contiguous span.
-    [[nodiscard]] std::span<const float> ReQ_col() const noexcept {
-        return m_view.column<float>(h_ReQ);
-    }
-    /// el_logl column as a contiguous span.
-    [[nodiscard]] std::span<const float> el_logl_col() const noexcept {
-        return m_view.column<float>(h_el_logl);
-    }
-    /// pi_logl column as a contiguous span.
-    [[nodiscard]] std::span<const float> pi_logl_col() const noexcept {
-        return m_view.column<float>(h_pi_logl);
-    }
-    /// k_logl column as a contiguous span.
-    [[nodiscard]] std::span<const float> k_logl_col() const noexcept {
-        return m_view.column<float>(h_k_logl);
-    }
-    /// pr_logl column as a contiguous span.
-    [[nodiscard]] std::span<const float> pr_logl_col() const noexcept {
-        return m_view.column<float>(h_pr_logl);
-    }
-    /// best_ch column as a contiguous span.
-    [[nodiscard]] std::span<const float> best_ch_col() const noexcept {
-        return m_view.column<float>(h_best_ch);
-    }
-    /// best_c2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> best_c2_col() const noexcept {
-        return m_view.column<float>(h_best_c2);
-    }
-    /// best_RL column as a contiguous span.
-    [[nodiscard]] std::span<const float> best_RL_col() const noexcept {
-        return m_view.column<float>(h_best_RL);
-    }
-    /// best_ntot column as a contiguous span.
-    [[nodiscard]] std::span<const float> best_ntot_col() const noexcept {
-        return m_view.column<float>(h_best_ntot);
-    }
-    /// best_mass column as a contiguous span.
-    [[nodiscard]] std::span<const float> best_mass_col() const noexcept {
-        return m_view.column<float>(h_best_mass);
+        return static_cast<float>(m_view->getFloat(i_best_mass, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
     // -------------------------------------------------------------------
-    // Link-column handles (used by PindexLinker-style helpers to
-    // read the whole index column as a typed span in one shot)
+    // Link-column item indices (used by PindexLinker to scan the
+    // pindex/index column without re-resolving by name per call)
     // -------------------------------------------------------------------
-    [[nodiscard]] hipo::column_handle hindex_handle() const noexcept { return h_hindex; }
-    [[nodiscard]] hipo::column_handle pindex_handle() const noexcept { return h_pindex; }
+    [[nodiscard]] int hindex_handle() const noexcept { return i_hindex; }
+    [[nodiscard]] int pindex_handle() const noexcept { return i_pindex; }
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_hindex{};
-    hipo::column_handle h_pindex{};
-    hipo::column_handle h_emilay{};
-    hipo::column_handle h_emico{};
-    hipo::column_handle h_enico{};
-    hipo::column_handle h_emqua{};
-    hipo::column_handle h_mchi2{};
-    hipo::column_handle h_mass{};
-    hipo::column_handle h_best_PID{};
-    hipo::column_handle h_RQ{};
-    hipo::column_handle h_ReQ{};
-    hipo::column_handle h_el_logl{};
-    hipo::column_handle h_pi_logl{};
-    hipo::column_handle h_k_logl{};
-    hipo::column_handle h_pr_logl{};
-    hipo::column_handle h_best_ch{};
-    hipo::column_handle h_best_c2{};
-    hipo::column_handle h_best_RL{};
-    hipo::column_handle h_best_ntot{};
-    hipo::column_handle h_best_mass{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_hindex = -1;
+    int i_pindex = -1;
+    int i_emilay = -1;
+    int i_emico = -1;
+    int i_enico = -1;
+    int i_emqua = -1;
+    int i_mchi2 = -1;
+    int i_mass = -1;
+    int i_best_PID = -1;
+    int i_RQ = -1;
+    int i_ReQ = -1;
+    int i_el_logl = -1;
+    int i_pi_logl = -1;
+    int i_k_logl = -1;
+    int i_pr_logl = -1;
+    int i_best_ch = -1;
+    int i_best_c2 = -1;
+    int i_best_RL = -1;
+    int i_best_ntot = -1;
+    int i_best_mass = -1;
 
     friend class Row;
 };

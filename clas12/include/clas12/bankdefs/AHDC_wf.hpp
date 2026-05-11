@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `AHDC::wf` (group 22400, item 10).
 /// Waveform bank for the AHDC
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,515 +40,331 @@ class AHDC_wf {
 
     AHDC_wf() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_sector;
-            hipo::column_handle h_layer;
-            hipo::column_handle h_component;
-            hipo::column_handle h_order;
-            hipo::column_handle h_timestamp;
-            hipo::column_handle h_s1;
-            hipo::column_handle h_s2;
-            hipo::column_handle h_s3;
-            hipo::column_handle h_s4;
-            hipo::column_handle h_s5;
-            hipo::column_handle h_s6;
-            hipo::column_handle h_s7;
-            hipo::column_handle h_s8;
-            hipo::column_handle h_s9;
-            hipo::column_handle h_s10;
-            hipo::column_handle h_s11;
-            hipo::column_handle h_s12;
-            hipo::column_handle h_s13;
-            hipo::column_handle h_s14;
-            hipo::column_handle h_s15;
-            hipo::column_handle h_s16;
-            hipo::column_handle h_s17;
-            hipo::column_handle h_s18;
-            hipo::column_handle h_s19;
-            hipo::column_handle h_s20;
-            hipo::column_handle h_s21;
-            hipo::column_handle h_s22;
-            hipo::column_handle h_s23;
-            hipo::column_handle h_s24;
-            hipo::column_handle h_s25;
-            hipo::column_handle h_s26;
-            hipo::column_handle h_s27;
-            hipo::column_handle h_s28;
-            hipo::column_handle h_s29;
-            hipo::column_handle h_s30;
-            hipo::column_handle h_time;
+            int i_sector = -1;
+            int i_layer = -1;
+            int i_component = -1;
+            int i_order = -1;
+            int i_timestamp = -1;
+            int i_s1 = -1;
+            int i_s2 = -1;
+            int i_s3 = -1;
+            int i_s4 = -1;
+            int i_s5 = -1;
+            int i_s6 = -1;
+            int i_s7 = -1;
+            int i_s8 = -1;
+            int i_s9 = -1;
+            int i_s10 = -1;
+            int i_s11 = -1;
+            int i_s12 = -1;
+            int i_s13 = -1;
+            int i_s14 = -1;
+            int i_s15 = -1;
+            int i_s16 = -1;
+            int i_s17 = -1;
+            int i_s18 = -1;
+            int i_s19 = -1;
+            int i_s20 = -1;
+            int i_s21 = -1;
+            int i_s22 = -1;
+            int i_s23 = -1;
+            int i_s24 = -1;
+            int i_s25 = -1;
+            int i_s26 = -1;
+            int i_s27 = -1;
+            int i_s28 = -1;
+            int i_s29 = -1;
+            int i_s30 = -1;
+            int i_time = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
-            else cache.h_sector = {};
-            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
-            else cache.h_layer = {};
-            if (auto h = schema.get_handle("component"); h) cache.h_component = *h;
-            else cache.h_component = {};
-            if (auto h = schema.get_handle("order"); h) cache.h_order = *h;
-            else cache.h_order = {};
-            if (auto h = schema.get_handle("timestamp"); h) cache.h_timestamp = *h;
-            else cache.h_timestamp = {};
-            if (auto h = schema.get_handle("s1"); h) cache.h_s1 = *h;
-            else cache.h_s1 = {};
-            if (auto h = schema.get_handle("s2"); h) cache.h_s2 = *h;
-            else cache.h_s2 = {};
-            if (auto h = schema.get_handle("s3"); h) cache.h_s3 = *h;
-            else cache.h_s3 = {};
-            if (auto h = schema.get_handle("s4"); h) cache.h_s4 = *h;
-            else cache.h_s4 = {};
-            if (auto h = schema.get_handle("s5"); h) cache.h_s5 = *h;
-            else cache.h_s5 = {};
-            if (auto h = schema.get_handle("s6"); h) cache.h_s6 = *h;
-            else cache.h_s6 = {};
-            if (auto h = schema.get_handle("s7"); h) cache.h_s7 = *h;
-            else cache.h_s7 = {};
-            if (auto h = schema.get_handle("s8"); h) cache.h_s8 = *h;
-            else cache.h_s8 = {};
-            if (auto h = schema.get_handle("s9"); h) cache.h_s9 = *h;
-            else cache.h_s9 = {};
-            if (auto h = schema.get_handle("s10"); h) cache.h_s10 = *h;
-            else cache.h_s10 = {};
-            if (auto h = schema.get_handle("s11"); h) cache.h_s11 = *h;
-            else cache.h_s11 = {};
-            if (auto h = schema.get_handle("s12"); h) cache.h_s12 = *h;
-            else cache.h_s12 = {};
-            if (auto h = schema.get_handle("s13"); h) cache.h_s13 = *h;
-            else cache.h_s13 = {};
-            if (auto h = schema.get_handle("s14"); h) cache.h_s14 = *h;
-            else cache.h_s14 = {};
-            if (auto h = schema.get_handle("s15"); h) cache.h_s15 = *h;
-            else cache.h_s15 = {};
-            if (auto h = schema.get_handle("s16"); h) cache.h_s16 = *h;
-            else cache.h_s16 = {};
-            if (auto h = schema.get_handle("s17"); h) cache.h_s17 = *h;
-            else cache.h_s17 = {};
-            if (auto h = schema.get_handle("s18"); h) cache.h_s18 = *h;
-            else cache.h_s18 = {};
-            if (auto h = schema.get_handle("s19"); h) cache.h_s19 = *h;
-            else cache.h_s19 = {};
-            if (auto h = schema.get_handle("s20"); h) cache.h_s20 = *h;
-            else cache.h_s20 = {};
-            if (auto h = schema.get_handle("s21"); h) cache.h_s21 = *h;
-            else cache.h_s21 = {};
-            if (auto h = schema.get_handle("s22"); h) cache.h_s22 = *h;
-            else cache.h_s22 = {};
-            if (auto h = schema.get_handle("s23"); h) cache.h_s23 = *h;
-            else cache.h_s23 = {};
-            if (auto h = schema.get_handle("s24"); h) cache.h_s24 = *h;
-            else cache.h_s24 = {};
-            if (auto h = schema.get_handle("s25"); h) cache.h_s25 = *h;
-            else cache.h_s25 = {};
-            if (auto h = schema.get_handle("s26"); h) cache.h_s26 = *h;
-            else cache.h_s26 = {};
-            if (auto h = schema.get_handle("s27"); h) cache.h_s27 = *h;
-            else cache.h_s27 = {};
-            if (auto h = schema.get_handle("s28"); h) cache.h_s28 = *h;
-            else cache.h_s28 = {};
-            if (auto h = schema.get_handle("s29"); h) cache.h_s29 = *h;
-            else cache.h_s29 = {};
-            if (auto h = schema.get_handle("s30"); h) cache.h_s30 = *h;
-            else cache.h_s30 = {};
-            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
-            else cache.h_time = {};
+            cache.i_sector = schema.exists("sector") ? schema.getEntryOrder("sector") : -1;
+            cache.i_layer = schema.exists("layer") ? schema.getEntryOrder("layer") : -1;
+            cache.i_component = schema.exists("component") ? schema.getEntryOrder("component") : -1;
+            cache.i_order = schema.exists("order") ? schema.getEntryOrder("order") : -1;
+            cache.i_timestamp = schema.exists("timestamp") ? schema.getEntryOrder("timestamp") : -1;
+            cache.i_s1 = schema.exists("s1") ? schema.getEntryOrder("s1") : -1;
+            cache.i_s2 = schema.exists("s2") ? schema.getEntryOrder("s2") : -1;
+            cache.i_s3 = schema.exists("s3") ? schema.getEntryOrder("s3") : -1;
+            cache.i_s4 = schema.exists("s4") ? schema.getEntryOrder("s4") : -1;
+            cache.i_s5 = schema.exists("s5") ? schema.getEntryOrder("s5") : -1;
+            cache.i_s6 = schema.exists("s6") ? schema.getEntryOrder("s6") : -1;
+            cache.i_s7 = schema.exists("s7") ? schema.getEntryOrder("s7") : -1;
+            cache.i_s8 = schema.exists("s8") ? schema.getEntryOrder("s8") : -1;
+            cache.i_s9 = schema.exists("s9") ? schema.getEntryOrder("s9") : -1;
+            cache.i_s10 = schema.exists("s10") ? schema.getEntryOrder("s10") : -1;
+            cache.i_s11 = schema.exists("s11") ? schema.getEntryOrder("s11") : -1;
+            cache.i_s12 = schema.exists("s12") ? schema.getEntryOrder("s12") : -1;
+            cache.i_s13 = schema.exists("s13") ? schema.getEntryOrder("s13") : -1;
+            cache.i_s14 = schema.exists("s14") ? schema.getEntryOrder("s14") : -1;
+            cache.i_s15 = schema.exists("s15") ? schema.getEntryOrder("s15") : -1;
+            cache.i_s16 = schema.exists("s16") ? schema.getEntryOrder("s16") : -1;
+            cache.i_s17 = schema.exists("s17") ? schema.getEntryOrder("s17") : -1;
+            cache.i_s18 = schema.exists("s18") ? schema.getEntryOrder("s18") : -1;
+            cache.i_s19 = schema.exists("s19") ? schema.getEntryOrder("s19") : -1;
+            cache.i_s20 = schema.exists("s20") ? schema.getEntryOrder("s20") : -1;
+            cache.i_s21 = schema.exists("s21") ? schema.getEntryOrder("s21") : -1;
+            cache.i_s22 = schema.exists("s22") ? schema.getEntryOrder("s22") : -1;
+            cache.i_s23 = schema.exists("s23") ? schema.getEntryOrder("s23") : -1;
+            cache.i_s24 = schema.exists("s24") ? schema.getEntryOrder("s24") : -1;
+            cache.i_s25 = schema.exists("s25") ? schema.getEntryOrder("s25") : -1;
+            cache.i_s26 = schema.exists("s26") ? schema.getEntryOrder("s26") : -1;
+            cache.i_s27 = schema.exists("s27") ? schema.getEntryOrder("s27") : -1;
+            cache.i_s28 = schema.exists("s28") ? schema.getEntryOrder("s28") : -1;
+            cache.i_s29 = schema.exists("s29") ? schema.getEntryOrder("s29") : -1;
+            cache.i_s30 = schema.exists("s30") ? schema.getEntryOrder("s30") : -1;
+            cache.i_time = schema.exists("time") ? schema.getEntryOrder("time") : -1;
         }
-        h_sector = cache.h_sector;
-        h_layer = cache.h_layer;
-        h_component = cache.h_component;
-        h_order = cache.h_order;
-        h_timestamp = cache.h_timestamp;
-        h_s1 = cache.h_s1;
-        h_s2 = cache.h_s2;
-        h_s3 = cache.h_s3;
-        h_s4 = cache.h_s4;
-        h_s5 = cache.h_s5;
-        h_s6 = cache.h_s6;
-        h_s7 = cache.h_s7;
-        h_s8 = cache.h_s8;
-        h_s9 = cache.h_s9;
-        h_s10 = cache.h_s10;
-        h_s11 = cache.h_s11;
-        h_s12 = cache.h_s12;
-        h_s13 = cache.h_s13;
-        h_s14 = cache.h_s14;
-        h_s15 = cache.h_s15;
-        h_s16 = cache.h_s16;
-        h_s17 = cache.h_s17;
-        h_s18 = cache.h_s18;
-        h_s19 = cache.h_s19;
-        h_s20 = cache.h_s20;
-        h_s21 = cache.h_s21;
-        h_s22 = cache.h_s22;
-        h_s23 = cache.h_s23;
-        h_s24 = cache.h_s24;
-        h_s25 = cache.h_s25;
-        h_s26 = cache.h_s26;
-        h_s27 = cache.h_s27;
-        h_s28 = cache.h_s28;
-        h_s29 = cache.h_s29;
-        h_s30 = cache.h_s30;
-        h_time = cache.h_time;
+        i_sector = cache.i_sector;
+        i_layer = cache.i_layer;
+        i_component = cache.i_component;
+        i_order = cache.i_order;
+        i_timestamp = cache.i_timestamp;
+        i_s1 = cache.i_s1;
+        i_s2 = cache.i_s2;
+        i_s3 = cache.i_s3;
+        i_s4 = cache.i_s4;
+        i_s5 = cache.i_s5;
+        i_s6 = cache.i_s6;
+        i_s7 = cache.i_s7;
+        i_s8 = cache.i_s8;
+        i_s9 = cache.i_s9;
+        i_s10 = cache.i_s10;
+        i_s11 = cache.i_s11;
+        i_s12 = cache.i_s12;
+        i_s13 = cache.i_s13;
+        i_s14 = cache.i_s14;
+        i_s15 = cache.i_s15;
+        i_s16 = cache.i_s16;
+        i_s17 = cache.i_s17;
+        i_s18 = cache.i_s18;
+        i_s19 = cache.i_s19;
+        i_s20 = cache.i_s20;
+        i_s21 = cache.i_s21;
+        i_s22 = cache.i_s22;
+        i_s23 = cache.i_s23;
+        i_s24 = cache.i_s24;
+        i_s25 = cache.i_s25;
+        i_s26 = cache.i_s26;
+        i_s27 = cache.i_s27;
+        i_s28 = cache.i_s28;
+        i_s29 = cache.i_s29;
+        i_s30 = cache.i_s30;
+        i_time = cache.i_time;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// sector: sector
     [[nodiscard]] int sector(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+        return static_cast<int>(m_view->getByte(i_sector, row));
     }
     /// layer: layer (1-6)
     [[nodiscard]] int layer(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_layer, row));
+        return static_cast<int>(m_view->getByte(i_layer, row));
     }
     /// component: strips
     [[nodiscard]] int component(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_component, row));
+        return static_cast<int>(m_view->getShort(i_component, row));
     }
     /// order: order: 0 - ADCL , 1 - ADCR
     [[nodiscard]] int order(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_order, row));
+        return static_cast<int>(m_view->getByte(i_order, row));
     }
     /// timestamp: timestamp
     [[nodiscard]] int64_t timestamp(int row) const noexcept {
-        return static_cast<int64_t>(m_view.get<int64_t>(h_timestamp, row));
+        return static_cast<int64_t>(m_view->getLong(i_timestamp, row));
     }
     /// s1: first sample
     [[nodiscard]] int s1(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s1, row));
+        return static_cast<int>(m_view->getShort(i_s1, row));
     }
     /// s2: 
     [[nodiscard]] int s2(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s2, row));
+        return static_cast<int>(m_view->getShort(i_s2, row));
     }
     /// s3: 
     [[nodiscard]] int s3(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s3, row));
+        return static_cast<int>(m_view->getShort(i_s3, row));
     }
     /// s4: 
     [[nodiscard]] int s4(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s4, row));
+        return static_cast<int>(m_view->getShort(i_s4, row));
     }
     /// s5: 
     [[nodiscard]] int s5(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s5, row));
+        return static_cast<int>(m_view->getShort(i_s5, row));
     }
     /// s6: 
     [[nodiscard]] int s6(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s6, row));
+        return static_cast<int>(m_view->getShort(i_s6, row));
     }
     /// s7: 
     [[nodiscard]] int s7(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s7, row));
+        return static_cast<int>(m_view->getShort(i_s7, row));
     }
     /// s8: 
     [[nodiscard]] int s8(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s8, row));
+        return static_cast<int>(m_view->getShort(i_s8, row));
     }
     /// s9: 
     [[nodiscard]] int s9(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s9, row));
+        return static_cast<int>(m_view->getShort(i_s9, row));
     }
     /// s10: 
     [[nodiscard]] int s10(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s10, row));
+        return static_cast<int>(m_view->getShort(i_s10, row));
     }
     /// s11: 
     [[nodiscard]] int s11(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s11, row));
+        return static_cast<int>(m_view->getShort(i_s11, row));
     }
     /// s12: 
     [[nodiscard]] int s12(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s12, row));
+        return static_cast<int>(m_view->getShort(i_s12, row));
     }
     /// s13: 
     [[nodiscard]] int s13(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s13, row));
+        return static_cast<int>(m_view->getShort(i_s13, row));
     }
     /// s14: 
     [[nodiscard]] int s14(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s14, row));
+        return static_cast<int>(m_view->getShort(i_s14, row));
     }
     /// s15: 
     [[nodiscard]] int s15(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s15, row));
+        return static_cast<int>(m_view->getShort(i_s15, row));
     }
     /// s16: 
     [[nodiscard]] int s16(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s16, row));
+        return static_cast<int>(m_view->getShort(i_s16, row));
     }
     /// s17: 
     [[nodiscard]] int s17(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s17, row));
+        return static_cast<int>(m_view->getShort(i_s17, row));
     }
     /// s18: 
     [[nodiscard]] int s18(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s18, row));
+        return static_cast<int>(m_view->getShort(i_s18, row));
     }
     /// s19: 
     [[nodiscard]] int s19(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s19, row));
+        return static_cast<int>(m_view->getShort(i_s19, row));
     }
     /// s20: 
     [[nodiscard]] int s20(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s20, row));
+        return static_cast<int>(m_view->getShort(i_s20, row));
     }
     /// s21: 
     [[nodiscard]] int s21(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s21, row));
+        return static_cast<int>(m_view->getShort(i_s21, row));
     }
     /// s22: 
     [[nodiscard]] int s22(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s22, row));
+        return static_cast<int>(m_view->getShort(i_s22, row));
     }
     /// s23: 
     [[nodiscard]] int s23(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s23, row));
+        return static_cast<int>(m_view->getShort(i_s23, row));
     }
     /// s24: 
     [[nodiscard]] int s24(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s24, row));
+        return static_cast<int>(m_view->getShort(i_s24, row));
     }
     /// s25: 
     [[nodiscard]] int s25(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s25, row));
+        return static_cast<int>(m_view->getShort(i_s25, row));
     }
     /// s26: 
     [[nodiscard]] int s26(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s26, row));
+        return static_cast<int>(m_view->getShort(i_s26, row));
     }
     /// s27: 
     [[nodiscard]] int s27(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s27, row));
+        return static_cast<int>(m_view->getShort(i_s27, row));
     }
     /// s28: 
     [[nodiscard]] int s28(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s28, row));
+        return static_cast<int>(m_view->getShort(i_s28, row));
     }
     /// s29: 
     [[nodiscard]] int s29(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s29, row));
+        return static_cast<int>(m_view->getShort(i_s29, row));
     }
     /// s30: 
     [[nodiscard]] int s30(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_s30, row));
+        return static_cast<int>(m_view->getShort(i_s30, row));
     }
     /// time: for fine time correction
     [[nodiscard]] int time(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_time, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// sector column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
-        return m_view.column<int8_t>(h_sector);
-    }
-    /// layer column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> layer_col() const noexcept {
-        return m_view.column<int8_t>(h_layer);
-    }
-    /// component column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> component_col() const noexcept {
-        return m_view.column<int16_t>(h_component);
-    }
-    /// order column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> order_col() const noexcept {
-        return m_view.column<int8_t>(h_order);
-    }
-    /// timestamp column as a contiguous span.
-    [[nodiscard]] std::span<const int64_t> timestamp_col() const noexcept {
-        return m_view.column<int64_t>(h_timestamp);
-    }
-    /// s1 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s1_col() const noexcept {
-        return m_view.column<int16_t>(h_s1);
-    }
-    /// s2 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s2_col() const noexcept {
-        return m_view.column<int16_t>(h_s2);
-    }
-    /// s3 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s3_col() const noexcept {
-        return m_view.column<int16_t>(h_s3);
-    }
-    /// s4 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s4_col() const noexcept {
-        return m_view.column<int16_t>(h_s4);
-    }
-    /// s5 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s5_col() const noexcept {
-        return m_view.column<int16_t>(h_s5);
-    }
-    /// s6 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s6_col() const noexcept {
-        return m_view.column<int16_t>(h_s6);
-    }
-    /// s7 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s7_col() const noexcept {
-        return m_view.column<int16_t>(h_s7);
-    }
-    /// s8 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s8_col() const noexcept {
-        return m_view.column<int16_t>(h_s8);
-    }
-    /// s9 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s9_col() const noexcept {
-        return m_view.column<int16_t>(h_s9);
-    }
-    /// s10 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s10_col() const noexcept {
-        return m_view.column<int16_t>(h_s10);
-    }
-    /// s11 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s11_col() const noexcept {
-        return m_view.column<int16_t>(h_s11);
-    }
-    /// s12 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s12_col() const noexcept {
-        return m_view.column<int16_t>(h_s12);
-    }
-    /// s13 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s13_col() const noexcept {
-        return m_view.column<int16_t>(h_s13);
-    }
-    /// s14 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s14_col() const noexcept {
-        return m_view.column<int16_t>(h_s14);
-    }
-    /// s15 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s15_col() const noexcept {
-        return m_view.column<int16_t>(h_s15);
-    }
-    /// s16 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s16_col() const noexcept {
-        return m_view.column<int16_t>(h_s16);
-    }
-    /// s17 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s17_col() const noexcept {
-        return m_view.column<int16_t>(h_s17);
-    }
-    /// s18 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s18_col() const noexcept {
-        return m_view.column<int16_t>(h_s18);
-    }
-    /// s19 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s19_col() const noexcept {
-        return m_view.column<int16_t>(h_s19);
-    }
-    /// s20 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s20_col() const noexcept {
-        return m_view.column<int16_t>(h_s20);
-    }
-    /// s21 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s21_col() const noexcept {
-        return m_view.column<int16_t>(h_s21);
-    }
-    /// s22 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s22_col() const noexcept {
-        return m_view.column<int16_t>(h_s22);
-    }
-    /// s23 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s23_col() const noexcept {
-        return m_view.column<int16_t>(h_s23);
-    }
-    /// s24 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s24_col() const noexcept {
-        return m_view.column<int16_t>(h_s24);
-    }
-    /// s25 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s25_col() const noexcept {
-        return m_view.column<int16_t>(h_s25);
-    }
-    /// s26 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s26_col() const noexcept {
-        return m_view.column<int16_t>(h_s26);
-    }
-    /// s27 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s27_col() const noexcept {
-        return m_view.column<int16_t>(h_s27);
-    }
-    /// s28 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s28_col() const noexcept {
-        return m_view.column<int16_t>(h_s28);
-    }
-    /// s29 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s29_col() const noexcept {
-        return m_view.column<int16_t>(h_s29);
-    }
-    /// s30 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> s30_col() const noexcept {
-        return m_view.column<int16_t>(h_s30);
-    }
-    /// time column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> time_col() const noexcept {
-        return m_view.column<int32_t>(h_time);
+        return static_cast<int>(m_view->getInt(i_time, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_sector{};
-    hipo::column_handle h_layer{};
-    hipo::column_handle h_component{};
-    hipo::column_handle h_order{};
-    hipo::column_handle h_timestamp{};
-    hipo::column_handle h_s1{};
-    hipo::column_handle h_s2{};
-    hipo::column_handle h_s3{};
-    hipo::column_handle h_s4{};
-    hipo::column_handle h_s5{};
-    hipo::column_handle h_s6{};
-    hipo::column_handle h_s7{};
-    hipo::column_handle h_s8{};
-    hipo::column_handle h_s9{};
-    hipo::column_handle h_s10{};
-    hipo::column_handle h_s11{};
-    hipo::column_handle h_s12{};
-    hipo::column_handle h_s13{};
-    hipo::column_handle h_s14{};
-    hipo::column_handle h_s15{};
-    hipo::column_handle h_s16{};
-    hipo::column_handle h_s17{};
-    hipo::column_handle h_s18{};
-    hipo::column_handle h_s19{};
-    hipo::column_handle h_s20{};
-    hipo::column_handle h_s21{};
-    hipo::column_handle h_s22{};
-    hipo::column_handle h_s23{};
-    hipo::column_handle h_s24{};
-    hipo::column_handle h_s25{};
-    hipo::column_handle h_s26{};
-    hipo::column_handle h_s27{};
-    hipo::column_handle h_s28{};
-    hipo::column_handle h_s29{};
-    hipo::column_handle h_s30{};
-    hipo::column_handle h_time{};
+    const hipo::bank* m_view = nullptr;
+    int i_sector = -1;
+    int i_layer = -1;
+    int i_component = -1;
+    int i_order = -1;
+    int i_timestamp = -1;
+    int i_s1 = -1;
+    int i_s2 = -1;
+    int i_s3 = -1;
+    int i_s4 = -1;
+    int i_s5 = -1;
+    int i_s6 = -1;
+    int i_s7 = -1;
+    int i_s8 = -1;
+    int i_s9 = -1;
+    int i_s10 = -1;
+    int i_s11 = -1;
+    int i_s12 = -1;
+    int i_s13 = -1;
+    int i_s14 = -1;
+    int i_s15 = -1;
+    int i_s16 = -1;
+    int i_s17 = -1;
+    int i_s18 = -1;
+    int i_s19 = -1;
+    int i_s20 = -1;
+    int i_s21 = -1;
+    int i_s22 = -1;
+    int i_s23 = -1;
+    int i_s24 = -1;
+    int i_s25 = -1;
+    int i_s26 = -1;
+    int i_s27 = -1;
+    int i_s28 = -1;
+    int i_s29 = -1;
+    int i_s30 = -1;
+    int i_time = -1;
 
     friend class Row;
 };

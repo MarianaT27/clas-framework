@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `HEL::flip` (group 22000, item 12).
 /// Helicity flips from ADC bank.  State values are -1/0/+1, where 0 is invalid.
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,151 +40,107 @@ class HEL_flip {
 
     HEL_flip() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_run;
-            hipo::column_handle h_event;
-            hipo::column_handle h_timestamp;
-            hipo::column_handle h_helicity;
-            hipo::column_handle h_helicityRaw;
-            hipo::column_handle h_pair;
-            hipo::column_handle h_pattern;
-            hipo::column_handle h_status;
+            int i_run = -1;
+            int i_event = -1;
+            int i_timestamp = -1;
+            int i_helicity = -1;
+            int i_helicityRaw = -1;
+            int i_pair = -1;
+            int i_pattern = -1;
+            int i_status = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("run"); h) cache.h_run = *h;
-            else cache.h_run = {};
-            if (auto h = schema.get_handle("event"); h) cache.h_event = *h;
-            else cache.h_event = {};
-            if (auto h = schema.get_handle("timestamp"); h) cache.h_timestamp = *h;
-            else cache.h_timestamp = {};
-            if (auto h = schema.get_handle("helicity"); h) cache.h_helicity = *h;
-            else cache.h_helicity = {};
-            if (auto h = schema.get_handle("helicityRaw"); h) cache.h_helicityRaw = *h;
-            else cache.h_helicityRaw = {};
-            if (auto h = schema.get_handle("pair"); h) cache.h_pair = *h;
-            else cache.h_pair = {};
-            if (auto h = schema.get_handle("pattern"); h) cache.h_pattern = *h;
-            else cache.h_pattern = {};
-            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
-            else cache.h_status = {};
+            cache.i_run = schema.exists("run") ? schema.getEntryOrder("run") : -1;
+            cache.i_event = schema.exists("event") ? schema.getEntryOrder("event") : -1;
+            cache.i_timestamp = schema.exists("timestamp") ? schema.getEntryOrder("timestamp") : -1;
+            cache.i_helicity = schema.exists("helicity") ? schema.getEntryOrder("helicity") : -1;
+            cache.i_helicityRaw = schema.exists("helicityRaw") ? schema.getEntryOrder("helicityRaw") : -1;
+            cache.i_pair = schema.exists("pair") ? schema.getEntryOrder("pair") : -1;
+            cache.i_pattern = schema.exists("pattern") ? schema.getEntryOrder("pattern") : -1;
+            cache.i_status = schema.exists("status") ? schema.getEntryOrder("status") : -1;
         }
-        h_run = cache.h_run;
-        h_event = cache.h_event;
-        h_timestamp = cache.h_timestamp;
-        h_helicity = cache.h_helicity;
-        h_helicityRaw = cache.h_helicityRaw;
-        h_pair = cache.h_pair;
-        h_pattern = cache.h_pattern;
-        h_status = cache.h_status;
+        i_run = cache.i_run;
+        i_event = cache.i_event;
+        i_timestamp = cache.i_timestamp;
+        i_helicity = cache.i_helicity;
+        i_helicityRaw = cache.i_helicityRaw;
+        i_pair = cache.i_pair;
+        i_pattern = cache.i_pattern;
+        i_status = cache.i_status;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// run: run number
     [[nodiscard]] int run(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_run, row));
+        return static_cast<int>(m_view->getInt(i_run, row));
     }
     /// event: event number
     [[nodiscard]] int event(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_event, row));
+        return static_cast<int>(m_view->getInt(i_event, row));
     }
     /// timestamp: timestamp (4ns)
     [[nodiscard]] int64_t timestamp(int row) const noexcept {
-        return static_cast<int64_t>(m_view.get<int64_t>(h_timestamp, row));
+        return static_cast<int64_t>(m_view->getLong(i_timestamp, row));
     }
     /// helicity: helicity state with half-wave plate correction
     [[nodiscard]] int helicity(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_helicity, row));
+        return static_cast<int>(m_view->getByte(i_helicity, row));
     }
     /// helicityRaw: helicity state without half-wave plate correction
     [[nodiscard]] int helicityRaw(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_helicityRaw, row));
+        return static_cast<int>(m_view->getByte(i_helicityRaw, row));
     }
     /// pair: pair sync state
     [[nodiscard]] int pair(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_pair, row));
+        return static_cast<int>(m_view->getByte(i_pair, row));
     }
     /// pattern: pattern sync state
     [[nodiscard]] int pattern(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_pattern, row));
+        return static_cast<int>(m_view->getByte(i_pattern, row));
     }
     /// status: status
     [[nodiscard]] int status(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_status, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// run column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> run_col() const noexcept {
-        return m_view.column<int32_t>(h_run);
-    }
-    /// event column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> event_col() const noexcept {
-        return m_view.column<int32_t>(h_event);
-    }
-    /// timestamp column as a contiguous span.
-    [[nodiscard]] std::span<const int64_t> timestamp_col() const noexcept {
-        return m_view.column<int64_t>(h_timestamp);
-    }
-    /// helicity column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> helicity_col() const noexcept {
-        return m_view.column<int8_t>(h_helicity);
-    }
-    /// helicityRaw column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> helicityRaw_col() const noexcept {
-        return m_view.column<int8_t>(h_helicityRaw);
-    }
-    /// pair column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> pair_col() const noexcept {
-        return m_view.column<int8_t>(h_pair);
-    }
-    /// pattern column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> pattern_col() const noexcept {
-        return m_view.column<int8_t>(h_pattern);
-    }
-    /// status column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> status_col() const noexcept {
-        return m_view.column<int8_t>(h_status);
+        return static_cast<int>(m_view->getByte(i_status, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_run{};
-    hipo::column_handle h_event{};
-    hipo::column_handle h_timestamp{};
-    hipo::column_handle h_helicity{};
-    hipo::column_handle h_helicityRaw{};
-    hipo::column_handle h_pair{};
-    hipo::column_handle h_pattern{};
-    hipo::column_handle h_status{};
+    const hipo::bank* m_view = nullptr;
+    int i_run = -1;
+    int i_event = -1;
+    int i_timestamp = -1;
+    int i_helicity = -1;
+    int i_helicityRaw = -1;
+    int i_pair = -1;
+    int i_pattern = -1;
+    int i_status = -1;
 
     friend class Row;
 };

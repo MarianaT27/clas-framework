@@ -25,7 +25,7 @@
 #include <vector>
 #include "Math/GenVector/PxPyPzE4D.h"
 #include "Math/Vector3Dfwd.h"
-#include <bank_view.h>
+#include <bank.h>
 
 namespace ALERT_track_matching {
 

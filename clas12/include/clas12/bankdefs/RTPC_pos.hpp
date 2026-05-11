@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `RTPC::pos` (group 21900, item 14).
 /// Digitized bank for the Radial TPC
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,151 +40,107 @@ class RTPC_pos {
 
     RTPC_pos() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_step;
-            hipo::column_handle h_time;
-            hipo::column_handle h_energy;
-            hipo::column_handle h_posx;
-            hipo::column_handle h_posy;
-            hipo::column_handle h_posz;
-            hipo::column_handle h_phi;
-            hipo::column_handle h_tid;
+            int i_step = -1;
+            int i_time = -1;
+            int i_energy = -1;
+            int i_posx = -1;
+            int i_posy = -1;
+            int i_posz = -1;
+            int i_phi = -1;
+            int i_tid = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("step"); h) cache.h_step = *h;
-            else cache.h_step = {};
-            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
-            else cache.h_time = {};
-            if (auto h = schema.get_handle("energy"); h) cache.h_energy = *h;
-            else cache.h_energy = {};
-            if (auto h = schema.get_handle("posx"); h) cache.h_posx = *h;
-            else cache.h_posx = {};
-            if (auto h = schema.get_handle("posy"); h) cache.h_posy = *h;
-            else cache.h_posy = {};
-            if (auto h = schema.get_handle("posz"); h) cache.h_posz = *h;
-            else cache.h_posz = {};
-            if (auto h = schema.get_handle("phi"); h) cache.h_phi = *h;
-            else cache.h_phi = {};
-            if (auto h = schema.get_handle("tid"); h) cache.h_tid = *h;
-            else cache.h_tid = {};
+            cache.i_step = schema.exists("step") ? schema.getEntryOrder("step") : -1;
+            cache.i_time = schema.exists("time") ? schema.getEntryOrder("time") : -1;
+            cache.i_energy = schema.exists("energy") ? schema.getEntryOrder("energy") : -1;
+            cache.i_posx = schema.exists("posx") ? schema.getEntryOrder("posx") : -1;
+            cache.i_posy = schema.exists("posy") ? schema.getEntryOrder("posy") : -1;
+            cache.i_posz = schema.exists("posz") ? schema.getEntryOrder("posz") : -1;
+            cache.i_phi = schema.exists("phi") ? schema.getEntryOrder("phi") : -1;
+            cache.i_tid = schema.exists("tid") ? schema.getEntryOrder("tid") : -1;
         }
-        h_step = cache.h_step;
-        h_time = cache.h_time;
-        h_energy = cache.h_energy;
-        h_posx = cache.h_posx;
-        h_posy = cache.h_posy;
-        h_posz = cache.h_posz;
-        h_phi = cache.h_phi;
-        h_tid = cache.h_tid;
+        i_step = cache.i_step;
+        i_time = cache.i_time;
+        i_energy = cache.i_energy;
+        i_posx = cache.i_posx;
+        i_posy = cache.i_posy;
+        i_posz = cache.i_posz;
+        i_phi = cache.i_phi;
+        i_tid = cache.i_tid;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// step: step
     [[nodiscard]] int step(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_step, row));
+        return static_cast<int>(m_view->getInt(i_step, row));
     }
     /// time: time (ns)
     [[nodiscard]] float time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_time, row));
+        return static_cast<float>(m_view->getFloat(i_time, row));
     }
     /// energy: energy
     [[nodiscard]] float energy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_energy, row));
+        return static_cast<float>(m_view->getFloat(i_energy, row));
     }
     /// posx: x position (mm)
     [[nodiscard]] float posx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_posx, row));
+        return static_cast<float>(m_view->getFloat(i_posx, row));
     }
     /// posy: y position (mm)
     [[nodiscard]] float posy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_posy, row));
+        return static_cast<float>(m_view->getFloat(i_posy, row));
     }
     /// posz: z position (mm)
     [[nodiscard]] float posz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_posz, row));
+        return static_cast<float>(m_view->getFloat(i_posz, row));
     }
     /// phi: phi (rad)
     [[nodiscard]] float phi(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_phi, row));
+        return static_cast<float>(m_view->getFloat(i_phi, row));
     }
     /// tid: track id
     [[nodiscard]] int tid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_tid, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// step column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> step_col() const noexcept {
-        return m_view.column<int32_t>(h_step);
-    }
-    /// time column as a contiguous span.
-    [[nodiscard]] std::span<const float> time_col() const noexcept {
-        return m_view.column<float>(h_time);
-    }
-    /// energy column as a contiguous span.
-    [[nodiscard]] std::span<const float> energy_col() const noexcept {
-        return m_view.column<float>(h_energy);
-    }
-    /// posx column as a contiguous span.
-    [[nodiscard]] std::span<const float> posx_col() const noexcept {
-        return m_view.column<float>(h_posx);
-    }
-    /// posy column as a contiguous span.
-    [[nodiscard]] std::span<const float> posy_col() const noexcept {
-        return m_view.column<float>(h_posy);
-    }
-    /// posz column as a contiguous span.
-    [[nodiscard]] std::span<const float> posz_col() const noexcept {
-        return m_view.column<float>(h_posz);
-    }
-    /// phi column as a contiguous span.
-    [[nodiscard]] std::span<const float> phi_col() const noexcept {
-        return m_view.column<float>(h_phi);
-    }
-    /// tid column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> tid_col() const noexcept {
-        return m_view.column<int32_t>(h_tid);
+        return static_cast<int>(m_view->getInt(i_tid, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_step{};
-    hipo::column_handle h_time{};
-    hipo::column_handle h_energy{};
-    hipo::column_handle h_posx{};
-    hipo::column_handle h_posy{};
-    hipo::column_handle h_posz{};
-    hipo::column_handle h_phi{};
-    hipo::column_handle h_tid{};
+    const hipo::bank* m_view = nullptr;
+    int i_step = -1;
+    int i_time = -1;
+    int i_energy = -1;
+    int i_posx = -1;
+    int i_posy = -1;
+    int i_posz = -1;
+    int i_phi = -1;
+    int i_tid = -1;
 
     friend class Row;
 };

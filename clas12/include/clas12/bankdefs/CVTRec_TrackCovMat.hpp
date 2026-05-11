@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `CVTRec::TrackCovMat` (group 20500, item 28).
 /// reconstructed CVT tracks covariance matrix in track representation
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,528 +40,339 @@ class CVTRec_TrackCovMat {
 
     CVTRec_TrackCovMat() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_ID;
-            hipo::column_handle h_cov_xx;
-            hipo::column_handle h_cov_xy;
-            hipo::column_handle h_cov_xz;
-            hipo::column_handle h_cov_xpx;
-            hipo::column_handle h_cov_xpy;
-            hipo::column_handle h_cov_xpz;
-            hipo::column_handle h_cov_yx;
-            hipo::column_handle h_cov_yy;
-            hipo::column_handle h_cov_yz;
-            hipo::column_handle h_cov_ypx;
-            hipo::column_handle h_cov_ypy;
-            hipo::column_handle h_cov_ypz;
-            hipo::column_handle h_cov_zx;
-            hipo::column_handle h_cov_zy;
-            hipo::column_handle h_cov_zz;
-            hipo::column_handle h_cov_zpx;
-            hipo::column_handle h_cov_zpy;
-            hipo::column_handle h_cov_zpz;
-            hipo::column_handle h_cov_pxx;
-            hipo::column_handle h_cov_pxy;
-            hipo::column_handle h_cov_pxz;
-            hipo::column_handle h_cov_pxpx;
-            hipo::column_handle h_cov_pxpy;
-            hipo::column_handle h_cov_pxpz;
-            hipo::column_handle h_cov_pyx;
-            hipo::column_handle h_cov_pyy;
-            hipo::column_handle h_cov_pyz;
-            hipo::column_handle h_cov_pypx;
-            hipo::column_handle h_cov_pypy;
-            hipo::column_handle h_cov_pypz;
-            hipo::column_handle h_cov_pzx;
-            hipo::column_handle h_cov_pzy;
-            hipo::column_handle h_cov_pzz;
-            hipo::column_handle h_cov_pzpx;
-            hipo::column_handle h_cov_pzpy;
-            hipo::column_handle h_cov_pzpz;
+            int i_ID = -1;
+            int i_cov_xx = -1;
+            int i_cov_xy = -1;
+            int i_cov_xz = -1;
+            int i_cov_xpx = -1;
+            int i_cov_xpy = -1;
+            int i_cov_xpz = -1;
+            int i_cov_yx = -1;
+            int i_cov_yy = -1;
+            int i_cov_yz = -1;
+            int i_cov_ypx = -1;
+            int i_cov_ypy = -1;
+            int i_cov_ypz = -1;
+            int i_cov_zx = -1;
+            int i_cov_zy = -1;
+            int i_cov_zz = -1;
+            int i_cov_zpx = -1;
+            int i_cov_zpy = -1;
+            int i_cov_zpz = -1;
+            int i_cov_pxx = -1;
+            int i_cov_pxy = -1;
+            int i_cov_pxz = -1;
+            int i_cov_pxpx = -1;
+            int i_cov_pxpy = -1;
+            int i_cov_pxpz = -1;
+            int i_cov_pyx = -1;
+            int i_cov_pyy = -1;
+            int i_cov_pyz = -1;
+            int i_cov_pypx = -1;
+            int i_cov_pypy = -1;
+            int i_cov_pypz = -1;
+            int i_cov_pzx = -1;
+            int i_cov_pzy = -1;
+            int i_cov_pzz = -1;
+            int i_cov_pzpx = -1;
+            int i_cov_pzpy = -1;
+            int i_cov_pzpz = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("ID"); h) cache.h_ID = *h;
-            else cache.h_ID = {};
-            if (auto h = schema.get_handle("cov_xx"); h) cache.h_cov_xx = *h;
-            else cache.h_cov_xx = {};
-            if (auto h = schema.get_handle("cov_xy"); h) cache.h_cov_xy = *h;
-            else cache.h_cov_xy = {};
-            if (auto h = schema.get_handle("cov_xz"); h) cache.h_cov_xz = *h;
-            else cache.h_cov_xz = {};
-            if (auto h = schema.get_handle("cov_xpx"); h) cache.h_cov_xpx = *h;
-            else cache.h_cov_xpx = {};
-            if (auto h = schema.get_handle("cov_xpy"); h) cache.h_cov_xpy = *h;
-            else cache.h_cov_xpy = {};
-            if (auto h = schema.get_handle("cov_xpz"); h) cache.h_cov_xpz = *h;
-            else cache.h_cov_xpz = {};
-            if (auto h = schema.get_handle("cov_yx"); h) cache.h_cov_yx = *h;
-            else cache.h_cov_yx = {};
-            if (auto h = schema.get_handle("cov_yy"); h) cache.h_cov_yy = *h;
-            else cache.h_cov_yy = {};
-            if (auto h = schema.get_handle("cov_yz"); h) cache.h_cov_yz = *h;
-            else cache.h_cov_yz = {};
-            if (auto h = schema.get_handle("cov_ypx"); h) cache.h_cov_ypx = *h;
-            else cache.h_cov_ypx = {};
-            if (auto h = schema.get_handle("cov_ypy"); h) cache.h_cov_ypy = *h;
-            else cache.h_cov_ypy = {};
-            if (auto h = schema.get_handle("cov_ypz"); h) cache.h_cov_ypz = *h;
-            else cache.h_cov_ypz = {};
-            if (auto h = schema.get_handle("cov_zx"); h) cache.h_cov_zx = *h;
-            else cache.h_cov_zx = {};
-            if (auto h = schema.get_handle("cov_zy"); h) cache.h_cov_zy = *h;
-            else cache.h_cov_zy = {};
-            if (auto h = schema.get_handle("cov_zz"); h) cache.h_cov_zz = *h;
-            else cache.h_cov_zz = {};
-            if (auto h = schema.get_handle("cov_zpx"); h) cache.h_cov_zpx = *h;
-            else cache.h_cov_zpx = {};
-            if (auto h = schema.get_handle("cov_zpy"); h) cache.h_cov_zpy = *h;
-            else cache.h_cov_zpy = {};
-            if (auto h = schema.get_handle("cov_zpz"); h) cache.h_cov_zpz = *h;
-            else cache.h_cov_zpz = {};
-            if (auto h = schema.get_handle("cov_pxx"); h) cache.h_cov_pxx = *h;
-            else cache.h_cov_pxx = {};
-            if (auto h = schema.get_handle("cov_pxy"); h) cache.h_cov_pxy = *h;
-            else cache.h_cov_pxy = {};
-            if (auto h = schema.get_handle("cov_pxz"); h) cache.h_cov_pxz = *h;
-            else cache.h_cov_pxz = {};
-            if (auto h = schema.get_handle("cov_pxpx"); h) cache.h_cov_pxpx = *h;
-            else cache.h_cov_pxpx = {};
-            if (auto h = schema.get_handle("cov_pxpy"); h) cache.h_cov_pxpy = *h;
-            else cache.h_cov_pxpy = {};
-            if (auto h = schema.get_handle("cov_pxpz"); h) cache.h_cov_pxpz = *h;
-            else cache.h_cov_pxpz = {};
-            if (auto h = schema.get_handle("cov_pyx"); h) cache.h_cov_pyx = *h;
-            else cache.h_cov_pyx = {};
-            if (auto h = schema.get_handle("cov_pyy"); h) cache.h_cov_pyy = *h;
-            else cache.h_cov_pyy = {};
-            if (auto h = schema.get_handle("cov_pyz"); h) cache.h_cov_pyz = *h;
-            else cache.h_cov_pyz = {};
-            if (auto h = schema.get_handle("cov_pypx"); h) cache.h_cov_pypx = *h;
-            else cache.h_cov_pypx = {};
-            if (auto h = schema.get_handle("cov_pypy"); h) cache.h_cov_pypy = *h;
-            else cache.h_cov_pypy = {};
-            if (auto h = schema.get_handle("cov_pypz"); h) cache.h_cov_pypz = *h;
-            else cache.h_cov_pypz = {};
-            if (auto h = schema.get_handle("cov_pzx"); h) cache.h_cov_pzx = *h;
-            else cache.h_cov_pzx = {};
-            if (auto h = schema.get_handle("cov_pzy"); h) cache.h_cov_pzy = *h;
-            else cache.h_cov_pzy = {};
-            if (auto h = schema.get_handle("cov_pzz"); h) cache.h_cov_pzz = *h;
-            else cache.h_cov_pzz = {};
-            if (auto h = schema.get_handle("cov_pzpx"); h) cache.h_cov_pzpx = *h;
-            else cache.h_cov_pzpx = {};
-            if (auto h = schema.get_handle("cov_pzpy"); h) cache.h_cov_pzpy = *h;
-            else cache.h_cov_pzpy = {};
-            if (auto h = schema.get_handle("cov_pzpz"); h) cache.h_cov_pzpz = *h;
-            else cache.h_cov_pzpz = {};
+            cache.i_ID = schema.exists("ID") ? schema.getEntryOrder("ID") : -1;
+            cache.i_cov_xx = schema.exists("cov_xx") ? schema.getEntryOrder("cov_xx") : -1;
+            cache.i_cov_xy = schema.exists("cov_xy") ? schema.getEntryOrder("cov_xy") : -1;
+            cache.i_cov_xz = schema.exists("cov_xz") ? schema.getEntryOrder("cov_xz") : -1;
+            cache.i_cov_xpx = schema.exists("cov_xpx") ? schema.getEntryOrder("cov_xpx") : -1;
+            cache.i_cov_xpy = schema.exists("cov_xpy") ? schema.getEntryOrder("cov_xpy") : -1;
+            cache.i_cov_xpz = schema.exists("cov_xpz") ? schema.getEntryOrder("cov_xpz") : -1;
+            cache.i_cov_yx = schema.exists("cov_yx") ? schema.getEntryOrder("cov_yx") : -1;
+            cache.i_cov_yy = schema.exists("cov_yy") ? schema.getEntryOrder("cov_yy") : -1;
+            cache.i_cov_yz = schema.exists("cov_yz") ? schema.getEntryOrder("cov_yz") : -1;
+            cache.i_cov_ypx = schema.exists("cov_ypx") ? schema.getEntryOrder("cov_ypx") : -1;
+            cache.i_cov_ypy = schema.exists("cov_ypy") ? schema.getEntryOrder("cov_ypy") : -1;
+            cache.i_cov_ypz = schema.exists("cov_ypz") ? schema.getEntryOrder("cov_ypz") : -1;
+            cache.i_cov_zx = schema.exists("cov_zx") ? schema.getEntryOrder("cov_zx") : -1;
+            cache.i_cov_zy = schema.exists("cov_zy") ? schema.getEntryOrder("cov_zy") : -1;
+            cache.i_cov_zz = schema.exists("cov_zz") ? schema.getEntryOrder("cov_zz") : -1;
+            cache.i_cov_zpx = schema.exists("cov_zpx") ? schema.getEntryOrder("cov_zpx") : -1;
+            cache.i_cov_zpy = schema.exists("cov_zpy") ? schema.getEntryOrder("cov_zpy") : -1;
+            cache.i_cov_zpz = schema.exists("cov_zpz") ? schema.getEntryOrder("cov_zpz") : -1;
+            cache.i_cov_pxx = schema.exists("cov_pxx") ? schema.getEntryOrder("cov_pxx") : -1;
+            cache.i_cov_pxy = schema.exists("cov_pxy") ? schema.getEntryOrder("cov_pxy") : -1;
+            cache.i_cov_pxz = schema.exists("cov_pxz") ? schema.getEntryOrder("cov_pxz") : -1;
+            cache.i_cov_pxpx = schema.exists("cov_pxpx") ? schema.getEntryOrder("cov_pxpx") : -1;
+            cache.i_cov_pxpy = schema.exists("cov_pxpy") ? schema.getEntryOrder("cov_pxpy") : -1;
+            cache.i_cov_pxpz = schema.exists("cov_pxpz") ? schema.getEntryOrder("cov_pxpz") : -1;
+            cache.i_cov_pyx = schema.exists("cov_pyx") ? schema.getEntryOrder("cov_pyx") : -1;
+            cache.i_cov_pyy = schema.exists("cov_pyy") ? schema.getEntryOrder("cov_pyy") : -1;
+            cache.i_cov_pyz = schema.exists("cov_pyz") ? schema.getEntryOrder("cov_pyz") : -1;
+            cache.i_cov_pypx = schema.exists("cov_pypx") ? schema.getEntryOrder("cov_pypx") : -1;
+            cache.i_cov_pypy = schema.exists("cov_pypy") ? schema.getEntryOrder("cov_pypy") : -1;
+            cache.i_cov_pypz = schema.exists("cov_pypz") ? schema.getEntryOrder("cov_pypz") : -1;
+            cache.i_cov_pzx = schema.exists("cov_pzx") ? schema.getEntryOrder("cov_pzx") : -1;
+            cache.i_cov_pzy = schema.exists("cov_pzy") ? schema.getEntryOrder("cov_pzy") : -1;
+            cache.i_cov_pzz = schema.exists("cov_pzz") ? schema.getEntryOrder("cov_pzz") : -1;
+            cache.i_cov_pzpx = schema.exists("cov_pzpx") ? schema.getEntryOrder("cov_pzpx") : -1;
+            cache.i_cov_pzpy = schema.exists("cov_pzpy") ? schema.getEntryOrder("cov_pzpy") : -1;
+            cache.i_cov_pzpz = schema.exists("cov_pzpz") ? schema.getEntryOrder("cov_pzpz") : -1;
         }
-        h_ID = cache.h_ID;
-        h_cov_xx = cache.h_cov_xx;
-        h_cov_xy = cache.h_cov_xy;
-        h_cov_xz = cache.h_cov_xz;
-        h_cov_xpx = cache.h_cov_xpx;
-        h_cov_xpy = cache.h_cov_xpy;
-        h_cov_xpz = cache.h_cov_xpz;
-        h_cov_yx = cache.h_cov_yx;
-        h_cov_yy = cache.h_cov_yy;
-        h_cov_yz = cache.h_cov_yz;
-        h_cov_ypx = cache.h_cov_ypx;
-        h_cov_ypy = cache.h_cov_ypy;
-        h_cov_ypz = cache.h_cov_ypz;
-        h_cov_zx = cache.h_cov_zx;
-        h_cov_zy = cache.h_cov_zy;
-        h_cov_zz = cache.h_cov_zz;
-        h_cov_zpx = cache.h_cov_zpx;
-        h_cov_zpy = cache.h_cov_zpy;
-        h_cov_zpz = cache.h_cov_zpz;
-        h_cov_pxx = cache.h_cov_pxx;
-        h_cov_pxy = cache.h_cov_pxy;
-        h_cov_pxz = cache.h_cov_pxz;
-        h_cov_pxpx = cache.h_cov_pxpx;
-        h_cov_pxpy = cache.h_cov_pxpy;
-        h_cov_pxpz = cache.h_cov_pxpz;
-        h_cov_pyx = cache.h_cov_pyx;
-        h_cov_pyy = cache.h_cov_pyy;
-        h_cov_pyz = cache.h_cov_pyz;
-        h_cov_pypx = cache.h_cov_pypx;
-        h_cov_pypy = cache.h_cov_pypy;
-        h_cov_pypz = cache.h_cov_pypz;
-        h_cov_pzx = cache.h_cov_pzx;
-        h_cov_pzy = cache.h_cov_pzy;
-        h_cov_pzz = cache.h_cov_pzz;
-        h_cov_pzpx = cache.h_cov_pzpx;
-        h_cov_pzpy = cache.h_cov_pzpy;
-        h_cov_pzpz = cache.h_cov_pzpz;
+        i_ID = cache.i_ID;
+        i_cov_xx = cache.i_cov_xx;
+        i_cov_xy = cache.i_cov_xy;
+        i_cov_xz = cache.i_cov_xz;
+        i_cov_xpx = cache.i_cov_xpx;
+        i_cov_xpy = cache.i_cov_xpy;
+        i_cov_xpz = cache.i_cov_xpz;
+        i_cov_yx = cache.i_cov_yx;
+        i_cov_yy = cache.i_cov_yy;
+        i_cov_yz = cache.i_cov_yz;
+        i_cov_ypx = cache.i_cov_ypx;
+        i_cov_ypy = cache.i_cov_ypy;
+        i_cov_ypz = cache.i_cov_ypz;
+        i_cov_zx = cache.i_cov_zx;
+        i_cov_zy = cache.i_cov_zy;
+        i_cov_zz = cache.i_cov_zz;
+        i_cov_zpx = cache.i_cov_zpx;
+        i_cov_zpy = cache.i_cov_zpy;
+        i_cov_zpz = cache.i_cov_zpz;
+        i_cov_pxx = cache.i_cov_pxx;
+        i_cov_pxy = cache.i_cov_pxy;
+        i_cov_pxz = cache.i_cov_pxz;
+        i_cov_pxpx = cache.i_cov_pxpx;
+        i_cov_pxpy = cache.i_cov_pxpy;
+        i_cov_pxpz = cache.i_cov_pxpz;
+        i_cov_pyx = cache.i_cov_pyx;
+        i_cov_pyy = cache.i_cov_pyy;
+        i_cov_pyz = cache.i_cov_pyz;
+        i_cov_pypx = cache.i_cov_pypx;
+        i_cov_pypy = cache.i_cov_pypy;
+        i_cov_pypz = cache.i_cov_pypz;
+        i_cov_pzx = cache.i_cov_pzx;
+        i_cov_pzy = cache.i_cov_pzy;
+        i_cov_pzz = cache.i_cov_pzz;
+        i_cov_pzpx = cache.i_cov_pzpx;
+        i_cov_pzpy = cache.i_cov_pzpy;
+        i_cov_pzpz = cache.i_cov_pzpz;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// ID: ID
     [[nodiscard]] int ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_ID, row));
+        return static_cast<int>(m_view->getShort(i_ID, row));
     }
     /// cov_xx: helical track fit covariance matrix element : delta_x.delta_x
     [[nodiscard]] float cov_xx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_xx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_xx, row));
     }
     /// cov_xy: helical track fit covariance matrix element : delta_x.delta_y
     [[nodiscard]] float cov_xy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_xy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_xy, row));
     }
     /// cov_xz: helical track fit covariance matrix element : delta_x.delta_z
     [[nodiscard]] float cov_xz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_xz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_xz, row));
     }
     /// cov_xpx: helical track fit covariance matrix element : delta_x.delta_px
     [[nodiscard]] float cov_xpx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_xpx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_xpx, row));
     }
     /// cov_xpy: helical track fit covariance matrix element : delta_x.delta_py
     [[nodiscard]] float cov_xpy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_xpy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_xpy, row));
     }
     /// cov_xpz: helical track fit covariance matrix element : delta_x.delta_pz
     [[nodiscard]] float cov_xpz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_xpz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_xpz, row));
     }
     /// cov_yx: helical track fit covariance matrix element : delta_y.delta_x
     [[nodiscard]] float cov_yx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_yx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_yx, row));
     }
     /// cov_yy: helical track fit covariance matrix element : delta_y.delta_y
     [[nodiscard]] float cov_yy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_yy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_yy, row));
     }
     /// cov_yz: helical track fit covariance matrix element : delta_y.delta_z
     [[nodiscard]] float cov_yz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_yz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_yz, row));
     }
     /// cov_ypx: helical track fit covariance matrix element : delta_y.delta_px
     [[nodiscard]] float cov_ypx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_ypx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_ypx, row));
     }
     /// cov_ypy: helical track fit covariance matrix element : delta_y.delta_py
     [[nodiscard]] float cov_ypy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_ypy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_ypy, row));
     }
     /// cov_ypz: helical track fit covariance matrix element : delta_y.delta_pz
     [[nodiscard]] float cov_ypz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_ypz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_ypz, row));
     }
     /// cov_zx: helical track fit covariance matrix element : delta_z.delta_x
     [[nodiscard]] float cov_zx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_zx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_zx, row));
     }
     /// cov_zy: helical track fit covariance matrix element : delta_z.delta_y
     [[nodiscard]] float cov_zy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_zy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_zy, row));
     }
     /// cov_zz: helical track fit covariance matrix element : delta_z.delta_z
     [[nodiscard]] float cov_zz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_zz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_zz, row));
     }
     /// cov_zpx: helical track fit covariance matrix element : delta_z.delta_px
     [[nodiscard]] float cov_zpx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_zpx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_zpx, row));
     }
     /// cov_zpy: helical track fit covariance matrix element : delta_z.delta_py
     [[nodiscard]] float cov_zpy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_zpy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_zpy, row));
     }
     /// cov_zpz: helical track fit covariance matrix element : delta_z.delta_pz
     [[nodiscard]] float cov_zpz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_zpz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_zpz, row));
     }
     /// cov_pxx: helical track fit covariance matrix element : delta_px.delta_x
     [[nodiscard]] float cov_pxx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pxx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pxx, row));
     }
     /// cov_pxy: helical track fit covariance matrix element : delta_px.delta_y
     [[nodiscard]] float cov_pxy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pxy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pxy, row));
     }
     /// cov_pxz: helical track fit covariance matrix element : delta_px.delta_z
     [[nodiscard]] float cov_pxz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pxz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pxz, row));
     }
     /// cov_pxpx: helical track fit covariance matrix element : delta_px.delta_px
     [[nodiscard]] float cov_pxpx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pxpx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pxpx, row));
     }
     /// cov_pxpy: helical track fit covariance matrix element : delta_px.delta_py
     [[nodiscard]] float cov_pxpy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pxpy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pxpy, row));
     }
     /// cov_pxpz: helical track fit covariance matrix element : delta_px.delta_pz
     [[nodiscard]] float cov_pxpz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pxpz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pxpz, row));
     }
     /// cov_pyx: helical track fit covariance matrix element : delta_py.delta_x
     [[nodiscard]] float cov_pyx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pyx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pyx, row));
     }
     /// cov_pyy: helical track fit covariance matrix element : delta_py.delta_y
     [[nodiscard]] float cov_pyy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pyy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pyy, row));
     }
     /// cov_pyz: helical track fit covariance matrix element : delta_py.delta_z
     [[nodiscard]] float cov_pyz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pyz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pyz, row));
     }
     /// cov_pypx: helical track fit covariance matrix element : delta_py.delta_px
     [[nodiscard]] float cov_pypx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pypx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pypx, row));
     }
     /// cov_pypy: helical track fit covariance matrix element : delta_py.delta_py
     [[nodiscard]] float cov_pypy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pypy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pypy, row));
     }
     /// cov_pypz: helical track fit covariance matrix element : delta_py.delta_pz
     [[nodiscard]] float cov_pypz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pypz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pypz, row));
     }
     /// cov_pzx: helical track fit covariance matrix element : delta_pz.delta_x
     [[nodiscard]] float cov_pzx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pzx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pzx, row));
     }
     /// cov_pzy: helical track fit covariance matrix element : delta_pz.delta_y
     [[nodiscard]] float cov_pzy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pzy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pzy, row));
     }
     /// cov_pzz: helical track fit covariance matrix element : delta_pz.delta_z
     [[nodiscard]] float cov_pzz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pzz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pzz, row));
     }
     /// cov_pzpx: helical track fit covariance matrix element : delta_pz.delta_px
     [[nodiscard]] float cov_pzpx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pzpx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pzpx, row));
     }
     /// cov_pzpy: helical track fit covariance matrix element : delta_pz.delta_py
     [[nodiscard]] float cov_pzpy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pzpy, row));
+        return static_cast<float>(m_view->getFloat(i_cov_pzpy, row));
     }
     /// cov_pzpz: helical track fit covariance matrix element : delta_pz.delta_pz
     [[nodiscard]] float cov_pzpz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_pzpz, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> ID_col() const noexcept {
-        return m_view.column<int16_t>(h_ID);
-    }
-    /// cov_xx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_xx_col() const noexcept {
-        return m_view.column<float>(h_cov_xx);
-    }
-    /// cov_xy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_xy_col() const noexcept {
-        return m_view.column<float>(h_cov_xy);
-    }
-    /// cov_xz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_xz_col() const noexcept {
-        return m_view.column<float>(h_cov_xz);
-    }
-    /// cov_xpx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_xpx_col() const noexcept {
-        return m_view.column<float>(h_cov_xpx);
-    }
-    /// cov_xpy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_xpy_col() const noexcept {
-        return m_view.column<float>(h_cov_xpy);
-    }
-    /// cov_xpz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_xpz_col() const noexcept {
-        return m_view.column<float>(h_cov_xpz);
-    }
-    /// cov_yx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_yx_col() const noexcept {
-        return m_view.column<float>(h_cov_yx);
-    }
-    /// cov_yy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_yy_col() const noexcept {
-        return m_view.column<float>(h_cov_yy);
-    }
-    /// cov_yz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_yz_col() const noexcept {
-        return m_view.column<float>(h_cov_yz);
-    }
-    /// cov_ypx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_ypx_col() const noexcept {
-        return m_view.column<float>(h_cov_ypx);
-    }
-    /// cov_ypy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_ypy_col() const noexcept {
-        return m_view.column<float>(h_cov_ypy);
-    }
-    /// cov_ypz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_ypz_col() const noexcept {
-        return m_view.column<float>(h_cov_ypz);
-    }
-    /// cov_zx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_zx_col() const noexcept {
-        return m_view.column<float>(h_cov_zx);
-    }
-    /// cov_zy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_zy_col() const noexcept {
-        return m_view.column<float>(h_cov_zy);
-    }
-    /// cov_zz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_zz_col() const noexcept {
-        return m_view.column<float>(h_cov_zz);
-    }
-    /// cov_zpx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_zpx_col() const noexcept {
-        return m_view.column<float>(h_cov_zpx);
-    }
-    /// cov_zpy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_zpy_col() const noexcept {
-        return m_view.column<float>(h_cov_zpy);
-    }
-    /// cov_zpz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_zpz_col() const noexcept {
-        return m_view.column<float>(h_cov_zpz);
-    }
-    /// cov_pxx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pxx_col() const noexcept {
-        return m_view.column<float>(h_cov_pxx);
-    }
-    /// cov_pxy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pxy_col() const noexcept {
-        return m_view.column<float>(h_cov_pxy);
-    }
-    /// cov_pxz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pxz_col() const noexcept {
-        return m_view.column<float>(h_cov_pxz);
-    }
-    /// cov_pxpx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pxpx_col() const noexcept {
-        return m_view.column<float>(h_cov_pxpx);
-    }
-    /// cov_pxpy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pxpy_col() const noexcept {
-        return m_view.column<float>(h_cov_pxpy);
-    }
-    /// cov_pxpz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pxpz_col() const noexcept {
-        return m_view.column<float>(h_cov_pxpz);
-    }
-    /// cov_pyx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pyx_col() const noexcept {
-        return m_view.column<float>(h_cov_pyx);
-    }
-    /// cov_pyy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pyy_col() const noexcept {
-        return m_view.column<float>(h_cov_pyy);
-    }
-    /// cov_pyz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pyz_col() const noexcept {
-        return m_view.column<float>(h_cov_pyz);
-    }
-    /// cov_pypx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pypx_col() const noexcept {
-        return m_view.column<float>(h_cov_pypx);
-    }
-    /// cov_pypy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pypy_col() const noexcept {
-        return m_view.column<float>(h_cov_pypy);
-    }
-    /// cov_pypz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pypz_col() const noexcept {
-        return m_view.column<float>(h_cov_pypz);
-    }
-    /// cov_pzx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pzx_col() const noexcept {
-        return m_view.column<float>(h_cov_pzx);
-    }
-    /// cov_pzy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pzy_col() const noexcept {
-        return m_view.column<float>(h_cov_pzy);
-    }
-    /// cov_pzz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pzz_col() const noexcept {
-        return m_view.column<float>(h_cov_pzz);
-    }
-    /// cov_pzpx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pzpx_col() const noexcept {
-        return m_view.column<float>(h_cov_pzpx);
-    }
-    /// cov_pzpy column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pzpy_col() const noexcept {
-        return m_view.column<float>(h_cov_pzpy);
-    }
-    /// cov_pzpz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_pzpz_col() const noexcept {
-        return m_view.column<float>(h_cov_pzpz);
+        return static_cast<float>(m_view->getFloat(i_cov_pzpz, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_ID{};
-    hipo::column_handle h_cov_xx{};
-    hipo::column_handle h_cov_xy{};
-    hipo::column_handle h_cov_xz{};
-    hipo::column_handle h_cov_xpx{};
-    hipo::column_handle h_cov_xpy{};
-    hipo::column_handle h_cov_xpz{};
-    hipo::column_handle h_cov_yx{};
-    hipo::column_handle h_cov_yy{};
-    hipo::column_handle h_cov_yz{};
-    hipo::column_handle h_cov_ypx{};
-    hipo::column_handle h_cov_ypy{};
-    hipo::column_handle h_cov_ypz{};
-    hipo::column_handle h_cov_zx{};
-    hipo::column_handle h_cov_zy{};
-    hipo::column_handle h_cov_zz{};
-    hipo::column_handle h_cov_zpx{};
-    hipo::column_handle h_cov_zpy{};
-    hipo::column_handle h_cov_zpz{};
-    hipo::column_handle h_cov_pxx{};
-    hipo::column_handle h_cov_pxy{};
-    hipo::column_handle h_cov_pxz{};
-    hipo::column_handle h_cov_pxpx{};
-    hipo::column_handle h_cov_pxpy{};
-    hipo::column_handle h_cov_pxpz{};
-    hipo::column_handle h_cov_pyx{};
-    hipo::column_handle h_cov_pyy{};
-    hipo::column_handle h_cov_pyz{};
-    hipo::column_handle h_cov_pypx{};
-    hipo::column_handle h_cov_pypy{};
-    hipo::column_handle h_cov_pypz{};
-    hipo::column_handle h_cov_pzx{};
-    hipo::column_handle h_cov_pzy{};
-    hipo::column_handle h_cov_pzz{};
-    hipo::column_handle h_cov_pzpx{};
-    hipo::column_handle h_cov_pzpy{};
-    hipo::column_handle h_cov_pzpz{};
+    const hipo::bank* m_view = nullptr;
+    int i_ID = -1;
+    int i_cov_xx = -1;
+    int i_cov_xy = -1;
+    int i_cov_xz = -1;
+    int i_cov_xpx = -1;
+    int i_cov_xpy = -1;
+    int i_cov_xpz = -1;
+    int i_cov_yx = -1;
+    int i_cov_yy = -1;
+    int i_cov_yz = -1;
+    int i_cov_ypx = -1;
+    int i_cov_ypy = -1;
+    int i_cov_ypz = -1;
+    int i_cov_zx = -1;
+    int i_cov_zy = -1;
+    int i_cov_zz = -1;
+    int i_cov_zpx = -1;
+    int i_cov_zpy = -1;
+    int i_cov_zpz = -1;
+    int i_cov_pxx = -1;
+    int i_cov_pxy = -1;
+    int i_cov_pxz = -1;
+    int i_cov_pxpx = -1;
+    int i_cov_pxpy = -1;
+    int i_cov_pxpz = -1;
+    int i_cov_pyx = -1;
+    int i_cov_pyy = -1;
+    int i_cov_pyz = -1;
+    int i_cov_pypx = -1;
+    int i_cov_pypy = -1;
+    int i_cov_pypz = -1;
+    int i_cov_pzx = -1;
+    int i_cov_pzy = -1;
+    int i_cov_pzz = -1;
+    int i_cov_pzpx = -1;
+    int i_cov_pzpy = -1;
+    int i_cov_pzpz = -1;
 
     friend class Row;
 };

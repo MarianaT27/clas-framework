@@ -1,54 +1,79 @@
-hipo4_sources = files(
-  'schema.cpp',
+hipo_sources = files(
+  'bank.cpp',
+  'datastream.cpp',
   'dictionary.cpp',
-  'io.cpp',
-  'file_sink.cpp',
-  'record.cpp',
-  'record_builder.cpp',
+  'event.cpp',
+  'fusion.cpp',
+  'node.cpp',
+  'parser.cpp',
+  'reaction.cpp',
   'reader.cpp',
+  'record.cpp',
+  'recordbuilder.cpp',
+  'tuple.cpp',
+  'utils.cpp',
+  'wrapper.cpp',
   'writer.cpp',
-  'chain.cpp',
-  'prefetch.cpp',
-  'validator.cpp',
 )
-
-hipo4_headers = files(
-  'result.h',
-  'constants.h',
-  'schema.h',
-  'dictionary.h',
-  'io.h',
-  'file_sink.h',
-  'record.h',
-  'record_builder.h',
-  'bank_view.h',
+hipo_headers = files(
   'bank.h',
-  'event_builder.h',
+  'constants.h',
+  'datastream.h',
+  'dictionary.h',
+  'event.h',
+  'fizika.h',
+  'filehandle.h',
+  'fusion.h',
+  'hipoexceptions.h',
+  'ioOptions.h',
+  'json.h',
+  'jsonutil.h',
+  'node.h',
+  'parser.h',
+  'reaction.h',
   'reader.h',
+  'record.h',
+  'recordbuilder.h',
+  'recordcache.h',
+  'recordprefetcher.h',
+  'tuple.h',
+  'twig.h',
+  'utils.h',
   'writer.h',
-  'column_stats.h',
-  'chain.h',
-  'prefetch.h',
-  'validator.h',
+  'hipoeventiterator.h',
   'threadpool.hpp',
   'progresstracker.hpp',
+  'chain.h',
 )
 
-hipo4_lib = library(
-  'hipo4',
-  hipo4_sources,
-  dependencies: [lz4_dep, zlib_dep, fmt_dep, thread_dep],
-  include_directories: include_directories('.'),
-  cpp_args: ['-D__LZ4__'],
-  install: true,
+# Core deps. ROOT is optional: when found, datastreamROOT (a TFile-backed
+# datastream) is compiled into libhipo4, giving the chain native support for
+# root:// / http:// / https:// / davix:// URLs.
+hipo_lib_deps = [ lz4_dep, fmt_dep ]
+# -D__LZ4__ enables the LZ4 codepath inside hipo::record (and silences the
+# startup banner about "library was compiled without LZ4 support"). The lz4
+# dep is already in the link line; this just flips the #ifdef in record.cpp.
+hipo_lib_compile_args = [ '-D__LZ4__' ]
+if ROOT_dep.found()
+  hipo_lib_deps += ROOT_dep
+  hipo_lib_compile_args += '-D__ROOT__'
+endif
+
+hipo_lib = library(
+  meson.project_name(),
+  hipo_sources,
+  dependencies:   hipo_lib_deps,
+  cpp_args:       hipo_lib_compile_args,
+  install:        true,
 )
 
-install_headers(hipo4_headers, subdir: 'hipo4')
+install_headers(hipo_headers, subdir: meson.project_name())
+project_libs += hipo_lib
 
-hipo4_dep = declare_dependency(
+hipo_incdir = meson.current_source_dir()
+
+hipo_dep = declare_dependency(
   include_directories: include_directories('.'),
-  link_with: hipo4_lib,
+  link_with: hipo_lib,
   dependencies: [fmt_dep],
 )
-
-project_libs += hipo4_lib

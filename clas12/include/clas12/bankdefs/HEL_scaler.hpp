@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `HEL::scaler` (group 10000, item 16).
 /// Helicity-gated, analyzed scalers.
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,151 +40,107 @@ class HEL_scaler {
 
     HEL_scaler() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_fcupgated;
-            hipo::column_handle h_fcup;
-            hipo::column_handle h_slmgated;
-            hipo::column_handle h_slm;
-            hipo::column_handle h_clockgated;
-            hipo::column_handle h_clock;
-            hipo::column_handle h_helicity;
-            hipo::column_handle h_helicityRaw;
+            int i_fcupgated = -1;
+            int i_fcup = -1;
+            int i_slmgated = -1;
+            int i_slm = -1;
+            int i_clockgated = -1;
+            int i_clock = -1;
+            int i_helicity = -1;
+            int i_helicityRaw = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("fcupgated"); h) cache.h_fcupgated = *h;
-            else cache.h_fcupgated = {};
-            if (auto h = schema.get_handle("fcup"); h) cache.h_fcup = *h;
-            else cache.h_fcup = {};
-            if (auto h = schema.get_handle("slmgated"); h) cache.h_slmgated = *h;
-            else cache.h_slmgated = {};
-            if (auto h = schema.get_handle("slm"); h) cache.h_slm = *h;
-            else cache.h_slm = {};
-            if (auto h = schema.get_handle("clockgated"); h) cache.h_clockgated = *h;
-            else cache.h_clockgated = {};
-            if (auto h = schema.get_handle("clock"); h) cache.h_clock = *h;
-            else cache.h_clock = {};
-            if (auto h = schema.get_handle("helicity"); h) cache.h_helicity = *h;
-            else cache.h_helicity = {};
-            if (auto h = schema.get_handle("helicityRaw"); h) cache.h_helicityRaw = *h;
-            else cache.h_helicityRaw = {};
+            cache.i_fcupgated = schema.exists("fcupgated") ? schema.getEntryOrder("fcupgated") : -1;
+            cache.i_fcup = schema.exists("fcup") ? schema.getEntryOrder("fcup") : -1;
+            cache.i_slmgated = schema.exists("slmgated") ? schema.getEntryOrder("slmgated") : -1;
+            cache.i_slm = schema.exists("slm") ? schema.getEntryOrder("slm") : -1;
+            cache.i_clockgated = schema.exists("clockgated") ? schema.getEntryOrder("clockgated") : -1;
+            cache.i_clock = schema.exists("clock") ? schema.getEntryOrder("clock") : -1;
+            cache.i_helicity = schema.exists("helicity") ? schema.getEntryOrder("helicity") : -1;
+            cache.i_helicityRaw = schema.exists("helicityRaw") ? schema.getEntryOrder("helicityRaw") : -1;
         }
-        h_fcupgated = cache.h_fcupgated;
-        h_fcup = cache.h_fcup;
-        h_slmgated = cache.h_slmgated;
-        h_slm = cache.h_slm;
-        h_clockgated = cache.h_clockgated;
-        h_clock = cache.h_clock;
-        h_helicity = cache.h_helicity;
-        h_helicityRaw = cache.h_helicityRaw;
+        i_fcupgated = cache.i_fcupgated;
+        i_fcup = cache.i_fcup;
+        i_slmgated = cache.i_slmgated;
+        i_slm = cache.i_slm;
+        i_clockgated = cache.i_clockgated;
+        i_clock = cache.i_clock;
+        i_helicity = cache.i_helicity;
+        i_helicityRaw = cache.i_helicityRaw;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// fcupgated: Beam charge from Faraday cup, DAQ-gated (nano-Coulomb)
     [[nodiscard]] float fcupgated(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_fcupgated, row));
+        return static_cast<float>(m_view->getFloat(i_fcupgated, row));
     }
     /// fcup: Beam charge from Faraday cup, (nano-Coulomb)
     [[nodiscard]] float fcup(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_fcup, row));
+        return static_cast<float>(m_view->getFloat(i_fcup, row));
     }
     /// slmgated: Beam charge from SLM, DAQ-gated (nano-Coulomb)
     [[nodiscard]] float slmgated(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_slmgated, row));
+        return static_cast<float>(m_view->getFloat(i_slmgated, row));
     }
     /// slm: Beam charge from SLM (nano-Coulomb)
     [[nodiscard]] float slm(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_slm, row));
+        return static_cast<float>(m_view->getFloat(i_slm, row));
     }
     /// clockgated: Clock, DAQ-gated
     [[nodiscard]] float clockgated(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_clockgated, row));
+        return static_cast<float>(m_view->getFloat(i_clockgated, row));
     }
     /// clock: Clock
     [[nodiscard]] float clock(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_clock, row));
+        return static_cast<float>(m_view->getFloat(i_clock, row));
     }
     /// helicity: Helicity state, HWP-corrected
     [[nodiscard]] int helicity(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_helicity, row));
+        return static_cast<int>(m_view->getByte(i_helicity, row));
     }
     /// helicityRaw: Helicity state
     [[nodiscard]] int helicityRaw(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_helicityRaw, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// fcupgated column as a contiguous span.
-    [[nodiscard]] std::span<const float> fcupgated_col() const noexcept {
-        return m_view.column<float>(h_fcupgated);
-    }
-    /// fcup column as a contiguous span.
-    [[nodiscard]] std::span<const float> fcup_col() const noexcept {
-        return m_view.column<float>(h_fcup);
-    }
-    /// slmgated column as a contiguous span.
-    [[nodiscard]] std::span<const float> slmgated_col() const noexcept {
-        return m_view.column<float>(h_slmgated);
-    }
-    /// slm column as a contiguous span.
-    [[nodiscard]] std::span<const float> slm_col() const noexcept {
-        return m_view.column<float>(h_slm);
-    }
-    /// clockgated column as a contiguous span.
-    [[nodiscard]] std::span<const float> clockgated_col() const noexcept {
-        return m_view.column<float>(h_clockgated);
-    }
-    /// clock column as a contiguous span.
-    [[nodiscard]] std::span<const float> clock_col() const noexcept {
-        return m_view.column<float>(h_clock);
-    }
-    /// helicity column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> helicity_col() const noexcept {
-        return m_view.column<int8_t>(h_helicity);
-    }
-    /// helicityRaw column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> helicityRaw_col() const noexcept {
-        return m_view.column<int8_t>(h_helicityRaw);
+        return static_cast<int>(m_view->getByte(i_helicityRaw, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_fcupgated{};
-    hipo::column_handle h_fcup{};
-    hipo::column_handle h_slmgated{};
-    hipo::column_handle h_slm{};
-    hipo::column_handle h_clockgated{};
-    hipo::column_handle h_clock{};
-    hipo::column_handle h_helicity{};
-    hipo::column_handle h_helicityRaw{};
+    const hipo::bank* m_view = nullptr;
+    int i_fcupgated = -1;
+    int i_fcup = -1;
+    int i_slmgated = -1;
+    int i_slm = -1;
+    int i_clockgated = -1;
+    int i_clock = -1;
+    int i_helicity = -1;
+    int i_helicityRaw = -1;
 
     friend class Row;
 };

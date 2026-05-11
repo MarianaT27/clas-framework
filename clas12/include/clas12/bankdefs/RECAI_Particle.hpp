@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `RECAI::Particle` (group 400, item 31).
 /// Reconstructed Particle Information
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,203 +40,139 @@ class RECAI_Particle {
 
     RECAI_Particle() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_pid;
-            hipo::column_handle h_px;
-            hipo::column_handle h_py;
-            hipo::column_handle h_pz;
-            hipo::column_handle h_vx;
-            hipo::column_handle h_vy;
-            hipo::column_handle h_vz;
-            hipo::column_handle h_vt;
-            hipo::column_handle h_charge;
-            hipo::column_handle h_beta;
-            hipo::column_handle h_chi2pid;
-            hipo::column_handle h_status;
+            int i_pid = -1;
+            int i_px = -1;
+            int i_py = -1;
+            int i_pz = -1;
+            int i_vx = -1;
+            int i_vy = -1;
+            int i_vz = -1;
+            int i_vt = -1;
+            int i_charge = -1;
+            int i_beta = -1;
+            int i_chi2pid = -1;
+            int i_status = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("pid"); h) cache.h_pid = *h;
-            else cache.h_pid = {};
-            if (auto h = schema.get_handle("px"); h) cache.h_px = *h;
-            else cache.h_px = {};
-            if (auto h = schema.get_handle("py"); h) cache.h_py = *h;
-            else cache.h_py = {};
-            if (auto h = schema.get_handle("pz"); h) cache.h_pz = *h;
-            else cache.h_pz = {};
-            if (auto h = schema.get_handle("vx"); h) cache.h_vx = *h;
-            else cache.h_vx = {};
-            if (auto h = schema.get_handle("vy"); h) cache.h_vy = *h;
-            else cache.h_vy = {};
-            if (auto h = schema.get_handle("vz"); h) cache.h_vz = *h;
-            else cache.h_vz = {};
-            if (auto h = schema.get_handle("vt"); h) cache.h_vt = *h;
-            else cache.h_vt = {};
-            if (auto h = schema.get_handle("charge"); h) cache.h_charge = *h;
-            else cache.h_charge = {};
-            if (auto h = schema.get_handle("beta"); h) cache.h_beta = *h;
-            else cache.h_beta = {};
-            if (auto h = schema.get_handle("chi2pid"); h) cache.h_chi2pid = *h;
-            else cache.h_chi2pid = {};
-            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
-            else cache.h_status = {};
+            cache.i_pid = schema.exists("pid") ? schema.getEntryOrder("pid") : -1;
+            cache.i_px = schema.exists("px") ? schema.getEntryOrder("px") : -1;
+            cache.i_py = schema.exists("py") ? schema.getEntryOrder("py") : -1;
+            cache.i_pz = schema.exists("pz") ? schema.getEntryOrder("pz") : -1;
+            cache.i_vx = schema.exists("vx") ? schema.getEntryOrder("vx") : -1;
+            cache.i_vy = schema.exists("vy") ? schema.getEntryOrder("vy") : -1;
+            cache.i_vz = schema.exists("vz") ? schema.getEntryOrder("vz") : -1;
+            cache.i_vt = schema.exists("vt") ? schema.getEntryOrder("vt") : -1;
+            cache.i_charge = schema.exists("charge") ? schema.getEntryOrder("charge") : -1;
+            cache.i_beta = schema.exists("beta") ? schema.getEntryOrder("beta") : -1;
+            cache.i_chi2pid = schema.exists("chi2pid") ? schema.getEntryOrder("chi2pid") : -1;
+            cache.i_status = schema.exists("status") ? schema.getEntryOrder("status") : -1;
         }
-        h_pid = cache.h_pid;
-        h_px = cache.h_px;
-        h_py = cache.h_py;
-        h_pz = cache.h_pz;
-        h_vx = cache.h_vx;
-        h_vy = cache.h_vy;
-        h_vz = cache.h_vz;
-        h_vt = cache.h_vt;
-        h_charge = cache.h_charge;
-        h_beta = cache.h_beta;
-        h_chi2pid = cache.h_chi2pid;
-        h_status = cache.h_status;
+        i_pid = cache.i_pid;
+        i_px = cache.i_px;
+        i_py = cache.i_py;
+        i_pz = cache.i_pz;
+        i_vx = cache.i_vx;
+        i_vy = cache.i_vy;
+        i_vz = cache.i_vz;
+        i_vt = cache.i_vt;
+        i_charge = cache.i_charge;
+        i_beta = cache.i_beta;
+        i_chi2pid = cache.i_chi2pid;
+        i_status = cache.i_status;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// pid: particle id in LUND conventions
     [[nodiscard]] int pid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_pid, row));
+        return static_cast<int>(m_view->getInt(i_pid, row));
     }
     /// px: x component of the momentum (GeV)
     [[nodiscard]] float px(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_px, row));
+        return static_cast<float>(m_view->getFloat(i_px, row));
     }
     /// py: y component of the momentum (GeV)
     [[nodiscard]] float py(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_py, row));
+        return static_cast<float>(m_view->getFloat(i_py, row));
     }
     /// pz: z component of the momentum (GeV)
     [[nodiscard]] float pz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_pz, row));
+        return static_cast<float>(m_view->getFloat(i_pz, row));
     }
     /// vx: x component of the vertex (cm)
     [[nodiscard]] float vx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_vx, row));
+        return static_cast<float>(m_view->getFloat(i_vx, row));
     }
     /// vy: y component of the vertex (cm)
     [[nodiscard]] float vy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_vy, row));
+        return static_cast<float>(m_view->getFloat(i_vy, row));
     }
     /// vz: z component of the vertex (cm)
     [[nodiscard]] float vz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_vz, row));
+        return static_cast<float>(m_view->getFloat(i_vz, row));
     }
     /// vt: RF and z corrected vertex time (ns)
     [[nodiscard]] float vt(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_vt, row));
+        return static_cast<float>(m_view->getFloat(i_vt, row));
     }
     /// charge: particle charge
     [[nodiscard]] int charge(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_charge, row));
+        return static_cast<int>(m_view->getByte(i_charge, row));
     }
     /// beta: particle beta measured by TOF
     [[nodiscard]] float beta(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_beta, row));
+        return static_cast<float>(m_view->getFloat(i_beta, row));
     }
     /// chi2pid: Chi2 of assigned PID
     [[nodiscard]] float chi2pid(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_chi2pid, row));
+        return static_cast<float>(m_view->getFloat(i_chi2pid, row));
     }
     /// status: particle status (represents detector collection it passed)
     [[nodiscard]] int status(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_status, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// pid column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> pid_col() const noexcept {
-        return m_view.column<int32_t>(h_pid);
-    }
-    /// px column as a contiguous span.
-    [[nodiscard]] std::span<const float> px_col() const noexcept {
-        return m_view.column<float>(h_px);
-    }
-    /// py column as a contiguous span.
-    [[nodiscard]] std::span<const float> py_col() const noexcept {
-        return m_view.column<float>(h_py);
-    }
-    /// pz column as a contiguous span.
-    [[nodiscard]] std::span<const float> pz_col() const noexcept {
-        return m_view.column<float>(h_pz);
-    }
-    /// vx column as a contiguous span.
-    [[nodiscard]] std::span<const float> vx_col() const noexcept {
-        return m_view.column<float>(h_vx);
-    }
-    /// vy column as a contiguous span.
-    [[nodiscard]] std::span<const float> vy_col() const noexcept {
-        return m_view.column<float>(h_vy);
-    }
-    /// vz column as a contiguous span.
-    [[nodiscard]] std::span<const float> vz_col() const noexcept {
-        return m_view.column<float>(h_vz);
-    }
-    /// vt column as a contiguous span.
-    [[nodiscard]] std::span<const float> vt_col() const noexcept {
-        return m_view.column<float>(h_vt);
-    }
-    /// charge column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> charge_col() const noexcept {
-        return m_view.column<int8_t>(h_charge);
-    }
-    /// beta column as a contiguous span.
-    [[nodiscard]] std::span<const float> beta_col() const noexcept {
-        return m_view.column<float>(h_beta);
-    }
-    /// chi2pid column as a contiguous span.
-    [[nodiscard]] std::span<const float> chi2pid_col() const noexcept {
-        return m_view.column<float>(h_chi2pid);
-    }
-    /// status column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> status_col() const noexcept {
-        return m_view.column<int16_t>(h_status);
+        return static_cast<int>(m_view->getShort(i_status, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_pid{};
-    hipo::column_handle h_px{};
-    hipo::column_handle h_py{};
-    hipo::column_handle h_pz{};
-    hipo::column_handle h_vx{};
-    hipo::column_handle h_vy{};
-    hipo::column_handle h_vz{};
-    hipo::column_handle h_vt{};
-    hipo::column_handle h_charge{};
-    hipo::column_handle h_beta{};
-    hipo::column_handle h_chi2pid{};
-    hipo::column_handle h_status{};
+    const hipo::bank* m_view = nullptr;
+    int i_pid = -1;
+    int i_px = -1;
+    int i_py = -1;
+    int i_pz = -1;
+    int i_vx = -1;
+    int i_vy = -1;
+    int i_vz = -1;
+    int i_vt = -1;
+    int i_charge = -1;
+    int i_beta = -1;
+    int i_chi2pid = -1;
+    int i_status = -1;
 
     friend class Row;
 };

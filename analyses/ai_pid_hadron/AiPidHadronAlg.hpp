@@ -621,7 +621,7 @@ private:
         // Detector banks below are read via Particle's accessors, which
         // route to the per-event generated-wrapper cache.
 
-        if (event.get_bank("RICH::Particle").rows() == 0) {
+        if (event.get_bank("RICH::Particle").getRows() == 0) {
             return framework::StatusCode::FILTERED();
         }
 

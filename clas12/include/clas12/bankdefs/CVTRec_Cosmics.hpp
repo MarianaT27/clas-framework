@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `CVTRec::Cosmics` (group 20500, item 30).
 /// reconstructed SVT cosmic tracks
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,541 +40,347 @@ class CVTRec_Cosmics {
 
     CVTRec_Cosmics() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_ID;
-            hipo::column_handle h_trkline_yx_slope;
-            hipo::column_handle h_trkline_yx_interc;
-            hipo::column_handle h_trkline_yz_slope;
-            hipo::column_handle h_trkline_yz_interc;
-            hipo::column_handle h_theta;
-            hipo::column_handle h_phi;
-            hipo::column_handle h_chi2;
-            hipo::column_handle h_ndf;
-            hipo::column_handle h_cov_x02;
-            hipo::column_handle h_cov_x0z0;
-            hipo::column_handle h_cov_x0tx;
-            hipo::column_handle h_cov_x0tz;
-            hipo::column_handle h_cov_z02;
-            hipo::column_handle h_cov_z0tx;
-            hipo::column_handle h_cov_z0tz;
-            hipo::column_handle h_cov_tx2;
-            hipo::column_handle h_cov_txtz;
-            hipo::column_handle h_cov_tz2;
-            hipo::column_handle h_Cross1_ID;
-            hipo::column_handle h_Cross2_ID;
-            hipo::column_handle h_Cross3_ID;
-            hipo::column_handle h_Cross4_ID;
-            hipo::column_handle h_Cross5_ID;
-            hipo::column_handle h_Cross6_ID;
-            hipo::column_handle h_Cross7_ID;
-            hipo::column_handle h_Cross8_ID;
-            hipo::column_handle h_Cross9_ID;
-            hipo::column_handle h_Cross10_ID;
-            hipo::column_handle h_Cross11_ID;
-            hipo::column_handle h_Cross12_ID;
-            hipo::column_handle h_Cross13_ID;
-            hipo::column_handle h_Cross14_ID;
-            hipo::column_handle h_Cross15_ID;
-            hipo::column_handle h_Cross16_ID;
-            hipo::column_handle h_Cross17_ID;
-            hipo::column_handle h_Cross18_ID;
-            hipo::column_handle h_status;
+            int i_ID = -1;
+            int i_trkline_yx_slope = -1;
+            int i_trkline_yx_interc = -1;
+            int i_trkline_yz_slope = -1;
+            int i_trkline_yz_interc = -1;
+            int i_theta = -1;
+            int i_phi = -1;
+            int i_chi2 = -1;
+            int i_ndf = -1;
+            int i_cov_x02 = -1;
+            int i_cov_x0z0 = -1;
+            int i_cov_x0tx = -1;
+            int i_cov_x0tz = -1;
+            int i_cov_z02 = -1;
+            int i_cov_z0tx = -1;
+            int i_cov_z0tz = -1;
+            int i_cov_tx2 = -1;
+            int i_cov_txtz = -1;
+            int i_cov_tz2 = -1;
+            int i_Cross1_ID = -1;
+            int i_Cross2_ID = -1;
+            int i_Cross3_ID = -1;
+            int i_Cross4_ID = -1;
+            int i_Cross5_ID = -1;
+            int i_Cross6_ID = -1;
+            int i_Cross7_ID = -1;
+            int i_Cross8_ID = -1;
+            int i_Cross9_ID = -1;
+            int i_Cross10_ID = -1;
+            int i_Cross11_ID = -1;
+            int i_Cross12_ID = -1;
+            int i_Cross13_ID = -1;
+            int i_Cross14_ID = -1;
+            int i_Cross15_ID = -1;
+            int i_Cross16_ID = -1;
+            int i_Cross17_ID = -1;
+            int i_Cross18_ID = -1;
+            int i_status = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("ID"); h) cache.h_ID = *h;
-            else cache.h_ID = {};
-            if (auto h = schema.get_handle("trkline_yx_slope"); h) cache.h_trkline_yx_slope = *h;
-            else cache.h_trkline_yx_slope = {};
-            if (auto h = schema.get_handle("trkline_yx_interc"); h) cache.h_trkline_yx_interc = *h;
-            else cache.h_trkline_yx_interc = {};
-            if (auto h = schema.get_handle("trkline_yz_slope"); h) cache.h_trkline_yz_slope = *h;
-            else cache.h_trkline_yz_slope = {};
-            if (auto h = schema.get_handle("trkline_yz_interc"); h) cache.h_trkline_yz_interc = *h;
-            else cache.h_trkline_yz_interc = {};
-            if (auto h = schema.get_handle("theta"); h) cache.h_theta = *h;
-            else cache.h_theta = {};
-            if (auto h = schema.get_handle("phi"); h) cache.h_phi = *h;
-            else cache.h_phi = {};
-            if (auto h = schema.get_handle("chi2"); h) cache.h_chi2 = *h;
-            else cache.h_chi2 = {};
-            if (auto h = schema.get_handle("ndf"); h) cache.h_ndf = *h;
-            else cache.h_ndf = {};
-            if (auto h = schema.get_handle("cov_x02"); h) cache.h_cov_x02 = *h;
-            else cache.h_cov_x02 = {};
-            if (auto h = schema.get_handle("cov_x0z0"); h) cache.h_cov_x0z0 = *h;
-            else cache.h_cov_x0z0 = {};
-            if (auto h = schema.get_handle("cov_x0tx"); h) cache.h_cov_x0tx = *h;
-            else cache.h_cov_x0tx = {};
-            if (auto h = schema.get_handle("cov_x0tz"); h) cache.h_cov_x0tz = *h;
-            else cache.h_cov_x0tz = {};
-            if (auto h = schema.get_handle("cov_z02"); h) cache.h_cov_z02 = *h;
-            else cache.h_cov_z02 = {};
-            if (auto h = schema.get_handle("cov_z0tx"); h) cache.h_cov_z0tx = *h;
-            else cache.h_cov_z0tx = {};
-            if (auto h = schema.get_handle("cov_z0tz"); h) cache.h_cov_z0tz = *h;
-            else cache.h_cov_z0tz = {};
-            if (auto h = schema.get_handle("cov_tx2"); h) cache.h_cov_tx2 = *h;
-            else cache.h_cov_tx2 = {};
-            if (auto h = schema.get_handle("cov_txtz"); h) cache.h_cov_txtz = *h;
-            else cache.h_cov_txtz = {};
-            if (auto h = schema.get_handle("cov_tz2"); h) cache.h_cov_tz2 = *h;
-            else cache.h_cov_tz2 = {};
-            if (auto h = schema.get_handle("Cross1_ID"); h) cache.h_Cross1_ID = *h;
-            else cache.h_Cross1_ID = {};
-            if (auto h = schema.get_handle("Cross2_ID"); h) cache.h_Cross2_ID = *h;
-            else cache.h_Cross2_ID = {};
-            if (auto h = schema.get_handle("Cross3_ID"); h) cache.h_Cross3_ID = *h;
-            else cache.h_Cross3_ID = {};
-            if (auto h = schema.get_handle("Cross4_ID"); h) cache.h_Cross4_ID = *h;
-            else cache.h_Cross4_ID = {};
-            if (auto h = schema.get_handle("Cross5_ID"); h) cache.h_Cross5_ID = *h;
-            else cache.h_Cross5_ID = {};
-            if (auto h = schema.get_handle("Cross6_ID"); h) cache.h_Cross6_ID = *h;
-            else cache.h_Cross6_ID = {};
-            if (auto h = schema.get_handle("Cross7_ID"); h) cache.h_Cross7_ID = *h;
-            else cache.h_Cross7_ID = {};
-            if (auto h = schema.get_handle("Cross8_ID"); h) cache.h_Cross8_ID = *h;
-            else cache.h_Cross8_ID = {};
-            if (auto h = schema.get_handle("Cross9_ID"); h) cache.h_Cross9_ID = *h;
-            else cache.h_Cross9_ID = {};
-            if (auto h = schema.get_handle("Cross10_ID"); h) cache.h_Cross10_ID = *h;
-            else cache.h_Cross10_ID = {};
-            if (auto h = schema.get_handle("Cross11_ID"); h) cache.h_Cross11_ID = *h;
-            else cache.h_Cross11_ID = {};
-            if (auto h = schema.get_handle("Cross12_ID"); h) cache.h_Cross12_ID = *h;
-            else cache.h_Cross12_ID = {};
-            if (auto h = schema.get_handle("Cross13_ID"); h) cache.h_Cross13_ID = *h;
-            else cache.h_Cross13_ID = {};
-            if (auto h = schema.get_handle("Cross14_ID"); h) cache.h_Cross14_ID = *h;
-            else cache.h_Cross14_ID = {};
-            if (auto h = schema.get_handle("Cross15_ID"); h) cache.h_Cross15_ID = *h;
-            else cache.h_Cross15_ID = {};
-            if (auto h = schema.get_handle("Cross16_ID"); h) cache.h_Cross16_ID = *h;
-            else cache.h_Cross16_ID = {};
-            if (auto h = schema.get_handle("Cross17_ID"); h) cache.h_Cross17_ID = *h;
-            else cache.h_Cross17_ID = {};
-            if (auto h = schema.get_handle("Cross18_ID"); h) cache.h_Cross18_ID = *h;
-            else cache.h_Cross18_ID = {};
-            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
-            else cache.h_status = {};
+            cache.i_ID = schema.exists("ID") ? schema.getEntryOrder("ID") : -1;
+            cache.i_trkline_yx_slope = schema.exists("trkline_yx_slope") ? schema.getEntryOrder("trkline_yx_slope") : -1;
+            cache.i_trkline_yx_interc = schema.exists("trkline_yx_interc") ? schema.getEntryOrder("trkline_yx_interc") : -1;
+            cache.i_trkline_yz_slope = schema.exists("trkline_yz_slope") ? schema.getEntryOrder("trkline_yz_slope") : -1;
+            cache.i_trkline_yz_interc = schema.exists("trkline_yz_interc") ? schema.getEntryOrder("trkline_yz_interc") : -1;
+            cache.i_theta = schema.exists("theta") ? schema.getEntryOrder("theta") : -1;
+            cache.i_phi = schema.exists("phi") ? schema.getEntryOrder("phi") : -1;
+            cache.i_chi2 = schema.exists("chi2") ? schema.getEntryOrder("chi2") : -1;
+            cache.i_ndf = schema.exists("ndf") ? schema.getEntryOrder("ndf") : -1;
+            cache.i_cov_x02 = schema.exists("cov_x02") ? schema.getEntryOrder("cov_x02") : -1;
+            cache.i_cov_x0z0 = schema.exists("cov_x0z0") ? schema.getEntryOrder("cov_x0z0") : -1;
+            cache.i_cov_x0tx = schema.exists("cov_x0tx") ? schema.getEntryOrder("cov_x0tx") : -1;
+            cache.i_cov_x0tz = schema.exists("cov_x0tz") ? schema.getEntryOrder("cov_x0tz") : -1;
+            cache.i_cov_z02 = schema.exists("cov_z02") ? schema.getEntryOrder("cov_z02") : -1;
+            cache.i_cov_z0tx = schema.exists("cov_z0tx") ? schema.getEntryOrder("cov_z0tx") : -1;
+            cache.i_cov_z0tz = schema.exists("cov_z0tz") ? schema.getEntryOrder("cov_z0tz") : -1;
+            cache.i_cov_tx2 = schema.exists("cov_tx2") ? schema.getEntryOrder("cov_tx2") : -1;
+            cache.i_cov_txtz = schema.exists("cov_txtz") ? schema.getEntryOrder("cov_txtz") : -1;
+            cache.i_cov_tz2 = schema.exists("cov_tz2") ? schema.getEntryOrder("cov_tz2") : -1;
+            cache.i_Cross1_ID = schema.exists("Cross1_ID") ? schema.getEntryOrder("Cross1_ID") : -1;
+            cache.i_Cross2_ID = schema.exists("Cross2_ID") ? schema.getEntryOrder("Cross2_ID") : -1;
+            cache.i_Cross3_ID = schema.exists("Cross3_ID") ? schema.getEntryOrder("Cross3_ID") : -1;
+            cache.i_Cross4_ID = schema.exists("Cross4_ID") ? schema.getEntryOrder("Cross4_ID") : -1;
+            cache.i_Cross5_ID = schema.exists("Cross5_ID") ? schema.getEntryOrder("Cross5_ID") : -1;
+            cache.i_Cross6_ID = schema.exists("Cross6_ID") ? schema.getEntryOrder("Cross6_ID") : -1;
+            cache.i_Cross7_ID = schema.exists("Cross7_ID") ? schema.getEntryOrder("Cross7_ID") : -1;
+            cache.i_Cross8_ID = schema.exists("Cross8_ID") ? schema.getEntryOrder("Cross8_ID") : -1;
+            cache.i_Cross9_ID = schema.exists("Cross9_ID") ? schema.getEntryOrder("Cross9_ID") : -1;
+            cache.i_Cross10_ID = schema.exists("Cross10_ID") ? schema.getEntryOrder("Cross10_ID") : -1;
+            cache.i_Cross11_ID = schema.exists("Cross11_ID") ? schema.getEntryOrder("Cross11_ID") : -1;
+            cache.i_Cross12_ID = schema.exists("Cross12_ID") ? schema.getEntryOrder("Cross12_ID") : -1;
+            cache.i_Cross13_ID = schema.exists("Cross13_ID") ? schema.getEntryOrder("Cross13_ID") : -1;
+            cache.i_Cross14_ID = schema.exists("Cross14_ID") ? schema.getEntryOrder("Cross14_ID") : -1;
+            cache.i_Cross15_ID = schema.exists("Cross15_ID") ? schema.getEntryOrder("Cross15_ID") : -1;
+            cache.i_Cross16_ID = schema.exists("Cross16_ID") ? schema.getEntryOrder("Cross16_ID") : -1;
+            cache.i_Cross17_ID = schema.exists("Cross17_ID") ? schema.getEntryOrder("Cross17_ID") : -1;
+            cache.i_Cross18_ID = schema.exists("Cross18_ID") ? schema.getEntryOrder("Cross18_ID") : -1;
+            cache.i_status = schema.exists("status") ? schema.getEntryOrder("status") : -1;
         }
-        h_ID = cache.h_ID;
-        h_trkline_yx_slope = cache.h_trkline_yx_slope;
-        h_trkline_yx_interc = cache.h_trkline_yx_interc;
-        h_trkline_yz_slope = cache.h_trkline_yz_slope;
-        h_trkline_yz_interc = cache.h_trkline_yz_interc;
-        h_theta = cache.h_theta;
-        h_phi = cache.h_phi;
-        h_chi2 = cache.h_chi2;
-        h_ndf = cache.h_ndf;
-        h_cov_x02 = cache.h_cov_x02;
-        h_cov_x0z0 = cache.h_cov_x0z0;
-        h_cov_x0tx = cache.h_cov_x0tx;
-        h_cov_x0tz = cache.h_cov_x0tz;
-        h_cov_z02 = cache.h_cov_z02;
-        h_cov_z0tx = cache.h_cov_z0tx;
-        h_cov_z0tz = cache.h_cov_z0tz;
-        h_cov_tx2 = cache.h_cov_tx2;
-        h_cov_txtz = cache.h_cov_txtz;
-        h_cov_tz2 = cache.h_cov_tz2;
-        h_Cross1_ID = cache.h_Cross1_ID;
-        h_Cross2_ID = cache.h_Cross2_ID;
-        h_Cross3_ID = cache.h_Cross3_ID;
-        h_Cross4_ID = cache.h_Cross4_ID;
-        h_Cross5_ID = cache.h_Cross5_ID;
-        h_Cross6_ID = cache.h_Cross6_ID;
-        h_Cross7_ID = cache.h_Cross7_ID;
-        h_Cross8_ID = cache.h_Cross8_ID;
-        h_Cross9_ID = cache.h_Cross9_ID;
-        h_Cross10_ID = cache.h_Cross10_ID;
-        h_Cross11_ID = cache.h_Cross11_ID;
-        h_Cross12_ID = cache.h_Cross12_ID;
-        h_Cross13_ID = cache.h_Cross13_ID;
-        h_Cross14_ID = cache.h_Cross14_ID;
-        h_Cross15_ID = cache.h_Cross15_ID;
-        h_Cross16_ID = cache.h_Cross16_ID;
-        h_Cross17_ID = cache.h_Cross17_ID;
-        h_Cross18_ID = cache.h_Cross18_ID;
-        h_status = cache.h_status;
+        i_ID = cache.i_ID;
+        i_trkline_yx_slope = cache.i_trkline_yx_slope;
+        i_trkline_yx_interc = cache.i_trkline_yx_interc;
+        i_trkline_yz_slope = cache.i_trkline_yz_slope;
+        i_trkline_yz_interc = cache.i_trkline_yz_interc;
+        i_theta = cache.i_theta;
+        i_phi = cache.i_phi;
+        i_chi2 = cache.i_chi2;
+        i_ndf = cache.i_ndf;
+        i_cov_x02 = cache.i_cov_x02;
+        i_cov_x0z0 = cache.i_cov_x0z0;
+        i_cov_x0tx = cache.i_cov_x0tx;
+        i_cov_x0tz = cache.i_cov_x0tz;
+        i_cov_z02 = cache.i_cov_z02;
+        i_cov_z0tx = cache.i_cov_z0tx;
+        i_cov_z0tz = cache.i_cov_z0tz;
+        i_cov_tx2 = cache.i_cov_tx2;
+        i_cov_txtz = cache.i_cov_txtz;
+        i_cov_tz2 = cache.i_cov_tz2;
+        i_Cross1_ID = cache.i_Cross1_ID;
+        i_Cross2_ID = cache.i_Cross2_ID;
+        i_Cross3_ID = cache.i_Cross3_ID;
+        i_Cross4_ID = cache.i_Cross4_ID;
+        i_Cross5_ID = cache.i_Cross5_ID;
+        i_Cross6_ID = cache.i_Cross6_ID;
+        i_Cross7_ID = cache.i_Cross7_ID;
+        i_Cross8_ID = cache.i_Cross8_ID;
+        i_Cross9_ID = cache.i_Cross9_ID;
+        i_Cross10_ID = cache.i_Cross10_ID;
+        i_Cross11_ID = cache.i_Cross11_ID;
+        i_Cross12_ID = cache.i_Cross12_ID;
+        i_Cross13_ID = cache.i_Cross13_ID;
+        i_Cross14_ID = cache.i_Cross14_ID;
+        i_Cross15_ID = cache.i_Cross15_ID;
+        i_Cross16_ID = cache.i_Cross16_ID;
+        i_Cross17_ID = cache.i_Cross17_ID;
+        i_Cross18_ID = cache.i_Cross18_ID;
+        i_status = cache.i_status;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// ID: ID
     [[nodiscard]] int ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_ID, row));
+        return static_cast<int>(m_view->getShort(i_ID, row));
     }
     /// trkline_yx_slope: trkline_yx_slope
     [[nodiscard]] float trkline_yx_slope(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_trkline_yx_slope, row));
+        return static_cast<float>(m_view->getFloat(i_trkline_yx_slope, row));
     }
     /// trkline_yx_interc: trkline_yx_interc
     [[nodiscard]] float trkline_yx_interc(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_trkline_yx_interc, row));
+        return static_cast<float>(m_view->getFloat(i_trkline_yx_interc, row));
     }
     /// trkline_yz_slope: trkline_yz_slope
     [[nodiscard]] float trkline_yz_slope(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_trkline_yz_slope, row));
+        return static_cast<float>(m_view->getFloat(i_trkline_yz_slope, row));
     }
     /// trkline_yz_interc: trkline_yz_interc
     [[nodiscard]] float trkline_yz_interc(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_trkline_yz_interc, row));
+        return static_cast<float>(m_view->getFloat(i_trkline_yz_interc, row));
     }
     /// theta: theta (deg)
     [[nodiscard]] float theta(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_theta, row));
+        return static_cast<float>(m_view->getFloat(i_theta, row));
     }
     /// phi: phi (deg)
     [[nodiscard]] float phi(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_phi, row));
+        return static_cast<float>(m_view->getFloat(i_phi, row));
     }
     /// chi2: Fit chi^2 
     [[nodiscard]] float chi2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_chi2, row));
+        return static_cast<float>(m_view->getFloat(i_chi2, row));
     }
     /// ndf: number of degrees of freedom used in the fit
     [[nodiscard]] int ndf(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_ndf, row));
+        return static_cast<int>(m_view->getShort(i_ndf, row));
     }
     /// cov_x02: covariance matrix element : delta_x0^2
     [[nodiscard]] float cov_x02(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_x02, row));
+        return static_cast<float>(m_view->getFloat(i_cov_x02, row));
     }
     /// cov_x0z0: covariance matrix element : delta_x0z0
     [[nodiscard]] float cov_x0z0(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_x0z0, row));
+        return static_cast<float>(m_view->getFloat(i_cov_x0z0, row));
     }
     /// cov_x0tx: covariance matrix element : delta_x0tx
     [[nodiscard]] float cov_x0tx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_x0tx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_x0tx, row));
     }
     /// cov_x0tz: covariance matrix element : delta_x0tz
     [[nodiscard]] float cov_x0tz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_x0tz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_x0tz, row));
     }
     /// cov_z02: covariance matrix element : delta_z0^2
     [[nodiscard]] float cov_z02(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_z02, row));
+        return static_cast<float>(m_view->getFloat(i_cov_z02, row));
     }
     /// cov_z0tx: covariance matrix element : delta_z0tz
     [[nodiscard]] float cov_z0tx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_z0tx, row));
+        return static_cast<float>(m_view->getFloat(i_cov_z0tx, row));
     }
     /// cov_z0tz: covariance matrix element : delta_z0tz
     [[nodiscard]] float cov_z0tz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_z0tz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_z0tz, row));
     }
     /// cov_tx2: covariance matrix element : delta_tx^2
     [[nodiscard]] float cov_tx2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_tx2, row));
+        return static_cast<float>(m_view->getFloat(i_cov_tx2, row));
     }
     /// cov_txtz: covariance matrix element : delta_txtz
     [[nodiscard]] float cov_txtz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_txtz, row));
+        return static_cast<float>(m_view->getFloat(i_cov_txtz, row));
     }
     /// cov_tz2: covariance matrix element : delta_tz^2
     [[nodiscard]] float cov_tz2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_cov_tz2, row));
+        return static_cast<float>(m_view->getFloat(i_cov_tz2, row));
     }
     /// Cross1_ID: ID of cross in the track
     [[nodiscard]] int Cross1_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross1_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross1_ID, row));
     }
     /// Cross2_ID: ID of cross in the track
     [[nodiscard]] int Cross2_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross2_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross2_ID, row));
     }
     /// Cross3_ID: ID of cross in the track
     [[nodiscard]] int Cross3_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross3_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross3_ID, row));
     }
     /// Cross4_ID: ID of cross in the track
     [[nodiscard]] int Cross4_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross4_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross4_ID, row));
     }
     /// Cross5_ID: ID of cross in the track
     [[nodiscard]] int Cross5_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross5_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross5_ID, row));
     }
     /// Cross6_ID: ID of cross in the track
     [[nodiscard]] int Cross6_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross6_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross6_ID, row));
     }
     /// Cross7_ID: ID of cross in the track
     [[nodiscard]] int Cross7_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross7_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross7_ID, row));
     }
     /// Cross8_ID: ID of cross in the track
     [[nodiscard]] int Cross8_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross8_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross8_ID, row));
     }
     /// Cross9_ID: ID of cross in the track
     [[nodiscard]] int Cross9_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross9_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross9_ID, row));
     }
     /// Cross10_ID: ID of cross in the track
     [[nodiscard]] int Cross10_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross10_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross10_ID, row));
     }
     /// Cross11_ID: ID of cross in the track
     [[nodiscard]] int Cross11_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross11_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross11_ID, row));
     }
     /// Cross12_ID: ID of cross in the track
     [[nodiscard]] int Cross12_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross12_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross12_ID, row));
     }
     /// Cross13_ID: ID of cross in the track
     [[nodiscard]] int Cross13_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross13_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross13_ID, row));
     }
     /// Cross14_ID: ID of cross in the track
     [[nodiscard]] int Cross14_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross14_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross14_ID, row));
     }
     /// Cross15_ID: ID of cross in the track
     [[nodiscard]] int Cross15_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross15_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross15_ID, row));
     }
     /// Cross16_ID: ID of cross in the track
     [[nodiscard]] int Cross16_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross16_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross16_ID, row));
     }
     /// Cross17_ID: ID of cross in the track
     [[nodiscard]] int Cross17_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross17_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross17_ID, row));
     }
     /// Cross18_ID: ID of cross in the track
     [[nodiscard]] int Cross18_ID(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_Cross18_ID, row));
+        return static_cast<int>(m_view->getShort(i_Cross18_ID, row));
     }
     /// status: ID of cross in the track
     [[nodiscard]] int status(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_status, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> ID_col() const noexcept {
-        return m_view.column<int16_t>(h_ID);
-    }
-    /// trkline_yx_slope column as a contiguous span.
-    [[nodiscard]] std::span<const float> trkline_yx_slope_col() const noexcept {
-        return m_view.column<float>(h_trkline_yx_slope);
-    }
-    /// trkline_yx_interc column as a contiguous span.
-    [[nodiscard]] std::span<const float> trkline_yx_interc_col() const noexcept {
-        return m_view.column<float>(h_trkline_yx_interc);
-    }
-    /// trkline_yz_slope column as a contiguous span.
-    [[nodiscard]] std::span<const float> trkline_yz_slope_col() const noexcept {
-        return m_view.column<float>(h_trkline_yz_slope);
-    }
-    /// trkline_yz_interc column as a contiguous span.
-    [[nodiscard]] std::span<const float> trkline_yz_interc_col() const noexcept {
-        return m_view.column<float>(h_trkline_yz_interc);
-    }
-    /// theta column as a contiguous span.
-    [[nodiscard]] std::span<const float> theta_col() const noexcept {
-        return m_view.column<float>(h_theta);
-    }
-    /// phi column as a contiguous span.
-    [[nodiscard]] std::span<const float> phi_col() const noexcept {
-        return m_view.column<float>(h_phi);
-    }
-    /// chi2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> chi2_col() const noexcept {
-        return m_view.column<float>(h_chi2);
-    }
-    /// ndf column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> ndf_col() const noexcept {
-        return m_view.column<int16_t>(h_ndf);
-    }
-    /// cov_x02 column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_x02_col() const noexcept {
-        return m_view.column<float>(h_cov_x02);
-    }
-    /// cov_x0z0 column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_x0z0_col() const noexcept {
-        return m_view.column<float>(h_cov_x0z0);
-    }
-    /// cov_x0tx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_x0tx_col() const noexcept {
-        return m_view.column<float>(h_cov_x0tx);
-    }
-    /// cov_x0tz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_x0tz_col() const noexcept {
-        return m_view.column<float>(h_cov_x0tz);
-    }
-    /// cov_z02 column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_z02_col() const noexcept {
-        return m_view.column<float>(h_cov_z02);
-    }
-    /// cov_z0tx column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_z0tx_col() const noexcept {
-        return m_view.column<float>(h_cov_z0tx);
-    }
-    /// cov_z0tz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_z0tz_col() const noexcept {
-        return m_view.column<float>(h_cov_z0tz);
-    }
-    /// cov_tx2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_tx2_col() const noexcept {
-        return m_view.column<float>(h_cov_tx2);
-    }
-    /// cov_txtz column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_txtz_col() const noexcept {
-        return m_view.column<float>(h_cov_txtz);
-    }
-    /// cov_tz2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> cov_tz2_col() const noexcept {
-        return m_view.column<float>(h_cov_tz2);
-    }
-    /// Cross1_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross1_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross1_ID);
-    }
-    /// Cross2_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross2_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross2_ID);
-    }
-    /// Cross3_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross3_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross3_ID);
-    }
-    /// Cross4_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross4_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross4_ID);
-    }
-    /// Cross5_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross5_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross5_ID);
-    }
-    /// Cross6_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross6_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross6_ID);
-    }
-    /// Cross7_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross7_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross7_ID);
-    }
-    /// Cross8_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross8_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross8_ID);
-    }
-    /// Cross9_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross9_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross9_ID);
-    }
-    /// Cross10_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross10_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross10_ID);
-    }
-    /// Cross11_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross11_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross11_ID);
-    }
-    /// Cross12_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross12_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross12_ID);
-    }
-    /// Cross13_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross13_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross13_ID);
-    }
-    /// Cross14_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross14_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross14_ID);
-    }
-    /// Cross15_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross15_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross15_ID);
-    }
-    /// Cross16_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross16_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross16_ID);
-    }
-    /// Cross17_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross17_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross17_ID);
-    }
-    /// Cross18_ID column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> Cross18_ID_col() const noexcept {
-        return m_view.column<int16_t>(h_Cross18_ID);
-    }
-    /// status column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> status_col() const noexcept {
-        return m_view.column<int16_t>(h_status);
+        return static_cast<int>(m_view->getShort(i_status, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_ID{};
-    hipo::column_handle h_trkline_yx_slope{};
-    hipo::column_handle h_trkline_yx_interc{};
-    hipo::column_handle h_trkline_yz_slope{};
-    hipo::column_handle h_trkline_yz_interc{};
-    hipo::column_handle h_theta{};
-    hipo::column_handle h_phi{};
-    hipo::column_handle h_chi2{};
-    hipo::column_handle h_ndf{};
-    hipo::column_handle h_cov_x02{};
-    hipo::column_handle h_cov_x0z0{};
-    hipo::column_handle h_cov_x0tx{};
-    hipo::column_handle h_cov_x0tz{};
-    hipo::column_handle h_cov_z02{};
-    hipo::column_handle h_cov_z0tx{};
-    hipo::column_handle h_cov_z0tz{};
-    hipo::column_handle h_cov_tx2{};
-    hipo::column_handle h_cov_txtz{};
-    hipo::column_handle h_cov_tz2{};
-    hipo::column_handle h_Cross1_ID{};
-    hipo::column_handle h_Cross2_ID{};
-    hipo::column_handle h_Cross3_ID{};
-    hipo::column_handle h_Cross4_ID{};
-    hipo::column_handle h_Cross5_ID{};
-    hipo::column_handle h_Cross6_ID{};
-    hipo::column_handle h_Cross7_ID{};
-    hipo::column_handle h_Cross8_ID{};
-    hipo::column_handle h_Cross9_ID{};
-    hipo::column_handle h_Cross10_ID{};
-    hipo::column_handle h_Cross11_ID{};
-    hipo::column_handle h_Cross12_ID{};
-    hipo::column_handle h_Cross13_ID{};
-    hipo::column_handle h_Cross14_ID{};
-    hipo::column_handle h_Cross15_ID{};
-    hipo::column_handle h_Cross16_ID{};
-    hipo::column_handle h_Cross17_ID{};
-    hipo::column_handle h_Cross18_ID{};
-    hipo::column_handle h_status{};
+    const hipo::bank* m_view = nullptr;
+    int i_ID = -1;
+    int i_trkline_yx_slope = -1;
+    int i_trkline_yx_interc = -1;
+    int i_trkline_yz_slope = -1;
+    int i_trkline_yz_interc = -1;
+    int i_theta = -1;
+    int i_phi = -1;
+    int i_chi2 = -1;
+    int i_ndf = -1;
+    int i_cov_x02 = -1;
+    int i_cov_x0z0 = -1;
+    int i_cov_x0tx = -1;
+    int i_cov_x0tz = -1;
+    int i_cov_z02 = -1;
+    int i_cov_z0tx = -1;
+    int i_cov_z0tz = -1;
+    int i_cov_tx2 = -1;
+    int i_cov_txtz = -1;
+    int i_cov_tz2 = -1;
+    int i_Cross1_ID = -1;
+    int i_Cross2_ID = -1;
+    int i_Cross3_ID = -1;
+    int i_Cross4_ID = -1;
+    int i_Cross5_ID = -1;
+    int i_Cross6_ID = -1;
+    int i_Cross7_ID = -1;
+    int i_Cross8_ID = -1;
+    int i_Cross9_ID = -1;
+    int i_Cross10_ID = -1;
+    int i_Cross11_ID = -1;
+    int i_Cross12_ID = -1;
+    int i_Cross13_ID = -1;
+    int i_Cross14_ID = -1;
+    int i_Cross15_ID = -1;
+    int i_Cross16_ID = -1;
+    int i_Cross17_ID = -1;
+    int i_Cross18_ID = -1;
+    int i_status = -1;
 
     friend class Row;
 };

@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `ALERT::ai:pid` (group 23000, item 34).
 /// AI-assisted PID for ALERT
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,151 +40,107 @@ class ALERT_ai_pid {
 
     ALERT_ai_pid() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_trackid;
-            hipo::column_handle h_clusterid;
-            hipo::column_handle h_pid;
-            hipo::column_handle h_prob_2212;
-            hipo::column_handle h_prob_45;
-            hipo::column_handle h_prob_46;
-            hipo::column_handle h_prob_47;
-            hipo::column_handle h_prob_49;
+            int i_trackid = -1;
+            int i_clusterid = -1;
+            int i_pid = -1;
+            int i_prob_2212 = -1;
+            int i_prob_45 = -1;
+            int i_prob_46 = -1;
+            int i_prob_47 = -1;
+            int i_prob_49 = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("trackid"); h) cache.h_trackid = *h;
-            else cache.h_trackid = {};
-            if (auto h = schema.get_handle("clusterid"); h) cache.h_clusterid = *h;
-            else cache.h_clusterid = {};
-            if (auto h = schema.get_handle("pid"); h) cache.h_pid = *h;
-            else cache.h_pid = {};
-            if (auto h = schema.get_handle("prob_2212"); h) cache.h_prob_2212 = *h;
-            else cache.h_prob_2212 = {};
-            if (auto h = schema.get_handle("prob_45"); h) cache.h_prob_45 = *h;
-            else cache.h_prob_45 = {};
-            if (auto h = schema.get_handle("prob_46"); h) cache.h_prob_46 = *h;
-            else cache.h_prob_46 = {};
-            if (auto h = schema.get_handle("prob_47"); h) cache.h_prob_47 = *h;
-            else cache.h_prob_47 = {};
-            if (auto h = schema.get_handle("prob_49"); h) cache.h_prob_49 = *h;
-            else cache.h_prob_49 = {};
+            cache.i_trackid = schema.exists("trackid") ? schema.getEntryOrder("trackid") : -1;
+            cache.i_clusterid = schema.exists("clusterid") ? schema.getEntryOrder("clusterid") : -1;
+            cache.i_pid = schema.exists("pid") ? schema.getEntryOrder("pid") : -1;
+            cache.i_prob_2212 = schema.exists("prob_2212") ? schema.getEntryOrder("prob_2212") : -1;
+            cache.i_prob_45 = schema.exists("prob_45") ? schema.getEntryOrder("prob_45") : -1;
+            cache.i_prob_46 = schema.exists("prob_46") ? schema.getEntryOrder("prob_46") : -1;
+            cache.i_prob_47 = schema.exists("prob_47") ? schema.getEntryOrder("prob_47") : -1;
+            cache.i_prob_49 = schema.exists("prob_49") ? schema.getEntryOrder("prob_49") : -1;
         }
-        h_trackid = cache.h_trackid;
-        h_clusterid = cache.h_clusterid;
-        h_pid = cache.h_pid;
-        h_prob_2212 = cache.h_prob_2212;
-        h_prob_45 = cache.h_prob_45;
-        h_prob_46 = cache.h_prob_46;
-        h_prob_47 = cache.h_prob_47;
-        h_prob_49 = cache.h_prob_49;
+        i_trackid = cache.i_trackid;
+        i_clusterid = cache.i_clusterid;
+        i_pid = cache.i_pid;
+        i_prob_2212 = cache.i_prob_2212;
+        i_prob_45 = cache.i_prob_45;
+        i_prob_46 = cache.i_prob_46;
+        i_prob_47 = cache.i_prob_47;
+        i_prob_49 = cache.i_prob_49;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// trackid: AHDC trackid
     [[nodiscard]] int trackid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_trackid, row));
+        return static_cast<int>(m_view->getInt(i_trackid, row));
     }
     /// clusterid: ATOF cluster id
     [[nodiscard]] int clusterid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_clusterid, row));
+        return static_cast<int>(m_view->getInt(i_clusterid, row));
     }
     /// pid: argmax PID
     [[nodiscard]] int pid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_pid, row));
+        return static_cast<int>(m_view->getInt(i_pid, row));
     }
     /// prob_2212: P(pid=2212)
     [[nodiscard]] float prob_2212(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_prob_2212, row));
+        return static_cast<float>(m_view->getFloat(i_prob_2212, row));
     }
     /// prob_45: P(pid=45)
     [[nodiscard]] float prob_45(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_prob_45, row));
+        return static_cast<float>(m_view->getFloat(i_prob_45, row));
     }
     /// prob_46: P(pid=46)
     [[nodiscard]] float prob_46(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_prob_46, row));
+        return static_cast<float>(m_view->getFloat(i_prob_46, row));
     }
     /// prob_47: P(pid=47)
     [[nodiscard]] float prob_47(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_prob_47, row));
+        return static_cast<float>(m_view->getFloat(i_prob_47, row));
     }
     /// prob_49: P(pid=49)
     [[nodiscard]] float prob_49(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_prob_49, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// trackid column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> trackid_col() const noexcept {
-        return m_view.column<int32_t>(h_trackid);
-    }
-    /// clusterid column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> clusterid_col() const noexcept {
-        return m_view.column<int32_t>(h_clusterid);
-    }
-    /// pid column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> pid_col() const noexcept {
-        return m_view.column<int32_t>(h_pid);
-    }
-    /// prob_2212 column as a contiguous span.
-    [[nodiscard]] std::span<const float> prob_2212_col() const noexcept {
-        return m_view.column<float>(h_prob_2212);
-    }
-    /// prob_45 column as a contiguous span.
-    [[nodiscard]] std::span<const float> prob_45_col() const noexcept {
-        return m_view.column<float>(h_prob_45);
-    }
-    /// prob_46 column as a contiguous span.
-    [[nodiscard]] std::span<const float> prob_46_col() const noexcept {
-        return m_view.column<float>(h_prob_46);
-    }
-    /// prob_47 column as a contiguous span.
-    [[nodiscard]] std::span<const float> prob_47_col() const noexcept {
-        return m_view.column<float>(h_prob_47);
-    }
-    /// prob_49 column as a contiguous span.
-    [[nodiscard]] std::span<const float> prob_49_col() const noexcept {
-        return m_view.column<float>(h_prob_49);
+        return static_cast<float>(m_view->getFloat(i_prob_49, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_trackid{};
-    hipo::column_handle h_clusterid{};
-    hipo::column_handle h_pid{};
-    hipo::column_handle h_prob_2212{};
-    hipo::column_handle h_prob_45{};
-    hipo::column_handle h_prob_46{};
-    hipo::column_handle h_prob_47{};
-    hipo::column_handle h_prob_49{};
+    const hipo::bank* m_view = nullptr;
+    int i_trackid = -1;
+    int i_clusterid = -1;
+    int i_pid = -1;
+    int i_prob_2212 = -1;
+    int i_prob_45 = -1;
+    int i_prob_46 = -1;
+    int i_prob_47 = -1;
+    int i_prob_49 = -1;
 
     friend class Row;
 };

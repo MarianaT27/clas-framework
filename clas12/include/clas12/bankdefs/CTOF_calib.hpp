@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `CTOF::calib` (group 20400, item 25).
 /// reconstructed hit info from CTOF calibration
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,443 +40,289 @@ class CTOF_calib {
 
     CTOF_calib() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_status;
-            hipo::column_handle h_trackid;
-            hipo::column_handle h_component;
-            hipo::column_handle h_energy;
-            hipo::column_handle h_time;
-            hipo::column_handle h_x;
-            hipo::column_handle h_y;
-            hipo::column_handle h_z;
-            hipo::column_handle h_tx;
-            hipo::column_handle h_ty;
-            hipo::column_handle h_tz;
-            hipo::column_handle h_adc1;
-            hipo::column_handle h_adc2;
-            hipo::column_handle h_tdc1;
-            hipo::column_handle h_tdc2;
-            hipo::column_handle h_pindex;
-            hipo::column_handle h_pid;
-            hipo::column_handle h_charge;
-            hipo::column_handle h_px;
-            hipo::column_handle h_py;
-            hipo::column_handle h_pz;
-            hipo::column_handle h_vx;
-            hipo::column_handle h_vy;
-            hipo::column_handle h_vz;
-            hipo::column_handle h_vt;
-            hipo::column_handle h_chi2;
-            hipo::column_handle h_NDF;
-            hipo::column_handle h_pathLength;
-            hipo::column_handle h_pathLengthThruBar;
+            int i_id = -1;
+            int i_status = -1;
+            int i_trackid = -1;
+            int i_component = -1;
+            int i_energy = -1;
+            int i_time = -1;
+            int i_x = -1;
+            int i_y = -1;
+            int i_z = -1;
+            int i_tx = -1;
+            int i_ty = -1;
+            int i_tz = -1;
+            int i_adc1 = -1;
+            int i_adc2 = -1;
+            int i_tdc1 = -1;
+            int i_tdc2 = -1;
+            int i_pindex = -1;
+            int i_pid = -1;
+            int i_charge = -1;
+            int i_px = -1;
+            int i_py = -1;
+            int i_pz = -1;
+            int i_vx = -1;
+            int i_vy = -1;
+            int i_vz = -1;
+            int i_vt = -1;
+            int i_chi2 = -1;
+            int i_NDF = -1;
+            int i_pathLength = -1;
+            int i_pathLengthThruBar = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("status"); h) cache.h_status = *h;
-            else cache.h_status = {};
-            if (auto h = schema.get_handle("trackid"); h) cache.h_trackid = *h;
-            else cache.h_trackid = {};
-            if (auto h = schema.get_handle("component"); h) cache.h_component = *h;
-            else cache.h_component = {};
-            if (auto h = schema.get_handle("energy"); h) cache.h_energy = *h;
-            else cache.h_energy = {};
-            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
-            else cache.h_time = {};
-            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
-            else cache.h_x = {};
-            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
-            else cache.h_y = {};
-            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
-            else cache.h_z = {};
-            if (auto h = schema.get_handle("tx"); h) cache.h_tx = *h;
-            else cache.h_tx = {};
-            if (auto h = schema.get_handle("ty"); h) cache.h_ty = *h;
-            else cache.h_ty = {};
-            if (auto h = schema.get_handle("tz"); h) cache.h_tz = *h;
-            else cache.h_tz = {};
-            if (auto h = schema.get_handle("adc1"); h) cache.h_adc1 = *h;
-            else cache.h_adc1 = {};
-            if (auto h = schema.get_handle("adc2"); h) cache.h_adc2 = *h;
-            else cache.h_adc2 = {};
-            if (auto h = schema.get_handle("tdc1"); h) cache.h_tdc1 = *h;
-            else cache.h_tdc1 = {};
-            if (auto h = schema.get_handle("tdc2"); h) cache.h_tdc2 = *h;
-            else cache.h_tdc2 = {};
-            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
-            else cache.h_pindex = {};
-            if (auto h = schema.get_handle("pid"); h) cache.h_pid = *h;
-            else cache.h_pid = {};
-            if (auto h = schema.get_handle("charge"); h) cache.h_charge = *h;
-            else cache.h_charge = {};
-            if (auto h = schema.get_handle("px"); h) cache.h_px = *h;
-            else cache.h_px = {};
-            if (auto h = schema.get_handle("py"); h) cache.h_py = *h;
-            else cache.h_py = {};
-            if (auto h = schema.get_handle("pz"); h) cache.h_pz = *h;
-            else cache.h_pz = {};
-            if (auto h = schema.get_handle("vx"); h) cache.h_vx = *h;
-            else cache.h_vx = {};
-            if (auto h = schema.get_handle("vy"); h) cache.h_vy = *h;
-            else cache.h_vy = {};
-            if (auto h = schema.get_handle("vz"); h) cache.h_vz = *h;
-            else cache.h_vz = {};
-            if (auto h = schema.get_handle("vt"); h) cache.h_vt = *h;
-            else cache.h_vt = {};
-            if (auto h = schema.get_handle("chi2"); h) cache.h_chi2 = *h;
-            else cache.h_chi2 = {};
-            if (auto h = schema.get_handle("NDF"); h) cache.h_NDF = *h;
-            else cache.h_NDF = {};
-            if (auto h = schema.get_handle("pathLength"); h) cache.h_pathLength = *h;
-            else cache.h_pathLength = {};
-            if (auto h = schema.get_handle("pathLengthThruBar"); h) cache.h_pathLengthThruBar = *h;
-            else cache.h_pathLengthThruBar = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_status = schema.exists("status") ? schema.getEntryOrder("status") : -1;
+            cache.i_trackid = schema.exists("trackid") ? schema.getEntryOrder("trackid") : -1;
+            cache.i_component = schema.exists("component") ? schema.getEntryOrder("component") : -1;
+            cache.i_energy = schema.exists("energy") ? schema.getEntryOrder("energy") : -1;
+            cache.i_time = schema.exists("time") ? schema.getEntryOrder("time") : -1;
+            cache.i_x = schema.exists("x") ? schema.getEntryOrder("x") : -1;
+            cache.i_y = schema.exists("y") ? schema.getEntryOrder("y") : -1;
+            cache.i_z = schema.exists("z") ? schema.getEntryOrder("z") : -1;
+            cache.i_tx = schema.exists("tx") ? schema.getEntryOrder("tx") : -1;
+            cache.i_ty = schema.exists("ty") ? schema.getEntryOrder("ty") : -1;
+            cache.i_tz = schema.exists("tz") ? schema.getEntryOrder("tz") : -1;
+            cache.i_adc1 = schema.exists("adc1") ? schema.getEntryOrder("adc1") : -1;
+            cache.i_adc2 = schema.exists("adc2") ? schema.getEntryOrder("adc2") : -1;
+            cache.i_tdc1 = schema.exists("tdc1") ? schema.getEntryOrder("tdc1") : -1;
+            cache.i_tdc2 = schema.exists("tdc2") ? schema.getEntryOrder("tdc2") : -1;
+            cache.i_pindex = schema.exists("pindex") ? schema.getEntryOrder("pindex") : -1;
+            cache.i_pid = schema.exists("pid") ? schema.getEntryOrder("pid") : -1;
+            cache.i_charge = schema.exists("charge") ? schema.getEntryOrder("charge") : -1;
+            cache.i_px = schema.exists("px") ? schema.getEntryOrder("px") : -1;
+            cache.i_py = schema.exists("py") ? schema.getEntryOrder("py") : -1;
+            cache.i_pz = schema.exists("pz") ? schema.getEntryOrder("pz") : -1;
+            cache.i_vx = schema.exists("vx") ? schema.getEntryOrder("vx") : -1;
+            cache.i_vy = schema.exists("vy") ? schema.getEntryOrder("vy") : -1;
+            cache.i_vz = schema.exists("vz") ? schema.getEntryOrder("vz") : -1;
+            cache.i_vt = schema.exists("vt") ? schema.getEntryOrder("vt") : -1;
+            cache.i_chi2 = schema.exists("chi2") ? schema.getEntryOrder("chi2") : -1;
+            cache.i_NDF = schema.exists("NDF") ? schema.getEntryOrder("NDF") : -1;
+            cache.i_pathLength = schema.exists("pathLength") ? schema.getEntryOrder("pathLength") : -1;
+            cache.i_pathLengthThruBar = schema.exists("pathLengthThruBar") ? schema.getEntryOrder("pathLengthThruBar") : -1;
         }
-        h_id = cache.h_id;
-        h_status = cache.h_status;
-        h_trackid = cache.h_trackid;
-        h_component = cache.h_component;
-        h_energy = cache.h_energy;
-        h_time = cache.h_time;
-        h_x = cache.h_x;
-        h_y = cache.h_y;
-        h_z = cache.h_z;
-        h_tx = cache.h_tx;
-        h_ty = cache.h_ty;
-        h_tz = cache.h_tz;
-        h_adc1 = cache.h_adc1;
-        h_adc2 = cache.h_adc2;
-        h_tdc1 = cache.h_tdc1;
-        h_tdc2 = cache.h_tdc2;
-        h_pindex = cache.h_pindex;
-        h_pid = cache.h_pid;
-        h_charge = cache.h_charge;
-        h_px = cache.h_px;
-        h_py = cache.h_py;
-        h_pz = cache.h_pz;
-        h_vx = cache.h_vx;
-        h_vy = cache.h_vy;
-        h_vz = cache.h_vz;
-        h_vt = cache.h_vt;
-        h_chi2 = cache.h_chi2;
-        h_NDF = cache.h_NDF;
-        h_pathLength = cache.h_pathLength;
-        h_pathLengthThruBar = cache.h_pathLengthThruBar;
+        i_id = cache.i_id;
+        i_status = cache.i_status;
+        i_trackid = cache.i_trackid;
+        i_component = cache.i_component;
+        i_energy = cache.i_energy;
+        i_time = cache.i_time;
+        i_x = cache.i_x;
+        i_y = cache.i_y;
+        i_z = cache.i_z;
+        i_tx = cache.i_tx;
+        i_ty = cache.i_ty;
+        i_tz = cache.i_tz;
+        i_adc1 = cache.i_adc1;
+        i_adc2 = cache.i_adc2;
+        i_tdc1 = cache.i_tdc1;
+        i_tdc2 = cache.i_tdc2;
+        i_pindex = cache.i_pindex;
+        i_pid = cache.i_pid;
+        i_charge = cache.i_charge;
+        i_px = cache.i_px;
+        i_py = cache.i_py;
+        i_pz = cache.i_pz;
+        i_vx = cache.i_vx;
+        i_vy = cache.i_vy;
+        i_vz = cache.i_vz;
+        i_vt = cache.i_vt;
+        i_chi2 = cache.i_chi2;
+        i_NDF = cache.i_NDF;
+        i_pathLength = cache.i_pathLength;
+        i_pathLengthThruBar = cache.i_pathLengthThruBar;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: id of the hit
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+        return static_cast<int>(m_view->getShort(i_id, row));
     }
     /// status: hit status defined based on presence (0) or absence (1) of TDCR-TDCL-ADCR-ADCL
     [[nodiscard]] int status(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_status, row));
+        return static_cast<int>(m_view->getShort(i_status, row));
     }
     /// trackid: matched DC track id
     [[nodiscard]] int trackid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_trackid, row));
+        return static_cast<int>(m_view->getShort(i_trackid, row));
     }
     /// component: paddle id of CTOF
     [[nodiscard]] int component(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_component, row));
+        return static_cast<int>(m_view->getShort(i_component, row));
     }
     /// energy: E dep (MeV) of hit
     [[nodiscard]] float energy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_energy, row));
+        return static_cast<float>(m_view->getFloat(i_energy, row));
     }
     /// time: Hit time (ns)
     [[nodiscard]] float time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_time, row));
+        return static_cast<float>(m_view->getFloat(i_time, row));
     }
     /// x: Global X coor (cm) of hit
     [[nodiscard]] float x(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x, row));
+        return static_cast<float>(m_view->getFloat(i_x, row));
     }
     /// y: Global Y coor (cm) of hit
     [[nodiscard]] float y(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y, row));
+        return static_cast<float>(m_view->getFloat(i_y, row));
     }
     /// z: Global Z coor (cm) of hit
     [[nodiscard]] float z(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_z, row));
+        return static_cast<float>(m_view->getFloat(i_z, row));
     }
     /// tx: Global X coor (cm) of hit from DC info - trackid index
     [[nodiscard]] float tx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_tx, row));
+        return static_cast<float>(m_view->getFloat(i_tx, row));
     }
     /// ty: Global Y coor (cm) of hit from DC info - trackid index
     [[nodiscard]] float ty(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_ty, row));
+        return static_cast<float>(m_view->getFloat(i_ty, row));
     }
     /// tz: Global Z coor (cm) of hit from DC info - trackid index
     [[nodiscard]] float tz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_tz, row));
+        return static_cast<float>(m_view->getFloat(i_tz, row));
     }
     /// adc1: ADCL
     [[nodiscard]] int adc1(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_adc1, row));
+        return static_cast<int>(m_view->getInt(i_adc1, row));
     }
     /// adc2: ADCR
     [[nodiscard]] int adc2(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_adc2, row));
+        return static_cast<int>(m_view->getInt(i_adc2, row));
     }
     /// tdc1: TDCL
     [[nodiscard]] int tdc1(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_tdc1, row));
+        return static_cast<int>(m_view->getInt(i_tdc1, row));
     }
     /// tdc2: TDCR
     [[nodiscard]] int tdc2(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_tdc2, row));
+        return static_cast<int>(m_view->getInt(i_tdc2, row));
     }
     /// pindex: particle positionin REC::Particle
     [[nodiscard]] int pindex(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_pindex, row));
+        return static_cast<int>(m_view->getShort(i_pindex, row));
     }
     /// pid: particle id
     [[nodiscard]] int pid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_pid, row));
+        return static_cast<int>(m_view->getInt(i_pid, row));
     }
     /// charge: particle charge
     [[nodiscard]] int charge(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_charge, row));
+        return static_cast<int>(m_view->getByte(i_charge, row));
     }
     /// px: particle momentum x component
     [[nodiscard]] float px(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_px, row));
+        return static_cast<float>(m_view->getFloat(i_px, row));
     }
     /// py: particle momentum y component
     [[nodiscard]] float py(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_py, row));
+        return static_cast<float>(m_view->getFloat(i_py, row));
     }
     /// pz: particle momentum z component
     [[nodiscard]] float pz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_pz, row));
+        return static_cast<float>(m_view->getFloat(i_pz, row));
     }
     /// vx: particle vertex x coordinate
     [[nodiscard]] float vx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_vx, row));
+        return static_cast<float>(m_view->getFloat(i_vx, row));
     }
     /// vy: particle vertex y coordinate
     [[nodiscard]] float vy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_vy, row));
+        return static_cast<float>(m_view->getFloat(i_vy, row));
     }
     /// vz: particle vertex z coordinate
     [[nodiscard]] float vz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_vz, row));
+        return static_cast<float>(m_view->getFloat(i_vz, row));
     }
     /// vt: vertex-corrected event start time
     [[nodiscard]] float vt(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_vt, row));
+        return static_cast<float>(m_view->getFloat(i_vt, row));
     }
     /// chi2: track chi2
     [[nodiscard]] float chi2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_chi2, row));
+        return static_cast<float>(m_view->getFloat(i_chi2, row));
     }
     /// NDF: NDF
     [[nodiscard]] int NDF(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_NDF, row));
+        return static_cast<int>(m_view->getShort(i_NDF, row));
     }
     /// pathLength: pathlength of the track from the vertex (doca point to the beamline to the midpoint between the entrance and exit of the hit bar
     [[nodiscard]] float pathLength(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_pathLength, row));
+        return static_cast<float>(m_view->getFloat(i_pathLength, row));
     }
     /// pathLengthThruBar: pathlength of the track from the entrance point to the exit point through the hit bar 
     [[nodiscard]] float pathLengthThruBar(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_pathLengthThruBar, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
-        return m_view.column<int16_t>(h_id);
-    }
-    /// status column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> status_col() const noexcept {
-        return m_view.column<int16_t>(h_status);
-    }
-    /// trackid column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> trackid_col() const noexcept {
-        return m_view.column<int16_t>(h_trackid);
-    }
-    /// component column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> component_col() const noexcept {
-        return m_view.column<int16_t>(h_component);
-    }
-    /// energy column as a contiguous span.
-    [[nodiscard]] std::span<const float> energy_col() const noexcept {
-        return m_view.column<float>(h_energy);
-    }
-    /// time column as a contiguous span.
-    [[nodiscard]] std::span<const float> time_col() const noexcept {
-        return m_view.column<float>(h_time);
-    }
-    /// x column as a contiguous span.
-    [[nodiscard]] std::span<const float> x_col() const noexcept {
-        return m_view.column<float>(h_x);
-    }
-    /// y column as a contiguous span.
-    [[nodiscard]] std::span<const float> y_col() const noexcept {
-        return m_view.column<float>(h_y);
-    }
-    /// z column as a contiguous span.
-    [[nodiscard]] std::span<const float> z_col() const noexcept {
-        return m_view.column<float>(h_z);
-    }
-    /// tx column as a contiguous span.
-    [[nodiscard]] std::span<const float> tx_col() const noexcept {
-        return m_view.column<float>(h_tx);
-    }
-    /// ty column as a contiguous span.
-    [[nodiscard]] std::span<const float> ty_col() const noexcept {
-        return m_view.column<float>(h_ty);
-    }
-    /// tz column as a contiguous span.
-    [[nodiscard]] std::span<const float> tz_col() const noexcept {
-        return m_view.column<float>(h_tz);
-    }
-    /// adc1 column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> adc1_col() const noexcept {
-        return m_view.column<int32_t>(h_adc1);
-    }
-    /// adc2 column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> adc2_col() const noexcept {
-        return m_view.column<int32_t>(h_adc2);
-    }
-    /// tdc1 column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> tdc1_col() const noexcept {
-        return m_view.column<int32_t>(h_tdc1);
-    }
-    /// tdc2 column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> tdc2_col() const noexcept {
-        return m_view.column<int32_t>(h_tdc2);
-    }
-    /// pindex column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> pindex_col() const noexcept {
-        return m_view.column<int16_t>(h_pindex);
-    }
-    /// pid column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> pid_col() const noexcept {
-        return m_view.column<int32_t>(h_pid);
-    }
-    /// charge column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> charge_col() const noexcept {
-        return m_view.column<int8_t>(h_charge);
-    }
-    /// px column as a contiguous span.
-    [[nodiscard]] std::span<const float> px_col() const noexcept {
-        return m_view.column<float>(h_px);
-    }
-    /// py column as a contiguous span.
-    [[nodiscard]] std::span<const float> py_col() const noexcept {
-        return m_view.column<float>(h_py);
-    }
-    /// pz column as a contiguous span.
-    [[nodiscard]] std::span<const float> pz_col() const noexcept {
-        return m_view.column<float>(h_pz);
-    }
-    /// vx column as a contiguous span.
-    [[nodiscard]] std::span<const float> vx_col() const noexcept {
-        return m_view.column<float>(h_vx);
-    }
-    /// vy column as a contiguous span.
-    [[nodiscard]] std::span<const float> vy_col() const noexcept {
-        return m_view.column<float>(h_vy);
-    }
-    /// vz column as a contiguous span.
-    [[nodiscard]] std::span<const float> vz_col() const noexcept {
-        return m_view.column<float>(h_vz);
-    }
-    /// vt column as a contiguous span.
-    [[nodiscard]] std::span<const float> vt_col() const noexcept {
-        return m_view.column<float>(h_vt);
-    }
-    /// chi2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> chi2_col() const noexcept {
-        return m_view.column<float>(h_chi2);
-    }
-    /// NDF column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> NDF_col() const noexcept {
-        return m_view.column<int16_t>(h_NDF);
-    }
-    /// pathLength column as a contiguous span.
-    [[nodiscard]] std::span<const float> pathLength_col() const noexcept {
-        return m_view.column<float>(h_pathLength);
-    }
-    /// pathLengthThruBar column as a contiguous span.
-    [[nodiscard]] std::span<const float> pathLengthThruBar_col() const noexcept {
-        return m_view.column<float>(h_pathLengthThruBar);
+        return static_cast<float>(m_view->getFloat(i_pathLengthThruBar, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
     // -------------------------------------------------------------------
-    // Link-column handles (used by PindexLinker-style helpers to
-    // read the whole index column as a typed span in one shot)
+    // Link-column item indices (used by PindexLinker to scan the
+    // pindex/index column without re-resolving by name per call)
     // -------------------------------------------------------------------
-    [[nodiscard]] hipo::column_handle pindex_handle() const noexcept { return h_pindex; }
+    [[nodiscard]] int pindex_handle() const noexcept { return i_pindex; }
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_status{};
-    hipo::column_handle h_trackid{};
-    hipo::column_handle h_component{};
-    hipo::column_handle h_energy{};
-    hipo::column_handle h_time{};
-    hipo::column_handle h_x{};
-    hipo::column_handle h_y{};
-    hipo::column_handle h_z{};
-    hipo::column_handle h_tx{};
-    hipo::column_handle h_ty{};
-    hipo::column_handle h_tz{};
-    hipo::column_handle h_adc1{};
-    hipo::column_handle h_adc2{};
-    hipo::column_handle h_tdc1{};
-    hipo::column_handle h_tdc2{};
-    hipo::column_handle h_pindex{};
-    hipo::column_handle h_pid{};
-    hipo::column_handle h_charge{};
-    hipo::column_handle h_px{};
-    hipo::column_handle h_py{};
-    hipo::column_handle h_pz{};
-    hipo::column_handle h_vx{};
-    hipo::column_handle h_vy{};
-    hipo::column_handle h_vz{};
-    hipo::column_handle h_vt{};
-    hipo::column_handle h_chi2{};
-    hipo::column_handle h_NDF{};
-    hipo::column_handle h_pathLength{};
-    hipo::column_handle h_pathLengthThruBar{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_status = -1;
+    int i_trackid = -1;
+    int i_component = -1;
+    int i_energy = -1;
+    int i_time = -1;
+    int i_x = -1;
+    int i_y = -1;
+    int i_z = -1;
+    int i_tx = -1;
+    int i_ty = -1;
+    int i_tz = -1;
+    int i_adc1 = -1;
+    int i_adc2 = -1;
+    int i_tdc1 = -1;
+    int i_tdc2 = -1;
+    int i_pindex = -1;
+    int i_pid = -1;
+    int i_charge = -1;
+    int i_px = -1;
+    int i_py = -1;
+    int i_pz = -1;
+    int i_vx = -1;
+    int i_vy = -1;
+    int i_vz = -1;
+    int i_vt = -1;
+    int i_chi2 = -1;
+    int i_NDF = -1;
+    int i_pathLength = -1;
+    int i_pathLengthThruBar = -1;
 
     friend class Row;
 };

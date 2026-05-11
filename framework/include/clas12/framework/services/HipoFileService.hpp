@@ -10,7 +10,7 @@
 #include <reader.h>
 #include <writer.h>
 #include <dictionary.h>
-#include <event_builder.h>
+#include <event.h>
 
 namespace framework {
 
@@ -55,10 +55,7 @@ public:
         // Close output file
         if (m_writer) {
             std::lock_guard<std::mutex> lock(m_write_mutex);
-            auto res = m_writer->close();
-            if (!res) {
-                Log::error(name(), "Error closing output file: {}", m_output_file);
-            }
+            m_writer->close();  // new API: void return
             m_writer.reset();
 
             Log::info(name(), "Wrote {} events to {}", m_events_written, m_output_file);
@@ -128,53 +125,45 @@ public:
      * @return Unique pointer to reader, or nullptr on failure
      */
     auto open_reader(const std::string& filename) -> std::unique_ptr<hipo::reader> {
-        auto result = hipo::reader::open(filename);
-        if (!result) {
+        auto r = std::make_unique<hipo::reader>();
+        r->open(filename.c_str());
+        if (!r->is_open()) {
             Log::error(name(), "Failed to open reader for: {}", filename);
             return nullptr;
         }
-
         Log::debug(name(), "Opened reader for: {}", filename);
-
-        return std::make_unique<hipo::reader>(std::move(*result));
+        return r;
     }
 
     /**
-     * @brief Write an event to the output file
-     * @param event The HIPO event to write
-     * @return true if successful
+     * @brief Write a HIPO event to the output file.
      */
-    auto write_event(const hipo::event_builder& event) -> bool {
+    auto write_event(hipo::event& event) -> bool {
         if (!m_writer || !m_enable_output) {
             return false;
         }
 
         std::lock_guard<std::mutex> lock(m_write_mutex);
-        auto res = m_writer->add_event(event);
-        if (!res) {
-            Log::error(name(), "Failed to write event");
-            return false;
-        }
+        m_writer->addEvent(event);
         m_events_written++;
         return true;
     }
 
     /**
-     * @brief Write raw event bytes to the output file
-     * @param event_data Raw serialized event bytes (all banks preserved)
-     * @return true if successful
+     * @brief Write raw event bytes to the output file.
+     *
+     * Callers receive the byte buffer from framework::Event::get_raw_event_buffer().
+     * The hipo::writer::addEvent overload takes a mutable reference, so this
+     * helper copies into a stack buffer to honor the const-correct interface.
      */
-    auto write_event(std::span<const char> event_data) -> bool {
+    auto write_event(const std::vector<char>& event_data) -> bool {
         if (!m_writer || !m_enable_output) {
             return false;
         }
 
         std::lock_guard<std::mutex> lock(m_write_mutex);
-        auto res = m_writer->add_event(event_data);
-        if (!res) {
-            Log::error(name(), "Failed to write raw event");
-            return false;
-        }
+        std::vector<char> copy = event_data;
+        m_writer->addEvent(copy);
         m_events_written++;
         return true;
     }
@@ -190,7 +179,8 @@ public:
         if (!m_dictionary) {
             auto reader = open_reader(m_input_files[0]);
             if (!reader) return nullptr;
-            m_dictionary = std::make_unique<hipo::dictionary>(reader->dict());
+            m_dictionary = std::make_unique<hipo::dictionary>();
+            reader->readDictionary(*m_dictionary);
         }
 
         return m_dictionary.get();
@@ -238,16 +228,11 @@ private:
             if (!m_input_files.empty()) {
                 auto dict = get_dictionary();
                 if (dict) {
-                    m_writer->set_dictionary(*dict);
+                    m_writer->addDictionary(*dict);
                 }
             }
 
-            auto res = m_writer->open(m_output_file);
-            if (!res) {
-                Log::error(name(), "Failed to open output file: {}", m_output_file);
-                return false;
-            }
-
+            m_writer->open(m_output_file.c_str());  // new API: void return
             Log::info(name(), "Opened output file: {}", m_output_file);
             return true;
         } catch (const std::exception& e) {

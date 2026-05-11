@@ -51,7 +51,7 @@ public:
     auto process(framework::Event& event) -> framework::StatusCode override {
         if (!m_enabled) return framework::StatusCode::SUCCESS();
 
-        auto raw = event.get_bank_view_set().raw_event_data();
+        const auto& raw = event.get_raw_event_buffer();
         if (raw.empty()) return framework::StatusCode::SUCCESS();
 
         m_hipo_svc->write_event(raw);

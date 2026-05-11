@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `HTCC::rec` (group 21500, item 22).
 /// reconstructed clusters in HTCC
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,268 +40,179 @@ class HTCC_rec {
 
     HTCC_rec() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_nhits;
-            hipo::column_handle h_nphe;
-            hipo::column_handle h_ntheta;
-            hipo::column_handle h_nphi;
-            hipo::column_handle h_mintheta;
-            hipo::column_handle h_maxtheta;
-            hipo::column_handle h_minphi;
-            hipo::column_handle h_maxphi;
-            hipo::column_handle h_time;
-            hipo::column_handle h_theta;
-            hipo::column_handle h_dtheta;
-            hipo::column_handle h_phi;
-            hipo::column_handle h_dphi;
-            hipo::column_handle h_x;
-            hipo::column_handle h_y;
-            hipo::column_handle h_z;
+            int i_id = -1;
+            int i_nhits = -1;
+            int i_nphe = -1;
+            int i_ntheta = -1;
+            int i_nphi = -1;
+            int i_mintheta = -1;
+            int i_maxtheta = -1;
+            int i_minphi = -1;
+            int i_maxphi = -1;
+            int i_time = -1;
+            int i_theta = -1;
+            int i_dtheta = -1;
+            int i_phi = -1;
+            int i_dphi = -1;
+            int i_x = -1;
+            int i_y = -1;
+            int i_z = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("nhits"); h) cache.h_nhits = *h;
-            else cache.h_nhits = {};
-            if (auto h = schema.get_handle("nphe"); h) cache.h_nphe = *h;
-            else cache.h_nphe = {};
-            if (auto h = schema.get_handle("ntheta"); h) cache.h_ntheta = *h;
-            else cache.h_ntheta = {};
-            if (auto h = schema.get_handle("nphi"); h) cache.h_nphi = *h;
-            else cache.h_nphi = {};
-            if (auto h = schema.get_handle("mintheta"); h) cache.h_mintheta = *h;
-            else cache.h_mintheta = {};
-            if (auto h = schema.get_handle("maxtheta"); h) cache.h_maxtheta = *h;
-            else cache.h_maxtheta = {};
-            if (auto h = schema.get_handle("minphi"); h) cache.h_minphi = *h;
-            else cache.h_minphi = {};
-            if (auto h = schema.get_handle("maxphi"); h) cache.h_maxphi = *h;
-            else cache.h_maxphi = {};
-            if (auto h = schema.get_handle("time"); h) cache.h_time = *h;
-            else cache.h_time = {};
-            if (auto h = schema.get_handle("theta"); h) cache.h_theta = *h;
-            else cache.h_theta = {};
-            if (auto h = schema.get_handle("dtheta"); h) cache.h_dtheta = *h;
-            else cache.h_dtheta = {};
-            if (auto h = schema.get_handle("phi"); h) cache.h_phi = *h;
-            else cache.h_phi = {};
-            if (auto h = schema.get_handle("dphi"); h) cache.h_dphi = *h;
-            else cache.h_dphi = {};
-            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
-            else cache.h_x = {};
-            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
-            else cache.h_y = {};
-            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
-            else cache.h_z = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_nhits = schema.exists("nhits") ? schema.getEntryOrder("nhits") : -1;
+            cache.i_nphe = schema.exists("nphe") ? schema.getEntryOrder("nphe") : -1;
+            cache.i_ntheta = schema.exists("ntheta") ? schema.getEntryOrder("ntheta") : -1;
+            cache.i_nphi = schema.exists("nphi") ? schema.getEntryOrder("nphi") : -1;
+            cache.i_mintheta = schema.exists("mintheta") ? schema.getEntryOrder("mintheta") : -1;
+            cache.i_maxtheta = schema.exists("maxtheta") ? schema.getEntryOrder("maxtheta") : -1;
+            cache.i_minphi = schema.exists("minphi") ? schema.getEntryOrder("minphi") : -1;
+            cache.i_maxphi = schema.exists("maxphi") ? schema.getEntryOrder("maxphi") : -1;
+            cache.i_time = schema.exists("time") ? schema.getEntryOrder("time") : -1;
+            cache.i_theta = schema.exists("theta") ? schema.getEntryOrder("theta") : -1;
+            cache.i_dtheta = schema.exists("dtheta") ? schema.getEntryOrder("dtheta") : -1;
+            cache.i_phi = schema.exists("phi") ? schema.getEntryOrder("phi") : -1;
+            cache.i_dphi = schema.exists("dphi") ? schema.getEntryOrder("dphi") : -1;
+            cache.i_x = schema.exists("x") ? schema.getEntryOrder("x") : -1;
+            cache.i_y = schema.exists("y") ? schema.getEntryOrder("y") : -1;
+            cache.i_z = schema.exists("z") ? schema.getEntryOrder("z") : -1;
         }
-        h_id = cache.h_id;
-        h_nhits = cache.h_nhits;
-        h_nphe = cache.h_nphe;
-        h_ntheta = cache.h_ntheta;
-        h_nphi = cache.h_nphi;
-        h_mintheta = cache.h_mintheta;
-        h_maxtheta = cache.h_maxtheta;
-        h_minphi = cache.h_minphi;
-        h_maxphi = cache.h_maxphi;
-        h_time = cache.h_time;
-        h_theta = cache.h_theta;
-        h_dtheta = cache.h_dtheta;
-        h_phi = cache.h_phi;
-        h_dphi = cache.h_dphi;
-        h_x = cache.h_x;
-        h_y = cache.h_y;
-        h_z = cache.h_z;
+        i_id = cache.i_id;
+        i_nhits = cache.i_nhits;
+        i_nphe = cache.i_nphe;
+        i_ntheta = cache.i_ntheta;
+        i_nphi = cache.i_nphi;
+        i_mintheta = cache.i_mintheta;
+        i_maxtheta = cache.i_maxtheta;
+        i_minphi = cache.i_minphi;
+        i_maxphi = cache.i_maxphi;
+        i_time = cache.i_time;
+        i_theta = cache.i_theta;
+        i_dtheta = cache.i_dtheta;
+        i_phi = cache.i_phi;
+        i_dphi = cache.i_dphi;
+        i_x = cache.i_x;
+        i_y = cache.i_y;
+        i_z = cache.i_z;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: id of the hit
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+        return static_cast<int>(m_view->getShort(i_id, row));
     }
     /// nhits: number of hits in cluster
     [[nodiscard]] int nhits(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_nhits, row));
+        return static_cast<int>(m_view->getShort(i_nhits, row));
     }
     /// nphe: number of photoelectrons in cluster
     [[nodiscard]] float nphe(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_nphe, row));
+        return static_cast<float>(m_view->getFloat(i_nphe, row));
     }
     /// ntheta: ntheta
     [[nodiscard]] int ntheta(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_ntheta, row));
+        return static_cast<int>(m_view->getShort(i_ntheta, row));
     }
     /// nphi: nphi
     [[nodiscard]] int nphi(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_nphi, row));
+        return static_cast<int>(m_view->getShort(i_nphi, row));
     }
     /// mintheta: Minimum theta angle
     [[nodiscard]] int mintheta(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_mintheta, row));
+        return static_cast<int>(m_view->getShort(i_mintheta, row));
     }
     /// maxtheta: Maximum theta angle
     [[nodiscard]] int maxtheta(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_maxtheta, row));
+        return static_cast<int>(m_view->getShort(i_maxtheta, row));
     }
     /// minphi: Minimum phi angle
     [[nodiscard]] int minphi(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_minphi, row));
+        return static_cast<int>(m_view->getShort(i_minphi, row));
     }
     /// maxphi: Maximum phi angle
     [[nodiscard]] int maxphi(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_maxphi, row));
+        return static_cast<int>(m_view->getShort(i_maxphi, row));
     }
     /// time: Time at the vertex
     [[nodiscard]] float time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_time, row));
+        return static_cast<float>(m_view->getFloat(i_time, row));
     }
     /// theta: Theta of the cluster
     [[nodiscard]] float theta(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_theta, row));
+        return static_cast<float>(m_view->getFloat(i_theta, row));
     }
     /// dtheta: Error of the theta
     [[nodiscard]] float dtheta(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_dtheta, row));
+        return static_cast<float>(m_view->getFloat(i_dtheta, row));
     }
     /// phi: Phi of the cluster
     [[nodiscard]] float phi(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_phi, row));
+        return static_cast<float>(m_view->getFloat(i_phi, row));
     }
     /// dphi: Error of the phi
     [[nodiscard]] float dphi(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_dphi, row));
+        return static_cast<float>(m_view->getFloat(i_dphi, row));
     }
     /// x: X coordinate of the hit
     [[nodiscard]] float x(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x, row));
+        return static_cast<float>(m_view->getFloat(i_x, row));
     }
     /// y: Y coordinate of the hit
     [[nodiscard]] float y(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y, row));
+        return static_cast<float>(m_view->getFloat(i_y, row));
     }
     /// z: Z coordinate of the hit
     [[nodiscard]] float z(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_z, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
-        return m_view.column<int16_t>(h_id);
-    }
-    /// nhits column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> nhits_col() const noexcept {
-        return m_view.column<int16_t>(h_nhits);
-    }
-    /// nphe column as a contiguous span.
-    [[nodiscard]] std::span<const float> nphe_col() const noexcept {
-        return m_view.column<float>(h_nphe);
-    }
-    /// ntheta column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> ntheta_col() const noexcept {
-        return m_view.column<int16_t>(h_ntheta);
-    }
-    /// nphi column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> nphi_col() const noexcept {
-        return m_view.column<int16_t>(h_nphi);
-    }
-    /// mintheta column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> mintheta_col() const noexcept {
-        return m_view.column<int16_t>(h_mintheta);
-    }
-    /// maxtheta column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> maxtheta_col() const noexcept {
-        return m_view.column<int16_t>(h_maxtheta);
-    }
-    /// minphi column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> minphi_col() const noexcept {
-        return m_view.column<int16_t>(h_minphi);
-    }
-    /// maxphi column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> maxphi_col() const noexcept {
-        return m_view.column<int16_t>(h_maxphi);
-    }
-    /// time column as a contiguous span.
-    [[nodiscard]] std::span<const float> time_col() const noexcept {
-        return m_view.column<float>(h_time);
-    }
-    /// theta column as a contiguous span.
-    [[nodiscard]] std::span<const float> theta_col() const noexcept {
-        return m_view.column<float>(h_theta);
-    }
-    /// dtheta column as a contiguous span.
-    [[nodiscard]] std::span<const float> dtheta_col() const noexcept {
-        return m_view.column<float>(h_dtheta);
-    }
-    /// phi column as a contiguous span.
-    [[nodiscard]] std::span<const float> phi_col() const noexcept {
-        return m_view.column<float>(h_phi);
-    }
-    /// dphi column as a contiguous span.
-    [[nodiscard]] std::span<const float> dphi_col() const noexcept {
-        return m_view.column<float>(h_dphi);
-    }
-    /// x column as a contiguous span.
-    [[nodiscard]] std::span<const float> x_col() const noexcept {
-        return m_view.column<float>(h_x);
-    }
-    /// y column as a contiguous span.
-    [[nodiscard]] std::span<const float> y_col() const noexcept {
-        return m_view.column<float>(h_y);
-    }
-    /// z column as a contiguous span.
-    [[nodiscard]] std::span<const float> z_col() const noexcept {
-        return m_view.column<float>(h_z);
+        return static_cast<float>(m_view->getFloat(i_z, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_nhits{};
-    hipo::column_handle h_nphe{};
-    hipo::column_handle h_ntheta{};
-    hipo::column_handle h_nphi{};
-    hipo::column_handle h_mintheta{};
-    hipo::column_handle h_maxtheta{};
-    hipo::column_handle h_minphi{};
-    hipo::column_handle h_maxphi{};
-    hipo::column_handle h_time{};
-    hipo::column_handle h_theta{};
-    hipo::column_handle h_dtheta{};
-    hipo::column_handle h_phi{};
-    hipo::column_handle h_dphi{};
-    hipo::column_handle h_x{};
-    hipo::column_handle h_y{};
-    hipo::column_handle h_z{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_nhits = -1;
+    int i_nphe = -1;
+    int i_ntheta = -1;
+    int i_nphi = -1;
+    int i_mintheta = -1;
+    int i_maxtheta = -1;
+    int i_minphi = -1;
+    int i_maxphi = -1;
+    int i_time = -1;
+    int i_theta = -1;
+    int i_dtheta = -1;
+    int i_phi = -1;
+    int i_dphi = -1;
+    int i_x = -1;
+    int i_y = -1;
+    int i_z = -1;
 
     friend class Row;
 };

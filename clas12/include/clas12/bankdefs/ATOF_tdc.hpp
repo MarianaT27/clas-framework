@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `ATOF::tdc` (group 22500, item 12).
 /// TDC bank for the ALERT TOF
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,151 +40,107 @@ class ATOF_tdc {
 
     ATOF_tdc() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_sector;
-            hipo::column_handle h_layer;
-            hipo::column_handle h_component;
-            hipo::column_handle h_order;
-            hipo::column_handle h_TDC;
-            hipo::column_handle h_ToT;
-            hipo::column_handle h_timestamp;
-            hipo::column_handle h_trigger;
+            int i_sector = -1;
+            int i_layer = -1;
+            int i_component = -1;
+            int i_order = -1;
+            int i_TDC = -1;
+            int i_ToT = -1;
+            int i_timestamp = -1;
+            int i_trigger = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
-            else cache.h_sector = {};
-            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
-            else cache.h_layer = {};
-            if (auto h = schema.get_handle("component"); h) cache.h_component = *h;
-            else cache.h_component = {};
-            if (auto h = schema.get_handle("order"); h) cache.h_order = *h;
-            else cache.h_order = {};
-            if (auto h = schema.get_handle("TDC"); h) cache.h_TDC = *h;
-            else cache.h_TDC = {};
-            if (auto h = schema.get_handle("ToT"); h) cache.h_ToT = *h;
-            else cache.h_ToT = {};
-            if (auto h = schema.get_handle("timestamp"); h) cache.h_timestamp = *h;
-            else cache.h_timestamp = {};
-            if (auto h = schema.get_handle("trigger"); h) cache.h_trigger = *h;
-            else cache.h_trigger = {};
+            cache.i_sector = schema.exists("sector") ? schema.getEntryOrder("sector") : -1;
+            cache.i_layer = schema.exists("layer") ? schema.getEntryOrder("layer") : -1;
+            cache.i_component = schema.exists("component") ? schema.getEntryOrder("component") : -1;
+            cache.i_order = schema.exists("order") ? schema.getEntryOrder("order") : -1;
+            cache.i_TDC = schema.exists("TDC") ? schema.getEntryOrder("TDC") : -1;
+            cache.i_ToT = schema.exists("ToT") ? schema.getEntryOrder("ToT") : -1;
+            cache.i_timestamp = schema.exists("timestamp") ? schema.getEntryOrder("timestamp") : -1;
+            cache.i_trigger = schema.exists("trigger") ? schema.getEntryOrder("trigger") : -1;
         }
-        h_sector = cache.h_sector;
-        h_layer = cache.h_layer;
-        h_component = cache.h_component;
-        h_order = cache.h_order;
-        h_TDC = cache.h_TDC;
-        h_ToT = cache.h_ToT;
-        h_timestamp = cache.h_timestamp;
-        h_trigger = cache.h_trigger;
+        i_sector = cache.i_sector;
+        i_layer = cache.i_layer;
+        i_component = cache.i_component;
+        i_order = cache.i_order;
+        i_TDC = cache.i_TDC;
+        i_ToT = cache.i_ToT;
+        i_timestamp = cache.i_timestamp;
+        i_trigger = cache.i_trigger;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// sector: sector (=1)
     [[nodiscard]] int sector(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+        return static_cast<int>(m_view->getByte(i_sector, row));
     }
     /// layer: layer (=1)
     [[nodiscard]] int layer(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_layer, row));
+        return static_cast<int>(m_view->getByte(i_layer, row));
     }
     /// component: signal (1-2)
     [[nodiscard]] int component(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_component, row));
+        return static_cast<int>(m_view->getShort(i_component, row));
     }
     /// order: order: 2 - TDCL , 3 - TDCR
     [[nodiscard]] int order(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_order, row));
+        return static_cast<int>(m_view->getByte(i_order, row));
     }
     /// TDC: TDC value
     [[nodiscard]] int TDC(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_TDC, row));
+        return static_cast<int>(m_view->getInt(i_TDC, row));
     }
     /// ToT: Time Over Threshold
     [[nodiscard]] int ToT(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_ToT, row));
+        return static_cast<int>(m_view->getInt(i_ToT, row));
     }
     /// timestamp: timestamp
     [[nodiscard]] int64_t timestamp(int row) const noexcept {
-        return static_cast<int64_t>(m_view.get<int64_t>(h_timestamp, row));
+        return static_cast<int64_t>(m_view->getLong(i_timestamp, row));
     }
     /// trigger: trigger number
     [[nodiscard]] int trigger(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_trigger, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// sector column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
-        return m_view.column<int8_t>(h_sector);
-    }
-    /// layer column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> layer_col() const noexcept {
-        return m_view.column<int8_t>(h_layer);
-    }
-    /// component column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> component_col() const noexcept {
-        return m_view.column<int16_t>(h_component);
-    }
-    /// order column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> order_col() const noexcept {
-        return m_view.column<int8_t>(h_order);
-    }
-    /// TDC column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> TDC_col() const noexcept {
-        return m_view.column<int32_t>(h_TDC);
-    }
-    /// ToT column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> ToT_col() const noexcept {
-        return m_view.column<int32_t>(h_ToT);
-    }
-    /// timestamp column as a contiguous span.
-    [[nodiscard]] std::span<const int64_t> timestamp_col() const noexcept {
-        return m_view.column<int64_t>(h_timestamp);
-    }
-    /// trigger column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> trigger_col() const noexcept {
-        return m_view.column<int32_t>(h_trigger);
+        return static_cast<int>(m_view->getInt(i_trigger, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_sector{};
-    hipo::column_handle h_layer{};
-    hipo::column_handle h_component{};
-    hipo::column_handle h_order{};
-    hipo::column_handle h_TDC{};
-    hipo::column_handle h_ToT{};
-    hipo::column_handle h_timestamp{};
-    hipo::column_handle h_trigger{};
+    const hipo::bank* m_view = nullptr;
+    int i_sector = -1;
+    int i_layer = -1;
+    int i_component = -1;
+    int i_order = -1;
+    int i_TDC = -1;
+    int i_ToT = -1;
+    int i_timestamp = -1;
+    int i_trigger = -1;
 
     friend class Row;
 };

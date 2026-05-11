@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `MUVT::trajectory` (group 22900, item 37).
 /// MUVT tracks trajectory bank
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,261 +40,177 @@ class MUVT_trajectory {
 
     MUVT_trajectory() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_index;
-            hipo::column_handle h_detector;
-            hipo::column_handle h_layer;
-            hipo::column_handle h_x;
-            hipo::column_handle h_y;
-            hipo::column_handle h_z;
-            hipo::column_handle h_tx;
-            hipo::column_handle h_ty;
-            hipo::column_handle h_tz;
-            hipo::column_handle h_lx;
-            hipo::column_handle h_ly;
-            hipo::column_handle h_lz;
-            hipo::column_handle h_dx;
-            hipo::column_handle h_dy;
-            hipo::column_handle h_dz;
-            hipo::column_handle h_path;
+            int i_index = -1;
+            int i_detector = -1;
+            int i_layer = -1;
+            int i_x = -1;
+            int i_y = -1;
+            int i_z = -1;
+            int i_tx = -1;
+            int i_ty = -1;
+            int i_tz = -1;
+            int i_lx = -1;
+            int i_ly = -1;
+            int i_lz = -1;
+            int i_dx = -1;
+            int i_dy = -1;
+            int i_dz = -1;
+            int i_path = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("index"); h) cache.h_index = *h;
-            else cache.h_index = {};
-            if (auto h = schema.get_handle("detector"); h) cache.h_detector = *h;
-            else cache.h_detector = {};
-            if (auto h = schema.get_handle("layer"); h) cache.h_layer = *h;
-            else cache.h_layer = {};
-            if (auto h = schema.get_handle("x"); h) cache.h_x = *h;
-            else cache.h_x = {};
-            if (auto h = schema.get_handle("y"); h) cache.h_y = *h;
-            else cache.h_y = {};
-            if (auto h = schema.get_handle("z"); h) cache.h_z = *h;
-            else cache.h_z = {};
-            if (auto h = schema.get_handle("tx"); h) cache.h_tx = *h;
-            else cache.h_tx = {};
-            if (auto h = schema.get_handle("ty"); h) cache.h_ty = *h;
-            else cache.h_ty = {};
-            if (auto h = schema.get_handle("tz"); h) cache.h_tz = *h;
-            else cache.h_tz = {};
-            if (auto h = schema.get_handle("lx"); h) cache.h_lx = *h;
-            else cache.h_lx = {};
-            if (auto h = schema.get_handle("ly"); h) cache.h_ly = *h;
-            else cache.h_ly = {};
-            if (auto h = schema.get_handle("lz"); h) cache.h_lz = *h;
-            else cache.h_lz = {};
-            if (auto h = schema.get_handle("dx"); h) cache.h_dx = *h;
-            else cache.h_dx = {};
-            if (auto h = schema.get_handle("dy"); h) cache.h_dy = *h;
-            else cache.h_dy = {};
-            if (auto h = schema.get_handle("dz"); h) cache.h_dz = *h;
-            else cache.h_dz = {};
-            if (auto h = schema.get_handle("path"); h) cache.h_path = *h;
-            else cache.h_path = {};
+            cache.i_index = schema.exists("index") ? schema.getEntryOrder("index") : -1;
+            cache.i_detector = schema.exists("detector") ? schema.getEntryOrder("detector") : -1;
+            cache.i_layer = schema.exists("layer") ? schema.getEntryOrder("layer") : -1;
+            cache.i_x = schema.exists("x") ? schema.getEntryOrder("x") : -1;
+            cache.i_y = schema.exists("y") ? schema.getEntryOrder("y") : -1;
+            cache.i_z = schema.exists("z") ? schema.getEntryOrder("z") : -1;
+            cache.i_tx = schema.exists("tx") ? schema.getEntryOrder("tx") : -1;
+            cache.i_ty = schema.exists("ty") ? schema.getEntryOrder("ty") : -1;
+            cache.i_tz = schema.exists("tz") ? schema.getEntryOrder("tz") : -1;
+            cache.i_lx = schema.exists("lx") ? schema.getEntryOrder("lx") : -1;
+            cache.i_ly = schema.exists("ly") ? schema.getEntryOrder("ly") : -1;
+            cache.i_lz = schema.exists("lz") ? schema.getEntryOrder("lz") : -1;
+            cache.i_dx = schema.exists("dx") ? schema.getEntryOrder("dx") : -1;
+            cache.i_dy = schema.exists("dy") ? schema.getEntryOrder("dy") : -1;
+            cache.i_dz = schema.exists("dz") ? schema.getEntryOrder("dz") : -1;
+            cache.i_path = schema.exists("path") ? schema.getEntryOrder("path") : -1;
         }
-        h_index = cache.h_index;
-        h_detector = cache.h_detector;
-        h_layer = cache.h_layer;
-        h_x = cache.h_x;
-        h_y = cache.h_y;
-        h_z = cache.h_z;
-        h_tx = cache.h_tx;
-        h_ty = cache.h_ty;
-        h_tz = cache.h_tz;
-        h_lx = cache.h_lx;
-        h_ly = cache.h_ly;
-        h_lz = cache.h_lz;
-        h_dx = cache.h_dx;
-        h_dy = cache.h_dy;
-        h_dz = cache.h_dz;
-        h_path = cache.h_path;
+        i_index = cache.i_index;
+        i_detector = cache.i_detector;
+        i_layer = cache.i_layer;
+        i_x = cache.i_x;
+        i_y = cache.i_y;
+        i_z = cache.i_z;
+        i_tx = cache.i_tx;
+        i_ty = cache.i_ty;
+        i_tz = cache.i_tz;
+        i_lx = cache.i_lx;
+        i_ly = cache.i_ly;
+        i_lz = cache.i_lz;
+        i_dx = cache.i_dx;
+        i_dy = cache.i_dy;
+        i_dz = cache.i_dz;
+        i_path = cache.i_path;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// index: index of the track in the DC bank
     [[nodiscard]] int index(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_index, row));
+        return static_cast<int>(m_view->getShort(i_index, row));
     }
     /// detector: id of the detector
     [[nodiscard]] int detector(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_detector, row));
+        return static_cast<int>(m_view->getByte(i_detector, row));
     }
     /// layer: id of the layer
     [[nodiscard]] int layer(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_layer, row));
+        return static_cast<int>(m_view->getByte(i_layer, row));
     }
     /// x: track x position at detector surface (cm)
     [[nodiscard]] float x(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_x, row));
+        return static_cast<float>(m_view->getFloat(i_x, row));
     }
     /// y: track y position at detector surface (cm)
     [[nodiscard]] float y(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_y, row));
+        return static_cast<float>(m_view->getFloat(i_y, row));
     }
     /// z: track z position at detector surface (cm)
     [[nodiscard]] float z(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_z, row));
+        return static_cast<float>(m_view->getFloat(i_z, row));
     }
     /// tx: track unit direction vector x component at detector surface
     [[nodiscard]] float tx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_tx, row));
+        return static_cast<float>(m_view->getFloat(i_tx, row));
     }
     /// ty: track unit direction vector y component at detector surface
     [[nodiscard]] float ty(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_ty, row));
+        return static_cast<float>(m_view->getFloat(i_ty, row));
     }
     /// tz: track unit direction vector z component at detector surface
     [[nodiscard]] float tz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_tz, row));
+        return static_cast<float>(m_view->getFloat(i_tz, row));
     }
     /// lx: track x position in local coordinates (cm)
     [[nodiscard]] float lx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_lx, row));
+        return static_cast<float>(m_view->getFloat(i_lx, row));
     }
     /// ly: track y position in local coordinates (cm)
     [[nodiscard]] float ly(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_ly, row));
+        return static_cast<float>(m_view->getFloat(i_ly, row));
     }
     /// lz: track z position in local coordinates (cm)
     [[nodiscard]] float lz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_lz, row));
+        return static_cast<float>(m_view->getFloat(i_lz, row));
     }
     /// dx: DC track x position in local coordinates (cm)
     [[nodiscard]] float dx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_dx, row));
+        return static_cast<float>(m_view->getFloat(i_dx, row));
     }
     /// dy: DC track y position in local coordinates (cm)
     [[nodiscard]] float dy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_dy, row));
+        return static_cast<float>(m_view->getFloat(i_dy, row));
     }
     /// dz: DC track z position in local coordinates (cm)
     [[nodiscard]] float dz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_dz, row));
+        return static_cast<float>(m_view->getFloat(i_dz, row));
     }
     /// path: pathlength of the track from the track vertex to the detector surface (cm)
     [[nodiscard]] float path(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_path, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// index column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> index_col() const noexcept {
-        return m_view.column<int16_t>(h_index);
-    }
-    /// detector column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> detector_col() const noexcept {
-        return m_view.column<int8_t>(h_detector);
-    }
-    /// layer column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> layer_col() const noexcept {
-        return m_view.column<int8_t>(h_layer);
-    }
-    /// x column as a contiguous span.
-    [[nodiscard]] std::span<const float> x_col() const noexcept {
-        return m_view.column<float>(h_x);
-    }
-    /// y column as a contiguous span.
-    [[nodiscard]] std::span<const float> y_col() const noexcept {
-        return m_view.column<float>(h_y);
-    }
-    /// z column as a contiguous span.
-    [[nodiscard]] std::span<const float> z_col() const noexcept {
-        return m_view.column<float>(h_z);
-    }
-    /// tx column as a contiguous span.
-    [[nodiscard]] std::span<const float> tx_col() const noexcept {
-        return m_view.column<float>(h_tx);
-    }
-    /// ty column as a contiguous span.
-    [[nodiscard]] std::span<const float> ty_col() const noexcept {
-        return m_view.column<float>(h_ty);
-    }
-    /// tz column as a contiguous span.
-    [[nodiscard]] std::span<const float> tz_col() const noexcept {
-        return m_view.column<float>(h_tz);
-    }
-    /// lx column as a contiguous span.
-    [[nodiscard]] std::span<const float> lx_col() const noexcept {
-        return m_view.column<float>(h_lx);
-    }
-    /// ly column as a contiguous span.
-    [[nodiscard]] std::span<const float> ly_col() const noexcept {
-        return m_view.column<float>(h_ly);
-    }
-    /// lz column as a contiguous span.
-    [[nodiscard]] std::span<const float> lz_col() const noexcept {
-        return m_view.column<float>(h_lz);
-    }
-    /// dx column as a contiguous span.
-    [[nodiscard]] std::span<const float> dx_col() const noexcept {
-        return m_view.column<float>(h_dx);
-    }
-    /// dy column as a contiguous span.
-    [[nodiscard]] std::span<const float> dy_col() const noexcept {
-        return m_view.column<float>(h_dy);
-    }
-    /// dz column as a contiguous span.
-    [[nodiscard]] std::span<const float> dz_col() const noexcept {
-        return m_view.column<float>(h_dz);
-    }
-    /// path column as a contiguous span.
-    [[nodiscard]] std::span<const float> path_col() const noexcept {
-        return m_view.column<float>(h_path);
+        return static_cast<float>(m_view->getFloat(i_path, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
     // -------------------------------------------------------------------
-    // Link-column handles (used by PindexLinker-style helpers to
-    // read the whole index column as a typed span in one shot)
+    // Link-column item indices (used by PindexLinker to scan the
+    // pindex/index column without re-resolving by name per call)
     // -------------------------------------------------------------------
-    [[nodiscard]] hipo::column_handle index_handle() const noexcept { return h_index; }
+    [[nodiscard]] int index_handle() const noexcept { return i_index; }
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_index{};
-    hipo::column_handle h_detector{};
-    hipo::column_handle h_layer{};
-    hipo::column_handle h_x{};
-    hipo::column_handle h_y{};
-    hipo::column_handle h_z{};
-    hipo::column_handle h_tx{};
-    hipo::column_handle h_ty{};
-    hipo::column_handle h_tz{};
-    hipo::column_handle h_lx{};
-    hipo::column_handle h_ly{};
-    hipo::column_handle h_lz{};
-    hipo::column_handle h_dx{};
-    hipo::column_handle h_dy{};
-    hipo::column_handle h_dz{};
-    hipo::column_handle h_path{};
+    const hipo::bank* m_view = nullptr;
+    int i_index = -1;
+    int i_detector = -1;
+    int i_layer = -1;
+    int i_x = -1;
+    int i_y = -1;
+    int i_z = -1;
+    int i_tx = -1;
+    int i_ty = -1;
+    int i_tz = -1;
+    int i_lx = -1;
+    int i_ly = -1;
+    int i_lz = -1;
+    int i_dx = -1;
+    int i_dy = -1;
+    int i_dz = -1;
+    int i_path = -1;
 
     friend class Row;
 };

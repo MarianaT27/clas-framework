@@ -7,7 +7,7 @@
 //      `read_<Bank>_rows_by_index(Event&, int key)` for every bank that has
 //      an `index` column (for sibling-row joins like FMT::Tracks.index ->
 //      REC::Track row).
-//   2. `<View>Bank` + `read_<View>_bank(Event&, int pindex)` for each
+//   2. `clas12::<View>Bank` + `read_<View>_bank(Event&, int pindex)` for each
 //      entry in PHYSICS_VIEWS - denormalized physics-view structs driven by
 //      the declarative strategy config (first_matching / best_by_priority /
 //      dispatched / first_row).

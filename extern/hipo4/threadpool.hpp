@@ -1,6 +1,6 @@
 #pragma once
 
-#include <fmt/base.h>
+#include <fmt/format.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -8,7 +8,6 @@
 #include <future>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <queue>
 #include <string>
 #include <string_view>
@@ -16,17 +15,10 @@
 #include <type_traits>
 #include <vector>
 
-/**
- * @brief A ThreadPool implementation.
- * 
- * Features:
- * - RAII compliant with proper resource management
- * - Move-only semantics for efficiency
- * - Strong exception safety guarantees
- * - Comprehensive statistics and monitoring
- * - Graceful shutdown with configurable timeout
- * - Cross-platform thread naming support
- */
+///
+/// @brief A ThreadPool implementation.
+///
+///
 class ThreadPool {
    public:
     enum class ShutdownResult {
@@ -53,18 +45,18 @@ class ThreadPool {
         [[nodiscard]] auto get_uptime() const noexcept -> std::chrono::duration<double>;
     };
 
-    /**
-     * @brief Constructs a ThreadPool with specified number of worker threads.
-     * @param num_threads Number of threads (0 = hardware_concurrency)
-     * @param thread_name_prefix Prefix for thread names
-     * @throws std::system_error if thread creation fails
-     * @throws std::invalid_argument if num_threads > hardware limit
-     */
+    ///
+    /// @brief Constructs a ThreadPool with specified number of worker threads.
+    /// @param num_threads Number of threads (0 = hardware_concurrency)
+    /// @param thread_name_prefix Prefix for thread names
+    /// @throws std::system_error if thread creation fails
+    /// @throws std::invalid_argument if num_threads > hardware limit
+    ///
     explicit ThreadPool(std::size_t num_threads = 0, std::string_view thread_name_prefix = "ThreadPool");
 
-    /**
-     * @brief Destructor ensures graceful shutdown with reasonable timeout.
-     */
+    ///
+    /// @brief Destructor ensures graceful shutdown with reasonable timeout.
+    ///
     ~ThreadPool() noexcept;
 
     // Non-copyable, move-only
@@ -73,47 +65,47 @@ class ThreadPool {
     ThreadPool(ThreadPool&&) noexcept;
     ThreadPool& operator=(ThreadPool&&) noexcept;
 
-    /**
-     * @brief Submits a task for asynchronous execution.
-     * @param callable Function/callable object to execute
-     * @param args Arguments to pass to the callable
-     * @return Future for the result
-     * @throws std::runtime_error if pool is stopped
-     */
+    ///
+    /// @brief Submits a task for asynchronous execution.
+    /// @param callable Function/callable object to execute
+    /// @param args Arguments to pass to the callable
+    /// @return Future for the result
+    /// @throws std::runtime_error if pool is stopped
+    ///
     template <typename Callable, typename... Args>
     [[nodiscard]] auto submit(Callable&& callable, Args&&... args) -> std::future<std::invoke_result_t<std::decay_t<Callable>, std::decay_t<Args>...>>;
 
-    /**
-     * @brief Initiates graceful shutdown with specified timeout.
-     * @param timeout Maximum time to wait for completion
-     */
+    ///
+    /// @brief Initiates graceful shutdown with specified timeout.
+    /// @param timeout Maximum time to wait for completion
+    ///
     auto shutdown(std::chrono::milliseconds timeout = std::chrono::seconds{5}) noexcept -> void;
 
-    /**
-     * @brief Waits for all pending tasks to complete.
-     * @param timeout Maximum time to wait
-     * @return true if all tasks completed within timeout
-     */
+    ///
+    /// @brief Waits for all pending tasks to complete.
+    /// @param timeout Maximum time to wait
+    /// @return true if all tasks completed within timeout
+    ///
     [[nodiscard]] auto wait_for_idle(std::chrono::milliseconds timeout = std::chrono::milliseconds::max()) const -> bool;
 
-    /**
-     * @brief Gets the number of worker threads.
-     */
+    ///
+    /// @brief Gets the number of worker threads.
+    ///
     [[nodiscard]] auto thread_count() const noexcept -> std::size_t { return m_workers.size(); }
 
-    /**
-     * @brief Gets the number of pending tasks.
-     */
+    ///
+    /// @brief Gets the number of pending tasks.
+    ///
     [[nodiscard]] auto pending_tasks() const noexcept -> std::size_t { return m_stats.tasks_pending.load(std::memory_order_acquire); }
 
-    /**
-     * @brief Checks if the pool is running (not stopped).
-     */
+    ///
+    /// @brief Checks if the pool is running (not stopped).
+    ///
     [[nodiscard]] auto is_running() const noexcept -> bool { return !m_stop_requested.load(std::memory_order_acquire); }
 
-    /**
-     * @brief Gets current statistics snapshot.
-     */
+    ///
+    /// @brief Gets current statistics snapshot.
+    ///
     [[nodiscard]] auto get_statistics() const noexcept -> const Statistics& { return m_stats; }
 
    private:
@@ -162,17 +154,17 @@ constexpr std::size_t MAX_REASONABLE_THREADS = 100;
 constexpr auto DEFAULT_SHUTDOWN_TIMEOUT = std::chrono::seconds{5};
 }  // anonymous namespace
 
-auto ThreadPool::Statistics::get_throughput() const noexcept -> double {
+inline auto ThreadPool::Statistics::get_throughput() const noexcept -> double {
     const auto elapsed = std::chrono::steady_clock::now() - start_time;
     const auto seconds = std::chrono::duration<double>(elapsed).count();
     return seconds > 0.0 ? static_cast<double>(tasks_completed.load(std::memory_order_acquire)) / seconds : 0.0;
 }
 
-auto ThreadPool::Statistics::get_uptime() const noexcept -> std::chrono::duration<double> {
+inline auto ThreadPool::Statistics::get_uptime() const noexcept -> std::chrono::duration<double> {
     return std::chrono::steady_clock::now() - start_time;
 }
 
-ThreadPool::Statistics::Statistics(Statistics&& other) noexcept
+inline ThreadPool::Statistics::Statistics(Statistics&& other) noexcept
     : tasks_submitted{other.tasks_submitted.load(std::memory_order_acquire)},
       tasks_completed{other.tasks_completed.load(std::memory_order_acquire)},
       tasks_failed{other.tasks_failed.load(std::memory_order_acquire)},
@@ -186,7 +178,7 @@ ThreadPool::Statistics::Statistics(Statistics&& other) noexcept
 }
 
 // Statistics move assignment operator
-ThreadPool::Statistics& ThreadPool::Statistics::operator=(Statistics&& other) noexcept {
+inline ThreadPool::Statistics& ThreadPool::Statistics::operator=(Statistics&& other) noexcept {
     if (this != &other) {
         tasks_submitted.store(other.tasks_submitted.load(std::memory_order_acquire), std::memory_order_release);
         tasks_completed.store(other.tasks_completed.load(std::memory_order_acquire), std::memory_order_release);
@@ -203,7 +195,7 @@ ThreadPool::Statistics& ThreadPool::Statistics::operator=(Statistics&& other) no
     return *this;
 }
 
-ThreadPool::ThreadPool(std::size_t num_threads, std::string_view thread_name_prefix)
+inline ThreadPool::ThreadPool(std::size_t num_threads, std::string_view thread_name_prefix)
     : m_thread_name_prefix{thread_name_prefix} {
 
     if (num_threads == 0) throw std::invalid_argument("ThreadPool: num_threads must be greater than 0");
@@ -226,11 +218,11 @@ ThreadPool::ThreadPool(std::size_t num_threads, std::string_view thread_name_pre
     }
 }
 
-ThreadPool::~ThreadPool() noexcept {
+inline ThreadPool::~ThreadPool() noexcept {
     if (is_running()) shutdown(DEFAULT_SHUTDOWN_TIMEOUT);
 }
 
-ThreadPool::ThreadPool(ThreadPool&& other) noexcept
+inline ThreadPool::ThreadPool(ThreadPool&& other) noexcept
     : m_queue_mutex{},     // Cannot move mutex, create new
       m_task_available{},  // Cannot move condition_variable, create new
       m_all_idle{},        // Cannot move condition_variable, create new
@@ -243,7 +235,7 @@ ThreadPool::ThreadPool(ThreadPool&& other) noexcept
     other.m_stop_requested.store(true, std::memory_order_release);
 }
 
-ThreadPool& ThreadPool::operator=(ThreadPool&& other) noexcept {
+inline ThreadPool& ThreadPool::operator=(ThreadPool&& other) noexcept {
     if (this != &other) {
         if (is_running()) shutdown(DEFAULT_SHUTDOWN_TIMEOUT);
 
@@ -263,7 +255,7 @@ ThreadPool& ThreadPool::operator=(ThreadPool&& other) noexcept {
     return *this;
 }
 
-auto ThreadPool::shutdown(std::chrono::milliseconds timeout) noexcept -> void {
+inline auto ThreadPool::shutdown(std::chrono::milliseconds timeout) noexcept -> void {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
 
     bool expected = false;
@@ -312,7 +304,7 @@ auto ThreadPool::shutdown(std::chrono::milliseconds timeout) noexcept -> void {
     }
 }
 
-auto ThreadPool::wait_for_idle(std::chrono::milliseconds timeout) const -> bool {
+inline auto ThreadPool::wait_for_idle(std::chrono::milliseconds timeout) const -> bool {
     std::unique_lock lock{m_queue_mutex};
     return m_all_idle.wait_for(lock, timeout, [this] {
         return m_task_queue.empty() &&
@@ -320,7 +312,7 @@ auto ThreadPool::wait_for_idle(std::chrono::milliseconds timeout) const -> bool 
     });
 }
 
-auto ThreadPool::worker_loop(std::size_t worker_id) noexcept -> void {
+inline auto ThreadPool::worker_loop(std::size_t worker_id) noexcept -> void {
     set_thread_name(m_thread_name_prefix + "_" + std::to_string(worker_id));
 
     while (!m_stop_requested.load(std::memory_order_acquire)) {
@@ -372,7 +364,7 @@ auto ThreadPool::worker_loop(std::size_t worker_id) noexcept -> void {
     }
 }
 
-auto ThreadPool::set_thread_name(std::string_view name) const noexcept -> void {
+inline auto ThreadPool::set_thread_name(std::string_view name) const noexcept -> void {
     try {
 #if defined(__linux__)
         // Linux limits thread names to 15 characters + null terminator
@@ -395,6 +387,5 @@ auto ThreadPool::set_thread_name(std::string_view name) const noexcept -> void {
         pthread_setname_np(name_str.c_str());
 #endif
     } catch (...) {
-        // Ignore thread naming failures - not critical for functionality
     }
 }

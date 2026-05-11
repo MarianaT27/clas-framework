@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `aidn::tracks` (group 4200, item 4).
 /// tracks identified with denoised AI
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,229 +40,155 @@ class aidn_tracks {
 
     aidn_tracks() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_sector;
-            hipo::column_handle h_charge;
-            hipo::column_handle h_prob;
-            hipo::column_handle h_c1;
-            hipo::column_handle h_c2;
-            hipo::column_handle h_c3;
-            hipo::column_handle h_c4;
-            hipo::column_handle h_c5;
-            hipo::column_handle h_c6;
-            hipo::column_handle h_p;
-            hipo::column_handle h_theta;
-            hipo::column_handle h_phi;
-            hipo::column_handle h_vz;
+            int i_id = -1;
+            int i_sector = -1;
+            int i_charge = -1;
+            int i_prob = -1;
+            int i_c1 = -1;
+            int i_c2 = -1;
+            int i_c3 = -1;
+            int i_c4 = -1;
+            int i_c5 = -1;
+            int i_c6 = -1;
+            int i_p = -1;
+            int i_theta = -1;
+            int i_phi = -1;
+            int i_vz = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
-            else cache.h_sector = {};
-            if (auto h = schema.get_handle("charge"); h) cache.h_charge = *h;
-            else cache.h_charge = {};
-            if (auto h = schema.get_handle("prob"); h) cache.h_prob = *h;
-            else cache.h_prob = {};
-            if (auto h = schema.get_handle("c1"); h) cache.h_c1 = *h;
-            else cache.h_c1 = {};
-            if (auto h = schema.get_handle("c2"); h) cache.h_c2 = *h;
-            else cache.h_c2 = {};
-            if (auto h = schema.get_handle("c3"); h) cache.h_c3 = *h;
-            else cache.h_c3 = {};
-            if (auto h = schema.get_handle("c4"); h) cache.h_c4 = *h;
-            else cache.h_c4 = {};
-            if (auto h = schema.get_handle("c5"); h) cache.h_c5 = *h;
-            else cache.h_c5 = {};
-            if (auto h = schema.get_handle("c6"); h) cache.h_c6 = *h;
-            else cache.h_c6 = {};
-            if (auto h = schema.get_handle("p"); h) cache.h_p = *h;
-            else cache.h_p = {};
-            if (auto h = schema.get_handle("theta"); h) cache.h_theta = *h;
-            else cache.h_theta = {};
-            if (auto h = schema.get_handle("phi"); h) cache.h_phi = *h;
-            else cache.h_phi = {};
-            if (auto h = schema.get_handle("vz"); h) cache.h_vz = *h;
-            else cache.h_vz = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_sector = schema.exists("sector") ? schema.getEntryOrder("sector") : -1;
+            cache.i_charge = schema.exists("charge") ? schema.getEntryOrder("charge") : -1;
+            cache.i_prob = schema.exists("prob") ? schema.getEntryOrder("prob") : -1;
+            cache.i_c1 = schema.exists("c1") ? schema.getEntryOrder("c1") : -1;
+            cache.i_c2 = schema.exists("c2") ? schema.getEntryOrder("c2") : -1;
+            cache.i_c3 = schema.exists("c3") ? schema.getEntryOrder("c3") : -1;
+            cache.i_c4 = schema.exists("c4") ? schema.getEntryOrder("c4") : -1;
+            cache.i_c5 = schema.exists("c5") ? schema.getEntryOrder("c5") : -1;
+            cache.i_c6 = schema.exists("c6") ? schema.getEntryOrder("c6") : -1;
+            cache.i_p = schema.exists("p") ? schema.getEntryOrder("p") : -1;
+            cache.i_theta = schema.exists("theta") ? schema.getEntryOrder("theta") : -1;
+            cache.i_phi = schema.exists("phi") ? schema.getEntryOrder("phi") : -1;
+            cache.i_vz = schema.exists("vz") ? schema.getEntryOrder("vz") : -1;
         }
-        h_id = cache.h_id;
-        h_sector = cache.h_sector;
-        h_charge = cache.h_charge;
-        h_prob = cache.h_prob;
-        h_c1 = cache.h_c1;
-        h_c2 = cache.h_c2;
-        h_c3 = cache.h_c3;
-        h_c4 = cache.h_c4;
-        h_c5 = cache.h_c5;
-        h_c6 = cache.h_c6;
-        h_p = cache.h_p;
-        h_theta = cache.h_theta;
-        h_phi = cache.h_phi;
-        h_vz = cache.h_vz;
+        i_id = cache.i_id;
+        i_sector = cache.i_sector;
+        i_charge = cache.i_charge;
+        i_prob = cache.i_prob;
+        i_c1 = cache.i_c1;
+        i_c2 = cache.i_c2;
+        i_c3 = cache.i_c3;
+        i_c4 = cache.i_c4;
+        i_c5 = cache.i_c5;
+        i_c6 = cache.i_c6;
+        i_p = cache.i_p;
+        i_theta = cache.i_theta;
+        i_phi = cache.i_phi;
+        i_vz = cache.i_vz;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: id of the track
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_id, row));
+        return static_cast<int>(m_view->getByte(i_id, row));
     }
     /// sector: sector of the track
     [[nodiscard]] int sector(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+        return static_cast<int>(m_view->getByte(i_sector, row));
     }
     /// charge: charge of the track
     [[nodiscard]] int charge(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_charge, row));
+        return static_cast<int>(m_view->getByte(i_charge, row));
     }
     /// prob: probability of inference
     [[nodiscard]] float prob(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_prob, row));
+        return static_cast<float>(m_view->getFloat(i_prob, row));
     }
     /// c1: cluster ID in superlayer 1
     [[nodiscard]] int c1(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_c1, row));
+        return static_cast<int>(m_view->getShort(i_c1, row));
     }
     /// c2: cluster ID in superlayer 2
     [[nodiscard]] int c2(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_c2, row));
+        return static_cast<int>(m_view->getShort(i_c2, row));
     }
     /// c3: cluster ID in superlayer 3
     [[nodiscard]] int c3(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_c3, row));
+        return static_cast<int>(m_view->getShort(i_c3, row));
     }
     /// c4: cluster ID in superlayer 4
     [[nodiscard]] int c4(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_c4, row));
+        return static_cast<int>(m_view->getShort(i_c4, row));
     }
     /// c5: cluster ID in superlayer 5
     [[nodiscard]] int c5(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_c5, row));
+        return static_cast<int>(m_view->getShort(i_c5, row));
     }
     /// c6: cluster ID in superlayer 6
     [[nodiscard]] int c6(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_c6, row));
+        return static_cast<int>(m_view->getShort(i_c6, row));
     }
     /// p: momentum of the track
     [[nodiscard]] float p(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_p, row));
+        return static_cast<float>(m_view->getFloat(i_p, row));
     }
     /// theta: theta angle of the track
     [[nodiscard]] float theta(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_theta, row));
+        return static_cast<float>(m_view->getFloat(i_theta, row));
     }
     /// phi: phi angle of the track
     [[nodiscard]] float phi(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_phi, row));
+        return static_cast<float>(m_view->getFloat(i_phi, row));
     }
     /// vz: vertex Z component for predicted track
     [[nodiscard]] float vz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_vz, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> id_col() const noexcept {
-        return m_view.column<int8_t>(h_id);
-    }
-    /// sector column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
-        return m_view.column<int8_t>(h_sector);
-    }
-    /// charge column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> charge_col() const noexcept {
-        return m_view.column<int8_t>(h_charge);
-    }
-    /// prob column as a contiguous span.
-    [[nodiscard]] std::span<const float> prob_col() const noexcept {
-        return m_view.column<float>(h_prob);
-    }
-    /// c1 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> c1_col() const noexcept {
-        return m_view.column<int16_t>(h_c1);
-    }
-    /// c2 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> c2_col() const noexcept {
-        return m_view.column<int16_t>(h_c2);
-    }
-    /// c3 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> c3_col() const noexcept {
-        return m_view.column<int16_t>(h_c3);
-    }
-    /// c4 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> c4_col() const noexcept {
-        return m_view.column<int16_t>(h_c4);
-    }
-    /// c5 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> c5_col() const noexcept {
-        return m_view.column<int16_t>(h_c5);
-    }
-    /// c6 column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> c6_col() const noexcept {
-        return m_view.column<int16_t>(h_c6);
-    }
-    /// p column as a contiguous span.
-    [[nodiscard]] std::span<const float> p_col() const noexcept {
-        return m_view.column<float>(h_p);
-    }
-    /// theta column as a contiguous span.
-    [[nodiscard]] std::span<const float> theta_col() const noexcept {
-        return m_view.column<float>(h_theta);
-    }
-    /// phi column as a contiguous span.
-    [[nodiscard]] std::span<const float> phi_col() const noexcept {
-        return m_view.column<float>(h_phi);
-    }
-    /// vz column as a contiguous span.
-    [[nodiscard]] std::span<const float> vz_col() const noexcept {
-        return m_view.column<float>(h_vz);
+        return static_cast<float>(m_view->getFloat(i_vz, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_sector{};
-    hipo::column_handle h_charge{};
-    hipo::column_handle h_prob{};
-    hipo::column_handle h_c1{};
-    hipo::column_handle h_c2{};
-    hipo::column_handle h_c3{};
-    hipo::column_handle h_c4{};
-    hipo::column_handle h_c5{};
-    hipo::column_handle h_c6{};
-    hipo::column_handle h_p{};
-    hipo::column_handle h_theta{};
-    hipo::column_handle h_phi{};
-    hipo::column_handle h_vz{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_sector = -1;
+    int i_charge = -1;
+    int i_prob = -1;
+    int i_c1 = -1;
+    int i_c2 = -1;
+    int i_c3 = -1;
+    int i_c4 = -1;
+    int i_c5 = -1;
+    int i_c6 = -1;
+    int i_p = -1;
+    int i_theta = -1;
+    int i_phi = -1;
+    int i_vz = -1;
 
     friend class Row;
 };

@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `RICH::Hadron` (group 21800, item 38).
 /// Reconstructed Hadrons in RICH
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,327 +40,218 @@ class RICH_Hadron {
 
     RICH_Hadron() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_hindex;
-            hipo::column_handle h_pindex;
-            hipo::column_handle h_sector;
-            hipo::column_handle h_traced_the;
-            hipo::column_handle h_traced_phi;
-            hipo::column_handle h_traced_hitx;
-            hipo::column_handle h_traced_hity;
-            hipo::column_handle h_traced_hitz;
-            hipo::column_handle h_traced_time;
-            hipo::column_handle h_traced_path;
-            hipo::column_handle h_traced_mchi2;
-            hipo::column_handle h_traced_ilay;
-            hipo::column_handle h_traced_ico;
-            hipo::column_handle h_traced_emix;
-            hipo::column_handle h_traced_emiy;
-            hipo::column_handle h_traced_emiz;
-            hipo::column_handle h_etaC_dir;
-            hipo::column_handle h_etaC_lat;
-            hipo::column_handle h_etaC_sphe;
-            hipo::column_handle h_etaC_rms;
+            int i_id = -1;
+            int i_hindex = -1;
+            int i_pindex = -1;
+            int i_sector = -1;
+            int i_traced_the = -1;
+            int i_traced_phi = -1;
+            int i_traced_hitx = -1;
+            int i_traced_hity = -1;
+            int i_traced_hitz = -1;
+            int i_traced_time = -1;
+            int i_traced_path = -1;
+            int i_traced_mchi2 = -1;
+            int i_traced_ilay = -1;
+            int i_traced_ico = -1;
+            int i_traced_emix = -1;
+            int i_traced_emiy = -1;
+            int i_traced_emiz = -1;
+            int i_etaC_dir = -1;
+            int i_etaC_lat = -1;
+            int i_etaC_sphe = -1;
+            int i_etaC_rms = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("hindex"); h) cache.h_hindex = *h;
-            else cache.h_hindex = {};
-            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
-            else cache.h_pindex = {};
-            if (auto h = schema.get_handle("sector"); h) cache.h_sector = *h;
-            else cache.h_sector = {};
-            if (auto h = schema.get_handle("traced_the"); h) cache.h_traced_the = *h;
-            else cache.h_traced_the = {};
-            if (auto h = schema.get_handle("traced_phi"); h) cache.h_traced_phi = *h;
-            else cache.h_traced_phi = {};
-            if (auto h = schema.get_handle("traced_hitx"); h) cache.h_traced_hitx = *h;
-            else cache.h_traced_hitx = {};
-            if (auto h = schema.get_handle("traced_hity"); h) cache.h_traced_hity = *h;
-            else cache.h_traced_hity = {};
-            if (auto h = schema.get_handle("traced_hitz"); h) cache.h_traced_hitz = *h;
-            else cache.h_traced_hitz = {};
-            if (auto h = schema.get_handle("traced_time"); h) cache.h_traced_time = *h;
-            else cache.h_traced_time = {};
-            if (auto h = schema.get_handle("traced_path"); h) cache.h_traced_path = *h;
-            else cache.h_traced_path = {};
-            if (auto h = schema.get_handle("traced_mchi2"); h) cache.h_traced_mchi2 = *h;
-            else cache.h_traced_mchi2 = {};
-            if (auto h = schema.get_handle("traced_ilay"); h) cache.h_traced_ilay = *h;
-            else cache.h_traced_ilay = {};
-            if (auto h = schema.get_handle("traced_ico"); h) cache.h_traced_ico = *h;
-            else cache.h_traced_ico = {};
-            if (auto h = schema.get_handle("traced_emix"); h) cache.h_traced_emix = *h;
-            else cache.h_traced_emix = {};
-            if (auto h = schema.get_handle("traced_emiy"); h) cache.h_traced_emiy = *h;
-            else cache.h_traced_emiy = {};
-            if (auto h = schema.get_handle("traced_emiz"); h) cache.h_traced_emiz = *h;
-            else cache.h_traced_emiz = {};
-            if (auto h = schema.get_handle("etaC_dir"); h) cache.h_etaC_dir = *h;
-            else cache.h_etaC_dir = {};
-            if (auto h = schema.get_handle("etaC_lat"); h) cache.h_etaC_lat = *h;
-            else cache.h_etaC_lat = {};
-            if (auto h = schema.get_handle("etaC_sphe"); h) cache.h_etaC_sphe = *h;
-            else cache.h_etaC_sphe = {};
-            if (auto h = schema.get_handle("etaC_rms"); h) cache.h_etaC_rms = *h;
-            else cache.h_etaC_rms = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_hindex = schema.exists("hindex") ? schema.getEntryOrder("hindex") : -1;
+            cache.i_pindex = schema.exists("pindex") ? schema.getEntryOrder("pindex") : -1;
+            cache.i_sector = schema.exists("sector") ? schema.getEntryOrder("sector") : -1;
+            cache.i_traced_the = schema.exists("traced_the") ? schema.getEntryOrder("traced_the") : -1;
+            cache.i_traced_phi = schema.exists("traced_phi") ? schema.getEntryOrder("traced_phi") : -1;
+            cache.i_traced_hitx = schema.exists("traced_hitx") ? schema.getEntryOrder("traced_hitx") : -1;
+            cache.i_traced_hity = schema.exists("traced_hity") ? schema.getEntryOrder("traced_hity") : -1;
+            cache.i_traced_hitz = schema.exists("traced_hitz") ? schema.getEntryOrder("traced_hitz") : -1;
+            cache.i_traced_time = schema.exists("traced_time") ? schema.getEntryOrder("traced_time") : -1;
+            cache.i_traced_path = schema.exists("traced_path") ? schema.getEntryOrder("traced_path") : -1;
+            cache.i_traced_mchi2 = schema.exists("traced_mchi2") ? schema.getEntryOrder("traced_mchi2") : -1;
+            cache.i_traced_ilay = schema.exists("traced_ilay") ? schema.getEntryOrder("traced_ilay") : -1;
+            cache.i_traced_ico = schema.exists("traced_ico") ? schema.getEntryOrder("traced_ico") : -1;
+            cache.i_traced_emix = schema.exists("traced_emix") ? schema.getEntryOrder("traced_emix") : -1;
+            cache.i_traced_emiy = schema.exists("traced_emiy") ? schema.getEntryOrder("traced_emiy") : -1;
+            cache.i_traced_emiz = schema.exists("traced_emiz") ? schema.getEntryOrder("traced_emiz") : -1;
+            cache.i_etaC_dir = schema.exists("etaC_dir") ? schema.getEntryOrder("etaC_dir") : -1;
+            cache.i_etaC_lat = schema.exists("etaC_lat") ? schema.getEntryOrder("etaC_lat") : -1;
+            cache.i_etaC_sphe = schema.exists("etaC_sphe") ? schema.getEntryOrder("etaC_sphe") : -1;
+            cache.i_etaC_rms = schema.exists("etaC_rms") ? schema.getEntryOrder("etaC_rms") : -1;
         }
-        h_id = cache.h_id;
-        h_hindex = cache.h_hindex;
-        h_pindex = cache.h_pindex;
-        h_sector = cache.h_sector;
-        h_traced_the = cache.h_traced_the;
-        h_traced_phi = cache.h_traced_phi;
-        h_traced_hitx = cache.h_traced_hitx;
-        h_traced_hity = cache.h_traced_hity;
-        h_traced_hitz = cache.h_traced_hitz;
-        h_traced_time = cache.h_traced_time;
-        h_traced_path = cache.h_traced_path;
-        h_traced_mchi2 = cache.h_traced_mchi2;
-        h_traced_ilay = cache.h_traced_ilay;
-        h_traced_ico = cache.h_traced_ico;
-        h_traced_emix = cache.h_traced_emix;
-        h_traced_emiy = cache.h_traced_emiy;
-        h_traced_emiz = cache.h_traced_emiz;
-        h_etaC_dir = cache.h_etaC_dir;
-        h_etaC_lat = cache.h_etaC_lat;
-        h_etaC_sphe = cache.h_etaC_sphe;
-        h_etaC_rms = cache.h_etaC_rms;
+        i_id = cache.i_id;
+        i_hindex = cache.i_hindex;
+        i_pindex = cache.i_pindex;
+        i_sector = cache.i_sector;
+        i_traced_the = cache.i_traced_the;
+        i_traced_phi = cache.i_traced_phi;
+        i_traced_hitx = cache.i_traced_hitx;
+        i_traced_hity = cache.i_traced_hity;
+        i_traced_hitz = cache.i_traced_hitz;
+        i_traced_time = cache.i_traced_time;
+        i_traced_path = cache.i_traced_path;
+        i_traced_mchi2 = cache.i_traced_mchi2;
+        i_traced_ilay = cache.i_traced_ilay;
+        i_traced_ico = cache.i_traced_ico;
+        i_traced_emix = cache.i_traced_emix;
+        i_traced_emiy = cache.i_traced_emiy;
+        i_traced_emiz = cache.i_traced_emiz;
+        i_etaC_dir = cache.i_etaC_dir;
+        i_etaC_lat = cache.i_etaC_lat;
+        i_etaC_sphe = cache.i_etaC_sphe;
+        i_etaC_rms = cache.i_etaC_rms;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: hadron id
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+        return static_cast<int>(m_view->getShort(i_id, row));
     }
     /// hindex: row in the RICH clusters bank
     [[nodiscard]] int hindex(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_hindex, row));
+        return static_cast<int>(m_view->getShort(i_hindex, row));
     }
     /// pindex: row in the REC  particle bank
     [[nodiscard]] int pindex(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_pindex, row));
+        return static_cast<int>(m_view->getByte(i_pindex, row));
     }
     /// sector: sector
     [[nodiscard]] int sector(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_sector, row));
+        return static_cast<int>(m_view->getByte(i_sector, row));
     }
     /// traced_the: Lab theta angle for traced solution
     [[nodiscard]] float traced_the(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_the, row));
+        return static_cast<float>(m_view->getFloat(i_traced_the, row));
     }
     /// traced_phi: Lab phi angle for traced solution
     [[nodiscard]] float traced_phi(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_phi, row));
+        return static_cast<float>(m_view->getFloat(i_traced_phi, row));
     }
     /// traced_hitx: Lab hitx angle for traced solution
     [[nodiscard]] float traced_hitx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_hitx, row));
+        return static_cast<float>(m_view->getFloat(i_traced_hitx, row));
     }
     /// traced_hity: Lab hity angle for traced solution
     [[nodiscard]] float traced_hity(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_hity, row));
+        return static_cast<float>(m_view->getFloat(i_traced_hity, row));
     }
     /// traced_hitz: Lab hitz angle for traced solution
     [[nodiscard]] float traced_hitz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_hitz, row));
+        return static_cast<float>(m_view->getFloat(i_traced_hitz, row));
     }
     /// traced_time: time for traced solution
     [[nodiscard]] float traced_time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_time, row));
+        return static_cast<float>(m_view->getFloat(i_traced_time, row));
     }
     /// traced_path: path for traced solution
     [[nodiscard]] float traced_path(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_path, row));
+        return static_cast<float>(m_view->getFloat(i_traced_path, row));
     }
     /// traced_mchi2: mchi2 for traced solution
     [[nodiscard]] float traced_mchi2(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_mchi2, row));
+        return static_cast<float>(m_view->getFloat(i_traced_mchi2, row));
     }
     /// traced_ilay: emission aero layer for traced solution
     [[nodiscard]] int traced_ilay(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_traced_ilay, row));
+        return static_cast<int>(m_view->getShort(i_traced_ilay, row));
     }
     /// traced_ico: emission aero component for traced solution
     [[nodiscard]] int traced_ico(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_traced_ico, row));
+        return static_cast<int>(m_view->getShort(i_traced_ico, row));
     }
     /// traced_emix: emission point x for traced solution
     [[nodiscard]] float traced_emix(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_emix, row));
+        return static_cast<float>(m_view->getFloat(i_traced_emix, row));
     }
     /// traced_emiy: emission point y for traced solution
     [[nodiscard]] float traced_emiy(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_emiy, row));
+        return static_cast<float>(m_view->getFloat(i_traced_emiy, row));
     }
     /// traced_emiz: emission point z for traced solution
     [[nodiscard]] float traced_emiz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_emiz, row));
+        return static_cast<float>(m_view->getFloat(i_traced_emiz, row));
     }
     /// etaC_dir: expected etaC for electron (direct photons)
     [[nodiscard]] float etaC_dir(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_etaC_dir, row));
+        return static_cast<float>(m_view->getFloat(i_etaC_dir, row));
     }
     /// etaC_lat: expected etaC for electron (after lateral reflection)
     [[nodiscard]] float etaC_lat(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_etaC_lat, row));
+        return static_cast<float>(m_view->getFloat(i_etaC_lat, row));
     }
     /// etaC_sphe: expected etaC for electron (after spherical reflection)
     [[nodiscard]] float etaC_sphe(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_etaC_sphe, row));
+        return static_cast<float>(m_view->getFloat(i_etaC_sphe, row));
     }
     /// etaC_rms: expected etaC resolution
     [[nodiscard]] float etaC_rms(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_etaC_rms, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
-        return m_view.column<int16_t>(h_id);
-    }
-    /// hindex column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> hindex_col() const noexcept {
-        return m_view.column<int16_t>(h_hindex);
-    }
-    /// pindex column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> pindex_col() const noexcept {
-        return m_view.column<int8_t>(h_pindex);
-    }
-    /// sector column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> sector_col() const noexcept {
-        return m_view.column<int8_t>(h_sector);
-    }
-    /// traced_the column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_the_col() const noexcept {
-        return m_view.column<float>(h_traced_the);
-    }
-    /// traced_phi column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_phi_col() const noexcept {
-        return m_view.column<float>(h_traced_phi);
-    }
-    /// traced_hitx column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_hitx_col() const noexcept {
-        return m_view.column<float>(h_traced_hitx);
-    }
-    /// traced_hity column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_hity_col() const noexcept {
-        return m_view.column<float>(h_traced_hity);
-    }
-    /// traced_hitz column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_hitz_col() const noexcept {
-        return m_view.column<float>(h_traced_hitz);
-    }
-    /// traced_time column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_time_col() const noexcept {
-        return m_view.column<float>(h_traced_time);
-    }
-    /// traced_path column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_path_col() const noexcept {
-        return m_view.column<float>(h_traced_path);
-    }
-    /// traced_mchi2 column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_mchi2_col() const noexcept {
-        return m_view.column<float>(h_traced_mchi2);
-    }
-    /// traced_ilay column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> traced_ilay_col() const noexcept {
-        return m_view.column<int16_t>(h_traced_ilay);
-    }
-    /// traced_ico column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> traced_ico_col() const noexcept {
-        return m_view.column<int16_t>(h_traced_ico);
-    }
-    /// traced_emix column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_emix_col() const noexcept {
-        return m_view.column<float>(h_traced_emix);
-    }
-    /// traced_emiy column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_emiy_col() const noexcept {
-        return m_view.column<float>(h_traced_emiy);
-    }
-    /// traced_emiz column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_emiz_col() const noexcept {
-        return m_view.column<float>(h_traced_emiz);
-    }
-    /// etaC_dir column as a contiguous span.
-    [[nodiscard]] std::span<const float> etaC_dir_col() const noexcept {
-        return m_view.column<float>(h_etaC_dir);
-    }
-    /// etaC_lat column as a contiguous span.
-    [[nodiscard]] std::span<const float> etaC_lat_col() const noexcept {
-        return m_view.column<float>(h_etaC_lat);
-    }
-    /// etaC_sphe column as a contiguous span.
-    [[nodiscard]] std::span<const float> etaC_sphe_col() const noexcept {
-        return m_view.column<float>(h_etaC_sphe);
-    }
-    /// etaC_rms column as a contiguous span.
-    [[nodiscard]] std::span<const float> etaC_rms_col() const noexcept {
-        return m_view.column<float>(h_etaC_rms);
+        return static_cast<float>(m_view->getFloat(i_etaC_rms, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
     // -------------------------------------------------------------------
-    // Link-column handles (used by PindexLinker-style helpers to
-    // read the whole index column as a typed span in one shot)
+    // Link-column item indices (used by PindexLinker to scan the
+    // pindex/index column without re-resolving by name per call)
     // -------------------------------------------------------------------
-    [[nodiscard]] hipo::column_handle hindex_handle() const noexcept { return h_hindex; }
-    [[nodiscard]] hipo::column_handle pindex_handle() const noexcept { return h_pindex; }
+    [[nodiscard]] int hindex_handle() const noexcept { return i_hindex; }
+    [[nodiscard]] int pindex_handle() const noexcept { return i_pindex; }
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_hindex{};
-    hipo::column_handle h_pindex{};
-    hipo::column_handle h_sector{};
-    hipo::column_handle h_traced_the{};
-    hipo::column_handle h_traced_phi{};
-    hipo::column_handle h_traced_hitx{};
-    hipo::column_handle h_traced_hity{};
-    hipo::column_handle h_traced_hitz{};
-    hipo::column_handle h_traced_time{};
-    hipo::column_handle h_traced_path{};
-    hipo::column_handle h_traced_mchi2{};
-    hipo::column_handle h_traced_ilay{};
-    hipo::column_handle h_traced_ico{};
-    hipo::column_handle h_traced_emix{};
-    hipo::column_handle h_traced_emiy{};
-    hipo::column_handle h_traced_emiz{};
-    hipo::column_handle h_etaC_dir{};
-    hipo::column_handle h_etaC_lat{};
-    hipo::column_handle h_etaC_sphe{};
-    hipo::column_handle h_etaC_rms{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_hindex = -1;
+    int i_pindex = -1;
+    int i_sector = -1;
+    int i_traced_the = -1;
+    int i_traced_phi = -1;
+    int i_traced_hitx = -1;
+    int i_traced_hity = -1;
+    int i_traced_hitz = -1;
+    int i_traced_time = -1;
+    int i_traced_path = -1;
+    int i_traced_mchi2 = -1;
+    int i_traced_ilay = -1;
+    int i_traced_ico = -1;
+    int i_traced_emix = -1;
+    int i_traced_emiy = -1;
+    int i_traced_emiz = -1;
+    int i_etaC_dir = -1;
+    int i_etaC_lat = -1;
+    int i_etaC_sphe = -1;
+    int i_etaC_rms = -1;
 
     friend class Row;
 };

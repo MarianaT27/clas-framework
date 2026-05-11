@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `RUN::config` (group 10000, item 11).
 /// Run Configuration
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,164 +40,115 @@ class RUN_config {
 
     RUN_config() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_run;
-            hipo::column_handle h_event;
-            hipo::column_handle h_unixtime;
-            hipo::column_handle h_trigger;
-            hipo::column_handle h_timestamp;
-            hipo::column_handle h_type;
-            hipo::column_handle h_mode;
-            hipo::column_handle h_torus;
-            hipo::column_handle h_solenoid;
+            int i_run = -1;
+            int i_event = -1;
+            int i_unixtime = -1;
+            int i_trigger = -1;
+            int i_timestamp = -1;
+            int i_type = -1;
+            int i_mode = -1;
+            int i_torus = -1;
+            int i_solenoid = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("run"); h) cache.h_run = *h;
-            else cache.h_run = {};
-            if (auto h = schema.get_handle("event"); h) cache.h_event = *h;
-            else cache.h_event = {};
-            if (auto h = schema.get_handle("unixtime"); h) cache.h_unixtime = *h;
-            else cache.h_unixtime = {};
-            if (auto h = schema.get_handle("trigger"); h) cache.h_trigger = *h;
-            else cache.h_trigger = {};
-            if (auto h = schema.get_handle("timestamp"); h) cache.h_timestamp = *h;
-            else cache.h_timestamp = {};
-            if (auto h = schema.get_handle("type"); h) cache.h_type = *h;
-            else cache.h_type = {};
-            if (auto h = schema.get_handle("mode"); h) cache.h_mode = *h;
-            else cache.h_mode = {};
-            if (auto h = schema.get_handle("torus"); h) cache.h_torus = *h;
-            else cache.h_torus = {};
-            if (auto h = schema.get_handle("solenoid"); h) cache.h_solenoid = *h;
-            else cache.h_solenoid = {};
+            cache.i_run = schema.exists("run") ? schema.getEntryOrder("run") : -1;
+            cache.i_event = schema.exists("event") ? schema.getEntryOrder("event") : -1;
+            cache.i_unixtime = schema.exists("unixtime") ? schema.getEntryOrder("unixtime") : -1;
+            cache.i_trigger = schema.exists("trigger") ? schema.getEntryOrder("trigger") : -1;
+            cache.i_timestamp = schema.exists("timestamp") ? schema.getEntryOrder("timestamp") : -1;
+            cache.i_type = schema.exists("type") ? schema.getEntryOrder("type") : -1;
+            cache.i_mode = schema.exists("mode") ? schema.getEntryOrder("mode") : -1;
+            cache.i_torus = schema.exists("torus") ? schema.getEntryOrder("torus") : -1;
+            cache.i_solenoid = schema.exists("solenoid") ? schema.getEntryOrder("solenoid") : -1;
         }
-        h_run = cache.h_run;
-        h_event = cache.h_event;
-        h_unixtime = cache.h_unixtime;
-        h_trigger = cache.h_trigger;
-        h_timestamp = cache.h_timestamp;
-        h_type = cache.h_type;
-        h_mode = cache.h_mode;
-        h_torus = cache.h_torus;
-        h_solenoid = cache.h_solenoid;
+        i_run = cache.i_run;
+        i_event = cache.i_event;
+        i_unixtime = cache.i_unixtime;
+        i_trigger = cache.i_trigger;
+        i_timestamp = cache.i_timestamp;
+        i_type = cache.i_type;
+        i_mode = cache.i_mode;
+        i_torus = cache.i_torus;
+        i_solenoid = cache.i_solenoid;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// run: RUN number from CODA or GEMC
     [[nodiscard]] int run(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_run, row));
+        return static_cast<int>(m_view->getInt(i_run, row));
     }
     /// event: Event number
     [[nodiscard]] int event(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_event, row));
+        return static_cast<int>(m_view->getInt(i_event, row));
     }
     /// unixtime: Unix time (seconds)
     [[nodiscard]] int unixtime(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_unixtime, row));
+        return static_cast<int>(m_view->getInt(i_unixtime, row));
     }
     /// trigger: trigger bits
     [[nodiscard]] int64_t trigger(int row) const noexcept {
-        return static_cast<int64_t>(m_view.get<int64_t>(h_trigger, row));
+        return static_cast<int64_t>(m_view->getLong(i_trigger, row));
     }
     /// timestamp: time stamp from Trigger Interface (TI) board (4 nanoseconds)
     [[nodiscard]] int64_t timestamp(int row) const noexcept {
-        return static_cast<int64_t>(m_view.get<int64_t>(h_timestamp, row));
+        return static_cast<int64_t>(m_view->getLong(i_timestamp, row));
     }
     /// type: type of the run
     [[nodiscard]] int type(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_type, row));
+        return static_cast<int>(m_view->getByte(i_type, row));
     }
     /// mode: run mode
     [[nodiscard]] int mode(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_mode, row));
+        return static_cast<int>(m_view->getByte(i_mode, row));
     }
     /// torus: torus setting relative value(-1.0 to 1.0)
     [[nodiscard]] float torus(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_torus, row));
+        return static_cast<float>(m_view->getFloat(i_torus, row));
     }
     /// solenoid: solenoid field setting (-1.0 to 1.0)
     [[nodiscard]] float solenoid(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_solenoid, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// run column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> run_col() const noexcept {
-        return m_view.column<int32_t>(h_run);
-    }
-    /// event column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> event_col() const noexcept {
-        return m_view.column<int32_t>(h_event);
-    }
-    /// unixtime column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> unixtime_col() const noexcept {
-        return m_view.column<int32_t>(h_unixtime);
-    }
-    /// trigger column as a contiguous span.
-    [[nodiscard]] std::span<const int64_t> trigger_col() const noexcept {
-        return m_view.column<int64_t>(h_trigger);
-    }
-    /// timestamp column as a contiguous span.
-    [[nodiscard]] std::span<const int64_t> timestamp_col() const noexcept {
-        return m_view.column<int64_t>(h_timestamp);
-    }
-    /// type column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> type_col() const noexcept {
-        return m_view.column<int8_t>(h_type);
-    }
-    /// mode column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> mode_col() const noexcept {
-        return m_view.column<int8_t>(h_mode);
-    }
-    /// torus column as a contiguous span.
-    [[nodiscard]] std::span<const float> torus_col() const noexcept {
-        return m_view.column<float>(h_torus);
-    }
-    /// solenoid column as a contiguous span.
-    [[nodiscard]] std::span<const float> solenoid_col() const noexcept {
-        return m_view.column<float>(h_solenoid);
+        return static_cast<float>(m_view->getFloat(i_solenoid, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_run{};
-    hipo::column_handle h_event{};
-    hipo::column_handle h_unixtime{};
-    hipo::column_handle h_trigger{};
-    hipo::column_handle h_timestamp{};
-    hipo::column_handle h_type{};
-    hipo::column_handle h_mode{};
-    hipo::column_handle h_torus{};
-    hipo::column_handle h_solenoid{};
+    const hipo::bank* m_view = nullptr;
+    int i_run = -1;
+    int i_event = -1;
+    int i_unixtime = -1;
+    int i_trigger = -1;
+    int i_timestamp = -1;
+    int i_type = -1;
+    int i_mode = -1;
+    int i_torus = -1;
+    int i_solenoid = -1;
 
     friend class Row;
 };

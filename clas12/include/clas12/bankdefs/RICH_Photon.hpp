@@ -8,11 +8,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <string_view>
 
-#include <bank_view.h>
-#include <schema.h>
+#include <bank.h>
 
 namespace bankdefs {
 
@@ -20,8 +18,8 @@ namespace bankdefs {
 /// HIPO bank wrapper for `RICH::Photon` (group 21800, item 39).
 /// Reconstructed Photons in RICH
 ///
-/// Bind the wrapper to a `hipo::bank_view` once, then access columns
-/// via zero-cost handle-based getters.
+/// Bind the wrapper to a `hipo::bank` once, then access columns
+/// via cached item-index getters (no per-call name lookup).
 ///
 /// Example:
 /// @code
@@ -42,431 +40,282 @@ class RICH_Photon {
 
     RICH_Photon() = default;
 
-    /// Bind to a live bank_view. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column handle by name; all
-    /// subsequent bind()s for the same schema hit the cache and copy 25-30
-    /// trivially-copyable column_handle words.
-    /// Returns false if the view is not valid.
-    bool bind(const hipo::bank_view& view) noexcept {
-        m_view = view;
-        if (!view.valid()) return false;
-        const auto& schema = view.get_schema();
-        struct HandleCache {
+    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
+    /// the first bind() in a thread resolves every column name to its item
+    /// index via schema.getEntryOrder(); subsequent bind()s for the same
+    /// schema hit the cache. Returns true on success.
+    bool bind(const hipo::bank& view) noexcept {
+        m_view = &view;
+        // const_cast is OK: hipo::bank::getSchema() lacks a const overload
+        // but only reads schemaEntriesMap; we never mutate the bank here.
+        auto& schema = const_cast<hipo::bank&>(view).getSchema();
+        struct ItemCache {
             const hipo::schema* schema_ptr = nullptr;
-            hipo::column_handle h_id;
-            hipo::column_handle h_hindex;
-            hipo::column_handle h_pindex;
-            hipo::column_handle h_type;
-            hipo::column_handle h_used;
-            hipo::column_handle h_start_time;
-            hipo::column_handle h_traced_the;
-            hipo::column_handle h_traced_phi;
-            hipo::column_handle h_traced_hitx;
-            hipo::column_handle h_traced_hity;
-            hipo::column_handle h_traced_hitz;
-            hipo::column_handle h_traced_path;
-            hipo::column_handle h_traced_time;
-            hipo::column_handle h_traced_stime;
-            hipo::column_handle h_traced_nrfl;
-            hipo::column_handle h_traced_nrfr;
-            hipo::column_handle h_traced_1rfl;
-            hipo::column_handle h_traced_layers;
-            hipo::column_handle h_traced_compos;
-            hipo::column_handle h_traced_etaC;
-            hipo::column_handle h_traced_aeron;
-            hipo::column_handle h_traced_dthe;
-            hipo::column_handle h_traced_dphi;
-            hipo::column_handle h_eff;
-            hipo::column_handle h_back;
-            hipo::column_handle h_hypo_pid;
-            hipo::column_handle h_etac_ref;
-            hipo::column_handle h_etac_rms;
-            hipo::column_handle h_prob;
+            int i_id = -1;
+            int i_hindex = -1;
+            int i_pindex = -1;
+            int i_type = -1;
+            int i_used = -1;
+            int i_start_time = -1;
+            int i_traced_the = -1;
+            int i_traced_phi = -1;
+            int i_traced_hitx = -1;
+            int i_traced_hity = -1;
+            int i_traced_hitz = -1;
+            int i_traced_path = -1;
+            int i_traced_time = -1;
+            int i_traced_stime = -1;
+            int i_traced_nrfl = -1;
+            int i_traced_nrfr = -1;
+            int i_traced_1rfl = -1;
+            int i_traced_layers = -1;
+            int i_traced_compos = -1;
+            int i_traced_etaC = -1;
+            int i_traced_aeron = -1;
+            int i_traced_dthe = -1;
+            int i_traced_dphi = -1;
+            int i_eff = -1;
+            int i_back = -1;
+            int i_hypo_pid = -1;
+            int i_etac_ref = -1;
+            int i_etac_rms = -1;
+            int i_prob = -1;
         };
-        static thread_local HandleCache cache;
+        static thread_local ItemCache cache;
         if (cache.schema_ptr != &schema) {
             cache.schema_ptr = &schema;
-            if (auto h = schema.get_handle("id"); h) cache.h_id = *h;
-            else cache.h_id = {};
-            if (auto h = schema.get_handle("hindex"); h) cache.h_hindex = *h;
-            else cache.h_hindex = {};
-            if (auto h = schema.get_handle("pindex"); h) cache.h_pindex = *h;
-            else cache.h_pindex = {};
-            if (auto h = schema.get_handle("type"); h) cache.h_type = *h;
-            else cache.h_type = {};
-            if (auto h = schema.get_handle("used"); h) cache.h_used = *h;
-            else cache.h_used = {};
-            if (auto h = schema.get_handle("start_time"); h) cache.h_start_time = *h;
-            else cache.h_start_time = {};
-            if (auto h = schema.get_handle("traced_the"); h) cache.h_traced_the = *h;
-            else cache.h_traced_the = {};
-            if (auto h = schema.get_handle("traced_phi"); h) cache.h_traced_phi = *h;
-            else cache.h_traced_phi = {};
-            if (auto h = schema.get_handle("traced_hitx"); h) cache.h_traced_hitx = *h;
-            else cache.h_traced_hitx = {};
-            if (auto h = schema.get_handle("traced_hity"); h) cache.h_traced_hity = *h;
-            else cache.h_traced_hity = {};
-            if (auto h = schema.get_handle("traced_hitz"); h) cache.h_traced_hitz = *h;
-            else cache.h_traced_hitz = {};
-            if (auto h = schema.get_handle("traced_path"); h) cache.h_traced_path = *h;
-            else cache.h_traced_path = {};
-            if (auto h = schema.get_handle("traced_time"); h) cache.h_traced_time = *h;
-            else cache.h_traced_time = {};
-            if (auto h = schema.get_handle("traced_stime"); h) cache.h_traced_stime = *h;
-            else cache.h_traced_stime = {};
-            if (auto h = schema.get_handle("traced_nrfl"); h) cache.h_traced_nrfl = *h;
-            else cache.h_traced_nrfl = {};
-            if (auto h = schema.get_handle("traced_nrfr"); h) cache.h_traced_nrfr = *h;
-            else cache.h_traced_nrfr = {};
-            if (auto h = schema.get_handle("traced_1rfl"); h) cache.h_traced_1rfl = *h;
-            else cache.h_traced_1rfl = {};
-            if (auto h = schema.get_handle("traced_layers"); h) cache.h_traced_layers = *h;
-            else cache.h_traced_layers = {};
-            if (auto h = schema.get_handle("traced_compos"); h) cache.h_traced_compos = *h;
-            else cache.h_traced_compos = {};
-            if (auto h = schema.get_handle("traced_etaC"); h) cache.h_traced_etaC = *h;
-            else cache.h_traced_etaC = {};
-            if (auto h = schema.get_handle("traced_aeron"); h) cache.h_traced_aeron = *h;
-            else cache.h_traced_aeron = {};
-            if (auto h = schema.get_handle("traced_dthe"); h) cache.h_traced_dthe = *h;
-            else cache.h_traced_dthe = {};
-            if (auto h = schema.get_handle("traced_dphi"); h) cache.h_traced_dphi = *h;
-            else cache.h_traced_dphi = {};
-            if (auto h = schema.get_handle("eff"); h) cache.h_eff = *h;
-            else cache.h_eff = {};
-            if (auto h = schema.get_handle("back"); h) cache.h_back = *h;
-            else cache.h_back = {};
-            if (auto h = schema.get_handle("hypo_pid"); h) cache.h_hypo_pid = *h;
-            else cache.h_hypo_pid = {};
-            if (auto h = schema.get_handle("etac_ref"); h) cache.h_etac_ref = *h;
-            else cache.h_etac_ref = {};
-            if (auto h = schema.get_handle("etac_rms"); h) cache.h_etac_rms = *h;
-            else cache.h_etac_rms = {};
-            if (auto h = schema.get_handle("prob"); h) cache.h_prob = *h;
-            else cache.h_prob = {};
+            cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
+            cache.i_hindex = schema.exists("hindex") ? schema.getEntryOrder("hindex") : -1;
+            cache.i_pindex = schema.exists("pindex") ? schema.getEntryOrder("pindex") : -1;
+            cache.i_type = schema.exists("type") ? schema.getEntryOrder("type") : -1;
+            cache.i_used = schema.exists("used") ? schema.getEntryOrder("used") : -1;
+            cache.i_start_time = schema.exists("start_time") ? schema.getEntryOrder("start_time") : -1;
+            cache.i_traced_the = schema.exists("traced_the") ? schema.getEntryOrder("traced_the") : -1;
+            cache.i_traced_phi = schema.exists("traced_phi") ? schema.getEntryOrder("traced_phi") : -1;
+            cache.i_traced_hitx = schema.exists("traced_hitx") ? schema.getEntryOrder("traced_hitx") : -1;
+            cache.i_traced_hity = schema.exists("traced_hity") ? schema.getEntryOrder("traced_hity") : -1;
+            cache.i_traced_hitz = schema.exists("traced_hitz") ? schema.getEntryOrder("traced_hitz") : -1;
+            cache.i_traced_path = schema.exists("traced_path") ? schema.getEntryOrder("traced_path") : -1;
+            cache.i_traced_time = schema.exists("traced_time") ? schema.getEntryOrder("traced_time") : -1;
+            cache.i_traced_stime = schema.exists("traced_stime") ? schema.getEntryOrder("traced_stime") : -1;
+            cache.i_traced_nrfl = schema.exists("traced_nrfl") ? schema.getEntryOrder("traced_nrfl") : -1;
+            cache.i_traced_nrfr = schema.exists("traced_nrfr") ? schema.getEntryOrder("traced_nrfr") : -1;
+            cache.i_traced_1rfl = schema.exists("traced_1rfl") ? schema.getEntryOrder("traced_1rfl") : -1;
+            cache.i_traced_layers = schema.exists("traced_layers") ? schema.getEntryOrder("traced_layers") : -1;
+            cache.i_traced_compos = schema.exists("traced_compos") ? schema.getEntryOrder("traced_compos") : -1;
+            cache.i_traced_etaC = schema.exists("traced_etaC") ? schema.getEntryOrder("traced_etaC") : -1;
+            cache.i_traced_aeron = schema.exists("traced_aeron") ? schema.getEntryOrder("traced_aeron") : -1;
+            cache.i_traced_dthe = schema.exists("traced_dthe") ? schema.getEntryOrder("traced_dthe") : -1;
+            cache.i_traced_dphi = schema.exists("traced_dphi") ? schema.getEntryOrder("traced_dphi") : -1;
+            cache.i_eff = schema.exists("eff") ? schema.getEntryOrder("eff") : -1;
+            cache.i_back = schema.exists("back") ? schema.getEntryOrder("back") : -1;
+            cache.i_hypo_pid = schema.exists("hypo_pid") ? schema.getEntryOrder("hypo_pid") : -1;
+            cache.i_etac_ref = schema.exists("etac_ref") ? schema.getEntryOrder("etac_ref") : -1;
+            cache.i_etac_rms = schema.exists("etac_rms") ? schema.getEntryOrder("etac_rms") : -1;
+            cache.i_prob = schema.exists("prob") ? schema.getEntryOrder("prob") : -1;
         }
-        h_id = cache.h_id;
-        h_hindex = cache.h_hindex;
-        h_pindex = cache.h_pindex;
-        h_type = cache.h_type;
-        h_used = cache.h_used;
-        h_start_time = cache.h_start_time;
-        h_traced_the = cache.h_traced_the;
-        h_traced_phi = cache.h_traced_phi;
-        h_traced_hitx = cache.h_traced_hitx;
-        h_traced_hity = cache.h_traced_hity;
-        h_traced_hitz = cache.h_traced_hitz;
-        h_traced_path = cache.h_traced_path;
-        h_traced_time = cache.h_traced_time;
-        h_traced_stime = cache.h_traced_stime;
-        h_traced_nrfl = cache.h_traced_nrfl;
-        h_traced_nrfr = cache.h_traced_nrfr;
-        h_traced_1rfl = cache.h_traced_1rfl;
-        h_traced_layers = cache.h_traced_layers;
-        h_traced_compos = cache.h_traced_compos;
-        h_traced_etaC = cache.h_traced_etaC;
-        h_traced_aeron = cache.h_traced_aeron;
-        h_traced_dthe = cache.h_traced_dthe;
-        h_traced_dphi = cache.h_traced_dphi;
-        h_eff = cache.h_eff;
-        h_back = cache.h_back;
-        h_hypo_pid = cache.h_hypo_pid;
-        h_etac_ref = cache.h_etac_ref;
-        h_etac_rms = cache.h_etac_rms;
-        h_prob = cache.h_prob;
+        i_id = cache.i_id;
+        i_hindex = cache.i_hindex;
+        i_pindex = cache.i_pindex;
+        i_type = cache.i_type;
+        i_used = cache.i_used;
+        i_start_time = cache.i_start_time;
+        i_traced_the = cache.i_traced_the;
+        i_traced_phi = cache.i_traced_phi;
+        i_traced_hitx = cache.i_traced_hitx;
+        i_traced_hity = cache.i_traced_hity;
+        i_traced_hitz = cache.i_traced_hitz;
+        i_traced_path = cache.i_traced_path;
+        i_traced_time = cache.i_traced_time;
+        i_traced_stime = cache.i_traced_stime;
+        i_traced_nrfl = cache.i_traced_nrfl;
+        i_traced_nrfr = cache.i_traced_nrfr;
+        i_traced_1rfl = cache.i_traced_1rfl;
+        i_traced_layers = cache.i_traced_layers;
+        i_traced_compos = cache.i_traced_compos;
+        i_traced_etaC = cache.i_traced_etaC;
+        i_traced_aeron = cache.i_traced_aeron;
+        i_traced_dthe = cache.i_traced_dthe;
+        i_traced_dphi = cache.i_traced_dphi;
+        i_eff = cache.i_eff;
+        i_back = cache.i_back;
+        i_hypo_pid = cache.i_hypo_pid;
+        i_etac_ref = cache.i_etac_ref;
+        i_etac_rms = cache.i_etac_rms;
+        i_prob = cache.i_prob;
         return true;
     }
 
-    /// Current row count of the bound bank view.
-    [[nodiscard]] int rows() const noexcept { return m_view.rows(); }
+    /// Current row count of the bound bank (0 if unbound).
+    [[nodiscard]] int rows() const noexcept { return m_view ? m_view->getRows() : 0; }
 
-    /// True if bind() has been called with a valid view.
-    [[nodiscard]] bool valid() const noexcept { return m_view.valid(); }
+    /// True if bind() has been called.
+    [[nodiscard]] bool valid() const noexcept { return m_view != nullptr; }
 
-    /// Access the underlying bank_view (for advanced use).
-    [[nodiscard]] const hipo::bank_view& view() const noexcept { return m_view; }
+    /// Access the underlying hipo::bank (for advanced use).
+    [[nodiscard]] const hipo::bank& view() const noexcept { return *m_view; }
 
     // -------------------------------------------------------------------
-    // Per-row scalar getters (handle-based, zero string lookup)
+    // Per-row scalar getters (item-index based, no string lookup)
     // -------------------------------------------------------------------
     /// id: id
     [[nodiscard]] int id(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_id, row));
+        return static_cast<int>(m_view->getShort(i_id, row));
     }
     /// hindex: related row in the RICH::hits bank
     [[nodiscard]] int hindex(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_hindex, row));
+        return static_cast<int>(m_view->getShort(i_hindex, row));
     }
     /// pindex: related row in the REC::Particle bank
     [[nodiscard]] int pindex(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_pindex, row));
+        return static_cast<int>(m_view->getByte(i_pindex, row));
     }
     /// type: hypo (0=ele, 1=pion, 2=kaon, 3=proto) + reco (0=real hit, 10=trial)
     [[nodiscard]] int type(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_type, row));
+        return static_cast<int>(m_view->getShort(i_type, row));
     }
     /// used: eligible for PID in time (1=yes, 0=no) angle (10=yes, 0=no) hypo (100=by other)
     [[nodiscard]] int used(int row) const noexcept {
-        return static_cast<int>(m_view.get<int8_t>(h_used, row));
+        return static_cast<int>(m_view->getByte(i_used, row));
     }
     /// start_time: time at photon emission point
     [[nodiscard]] float start_time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_start_time, row));
+        return static_cast<float>(m_view->getFloat(i_start_time, row));
     }
     /// traced_the: Lab theta angle for traced solution
     [[nodiscard]] float traced_the(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_the, row));
+        return static_cast<float>(m_view->getFloat(i_traced_the, row));
     }
     /// traced_phi: Lab phi angle for traced solution
     [[nodiscard]] float traced_phi(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_phi, row));
+        return static_cast<float>(m_view->getFloat(i_traced_phi, row));
     }
     /// traced_hitx: Lab hitx angle for traced solution
     [[nodiscard]] float traced_hitx(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_hitx, row));
+        return static_cast<float>(m_view->getFloat(i_traced_hitx, row));
     }
     /// traced_hity: Lab hity angle for traced solution
     [[nodiscard]] float traced_hity(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_hity, row));
+        return static_cast<float>(m_view->getFloat(i_traced_hity, row));
     }
     /// traced_hitz: Lab hitz angle for traced solution
     [[nodiscard]] float traced_hitz(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_hitz, row));
+        return static_cast<float>(m_view->getFloat(i_traced_hitz, row));
     }
     /// traced_path: path for traced solution
     [[nodiscard]] float traced_path(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_path, row));
+        return static_cast<float>(m_view->getFloat(i_traced_path, row));
     }
     /// traced_time: time for traced solution
     [[nodiscard]] float traced_time(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_time, row));
+        return static_cast<float>(m_view->getFloat(i_traced_time, row));
     }
     /// traced_stime: time rms for traced solution
     [[nodiscard]] float traced_stime(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_stime, row));
+        return static_cast<float>(m_view->getFloat(i_traced_stime, row));
     }
     /// traced_nrfl: n reflections for traced solution
     [[nodiscard]] int traced_nrfl(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_traced_nrfl, row));
+        return static_cast<int>(m_view->getShort(i_traced_nrfl, row));
     }
     /// traced_nrfr: n refractions for traced solution
     [[nodiscard]] int traced_nrfr(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_traced_nrfr, row));
+        return static_cast<int>(m_view->getShort(i_traced_nrfr, row));
     }
     /// traced_1rfl: first reflection type for traced solution
     [[nodiscard]] int traced_1rfl(int row) const noexcept {
-        return static_cast<int>(m_view.get<int16_t>(h_traced_1rfl, row));
+        return static_cast<int>(m_view->getShort(i_traced_1rfl, row));
     }
     /// traced_layers: sequence of hit layers (reflections)
     [[nodiscard]] int traced_layers(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_traced_layers, row));
+        return static_cast<int>(m_view->getInt(i_traced_layers, row));
     }
     /// traced_compos: sequence of hit components (reflections)
     [[nodiscard]] int traced_compos(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_traced_compos, row));
+        return static_cast<int>(m_view->getInt(i_traced_compos, row));
     }
     /// traced_etaC: etaC angle for traced solution
     [[nodiscard]] float traced_etaC(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_etaC, row));
+        return static_cast<float>(m_view->getFloat(i_traced_etaC, row));
     }
     /// traced_aeron: n for traced solution
     [[nodiscard]] float traced_aeron(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_aeron, row));
+        return static_cast<float>(m_view->getFloat(i_traced_aeron, row));
     }
     /// traced_dthe: pixel equivalent dthe for traced solution
     [[nodiscard]] float traced_dthe(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_dthe, row));
+        return static_cast<float>(m_view->getFloat(i_traced_dthe, row));
     }
     /// traced_dphi: pixel equivalent dphi for traced solution
     [[nodiscard]] float traced_dphi(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_traced_dphi, row));
+        return static_cast<float>(m_view->getFloat(i_traced_dphi, row));
     }
     /// eff: photon detection efficiency for likelihood
     [[nodiscard]] float eff(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_eff, row));
+        return static_cast<float>(m_view->getFloat(i_eff, row));
     }
     /// back: background level for likelihood
     [[nodiscard]] float back(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_back, row));
+        return static_cast<float>(m_view->getFloat(i_back, row));
     }
     /// hypo_pid: PID hypothesis for photon reconstruction
     [[nodiscard]] int hypo_pid(int row) const noexcept {
-        return static_cast<int>(m_view.get<int32_t>(h_hypo_pid, row));
+        return static_cast<int>(m_view->getInt(i_hypo_pid, row));
     }
     /// etac_ref: Cherenkov angle expected value
     [[nodiscard]] float etac_ref(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_etac_ref, row));
+        return static_cast<float>(m_view->getFloat(i_etac_ref, row));
     }
     /// etac_rms: Cherenkov angle expected resolution
     [[nodiscard]] float etac_rms(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_etac_rms, row));
+        return static_cast<float>(m_view->getFloat(i_etac_rms, row));
     }
     /// prob: probability for traced solution with given hypo
     [[nodiscard]] float prob(int row) const noexcept {
-        return static_cast<float>(m_view.get<float>(h_prob, row));
-    }
-
-    // -------------------------------------------------------------------
-    // Whole-column span accessors (SIMD-friendly, zero-copy)
-    // -------------------------------------------------------------------
-    /// id column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> id_col() const noexcept {
-        return m_view.column<int16_t>(h_id);
-    }
-    /// hindex column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> hindex_col() const noexcept {
-        return m_view.column<int16_t>(h_hindex);
-    }
-    /// pindex column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> pindex_col() const noexcept {
-        return m_view.column<int8_t>(h_pindex);
-    }
-    /// type column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> type_col() const noexcept {
-        return m_view.column<int16_t>(h_type);
-    }
-    /// used column as a contiguous span.
-    [[nodiscard]] std::span<const int8_t> used_col() const noexcept {
-        return m_view.column<int8_t>(h_used);
-    }
-    /// start_time column as a contiguous span.
-    [[nodiscard]] std::span<const float> start_time_col() const noexcept {
-        return m_view.column<float>(h_start_time);
-    }
-    /// traced_the column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_the_col() const noexcept {
-        return m_view.column<float>(h_traced_the);
-    }
-    /// traced_phi column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_phi_col() const noexcept {
-        return m_view.column<float>(h_traced_phi);
-    }
-    /// traced_hitx column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_hitx_col() const noexcept {
-        return m_view.column<float>(h_traced_hitx);
-    }
-    /// traced_hity column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_hity_col() const noexcept {
-        return m_view.column<float>(h_traced_hity);
-    }
-    /// traced_hitz column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_hitz_col() const noexcept {
-        return m_view.column<float>(h_traced_hitz);
-    }
-    /// traced_path column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_path_col() const noexcept {
-        return m_view.column<float>(h_traced_path);
-    }
-    /// traced_time column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_time_col() const noexcept {
-        return m_view.column<float>(h_traced_time);
-    }
-    /// traced_stime column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_stime_col() const noexcept {
-        return m_view.column<float>(h_traced_stime);
-    }
-    /// traced_nrfl column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> traced_nrfl_col() const noexcept {
-        return m_view.column<int16_t>(h_traced_nrfl);
-    }
-    /// traced_nrfr column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> traced_nrfr_col() const noexcept {
-        return m_view.column<int16_t>(h_traced_nrfr);
-    }
-    /// traced_1rfl column as a contiguous span.
-    [[nodiscard]] std::span<const int16_t> traced_1rfl_col() const noexcept {
-        return m_view.column<int16_t>(h_traced_1rfl);
-    }
-    /// traced_layers column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> traced_layers_col() const noexcept {
-        return m_view.column<int32_t>(h_traced_layers);
-    }
-    /// traced_compos column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> traced_compos_col() const noexcept {
-        return m_view.column<int32_t>(h_traced_compos);
-    }
-    /// traced_etaC column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_etaC_col() const noexcept {
-        return m_view.column<float>(h_traced_etaC);
-    }
-    /// traced_aeron column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_aeron_col() const noexcept {
-        return m_view.column<float>(h_traced_aeron);
-    }
-    /// traced_dthe column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_dthe_col() const noexcept {
-        return m_view.column<float>(h_traced_dthe);
-    }
-    /// traced_dphi column as a contiguous span.
-    [[nodiscard]] std::span<const float> traced_dphi_col() const noexcept {
-        return m_view.column<float>(h_traced_dphi);
-    }
-    /// eff column as a contiguous span.
-    [[nodiscard]] std::span<const float> eff_col() const noexcept {
-        return m_view.column<float>(h_eff);
-    }
-    /// back column as a contiguous span.
-    [[nodiscard]] std::span<const float> back_col() const noexcept {
-        return m_view.column<float>(h_back);
-    }
-    /// hypo_pid column as a contiguous span.
-    [[nodiscard]] std::span<const int32_t> hypo_pid_col() const noexcept {
-        return m_view.column<int32_t>(h_hypo_pid);
-    }
-    /// etac_ref column as a contiguous span.
-    [[nodiscard]] std::span<const float> etac_ref_col() const noexcept {
-        return m_view.column<float>(h_etac_ref);
-    }
-    /// etac_rms column as a contiguous span.
-    [[nodiscard]] std::span<const float> etac_rms_col() const noexcept {
-        return m_view.column<float>(h_etac_rms);
-    }
-    /// prob column as a contiguous span.
-    [[nodiscard]] std::span<const float> prob_col() const noexcept {
-        return m_view.column<float>(h_prob);
+        return static_cast<float>(m_view->getFloat(i_prob, row));
     }
 
     /// Construct a lightweight Row view for the given index.
     [[nodiscard]] Row row(int index) const noexcept;
 
     // -------------------------------------------------------------------
-    // Link-column handles (used by PindexLinker-style helpers to
-    // read the whole index column as a typed span in one shot)
+    // Link-column item indices (used by PindexLinker to scan the
+    // pindex/index column without re-resolving by name per call)
     // -------------------------------------------------------------------
-    [[nodiscard]] hipo::column_handle hindex_handle() const noexcept { return h_hindex; }
-    [[nodiscard]] hipo::column_handle pindex_handle() const noexcept { return h_pindex; }
+    [[nodiscard]] int hindex_handle() const noexcept { return i_hindex; }
+    [[nodiscard]] int pindex_handle() const noexcept { return i_pindex; }
 
  private:
-    hipo::bank_view m_view{};
-    hipo::column_handle h_id{};
-    hipo::column_handle h_hindex{};
-    hipo::column_handle h_pindex{};
-    hipo::column_handle h_type{};
-    hipo::column_handle h_used{};
-    hipo::column_handle h_start_time{};
-    hipo::column_handle h_traced_the{};
-    hipo::column_handle h_traced_phi{};
-    hipo::column_handle h_traced_hitx{};
-    hipo::column_handle h_traced_hity{};
-    hipo::column_handle h_traced_hitz{};
-    hipo::column_handle h_traced_path{};
-    hipo::column_handle h_traced_time{};
-    hipo::column_handle h_traced_stime{};
-    hipo::column_handle h_traced_nrfl{};
-    hipo::column_handle h_traced_nrfr{};
-    hipo::column_handle h_traced_1rfl{};
-    hipo::column_handle h_traced_layers{};
-    hipo::column_handle h_traced_compos{};
-    hipo::column_handle h_traced_etaC{};
-    hipo::column_handle h_traced_aeron{};
-    hipo::column_handle h_traced_dthe{};
-    hipo::column_handle h_traced_dphi{};
-    hipo::column_handle h_eff{};
-    hipo::column_handle h_back{};
-    hipo::column_handle h_hypo_pid{};
-    hipo::column_handle h_etac_ref{};
-    hipo::column_handle h_etac_rms{};
-    hipo::column_handle h_prob{};
+    const hipo::bank* m_view = nullptr;
+    int i_id = -1;
+    int i_hindex = -1;
+    int i_pindex = -1;
+    int i_type = -1;
+    int i_used = -1;
+    int i_start_time = -1;
+    int i_traced_the = -1;
+    int i_traced_phi = -1;
+    int i_traced_hitx = -1;
+    int i_traced_hity = -1;
+    int i_traced_hitz = -1;
+    int i_traced_path = -1;
+    int i_traced_time = -1;
+    int i_traced_stime = -1;
+    int i_traced_nrfl = -1;
+    int i_traced_nrfr = -1;
+    int i_traced_1rfl = -1;
+    int i_traced_layers = -1;
+    int i_traced_compos = -1;
+    int i_traced_etaC = -1;
+    int i_traced_aeron = -1;
+    int i_traced_dthe = -1;
+    int i_traced_dphi = -1;
+    int i_eff = -1;
+    int i_back = -1;
+    int i_hypo_pid = -1;
+    int i_etac_ref = -1;
+    int i_etac_rms = -1;
+    int i_prob = -1;
 
     friend class Row;
 };
