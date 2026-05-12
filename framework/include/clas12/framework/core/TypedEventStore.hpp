@@ -4,10 +4,10 @@
 
 #include <any>
 #include <cstddef>
-#include <map>
 #include <optional>
 #include <string>
 #include <typeinfo>
+#include <unordered_map>
 #include <vector>
 
 // Forward declarations
@@ -217,8 +217,13 @@ class TypedEventStore {
     }
 
    private:
-    std::map<std::string, std::any> m_store;
-    std::map<std::string, std::size_t> m_types;
+    // unordered_map (hash-based, average O(1)) rather than std::map
+    // (red-black tree, O(log N)): the store is hit ~10–20× per event from
+    // every algorithm in the pipeline, with ~50 distinct keys across
+    // Keys::* + Decisions::*. Both maps stay strictly in sync (one for
+    // values, one for type hashes), keyed by the same TypedKey<T>::name.
+    std::unordered_map<std::string, std::any> m_store;
+    std::unordered_map<std::string, std::size_t> m_types;
 };
 
 /**
