@@ -309,6 +309,15 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     std::vector<std::unique_ptr<framework::H1<>>> h_n_DIS_Q2bin;
     std::vector<std::unique_ptr<framework::H1<>>> h_n_DIS_xBbin;
 
+    // DIS-electron counts on the analysis (Q^2 x x_B) binning, used offline
+    // (Python) as the denominator of the multiplicity ratio R_A. The variable
+    // axes carry the physics bin edges directly into the ROOT file so the
+    // downstream code does not need to redo the binning logic.
+    using H2VarVar = mh::Histogram<mh::CountAccumulator,
+                                   mh::AtomicStorage<mh::CountAccumulator>,
+                                   mh::VariableAxis, mh::VariableAxis>;
+    std::unique_ptr<H2VarVar> h_n_DIS_Q2_vs_xB;
+
     framework::H1<> h_z{mh::regular(0, 1, 100)};
     framework::H1<> h_pT2{mh::regular(0, 2, 100)};
     framework::H1<> h_phi_h{mh::regular(-180, 180, 72)};
@@ -435,6 +444,10 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         h_n_DIS_vs_xB.fill(xB);
         if (iQ2 >= 0 && iQ2 < static_cast<int>(h_n_DIS_Q2bin.size())) h_n_DIS_Q2bin[iQ2]->fill(0.5);
         if (ixB >= 0 && ixB < static_cast<int>(h_n_DIS_xBbin.size())) h_n_DIS_xBbin[ixB]->fill(0.5);
+        // (Q^2, x_B) 2D count on the analysis binning — flow bins capture
+        // events outside the kinematic grid so they remain accountable
+        // offline.
+        if (h_n_DIS_Q2_vs_xB) h_n_DIS_Q2_vs_xB->fill(Q2, xB);
     }
 
     // -------- Multiplicity histograms ----------------------------------------
@@ -666,6 +679,18 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                                            m_config.xB_edges[i], m_config.xB_edges[i + 1]),
                                *h_n_DIS_xBbin[i]);
         }
+
+        // 2D DIS-electron count on the analysis (Q^2 x x_B) variable-edge
+        // binning. Consumed by the Python multiplicity-ratio extraction as the
+        // denominator N_A^{DIS}(Q^2, x_B). Stored in the /norm subdirectory
+        // alongside the per-axis projections so the offline tooling can grab
+        // everything DIS-norm-related from one place.
+        h_n_DIS_Q2_vs_xB = std::make_unique<H2VarVar>(
+            mh::VariableAxis(m_config.Q2_edges.begin(), m_config.Q2_edges.end()),
+            mh::VariableAxis(m_config.xB_edges.begin(), m_config.xB_edges.end()));
+        svc->register_hist(mult_dir + "/norm/n_DIS_Q2_vs_xB",
+                           "DIS Events vs Q^{2} and x_{B};Q^{2} [GeV^{2}];x_{B}",
+                           *h_n_DIS_Q2_vs_xB);
 
         svc->register_hist(mult_dir + "/z",        "#pi^{0} z = E_{#pi^{0}}/#nu;z;Counts", h_z);
         svc->register_hist(mult_dir + "/pT2",      "#pi^{0} p_{T}^{2};p_{T}^{2} [GeV^{2}];Counts", h_pT2);
