@@ -42,6 +42,8 @@ class Application {
         , m_input_files(std::move(other.m_input_files))
         , m_config(std::move(other.m_config))
         , m_io_options(std::move(other.m_io_options))
+        , m_record_first(other.m_record_first)
+        , m_record_last(other.m_record_last)
         , m_percentage(other.m_percentage)
         , m_num_threads(other.m_num_threads)
         , m_exception_count(other.m_exception_count.load()) {}
@@ -116,6 +118,22 @@ class Application {
     [[nodiscard]] auto io_options() const -> const hipo::IOOptions& {
         return m_io_options;
     }
+
+    /**
+     * @brief Restrict event processing to a half-open record range
+     *        [first, last). Negative `last` means "to the end of every file".
+     *
+     * Used by the local batch driver to slice one big skim file across N
+     * concurrent processes — each process gets a disjoint record slice and
+     * a unique output file. Default range covers the whole file.
+     */
+    auto set_record_range(int first, int last) -> void {
+        m_record_first = first;
+        m_record_last  = last;
+    }
+
+    [[nodiscard]] auto record_range_first() const -> int { return m_record_first; }
+    [[nodiscard]] auto record_range_last()  const -> int { return m_record_last; }
 
     /**
      * @brief Set logging service for structured output
@@ -289,6 +307,7 @@ class Application {
         for (const auto& file : m_input_files) {
             chain.add(file);
         }
+        chain.set_record_range(m_record_first, m_record_last);
 
         Log::info("Application", "");
         Log::info("Application", "Starting event processing...");
@@ -296,6 +315,12 @@ class Application {
         Log::info("Application", "  Algorithms: {}", m_algorithms.size());
         Log::info("Application", "  Required banks: {}", all_required_banks.size());
         Log::info("Application", "  Threads: {}", m_num_threads);
+        if (m_record_first > 0 || m_record_last >= 0) {
+            Log::info("Application",
+                      "  Record range: [{}, {})",
+                      m_record_first,
+                      m_record_last < 0 ? std::string("end") : std::to_string(m_record_last));
+        }
         if (io_active) {
             Log::info("Application", "  I/O options: prefetch_depth={}, "
                                       "record_cache={} MB, io_threads={}",
@@ -400,6 +425,10 @@ class Application {
     /// thread count, bank filter). Defaults preserve the legacy
     /// synchronous read path.
     hipo::IOOptions m_io_options{};
+    /// Half-open record slice [m_record_first, m_record_last). Last < 0
+    /// means "to end of file". Default = process the whole input.
+    int m_record_first = 0;
+    int m_record_last  = -1;
     double m_percentage = 100;
     int m_num_threads = 1;
     mutable std::atomic<long> m_exception_count{0};

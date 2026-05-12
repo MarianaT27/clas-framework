@@ -49,6 +49,7 @@ auto ApplicationBuilder::build() -> Application {
     app.set_num_threads(m_num_threads);
     app.set_config(m_config);  // null if user never called with_config()
     app.set_io_options(m_io_options);
+    app.set_record_range(m_record_first, m_record_last);
 
     return app;
 }

@@ -97,6 +97,15 @@ public:
         return *this;
     }
 
+    /// Restrict the chain to records [first, last). Negative `last` means
+    /// "to the end of each file" (the default). Used by the local batch
+    /// driver to slice one big skim across N processes.
+    auto with_record_range(int first, int last) -> ApplicationBuilder& {
+        m_record_first = first;
+        m_record_last  = last;
+        return *this;
+    }
+
     /// Attach the parsed TOML config table. The Application will look
     /// up `[<algorithm.name()>]` for every registered algorithm and
     /// apply matching `Property` values via
@@ -200,6 +209,8 @@ private:
     bool m_add_standard_services = false;
     std::shared_ptr<const toml::table> m_config;
     hipo::IOOptions m_io_options{};
+    int m_record_first = 0;
+    int m_record_last  = -1;
 
     // Metadata
     std::string m_version = "1.0";

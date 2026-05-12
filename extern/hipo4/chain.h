@@ -488,6 +488,20 @@ public:
     /// Enable/disable verbose output
     void set_verbose(bool verbose) { m_verbose = verbose; }
 
+    /// Restrict processing to the record-index range `[first, last)` within
+    /// each file. `last == -1` (the default) means "to the end of the file".
+    /// Workers initialise the shared `next_record` atomic to `first` and stop
+    /// when `rec_idx >= last`. Useful for splitting a single big file across
+    /// N independent processes that each handle a disjoint slice.
+    void set_record_range(int first, int last) {
+        m_record_first = std::max(0, first);
+        m_record_last  = last;  // negative = "to end"
+    }
+
+    /// Read-only accessors for the current record-range bounds.
+    [[nodiscard]] int record_range_first() const noexcept { return m_record_first; }
+    [[nodiscard]] int record_range_last()  const noexcept { return m_record_last; }
+
     //=========================================================================
     // Validation and Scanning
     //=========================================================================
@@ -812,7 +826,13 @@ public:
         for (const auto& work : work_list) {
             const auto& file = m_files[work.file_idx];
             const bool use_io = use_iohandle_for(file);
-            std::atomic<int> next_record{0};
+            // Bound the worker loop to the configured record range. Default
+            // (first=0, last=-1) means the whole file.
+            const int eff_first = std::min(m_record_first, work.num_records);
+            const int eff_last  = (m_record_last < 0)
+                                  ? work.num_records
+                                  : std::min(m_record_last, work.num_records);
+            std::atomic<int> next_record{eff_first};
             std::atomic<long> events_processed_in_file{0};
             std::vector<std::future<void>> futures;
 
@@ -828,9 +848,9 @@ public:
                     prefetcher = std::make_unique<RecordPrefetcher>(
                         fh, work.file_idx, m_record_cache.get(),
                         io_threads, m_io_options.prefetch_depth);
-                    int seed = std::min(work.num_records,
+                    int seed = std::min(eff_last - eff_first,
                                         m_io_options.prefetch_depth * 2);
-                    prefetcher->prefetch_range(0, seed);
+                    prefetcher->prefetch_range(eff_first, eff_first + seed);
                 }
             }
 
@@ -843,13 +863,13 @@ public:
 
                             while (true) {
                                 int rec_idx = next_record.fetch_add(1);
-                                if (rec_idx >= work.num_records) break;
+                                if (rec_idx >= eff_last) break;
                                 if (events_processed_in_file.load() >= work.max_events) break;
                                 if (prefetcher) {
                                     int look_ahead = rec_idx + 1 + m_io_options.prefetch_depth;
                                     prefetcher->prefetch_range(
                                         rec_idx + 1,
-                                        std::min(look_ahead, work.num_records));
+                                        std::min(look_ahead, eff_last));
                                 }
                                 std::shared_ptr<record> rec_ptr =
                                     prefetcher ? prefetcher->get(rec_idx)
@@ -883,7 +903,7 @@ public:
 
                             while (true) {
                                 int rec_idx = next_record.fetch_add(1);
-                                if (rec_idx >= work.num_records) break;
+                                if (rec_idx >= eff_last) break;
 
                                 if (events_processed_in_file.load() >= work.max_events) break;
 
@@ -1090,6 +1110,8 @@ private:
     int m_num_threads;
     bool m_show_progress;
     bool m_verbose;
+    int m_record_first{0};
+    int m_record_last{-1};  // -1 = process to end of file
     bool m_metadata_loaded{false};
     ThreadPool m_thread_pool;
     ChainStatistics m_stats;
@@ -1219,7 +1241,13 @@ private:
             const auto& file = m_files[work.file_idx];
             const bool use_io = use_iohandle_for(file);
 
-            std::atomic<int> next_record{0};
+            // Bound the worker loop to the configured record range. Default
+            // (first=0, last=-1) means the whole file.
+            const int eff_first = std::min(m_record_first, work.num_records);
+            const int eff_last  = (m_record_last < 0)
+                                  ? work.num_records
+                                  : std::min(m_record_last, work.num_records);
+            std::atomic<int> next_record{eff_first};
             std::atomic<long> events_processed_in_file{0};
             std::vector<std::future<void>> futures;
 
@@ -1236,9 +1264,9 @@ private:
                     prefetcher = std::make_unique<RecordPrefetcher>(
                         fh, work.file_idx, m_record_cache.get(),
                         io_threads, m_io_options.prefetch_depth);
-                    int seed = std::min(work.num_records,
+                    int seed = std::min(eff_last - eff_first,
                                         m_io_options.prefetch_depth * 2);
-                    prefetcher->prefetch_range(0, seed);
+                    prefetcher->prefetch_range(eff_first, eff_first + seed);
                 }
             }
 
@@ -1252,14 +1280,14 @@ private:
 
                             while (true) {
                                 int rec_idx = next_record.fetch_add(1);
-                                if (rec_idx >= work.num_records) break;
+                                if (rec_idx >= eff_last) break;
                                 if (events_processed_in_file.load() >= work.max_events) break;
 
                                 if (prefetcher) {
                                     int look_ahead = rec_idx + 1 + m_io_options.prefetch_depth;
                                     prefetcher->prefetch_range(
                                         rec_idx + 1,
-                                        std::min(look_ahead, work.num_records));
+                                        std::min(look_ahead, eff_last));
                                 }
                                 std::shared_ptr<record> rec_ptr =
                                     prefetcher ? prefetcher->get(rec_idx)
@@ -1294,7 +1322,7 @@ private:
 
                             while (true) {
                                 int rec_idx = next_record.fetch_add(1);
-                                if (rec_idx >= work.num_records) break;
+                                if (rec_idx >= eff_last) break;
                                 if (events_processed_in_file.load() >= work.max_events) break;
 
                                 if (!file_reader.loadRecord(rec, rec_idx)) continue;

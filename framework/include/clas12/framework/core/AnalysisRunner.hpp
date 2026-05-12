@@ -150,6 +150,11 @@ struct AnalysisConfig {
     std::string              version     = "2.0";
     std::string              output_file;
     std::vector<std::string> input_files;
+    /// Optional half-open record slice `[first, last)`. Set via the
+    /// `[run].record_range = [first, last]` TOML key or the `--record-range
+    /// first:last` CLI override. Default (0, -1) processes every record.
+    int                      record_first = 0;
+    int                      record_last  = -1;
 
     /// Whole parsed TOML, kept around so per-algorithm sections are
     /// available to Application::initialize().
@@ -221,6 +226,8 @@ public:
         if (config->config_table) {
             builder.with_io_options(io_options_from_toml(*config->config_table));
         }
+
+        builder.with_record_range(config->record_first, config->record_last);
 
         configure_fn(builder, *config);
 
@@ -295,6 +302,14 @@ private:
         options.add_options()
             ("c,config", "Path to TOML configuration file (required)",
                 cxxopts::value<std::string>())
+            ("record-range",
+                "Override [run].record_range with FIRST:LAST (half-open). "
+                "LAST=-1 means \"to end of file\". Used by the local batch driver "
+                "to slice one big file across N processes.",
+                cxxopts::value<std::string>())
+            ("output",
+                "Override [run].output (per-slice output filenames).",
+                cxxopts::value<std::string>())
             ("h,help",   "Show help");
 
         auto args = options.parse(argc, argv);
@@ -331,9 +346,36 @@ private:
             if (auto v = (*run_tbl)["num_threads"].value<int64_t>()) cfg.num_threads = static_cast<int>(*v);
             if (auto v = (*run_tbl)["percentage"].value<double>())   cfg.percentage = *v;
             cfg.input_files = parse_input(run_tbl);
+            // [run].record_range = [first, last]   (half-open, last < 0 = "to end")
+            if (auto arr = (*run_tbl)["record_range"].as_array(); arr && arr->size() == 2) {
+                if (auto f = (*arr)[0].value<int64_t>()) cfg.record_first = static_cast<int>(*f);
+                if (auto l = (*arr)[1].value<int64_t>()) cfg.record_last  = static_cast<int>(*l);
+            }
         } else {
             Log::error("Main", "TOML missing required [run] section");
             return std::nullopt;
+        }
+
+        // CLI overrides win over TOML so the batch driver can launch one
+        // process per slice without rewriting the TOML.
+        if (args.count("record-range")) {
+            const auto spec = args["record-range"].as<std::string>();
+            const auto colon = spec.find(':');
+            if (colon == std::string::npos) {
+                Log::error("Main",
+                    "--record-range expects FIRST:LAST, got '{}'", spec);
+                return std::nullopt;
+            }
+            try {
+                cfg.record_first = std::stoi(spec.substr(0, colon));
+                cfg.record_last  = std::stoi(spec.substr(colon + 1));
+            } catch (const std::exception& e) {
+                Log::error("Main", "Bad --record-range '{}': {}", spec, e.what());
+                return std::nullopt;
+            }
+        }
+        if (args.count("output")) {
+            cfg.output_file = args["output"].as<std::string>();
         }
 
         // [analysis]
