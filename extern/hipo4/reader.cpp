@@ -359,12 +359,12 @@ bool  reader::next(){
  * @param eventNumber - number of event to jump to
  * @return true if event is available, false - otherwise
  */
-bool reader::gotoEvent(int eventNumber){
+bool reader::gotoEvent(long eventNumber){
   int recordNumber = readerEventIndex.getRecordNumber();
 
   //goto event in index if exists, if not return
   if(readerEventIndex.gotoEvent(eventNumber)==false){
-    printf("[WARNING] hipo::reader::gotoEvent event %d greater than max events = %d, will stay at current event\n",
+    printf("[WARNING] hipo::reader::gotoEvent event %ld greater than max events = %ld, will stay at current event\n",
 	   eventNumber, readerEventIndex.getMaxEvents());
     return false;
   }
@@ -473,9 +473,11 @@ namespace hipo {
 void readerIndex::addSize(int size){
   if(recordEvents.size()==0){
     recordEvents.push_back(0);
-    recordEvents.push_back(size);
+    recordEvents.push_back(static_cast<long>(size));
   } else {
-    int cz = recordEvents[recordEvents.size()-1] + size;
+    // 64-bit accumulator: int would overflow on files past ~2.1B
+    // cumulative events (skim files easily hit that).
+    long cz = recordEvents[recordEvents.size()-1] + static_cast<long>(size);
     recordEvents.push_back(cz);
   }
 }
@@ -514,24 +516,24 @@ bool readerIndex::advance(){
  * @param event number to jump to
  * @return true - if event number is valid event, false - otherwise
  */
-bool readerIndex::gotoEvent(int eventNumber){
+bool readerIndex::gotoEvent(long eventNumber){
   //check if event exists
   if(eventNumber>=getMaxEvents()) return false;
   // The proper record number is found by binary search through records array
-  //------ 
+  //------
   // G.Gavalian (July 25/2022)
   // Changed the eventNumber -> eventNumber+1 in binary search. Now it changes the
   // record number properly and starts with record event number from 0
   // I think this was a bug.
-  
-    std::vector<int>::iterator l_bound =
+
+    auto l_bound =
       std::lower_bound(recordEvents.begin(), recordEvents.end(), eventNumber+1);
 
-  
+
     long  position = (l_bound - recordEvents.begin()) - 1;
-    //printf("event # %d , lbound = %ld\n",eventNumber,position);
-    currentRecord       = position;
-    currentRecordEvent  = eventNumber - recordEvents[currentRecord];
+    //printf("event # %ld , lbound = %ld\n",eventNumber,position);
+    currentRecord       = static_cast<int>(position);
+    currentRecordEvent  = static_cast<int>(eventNumber - recordEvents[currentRecord]);
     currentEvent        = eventNumber;
     return true;
 }
@@ -539,14 +541,14 @@ bool readerIndex::gotoEvent(int eventNumber){
 
   void readerIndex::show(){
     for(size_t i = 0; i < recordEvents.size(); i++){
-      printf("record = %8zu, %8d\n",i,recordEvents[i]);
+      printf("record = %8zu, %8ld\n",i,recordEvents[i]);
     }
   }
 /**
  * Returns maximum number of events available to read.
  * @return maximum number of events.
  */
-int readerIndex::getMaxEvents(){
+long readerIndex::getMaxEvents(){
   if(recordEvents.size()==0) return 0;
   return recordEvents[recordEvents.size()-1];
 }

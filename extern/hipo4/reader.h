@@ -151,11 +151,16 @@ namespace hipo {
 
    private:
 
-     std::vector<int>  recordEvents;
+      // 64-bit cumulative counter — a `std::vector<int>` here was the cause
+      // of the silent "0 events to process" bug on skim files > ~2.1B
+      // cumulative events: addSize() overflowed the int accumulator and
+      // getMaxEvents() returned negative, which propagated up to the chain
+      // and gated all work-list entries off.
+      std::vector<long> recordEvents;
       std::vector<long> recordPosition;
 
       int              currentRecord{};
-      int              currentEvent{};
+      long             currentEvent{};
       int              currentRecordEvent{};
 
    public:
@@ -169,13 +174,13 @@ namespace hipo {
       //dglazier
       bool canAdvanceInRecord();
       bool loadRecord(int irec);
-      bool  gotoEvent(int eventNumber);
+      bool  gotoEvent(long eventNumber);
       bool  gotoRecord(int irec);
 
-      int  getEventNumber() { return currentEvent;}
+      long getEventNumber() { return currentEvent;}
       int  getRecordNumber() { return currentRecord;}
       int  getRecordEventNumber() { return currentRecordEvent;}
-      int  getMaxEvents();
+      long getMaxEvents();
       void addSize(int size);
       void addPosition(long position){ recordPosition.push_back(position);}
       long getPosition(int index) { return recordPosition[index];}
@@ -251,10 +256,10 @@ namespace hipo {
 
       bool  hasNext();
       bool  next();
-      bool  gotoEvent(int eventNumber);
+      bool  gotoEvent(long eventNumber);
       bool  gotoRecord(int irec);
       bool  next(hipo::event &dataevent);
-      
+
       bool  next(std::vector<hipo::bank> &list);
       std::vector<hipo::bank> getBanks(std::vector<std::string> names);
 
@@ -265,7 +270,7 @@ namespace hipo {
       bool  nextInRecord();
       bool loadRecord(int irec);
       bool loadRecord(hipo::record &record, int irec);
-      int  getEntries(){return readerEventIndex.getMaxEvents();}
+      long getEntries(){return readerEventIndex.getMaxEvents();}
       std::vector<int>   getInt(  const char *bank, const char *column, int max = -1);
       std::vector<float> getFloat(const char *bank, const char *column, int max = -1);
    };
