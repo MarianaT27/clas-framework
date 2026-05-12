@@ -38,6 +38,7 @@
 #include <tuple>
 #include <type_traits>
 #include <functional>
+#include <unordered_map>
 #include <vector>
 
 #include <clas12/framework/core/Field.hpp>
@@ -69,17 +70,17 @@ namespace framework {
 // service at `init()` time via a single fold-expression call.  No
 // preprocessor, full type-checking, no 20-field limit.
 
-/// Register every field listed in `fields` onto `svc` for `tree`, taking
-/// each branch's address from `data`.
+/// Register every field listed in `fields` onto `svc` for `tree`.
+///
+/// Legacy helper, retained for source compatibility. The new NTupleWriter<T>
+/// path drives schema registration through NTupleService::register_struct<T>
+/// directly; this helper is unused but kept so any out-of-tree caller still
+/// compiles.
 template <typename T, typename Svc, typename... Fs>
-auto register_fields(Svc* svc, const std::string& tree, T& data,
-                     const std::tuple<Fs...>& fields) -> void {
+auto register_fields(Svc* svc, const std::string& tree, T& /*data*/,
+                     const std::tuple<Fs...>& /*fields*/) -> void {
     if (!svc) return;
-    std::apply(
-        [&](const auto&... f) {
-            (svc->register_branch(tree, std::string{f.name}, &(data.*f.ptr)), ...);
-        },
-        fields);
+    svc->template register_struct<T>(tree);
 }
 
 
@@ -168,7 +169,11 @@ public:
             static_assert(HasStaticNTupleFields<T>,
                           "NTupleWriter<T>: T must expose a "
                           "static constexpr auto ntuple_fields()");
-            register_fields(svc, tree_name, m_data, T::ntuple_fields());
+            // Register the schema once; per-thread Slot<T> instances
+            // (each carrying its own T storage + RNTupleFillContext +
+            // pre-bound REntry) are lazily allocated on first access
+            // from each worker thread via NTupleService::acquire_slot<T>.
+            svc->template register_struct<T>(tree_name);
             m_initialized = true;
         }
     }
@@ -179,24 +184,32 @@ public:
     [[nodiscard]] auto is_initialized() const -> bool { return m_initialized && m_svc != nullptr; }
 
     /**
-     * @brief Access the data struct for modification
+     * @brief Access the per-thread data struct for modification.
      *
-     * @return T& Reference to the data struct
+     * Each worker thread sees its own T instance, bound by raw pointer
+     * to the thread's RNTupleFillContext entry. The first call from a
+     * given thread takes a brief lock to allocate the slot; subsequent
+     * calls hit a cached pointer.
      */
-    auto data() -> T& { return m_data; }
+    auto data() -> T& { return slot().value; }
 
     /**
-     * @brief Access the data struct (const)
+     * @brief Access the per-thread data struct (const).
      */
-    [[nodiscard]] auto data() const -> const T& { return m_data; }
+    [[nodiscard]] auto data() const -> const T& {
+        return const_cast<NTupleWriter*>(this)->slot().value;
+    }
 
     /**
-     * @brief Fill the tree with current data (thread-safe via NTupleService)
+     * @brief Fill the ntuple with the current per-thread data.
+     *
+     * Lock-free in steady state: each worker thread fills its own
+     * RNTupleFillContext, which queues independent clusters into the
+     * shared RNTupleParallelWriter. ROOT serializes only at cluster
+     * commit time.
      */
     auto fill() -> void {
-        if (m_svc && m_initialized) {
-            m_svc->fill(m_tree_name);
-        }
+        if (m_svc && m_initialized) slot().fill();
     }
 
     /**
@@ -226,7 +239,23 @@ public:
     explicit operator bool() const { return is_initialized(); }
 
 private:
-    T m_data{};
+    auto slot() -> typename NTupleService::Slot<T>& {
+        // Per-thread cache of NTupleWriter*-keyed slot pointers. Keyed
+        // on `this` so two NTupleWriter<T> instances bound to different
+        // tree names never alias. Each thread has its own map, so no
+        // cross-thread synchronisation is needed; the only lock is taken
+        // by NTupleService::acquire_slot on a miss (once per thread per
+        // writer, lifetime of the run).
+        thread_local std::unordered_map<const NTupleWriter*,
+                                        typename NTupleService::Slot<T>*> cache;
+        auto it = cache.find(this);
+        if (it == cache.end()) {
+            auto* s = m_svc->template acquire_slot<T>(m_tree_name);
+            it = cache.emplace(this, s).first;
+        }
+        return *it->second;
+    }
+
     NTupleService* m_svc = nullptr;
     std::string m_tree_name;
     bool m_initialized = false;
