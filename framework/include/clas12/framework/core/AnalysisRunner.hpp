@@ -155,6 +155,13 @@ struct AnalysisConfig {
     /// first:last` CLI override. Default (0, -1) processes every record.
     int                      record_first = 0;
     int                      record_last  = -1;
+    /// Optional per-analysis HIPO-output override exposed to skim binaries
+    /// that consult an analysis-specific TOML key (e.g.
+    /// `[skim].hipo_output`). Set via the `--hipo-output FILE` CLI flag —
+    /// empty string means "fall back to whatever the analysis lambda parses
+    /// out of the TOML". Lets local_batch slice a single big HIPO file
+    /// across N processes by writing a distinct skim output per slice.
+    std::string              hipo_output_override;
 
     /// Whole parsed TOML, kept around so per-algorithm sections are
     /// available to Application::initialize().
@@ -310,6 +317,11 @@ private:
             ("output",
                 "Override [run].output (per-slice output filenames).",
                 cxxopts::value<std::string>())
+            ("hipo-output",
+                "Override an analysis-specific HIPO output path (e.g. the "
+                "[skim].hipo_output key of pi0_multiplicity_skim). Empty / "
+                "absent = use the TOML value.",
+                cxxopts::value<std::string>())
             ("h,help",   "Show help");
 
         auto args = options.parse(argc, argv);
@@ -376,6 +388,9 @@ private:
         }
         if (args.count("output")) {
             cfg.output_file = args["output"].as<std::string>();
+        }
+        if (args.count("hipo-output")) {
+            cfg.hipo_output_override = args["hipo-output"].as<std::string>();
         }
 
         // [analysis]

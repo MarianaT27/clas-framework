@@ -73,6 +73,7 @@ struct DriverConfig {
 struct AnalysisTomlInfo {
     std::string input_file;          // first input file (driver only supports one)
     std::string output_base;         // output basename from [run].output
+    std::string hipo_output_base;    // optional [skim].hipo_output base; empty = none
 };
 
 [[nodiscard]] auto load_analysis_toml(const std::string& path)
@@ -95,6 +96,10 @@ struct AnalysisTomlInfo {
 
     AnalysisTomlInfo info;
     if (auto v = (*run)["output"].value<std::string>()) info.output_base = *v;
+    // Optional skim-specific HIPO output: pi0_multiplicity_skim and any
+    // future skim binary that consults `[skim].hipo_output` will pick this
+    // up via the `--hipo-output` CLI override.
+    if (auto v = tbl["skim"]["hipo_output"].value<std::string>()) info.hipo_output_base = *v;
 
     // [run].input may be a string or a one-element array; record-range
     // slicing is well-defined only for a single file.
@@ -156,11 +161,17 @@ struct SliceResult {
 
 /// fork/exec one slice; blocks until the child exits. Stdio is left
 /// connected to the parent so progress lines stream out interleaved.
+///
+/// `hipo_output_file` is forwarded as `--hipo-output FILE` only when
+/// non-empty — analysis binaries that don't honour that flag (the
+/// non-skim ones) ignore it harmlessly via cxxopts' unknown-option
+/// tolerance is not assumed; we just skip the argument instead.
 [[nodiscard]] auto run_one_slice(
     const std::string& exe,
     const std::string& analysis_toml,
     int first, int last,
-    const std::string& output_file) -> int
+    const std::string& output_file,
+    const std::string& hipo_output_file) -> int
 {
     const std::string range_arg = fmt::format("{}:{}", first, last);
 
@@ -170,14 +181,21 @@ struct SliceResult {
         return 127;
     }
     if (pid == 0) {
-        // Child — exec the analysis binary.
-        execl(exe.c_str(), exe.c_str(),
-              "--config",       analysis_toml.c_str(),
-              "--record-range", range_arg.c_str(),
-              "--output",       output_file.c_str(),
-              (char*)nullptr);
+        // Build argv at runtime so `--hipo-output` only gets passed for
+        // slices that actually have a skim output to write.
+        std::vector<const char*> argv;
+        argv.push_back(exe.c_str());
+        argv.push_back("--config");       argv.push_back(analysis_toml.c_str());
+        argv.push_back("--record-range"); argv.push_back(range_arg.c_str());
+        argv.push_back("--output");       argv.push_back(output_file.c_str());
+        if (!hipo_output_file.empty()) {
+            argv.push_back("--hipo-output");
+            argv.push_back(hipo_output_file.c_str());
+        }
+        argv.push_back(nullptr);
+        execv(exe.c_str(), const_cast<char* const*>(argv.data()));
         // Only reached on exec failure.
-        fmt::print(stderr, "[local_batch] execl('{}') failed: {}\n",
+        fmt::print(stderr, "[local_batch] execv('{}') failed: {}\n",
                    exe, std::strerror(errno));
         _exit(127);
     }
@@ -295,12 +313,25 @@ int main(int argc, char* argv[]) {
 
     fmt::print("Planned slices:\n");
     std::vector<std::string> outputs(static_cast<std::size_t>(cfg.slices));
+    std::vector<std::string> hipo_outputs(static_cast<std::size_t>(cfg.slices));
+    const bool has_hipo_out = !info.hipo_output_base.empty();
     for (int i = 0; i < cfg.slices; ++i) {
         outputs[static_cast<std::size_t>(i)] = make_slice_output(
             info.output_base, cfg.output_dir, cfg.slice_suffix, i);
-        fmt::print("  slice {:03d}: records [{:>7d}, {:>7d}) -> {}\n",
-                   i, ranges[i].first, ranges[i].second,
-                   outputs[static_cast<std::size_t>(i)]);
+        if (has_hipo_out) {
+            hipo_outputs[static_cast<std::size_t>(i)] = make_slice_output(
+                info.hipo_output_base, cfg.output_dir, cfg.slice_suffix, i);
+        }
+        if (has_hipo_out) {
+            fmt::print("  slice {:03d}: records [{:>7d}, {:>7d}) -> {}  +  {}\n",
+                       i, ranges[i].first, ranges[i].second,
+                       outputs[static_cast<std::size_t>(i)],
+                       hipo_outputs[static_cast<std::size_t>(i)]);
+        } else {
+            fmt::print("  slice {:03d}: records [{:>7d}, {:>7d}) -> {}\n",
+                       i, ranges[i].first, ranges[i].second,
+                       outputs[static_cast<std::size_t>(i)]);
+        }
     }
     fmt::print("\n");
 
@@ -335,7 +366,8 @@ int main(int argc, char* argv[]) {
             const int rc = run_one_slice(
                 cfg.executable, cfg.analysis_toml,
                 ranges[i].first, ranges[i].second,
-                outputs[static_cast<std::size_t>(i)]);
+                outputs[static_cast<std::size_t>(i)],
+                hipo_outputs[static_cast<std::size_t>(i)]);
             const auto t1 = std::chrono::steady_clock::now();
             const long ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
             results[static_cast<std::size_t>(i)] = {
@@ -379,7 +411,24 @@ int main(int argc, char* argv[]) {
             : (fs::path(cfg.output_dir) / base.filename());
         fmt::print("    hadd -f {} ", merged.string());
         for (const auto& r : results) fmt::print("{} ", r.output_file);
-        fmt::print("\n\n");
+        fmt::print("\n");
+
+        if (has_hipo_out) {
+            // hipo-utils ships a `hipo-merger` (or `hipo-utils -merge`)
+            // helper for the .hipo case. The user picks whichever they
+            // have in PATH; we just emit the slice list.
+            const fs::path hipo_base{info.hipo_output_base};
+            fs::path merged_hipo = cfg.output_dir.empty()
+                ? hipo_base
+                : (fs::path(cfg.output_dir) / hipo_base.filename());
+            fmt::print("    # skim HIPO output — merge with hipo-utils:\n");
+            fmt::print("    hipo-utils -merge -o {} ", merged_hipo.string());
+            for (std::size_t i = 0; i < hipo_outputs.size(); ++i) {
+                fmt::print("{} ", hipo_outputs[i]);
+            }
+            fmt::print("\n");
+        }
+        fmt::print("\n");
     }
 
     return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

@@ -77,11 +77,12 @@ auto main(int argc, char* argv[]) -> int {
     return framework::AnalysisRunner::run(
         argc, argv, "Pi0 Multiplicity Skim", "pi0_multiplicity_skim",
         [](auto& builder, const auto& config) {
-            // Optional HIPO output file path lives in the TOML at
-            // [skim].hipo_output (top-level so it isn't tied to a
-            // specific algorithm). Empty / missing = no output.
-            std::string hipo_output;
-            if (config.config_table) {
+            // Optional HIPO output file path. The CLI override
+            // (`--hipo-output FILE`) wins over `[skim].hipo_output` in the
+            // TOML so local_batch can hand each slice a unique skim file
+            // without rewriting the TOML.
+            std::string hipo_output = config.hipo_output_override;
+            if (hipo_output.empty() && config.config_table) {
                 if (auto v = (*config.config_table)["skim"]["hipo_output"].template value<std::string>())
                     hipo_output = *v;
             }
