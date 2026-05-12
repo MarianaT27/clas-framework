@@ -34,9 +34,12 @@
  */
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
