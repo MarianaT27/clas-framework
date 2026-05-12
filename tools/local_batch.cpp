@@ -347,16 +347,15 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    const bool file_sharding = (files.size() > 1);
-
-    // Cap slices at the number of files when sharding by file — splitting
-    // 10 files across 100 slices wastes 90 processes on empty inputs.
-    if (file_sharding && cfg.slices > static_cast<int>(files.size())) {
-        fmt::print(stderr,
-            "[local_batch] Note: capping --slices {} to {} (one slice per file)\n",
-            cfg.slices, files.size());
-        cfg.slices = static_cast<int>(files.size());
-    }
+    // Sharding mode:
+    //   * #files >= #slices  →  pure file sharding (each slice owns 1+
+    //     whole files, no record range).
+    //   * #files <  #slices  →  per-file record sub-slicing. Each slice
+    //     owns exactly one file + one record range; slice counts are
+    //     allocated proportionally to file size so big files get more
+    //     workers and small files don't get an artificial floor.
+    const bool needs_record_subslicing =
+        cfg.slices > static_cast<int>(files.size());
 
     // ---- Build per-slice plans --------------------------------------------
 
@@ -364,10 +363,19 @@ int main(int argc, char* argv[]) {
     plans.reserve(static_cast<std::size_t>(cfg.slices));
     const bool has_hipo_out = !info.hipo_output_base.empty();
 
-    if (file_sharding) {
-        // Sharding by file list. Round-robin distribution keeps slice
-        // sizes balanced even when file sizes vary, since neighbouring
-        // files in train output tend to come from different runs.
+    auto attach_outputs = [&](SlicePlan& p) {
+        p.output_file = make_slice_output(
+            info.output_base, cfg.output_dir, cfg.slice_suffix, p.index);
+        if (has_hipo_out) {
+            p.hipo_output_file = make_slice_output(
+                info.hipo_output_base, cfg.output_dir, cfg.slice_suffix, p.index);
+        }
+    };
+
+    if (!needs_record_subslicing) {
+        // Pure file sharding. Round-robin distribution keeps slice sizes
+        // balanced even when file sizes vary, since neighbouring files
+        // in train output tend to come from different runs.
         std::vector<std::vector<std::string>> buckets(static_cast<std::size_t>(cfg.slices));
         for (std::size_t i = 0; i < files.size(); ++i) {
             buckets[i % static_cast<std::size_t>(cfg.slices)].push_back(files[i]);
@@ -376,40 +384,71 @@ int main(int argc, char* argv[]) {
             SlicePlan p;
             p.index = i;
             p.input_files = std::move(buckets[static_cast<std::size_t>(i)]);
-            p.output_file = make_slice_output(
-                info.output_base, cfg.output_dir, cfg.slice_suffix, i);
-            if (has_hipo_out) {
-                p.hipo_output_file = make_slice_output(
-                    info.hipo_output_base, cfg.output_dir, cfg.slice_suffix, i);
-            }
+            attach_outputs(p);
             plans.push_back(std::move(p));
         }
     } else {
-        // Single file → record-range sharding (original behaviour).
-        const std::string& only_file = files.front();
-        fmt::print("[local_batch] Probing record count of {} ...\n", only_file);
-        const int nrec = probe_num_records(only_file);
-        if (nrec <= 0) {
+        // Per-file record sub-slicing. Probe each file's record count so
+        // we can allocate workers proportionally to total work.
+        fmt::print("[local_batch] Probing record counts of {} files ...\n",
+                   files.size());
+        struct FileRec { std::string path; int nrec; };
+        std::vector<FileRec> file_recs;
+        file_recs.reserve(files.size());
+        long total_records = 0;
+        for (const auto& f : files) {
+            const int n = probe_num_records(f);
+            if (n <= 0) {
+                fmt::print(stderr,
+                    "[local_batch] Skipping {} (record count = {})\n", f, n);
+                continue;
+            }
+            file_recs.push_back({f, n});
+            total_records += n;
+        }
+        if (file_recs.empty()) {
             fmt::print(stderr,
-                "[local_batch] Could not get a positive record count "
-                "(got {}) for {}\n", nrec, only_file);
+                "[local_batch] No files with a positive record count\n");
             return EXIT_FAILURE;
         }
-        const int per = nrec / cfg.slices;
-        int cursor = 0;
-        for (int i = 0; i < cfg.slices; ++i) {
-            SlicePlan p;
-            p.index = i;
-            p.record_first = cursor;
-            p.record_last  = (i == cfg.slices - 1) ? nrec : (cursor + per);
-            p.output_file = make_slice_output(
-                info.output_base, cfg.output_dir, cfg.slice_suffix, i);
-            if (has_hipo_out) {
-                p.hipo_output_file = make_slice_output(
-                    info.hipo_output_base, cfg.output_dir, cfg.slice_suffix, i);
+        fmt::print("[local_batch] Total records across {} file(s): {}\n",
+                   file_recs.size(), total_records);
+
+        // Greedy proportional allocation. After processing file i,
+        // `slices_remaining` is dialled down by `n_this`, and the last
+        // file always picks up whatever's left so the totals match.
+        int  slices_remaining  = cfg.slices;
+        long records_remaining = total_records;
+        int  next_index        = 0;
+        for (std::size_t i = 0; i < file_recs.size(); ++i) {
+            const auto& fr = file_recs[i];
+            const bool   is_last = (i + 1 == file_recs.size());
+            // Reserve at least 1 slice for each file that still follows
+            // this one, so a tiny tail file always gets a worker.
+            const int    files_after = static_cast<int>(file_recs.size() - 1 - i);
+            int n_this;
+            if (is_last) {
+                n_this = slices_remaining;
+            } else {
+                const double share = static_cast<double>(fr.nrec) / records_remaining;
+                n_this = static_cast<int>(std::lround(share * slices_remaining));
+                n_this = std::clamp(n_this, 1, slices_remaining - files_after);
             }
-            plans.push_back(std::move(p));
-            cursor = p.record_last;
+
+            const int per = fr.nrec / n_this;
+            int cursor = 0;
+            for (int k = 0; k < n_this; ++k) {
+                SlicePlan p;
+                p.index        = next_index++;
+                p.input_files  = {fr.path};
+                p.record_first = cursor;
+                p.record_last  = (k + 1 == n_this) ? fr.nrec : (cursor + per);
+                attach_outputs(p);
+                plans.push_back(std::move(p));
+                cursor = plans.back().record_last;
+            }
+            slices_remaining  -= n_this;
+            records_remaining -= fr.nrec;
         }
     }
 
@@ -426,9 +465,11 @@ int main(int argc, char* argv[]) {
         "  Slices:          {}\n"
         "  Max concurrent:  {}\n"
         "══════════════════════════════════════════════════════════════════\n\n",
-        file_sharding ? "file-list sharding" : "record-range slicing",
+        needs_record_subslicing
+            ? "per-file record sub-slicing"
+            : "file-list sharding",
         cfg.analysis_toml, cfg.executable, info.input_raw,
-        files.size(), cfg.slices, cfg.concurrent);
+        files.size(), plans.size(), cfg.concurrent);
 
     if (!cfg.output_dir.empty()) {
         fs::create_directories(cfg.output_dir);
@@ -437,12 +478,14 @@ int main(int argc, char* argv[]) {
     fmt::print("Planned slices:\n");
     for (const auto& p : plans) {
         std::string desc;
-        if (!p.input_files.empty()) {
+        if (p.record_last >= 0) {
+            // Sub-slicing path: exactly one file + one record range.
+            desc = fmt::format("{} records [{:>7d}, {:>7d})",
+                               fs::path(p.input_files.front()).filename().string(),
+                               p.record_first, p.record_last);
+        } else {
             desc = fmt::format("{} file{}", p.input_files.size(),
                                p.input_files.size() == 1 ? "" : "s");
-        } else {
-            desc = fmt::format("records [{:>7d}, {:>7d})",
-                               p.record_first, p.record_last);
         }
         if (!p.hipo_output_file.empty()) {
             fmt::print("  slice {:03d}: {} -> {}  +  {}\n",
@@ -465,7 +508,8 @@ int main(int argc, char* argv[]) {
     // gate them through a counting condition variable so at most
     // `cfg.concurrent` are in their fork+wait at any one time.
 
-    std::vector<SliceResult> results(static_cast<std::size_t>(cfg.slices));
+    const int n_slices = static_cast<int>(plans.size());
+    std::vector<SliceResult> results(static_cast<std::size_t>(n_slices));
     std::mutex mu;
     std::condition_variable cv;
     int in_flight = 0;
@@ -473,8 +517,8 @@ int main(int argc, char* argv[]) {
     auto wall_start = std::chrono::steady_clock::now();
 
     std::vector<std::thread> workers;
-    workers.reserve(static_cast<std::size_t>(cfg.slices));
-    for (int i = 0; i < cfg.slices; ++i) {
+    workers.reserve(static_cast<std::size_t>(n_slices));
+    for (int i = 0; i < n_slices; ++i) {
         workers.emplace_back([&, i]() {
             {
                 std::unique_lock<std::mutex> lk(mu);
