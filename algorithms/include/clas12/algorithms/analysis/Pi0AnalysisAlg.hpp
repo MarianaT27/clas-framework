@@ -227,7 +227,13 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         fill_multiplicity_histograms(event, Q2, nu, q_hat, x_hat, y_hat, iQ2, ixB);
 
         const long event_id = event.event_number();
-        std::vector<Pi0PairNTupleData> local_rows;
+        // Reuse a thread-local row buffer instead of constructing a fresh
+        // vector each event — keeps the allocator warm so a multi-photon
+        // event doesn't re-grow it. Cleared, not destroyed, so the
+        // underlying capacity sticks around for the next pi0-producing
+        // event on this worker thread.
+        thread_local std::vector<Pi0PairNTupleData> local_rows;
+        local_rows.clear();
         process_photon_pairs(event, Q2, xB, nu, W, y, q_hat, x_hat, y_hat,
                              electron_4v, iQ2, ixB, event_id, local_rows);
 
@@ -272,18 +278,33 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     }
 
    private:
+    /// Per-photon (or per-electron) cached kinematic snapshot used by the
+    /// pair validators. Storing px/py/pz/E plus 1/|p| lets the inner loops
+    /// compare angles by cosine (dot * inv_p1 * inv_p2 vs cos(θ_min))
+    /// instead of going through `acos` + `sqrt` for every pair tested.
+    /// Defined here (ahead of `PhotonPool`) so `std::vector<PhotonCache>`
+    /// in the pool member is complete-typed at member-declaration time.
+    struct PhotonCache {
+        double px = 0.0, py = 0.0, pz = 0.0, E = 0.0, inv_p = 0.0;
+        [[nodiscard]] auto PxPyPzEVector() const noexcept -> ROOT::Math::PxPyPzEVector {
+            return ROOT::Math::PxPyPzEVector{px, py, pz, E};
+        }
+    };
+
     Config m_config;
     framework::Cutflow m_cutflow;
 
     framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService>    m_ntuple;
     framework::NTupleWriter<Pi0PairNTupleData>         m_ntuple_writer;
-    std::mutex m_ntuple_mutex;
 
     // -------- Pool ------------------------------------------------------------
+    /// Per-(Q^2, x_B, W, mult, ν)-bin photon pool. Stores the cached
+    /// kinematic snapshot rather than the heavier `Particle` so the
+    /// mixed-event loop sees a contiguous array of 5-double records.
     struct PhotonPool {
-        std::vector<Particle> photons;
-        std::deque<size_t>    event_sizes;
+        std::vector<PhotonCache> photons;
+        std::deque<size_t>       event_sizes;
     };
     std::map<int, PhotonPool> m_photon_pools;
     mutable std::shared_mutex m_pool_mutex;
@@ -348,24 +369,50 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         return MIN_PHOTON_ANGLE_A * std::exp(-MIN_PHOTON_ANGLE_B * momentum) + MIN_PHOTON_ANGLE_OFFSET;
     }
 
-    static auto validate_photon_pair(const ROOT::Math::PxPyPzEVector& electron_4v,
-                                     const ROOT::Math::PxPyPzEVector& g1_4v,
-                                     const ROOT::Math::PxPyPzEVector& g2_4v,
-                                     bool is_mixed = false) -> bool {
-        double angle1 = ROOT::Math::VectorUtil::Angle(electron_4v, g1_4v) * 180.0 / M_PI;
-        if (angle1 < MIN_ELECTRON_PHOTON_ANGLE) return false;
-        if (!is_mixed) {
-            double angle2 = ROOT::Math::VectorUtil::Angle(electron_4v, g2_4v) * 180.0 / M_PI;
-            if (angle2 < MIN_ELECTRON_PHOTON_ANGLE) return false;
-        }
-        auto total = g1_4v + g2_4v;
-        double mass = total.M();
-        if (mass < MIN_INVARIANT_MASS) return false;
-        double momentum = std::sqrt(total.Px() * total.Px() + total.Py() * total.Py() + total.Pz() * total.Pz());
-        double opening_angle = ROOT::Math::VectorUtil::Angle(g1_4v, g2_4v) * 180.0 / M_PI;
-        if (opening_angle < min_photon_opening_angle(momentum)) return false;
-        return true;
+    static auto make_cache(const ROOT::Math::PxPyPzEVector& v) noexcept -> PhotonCache {
+        const double p3 = std::sqrt(v.Px() * v.Px() + v.Py() * v.Py() + v.Pz() * v.Pz());
+        return {v.Px(), v.Py(), v.Pz(), v.E(), p3 > 0.0 ? 1.0 / p3 : 0.0};
     }
+    static auto make_cache(const Particle& p) noexcept -> PhotonCache {
+        return make_cache(p.PxPyPzEVector());
+    }
+
+    /// True if the angle between `a` and `b` exceeds `theta_min_deg`.
+    /// Implements the inequality `cos(θ_ab) < cos(θ_min)` using cached
+    /// inverse momenta to avoid `acos` and the per-call `sqrt` of |a||b|.
+    static auto angle_exceeds(const PhotonCache& a, const PhotonCache& b,
+                              double cos_theta_min) noexcept -> bool {
+        const double dot = a.px * b.px + a.py * b.py + a.pz * b.pz;
+        return (dot * a.inv_p * b.inv_p) < cos_theta_min;
+    }
+
+    /// Squared γγ invariant mass — `(E1+E2)² − |p1+p2|²` using the
+    /// cached 4-momenta directly (avoids the temporary
+    /// `PxPyPzEVector::operator+` and `M()` call).
+    static auto mgg_squared(const PhotonCache& g1, const PhotonCache& g2) noexcept -> double {
+        const double dE  = g1.E  + g2.E;
+        const double dpx = g1.px + g2.px;
+        const double dpy = g1.py + g2.py;
+        const double dpz = g1.pz + g2.pz;
+        return dE * dE - (dpx * dpx + dpy * dpy + dpz * dpz);
+    }
+
+    /// Magnitude of the pair's 3-momentum (used by the opening-angle
+    /// threshold that scales with pi0 momentum).
+    static auto pair_momentum(const PhotonCache& g1, const PhotonCache& g2) noexcept -> double {
+        const double dpx = g1.px + g2.px;
+        const double dpy = g1.py + g2.py;
+        const double dpz = g1.pz + g2.pz;
+        return std::sqrt(dpx * dpx + dpy * dpy + dpz * dpz);
+    }
+
+    // Pre-computed cosine of the fixed e-γ angle threshold; used as the
+    // inequality target in `angle_exceeds`. Computed at compile time
+    // so the inner loop never re-evaluates std::cos.
+    static inline const double COS_MIN_ELECTRON_PHOTON_ANGLE =
+        std::cos(MIN_ELECTRON_PHOTON_ANGLE * M_PI / 180.0);
+    static constexpr double MIN_INVARIANT_MASS_SQUARED =
+        MIN_INVARIANT_MASS * MIN_INVARIANT_MASS;
 
     auto find_1d_bin(double value, const std::vector<double>& edges) const -> int {
         for (size_t i = 0; i + 1 < edges.size(); ++i) {
@@ -524,15 +571,40 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         const int n_photons = static_cast<int>(photons.size());
         const int pool_bin = find_pool_bin(Q2, xB, W, photons.size(), nu);
 
+        // Cache the kinematic snapshots once per event, plus the e-γ
+        // angle precheck for each current-event photon. Same-event pairs
+        // only iterate photon indices whose e-γ check already passed;
+        // mixed-event pairs reuse the same precheck for the "g1" side.
+        // The caches and the gate vector are thread-local so successive
+        // events on the same worker thread keep the allocator warm.
+        thread_local std::vector<PhotonCache> current_cache;
+        thread_local std::vector<char>        current_e_g_ok;
+        const PhotonCache electron_cache = make_cache(electron_4v);
+        current_cache.resize(photons.size());
+        current_e_g_ok.resize(photons.size());
+        for (size_t i = 0; i < photons.size(); ++i) {
+            current_cache[i]   = make_cache(photons[i]);
+            current_e_g_ok[i]  = angle_exceeds(electron_cache, current_cache[i],
+                                               COS_MIN_ELECTRON_PHOTON_ANGLE) ? 1 : 0;
+        }
+
         // Same-event pairs
         if (photons.size() >= 2) {
             for (size_t i = 0; i < photons.size(); ++i) {
+                if (!current_e_g_ok[i]) continue;
+                const auto& g1 = current_cache[i];
                 for (size_t j = i + 1; j < photons.size(); ++j) {
-                    auto g1_4v = photons[i].PxPyPzEVector();
-                    auto g2_4v = photons[j].PxPyPzEVector();
-                    if (!validate_photon_pair(electron_4v, g1_4v, g2_4v)) continue;
+                    if (!current_e_g_ok[j]) continue;
+                    const auto& g2 = current_cache[j];
 
-                    auto pi0_4v = g1_4v + g2_4v;
+                    const double mass_sq = mgg_squared(g1, g2);
+                    if (mass_sq < MIN_INVARIANT_MASS_SQUARED) continue;
+                    const double momentum = pair_momentum(g1, g2);
+                    const double cos_min_open =
+                        std::cos(min_photon_opening_angle(momentum) * M_PI / 180.0);
+                    if (!angle_exceeds(g1, g2, cos_min_open)) continue;
+
+                    auto pi0_4v = g1.PxPyPzEVector() + g2.PxPyPzEVector();
                     PairKinematics k = compute_pair_kinematics(pi0_4v, q_hat, x_hat, y_hat, nu);
 
                     h_mgg_same_all.fill(k.mgg);
@@ -552,22 +624,28 @@ class Pi0AnalysisAlg : public framework::Algorithm {
 
         // Mixed-event pairs: current event photons against the entire
         // photon pool. Histogram-only (no TTree row): the per-pair fill
-        // rate here dwarfs every other path, so writing it to the RNTuple
-        // serialises every worker thread on NTupleService's mutex. The
-        // /Pi0EventMixing mgg_mixed* histograms preserve all the binned
-        // background info.
+        // rate here dwarfs every other path. The pool stores photons as
+        // pre-computed `PhotonCache`s so the j-loop never reconstructs
+        // a 4-vector that ends up rejected.
         if (pool_bin >= 0 && !photons.empty()) {
             std::shared_lock lock(m_pool_mutex);
             auto pool_it = m_photon_pools.find(pool_bin);
             if (pool_it != m_photon_pools.end() && !pool_it->second.photons.empty()) {
                 const auto& pool_photons = pool_it->second.photons;
                 for (size_t i = 0; i < photons.size(); ++i) {
+                    if (!current_e_g_ok[i]) continue;
+                    const auto& g1 = current_cache[i];
                     for (size_t j = 0; j < pool_photons.size(); ++j) {
-                        auto g1_4v = photons[i].PxPyPzEVector();
-                        auto g2_4v = pool_photons[j].PxPyPzEVector();
-                        if (!validate_photon_pair(electron_4v, g1_4v, g2_4v, /*is_mixed=*/true)) continue;
+                        const auto& g2 = pool_photons[j];
 
-                        auto pi0_4v = g1_4v + g2_4v;
+                        const double mass_sq = mgg_squared(g1, g2);
+                        if (mass_sq < MIN_INVARIANT_MASS_SQUARED) continue;
+                        const double momentum = pair_momentum(g1, g2);
+                        const double cos_min_open =
+                            std::cos(min_photon_opening_angle(momentum) * M_PI / 180.0);
+                        if (!angle_exceeds(g1, g2, cos_min_open)) continue;
+
+                        auto pi0_4v = g1.PxPyPzEVector() + g2.PxPyPzEVector();
                         PairKinematics k = compute_pair_kinematics(pi0_4v, q_hat, x_hat, y_hat, nu);
 
                         h_mgg_mixed_all.fill(k.mgg);
@@ -582,11 +660,13 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             }
         }
 
-        // Pool update: append current event's photons, evict oldest FIFO if full
+        // Pool update: append current event's PhotonCache snapshots,
+        // evict oldest FIFO if full. Storing the cache (not the heavier
+        // Particle) makes the mixed-pair iteration purely arithmetic.
         if (pool_bin >= 0 && !photons.empty()) {
             std::unique_lock lock(m_pool_mutex);
             auto& pool = m_photon_pools[pool_bin];
-            pool.photons.insert(pool.photons.end(), photons.begin(), photons.end());
+            pool.photons.insert(pool.photons.end(), current_cache.begin(), current_cache.end());
             pool.event_sizes.push_back(photons.size());
             while (static_cast<int>(pool.event_sizes.size()) > m_config.max_pool_events) {
                 size_t n = pool.event_sizes.front();
@@ -644,7 +724,9 @@ class Pi0AnalysisAlg : public framework::Algorithm {
 
     auto flush_rows_to_ntuple(const std::vector<Pi0PairNTupleData>& rows) -> void {
         if (rows.empty() || !m_ntuple_writer) return;
-        std::lock_guard lock(m_ntuple_mutex);
+        // No explicit lock: NTupleService now hands each worker thread
+        // its own RNTupleFillContext via NTupleWriter<T>::slot(), so the
+        // fills below are independent across threads.
         for (const auto& r : rows) {
             m_ntuple_writer.data() = r;
             m_ntuple_writer.fill();
