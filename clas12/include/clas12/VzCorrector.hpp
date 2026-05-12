@@ -74,6 +74,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -569,6 +570,18 @@ inline VzCorrector VzCorrector::load_from_file(const std::string& path,
     return false;
   };
 
+  // Pull the next whitespace-delimited token from `iss` and parse it as a
+  // double via std::strtod. We can't use `iss >> dbl` directly because some
+  // libstdc++ versions on Linux reject the literal "nan" token that the
+  // params file uses as the theta-domain sentinel for empty cells.
+  auto read_double = [](std::istream& iss, double& out) -> bool {
+    std::string tok;
+    if (!(iss >> tok)) return false;
+    char* endp = nullptr;
+    out = std::strtod(tok.c_str(), &endp);
+    return endp != tok.c_str();
+  };
+
   VzCorrector vc(n_sigma_cut);
   std::string line;
 
@@ -594,9 +607,15 @@ inline VzCorrector VzCorrector::load_from_file(const std::string& path,
     Params p;
     {
       std::istringstream iss(line);
-      iss >> key >> p.mu0_lo >> p.sigma0_lo >> p.mu0_hi >> p.sigma0_hi
-          >> p.p_lo >> p.p_binw >> p.n_p;
-      if (!iss)
+      iss >> key;
+      bool ok = read_double(iss, p.mu0_lo)
+             && read_double(iss, p.sigma0_lo)
+             && read_double(iss, p.mu0_hi)
+             && read_double(iss, p.sigma0_hi)
+             && read_double(iss, p.p_lo)
+             && read_double(iss, p.p_binw)
+             && static_cast<bool>(iss >> p.n_p);
+      if (!ok)
         throw std::runtime_error(
             "VzCorrector: bad variant header for '" + key + "'");
     }
@@ -617,15 +636,17 @@ inline VzCorrector VzCorrector::load_from_file(const std::string& path,
       int sec = 0, ip = 0, iphi = 0;
       iss >> sec >> ip >> iphi;
       const auto idx = p.cell_index(sec, ip, iphi);
+      bool ok = static_cast<bool>(iss);
       auto read4 = [&](std::array<double, kNPoly>& dst) {
-        for (int k = 0; k < kNPoly; ++k) iss >> dst[k];
+        for (int k = 0; k < kNPoly; ++k) ok = ok && read_double(iss, dst[k]);
       };
       read4(p.mu_lo[idx]);
       read4(p.mu_hi[idx]);
       read4(p.sig_lo[idx]);
       read4(p.sig_hi[idx]);
-      iss >> p.theta_dom[idx][0] >> p.theta_dom[idx][1];
-      if (!iss)
+      ok = ok && read_double(iss, p.theta_dom[idx][0])
+              && read_double(iss, p.theta_dom[idx][1]);
+      if (!ok)
         throw std::runtime_error(
             "VzCorrector: bad row in variant '" + key + "'");
     }
