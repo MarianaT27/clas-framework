@@ -14,6 +14,7 @@
  *     signal rows (mixed pairs stay in histograms only — see process()).
  */
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <deque>
@@ -21,6 +22,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <Math/Vector4D.h>
@@ -250,8 +252,10 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         size_t max_occupancy = 0;
         size_t total_photons = 0;
         size_t max_photons = 0;
-        for (const auto& [bin, pool] : m_photon_pools) {
-            if (!pool.event_sizes.empty()) {
+        for (auto& shard : m_pool_shards) {
+            std::shared_lock lock(shard.mutex);
+            for (const auto& [bin, pool] : shard.pools) {
+                if (pool.event_sizes.empty()) continue;
                 bins_used++;
                 total_stored += pool.event_sizes.size();
                 max_occupancy = std::max(max_occupancy, pool.event_sizes.size());
@@ -306,8 +310,28 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         std::vector<PhotonCache> photons;
         std::deque<size_t>       event_sizes;
     };
-    std::map<int, PhotonPool> m_photon_pools;
-    mutable std::shared_mutex m_pool_mutex;
+
+    /// Sharded pool. Each shard owns an independent `shared_mutex` +
+    /// `unordered_map<bin, PhotonPool>`. Different pool bins map to
+    /// different shards via the bin modulus, so two worker threads
+    /// updating different (Q^2, x_B, …) bins never block each other.
+    /// 32 shards covers the ~hundreds of populated bins observed in
+    /// the LD2 / CuSn analyses with comfortable headroom.
+    static constexpr int N_POOL_SHARDS = 32;
+    struct PoolShard {
+        mutable std::shared_mutex          mutex;
+        std::unordered_map<int, PhotonPool> pools;
+    };
+    std::array<PoolShard, N_POOL_SHARDS> m_pool_shards;
+
+    [[nodiscard]] auto pool_shard_for(int bin) noexcept -> PoolShard& {
+        // Bins are non-negative once they're emitted by find_pool_bin;
+        // a plain modulus is enough for the distribution we see.
+        return m_pool_shards[static_cast<unsigned>(bin) % static_cast<unsigned>(N_POOL_SHARDS)];
+    }
+    [[nodiscard]] auto pool_shard_for(int bin) const noexcept -> const PoolShard& {
+        return m_pool_shards[static_cast<unsigned>(bin) % static_cast<unsigned>(N_POOL_SHARDS)];
+    }
 
     static constexpr int N_MULT_BINS = 4;
 
@@ -628,9 +652,10 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         // pre-computed `PhotonCache`s so the j-loop never reconstructs
         // a 4-vector that ends up rejected.
         if (pool_bin >= 0 && !photons.empty()) {
-            std::shared_lock lock(m_pool_mutex);
-            auto pool_it = m_photon_pools.find(pool_bin);
-            if (pool_it != m_photon_pools.end() && !pool_it->second.photons.empty()) {
+            auto& shard = pool_shard_for(pool_bin);
+            std::shared_lock lock(shard.mutex);
+            auto pool_it = shard.pools.find(pool_bin);
+            if (pool_it != shard.pools.end() && !pool_it->second.photons.empty()) {
                 const auto& pool_photons = pool_it->second.photons;
                 for (size_t i = 0; i < photons.size(); ++i) {
                     if (!current_e_g_ok[i]) continue;
@@ -663,9 +688,12 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         // Pool update: append current event's PhotonCache snapshots,
         // evict oldest FIFO if full. Storing the cache (not the heavier
         // Particle) makes the mixed-pair iteration purely arithmetic.
+        // The shard lock is held only for the duration of the update on
+        // this bin's shard; other shards stay independently writable.
         if (pool_bin >= 0 && !photons.empty()) {
-            std::unique_lock lock(m_pool_mutex);
-            auto& pool = m_photon_pools[pool_bin];
+            auto& shard = pool_shard_for(pool_bin);
+            std::unique_lock lock(shard.mutex);
+            auto& pool = shard.pools[pool_bin];
             pool.photons.insert(pool.photons.end(), current_cache.begin(), current_cache.end());
             pool.event_sizes.push_back(photons.size());
             while (static_cast<int>(pool.event_sizes.size()) > m_config.max_pool_events) {
