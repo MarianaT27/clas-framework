@@ -322,6 +322,12 @@ private:
                 "[skim].hipo_output key of pi0_multiplicity_skim). Empty / "
                 "absent = use the TOML value.",
                 cxxopts::value<std::string>())
+            ("input",
+                "Override [run].input. Accepts a single file, a "
+                "comma-separated list of files, or a directory (recursively "
+                "scanned for .hipo). Used by local_batch's file-list "
+                "sharding mode to hand each child a subset of files.",
+                cxxopts::value<std::string>())
             ("h,help",   "Show help");
 
         auto args = options.parse(argc, argv);
@@ -391,6 +397,14 @@ private:
         }
         if (args.count("hipo-output")) {
             cfg.hipo_output_override = args["hipo-output"].as<std::string>();
+        }
+        if (args.count("input")) {
+            // Reuse parse_input's resolver by synthesizing a one-key table
+            // around the override string so directories, comma lists, and
+            // brace expansion all work identically to the TOML path.
+            toml::table fake;
+            fake.insert_or_assign("input", args["input"].as<std::string>());
+            cfg.input_files = parse_input(&fake);
         }
 
         // [analysis]

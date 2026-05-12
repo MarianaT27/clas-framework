@@ -71,7 +71,10 @@ struct DriverConfig {
 };
 
 struct AnalysisTomlInfo {
-    std::string input_file;          // first input file (driver only supports one)
+    /// Raw [run].input string verbatim from the TOML (path / directory /
+    /// comma list / brace expansion). Expanded later to a flat file list
+    /// by expand_input_path().
+    std::string input_raw;
     std::string output_base;         // output basename from [run].output
     std::string hipo_output_base;    // optional [skim].hipo_output base; empty = none
 };
@@ -101,20 +104,22 @@ struct AnalysisTomlInfo {
     // up via the `--hipo-output` CLI override.
     if (auto v = tbl["skim"]["hipo_output"].value<std::string>()) info.hipo_output_base = *v;
 
-    // [run].input may be a string or a one-element array; record-range
-    // slicing is well-defined only for a single file.
+    // [run].input — accept either a single string (path / directory /
+    // comma list) or an array. Multiple-array entries are joined with
+    // commas so downstream expansion handles them uniformly.
     if (auto arr = (*run)["input"].as_array()) {
-        if (arr->size() != 1) {
-            fmt::print(stderr,
-                "[local_batch] [run].input has {} entries; slicing requires "
-                "exactly one input file\n", arr->size());
-            return std::nullopt;
+        std::string joined;
+        for (const auto& el : *arr) {
+            if (auto s = el.value<std::string>()) {
+                if (!joined.empty()) joined += ',';
+                joined += *s;
+            }
         }
-        if (auto s = (*arr)[0].value<std::string>()) info.input_file = *s;
+        info.input_raw = std::move(joined);
     } else if (auto s = (*run)["input"].value<std::string>()) {
-        info.input_file = *s;
+        info.input_raw = *s;
     }
-    if (info.input_file.empty()) {
+    if (info.input_raw.empty()) {
         fmt::print(stderr, "[local_batch] [run].input is empty\n");
         return std::nullopt;
     }
@@ -123,6 +128,47 @@ struct AnalysisTomlInfo {
         return std::nullopt;
     }
     return info;
+}
+
+/// Resolve a raw [run].input value (path / directory / comma list) to a
+/// flat sorted list of HIPO files. Directories are scanned recursively
+/// for `*.hipo`. Comma-separated entries are split. Single-file paths
+/// pass through unchanged.
+[[nodiscard]] auto expand_input_path(const std::string& raw)
+    -> std::vector<std::string>
+{
+    std::vector<std::string> out;
+
+    auto add_one = [&](std::string s) {
+        if (s.empty()) return;
+        if (fs::is_directory(s)) {
+            std::vector<std::string> dir_files;
+            for (auto& p : fs::recursive_directory_iterator(s)) {
+                if (p.is_regular_file() && p.path().extension() == ".hipo") {
+                    dir_files.push_back(fs::absolute(p.path()).string());
+                }
+            }
+            std::sort(dir_files.begin(), dir_files.end());
+            out.insert(out.end(), dir_files.begin(), dir_files.end());
+        } else if (fs::is_regular_file(s)) {
+            out.push_back(std::move(s));
+        } else {
+            fmt::print(stderr,
+                "[local_batch] Input '{}' is neither a file nor a directory; skipping\n",
+                s);
+        }
+    };
+
+    // Top-level comma split. We don't try to honour brace expansion here
+    // (the framework's AnalysisRunner does that for the actual run) —
+    // local_batch only needs an enumerable file list to shard.
+    std::string cur;
+    for (char c : raw) {
+        if (c == ',') { add_one(std::move(cur)); cur.clear(); }
+        else cur += c;
+    }
+    add_one(std::move(cur));
+    return out;
 }
 
 /// Insert `<suffix><i>` before the `.root`/`.hipo` extension. Falls back
@@ -153,27 +199,43 @@ struct AnalysisTomlInfo {
 
 struct SliceResult {
     int slice;
-    int first, last;
     int exit_code;
     long ms;
+    std::string description;   // "records [a, b)" or "N files"
     std::string output_file;
+};
+
+/// One slice's plan. Either a record range (single-file input) or a
+/// list of files (multi-file / directory input); never both.
+struct SlicePlan {
+    int                       index = 0;
+    int                       record_first = 0;
+    int                       record_last  = -1;   // -1 = no range arg
+    std::vector<std::string>  input_files;          // empty = no --input arg
+    std::string               output_file;
+    std::string               hipo_output_file;     // empty = no --hipo-output
 };
 
 /// fork/exec one slice; blocks until the child exits. Stdio is left
 /// connected to the parent so progress lines stream out interleaved.
-///
-/// `hipo_output_file` is forwarded as `--hipo-output FILE` only when
-/// non-empty — analysis binaries that don't honour that flag (the
-/// non-skim ones) ignore it harmlessly via cxxopts' unknown-option
-/// tolerance is not assumed; we just skip the argument instead.
 [[nodiscard]] auto run_one_slice(
     const std::string& exe,
     const std::string& analysis_toml,
-    int first, int last,
-    const std::string& output_file,
-    const std::string& hipo_output_file) -> int
+    const SlicePlan& plan) -> int
 {
-    const std::string range_arg = fmt::format("{}:{}", first, last);
+    // String storage lives in the caller's frame, but the argv vector is
+    // built per call so we own the lifetimes locally and only pass
+    // pointers to execv.
+    const std::string range_arg = (plan.record_last >= 0)
+        ? fmt::format("{}:{}", plan.record_first, plan.record_last)
+        : std::string{};
+    std::string input_arg;
+    if (!plan.input_files.empty()) {
+        for (std::size_t i = 0; i < plan.input_files.size(); ++i) {
+            if (i) input_arg += ',';
+            input_arg += plan.input_files[i];
+        }
+    }
 
     pid_t pid = fork();
     if (pid < 0) {
@@ -181,16 +243,21 @@ struct SliceResult {
         return 127;
     }
     if (pid == 0) {
-        // Build argv at runtime so `--hipo-output` only gets passed for
-        // slices that actually have a skim output to write.
         std::vector<const char*> argv;
         argv.push_back(exe.c_str());
-        argv.push_back("--config");       argv.push_back(analysis_toml.c_str());
-        argv.push_back("--record-range"); argv.push_back(range_arg.c_str());
-        argv.push_back("--output");       argv.push_back(output_file.c_str());
-        if (!hipo_output_file.empty()) {
+        argv.push_back("--config"); argv.push_back(analysis_toml.c_str());
+        argv.push_back("--output"); argv.push_back(plan.output_file.c_str());
+        if (!range_arg.empty()) {
+            argv.push_back("--record-range");
+            argv.push_back(range_arg.c_str());
+        }
+        if (!input_arg.empty()) {
+            argv.push_back("--input");
+            argv.push_back(input_arg.c_str());
+        }
+        if (!plan.hipo_output_file.empty()) {
             argv.push_back("--hipo-output");
-            argv.push_back(hipo_output_file.c_str());
+            argv.push_back(plan.hipo_output_file.c_str());
         }
         argv.push_back(nullptr);
         execv(exe.c_str(), const_cast<char* const*>(argv.data()));
@@ -214,8 +281,9 @@ struct SliceResult {
 
 int main(int argc, char* argv[]) {
     cxxopts::Options opts("local_batch",
-        "Local (non-SWIF2) batch driver — split one big HIPO file across N "
-        "concurrent processes by record range.");
+        "Local (non-SWIF2) batch driver — shard a HIPO workload across N "
+        "concurrent processes. Single-file inputs are split by record "
+        "range; directory / multi-file inputs are split by file list.");
     opts.add_options()
         ("c,config",     "Analysis TOML (same one the analysis binary takes)",
             cxxopts::value<std::string>())
@@ -270,67 +338,118 @@ int main(int argc, char* argv[]) {
     if (!info_opt) return EXIT_FAILURE;
     auto& info = *info_opt;
 
-    fmt::print("[local_batch] Probing record count of {} ...\n",
-               info.input_file);
-    const int nrec = probe_num_records(info.input_file);
-    if (nrec <= 0) {
+    fmt::print("[local_batch] Resolving [run].input = '{}' ...\n",
+               info.input_raw);
+    const auto files = expand_input_path(info.input_raw);
+    if (files.empty()) {
         fmt::print(stderr,
-            "[local_batch] Could not get a positive record count "
-            "(got {})\n", nrec);
+            "[local_batch] No HIPO files resolved from '{}'\n", info.input_raw);
         return EXIT_FAILURE;
     }
 
-    // Slice into nearly-equal half-open ranges. The last slice picks up
-    // any remainder from integer division.
-    std::vector<std::pair<int, int>> ranges;
-    ranges.reserve(static_cast<std::size_t>(cfg.slices));
-    const int per = nrec / cfg.slices;
-    int cursor = 0;
-    for (int i = 0; i < cfg.slices; ++i) {
-        const int first = cursor;
-        const int last  = (i == cfg.slices - 1) ? nrec : (cursor + per);
-        ranges.emplace_back(first, last);
-        cursor = last;
+    const bool file_sharding = (files.size() > 1);
+
+    // Cap slices at the number of files when sharding by file — splitting
+    // 10 files across 100 slices wastes 90 processes on empty inputs.
+    if (file_sharding && cfg.slices > static_cast<int>(files.size())) {
+        fmt::print(stderr,
+            "[local_batch] Note: capping --slices {} to {} (one slice per file)\n",
+            cfg.slices, files.size());
+        cfg.slices = static_cast<int>(files.size());
     }
+
+    // ---- Build per-slice plans --------------------------------------------
+
+    std::vector<SlicePlan> plans;
+    plans.reserve(static_cast<std::size_t>(cfg.slices));
+    const bool has_hipo_out = !info.hipo_output_base.empty();
+
+    if (file_sharding) {
+        // Sharding by file list. Round-robin distribution keeps slice
+        // sizes balanced even when file sizes vary, since neighbouring
+        // files in train output tend to come from different runs.
+        std::vector<std::vector<std::string>> buckets(static_cast<std::size_t>(cfg.slices));
+        for (std::size_t i = 0; i < files.size(); ++i) {
+            buckets[i % static_cast<std::size_t>(cfg.slices)].push_back(files[i]);
+        }
+        for (int i = 0; i < cfg.slices; ++i) {
+            SlicePlan p;
+            p.index = i;
+            p.input_files = std::move(buckets[static_cast<std::size_t>(i)]);
+            p.output_file = make_slice_output(
+                info.output_base, cfg.output_dir, cfg.slice_suffix, i);
+            if (has_hipo_out) {
+                p.hipo_output_file = make_slice_output(
+                    info.hipo_output_base, cfg.output_dir, cfg.slice_suffix, i);
+            }
+            plans.push_back(std::move(p));
+        }
+    } else {
+        // Single file → record-range sharding (original behaviour).
+        const std::string& only_file = files.front();
+        fmt::print("[local_batch] Probing record count of {} ...\n", only_file);
+        const int nrec = probe_num_records(only_file);
+        if (nrec <= 0) {
+            fmt::print(stderr,
+                "[local_batch] Could not get a positive record count "
+                "(got {}) for {}\n", nrec, only_file);
+            return EXIT_FAILURE;
+        }
+        const int per = nrec / cfg.slices;
+        int cursor = 0;
+        for (int i = 0; i < cfg.slices; ++i) {
+            SlicePlan p;
+            p.index = i;
+            p.record_first = cursor;
+            p.record_last  = (i == cfg.slices - 1) ? nrec : (cursor + per);
+            p.output_file = make_slice_output(
+                info.output_base, cfg.output_dir, cfg.slice_suffix, i);
+            if (has_hipo_out) {
+                p.hipo_output_file = make_slice_output(
+                    info.hipo_output_base, cfg.output_dir, cfg.slice_suffix, i);
+            }
+            plans.push_back(std::move(p));
+            cursor = p.record_last;
+        }
+    }
+
+    // ---- Print banner -----------------------------------------------------
 
     fmt::print(
         "\n══════════════════════════════════════════════════════════════════\n"
-        "  Local batch — record-range slicing\n"
+        "  Local batch — {}\n"
         "──────────────────────────────────────────────────────────────────\n"
         "  Analysis TOML:   {}\n"
         "  Executable:      {}\n"
-        "  Input file:      {}\n"
-        "  Records total:   {}\n"
+        "  Input:           {}\n"
+        "  Files resolved:  {}\n"
         "  Slices:          {}\n"
         "  Max concurrent:  {}\n"
         "══════════════════════════════════════════════════════════════════\n\n",
-        cfg.analysis_toml, cfg.executable, info.input_file,
-        nrec, cfg.slices, cfg.concurrent);
+        file_sharding ? "file-list sharding" : "record-range slicing",
+        cfg.analysis_toml, cfg.executable, info.input_raw,
+        files.size(), cfg.slices, cfg.concurrent);
 
     if (!cfg.output_dir.empty()) {
         fs::create_directories(cfg.output_dir);
     }
 
     fmt::print("Planned slices:\n");
-    std::vector<std::string> outputs(static_cast<std::size_t>(cfg.slices));
-    std::vector<std::string> hipo_outputs(static_cast<std::size_t>(cfg.slices));
-    const bool has_hipo_out = !info.hipo_output_base.empty();
-    for (int i = 0; i < cfg.slices; ++i) {
-        outputs[static_cast<std::size_t>(i)] = make_slice_output(
-            info.output_base, cfg.output_dir, cfg.slice_suffix, i);
-        if (has_hipo_out) {
-            hipo_outputs[static_cast<std::size_t>(i)] = make_slice_output(
-                info.hipo_output_base, cfg.output_dir, cfg.slice_suffix, i);
-        }
-        if (has_hipo_out) {
-            fmt::print("  slice {:03d}: records [{:>7d}, {:>7d}) -> {}  +  {}\n",
-                       i, ranges[i].first, ranges[i].second,
-                       outputs[static_cast<std::size_t>(i)],
-                       hipo_outputs[static_cast<std::size_t>(i)]);
+    for (const auto& p : plans) {
+        std::string desc;
+        if (!p.input_files.empty()) {
+            desc = fmt::format("{} file{}", p.input_files.size(),
+                               p.input_files.size() == 1 ? "" : "s");
         } else {
-            fmt::print("  slice {:03d}: records [{:>7d}, {:>7d}) -> {}\n",
-                       i, ranges[i].first, ranges[i].second,
-                       outputs[static_cast<std::size_t>(i)]);
+            desc = fmt::format("records [{:>7d}, {:>7d})",
+                               p.record_first, p.record_last);
+        }
+        if (!p.hipo_output_file.empty()) {
+            fmt::print("  slice {:03d}: {} -> {}  +  {}\n",
+                       p.index, desc, p.output_file, p.hipo_output_file);
+        } else {
+            fmt::print("  slice {:03d}: {} -> {}\n",
+                       p.index, desc, p.output_file);
         }
     }
     fmt::print("\n");
@@ -363,16 +482,16 @@ int main(int argc, char* argv[]) {
                 ++in_flight;
             }
             const auto t0 = std::chrono::steady_clock::now();
-            const int rc = run_one_slice(
-                cfg.executable, cfg.analysis_toml,
-                ranges[i].first, ranges[i].second,
-                outputs[static_cast<std::size_t>(i)],
-                hipo_outputs[static_cast<std::size_t>(i)]);
+            const int rc = run_one_slice(cfg.executable, cfg.analysis_toml,
+                                         plans[static_cast<std::size_t>(i)]);
             const auto t1 = std::chrono::steady_clock::now();
             const long ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+            const auto& p = plans[static_cast<std::size_t>(i)];
+            std::string desc = !p.input_files.empty()
+                ? fmt::format("{} files", p.input_files.size())
+                : fmt::format("records [{}, {})", p.record_first, p.record_last);
             results[static_cast<std::size_t>(i)] = {
-                i, ranges[i].first, ranges[i].second, rc, ms,
-                outputs[static_cast<std::size_t>(i)]
+                i, rc, ms, std::move(desc), p.output_file
             };
             {
                 std::lock_guard<std::mutex> lk(mu);
@@ -423,8 +542,8 @@ int main(int argc, char* argv[]) {
                 : (fs::path(cfg.output_dir) / hipo_base.filename());
             fmt::print("    # skim HIPO output — merge with hipo-utils:\n");
             fmt::print("    hipo-utils -merge -o {} ", merged_hipo.string());
-            for (std::size_t i = 0; i < hipo_outputs.size(); ++i) {
-                fmt::print("{} ", hipo_outputs[i]);
+            for (const auto& p : plans) {
+                fmt::print("{} ", p.hipo_output_file);
             }
             fmt::print("\n");
         }
