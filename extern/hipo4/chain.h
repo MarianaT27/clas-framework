@@ -857,6 +857,13 @@ public:
             for (int t = 0; t < m_num_threads; t++) {
                 futures.push_back(m_thread_pool.submit([&, this]() {
                     try {
+                        // Per-record atomic batching: each iteration of the
+                        // outer record loop reserves all of its events worth
+                        // of slots from `events_processed_in_file` with a
+                        // single fetch_add, and merges per-event counters
+                        // into m_stats / progress once after the inner loop.
+                        // With ~50k events/record this drops three hot
+                        // atomics from per-event to per-record frequency.
                         if (use_io) {
                             event temp_event;
                             banklist thread_banks = banks; // thread-local copy
@@ -875,21 +882,28 @@ public:
                                     prefetcher ? prefetcher->get(rec_idx)
                                                : fh->loadRecordShared(rec_idx);
                                 if (!rec_ptr) continue;
-                                int events_in_record = rec_ptr->getEventCount();
-                                for (int evt_in_rec = 0; evt_in_rec < events_in_record; evt_in_rec++) {
-                                    long current_count = events_processed_in_file.fetch_add(1);
-                                    if (current_count >= work.max_events) {
-                                        events_processed_in_file.fetch_sub(1);
-                                        break;
-                                    }
+                                const int events_in_record = rec_ptr->getEventCount();
+                                const long local_base = events_processed_in_file.fetch_add(events_in_record);
+                                if (local_base >= work.max_events) {
+                                    events_processed_in_file.fetch_sub(events_in_record);
+                                    break;
+                                }
+                                const int usable = static_cast<int>(std::min<long>(
+                                    events_in_record, work.max_events - local_base));
+                                for (int evt_in_rec = 0; evt_in_rec < usable; evt_in_rec++) {
+                                    const long current_count = local_base + evt_in_rec;
                                     rec_ptr->readHipoEvent(temp_event, evt_in_rec);
                                     for (auto& b : thread_banks) {
                                         temp_event.read(b);
                                     }
                                     process_func(thread_banks, file.index, current_count);
-                                    m_stats.events_processed++;
-                                    if (progress) progress->increment();
                                 }
+                                if (usable < events_in_record) {
+                                    events_processed_in_file.fetch_sub(events_in_record - usable);
+                                }
+                                m_stats.events_processed.fetch_add(usable, std::memory_order_relaxed);
+                                if (progress) progress->add(static_cast<std::size_t>(usable));
+                                if (usable < events_in_record) break;  // hit the percentage cap
                             }
                         } else {
                             // Each thread has its own reader, record buffer, and banklist copy
@@ -909,23 +923,28 @@ public:
 
                                 if (!file_reader.loadRecord(rec, rec_idx)) continue;
 
-                                int events_in_record = rec.getEventCount();
-
-                                for (int evt_in_rec = 0; evt_in_rec < events_in_record; evt_in_rec++) {
-                                    long current_count = events_processed_in_file.fetch_add(1);
-                                    if (current_count >= work.max_events) {
-                                        events_processed_in_file.fetch_sub(1);
-                                        break;
-                                    }
-
+                                const int events_in_record = rec.getEventCount();
+                                const long local_base = events_processed_in_file.fetch_add(events_in_record);
+                                if (local_base >= work.max_events) {
+                                    events_processed_in_file.fetch_sub(events_in_record);
+                                    break;
+                                }
+                                const int usable = static_cast<int>(std::min<long>(
+                                    events_in_record, work.max_events - local_base));
+                                for (int evt_in_rec = 0; evt_in_rec < usable; evt_in_rec++) {
+                                    const long current_count = local_base + evt_in_rec;
                                     rec.readHipoEvent(temp_event, evt_in_rec);
                                     for (auto& b : thread_banks) {
                                         temp_event.read(b);
                                     }
                                     process_func(thread_banks, file.index, current_count);
-                                    m_stats.events_processed++;
-                                    if (progress) progress->increment();
                                 }
+                                if (usable < events_in_record) {
+                                    events_processed_in_file.fetch_sub(events_in_record - usable);
+                                }
+                                m_stats.events_processed.fetch_add(usable, std::memory_order_relaxed);
+                                if (progress) progress->add(static_cast<std::size_t>(usable));
+                                if (usable < events_in_record) break;  // hit the percentage cap
                             }
                         }
                     } catch (const std::exception& e) {
@@ -1273,6 +1292,10 @@ private:
             for (int t = 0; t < m_num_threads; t++) {
                 futures.push_back(m_thread_pool.submit([&, this]() {
                     try {
+                        // Per-record atomic batching — same pattern as the
+                        // banks variant above. Reserve events_in_record
+                        // slots up front, drop the m_stats / progress
+                        // updates out of the inner loop entirely.
                         if (use_io) {
                             // ---- RNTuple-style pipeline path ----
                             dictionary& dict = fh->dictionary();
@@ -1294,19 +1317,26 @@ private:
                                                : fh->loadRecordShared(rec_idx);
                                 if (!rec_ptr) continue;
 
-                                int events_in_record = rec_ptr->getEventCount();
-                                for (int evt_in_rec = 0; evt_in_rec < events_in_record; evt_in_rec++) {
-                                    long current_count = events_processed_in_file.fetch_add(1);
-                                    if (current_count >= work.max_events) {
-                                        events_processed_in_file.fetch_sub(1);
-                                        break;
-                                    }
+                                const int events_in_record = rec_ptr->getEventCount();
+                                const long local_base = events_processed_in_file.fetch_add(events_in_record);
+                                if (local_base >= work.max_events) {
+                                    events_processed_in_file.fetch_sub(events_in_record);
+                                    break;
+                                }
+                                const int usable = static_cast<int>(std::min<long>(
+                                    events_in_record, work.max_events - local_base));
+                                for (int evt_in_rec = 0; evt_in_rec < usable; evt_in_rec++) {
+                                    const long current_count = local_base + evt_in_rec;
                                     rec_ptr->readHipoEvent(temp_event, evt_in_rec);
                                     chain_event evt(&temp_event, &dict);
                                     process_func(evt, file.index, current_count);
-                                    m_stats.events_processed++;
-                                    if (progress) progress->increment();
                                 }
+                                if (usable < events_in_record) {
+                                    events_processed_in_file.fetch_sub(events_in_record - usable);
+                                }
+                                m_stats.events_processed.fetch_add(usable, std::memory_order_relaxed);
+                                if (progress) progress->add(static_cast<std::size_t>(usable));
+                                if (usable < events_in_record) break;  // hit the percentage cap
                             }
                         } else {
                             // ---- Legacy per-worker reader path (unchanged) ----
@@ -1327,21 +1357,26 @@ private:
 
                                 if (!file_reader.loadRecord(rec, rec_idx)) continue;
 
-                                int events_in_record = rec.getEventCount();
-
-                                for (int evt_in_rec = 0; evt_in_rec < events_in_record; evt_in_rec++) {
-                                    long current_count = events_processed_in_file.fetch_add(1);
-                                    if (current_count >= work.max_events) {
-                                        events_processed_in_file.fetch_sub(1);
-                                        break;
-                                    }
-
+                                const int events_in_record = rec.getEventCount();
+                                const long local_base = events_processed_in_file.fetch_add(events_in_record);
+                                if (local_base >= work.max_events) {
+                                    events_processed_in_file.fetch_sub(events_in_record);
+                                    break;
+                                }
+                                const int usable = static_cast<int>(std::min<long>(
+                                    events_in_record, work.max_events - local_base));
+                                for (int evt_in_rec = 0; evt_in_rec < usable; evt_in_rec++) {
+                                    const long current_count = local_base + evt_in_rec;
                                     rec.readHipoEvent(temp_event, evt_in_rec);
                                     chain_event evt(&temp_event, &dict);
                                     process_func(evt, file.index, current_count);
-                                    m_stats.events_processed++;
-                                    if (progress) progress->increment();
                                 }
+                                if (usable < events_in_record) {
+                                    events_processed_in_file.fetch_sub(events_in_record - usable);
+                                }
+                                m_stats.events_processed.fetch_add(usable, std::memory_order_relaxed);
+                                if (progress) progress->add(static_cast<std::size_t>(usable));
+                                if (usable < events_in_record) break;  // hit the percentage cap
                             }
                         }
                     } catch (const std::exception& e) {
