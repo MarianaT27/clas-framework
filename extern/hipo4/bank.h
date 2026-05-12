@@ -75,6 +75,68 @@ namespace hipo {
       structure(int __group, int __item, std::string &str);
 
       virtual     ~structure()= default;
+
+      /// Copy / move ops that keep the raw `structureAddress` pointer in sync
+      /// with `structureBuffer`. The default compiler-generated versions
+      /// leave `structureAddress` pointing at the *other* object's vector,
+      /// which becomes dangling once that vector is destroyed (in the copy
+      /// case) or relocated (in the move case). Callers that hold a
+      /// structure inside an STL container (e.g. unordered_map<string, bank>
+      /// in framework::Event's per-event cache) hit that bug as soon as
+      /// they read any field; the row count comes back zero or worse.
+      ///
+      /// Only the "internal buffer" case is fixed up: when initNoCopy() has
+      /// pointed `structureAddress` at an external buffer, we preserve the
+      /// raw pointer (no internal vector to relocate into).
+   private:
+      void rebind_address_(const structure& src) noexcept {
+         const char* old_base = src.structureBuffer.empty()
+             ? nullptr
+             : src.structureBuffer.data();
+         const char* old_end  = old_base + src.structureBuffer.size();
+         if (src.structureAddress && old_base
+             && src.structureAddress >= old_base
+             && src.structureAddress <  old_end) {
+            const std::ptrdiff_t off = src.structureAddress - old_base;
+            structureAddress = structureBuffer.data() + off;
+         } else {
+            structureAddress = src.structureAddress;
+         }
+      }
+
+   public:
+      structure(const structure& other)
+        : structureBuffer(other.structureBuffer),
+          dataOffset(other.dataOffset) {
+         rebind_address_(other);
+      }
+      structure(structure&& other) noexcept
+        : structureBuffer(std::move(other.structureBuffer)),
+          dataOffset(other.dataOffset) {
+         // After vector-move the buffer's heap address typically stays
+         // put, so the offset-based rebind handles both moves and copies
+         // correctly. We re-evaluate against the moved-into vector so the
+         // logic is identical for both code paths.
+         rebind_address_(other);
+         other.structureAddress = nullptr;
+      }
+      structure& operator=(const structure& other) {
+         if (this != &other) {
+            structureBuffer = other.structureBuffer;
+            dataOffset      = other.dataOffset;
+            rebind_address_(other);
+         }
+         return *this;
+      }
+      structure& operator=(structure&& other) noexcept {
+         if (this != &other) {
+            structureBuffer = std::move(other.structureBuffer);
+            dataOffset      = other.dataOffset;
+            rebind_address_(other);
+            other.structureAddress = nullptr;
+         }
+         return *this;
+      }
       bool         allocate(int size);
       
       int          getSize() const noexcept{
