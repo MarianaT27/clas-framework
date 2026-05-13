@@ -50,6 +50,8 @@ auto ApplicationBuilder::build() -> Application {
     app.set_config(m_config);  // null if user never called with_config()
     app.set_io_options(m_io_options);
     app.set_record_range(m_record_first, m_record_last);
+    app.set_quiet_mode(m_quiet_mode);
+    app.set_progress_reporter(m_progress_fd, m_slice_id);
 
     return app;
 }

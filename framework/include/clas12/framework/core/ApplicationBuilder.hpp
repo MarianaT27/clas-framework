@@ -106,6 +106,26 @@ public:
         return *this;
     }
 
+    /// Suppress LoggingService console output. Used by tools/local_batch's
+    /// child workers so their per-algorithm Configuration tables don't
+    /// flood the parent's terminal — the lines still land in the
+    /// per-slice log file via the parent's stdout redirect.
+    auto with_quiet_mode(bool quiet) -> ApplicationBuilder& {
+        m_quiet_mode = quiet;
+        return *this;
+    }
+
+    /// Activate out-of-band progress reporting to file descriptor `fd`.
+    /// The Application's `run()` will spawn a small background thread
+    /// that periodically writes `<slice_id> <events_processed>
+    /// <total_events>` lines to the FD, and disables the in-process
+    /// progress bar.
+    auto with_progress_reporter(int fd, int slice_id) -> ApplicationBuilder& {
+        m_progress_fd = fd;
+        m_slice_id    = slice_id;
+        return *this;
+    }
+
     /// Attach the parsed TOML config table. The Application will look
     /// up `[<algorithm.name()>]` for every registered algorithm and
     /// apply matching `Property` values via
@@ -211,6 +231,9 @@ private:
     hipo::IOOptions m_io_options{};
     int m_record_first = 0;
     int m_record_last  = -1;
+    int m_progress_fd  = -1;
+    int m_slice_id     = -1;
+    bool m_quiet_mode  = false;
 
     // Metadata
     std::string m_version = "1.0";

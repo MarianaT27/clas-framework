@@ -488,6 +488,19 @@ public:
     /// Enable/disable verbose output
     void set_verbose(bool verbose) { m_verbose = verbose; }
 
+    /// Current per-event progress counter. Cheap atomic load; intended for
+    /// out-of-band watchers (e.g. tools/local_batch's parent-side aggregate
+    /// progress bar) that need to sample the chain's progress without
+    /// touching the internal ProgressTracker.
+    [[nodiscard]] long events_processed() const noexcept {
+        return m_stats.events_processed.load(std::memory_order_relaxed);
+    }
+    /// Total events the chain plans to process for this run, set after
+    /// `load_metadata_if_needed()` / the work-list build.
+    [[nodiscard]] long total_events() const noexcept {
+        return m_stats.total_events.load(std::memory_order_relaxed);
+    }
+
     /// Restrict processing to the record-index range `[first, last)` within
     /// each file. `last == -1` (the default) means "to the end of the file".
     /// Workers initialise the shared `next_record` atomic to `first` and stop

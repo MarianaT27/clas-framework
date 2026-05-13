@@ -40,11 +40,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
@@ -54,6 +56,7 @@
 #include <fmt/format.h>
 #include <toml++/toml.hpp>
 
+#include <progresstracker.hpp>
 #include <reader.h>
 
 namespace fs = std::filesystem;
@@ -216,12 +219,18 @@ struct SlicePlan {
     std::string               hipo_output_file;     // empty = no --hipo-output
 };
 
-/// fork/exec one slice; blocks until the child exits. Stdio is left
-/// connected to the parent so progress lines stream out interleaved.
+/// fork/exec one slice; blocks until the child exits. Per the new UX
+/// design (see plan.md "local_batch UX") each child:
+///   - redirects stdout + stderr to <log_path> (per-slice log file),
+///   - dup2s `progress_pipe_write_fd` onto FD 3 + passes
+///     `--progress-fd 3 --slice-id <plan.index>` to the analysis,
+/// so the parent's terminal only ever sees the aggregated bar.
 [[nodiscard]] auto run_one_slice(
     const std::string& exe,
     const std::string& analysis_toml,
-    const SlicePlan& plan) -> int
+    const SlicePlan& plan,
+    int progress_pipe_write_fd,
+    const std::string& log_path) -> int
 {
     // String storage lives in the caller's frame, but the argv vector is
     // built per call so we own the lifetimes locally and only pass
@@ -236,6 +245,8 @@ struct SlicePlan {
             input_arg += plan.input_files[i];
         }
     }
+    const std::string slice_id_arg = fmt::format("{}", plan.index);
+    const std::string progress_fd_arg = "3"; // we dup2 into FD 3 below
 
     pid_t pid = fork();
     if (pid < 0) {
@@ -243,6 +254,31 @@ struct SlicePlan {
         return 127;
     }
     if (pid == 0) {
+        // Redirect stdout + stderr to the per-slice log file so the
+        // parent's terminal stays clean. Open here in the child so the
+        // file descriptor and seek state belong to this worker only.
+        int log_fd = ::open(log_path.c_str(),
+                            O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (log_fd < 0) {
+            // Stdio is still on the terminal; emit one diagnostic so
+            // the parent's screen tells us *something* if log redirect
+            // failed.
+            fmt::print(stderr, "[local_batch] open('{}') failed: {}\n",
+                       log_path, std::strerror(errno));
+            _exit(127);
+        }
+        ::dup2(log_fd, 1);
+        ::dup2(log_fd, 2);
+        if (log_fd != 1 && log_fd != 2) ::close(log_fd);
+
+        // Wire the progress pipe onto FD 3 so the analysis binary's
+        // --progress-fd 3 lookup finds it. dup2 atomically replaces
+        // FD 3 if it was already in use.
+        if (progress_pipe_write_fd >= 0) {
+            ::dup2(progress_pipe_write_fd, 3);
+            if (progress_pipe_write_fd != 3) ::close(progress_pipe_write_fd);
+        }
+
         std::vector<const char*> argv;
         argv.push_back(exe.c_str());
         argv.push_back("--config"); argv.push_back(analysis_toml.c_str());
@@ -258,6 +294,10 @@ struct SlicePlan {
         if (!plan.hipo_output_file.empty()) {
             argv.push_back("--hipo-output");
             argv.push_back(plan.hipo_output_file.c_str());
+        }
+        if (progress_pipe_write_fd >= 0) {
+            argv.push_back("--progress-fd"); argv.push_back(progress_fd_arg.c_str());
+            argv.push_back("--slice-id");    argv.push_back(slice_id_arg.c_str());
         }
         argv.push_back(nullptr);
         execv(exe.c_str(), const_cast<char* const*>(argv.data()));
@@ -474,33 +514,107 @@ int main(int argc, char* argv[]) {
     if (!cfg.output_dir.empty()) {
         fs::create_directories(cfg.output_dir);
     }
+    // Logs directory: each child redirects stdout/stderr into
+    // <logs_dir>/slice<NNN>.log. Created up front so the children don't
+    // race on mkdir.
+    const fs::path logs_dir = cfg.output_dir.empty()
+        ? fs::path{"."} / "logs"
+        : fs::path{cfg.output_dir} / "logs";
+    fs::create_directories(logs_dir);
 
-    fmt::print("Planned slices:\n");
-    for (const auto& p : plans) {
-        std::string desc;
-        if (p.record_last >= 0) {
-            // Sub-slicing path: exactly one file + one record range.
-            desc = fmt::format("{} records [{:>7d}, {:>7d})",
-                               fs::path(p.input_files.front()).filename().string(),
-                               p.record_first, p.record_last);
-        } else {
-            desc = fmt::format("{} file{}", p.input_files.size(),
-                               p.input_files.size() == 1 ? "" : "s");
-        }
-        if (!p.hipo_output_file.empty()) {
-            fmt::print("  slice {:03d}: {} -> {}  +  {}\n",
-                       p.index, desc, p.output_file, p.hipo_output_file);
-        } else {
-            fmt::print("  slice {:03d}: {} -> {}\n",
-                       p.index, desc, p.output_file);
-        }
-    }
+    fmt::print("Per-slice logs: {}/slice<NNN>.log\n", logs_dir.string());
     fmt::print("\n");
-
+    // The fully-expanded planned-slices table is verbose and the user
+    // already approved the slice plan via dry-run; in non-dry runs we
+    // collapse to a one-line summary. Each child's log file still
+    // contains its own full configuration banner.
     if (cfg.no_run) {
-        fmt::print("--dry-run: not launching any slices.\n");
+        fmt::print("Planned slices:\n");
+        for (const auto& p : plans) {
+            std::string desc;
+            if (p.record_last >= 0) {
+                desc = fmt::format("{} records [{:>7d}, {:>7d})",
+                                   fs::path(p.input_files.front()).filename().string(),
+                                   p.record_first, p.record_last);
+            } else {
+                desc = fmt::format("{} file{}", p.input_files.size(),
+                                   p.input_files.size() == 1 ? "" : "s");
+            }
+            if (!p.hipo_output_file.empty()) {
+                fmt::print("  slice {:03d}: {} -> {}  +  {}\n",
+                           p.index, desc, p.output_file, p.hipo_output_file);
+            } else {
+                fmt::print("  slice {:03d}: {} -> {}\n",
+                           p.index, desc, p.output_file);
+            }
+        }
+        fmt::print("\n--dry-run: not launching any slices.\n");
         return EXIT_SUCCESS;
     }
+
+    // ---- Aggregate progress pipe -----------------------------------------
+    //
+    // One shared pipe. Each child dup2s the write end onto FD 3 + passes
+    // `--progress-fd 3 --slice-id <NNN>` to its analysis binary, which
+    // periodically writes `<slice_id> <events_processed> <total_events>`
+    // lines while running. The parent reads from the read end in a
+    // dedicated thread, maintains per-slice counters, and feeds a single
+    // ProgressTracker that renders one bar to the terminal.
+    int pipe_fds[2];
+    if (::pipe(pipe_fds) < 0) {
+        fmt::print(stderr, "[local_batch] pipe() failed: {}\n", std::strerror(errno));
+        return EXIT_FAILURE;
+    }
+    const int pipe_read_fd  = pipe_fds[0];
+    const int pipe_write_fd = pipe_fds[1];
+
+    const int n_slices = static_cast<int>(plans.size());
+    std::vector<long> events_done (static_cast<std::size_t>(n_slices), 0);
+    std::vector<long> events_total(static_cast<std::size_t>(n_slices), 0);
+    std::mutex                agg_mu;
+    std::atomic<int>          completed_slices{0};
+
+    // Construct the tracker eagerly with a placeholder total of 1; the
+    // reader thread updates `tracker.set_total(sum)` as soon as the
+    // children begin reporting their per-slice totals.
+    ProgressTracker::Config bar_cfg;
+    bar_cfg.label = fmt::format("Local batch (0/{} slices)", n_slices);
+    bar_cfg.show_eta = true;
+    bar_cfg.show_rate = true;
+    ProgressTracker tracker(1, bar_cfg);
+    tracker.start();
+
+    // Reader thread: parses incoming progress lines, updates the aggregate.
+    std::thread reader([&]() {
+        std::string carry;
+        char buf[4096];
+        for (;;) {
+            ssize_t n = ::read(pipe_read_fd, buf, sizeof(buf));
+            if (n <= 0) break;
+            carry.append(buf, buf + static_cast<std::size_t>(n));
+            std::size_t pos;
+            while ((pos = carry.find('\n')) != std::string::npos) {
+                std::string line = carry.substr(0, pos);
+                carry.erase(0, pos + 1);
+                int  slice_id = -1;
+                long ev = 0, tot = 0;
+                if (std::sscanf(line.c_str(), "%d %ld %ld", &slice_id, &ev, &tot) != 3) continue;
+                if (slice_id < 0 || slice_id >= n_slices) continue;
+                std::lock_guard lk(agg_mu);
+                events_done [static_cast<std::size_t>(slice_id)] = ev;
+                if (tot > 0) events_total[static_cast<std::size_t>(slice_id)] = tot;
+                long sum_done = 0, sum_total = 0;
+                for (int s = 0; s < n_slices; ++s) {
+                    sum_done  += events_done [static_cast<std::size_t>(s)];
+                    sum_total += events_total[static_cast<std::size_t>(s)];
+                }
+                if (sum_total > 0) tracker.set_total(static_cast<std::size_t>(sum_total));
+                tracker.set_processed(static_cast<std::size_t>(sum_done));
+                tracker.set_label(fmt::format("Local batch ({}/{} slices)",
+                                              completed_slices.load(), n_slices));
+            }
+        }
+    });
 
     // ---- Run with bounded concurrency --------------------------------------
     //
@@ -508,7 +622,6 @@ int main(int argc, char* argv[]) {
     // gate them through a counting condition variable so at most
     // `cfg.concurrent` are in their fork+wait at any one time.
 
-    const int n_slices = static_cast<int>(plans.size());
     std::vector<SliceResult> results(static_cast<std::size_t>(n_slices));
     std::mutex mu;
     std::condition_variable cv;
@@ -526,27 +639,41 @@ int main(int argc, char* argv[]) {
                 ++in_flight;
             }
             const auto t0 = std::chrono::steady_clock::now();
+            const auto& p = plans[static_cast<std::size_t>(i)];
+            const std::string log_path =
+                (logs_dir / fmt::format("slice{:03d}.log", p.index)).string();
             const int rc = run_one_slice(cfg.executable, cfg.analysis_toml,
-                                         plans[static_cast<std::size_t>(i)]);
+                                         p, pipe_write_fd, log_path);
             const auto t1 = std::chrono::steady_clock::now();
             const long ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
-            const auto& p = plans[static_cast<std::size_t>(i)];
             std::string desc = !p.input_files.empty()
                 ? fmt::format("{} files", p.input_files.size())
                 : fmt::format("records [{}, {})", p.record_first, p.record_last);
             results[static_cast<std::size_t>(i)] = {
                 i, rc, ms, std::move(desc), p.output_file
             };
+            completed_slices.fetch_add(1, std::memory_order_relaxed);
+            // Update the bar's label inline so the user sees slice
+            // completion counter advance immediately on each finish,
+            // even if the next progress line is still ~200 ms away.
+            tracker.set_label(fmt::format("Local batch ({}/{} slices)",
+                                           completed_slices.load(), n_slices));
             {
                 std::lock_guard<std::mutex> lk(mu);
                 --in_flight;
-                fmt::print("[local_batch] slice {:03d} done  rc={}  {} ms\n",
-                           i, rc, ms);
             }
             cv.notify_all();
         });
     }
     for (auto& t : workers) t.join();
+
+    // Close the parent's pipe-write copy so the reader thread sees EOF
+    // (the children's dup2'd copies were already closed when they
+    // exited). Then join the reader and tear down the tracker.
+    ::close(pipe_write_fd);
+    reader.join();
+    ::close(pipe_read_fd);
+    tracker.finish();
 
     const auto wall_end = std::chrono::steady_clock::now();
     const long wall_ms = std::chrono::duration_cast<std::chrono::milliseconds>(wall_end - wall_start).count();

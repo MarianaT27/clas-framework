@@ -162,6 +162,13 @@ struct AnalysisConfig {
     /// out of the TOML". Lets local_batch slice a single big HIPO file
     /// across N processes by writing a distinct skim output per slice.
     std::string              hipo_output_override;
+    /// Optional out-of-band progress pipe FD + slice tag. When
+    /// `progress_fd >= 0`, the runner switches the Application into
+    /// quiet mode + spawns a periodic reporter thread that writes
+    /// `<slice_id> <events_processed> <total_events>\n` to the FD.
+    /// Set via `--progress-fd N` / `--slice-id N` from tools/local_batch.
+    int                      progress_fd = -1;
+    int                      slice_id    = -1;
 
     /// Whole parsed TOML, kept around so per-algorithm sections are
     /// available to Application::initialize().
@@ -235,6 +242,15 @@ public:
         }
 
         builder.with_record_range(config->record_first, config->record_last);
+
+        // Local-batch progress mode: silence per-process logging + pipe
+        // progress updates to the parent. Only takes effect when the
+        // parent passes --progress-fd; otherwise the legacy in-process
+        // bar is preserved.
+        if (config->progress_fd >= 0) {
+            builder.with_quiet_mode(true);
+            builder.with_progress_reporter(config->progress_fd, config->slice_id);
+        }
 
         configure_fn(builder, *config);
 
@@ -328,6 +344,17 @@ private:
                 "scanned for .hipo). Used by local_batch's file-list "
                 "sharding mode to hand each child a subset of files.",
                 cxxopts::value<std::string>())
+            ("progress-fd",
+                "Out-of-band progress pipe FD set by tools/local_batch. "
+                "When provided, the analysis runs in quiet mode and "
+                "periodically writes `<slice_id> <events_processed> "
+                "<total_events>` lines to this FD instead of rendering an "
+                "in-process progress bar.",
+                cxxopts::value<int>())
+            ("slice-id",
+                "Slice tag used as the first column in progress-fd lines. "
+                "Required when --progress-fd is set; ignored otherwise.",
+                cxxopts::value<int>())
             ("h,help",   "Show help");
 
         auto args = options.parse(argc, argv);
@@ -406,6 +433,8 @@ private:
             fake.insert_or_assign("input", args["input"].as<std::string>());
             cfg.input_files = parse_input(&fake);
         }
+        if (args.count("progress-fd")) cfg.progress_fd = args["progress-fd"].as<int>();
+        if (args.count("slice-id"))    cfg.slice_id    = args["slice-id"].as<int>();
 
         // [analysis]
         if (auto an_tbl = tbl["analysis"].as_table()) {

@@ -2,9 +2,14 @@
 
 #include <fmt/format.h>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
+#include <thread>
+#include <unistd.h>
 #include <vector>
 #include <toml++/toml.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -44,6 +49,9 @@ class Application {
         , m_io_options(std::move(other.m_io_options))
         , m_record_first(other.m_record_first)
         , m_record_last(other.m_record_last)
+        , m_progress_fd(other.m_progress_fd)
+        , m_slice_id(other.m_slice_id)
+        , m_quiet_mode(other.m_quiet_mode)
         , m_percentage(other.m_percentage)
         , m_num_threads(other.m_num_threads)
         , m_exception_count(other.m_exception_count.load()) {}
@@ -136,6 +144,36 @@ class Application {
     [[nodiscard]] auto record_range_last()  const -> int { return m_record_last; }
 
     /**
+     * @brief Optional out-of-band progress reporter for tools/local_batch.
+     *
+     * When `fd >= 0`, `run()` suppresses the chain's terminal progress bar
+     * and instead spawns a small background thread that periodically
+     * writes one line `<slice_id> <events_processed> <total_events>\n`
+     * to the given file descriptor. The parent batch driver reads from a
+     * shared pipe and renders a single aggregate bar.
+     *
+     * Setting `fd < 0` (the default) leaves the legacy in-process bar on.
+     */
+    auto set_progress_reporter(int fd, int slice_id) -> void {
+        m_progress_fd = fd;
+        m_slice_id    = slice_id;
+    }
+
+    /**
+     * @brief Quiet mode — suppresses every LoggingService console write.
+     *
+     * Used by `tools/local_batch` when many worker processes are running
+     * in parallel: the parent prints one config banner + one progress
+     * bar; each child's per-algorithm Configuration tables and cutflow
+     * summaries get redirected to a per-slice log file at exec time, so
+     * silencing the console here avoids double-redirecting the terminal
+     * inside the child as well.
+     */
+    auto set_quiet_mode(bool quiet) -> void {
+        m_quiet_mode = quiet;
+    }
+
+    /**
      * @brief Set logging service for structured output
      * Sets the global Log singleton for easy access from anywhere
      */
@@ -165,6 +203,14 @@ class Application {
         if (sc.is_failure()) {
             return sc;
         }
+
+        // `m_quiet_mode` historically suppressed LoggingService console
+        // output too, but in tools/local_batch's setup the child's
+        // stdout is already dup2'd to its per-slice log file at fork
+        // time — so the per-algorithm Configuration banners *should*
+        // reach that file. The only thing we keep suppressed is the
+        // in-process progress bar (done via `chain.set_progress(false)`
+        // in `run()` when `m_progress_fd >= 0`).
 
         // Auto-detect LoggingService if not manually set
         if (!Log::is_available()) {
@@ -302,7 +348,12 @@ class Application {
         const bool io_active = m_io_options.prefetch_depth > 0
                             || m_io_options.record_cache_bytes > 0
                             || m_io_options.io_threads > 0;
-        hipo::chain chain(m_num_threads, /*progress=*/true, /*verbose=*/false,
+        // Drive the chain's terminal progress bar based on quiet mode. When
+        // `m_progress_fd >= 0` an external aggregator (tools/local_batch) is
+        // rendering one bar across all worker processes, so the per-process
+        // bar would just collide with it.
+        const bool show_chain_progress = !m_quiet_mode && (m_progress_fd < 0);
+        hipo::chain chain(m_num_threads, show_chain_progress, /*verbose=*/false,
                           m_io_options);
         for (const auto& file : m_input_files) {
             chain.add(file);
@@ -331,6 +382,39 @@ class Application {
                 Log::info("Application", "  I/O bank filter ({} banks)",
                           m_io_options.bank_filter.size());
             }
+        }
+
+        // Optional out-of-band progress reporter for tools/local_batch.
+        // Activated when `--progress-fd N` was passed at startup; the parent
+        // batch driver dup2'd the write end of a pipe onto that FD and reads
+        // aggregated lines from the other side. We sample chain.events_processed()
+        // every 200 ms and emit one text line per sample so the parent can
+        // demultiplex by slice id and render a single bar.
+        std::atomic<bool>       progress_stop{false};
+        std::thread             progress_thread;
+        const bool              report_progress = (m_progress_fd >= 0);
+        if (report_progress) {
+            progress_thread = std::thread([this, &chain, &progress_stop]() {
+                using namespace std::chrono_literals;
+                long last_total_seen = -1;
+                while (!progress_stop.load(std::memory_order_relaxed)) {
+                    const long ev = chain.events_processed();
+                    const long tot = chain.total_events();
+                    if (tot != last_total_seen || ev > 0) {
+                        last_total_seen = tot;
+                        auto line = fmt::format("{} {} {}\n", m_slice_id, ev, tot);
+                        // Best-effort write — closed pipe / EPIPE just stops the loop.
+                        if (::write(m_progress_fd, line.data(), line.size()) < 0) break;
+                    }
+                    std::this_thread::sleep_for(200ms);
+                }
+                // Final flush so the parent sees the actual processed count
+                // even if the loop happened to skip the last sample.
+                const long ev = chain.events_processed();
+                const long tot = chain.total_events();
+                auto line = fmt::format("{} {} {}\n", m_slice_id, ev, tot);
+                (void) ::write(m_progress_fd, line.data(), line.size());
+            });
         }
 
         // Process events
@@ -365,6 +449,11 @@ class Application {
             }
         }, m_percentage);
         (void)all_required_banks;  // kept around for the dictionary probe / future banklist pre-binding
+
+        if (report_progress) {
+            progress_stop.store(true, std::memory_order_relaxed);
+            if (progress_thread.joinable()) progress_thread.join();
+        }
 
         if (m_exception_count > 0) {
             fmt::print("WARNING: {} exception(s) caught during event processing\n", m_exception_count.load());
@@ -429,6 +518,13 @@ class Application {
     /// means "to end of file". Default = process the whole input.
     int m_record_first = 0;
     int m_record_last  = -1;
+    /// Optional progress-pipe descriptor handed to us by a parent batch
+    /// driver. `m_progress_fd >= 0` activates the periodic reporter
+    /// thread in `run()`. `m_slice_id` tags each pipe line so the
+    /// aggregator can demultiplex.
+    int m_progress_fd = -1;
+    int m_slice_id    = -1;
+    bool m_quiet_mode = false;
     double m_percentage = 100;
     int m_num_threads = 1;
     mutable std::atomic<long> m_exception_count{0};
