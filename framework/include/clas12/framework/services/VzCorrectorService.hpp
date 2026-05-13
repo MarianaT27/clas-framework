@@ -69,7 +69,7 @@ class VzCorrectorService : public Service {
     auto initialize() -> StatusCode override {
         if (m_config.target == Target::LD2) {
             Log::info(name(),
-                      "Target is LD2 -> Vz correction disabled; using legacy raw cut [{:.2f}, {:.2f}] cm",
+                      "Target is LD2 -> Vz correction disabled; using cut [{:.2f}, {:.2f}] cm",
                       m_config.ld2_vz_min, m_config.ld2_vz_max);
             m_loaded = false;
             return StatusCode::SUCCESS();

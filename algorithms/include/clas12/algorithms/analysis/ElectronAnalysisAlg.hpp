@@ -240,12 +240,18 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         double e_chi2pid = 0.0;
         double sampling_fraction = 0.0;
         int sector = 0;
+        double edge_r1 = 0.0;
+        double edge_r2 = 0.0;
+        double edge_r3 = 0.0;
         double x_r1 = 0.0;
         double y_r1 = 0.0;
         double z_r1 = 0.0;
         double x_r2 = 0.0;
         double y_r2 = 0.0;
         double z_r2 = 0.0;
+        double x_r3 = 0.0;
+        double y_r3 = 0.0;
+        double z_r3 = 0.0;
 
         auto from(const ElectronCandidate& can) -> void {
             e_p = can.particle.p();
@@ -255,18 +261,24 @@ class ElectronAnalysisAlg : public framework::Algorithm {
             e_chi2pid = can.particle.chi2pid();
             sampling_fraction = can.sampling_fraction;
             sector = can.sector;
+            edge_r1 = can.traj.region1_edge;
+            edge_r2 = can.traj.region2_edge;
+            edge_r3 = can.traj.region3_edge;
             x_r1 = can.traj.region1_x;
             y_r1 = can.traj.region1_y;
             z_r1 = can.traj.region1_z;
             x_r2 = can.traj.region2_x;
             y_r2 = can.traj.region2_y;
             z_r2 = can.traj.region2_z;
+            x_r3 = can.traj.region3_x;
+            y_r3 = can.traj.region3_y;
+            z_r3 = can.traj.region3_z;
         }
 
         static constexpr auto ntuple_fields() {
             using T = ElectronNTupleData;
             return std::make_tuple(framework::field("e_p", &T::e_p), framework::field("e_theta", &T::e_theta), framework::field("e_phi", &T::e_phi), framework::field("e_vz", &T::e_vz), framework::field("e_chi2pid", &T::e_chi2pid), framework::field("sampling_fraction", &T::sampling_fraction), framework::field("sector", &T::sector),
-                                   framework::field("x_r1", &T::x_r1), framework::field("y_r1", &T::y_r1), framework::field("z_r1", &T::z_r1), framework::field("x_r2", &T::x_r2), framework::field("y_r2", &T::y_r2), framework::field("z_r2", &T::z_r2));
+                                   framework::field("edge_r1", &T::edge_r1), framework::field("edge_r2", &T::edge_r2), framework::field("edge_r3", &T::edge_r3), framework::field("x_r1", &T::x_r1), framework::field("y_r1", &T::y_r1), framework::field("z_r1", &T::z_r1), framework::field("x_r2", &T::x_r2), framework::field("y_r2", &T::y_r2), framework::field("z_r2", &T::z_r2), framework::field("x_r3", &T::x_r3), framework::field("y_r3", &T::y_r3), framework::field("z_r3", &T::z_r3));
         }
     };
 
