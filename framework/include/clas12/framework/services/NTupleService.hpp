@@ -66,8 +66,23 @@
 #include <ROOT/RNTupleModel.hxx>
 #include <ROOT/RNTupleParallelWriter.hxx>
 #include <ROOT/RNTupleWriteOptions.hxx>
+#include <ROOT/RVersion.hxx>
 
 namespace framework {
+
+// `RNTupleParallelWriter` and `RNTupleFillContext` were promoted from
+// `ROOT::Experimental::` into `ROOT::` in ROOT 6.38. ifarm still ships
+// 6.36 in places, so resolve both via a small alias namespace and keep
+// the rest of the service namespace-agnostic.
+namespace rntp_detail {
+#if defined(ROOT_VERSION_CODE) && ROOT_VERSION_CODE >= ROOT_VERSION(6, 38, 0)
+    using ParallelWriterType = ::ROOT::RNTupleParallelWriter;
+    using FillContextType    = ::ROOT::RNTupleFillContext;
+#else
+    using ParallelWriterType = ::ROOT::Experimental::RNTupleParallelWriter;
+    using FillContextType    = ::ROOT::Experimental::RNTupleFillContext;
+#endif
+}  // namespace rntp_detail
 
 class OutputFileService;
 
@@ -184,7 +199,7 @@ class NTupleService : public Service {
     template <typename T>
     struct Slot final : SlotBase {
         T                                          value{};
-        std::shared_ptr<ROOT::RNTupleFillContext>  ctx;
+        std::shared_ptr<rntp_detail::FillContextType>  ctx;
         std::unique_ptr<ROOT::REntry>              entry;
 
         auto fill() -> void { ctx->Fill(*entry); }
@@ -281,7 +296,7 @@ class NTupleService : public Service {
     struct PendingNtuple {
         std::unique_ptr<ROOT::RNTupleModel>                          model;
         std::vector<BinderFn>                                        binders;
-        std::unique_ptr<ROOT::RNTupleParallelWriter>                 writer;
+        std::unique_ptr<rntp_detail::ParallelWriterType>                 writer;
         std::unordered_map<std::thread::id, std::shared_ptr<SlotBase>> slots;
         std::string                                                  title;
     };
@@ -313,7 +328,7 @@ class NTupleService : public Service {
             return false;
         }
         try {
-            pn.writer = ROOT::RNTupleParallelWriter::Append(
+            pn.writer = rntp_detail::ParallelWriterType::Append(
                 std::move(pn.model), std::string_view(tree_name), *file);
         } catch (const std::exception& e) {
             Log::error(name(), "Failed to create RNTupleParallelWriter for '{}': {}",
