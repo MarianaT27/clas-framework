@@ -158,6 +158,19 @@ namespace hipo {
  */
 void  reader::readIndex(){
 
+    // The file header's trailer position field is documented to be 0 when
+    // no trailer was written (cf. reader.h FILE HEADER STRUCTURE: "0 = no
+    // offset available or no trailer exists"). This happens for files
+    // closed without emitting any record, e.g. a skim slice that produced
+    // zero passing events. Without this guard, `readRecord(stream, 0, 0)`
+    // tries to interpret the file header bytes as a record header, reads
+    // garbage row counts, and asserts out of vector::operator[] when the
+    // for-loop in this function then walks "rows" entries.
+    if (header.trailerPosition <= 0 ||
+        header.trailerPosition >= static_cast<long>(inputStreamSize)) {
+        return;
+    }
+
     inputRecord.readRecord(inputStream,header.trailerPosition,0);
     if(_verbose)printf("*** reader:: trailer record event count : %d\n",inputRecord.getEventCount());
 
