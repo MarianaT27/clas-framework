@@ -128,6 +128,7 @@ class ElectronAnalysisAlg : public framework::Algorithm {
 
         // Process negative tracks
         process_tracks(event.by_charge(-1), h_neg_tracks);
+        process_tracks(event.by_charge(1), h_pos_tracks);
 
         // Select trigger electron
         if (event.electrons().empty()) return StatusCode::FILTERED();
@@ -372,6 +373,7 @@ class ElectronAnalysisAlg : public framework::Algorithm {
     };
 
     TrackHistograms h_neg_tracks;
+    TrackHistograms h_pos_tracks;
     TrackHistograms h_electron_tracks;
 
     // Histograms for each cut stage (lock-free atomic)
