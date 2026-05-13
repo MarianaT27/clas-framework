@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include <clas12/framework/core/Field.hpp>
+#include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
 
@@ -13,6 +15,7 @@
 #include <ROOT/RNTupleView.hxx>
 
 using framework::NTupleService;
+using framework::NTupleWriter;
 using framework::OutputFileService;
 
 // Test fixture: create a fresh NTupleService wired to a temp ROOT file.
@@ -47,27 +50,73 @@ class NTupleServiceTest : public ::testing::Test {
     std::string       m_output_file;
 };
 
-// Scalar fields: register, fill a handful of entries, close the
-// service, then reopen the file via RNTupleReader and check every
-// entry matches.
-TEST_F(NTupleServiceTest, ScalarRoundTrip) {
+// -----------------------------------------------------------------------------
+// Per-test row structs. Each one exposes the `static constexpr ntuple_fields()`
+// hook that NTupleWriter<T> consumes. Mirrors how real algorithms declare
+// their own row types.
+// -----------------------------------------------------------------------------
+
+namespace {
+
+struct ScalarRow {
     double e_p     = 0.0;
     double e_theta = 0.0;
     int    sector  = 0;
 
-    m_ntuple_svc.register_branch("events", "e_p",     &e_p);
-    m_ntuple_svc.register_branch("events", "e_theta", &e_theta);
-    m_ntuple_svc.register_branch("events", "sector",  &sector);
+    static constexpr auto ntuple_fields() {
+        using T = ScalarRow;
+        return std::make_tuple(
+            framework::field("e_p",     &T::e_p),
+            framework::field("e_theta", &T::e_theta),
+            framework::field("sector",  &T::sector));
+    }
+};
+
+struct VectorRow {
+    std::vector<int> hits;
+
+    static constexpr auto ntuple_fields() {
+        using T = VectorRow;
+        return std::make_tuple(
+            framework::field("hits", &T::hits));
+    }
+};
+
+struct EventsRow {
+    double Q2 = 0.0;
+
+    static constexpr auto ntuple_fields() {
+        using T = EventsRow;
+        return std::make_tuple(framework::field("Q2", &T::Q2));
+    }
+};
+
+struct TracksRow {
+    int id = 0;
+
+    static constexpr auto ntuple_fields() {
+        using T = TracksRow;
+        return std::make_tuple(framework::field("id", &T::id));
+    }
+};
+
+}  // namespace
+
+// Scalar fields: register, fill a handful of entries, close the
+// service, then reopen the file via RNTupleReader and check every
+// entry matches.
+TEST_F(NTupleServiceTest, ScalarRoundTrip) {
+    NTupleWriter<ScalarRow> writer(&m_ntuple_svc, "events");
 
     const std::vector<double> p_values     = {1.5, 2.0, 3.25};
     const std::vector<double> theta_values = {0.1, 0.2, 0.3};
     const std::vector<int>    sector_values = {1, 3, 6};
 
     for (std::size_t i = 0; i < p_values.size(); ++i) {
-        e_p     = p_values[i];
-        e_theta = theta_values[i];
-        sector  = sector_values[i];
-        m_ntuple_svc.fill("events");
+        writer.data().e_p     = p_values[i];
+        writer.data().e_theta = theta_values[i];
+        writer.data().sector  = sector_values[i];
+        writer.fill();
     }
 
     EXPECT_EQ(m_ntuple_svc.get_entries("events"), 3);
@@ -99,18 +148,16 @@ TEST_F(NTupleServiceTest, ScalarRoundTrip) {
 // Vector field: std::vector<int> -> an RNTuple variable-length column.
 // Different lengths per entry verify the jagged layout.
 TEST_F(NTupleServiceTest, VectorRoundTrip) {
-    std::vector<int> hits;
+    NTupleWriter<VectorRow> writer(&m_ntuple_svc, "events");
 
-    m_ntuple_svc.register_vector_branch("events", "hits", &hits);
+    writer.data().hits = {1, 2, 3};
+    writer.fill();
 
-    hits = {1, 2, 3};
-    m_ntuple_svc.fill("events");
+    writer.data().hits = {};
+    writer.fill();
 
-    hits = {};
-    m_ntuple_svc.fill("events");
-
-    hits = {42};
-    m_ntuple_svc.fill("events");
+    writer.data().hits = {42};
+    writer.fill();
 
     EXPECT_EQ(m_ntuple_svc.get_entries("events"), 3);
 
@@ -140,21 +187,20 @@ TEST_F(NTupleServiceTest, VectorRoundTrip) {
 }
 
 // Multiple ntuples in the same file: each has its own independent
-// schema and entry count.
+// schema and entry count. Two NTupleWriter<T> instances bound to
+// different tree names talk to two different RNTupleParallelWriter
+// instances inside the service.
 TEST_F(NTupleServiceTest, MultipleNtuples) {
-    double event_q2 = 0.0;
-    int    track_id = 0;
+    NTupleWriter<EventsRow> events_writer(&m_ntuple_svc, "events");
+    NTupleWriter<TracksRow> tracks_writer(&m_ntuple_svc, "tracks");
 
-    m_ntuple_svc.register_branch("events", "Q2", &event_q2);
-    m_ntuple_svc.register_branch("tracks", "id", &track_id);
+    events_writer.data().Q2 = 1.5;
+    events_writer.fill();
+    events_writer.data().Q2 = 2.5;
+    events_writer.fill();
 
-    event_q2 = 1.5;
-    m_ntuple_svc.fill("events");
-    event_q2 = 2.5;
-    m_ntuple_svc.fill("events");
-
-    track_id = 7;
-    m_ntuple_svc.fill("tracks");
+    tracks_writer.data().id = 7;
+    tracks_writer.fill();
 
     EXPECT_EQ(m_ntuple_svc.get_entries("events"), 2);
     EXPECT_EQ(m_ntuple_svc.get_entries("tracks"), 1);
