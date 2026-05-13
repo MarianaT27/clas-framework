@@ -414,6 +414,7 @@ class ElectronAnalysisAlg : public framework::Algorithm {
 
         // Book track histograms for all track categories
         book_track_histograms(h_neg_tracks, "NegativeTracks");
+        book_track_histograms(h_pos_tracks, "PositiveTracks");
         book_track_histograms(h_electron_tracks, "ElectronTracks");
 
         // Book cut-stage histograms (must be done at init time for thread safety)
