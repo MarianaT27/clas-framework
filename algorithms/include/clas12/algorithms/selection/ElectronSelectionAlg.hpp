@@ -215,8 +215,8 @@ class ElectronSelectionAlg : public framework::Algorithm {
         framework::H1<> phi{mh::regular(-180.0, 180.0, 360)};
         framework::H1<> pt{mh::regular(0.0, 4.0, 100)};
         framework::H1<> sector{mh::regular(0.5, 7.5, 7)};
-        framework::H1<> vz{mh::regular(-40.0, 40.0, 200)};
-        framework::H1<> vz_corr{mh::regular(-40.0, 40.0, 200)};
+        framework::H1<> vz{mh::regular(-20.0, 5.0, 200)};
+        framework::H1<> vz_corr{mh::regular(-20.0, 5.0, 200)};
         framework::H1<> vx{mh::regular(-2.0, 2.0, 100)};
         framework::H1<> vy{mh::regular(-2.0, 2.0, 100)};
         framework::H1<> chi2pid{mh::regular(-10.0, 10.0, 200)};
@@ -224,10 +224,10 @@ class ElectronSelectionAlg : public framework::Algorithm {
         framework::H1<> pcal_lw{mh::regular(0.0, 450.0, 100)};
         framework::H2<> sf_vs_p{mh::regular(0.0, 12.0, 100), mh::regular(0.0, 0.5, 100)};
         framework::H2<> chi2pid_vs_p{mh::regular(0.0, 12.0, 100), mh::regular(-10.0, 10.0, 200)};
-        framework::H2<> vz_vs_phi{mh::regular(-180.0, 180.0, 180), mh::regular(-40.0, 40.0, 100)};
-        framework::H2<> vz_vs_theta{mh::regular(0.0, 45.0, 90), mh::regular(-40.0, 40.0, 100)};
-        framework::H2<> vz_corr_vs_phi{mh::regular(-180.0, 180.0, 180), mh::regular(-40.0, 40.0, 100)};
-        framework::H2<> vz_corr_vs_theta{mh::regular(0.0, 45.0, 90), mh::regular(-40.0, 40.0, 100)};
+        framework::H2<> vz_vs_phi{mh::regular(-180.0, 180.0, 180), mh::regular(-20.0, 5.0, 100)};
+        framework::H2<> vz_vs_theta{mh::regular(0.0, 45.0, 90), mh::regular(-20.0, 5.0, 100)};
+        framework::H2<> vz_corr_vs_phi{mh::regular(-180.0, 180.0, 180), mh::regular(-20.0, 5.0, 100)};
+        framework::H2<> vz_corr_vs_theta{mh::regular(0.0, 45.0, 90), mh::regular(-20.0, 5.0, 100)};
         framework::H2<> theta_vs_phi{mh::regular(-180.0, 180.0, 180), mh::regular(0.0, 45.0, 90)};
         framework::H2<> p_vs_theta{mh::regular(0.0, 45.0, 90), mh::regular(0.0, 12.0, 100)};
 
