@@ -210,13 +210,23 @@ void writer::writeIndexTable(){
 }
 
 void writer::close(){
+  // Idempotent: a writer whose stream is already shut (because close()
+  // ran once, or the writer was never opened in the first place) is a
+  // no-op so the destructor can safely call this again.
+  if (!outputStream.is_open()) return;
+
   writeRecord(recordBuilder);
 
   std::map<int,hipo::recordbuilder>::iterator it;
   for(it = extendedBuilder.begin(); it != extendedBuilder.end(); it++){
     writeRecord(it->second);
-  } 
+  }
 
+  // ALWAYS emit the index/trailer + patch the file header's trailer
+  // position field. Even when no events were ever added — without this,
+  // the file's `trailerPosition` stays at the open-time 0 sentinel and
+  // hipo::reader::readIndex has to special-case "no trailer", which is
+  // exactly the bug local_batch hit on zero-pass-events skim slices.
   writeIndexTable();
   outputStream.close();
   writerRecordInfo.clear();

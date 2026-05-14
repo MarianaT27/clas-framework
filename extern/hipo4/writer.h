@@ -149,7 +149,13 @@ class writer {
   public:
 
      writer(){};
-     virtual ~writer(){};
+     // RAII auto-finalise: if the caller forgot to call close() (e.g. the
+     // analysis bailed via exception, or the writer was held in a
+     // unique_ptr that got dropped along an error path), make sure the
+     // trailer + index still land on disk. close() itself is idempotent
+     // — calling it again from finalize() after the explicit one is a
+     // no-op.
+     virtual ~writer(){ close(); }
 
      void addEvent(hipo::event &hevent);
      void addEvent(std::vector<char> &vec, int size = -1);
