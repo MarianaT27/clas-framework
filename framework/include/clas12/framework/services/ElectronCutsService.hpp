@@ -309,6 +309,19 @@ class ElectronCutsService : public Service {
     /// Access the underlying corrector service (e.g. to log the active variant).
     [[nodiscard]] auto vz_corrector() const -> VzCorrectorService* { return m_vz_corrector; }
 
+    /// Corrected vz value for the (p, theta, phi, sector) of a track.
+    /// Returns the raw vz unchanged when no corrector is loaded (legacy
+    /// LD2 path or when VzCorrectorService failed to find a variant for
+    /// the active (target, polarity)). Callers that need to fill plots
+    /// of the corrected vz alongside the raw one can use this without
+    /// caring whether the correction is active.
+    [[nodiscard]] auto corrected_vz(double vz, double p, double theta_deg,
+                                    double phi_deg, int sector) const -> double {
+        return m_vz_corrector
+            ? m_vz_corrector->corrected_vz(vz, p, theta_deg, phi_deg, sector)
+            : vz;
+    }
+
     // PCAL Fiducial Cuts
     [[nodiscard]] auto pass_pcal_v_cut(double v) const -> bool {
         return v > get_pcal_fiducial_cut();

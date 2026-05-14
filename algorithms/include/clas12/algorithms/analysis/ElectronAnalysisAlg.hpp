@@ -295,6 +295,11 @@ class ElectronAnalysisAlg : public framework::Algorithm {
             "Electron #phi;#phi [deg];Events", -180, 180, 180};
         framework::Hist1<> vz{"/Electron/vz",
             "Electron v_{z};v_{z} [cm];Events", -20, 20, 200};
+        // VzCorrector-corrected vertex z. Same binning as the raw vz so
+        // the two histograms can be overlaid 1:1 offline. Falls back to
+        // raw vz when no corrector variant is loaded (LD2 path).
+        framework::Hist1<> vz_corr{"/Electron/vz_corr",
+            "Electron corrected v_{z};v_{z}^{corr} [cm];Events", -20, 20, 200};
         framework::Hist1<> chi2pid{"/Electron/chi2pid",
             "Electron #chi^{2}_{PID};#chi^{2};Events", -10, 10, 200};
         framework::Hist2<> p_vs_theta{"/Electron/p_vs_theta",
@@ -343,6 +348,16 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         framework::Hist3<> vz_vs_theta_vs_p{"/Electron/vz_vs_theta_vs_p",
             "Electron v_{z} vs #theta vs p;p [GeV/c];#theta [deg];v_{z} [cm]",
             0, 10, 20, 0, 40, 100, -13, 0, 100};
+        // Same set of 2D / 3D projections but on the corrected vz axis.
+        framework::Hist2<> vz_corr_vs_theta{"/Electron/vz_corr_vs_theta",
+            "Electron corrected v_{z} vs #theta;#theta [deg];v_{z}^{corr} [cm]",
+            0, 40, 100, -13, 0, 100};
+        framework::Hist2<> vz_corr_vs_p{"/Electron/vz_corr_vs_p",
+            "Electron corrected v_{z} vs p;p [GeV/c];v_{z}^{corr} [cm]",
+            0, 10, 100, -13, 0, 100};
+        framework::Hist3<> vz_corr_vs_theta_vs_p{"/Electron/vz_corr_vs_theta_vs_p",
+            "Electron corrected v_{z} vs #theta vs p;p [GeV/c];#theta [deg];v_{z}^{corr} [cm]",
+            0, 10, 20, 0, 40, 100, -13, 0, 100};
     } h_electron_vz;
 
     // Track histograms structure (for neg/pos tracks, pions, etc.)
@@ -383,6 +398,10 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         framework::H1<> theta{mh::regular(0, 180, 180)};
         framework::H1<> phi{mh::regular(-180, 180, 180)};
         framework::H1<> vz{mh::regular(-20, 20, 200)};
+        // VzCorrector-corrected vz, same binning as raw. Falls back to
+        // raw vz when no corrector variant is loaded so the histogram
+        // is always populated.
+        framework::H1<> vz_corr{mh::regular(-20, 20, 200)};
         framework::H2<> sampling_fraction{mh::regular(0, 12, 120), mh::regular(0, 0.5, 100)};
         framework::H1<> dc_edge_r1{mh::regular(0, 50, 100)};
     };
@@ -442,6 +461,9 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         m_hist->register_hist(base + "/theta", fmt::format("Electron #theta after {};#theta [deg];Events", cut_name), cut_hists.theta);
         m_hist->register_hist(base + "/phi", fmt::format("Electron #phi after {};#phi [deg];Events", cut_name), cut_hists.phi);
         m_hist->register_hist(base + "/vz", fmt::format("Electron v_{{z}} after {};v_{{z}} [cm];Events", cut_name), cut_hists.vz);
+        m_hist->register_hist(base + "/vz_corr",
+                              fmt::format("Electron corrected v_{{z}} after {};v_{{z}}^{{corr}} [cm];Events", cut_name),
+                              cut_hists.vz_corr);
         m_hist->register_hist(base + "/sf_vs_p", fmt::format("SF vs p after {};p [GeV/c];E/p", cut_name), cut_hists.sampling_fraction);
         m_hist->register_hist(base + "/dc_edge_r1", fmt::format("DC Edge R1 after {};edge [cm];Events", cut_name), cut_hists.dc_edge_r1);
         cut_hists.booked = true;
@@ -464,6 +486,10 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         cut_hists.theta.fill(can.particle.theta());
         cut_hists.phi.fill(can.particle.phi());
         cut_hists.vz.fill(can.particle.vz());
+        const double vz_corrected = m_electron_cuts->corrected_vz(
+            can.particle.vz(), can.particle.p(),
+            can.particle.theta(), can.particle.phi(), can.sector);
+        cut_hists.vz_corr.fill(vz_corrected);
         cut_hists.sampling_fraction.fill(can.particle.p(), can.sampling_fraction);
         cut_hists.dc_edge_r1.fill(can.traj.region1_edge);
     }
@@ -588,6 +614,13 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         h_electron.theta.fill(electron.theta());
         h_electron.phi.fill(electron.phi());
         h_electron.vz.fill(electron.vz());
+        // Cached corrected vz used by both the 1D plot here and the
+        // 2D/3D projections below. Returns the raw vz when no corrector
+        // variant is loaded (LD2 path).
+        const double vz_corrected = m_electron_cuts->corrected_vz(
+            electron.vz(), electron.p(), electron.theta(),
+            electron.phi(), calo.pcal_sector);
+        h_electron.vz_corr.fill(vz_corrected);
         h_electron.chi2pid.fill(electron.chi2pid());
         h_electron.p_vs_theta.fill(electron.theta(), electron.p());
         h_electron.phi_vs_theta.fill(electron.theta(), electron.phi());
@@ -598,6 +631,9 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         h_electron_vz.vz_vs_theta.fill(e_theta, e_vz);
         h_electron_vz.vz_vs_p.fill(e_p, e_vz);
         h_electron_vz.vz_vs_theta_vs_p.fill(e_p, e_theta, e_vz);
+        h_electron_vz.vz_corr_vs_theta.fill(e_theta, vz_corrected);
+        h_electron_vz.vz_corr_vs_p.fill(e_p, vz_corrected);
+        h_electron_vz.vz_corr_vs_theta_vs_p.fill(e_p, e_theta, vz_corrected);
 
         // Fill calorimeter - PCAL
         h_calorimeter.lu_vs_lv_pcal.fill(calo.pcal_lv, calo.pcal_lu);

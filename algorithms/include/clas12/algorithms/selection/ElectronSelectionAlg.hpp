@@ -138,8 +138,15 @@ class ElectronSelectionAlg : public framework::Algorithm {
         CalorimeterBank calorimeter = electron.calo();
         DCTrajBank traj = electron.traj();
         double sampling_fraction = (calorimeter.pcal_energy + calorimeter.inner_energy + calorimeter.outer_energy) / electron.p();
+        // Pre-compute the corrected vz once so the same value flows into
+        // both the before- and after-cut histograms. Returns the raw vz
+        // when no VzCorrector variant is loaded (legacy LD2 path), so
+        // the corrected-vz plots remain populated unconditionally.
+        const double vz_corrected = m_electron_cuts->corrected_vz(
+            electron.vz(), electron.p(), electron.theta(),
+            electron.phi(), calorimeter.pcal_sector);
 
-        h_before.fill(electron, calorimeter, sampling_fraction);
+        h_before.fill(electron, calorimeter, sampling_fraction, vz_corrected);
 
         if (m_config.enable_chi2pid_cut && !m_electron_cuts->pass_chi2pid_cut(electron.chi2pid())) return StatusCode::FILTERED();
         m_cutflow.pass("Chi2 PID");
@@ -161,7 +168,7 @@ class ElectronSelectionAlg : public framework::Algorithm {
         m_cutflow.pass("DC R2 Edge");
         m_cutflow.pass("DC R3 Edge");
 
-        h_after.fill(electron, calorimeter, sampling_fraction);
+        h_after.fill(electron, calorimeter, sampling_fraction, vz_corrected);
 
         if (m_config.enable_ntuple) {
             m_ntuple.data().e_p = electron.p();
@@ -209,6 +216,7 @@ class ElectronSelectionAlg : public framework::Algorithm {
         framework::H1<> pt{mh::regular(0.0, 4.0, 100)};
         framework::H1<> sector{mh::regular(0.5, 7.5, 7)};
         framework::H1<> vz{mh::regular(-40.0, 40.0, 200)};
+        framework::H1<> vz_corr{mh::regular(-40.0, 40.0, 200)};
         framework::H1<> vx{mh::regular(-2.0, 2.0, 100)};
         framework::H1<> vy{mh::regular(-2.0, 2.0, 100)};
         framework::H1<> chi2pid{mh::regular(-10.0, 10.0, 200)};
@@ -218,6 +226,8 @@ class ElectronSelectionAlg : public framework::Algorithm {
         framework::H2<> chi2pid_vs_p{mh::regular(0.0, 12.0, 100), mh::regular(-10.0, 10.0, 200)};
         framework::H2<> vz_vs_phi{mh::regular(-180.0, 180.0, 180), mh::regular(-40.0, 40.0, 100)};
         framework::H2<> vz_vs_theta{mh::regular(0.0, 45.0, 90), mh::regular(-40.0, 40.0, 100)};
+        framework::H2<> vz_corr_vs_phi{mh::regular(-180.0, 180.0, 180), mh::regular(-40.0, 40.0, 100)};
+        framework::H2<> vz_corr_vs_theta{mh::regular(0.0, 45.0, 90), mh::regular(-40.0, 40.0, 100)};
         framework::H2<> theta_vs_phi{mh::regular(-180.0, 180.0, 180), mh::regular(0.0, 45.0, 90)};
         framework::H2<> p_vs_theta{mh::regular(0.0, 45.0, 90), mh::regular(0.0, 12.0, 100)};
 
@@ -228,6 +238,12 @@ class ElectronSelectionAlg : public framework::Algorithm {
             svc->register_hist(dir + "/pt", "Electron p_{T};p_{T} [GeV/c];Events", pt);
             svc->register_hist(dir + "/sector", "Electron Sector;Sector;Events", sector);
             svc->register_hist(dir + "/vz", "Vertex Z;v_{z} [cm];Events", vz);
+            // VzCorrector-corrected vz: same binning as raw vz so 1:1
+            // comparison plots (raw vs corrected, target peak alignment)
+            // are trivial offline. Falls back to raw vz when no corrector
+            // variant is loaded (legacy LD2 path).
+            svc->register_hist(dir + "/vz_corr",
+                               "Corrected Vertex Z;v_{z}^{corr} [cm];Events", vz_corr);
             svc->register_hist(dir + "/vx", "Vertex X;v_{x} [cm];Events", vx);
             svc->register_hist(dir + "/vy", "Vertex Y;v_{y} [cm];Events", vy);
             svc->register_hist(dir + "/chi2pid", "Electron #chi^{2}_{PID};#chi^{2}_{PID};Events", chi2pid);
@@ -237,17 +253,23 @@ class ElectronSelectionAlg : public framework::Algorithm {
             svc->register_hist(dir + "/chi2pid_vs_p", "#chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}", chi2pid_vs_p);
             svc->register_hist(dir + "/vz_vs_phi", "v_{z} vs #phi;#phi [deg];v_{z} [cm]", vz_vs_phi);
             svc->register_hist(dir + "/vz_vs_theta", "v_{z} vs #theta;#theta [deg];v_{z} [cm]", vz_vs_theta);
+            svc->register_hist(dir + "/vz_corr_vs_phi",
+                               "v_{z}^{corr} vs #phi;#phi [deg];v_{z}^{corr} [cm]", vz_corr_vs_phi);
+            svc->register_hist(dir + "/vz_corr_vs_theta",
+                               "v_{z}^{corr} vs #theta;#theta [deg];v_{z}^{corr} [cm]", vz_corr_vs_theta);
             svc->register_hist(dir + "/theta_vs_phi", "#theta vs #phi;#phi [deg];#theta [deg]", theta_vs_phi);
             svc->register_hist(dir + "/p_vs_theta", "p vs #theta;#theta [deg];p [GeV/c]", p_vs_theta);
         }
 
-        auto fill(const Particle& e, const CalorimeterBank& calo, double SF) -> void {
+        auto fill(const Particle& e, const CalorimeterBank& calo, double SF,
+                  double vz_corrected) -> void {
             p.fill(e.p());
             theta.fill(e.theta());
             phi.fill(e.phi());
             pt.fill(e.pt());
             sector.fill(calo.pcal_sector);
             vz.fill(e.vz());
+            vz_corr.fill(vz_corrected);
             vx.fill(e.vx());
             vy.fill(e.vy());
             chi2pid.fill(e.chi2pid());
@@ -257,6 +279,8 @@ class ElectronSelectionAlg : public framework::Algorithm {
             chi2pid_vs_p.fill(e.p(), e.chi2pid());
             vz_vs_phi.fill(e.phi(), e.vz());
             vz_vs_theta.fill(e.theta(), e.vz());
+            vz_corr_vs_phi.fill(e.phi(), vz_corrected);
+            vz_corr_vs_theta.fill(e.theta(), vz_corrected);
             theta_vs_phi.fill(e.phi(), e.theta());
             p_vs_theta.fill(e.theta(), e.p());
         }
