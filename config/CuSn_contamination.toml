@@ -1,0 +1,81 @@
+# Configuration for the `CuSn_contamination` binary.
+#
+# Run with:
+#   ./CuSn_contamination --config config/CuSn_contamination.toml
+#
+# This analysis studies Cu/Sn target contamination on RG-D simulation.
+# The pipeline is ElectronSelectionAlg -> CuSnContaminationAlg; the
+# latter reads the MC::Particle bank, so the input must be reconstructed
+# *simulation* (rec_*) files, not real data.
+#
+# Schema:
+#   [run]       — input/output/num_threads/percentage
+#   [analysis]  — target/polarity (+ beam_energy/version metadata)
+#   [IO]        — optional hipo::chain I/O tuning
+#   [<AlgName>] — one section per algorithm; keys match the algorithm's
+#                 Property names. Missing keys fall back to the C++
+#                 default; unknown keys log a warning.
+# Services: VzCorrectorService, ElectronCutsService (no TOML section —
+#           VzCorrectorService is configured from [analysis] in the
+#           binary's main()).
+
+[run]
+input       = "/volatile/clas12/ouillon/rgd_simu_CuSn-IB/recon"
+output      = "CuSn_contamination_CuSn_Inbending.root"
+num_threads = 8
+percentage  = 100.0
+
+[analysis]
+# CuSn here drives VzCorrectorService: it selects the `cusn_inbending`
+# Voigt-correction variant. (The ElectronSelectionAlg target is kept at
+# `Custom` on purpose — see the [ElectronSelectionAlg] section below.)
+target      = "CuSn"
+polarity    = "Inbending"
+beam_energy = 10.53
+version     = "2.0"
+
+# hipo::chain I/O tuning. Leaving every key at 0 reproduces the legacy
+# synchronous read path (one fread per record, no cache). Recommended
+# starting point for ifarm reads off /volatile or /cache:
+# prefetch_depth = 4, record_cache_bytes = "128MB", io_threads = 2.
+# record_cache_bytes accepts a plain int (bytes) or a string with
+# "KB" / "MB" / "GB".
+[IO]
+prefetch_depth     = 0
+record_cache_bytes = 0
+io_threads         = 0
+network_read_chunk = 0
+# bank_filter = ["REC::Particle", "REC::Calorimeter", "REC::Traj", "MC::Particle"]
+
+# ElectronSelectionAlg Property toggles.
+#
+# `target` is pinned to "Custom" on purpose: CuSn_contamination.cpp
+# constructs this algorithm with Target::Custom so the electron Vz cut
+# uses the wide custom acceptance window rather than the narrow CuSn
+# target window — the whole point of the study is to see events that
+# fall outside the nominal CuSn windows. The framework merges
+# [analysis] keys into every algorithm sub-table as defaults, so this
+# explicit `target = "Custom"` is required here to stop [analysis].target
+# = "CuSn" from overriding it.
+[ElectronSelectionAlg]
+target                   = "Custom"
+polarity                 = "Inbending"
+enable_ntuple            = true
+enable_chi2pid_cut       = true
+enable_momentum_cut      = true
+enable_vz_cut            = true
+enable_sf_cut            = true
+enable_pcal_fiducial_cut = true
+enable_dc_edge_cut       = true
+pcal_lv_min              = 9.0
+pcal_lw_min              = 9.0
+dc_r1_edge_min           = 1.68
+dc_r2_edge_min           = 2.0
+dc_r3_edge_min           = 8.75
+
+# CuSnContaminationAlg knobs.
+#   enable_histograms: book + fill the contamination histograms.
+#   example_cut:       reserved tuning knob (not yet wired to a cut).
+[CuSnContaminationAlg]
+enable_histograms = true
+example_cut       = 1.0
