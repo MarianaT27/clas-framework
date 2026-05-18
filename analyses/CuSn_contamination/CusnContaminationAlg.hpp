@@ -9,6 +9,7 @@
 #include <cmath>
 #include <memory>
 #include <string>
+#include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Decisions.hpp>
@@ -17,6 +18,7 @@
 #include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
+#include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include "Math/GenVector/PxPyPzE4D.h"
@@ -25,6 +27,10 @@
 namespace CuSnContamination {
 
 using framework::Log;
+
+// Momentum binning shared by every species' vz-vs-theta breakdown.
+static constexpr int N_P_BINS = 20;
+static constexpr std::array<double, N_P_BINS + 1> p_bin_edges = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0};
 
 /// Configuration for CuSnContaminationAlg.
 struct CuSnContaminationConfig {
@@ -42,6 +48,98 @@ struct CuSnContaminationConfig {
 };
 
 /**
+ * @brief Per-species set of vertex/kinematics histograms.
+ *
+ * Booked once per particle species (electron, pi+, pi-). The MC histograms
+ * live under `/MC/<species>/`, the reconstructed ones under `/Data/<species>/`.
+ */
+struct SpeciesHists {
+    explicit SpeciesHists(std::string species)
+        : m_species(std::move(species)),
+          h_p{"/MC/" + m_species + "/p", "p;p;Events", 0.0, 10.0, 100},
+          h_phi{"/MC/" + m_species + "/phi", "#phi;#phi;Events", -180.0, 180.0, 100},
+          h_theta{"/MC/" + m_species + "/theta", "#theta;#theta;Events", 0.0, 90.0, 100},
+          h_vz{"/MC/" + m_species + "/vz", "vz;vz;Events", -13.0, 0.0, 100},
+          h_vz_Cu{"/MC/" + m_species + "/vz_Cu", "vz_Cu;vz_Cu;Events", -13.0, 0.0, 100},
+          h_vz_Sn{"/MC/" + m_species + "/vz_Sn", "vz_Sn;vz_Sn;Events", -13.0, 0.0, 100},
+          h_vz_CuSn{"/MC/" + m_species + "/vz_CuSn", "vz_CuSn;vz_CuSn;Events", -13.0, 0.0, 100},
+          h_rec_vz_Cu{"/Data/" + m_species + "/vz_Cu", "vz_Cu;vz_Cu;Events", -13.0, 0.0, 100},
+          h_rec_vz_Sn{"/Data/" + m_species + "/vz_Sn", "vz_Sn;vz_Sn;Events", -13.0, 0.0, 100},
+          h_rec_vz_CuSn{"/Data/" + m_species + "/vz_CuSn", "vz_CuSn;vz_CuSn;Events", -13.0, 0.0, 100},
+          h_vz_vs_theta{"/MC/" + m_species + "/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100},
+          h_vz_vs_p{"/MC/" + m_species + "/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 0.0, 10.0, 100, -13.0, 0.0, 100} {}
+
+    // Declared first: the histogram initializers below reference it.
+    std::string m_species;
+
+    // MC truth histograms.
+    framework::Hist1<> h_p;
+    framework::Hist1<> h_phi;
+    framework::Hist1<> h_theta;
+    framework::Hist1<> h_vz;
+    // MC-truth-target gated: reconstructed vz for events whose MC vertex is in the region.
+    framework::Hist1<> h_vz_Cu;
+    framework::Hist1<> h_vz_Sn;
+    framework::Hist1<> h_vz_CuSn;
+    // Reconstructed-vz gated: reconstructed vz for tracks whose own vz is in the region.
+    framework::Hist1<> h_rec_vz_Cu;
+    framework::Hist1<> h_rec_vz_Sn;
+    framework::Hist1<> h_rec_vz_CuSn;
+    framework::Hist2<> h_vz_vs_theta;
+    framework::Hist2<> h_vz_vs_p;
+    // Variable-sized arrays of histograms need indirection: heap-allocate so
+    // each slot has a stable address for register_hist.
+    std::array<std::unique_ptr<framework::H2<>>, N_P_BINS> h_vz_vs_theta_pbin{};
+
+    /// Register the per-momentum-bin vz-vs-theta histograms with the service.
+    auto book_pbins(framework::HistogramService& hist) -> void {
+        for (int i = 0; i < N_P_BINS; ++i) {
+            auto plo = std::to_string(static_cast<int>(p_bin_edges[i]));
+            auto phi = std::to_string(static_cast<int>(p_bin_edges[i + 1]));
+            auto title = "vz vs #theta (" + plo + "<p<" + phi + " GeV/c);#theta [deg];vz [cm]";
+            h_vz_vs_theta_pbin[i] = std::make_unique<framework::H2<>>(
+                mh::regular(0.0, 40.0, 100), mh::regular(-13.0, 0.0, 100)
+            );
+            hist.register_hist("/MC/" + m_species + "/vz_vs_theta_p" + plo + "_" + phi, title, *h_vz_vs_theta_pbin[i]);
+        }
+    }
+
+    /// Fill the MC-truth histograms from one generated particle.
+    auto fill_mc(double px, double py, double pz, double vz, double mass) -> void {
+        double E = std::sqrt(px * px + py * py + pz * pz + mass * mass);
+        ROOT::Math::PxPyPzE4D p4(px, py, pz, E);
+        double theta_deg = p4.Theta() * 180.0 / M_PI;
+        double mom = p4.P();
+        h_p.fill(mom);
+        h_phi.fill(p4.Phi() * 180.0 / M_PI);
+        h_theta.fill(theta_deg);
+        h_vz.fill(vz);
+        h_vz_vs_theta.fill(theta_deg, vz);
+        h_vz_vs_p.fill(mom, vz);
+        for (int i = 0; i < N_P_BINS; ++i) {
+            if (mom >= p_bin_edges[i] && mom < p_bin_edges[i + 1]) {
+                h_vz_vs_theta_pbin[i]->fill(theta_deg, vz);
+                break;
+            }
+        }
+    }
+
+    /// Fill the reconstructed vz histograms for one reconstructed track.
+    /// `mc_vz` is the event's MC vertex z (only used when `has_mc`).
+    auto fill_rec(double rec_vz, double mc_vz, bool has_mc) -> void {
+        // RG-D vz ranges: Cu [-10.6, -6.5], Sn [-5.5, 5.0], CuSn [-10.6, 5.0]
+        if (-10.6 < rec_vz && rec_vz < -6.5) h_rec_vz_Cu.fill(rec_vz);
+        if (-5.5 < rec_vz && rec_vz < 5.0) h_rec_vz_Sn.fill(rec_vz);
+        h_rec_vz_CuSn.fill(rec_vz);
+        if (has_mc) {
+            if (-10.6 < mc_vz && mc_vz < -6.5) h_vz_Cu.fill(rec_vz);
+            if (-5.5 < mc_vz && mc_vz < 5.0) h_vz_Sn.fill(rec_vz);
+            h_vz_CuSn.fill(rec_vz);
+        }
+    }
+};
+
+/**
  * @brief Algorithm for Cu/Sn contamination analysis
  */
 class CuSnContaminationAlg : public framework::Algorithm {
@@ -54,72 +152,68 @@ class CuSnContaminationAlg : public framework::Algorithm {
         required_services(m_hist);
         declare_optional_bank("MC::Particle");
         declare_config(m_config);
-        declare_histograms(h_p, h_phi, h_theta, h_vz, h_vz_Cu, h_vz_Sn, h_vz_CuSn, h_rec_vz_Cu, h_rec_vz_Sn, h_rec_vz_CuSn, h_vz_vs_theta, h_vz_vs_p);
+        declare_species_histograms(m_e);
+        declare_species_histograms(m_pip);
+        declare_species_histograms(m_pim);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        if (m_config.enable_histograms) book_histograms();
+        if (m_config.enable_histograms) {
+            m_e.book_pbins(*m_hist);
+            m_pip.book_pbins(*m_hist);
+            m_pim.book_pbins(*m_hist);
+        }
         return StatusCode::SUCCESS();
     }
 
     auto process(framework::Event& event) -> StatusCode override {
         double mc_vz = 0;
         const bool has_mc = event.has_bank("MC::Particle");
-        if (has_mc) {
+        if (has_mc && m_config.enable_histograms) {
             const auto& MC_particles = event.get_bank("MC::Particle");
-            ROOT::Math::PxPyPzE4D electron4VecP;
-            ROOT::Math::XYZVector electron3VecV;
             for (int i = 0; i < MC_particles.getRows(); ++i) {
                 int pid = MC_particles.getInt("pid", i);
+                SpeciesHists* hists = nullptr;
+                double mass = 0.0;
                 if (pid == 11) {
-                    double px = static_cast<double>(MC_particles.getFloat("px", i));
-                    double py = static_cast<double>(MC_particles.getFloat("py", i));
-                    double pz = static_cast<double>(MC_particles.getFloat("pz", i));
-                    double vx = static_cast<double>(MC_particles.getFloat("vx", i));
-                    double vy = static_cast<double>(MC_particles.getFloat("vy", i));
-                    double vz = static_cast<double>(MC_particles.getFloat("vz", i));
-                    double E = std::sqrt(px * px + py * py + pz * pz + 0.000511 * 0.000511);
-                    electron4VecP = ROOT::Math::PxPyPzE4D(px, py, pz, E);
-                    electron3VecV = ROOT::Math::XYZVector(vx, vy, vz);
+                    hists = &m_e;
+                    mass = Constants::ELECTRONMASS;
+                } else if (pid == 211) {
+                    hists = &m_pip;
+                    mass = Constants::PIMASS;
+                } else if (pid == -211) {
+                    hists = &m_pim;
+                    mass = Constants::PIMASS;
+                } else {
+                    continue;
                 }
-            }
 
-            if (m_config.enable_histograms) {
-                h_p.fill(electron4VecP.P());
-                h_phi.fill(electron4VecP.Phi() * 180.0 / M_PI);
-                h_theta.fill(electron4VecP.Theta() * 180.0 / M_PI);
-                h_vz.fill(electron3VecV.Z());
-                double mc_theta_deg = electron4VecP.Theta() * 180.0 / M_PI;
-                double mc_p = electron4VecP.P();
-                h_vz_vs_theta.fill(mc_theta_deg, electron3VecV.Z());
-                h_vz_vs_p.fill(mc_p, electron3VecV.Z());
-                for (int i = 0; i < N_P_BINS; ++i) {
-                    if (mc_p >= p_bin_edges[i] && mc_p < p_bin_edges[i + 1]) {
-                        h_vz_vs_theta_pbin[i]->fill(mc_theta_deg, electron3VecV.Z());
-                        break;
-                    }
-                }
+                double px = static_cast<double>(MC_particles.getFloat("px", i));
+                double py = static_cast<double>(MC_particles.getFloat("py", i));
+                double pz = static_cast<double>(MC_particles.getFloat("pz", i));
+                double vz = static_cast<double>(MC_particles.getFloat("vz", i));
+                hists->fill_mc(px, py, pz, vz, mass);
+
+                // The scattered electron defines the event's MC interaction vertex.
+                if (pid == 11) mc_vz = vz;
             }
-            mc_vz = electron3VecV.Z();
         }
 
         auto electron_opt = framework::EventHelpers::get_selected_electron(event);
         if (!electron_opt) return StatusCode::FILTERED();
-        auto recon_electron = *electron_opt;
-        double rec_vz = recon_electron.vz();
 
-        // RG-D vz ranges: Cu [-10.6, -6.5], Sn [-5.5, 5.0], CuSn [-10.6, 5.0]
-        if (-10.6 < rec_vz && rec_vz < -6.5) h_rec_vz_Cu.fill(rec_vz);
-        if (-5.5 < rec_vz && rec_vz < 5.0) h_rec_vz_Sn.fill(rec_vz);
-        h_rec_vz_CuSn.fill(rec_vz);
+        if (m_config.enable_histograms) {
+            m_e.fill_rec(electron_opt->vz(), mc_vz, has_mc);
 
-        if (has_mc) {
-            if (-10.6 < mc_vz && mc_vz < -6.5) h_vz_Cu.fill(rec_vz);
-            if (-5.5 < mc_vz && mc_vz < 5.0) h_vz_Sn.fill(rec_vz);
-            h_vz_CuSn.fill(rec_vz);
+            if (auto pip = event.retrieve_typed(framework::Keys::SelectedPiPlus)) {
+                for (const auto& pion : *pip) m_pip.fill_rec(pion.vz(), mc_vz, has_mc);
+            }
+            if (auto pim = event.retrieve_typed(framework::Keys::SelectedPiMinus)) {
+                for (const auto& pion : *pim) m_pim.fill_rec(pion.vz(), mc_vz, has_mc);
+            }
         }
 
         return StatusCode::SUCCESS();
@@ -132,37 +226,17 @@ class CuSnContaminationAlg : public framework::Algorithm {
    private:
     Config m_config;
 
-framework::ServiceRef<framework::HistogramService> m_hist;
+    framework::ServiceRef<framework::HistogramService> m_hist;
 
-    framework::Hist1<> h_p{"/MC/Electron/p", "p;p;Events", 0.0, 10.0, 100};
-    framework::Hist1<> h_phi{"/MC/Electron/phi", "#phi;#phi;Events", -180.0, 180.0, 100};
-    framework::Hist1<> h_theta{"/MC/Electron/theta", "#theta;#theta;Events", 0.0, 90.0, 100};
-    framework::Hist1<> h_vz{"/MC/Electron/vz", "vz;vz;Events", -13.0, 0.0, 100};
-    framework::Hist1<> h_vz_Cu{"/MC/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", -13.0, 0.0, 100};
-    framework::Hist1<> h_vz_Sn{"/MC/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", -13.0, 0.0, 100};
-    framework::Hist1<> h_vz_CuSn{"/MC/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", -13.0, 0.0, 100};
-    framework::Hist1<> h_rec_vz_Cu{"/Data/Electron/vz_Cu", "vz_Cu;vz_Cu;Events", -13.0, 0.0, 100};
-    framework::Hist1<> h_rec_vz_Sn{"/Data/Electron/vz_Sn", "vz_Sn;vz_Sn;Events", -13.0, 0.0, 100};
-    framework::Hist1<> h_rec_vz_CuSn{"/Data/Electron/vz_CuSn", "vz_CuSn;vz_CuSn;Events", -13.0, 0.0, 100};
-    static constexpr int N_P_BINS = 20;
-    static constexpr std::array<double, N_P_BINS + 1> p_bin_edges = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0};
+    SpeciesHists m_e{"Electron"};
+    SpeciesHists m_pip{"PiPlus"};
+    SpeciesHists m_pim{"PiMinus"};
 
-    framework::Hist2<> h_vz_vs_theta{"/MC/Electron/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100};
-    framework::Hist2<> h_vz_vs_p{"/MC/Electron/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 0.0, 10.0, 100, -13.0, 0.0, 100};
-    // Variable-sized arrays of histograms need indirection: heap-allocate so
-    // each slot has a stable address for register_hist.
-    std::array<std::unique_ptr<framework::H2<>>, N_P_BINS> h_vz_vs_theta_pbin{};
-
-    auto book_histograms() -> void {
-        for (int i = 0; i < N_P_BINS; ++i) {
-            auto plo = std::to_string(static_cast<int>(p_bin_edges[i]));
-            auto phi = std::to_string(static_cast<int>(p_bin_edges[i + 1]));
-            auto title = "vz vs #theta (" + plo + "<p<" + phi + " GeV/c);#theta [deg];vz [cm]";
-            h_vz_vs_theta_pbin[i] = std::make_unique<framework::H2<>>(
-                mh::regular(0.0, 40.0, 100), mh::regular(-13.0, 0.0, 100)
-            );
-            m_hist->register_hist("/MC/Electron/vz_vs_theta_p" + plo + "_" + phi, title, *h_vz_vs_theta_pbin[i]);
-        }
+    /// Queue every self-registering wrapper of one species for booking.
+    auto declare_species_histograms(SpeciesHists& s) -> void {
+        declare_histograms(s.h_p, s.h_phi, s.h_theta, s.h_vz, s.h_vz_Cu, s.h_vz_Sn,
+                           s.h_vz_CuSn, s.h_rec_vz_Cu, s.h_rec_vz_Sn, s.h_rec_vz_CuSn,
+                           s.h_vz_vs_theta, s.h_vz_vs_p);
     }
 };
 
