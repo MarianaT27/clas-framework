@@ -34,14 +34,9 @@ struct McMatchResult {
  * Walks MC::RecMatch rows linked to `rec_pindex` and returns the first row
  * whose quality is at least `min_quality`. Returns -1 if no match is found.
  *
- * `min_quality` defaults to 0.5 — the historical 0.92 default rejected
- * everything but near-perfect matches and dropped the rate of accepted
- * MC matches on simulations whose layer overlap is in the 0.5-0.9 range
- * to effectively zero. Tighten via the parameter when the analysis
- * needs only the cleanest matches.
+ * `min_quality` defaults to 0.92.
  */
-inline auto get_mc_particle_index_diag(framework::Event& event, int rec_pindex,
-                                       float min_quality = 0.5f) -> McMatchResult {
+inline auto get_mc_particle_index_diag(framework::Event& event, int rec_pindex, float min_quality = 0.92f) -> McMatchResult {
     McMatchResult out;
     auto& bank = event.bank<bankdefs::MC_RecMatch>();
     out.bank_rows = bank.rows();
