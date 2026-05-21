@@ -6,6 +6,7 @@
  */
 
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -152,6 +153,10 @@ class CuSnContaminationAlg : public framework::Algorithm {
         : Algorithm(std::move(name)), m_config(config) {
         required_services(m_hist);
         declare_optional_bank("MC::Particle");
+        // MC::RecMatch carries the (REC::Particle -> MC::Particle) link
+        // used by `get_mc_particle_index` below; the framework warns
+        // upfront if the input file's dictionary lacks it.
+        declare_optional_bank("MC::RecMatch");
         declare_config(m_config);
         declare_species_histograms(m_e);
         declare_species_histograms(m_pip);
@@ -218,21 +223,43 @@ class CuSnContaminationAlg : public framework::Algorithm {
             auto electron = event.find_trigger_electron();
             if (electron) m_e_nocuts.fill_rec(electron->vz(), mc_vz, has_mc);
 
+            // Bounded one-shot diagnostic for the MC matching path. The
+            // first few hundred pions across the run get a one-line
+            // breakdown of (bank_rows, row_found?, quality, mc_index) so
+            // we can tell at a glance whether the file is missing
+            // MC::RecMatch (bank_rows=0), produced no rows for these
+            // pindices (row_found=false), or produced rows below the
+            // quality cut. Then it goes quiet. Bumping kDebugMax to 0
+            // disables the dump entirely.
+            static constexpr int kDebugMax = 200;
+            static std::atomic<int> dbg_remaining{kDebugMax};
+            auto debug_match = [&](const char* species, int rec_pindex,
+                                   const McMatchResult& r) {
+                int n = dbg_remaining.fetch_sub(1, std::memory_order_relaxed);
+                if (n > 0) {
+                    fmt::print(
+                        "[mc_match] {} pindex={} bank_rows={} row_found={} q={:.3f} mcindex={}\n",
+                        species, rec_pindex, r.bank_rows,
+                        r.row_found ? 'Y' : 'N', r.quality, r.mc_index);
+                }
+            };
+
             auto pi_plus = event.pions_plus();
-            for (auto p : pi_plus) { 
-                // Check that pion is indeed a pion track and not a misidentified other particle
-                int mc_index = get_mc_particle_index(event, p.index());
-                fmt::print("pindex {} matched to mc_index {}", p.index(), mc_index);
-                if (mc_index >= 0) {
-                    int pid = event.get_bank("MC::Particle").getInt("pid", mc_index);
+            for (auto p : pi_plus) {
+                // Check that the rec pion really came from a generated pion.
+                auto match = get_mc_particle_index_diag(event, p.index());
+                debug_match("pi+", p.index(), match);
+                if (match.mc_index >= 0) {
+                    int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
                     if (pid == 211) m_pip_nocuts.fill_rec(p.vz(), mc_vz, has_mc);
-                } 
+                }
             }
             auto pi_minus = event.pions_minus();
-            for (auto p : pi_minus) { 
-                int mc_index = get_mc_particle_index(event, p.index());
-                if (mc_index >= 0) {
-                    int pid = event.get_bank("MC::Particle").getInt("pid", mc_index);
+            for (auto p : pi_minus) {
+                auto match = get_mc_particle_index_diag(event, p.index());
+                debug_match("pi-", p.index(), match);
+                if (match.mc_index >= 0) {
+                    int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
                     if (pid == -211) m_pim_nocuts.fill_rec(p.vz(), mc_vz, has_mc);
                 }
             }
