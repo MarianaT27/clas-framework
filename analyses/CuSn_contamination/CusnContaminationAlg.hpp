@@ -155,6 +155,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
         declare_species_histograms(m_e);
         declare_species_histograms(m_pip);
         declare_species_histograms(m_pim);
+        declare_species_histograms(m_pip_nocuts);
+        declare_species_histograms(m_pim_nocuts);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -165,6 +167,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
             m_e.book_pbins(*m_hist);
             m_pip.book_pbins(*m_hist);
             m_pim.book_pbins(*m_hist);
+            m_pip_nocuts.book_pbins(*m_hist);
+            m_pim_nocuts.book_pbins(*m_hist);
         }
         return StatusCode::SUCCESS();
     }
@@ -208,6 +212,11 @@ class CuSnContaminationAlg : public framework::Algorithm {
         if (m_config.enable_histograms) {
             m_e.fill_rec(electron_opt->vz(), mc_vz, has_mc);
 
+            auto pi_plus = event.pions_plus();
+            for (auto p : pi_plus) m_pip_nocuts.fill_rec(p.vz(), mc_vz, has_mc);
+            auto pi_minus = event.pions_minus();
+            for (auto p : pi_minus) m_pim_nocuts.fill_rec(p.vz(), mc_vz, has_mc);
+
             if (auto pip = event.retrieve_typed(framework::Keys::SelectedPiPlus)) {
                 for (const auto& pion : *pip) m_pip.fill_rec(pion.vz(), mc_vz, has_mc);
             }
@@ -231,6 +240,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
     SpeciesHists m_e{"Electron"};
     SpeciesHists m_pip{"PiPlus"};
     SpeciesHists m_pim{"PiMinus"};
+    SpeciesHists m_pip_nocuts{"PiPlus_NoCuts"};
+    SpeciesHists m_pim_nocuts{"PiMinus_NoCuts"};
 
     /// Queue every self-registering wrapper of one species for booking.
     auto declare_species_histograms(SpeciesHists& s) -> void {
