@@ -11,6 +11,7 @@
 #include <string>
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
+#include <clas12/ReadBank.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
@@ -155,6 +156,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
         declare_species_histograms(m_e);
         declare_species_histograms(m_pip);
         declare_species_histograms(m_pim);
+        declare_species_histograms(m_e_nocuts);
         declare_species_histograms(m_pip_nocuts);
         declare_species_histograms(m_pim_nocuts);
     }
@@ -167,6 +169,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
             m_e.book_pbins(*m_hist);
             m_pip.book_pbins(*m_hist);
             m_pim.book_pbins(*m_hist);
+            m_e_nocuts.book_pbins(*m_hist);
             m_pip_nocuts.book_pbins(*m_hist);
             m_pim_nocuts.book_pbins(*m_hist);
         }
@@ -212,10 +215,26 @@ class CuSnContaminationAlg : public framework::Algorithm {
         if (m_config.enable_histograms) {
             m_e.fill_rec(electron_opt->vz(), mc_vz, has_mc);
 
+            auto electron = event.find_trigger_electron();
+            if (electron) m_e_nocuts.fill_rec(electron->vz(), mc_vz, has_mc);
+
             auto pi_plus = event.pions_plus();
-            for (auto p : pi_plus) m_pip_nocuts.fill_rec(p.vz(), mc_vz, has_mc);
+            for (auto p : pi_plus) { 
+                // Check that pion is indeed a pion track and not a misidentified other particle
+                int mc_index = get_mc_particle_index(event, p.index());
+                if (mc_index >= 0) {
+                    int pid = event.get_bank("MC::Particle").getInt("pid", mc_index);
+                    if (pid == 211) m_pip_nocuts.fill_rec(p.vz(), mc_vz, has_mc);
+                } 
+            }
             auto pi_minus = event.pions_minus();
-            for (auto p : pi_minus) m_pim_nocuts.fill_rec(p.vz(), mc_vz, has_mc);
+            for (auto p : pi_minus) { 
+                int mc_index = get_mc_particle_index(event, p.index());
+                if (mc_index >= 0) {
+                    int pid = event.get_bank("MC::Particle").getInt("pid", mc_index);
+                    if (pid == -211) m_pim_nocuts.fill_rec(p.vz(), mc_vz, has_mc);
+                }
+            }
 
             if (auto pip = event.retrieve_typed(framework::Keys::SelectedPiPlus)) {
                 for (const auto& pion : *pip) m_pip.fill_rec(pion.vz(), mc_vz, has_mc);
@@ -238,6 +257,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
     framework::ServiceRef<framework::HistogramService> m_hist;
 
     SpeciesHists m_e{"Electron"};
+    SpeciesHists m_e_nocuts{"Electron_NoCuts"};
     SpeciesHists m_pip{"PiPlus"};
     SpeciesHists m_pim{"PiMinus"};
     SpeciesHists m_pip_nocuts{"PiPlus_NoCuts"};
