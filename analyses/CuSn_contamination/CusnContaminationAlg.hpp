@@ -222,6 +222,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
             for (auto p : pi_plus) { 
                 // Check that pion is indeed a pion track and not a misidentified other particle
                 int mc_index = get_mc_particle_index(event, p.index());
+                fmt::print("pindex {} matched to mc_index {}", p.index(), mc_index);
                 if (mc_index >= 0) {
                     int pid = event.get_bank("MC::Particle").getInt("pid", mc_index);
                     if (pid == 211) m_pip_nocuts.fill_rec(p.vz(), mc_vz, has_mc);
