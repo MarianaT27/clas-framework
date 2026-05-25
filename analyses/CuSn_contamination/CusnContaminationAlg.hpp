@@ -323,7 +323,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
 
             if (auto pip = event.retrieve_typed(framework::Keys::SelectedPiPlus)) {
                 for (const auto& pion : *pip) {
-                    double theta_deg = pion.theta() * Constants::RAD_TO_DEG;
+                    double theta_deg = pion.theta();
                     m_pip.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
                     m_pip.fill_rec_pbin(pion.vz(), pion.p());
                     auto match = get_mc_particle_index_diag(event, pion.index(), 0.0f);
@@ -333,7 +333,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
             }
             if (auto pim = event.retrieve_typed(framework::Keys::SelectedPiMinus)) {
                 for (const auto& pion : *pim) {
-                    double theta_deg = pion.theta() * Constants::RAD_TO_DEG;
+                    double theta_deg = pion.theta();
                     m_pim.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
                     m_pim.fill_rec_pbin(pion.vz(), pion.p());
                     auto match = get_mc_particle_index_diag(event, pion.index(), 0.0f);
