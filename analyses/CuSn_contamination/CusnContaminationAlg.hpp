@@ -69,8 +69,10 @@ struct SpeciesHists {
           h_rec_vz_Sn{"/Data/" + m_species + "/vz_Sn", "vz_Sn;vz_Sn;Events", -13.0, 0.0, 100},
           h_rec_vz_CuSn{"/Data/" + m_species + "/vz_CuSn", "vz_CuSn;vz_CuSn;Events", -13.0, 0.0, 100},
           h_vz_vs_theta{"/MC/" + m_species + "/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100},
-          h_vz_vs_p{"/MC/" + m_species + "/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 0.0, 10.0, 100, -13.0, 0.0, 100} {}
-
+          h_vz_vs_p{"/MC/" + m_species + "/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 0.0, 10.0, 100, -13.0, 0.0, 100},
+          h_vz_Cu_vs_theta{"/MC/" + m_species + "/vz_Cu_vs_theta", "Cu vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100},
+          h_vz_Sn_vs_theta{"/MC/" + m_species + "/vz_Sn_vs_theta", "Sn vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100},
+          h_vz_CuSn_vs_theta{"/MC/" + m_species + "/vz_CuSn_vs_theta", "CuSn vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100) {
     // Declared first: the histogram initializers below reference it.
     std::string m_species;
 
@@ -92,6 +94,10 @@ struct SpeciesHists {
     // Variable-sized arrays of histograms need indirection: heap-allocate so
     // each slot has a stable address for register_hist.
     std::array<std::unique_ptr<framework::H2<>>, N_P_BINS> h_vz_vs_theta_pbin{};
+    // Reconstructed vz sliced per momentum bin, for the cut sample.
+    // Used to diagnose p-dependent vz bias (apparent broadening vs real
+    // intrinsic resolution at a given p).
+    std::array<std::unique_ptr<framework::H1<>>, N_P_BINS> h_rec_vz_pbin{};
 
     /// Register the per-momentum-bin vz-vs-theta histograms with the service.
     auto book_pbins(framework::HistogramService& hist) -> void {
@@ -103,6 +109,17 @@ struct SpeciesHists {
                 mh::regular(0.0, 40.0, 100), mh::regular(-13.0, 0.0, 100)
             );
             hist.register_hist("/MC/" + m_species + "/vz_vs_theta_p" + plo + "_" + phi, title, *h_vz_vs_theta_pbin[i]);
+        }
+    }
+
+    /// Register per-momentum-bin reconstructed-vz histograms.
+    auto book_rec_pbins(framework::HistogramService& hist) -> void {
+        for (int i = 0; i < N_P_BINS; ++i) {
+            auto plo = std::to_string(static_cast<int>(p_bin_edges[i]));
+            auto phi = std::to_string(static_cast<int>(p_bin_edges[i + 1]));
+            auto title = "rec vz (" + plo + "<p<" + phi + " GeV/c);vz [cm];Events";
+            h_rec_vz_pbin[i] = std::make_unique<framework::H1<>>(mh::regular(-13.0, 0.0, 100));
+            hist.register_hist("/Data/" + m_species + "/vz_p" + plo + "_" + phi, title, *h_rec_vz_pbin[i]);
         }
     }
 
@@ -128,15 +145,33 @@ struct SpeciesHists {
 
     /// Fill the reconstructed vz histograms for one reconstructed track.
     /// `mc_vz` is the event's MC vertex z (only used when `has_mc`).
-    auto fill_rec(double rec_vz, double mc_vz, bool has_mc) -> void {
+    auto fill_rec(double rec_vz, double theta_deg, double mc_vz, bool has_mc) -> void {
         // RG-D vz ranges: Cu [-10.6, -6.5], Sn [-5.5, 5.0], CuSn [-10.6, 5.0]
         if (-10.6 < rec_vz && rec_vz < -6.5) h_rec_vz_Cu.fill(rec_vz);
         if (-5.5 < rec_vz && rec_vz < 5.0) h_rec_vz_Sn.fill(rec_vz);
+        
         h_rec_vz_CuSn.fill(rec_vz);
         if (has_mc) {
-            if (-10.6 < mc_vz && mc_vz < -6.5) h_vz_Cu.fill(rec_vz);
-            if (-5.5 < mc_vz && mc_vz < 5.0) h_vz_Sn.fill(rec_vz);
+            if (-10.6 < mc_vz && mc_vz < -6.5) {
+                h_vz_Cu.fill(rec_vz);
+                h_vz_Cu_vs_theta.fill(theta_deg, rec_vz);
+            }
+            if (-5.5 < mc_vz && mc_vz < 5.0) {
+                h_vz_Sn.fill(rec_vz);
+                h_vz_Sn_vs_theta.fill(theta_deg, rec_vz);
+            }
             h_vz_CuSn.fill(rec_vz);
+            h_vz_CuSn_vs_theta.fill(theta_deg, rec_vz);
+        }
+    }
+
+    /// Fill the per-momentum-bin reconstructed-vz histogram, if booked.
+    auto fill_rec_pbin(double rec_vz, double p) -> void {
+        for (int i = 0; i < N_P_BINS; ++i) {
+            if (p >= p_bin_edges[i] && p < p_bin_edges[i + 1]) {
+                if (h_rec_vz_pbin[i]) { h_rec_vz_pbin[i]->fill(rec_vz); }
+                break;
+            }
         }
     }
 };
@@ -164,6 +199,12 @@ class CuSnContaminationAlg : public framework::Algorithm {
         declare_species_histograms(m_e_nocuts);
         declare_species_histograms(m_pip_nocuts);
         declare_species_histograms(m_pim_nocuts);
+        declare_species_histograms(m_pip_q_hi);
+        declare_species_histograms(m_pip_q_mid);
+        declare_species_histograms(m_pip_q_lo);
+        declare_species_histograms(m_pim_q_hi);
+        declare_species_histograms(m_pim_q_mid);
+        declare_species_histograms(m_pim_q_lo);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -177,6 +218,9 @@ class CuSnContaminationAlg : public framework::Algorithm {
             m_e_nocuts.book_pbins(*m_hist);
             m_pip_nocuts.book_pbins(*m_hist);
             m_pim_nocuts.book_pbins(*m_hist);
+            // Per-p-bin reconstructed-vz for the cut sample (diagnostic).
+            m_pip.book_rec_pbins(*m_hist);
+            m_pim.book_rec_pbins(*m_hist);
         }
         return StatusCode::SUCCESS();
     }
@@ -264,11 +308,32 @@ class CuSnContaminationAlg : public framework::Algorithm {
                 }
             }
 
+            // Bucket each selected pion by MC-match quality to diagnose
+            // where the cut-sample broadening comes from. min_quality=0
+            // so the actual quality is always returned; we bucket here.
+            auto quality_slice = [](float q, SpeciesHists& hi, SpeciesHists& mid, SpeciesHists& lo) -> SpeciesHists& {
+                if (q >= 0.92f) { return hi; }
+                if (q >= 0.50f) { return mid; }
+                return lo;
+            };
+
             if (auto pip = event.retrieve_typed(framework::Keys::SelectedPiPlus)) {
-                for (const auto& pion : *pip) m_pip.fill_rec(pion.vz(), mc_vz, has_mc);
+                for (const auto& pion : *pip) {
+                    m_pip.fill_rec(pion.vz(), pion.theta(), mc_vz, has_mc);
+                    m_pip.fill_rec_pbin(pion.vz(), pion.p());
+                    auto match = get_mc_particle_index_diag(event, pion.index(), 0.0f);
+                    auto& slice = quality_slice(match.quality, m_pip_q_hi, m_pip_q_mid, m_pip_q_lo);
+                    slice.fill_rec(pion.vz(), pion.theta(), mc_vz, has_mc);
+                }
             }
             if (auto pim = event.retrieve_typed(framework::Keys::SelectedPiMinus)) {
-                for (const auto& pion : *pim) m_pim.fill_rec(pion.vz(), mc_vz, has_mc);
+                for (const auto& pion : *pim) {
+                    m_pim.fill_rec(pion.vz(), pion.theta(), mc_vz, has_mc);
+                    m_pim.fill_rec_pbin(pion.vz(), pion.p());
+                    auto match = get_mc_particle_index_diag(event, pion.index(), 0.0f);
+                    auto& slice = quality_slice(match.quality, m_pim_q_hi, m_pim_q_mid, m_pim_q_lo);
+                    slice.fill_rec(pion.vz(), pion.theta(), mc_vz, has_mc);
+                }
             }
         }
 
@@ -290,6 +355,18 @@ class CuSnContaminationAlg : public framework::Algorithm {
     SpeciesHists m_pim{"PiMinus"};
     SpeciesHists m_pip_nocuts{"PiPlus_NoCuts"};
     SpeciesHists m_pim_nocuts{"PiMinus_NoCuts"};
+    // Quality-sliced copies of the cut sample, bucketed by MC-match
+    // quality from get_mc_particle_index_diag. QHi (>=0.92) matches the
+    // existing "no cuts MC pid" sample's hidden quality threshold;
+    // QMid (0.5-0.92) and QLo (<0.5, including no-match) are normally
+    // invisible. Used to diagnose whether the cut-sample broadening is
+    // dominated by low-quality MC matches.
+    SpeciesHists m_pip_q_hi{"PiPlus_QHi"};
+    SpeciesHists m_pip_q_mid{"PiPlus_QMid"};
+    SpeciesHists m_pip_q_lo{"PiPlus_QLo"};
+    SpeciesHists m_pim_q_hi{"PiMinus_QHi"};
+    SpeciesHists m_pim_q_mid{"PiMinus_QMid"};
+    SpeciesHists m_pim_q_lo{"PiMinus_QLo"};
 
     /// Queue every self-registering wrapper of one species for booking.
     auto declare_species_histograms(SpeciesHists& s) -> void {
