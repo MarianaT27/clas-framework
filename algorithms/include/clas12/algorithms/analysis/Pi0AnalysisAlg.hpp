@@ -31,6 +31,7 @@
 
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
+#include <clas12/bankdefs/REC_Event.hpp>
 #include <clas12/algorithms/reconstruction/Pi0ReconstructionAlg.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
@@ -94,6 +95,7 @@ struct Pi0PairNTupleData {
     int     pair_type = 0;
     long    event_id  = 0;
     int     n_photons = 0;
+    int     helicity  = 0;
 
     double  Q2 = 0.0;
     double  xB = 0.0;
@@ -125,6 +127,7 @@ struct Pi0PairNTupleData {
             framework::field("pair_type", &T::pair_type),
             framework::field("event_id",  &T::event_id),
             framework::field("n_photons", &T::n_photons),
+            framework::field("helicity",  &T::helicity),
             framework::field("Q2",        &T::Q2),
             framework::field("xB",        &T::xB),
             framework::field("nu",        &T::nu),
@@ -156,6 +159,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     explicit Pi0AnalysisAlg(std::string name = "Pi0Analysis", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Pi0 Analysis") {
         required_services(m_hist, m_ntuple);
+        declare_banks("REC::Event");
         declare_config(m_config);
         declare_ntuple(m_ntuple_writer, "pi0_pairs", m_config.enable_ntuple);
     }
@@ -208,6 +212,9 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         auto electron_opt = framework::EventHelpers::get_selected_electron(event);
         if (!electron_opt) return StatusCode::SUCCESS();
 
+        auto& rec_event = event.bank<bankdefs::REC_Event>();
+        const int helicity = rec_event.rows() > 0 ? rec_event.helicity(0) : 0;
+
         ROOT::Math::PxPyPzEVector beam_4v(0.0, 0.0, m_config.beam_energy, m_config.beam_energy);
         ROOT::Math::PxPyPzEVector electron_4v = electron_opt->PxPyPzEVector();
         ROOT::Math::PxPyPzEVector q_4v = beam_4v - electron_4v;
@@ -237,7 +244,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         thread_local std::vector<Pi0PairNTupleData> local_rows;
         local_rows.clear();
         process_photon_pairs(event, Q2, xB, nu, W, y, q_hat, x_hat, y_hat,
-                             electron_4v, iQ2, ixB, event_id, local_rows);
+                             electron_4v, iQ2, ixB, event_id, helicity, local_rows);
 
         flush_rows_to_ntuple(local_rows);
 
@@ -586,6 +593,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                               const ROOT::Math::PxPyPzEVector& electron_4v,
                               int iQ2, int ixB,
                               long event_id,
+                              int helicity,
                               std::vector<Pi0PairNTupleData>& local_rows) -> void {
         auto photons_opt = event.retrieve_typed(framework::Keys::SelectedPhotons_Pi0);
         if (!photons_opt || photons_opt->empty()) return;
@@ -639,7 +647,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                     }
                     m_cutflow.pass("Same-event pairs");
 
-                    local_rows.push_back(make_row(/*pair_type=*/0, event_id, n_photons,
+                    local_rows.push_back(make_row(/*pair_type=*/0, event_id, n_photons, helicity,
                                                   Q2, xB, nu, W, y, pi0_4v, k,
                                                   iQ2, ixB));
                 }
@@ -729,7 +737,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         return k;
     }
 
-    auto make_row(int pair_type, long event_id, int n_photons,
+    auto make_row(int pair_type, long event_id, int n_photons, int helicity,
                   double Q2, double xB, double nu, double W, double y,
                   const ROOT::Math::PxPyPzEVector& pi0_4v,
                   const PairKinematics& k,
@@ -738,6 +746,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         row.pair_type = pair_type;
         row.event_id  = event_id;
         row.n_photons = n_photons;
+        row.helicity  = helicity;
         row.Q2 = Q2; row.xB = xB; row.nu = nu; row.W = W; row.y = y;
         row.mgg = k.mgg; row.z = k.z; row.pT = k.pT; row.pT2 = k.pT2; row.phi_h = k.phi_h;
         row.pi0_px = pi0_4v.Px(); row.pi0_py = pi0_4v.Py(); row.pi0_pz = pi0_4v.Pz(); row.pi0_E = pi0_4v.E();
