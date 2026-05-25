@@ -72,7 +72,7 @@ struct SpeciesHists {
           h_vz_vs_p{"/MC/" + m_species + "/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 0.0, 10.0, 100, -13.0, 0.0, 100},
           h_vz_Cu_vs_theta{"/MC/" + m_species + "/vz_Cu_vs_theta", "Cu vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100},
           h_vz_Sn_vs_theta{"/MC/" + m_species + "/vz_Sn_vs_theta", "Sn vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100},
-          h_vz_CuSn_vs_theta{"/MC/" + m_species + "/vz_CuSn_vs_theta", "CuSn vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100) {
+          h_vz_CuSn_vs_theta{"/MC/" + m_species + "/vz_CuSn_vs_theta", "CuSn vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100} {}
     // Declared first: the histogram initializers below reference it.
     std::string m_species;
 
@@ -91,6 +91,10 @@ struct SpeciesHists {
     framework::Hist1<> h_rec_vz_CuSn;
     framework::Hist2<> h_vz_vs_theta;
     framework::Hist2<> h_vz_vs_p;
+    // Per-target vz vs theta: reconstructed vz vs theta, gated by MC truth vertex region.
+    framework::Hist2<> h_vz_Cu_vs_theta;
+    framework::Hist2<> h_vz_Sn_vs_theta;
+    framework::Hist2<> h_vz_CuSn_vs_theta;
     // Variable-sized arrays of histograms need indirection: heap-allocate so
     // each slot has a stable address for register_hist.
     std::array<std::unique_ptr<framework::H2<>>, N_P_BINS> h_vz_vs_theta_pbin{};
@@ -262,10 +266,10 @@ class CuSnContaminationAlg : public framework::Algorithm {
         if (!electron_opt) return StatusCode::FILTERED();
 
         if (m_config.enable_histograms) {
-            m_e.fill_rec(electron_opt->vz(), mc_vz, has_mc);
+            m_e.fill_rec(electron_opt->vz(), electron_opt->theta() * Constants::RAD_TO_DEG, mc_vz, has_mc);
 
             auto electron = event.find_trigger_electron();
-            if (electron) m_e_nocuts.fill_rec(electron->vz(), mc_vz, has_mc);
+            if (electron) m_e_nocuts.fill_rec(electron->vz(), electron->theta() * Constants::RAD_TO_DEG, mc_vz, has_mc);
 
             // Bounded one-shot diagnostic for the MC matching path. The
             // first few hundred pions across the run get a one-line
@@ -295,7 +299,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
                 debug_match("pi+", p.index(), match);
                 if (match.mc_index >= 0) {
                     int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
-                    if (pid == 211) m_pip_nocuts.fill_rec(p.vz(), mc_vz, has_mc);
+                    if (pid == 211) m_pip_nocuts.fill_rec(p.vz(), p.theta() * Constants::RAD_TO_DEG, mc_vz, has_mc);
                 }
             }
             auto pi_minus = event.pions_minus();
@@ -304,7 +308,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
                 debug_match("pi-", p.index(), match);
                 if (match.mc_index >= 0) {
                     int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
-                    if (pid == -211) m_pim_nocuts.fill_rec(p.vz(), mc_vz, has_mc);
+                    if (pid == -211) m_pim_nocuts.fill_rec(p.vz(), p.theta() * Constants::RAD_TO_DEG, mc_vz, has_mc);
                 }
             }
 
@@ -319,20 +323,22 @@ class CuSnContaminationAlg : public framework::Algorithm {
 
             if (auto pip = event.retrieve_typed(framework::Keys::SelectedPiPlus)) {
                 for (const auto& pion : *pip) {
-                    m_pip.fill_rec(pion.vz(), pion.theta(), mc_vz, has_mc);
+                    double theta_deg = pion.theta() * Constants::RAD_TO_DEG;
+                    m_pip.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
                     m_pip.fill_rec_pbin(pion.vz(), pion.p());
                     auto match = get_mc_particle_index_diag(event, pion.index(), 0.0f);
                     auto& slice = quality_slice(match.quality, m_pip_q_hi, m_pip_q_mid, m_pip_q_lo);
-                    slice.fill_rec(pion.vz(), pion.theta(), mc_vz, has_mc);
+                    slice.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
                 }
             }
             if (auto pim = event.retrieve_typed(framework::Keys::SelectedPiMinus)) {
                 for (const auto& pion : *pim) {
-                    m_pim.fill_rec(pion.vz(), pion.theta(), mc_vz, has_mc);
+                    double theta_deg = pion.theta() * Constants::RAD_TO_DEG;
+                    m_pim.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
                     m_pim.fill_rec_pbin(pion.vz(), pion.p());
                     auto match = get_mc_particle_index_diag(event, pion.index(), 0.0f);
                     auto& slice = quality_slice(match.quality, m_pim_q_hi, m_pim_q_mid, m_pim_q_lo);
-                    slice.fill_rec(pion.vz(), pion.theta(), mc_vz, has_mc);
+                    slice.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
                 }
             }
         }
@@ -372,7 +378,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
     auto declare_species_histograms(SpeciesHists& s) -> void {
         declare_histograms(s.h_p, s.h_phi, s.h_theta, s.h_vz, s.h_vz_Cu, s.h_vz_Sn,
                            s.h_vz_CuSn, s.h_rec_vz_Cu, s.h_rec_vz_Sn, s.h_rec_vz_CuSn,
-                           s.h_vz_vs_theta, s.h_vz_vs_p);
+                           s.h_vz_vs_theta, s.h_vz_vs_p,
+                           s.h_vz_Cu_vs_theta, s.h_vz_Sn_vs_theta, s.h_vz_CuSn_vs_theta);
     }
 };
 
