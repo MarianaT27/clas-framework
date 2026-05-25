@@ -19,9 +19,9 @@ auto main(int argc, char* argv[]) -> int {
             builder
                 .template add_service<framework::VzCorrectorService>(framework::VzCorrectorService::Config{.target = config.target, .polarity = config.polarity})
                 .template add_service<framework::ElectronCutsService>()
-                .template add_algorithm<algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", algorithms::ElectronSelectionConfig{.target = Target::Custom, .polarity = config.polarity})
+                .template add_algorithm<algorithms::ElectronSelectionAlg>("ElectronSelectionAlg", algorithms::ElectronSelectionConfig{.target = Target::Custom, .polarity = config.polarity, .enable_vz_cut = false})
                 .template add_algorithm<algorithms::DISSelectionAlg>("DISSelectionAlg")
-                .template add_algorithm<algorithms::PionSelectionAlg>("PionSelectionAlg", algorithms::PionSelectionConfig{.target = Target::Custom, .polarity = config.polarity})
+                .template add_algorithm<algorithms::PionSelectionAlg>("PionSelectionAlg", algorithms::PionSelectionConfig{.target = Target::Custom, .polarity = config.polarity, .enable_vz_cut = false})
                 .template add_algorithm<CuSnContamination::CuSnContaminationAlg>("CuSnContaminationAlg");
         });
 }
