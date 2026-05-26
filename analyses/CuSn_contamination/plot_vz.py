@@ -245,6 +245,218 @@ def plot_vz_per_p_bin(
     fig.savefig(out_path, bbox_inches="tight")
 
 
+def _project_2d_slices(
+    h2,
+    slice_edges: list[tuple[float, float]],
+    slice_unit_hint: str | None = None,
+    density: bool = True,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Project a 2-D (binning x vz) uproot histogram onto vz for each slice.
+
+    The vz axis is auto-detected by its negative range. When `slice_unit_hint`
+    is "theta_deg" and the histogram's binning axis turns out to be in
+    radians (max < 6.5), the slice edges are converted from deg to rad.
+    """
+    values, xedges, yedges = h2.to_numpy()
+    x_is_vz = xedges.min() < -1.0
+    y_is_vz = yedges.min() < -1.0
+    if x_is_vz and not y_is_vz:
+        bin_edges, vz_edges = yedges, xedges
+        vals = values.T
+    elif y_is_vz and not x_is_vz:
+        bin_edges, vz_edges = xedges, yedges
+        vals = values
+    else:
+        raise RuntimeError(
+            f"Cannot identify vz axis: "
+            f"xedges=[{xedges.min():.3g},{xedges.max():.3g}] "
+            f"yedges=[{yedges.min():.3g},{yedges.max():.3g}]"
+        )
+
+    if slice_unit_hint == "theta_deg" and bin_edges.max() < 6.5:
+        slice_edges = [(np.deg2rad(lo), np.deg2rad(hi)) for lo, hi in slice_edges]
+
+    out: list[tuple[np.ndarray, np.ndarray]] = []
+    widths = np.diff(vz_edges)
+    for lo, hi in slice_edges:
+        i_lo = np.searchsorted(bin_edges, lo, side="left")
+        i_hi = np.searchsorted(bin_edges, hi, side="left")
+        if i_hi <= i_lo:
+            out.append((np.zeros(len(vz_edges) - 1), vz_edges))
+            continue
+        proj = vals[i_lo:i_hi, :].sum(axis=0)
+        if density and proj.sum() > 0:
+            proj = proj / (proj.sum() * widths)
+        out.append((proj, vz_edges))
+    return out
+
+
+THREE_WAY_CATEGORIES: tuple[tuple[str, str], ...] = (
+    ("A", "Cut sample"),
+    ("B", "No cuts (MC pid)"),
+    ("C", "MC truth"),
+)
+
+
+def plot_vz_three_way_integrated(
+    file_path: str = SIM_PATH,
+    species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    density: bool = True,
+    out_path: str = "vz_three_way_integrated.pdf",
+):
+    """Overlay integrated vz for the three pion categories per species."""
+    styles = {
+        "A": ("Cut sample",       "tab:blue",   "-"),
+        "B": ("No cuts (MC pid)", "tab:orange", "-"),
+        "C": ("MC truth",         "black",      "--"),
+    }
+
+    fig, axs = plt.subplots(1, len(species), figsize=(5 * len(species), 5), squeeze=False)
+    axs = axs[0]
+
+    with uproot.open(file_path) as f:
+        for ax, sp in zip(axs, species):
+            sources = {
+                "A": f[f"Data/{sp}/vz_CuSn"],
+                "B": f[f"Data/{sp}_NoCuts/vz_CuSn"],
+                "C": f[f"MC/{sp}/vz"],
+            }
+            for tag, h in sources.items():
+                lbl, color, ls = styles[tag]
+                hep.histplot(
+                    h.to_numpy(), ax=ax, label=lbl,
+                    color=color, linestyle=ls, histtype="step", density=density,
+                )
+            ax.set_title(SPECIES_LABEL.get(sp, sp))
+            ax.set_xlabel(r"$v_z$ [cm]")
+            ax.set_ylabel("PDF" if density else "Counts")
+            ax.legend(fontsize=9, loc="best")
+
+    fig.suptitle(r"Integrated $v_z$: three-way comparison")
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+
+
+def plot_vz_three_way_p(
+    file_path: str = SIM_PATH,
+    species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    p_edges: tuple[float, ...] = tuple(np.arange(0.0, 6.5, 0.5)),
+    density: bool = True,
+    out_path: str = "vz_three_way_p.pdf",
+):
+    """Per-species grid (rows) x category (cols); overlay vz per p bin in each cell."""
+    bins = list(zip(p_edges[:-1], p_edges[1:]))
+    cmap = mpl.cm.viridis
+    colors = [cmap(i / max(1, len(bins) - 1)) for i in range(len(bins))]
+
+    col_titles = [lbl for _, lbl in THREE_WAY_CATEGORIES]
+    n_cols = len(THREE_WAY_CATEGORIES)
+    fig, axs = plt.subplots(
+        len(species), n_cols,
+        figsize=(4.5 * n_cols, 4 * len(species)),
+        squeeze=False,
+    )
+
+    with uproot.open(file_path) as f:
+        for i, sp in enumerate(species):
+            # Pre-project the MC-truth 2D once per species.
+            cat_c_slices = _project_2d_slices(
+                f[f"MC/{sp}/vz_vs_p"], list(bins), density=density,
+            )
+            for j, (tag, lbl) in enumerate(THREE_WAY_CATEGORIES):
+                ax = axs[i][j]
+                for k, ((p_lo, p_hi), color) in enumerate(zip(bins, colors)):
+                    legend = rf"${p_lo:.1f} \leq p < {p_hi:.1f}$ GeV"
+                    if tag == "A":
+                        h = f[f"Data/{sp}/vz_p{_fmt_edge(p_lo)}_{_fmt_edge(p_hi)}"]
+                        hep.histplot(
+                            h.to_numpy(), ax=ax, label=legend,
+                            color=color, histtype="step", density=density,
+                        )
+                    elif tag == "B":
+                        h = f[f"Data/{sp}_NoCuts/vz_p{_fmt_edge(p_lo)}_{_fmt_edge(p_hi)}"]
+                        hep.histplot(
+                            h.to_numpy(), ax=ax, label=legend,
+                            color=color, histtype="step", density=density,
+                        )
+                    else:  # C
+                        proj, vz_edges = cat_c_slices[k]
+                        hep.histplot(
+                            (proj, vz_edges), ax=ax, label=legend,
+                            color=color, histtype="step",
+                        )
+
+                if i == 0:
+                    ax.set_title(lbl)
+                ax.set_xlabel(r"$v_z$ [cm]")
+                if j == 0:
+                    ax.set_ylabel(rf"{SPECIES_LABEL.get(sp, sp)}    " + ("PDF" if density else "Counts"))
+                else:
+                    ax.set_ylabel("PDF" if density else "Counts")
+                ax.legend(fontsize=7, ncol=1, loc="best")
+
+    fig.suptitle(r"$v_z$ by momentum bin: three-way comparison")
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+
+
+def plot_vz_three_way_theta(
+    file_path: str = SIM_PATH,
+    species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    theta_min: float = 5.0,
+    theta_max: float = 35.0,
+    theta_step: float = 5.0,
+    density: bool = True,
+    out_path: str = "vz_three_way_theta.pdf",
+):
+    """Per-species (rows) x category (cols); overlay vz per theta bin in each cell."""
+    edges = np.arange(theta_min, theta_max + 1e-9, theta_step)
+    slices = list(zip(edges[:-1], edges[1:]))
+    cmap = mpl.cm.tab10
+    colors = [cmap(i % 10) for i in range(len(slices))]
+
+    n_cols = len(THREE_WAY_CATEGORIES)
+    fig, axs = plt.subplots(
+        len(species), n_cols,
+        figsize=(4.5 * n_cols, 4 * len(species)),
+        squeeze=False,
+    )
+
+    with uproot.open(file_path) as f:
+        for i, sp in enumerate(species):
+            cell_paths = {
+                "A": f[f"MC/{sp}/vz_CuSn_vs_theta"],
+                "B": f[f"MC/{sp}_NoCuts/vz_CuSn_vs_theta"],
+                "C": f[f"MC/{sp}/vz_vs_theta"],
+            }
+            cell_projections = {
+                tag: _project_2d_slices(h2, list(slices),
+                                        slice_unit_hint="theta_deg",
+                                        density=density)
+                for tag, h2 in cell_paths.items()
+            }
+            for j, (tag, lbl) in enumerate(THREE_WAY_CATEGORIES):
+                ax = axs[i][j]
+                for (t_lo, t_hi), color, (proj, vz_edges) in zip(slices, colors, cell_projections[tag]):
+                    hep.histplot(
+                        (proj, vz_edges), ax=ax,
+                        label=rf"${t_lo:.0f} \leq \theta < {t_hi:.0f}^\circ$",
+                        color=color, histtype="step",
+                    )
+                if i == 0:
+                    ax.set_title(lbl)
+                ax.set_xlabel(r"$v_z$ [cm]")
+                if j == 0:
+                    ax.set_ylabel(rf"{SPECIES_LABEL.get(sp, sp)}    " + ("PDF" if density else "Counts"))
+                else:
+                    ax.set_ylabel("PDF" if density else "Counts")
+                ax.legend(fontsize=7, ncol=1, loc="best")
+
+    fig.suptitle(r"$v_z$ by $\theta$ bin: three-way comparison")
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+
+
 if __name__ == "__main__":
     main()
     plot_vz_theta_slices()
@@ -261,3 +473,6 @@ if __name__ == "__main__":
         out_path="vz_per_p_bin_nocuts.pdf",
         title=r"$v_z$ by momentum bin (no cuts, MC truth pid)",
     )
+    plot_vz_three_way_integrated()
+    plot_vz_three_way_p()
+    plot_vz_three_way_theta()

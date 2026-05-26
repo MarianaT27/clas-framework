@@ -305,7 +305,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
             for (auto p : pi_plus) {
                 // Check that the rec pion really came from a generated pion.
                 auto match = get_mc_particle_index_diag(event, p.index());
-                debug_match("pi+", p.index(), match);
+                // debug_match("pi+", p.index(), match);
                 if (match.mc_index >= 0) {
                     int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
                     if (pid == 211) {
@@ -317,7 +317,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
             auto pi_minus = event.pions_minus();
             for (auto p : pi_minus) {
                 auto match = get_mc_particle_index_diag(event, p.index());
-                debug_match("pi-", p.index(), match);
+                // debug_match("pi-", p.index(), match);
                 if (match.mc_index >= 0) {
                     int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
                     if (pid == -211) {
