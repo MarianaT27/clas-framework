@@ -34,6 +34,12 @@ using framework::Log;
 static constexpr int N_P_BINS = 20;
 static constexpr std::array<double, N_P_BINS + 1> p_bin_edges = {0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0};
 
+// Filesystem/ROOT-safe edge label: 0.5 -> "0p5", 10.0 -> "10p0".
+inline auto fmt_p_edge(double v) -> std::string {
+    int tenths = static_cast<int>(std::lround(v * 10));
+    return std::to_string(tenths / 10) + "p" + std::to_string(tenths % 10);
+}
+
 /// Configuration for CuSnContaminationAlg.
 struct CuSnContaminationConfig {
     // Reserved for future tuning knobs that aren't user-tunable Properties.
@@ -106,8 +112,8 @@ struct SpeciesHists {
     /// Register the per-momentum-bin vz-vs-theta histograms with the service.
     auto book_pbins(framework::HistogramService& hist) -> void {
         for (int i = 0; i < N_P_BINS; ++i) {
-            auto plo = std::to_string(static_cast<int>(p_bin_edges[i]));
-            auto phi = std::to_string(static_cast<int>(p_bin_edges[i + 1]));
+            auto plo = fmt_p_edge(p_bin_edges[i]);
+            auto phi = fmt_p_edge(p_bin_edges[i + 1]);
             auto title = "vz vs #theta (" + plo + "<p<" + phi + " GeV/c);#theta [deg];vz [cm]";
             h_vz_vs_theta_pbin[i] = std::make_unique<framework::H2<>>(
                 mh::regular(0.0, 40.0, 100), mh::regular(-13.0, 0.0, 100)
@@ -119,8 +125,8 @@ struct SpeciesHists {
     /// Register per-momentum-bin reconstructed-vz histograms.
     auto book_rec_pbins(framework::HistogramService& hist) -> void {
         for (int i = 0; i < N_P_BINS; ++i) {
-            auto plo = std::to_string(static_cast<int>(p_bin_edges[i]));
-            auto phi = std::to_string(static_cast<int>(p_bin_edges[i + 1]));
+            auto plo = fmt_p_edge(p_bin_edges[i]);
+            auto phi = fmt_p_edge(p_bin_edges[i + 1]);
             auto title = "rec vz (" + plo + "<p<" + phi + " GeV/c);vz [cm];Events";
             h_rec_vz_pbin[i] = std::make_unique<framework::H1<>>(mh::regular(-13.0, 0.0, 100));
             hist.register_hist("/Data/" + m_species + "/vz_p" + plo + "_" + phi, title, *h_rec_vz_pbin[i]);
