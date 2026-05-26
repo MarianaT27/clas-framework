@@ -200,17 +200,17 @@ struct SpeciesHists {
 struct ResidualHists {
     explicit ResidualHists(std::string species)
         : m_species(std::move(species)),
-          h_dp_over_p{"/Residual/" + m_species + "/dp_over_p", "#Delta p/p;#Delta p/p;Events", -0.5, 0.5, 100},
-          h_dphi{"/Residual/" + m_species + "/dphi", "#Delta #phi;#Delta #phi [deg];Events", -10.0, 10.0, 100},
-          h_dtheta{"/Residual/" + m_species + "/dtheta", "#Delta #theta;#Delta #theta [deg];Events", -5.0, 5.0, 100},
+          h_dp_over_p{"/Residual/" + m_species + "/dp_over_p", "#Delta p/p;#Delta p/p;Events", -0.2, 0.2, 100},
+          h_dphi{"/Residual/" + m_species + "/dphi", "#Delta #phi;#Delta #phi [deg];Events", -5.0, 5.0, 100},
+          h_dtheta{"/Residual/" + m_species + "/dtheta", "#Delta #theta;#Delta #theta [deg];Events", -2.0, 2.0, 100},
           h_dvz{"/Residual/" + m_species + "/dvz", "#Delta v_{z};#Delta v_{z} [cm];Events", -5.0, 5.0, 100},
-          h_dp_over_p_vs_p{"/Residual/" + m_species + "/dp_over_p_vs_p", "#Delta p/p vs p;p [GeV];#Delta p/p", 0.0, 10.0, 50, -0.5, 0.5, 100},
-          h_dphi_vs_p{"/Residual/" + m_species + "/dphi_vs_p", "#Delta #phi vs p;p [GeV];#Delta #phi [deg]", 0.0, 10.0, 50, -10.0, 10.0, 100},
-          h_dtheta_vs_p{"/Residual/" + m_species + "/dtheta_vs_p", "#Delta #theta vs p;p [GeV];#Delta #theta [deg]", 0.0, 10.0, 50, -5.0, 5.0, 100},
+          h_dp_over_p_vs_p{"/Residual/" + m_species + "/dp_over_p_vs_p", "#Delta p/p vs p;p [GeV];#Delta p/p", 0.0, 10.0, 50, -0.2, 0.2, 100},
+          h_dphi_vs_p{"/Residual/" + m_species + "/dphi_vs_p", "#Delta #phi vs p;p [GeV];#Delta #phi [deg]", 0.0, 10.0, 50, -5.0, 5.0, 100},
+          h_dtheta_vs_p{"/Residual/" + m_species + "/dtheta_vs_p", "#Delta #theta vs p;p [GeV];#Delta #theta [deg]", 0.0, 10.0, 50, -2.0, 2.0, 100},
           h_dvz_vs_p{"/Residual/" + m_species + "/dvz_vs_p", "#Delta v_{z} vs p;p [GeV];#Delta v_{z} [cm]", 0.0, 10.0, 50, -5.0, 5.0, 100},
-          h_dp_over_p_vs_theta{"/Residual/" + m_species + "/dp_over_p_vs_theta", "#Delta p/p vs #theta;#theta [deg];#Delta p/p", 0.0, 40.0, 50, -0.5, 0.5, 100},
-          h_dphi_vs_theta{"/Residual/" + m_species + "/dphi_vs_theta", "#Delta #phi vs #theta;#theta [deg];#Delta #phi [deg]", 0.0, 40.0, 50, -10.0, 10.0, 100},
-          h_dtheta_vs_theta{"/Residual/" + m_species + "/dtheta_vs_theta", "#Delta #theta vs #theta;#theta [deg];#Delta #theta [deg]", 0.0, 40.0, 50, -5.0, 5.0, 100},
+          h_dp_over_p_vs_theta{"/Residual/" + m_species + "/dp_over_p_vs_theta", "#Delta p/p vs #theta;#theta [deg];#Delta p/p", 0.0, 40.0, 50, -0.2, 0.2, 100},
+          h_dphi_vs_theta{"/Residual/" + m_species + "/dphi_vs_theta", "#Delta #phi vs #theta;#theta [deg];#Delta #phi [deg]", 0.0, 40.0, 50, -5.0, 5.0, 100},
+          h_dtheta_vs_theta{"/Residual/" + m_species + "/dtheta_vs_theta", "#Delta #theta vs #theta;#theta [deg];#Delta #theta [deg]", 0.0, 40.0, 50, -2.0, 2.0, 100},
           h_dvz_vs_theta{"/Residual/" + m_species + "/dvz_vs_theta", "#Delta v_{z} vs #theta;#theta [deg];#Delta v_{z} [cm]", 0.0, 40.0, 50, -5.0, 5.0, 100} {}
 
     std::string m_species;

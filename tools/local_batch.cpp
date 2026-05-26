@@ -69,6 +69,7 @@ struct DriverConfig {
     int         slices       = 0;
     int         concurrent   = 0;
     bool        no_run       = false;
+    bool        automerge    = false; // run hadd (and hipo-utils -merge) on success
     std::string output_dir;          // optional: overrides what's in the TOML
     std::string slice_suffix = "_slice"; // <output_base>_slice<i>.root
 };
@@ -317,6 +318,39 @@ struct SlicePlan {
     return 127;
 }
 
+/// fork+execvp a PATH-resolved command and wait. Returns child's exit code
+/// (or 128+signal on signal death, 127 on internal failure). Inherits the
+/// parent's stdout/stderr so the user sees the merger's progress live.
+[[nodiscard]] auto run_command(
+    const std::string& cmd,
+    const std::vector<std::string>& args) -> int
+{
+    pid_t pid = fork();
+    if (pid < 0) {
+        fmt::print(stderr, "[local_batch] fork() failed for '{}': {}\n",
+                   cmd, std::strerror(errno));
+        return 127;
+    }
+    if (pid == 0) {
+        std::vector<const char*> argv;
+        argv.push_back(cmd.c_str());
+        for (const auto& a : args) { argv.push_back(a.c_str()); }
+        argv.push_back(nullptr);
+        execvp(cmd.c_str(), const_cast<char* const*>(argv.data()));
+        fmt::print(stderr, "[local_batch] execvp('{}') failed: {}\n",
+                   cmd, std::strerror(errno));
+        _exit(127);
+    }
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        fmt::print(stderr, "[local_batch] waitpid() failed for '{}'\n", cmd);
+        return 127;
+    }
+    if (WIFEXITED(status))   { return WEXITSTATUS(status); }
+    if (WIFSIGNALED(status)) { return 128 + WTERMSIG(status); }
+    return 127;
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -338,6 +372,10 @@ int main(int argc, char* argv[]) {
             cxxopts::value<std::string>())
         ("dry-run",      "Print the planned slice table without launching",
             cxxopts::value<bool>()->default_value("false"))
+        ("automerge",    "On success, run hadd (and hipo-utils -merge if a "
+                         "[skim].hipo_output is configured) to produce the "
+                         "merged output automatically",
+            cxxopts::value<bool>()->default_value("false"))
         ("h,help",       "Show help");
 
     auto args = opts.parse(argc, argv);
@@ -351,8 +389,9 @@ int main(int argc, char* argv[]) {
     cfg.executable    = args["exe"].as<std::string>();
     cfg.slices        = args["slices"].as<int>();
     cfg.concurrent    = args["concurrent"].as<int>();
-    if (args.count("output-dir")) cfg.output_dir = args["output-dir"].as<std::string>();
+    if (args.count("output-dir")) { cfg.output_dir = args["output-dir"].as<std::string>(); }
     cfg.no_run        = args["dry-run"].as<bool>();
+    cfg.automerge     = args["automerge"].as<bool>();
 
     if (cfg.slices < 1 || cfg.concurrent < 1) {
         fmt::print(stderr,
@@ -694,31 +733,74 @@ int main(int argc, char* argv[]) {
         static_cast<int>(results.size()) - failures, failures);
 
     if (failures == 0) {
-        fmt::print("All slices succeeded. To merge:\n");
         const fs::path base{info.output_base};
         fs::path merged = cfg.output_dir.empty()
             ? base
             : (fs::path(cfg.output_dir) / base.filename());
-        fmt::print("    hadd -f {} ", merged.string());
-        for (const auto& r : results) fmt::print("{} ", r.output_file);
-        fmt::print("\n");
-
+        fs::path merged_hipo;
         if (has_hipo_out) {
-            // hipo-utils ships a `hipo-merger` (or `hipo-utils -merge`)
-            // helper for the .hipo case. The user picks whichever they
-            // have in PATH; we just emit the slice list.
             const fs::path hipo_base{info.hipo_output_base};
-            fs::path merged_hipo = cfg.output_dir.empty()
+            merged_hipo = cfg.output_dir.empty()
                 ? hipo_base
                 : (fs::path(cfg.output_dir) / hipo_base.filename());
-            fmt::print("    # skim HIPO output — merge with hipo-utils:\n");
-            fmt::print("    hipo-utils -merge -o {} ", merged_hipo.string());
-            for (const auto& p : plans) {
-                fmt::print("{} ", p.hipo_output_file);
+        }
+
+        if (!cfg.automerge) {
+            fmt::print("All slices succeeded. To merge:\n");
+            fmt::print("    hadd -f {} ", merged.string());
+            for (const auto& r : results) { fmt::print("{} ", r.output_file); }
+            fmt::print("\n");
+            if (has_hipo_out) {
+                // hipo-utils ships a `hipo-merger` (or `hipo-utils -merge`)
+                // helper for the .hipo case. The user picks whichever they
+                // have in PATH; we just emit the slice list.
+                fmt::print("    # skim HIPO output — merge with hipo-utils:\n");
+                fmt::print("    hipo-utils -merge -o {} ", merged_hipo.string());
+                for (const auto& p : plans) { fmt::print("{} ", p.hipo_output_file); }
+                fmt::print("\n");
             }
             fmt::print("\n");
+        } else {
+            fmt::print("All slices succeeded. Auto-merging ...\n");
+            int merge_rc = 0;
+
+            // hadd -f <merged> <slice0> <slice1> ...
+            std::vector<std::string> hadd_args{"-f", merged.string()};
+            hadd_args.reserve(2 + results.size());
+            for (const auto& r : results) { hadd_args.push_back(r.output_file); }
+            fmt::print("[local_batch] $ hadd -f {} (+ {} slice files)\n",
+                       merged.string(), results.size());
+            int root_rc = run_command("hadd", hadd_args);
+            if (root_rc != 0) {
+                fmt::print(stderr,
+                    "[local_batch] hadd failed (exit {}); leaving slice files in place\n",
+                    root_rc);
+                merge_rc = root_rc;
+            } else {
+                fmt::print("[local_batch] ROOT merge OK → {}\n", merged.string());
+            }
+
+            if (has_hipo_out) {
+                // hipo-utils -merge -o <merged> <slice0> <slice1> ...
+                std::vector<std::string> hipo_args{"-merge", "-o", merged_hipo.string()};
+                hipo_args.reserve(3 + plans.size());
+                for (const auto& p : plans) { hipo_args.push_back(p.hipo_output_file); }
+                fmt::print("[local_batch] $ hipo-utils -merge -o {} (+ {} slice files)\n",
+                           merged_hipo.string(), plans.size());
+                int hipo_rc = run_command("hipo-utils", hipo_args);
+                if (hipo_rc != 0) {
+                    fmt::print(stderr,
+                        "[local_batch] hipo-utils -merge failed (exit {}); "
+                        "leaving slice files in place\n", hipo_rc);
+                    if (merge_rc == 0) { merge_rc = hipo_rc; }
+                } else {
+                    fmt::print("[local_batch] HIPO merge OK → {}\n", merged_hipo.string());
+                }
+            }
+
+            if (merge_rc != 0) { return EXIT_FAILURE; }
+            fmt::print("\n");
         }
-        fmt::print("\n");
     }
 
     return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
