@@ -225,6 +225,9 @@ class CuSnContaminationAlg : public framework::Algorithm {
             // Per-p-bin reconstructed-vz for the cut sample (diagnostic).
             m_pip.book_rec_pbins(*m_hist);
             m_pim.book_rec_pbins(*m_hist);
+            m_pim_nocuts.book_rec_pbins(*m_hist);
+            m_pip_nocuts.book_rec_pbins(*m_hist);
+
         }
         return StatusCode::SUCCESS();
     }
