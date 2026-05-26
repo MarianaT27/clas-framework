@@ -288,6 +288,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
         declare_species_histograms(m_pim_truth);
         declare_residual_histograms(m_pip_res);
         declare_residual_histograms(m_pim_res);
+        declare_residual_histograms(m_pip_res_truth);
+        declare_residual_histograms(m_pim_res_truth);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -375,6 +377,25 @@ class CuSnContaminationAlg : public framework::Algorithm {
                 }
             };
 
+            // Compute and fill residuals (Δp/p, Δφ, Δθ, Δvz) for one
+            // (rec particle, MC index) pair. Caller has already verified
+            // the MC match. Angles end up in degrees so they line up with
+            // Particle::theta()/phi() returned by the framework.
+            auto fill_residual = [&](const auto& rec_particle, int mc_idx,
+                                     ResidualHists& dst) {
+                const auto& mc_bank = event.get_bank("MC::Particle");
+                auto mc_px = static_cast<double>(mc_bank.getFloat("px", mc_idx));
+                auto mc_py = static_cast<double>(mc_bank.getFloat("py", mc_idx));
+                auto mc_pz = static_cast<double>(mc_bank.getFloat("pz", mc_idx));
+                auto mc_vz_track = static_cast<double>(mc_bank.getFloat("vz", mc_idx));
+                double mc_p_mag = std::sqrt((mc_px * mc_px) + (mc_py * mc_py) + (mc_pz * mc_pz));
+                double mc_pt = std::sqrt((mc_px * mc_px) + (mc_py * mc_py));
+                double mc_theta_deg = std::atan2(mc_pt, mc_pz) * 180.0 / M_PI;
+                double mc_phi_deg = std::atan2(mc_py, mc_px) * 180.0 / M_PI;
+                dst.fill(rec_particle.p(), rec_particle.theta(), rec_particle.phi(), rec_particle.vz(),
+                         mc_p_mag, mc_theta_deg, mc_phi_deg, mc_vz_track);
+            };
+
             auto pi_plus = event.pions_plus();
             for (auto p : pi_plus) {
                 // Check that the rec pion really came from a generated pion.
@@ -414,28 +435,16 @@ class CuSnContaminationAlg : public framework::Algorithm {
                     ResidualHists* res = nullptr;
                     if (mc_pid == 211) {
                         truth = &m_pip_truth;
-                        res = &m_pip_res;
+                        res = &m_pip_res_truth;
                     } else if (mc_pid == -211) {
                         truth = &m_pim_truth;
-                        res = &m_pim_res;
+                        res = &m_pim_res_truth;
                     } else {
                         continue;
                     }
                     truth->fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
                     truth->fill_rec_pbin(p.vz(), p.p());
-
-                    // Residuals (Δp/p, Δφ, Δθ, Δvz) in same units as rec
-                    // accessors (angles in deg, vz in cm).
-                    auto mc_px = static_cast<double>(MC_particles.getFloat("px", match.mc_index));
-                    auto mc_py = static_cast<double>(MC_particles.getFloat("py", match.mc_index));
-                    auto mc_pz = static_cast<double>(MC_particles.getFloat("pz", match.mc_index));
-                    auto mc_vz_track = static_cast<double>(MC_particles.getFloat("vz", match.mc_index));
-                    double mc_p_mag = std::sqrt((mc_px * mc_px) + (mc_py * mc_py) + (mc_pz * mc_pz));
-                    double mc_pt = std::sqrt((mc_px * mc_px) + (mc_py * mc_py));
-                    double mc_theta_deg = std::atan2(mc_pt, mc_pz) * 180.0 / M_PI;
-                    double mc_phi_deg = std::atan2(mc_py, mc_px) * 180.0 / M_PI;
-                    res->fill(p.p(), p.theta(), p.phi(), p.vz(),
-                              mc_p_mag, mc_theta_deg, mc_phi_deg, mc_vz_track);
+                    fill_residual(p, match.mc_index, *res);
                 }
             }
 
@@ -456,6 +465,12 @@ class CuSnContaminationAlg : public framework::Algorithm {
                     auto match = get_mc_particle_index_diag(event, pion.index(), 0.0f);
                     auto& slice = quality_slice(match.quality, m_pip_q_hi, m_pip_q_mid, m_pip_q_lo);
                     slice.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
+                    if (has_mc) {
+                        auto res_match = get_mc_particle_index_diag(event, pion.index());
+                        if (res_match.mc_index >= 0) {
+                            fill_residual(pion, res_match.mc_index, m_pip_res);
+                        }
+                    }
                 }
             }
             if (auto pim = event.retrieve_typed(framework::Keys::SelectedPiMinus)) {
@@ -466,6 +481,12 @@ class CuSnContaminationAlg : public framework::Algorithm {
                     auto match = get_mc_particle_index_diag(event, pion.index(), 0.0f);
                     auto& slice = quality_slice(match.quality, m_pim_q_hi, m_pim_q_mid, m_pim_q_lo);
                     slice.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
+                    if (has_mc) {
+                        auto res_match = get_mc_particle_index_diag(event, pion.index());
+                        if (res_match.mc_index >= 0) {
+                            fill_residual(pion, res_match.mc_index, m_pim_res);
+                        }
+                    }
                 }
             }
         }
@@ -506,9 +527,13 @@ class CuSnContaminationAlg : public framework::Algorithm {
     // by reconstruction as long as MC truth says they are pions.
     SpeciesHists m_pip_truth{"PiPlus_Truth"};
     SpeciesHists m_pim_truth{"PiMinus_Truth"};
-    // Reconstruction-vs-MC residuals for truth-matched pions (any rec pid).
+    // Reconstruction-vs-MC residuals. _res = cut sample (passes the pion
+    // selection in SelectedPiPlus/Minus). _res_truth = every rec track,
+    // any rec pid, whose MC match is a true pion.
     ResidualHists m_pip_res{"PiPlus"};
     ResidualHists m_pim_res{"PiMinus"};
+    ResidualHists m_pip_res_truth{"PiPlus_Truth"};
+    ResidualHists m_pim_res_truth{"PiMinus_Truth"};
 
     /// Queue every self-registering wrapper of one species for booking.
     auto declare_species_histograms(SpeciesHists& s) -> void {

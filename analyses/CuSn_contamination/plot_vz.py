@@ -500,10 +500,17 @@ RESIDUAL_VARS: tuple[tuple[str, str], ...] = (
 def plot_residuals_integrated(
     file_path: str = SIM_PATH,
     species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    species_suffix: str = "",
     density: bool = True,
     out_path: str = "residuals_integrated.pdf",
+    title: str = r"Reconstruction residuals (integrated, cut sample)",
 ):
-    """2x4 grid (rows = species, cols = vars): integrated residuals."""
+    """2x4 grid (rows = species, cols = vars): integrated residuals.
+
+    `species_suffix` selects the Residual sub-directory:
+      - "" (default): cut sample (rec pid pion AND passes the pion cuts)
+      - "_Truth": every rec track whose MC match is a true pion
+    """
     fig, axs = plt.subplots(
         len(species), len(RESIDUAL_VARS),
         figsize=(4 * len(RESIDUAL_VARS), 3.5 * len(species)),
@@ -513,7 +520,7 @@ def plot_residuals_integrated(
         for i, sp in enumerate(species):
             for j, (var, xlabel) in enumerate(RESIDUAL_VARS):
                 ax = axs[i][j]
-                h = f[f"Residual/{sp}/{var}"]
+                h = f[f"Residual/{sp}{species_suffix}/{var}"]
                 hep.histplot(
                     h.to_numpy(), ax=ax, histtype="step",
                     color="tab:blue", density=density,
@@ -525,7 +532,7 @@ def plot_residuals_integrated(
                     rf"{SPECIES_LABEL.get(sp, sp)}    " + ("PDF" if density else "Counts")
                     if j == 0 else ("PDF" if density else "Counts")
                 )
-    fig.suptitle(r"Reconstruction residuals (integrated)")
+    fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
 
@@ -533,11 +540,16 @@ def plot_residuals_integrated(
 def plot_residuals_vs_p(
     file_path: str = SIM_PATH,
     species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    species_suffix: str = "",
     p_edges: tuple[float, ...] = tuple(np.arange(0.0, 6.5, 0.5)),
     density: bool = True,
     out_path: str = "residuals_vs_p.pdf",
+    title: str = r"Reconstruction residuals by $p$ bin (cut sample)",
 ):
-    """2x4 grid; each cell overlays one residual per p slice (12 lines)."""
+    """2x4 grid; each cell overlays one residual per p slice (12 lines).
+
+    `species_suffix`: "" = cut sample (default); "_Truth" = truth-matched pions.
+    """
     bins = list(zip(p_edges[:-1], p_edges[1:]))
     colors = _bin_colors(len(bins))
     fig, axs = plt.subplots(
@@ -549,7 +561,7 @@ def plot_residuals_vs_p(
         for i, sp in enumerate(species):
             for j, (var, xlabel) in enumerate(RESIDUAL_VARS):
                 ax = axs[i][j]
-                h2 = f[f"Residual/{sp}/{var}_vs_p"]
+                h2 = f[f"Residual/{sp}{species_suffix}/{var}_vs_p"]
                 slices = _project_2d_slices(
                     h2, list(bins), residual_axis="y", density=density,
                 )
@@ -567,7 +579,7 @@ def plot_residuals_vs_p(
                     if j == 0 else ("PDF" if density else "Counts")
                 )
                 ax.legend(fontsize=6, ncol=1, loc="best")
-    fig.suptitle(r"Reconstruction residuals by $p$ bin")
+    fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
 
@@ -575,13 +587,18 @@ def plot_residuals_vs_p(
 def plot_residuals_vs_theta(
     file_path: str = SIM_PATH,
     species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    species_suffix: str = "",
     theta_min: float = 5.0,
     theta_max: float = 35.0,
     theta_step: float = 5.0,
     density: bool = True,
     out_path: str = "residuals_vs_theta.pdf",
+    title: str = r"Reconstruction residuals by $\theta$ bin (cut sample)",
 ):
-    """2x4 grid; each cell overlays one residual per theta slice (6 lines)."""
+    """2x4 grid; each cell overlays one residual per theta slice (6 lines).
+
+    `species_suffix`: "" = cut sample (default); "_Truth" = truth-matched pions.
+    """
     edges = np.arange(theta_min, theta_max + 1e-9, theta_step)
     slices = list(zip(edges[:-1], edges[1:]))
     cmap = mpl.cm.tab10
@@ -595,7 +612,7 @@ def plot_residuals_vs_theta(
         for i, sp in enumerate(species):
             for j, (var, xlabel) in enumerate(RESIDUAL_VARS):
                 ax = axs[i][j]
-                h2 = f[f"Residual/{sp}/{var}_vs_theta"]
+                h2 = f[f"Residual/{sp}{species_suffix}/{var}_vs_theta"]
                 projections = _project_2d_slices(
                     h2, list(slices), residual_axis="y",
                     slice_unit_hint="theta_deg", density=density,
@@ -614,7 +631,7 @@ def plot_residuals_vs_theta(
                     if j == 0 else ("PDF" if density else "Counts")
                 )
                 ax.legend(fontsize=6, ncol=1, loc="best")
-    fig.suptitle(r"Reconstruction residuals by $\theta$ bin")
+    fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
 
@@ -641,3 +658,18 @@ if __name__ == "__main__":
     plot_residuals_integrated()
     plot_residuals_vs_p()
     plot_residuals_vs_theta()
+    plot_residuals_integrated(
+        species_suffix="_Truth",
+        out_path="residuals_integrated_truth.pdf",
+        title=r"Reconstruction residuals (integrated, truth pions any rec pid)",
+    )
+    plot_residuals_vs_p(
+        species_suffix="_Truth",
+        out_path="residuals_vs_p_truth.pdf",
+        title=r"Reconstruction residuals by $p$ bin (truth pions any rec pid)",
+    )
+    plot_residuals_vs_theta(
+        species_suffix="_Truth",
+        out_path="residuals_vs_theta_truth.pdf",
+        title=r"Reconstruction residuals by $\theta$ bin (truth pions any rec pid)",
+    )
