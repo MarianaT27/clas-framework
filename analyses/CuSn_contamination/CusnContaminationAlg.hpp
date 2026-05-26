@@ -266,10 +266,10 @@ class CuSnContaminationAlg : public framework::Algorithm {
         if (!electron_opt) return StatusCode::FILTERED();
 
         if (m_config.enable_histograms) {
-            m_e.fill_rec(electron_opt->vz(), electron_opt->theta() * Constants::RAD_TO_DEG, mc_vz, has_mc);
+            m_e.fill_rec(electron_opt->vz(), electron_opt->theta(), mc_vz, has_mc);
 
             auto electron = event.find_trigger_electron();
-            if (electron) m_e_nocuts.fill_rec(electron->vz(), electron->theta() * Constants::RAD_TO_DEG, mc_vz, has_mc);
+            if (electron) m_e_nocuts.fill_rec(electron->vz(), electron->theta(), mc_vz, has_mc);
 
             // Bounded one-shot diagnostic for the MC matching path. The
             // first few hundred pions across the run get a one-line
@@ -299,7 +299,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
                 debug_match("pi+", p.index(), match);
                 if (match.mc_index >= 0) {
                     int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
-                    if (pid == 211) m_pip_nocuts.fill_rec(p.vz(), p.theta() * Constants::RAD_TO_DEG, mc_vz, has_mc);
+                    if (pid == 211) m_pip_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
                 }
             }
             auto pi_minus = event.pions_minus();
@@ -308,7 +308,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
                 debug_match("pi-", p.index(), match);
                 if (match.mc_index >= 0) {
                     int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
-                    if (pid == -211) m_pim_nocuts.fill_rec(p.vz(), p.theta() * Constants::RAD_TO_DEG, mc_vz, has_mc);
+                    if (pid == -211) m_pim_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
                 }
             }
 
