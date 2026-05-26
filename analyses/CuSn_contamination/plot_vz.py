@@ -293,8 +293,9 @@ def _project_2d_slices(
 
 THREE_WAY_CATEGORIES: tuple[tuple[str, str], ...] = (
     ("A", "Cut sample"),
-    ("B", "No cuts (MC pid)"),
-    ("C", "MC truth"),
+    ("B", "Rec pions (MC pid)"),
+    ("C", "Truth pions (any rec pid)"),
+    ("D", "MC truth"),
 )
 
 
@@ -304,11 +305,12 @@ def plot_vz_three_way_integrated(
     density: bool = True,
     out_path: str = "vz_three_way_integrated.pdf",
 ):
-    """Overlay integrated vz for the three pion categories per species."""
+    """Overlay integrated vz for the four pion populations per species."""
     styles = {
-        "A": ("Cut sample",       "tab:blue",   "-"),
-        "B": ("No cuts (MC pid)", "tab:orange", "-"),
-        "C": ("MC truth",         "black",      "--"),
+        "A": ("Cut sample",                "tab:blue",   "-"),
+        "B": ("Rec pions (MC pid)",        "tab:orange", "-"),
+        "C": ("Truth pions (any rec pid)", "tab:green",  "-"),
+        "D": ("MC truth",                  "black",      "--"),
     }
 
     fig, axs = plt.subplots(1, len(species), figsize=(5 * len(species), 5), squeeze=False)
@@ -319,7 +321,8 @@ def plot_vz_three_way_integrated(
             sources = {
                 "A": f[f"Data/{sp}/vz_CuSn"],
                 "B": f[f"Data/{sp}_NoCuts/vz_CuSn"],
-                "C": f[f"MC/{sp}/vz"],
+                "C": f[f"Data/{sp}_Truth/vz_CuSn"],
+                "D": f[f"MC/{sp}/vz"],
             }
             for tag, h in sources.items():
                 lbl, color, ls = styles[tag]
@@ -332,7 +335,7 @@ def plot_vz_three_way_integrated(
             ax.set_ylabel("PDF" if density else "Counts")
             ax.legend(fontsize=9, loc="best")
 
-    fig.suptitle(r"Integrated $v_z$: three-way comparison")
+    fig.suptitle(r"Integrated $v_z$: four-way comparison")
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
 
@@ -349,7 +352,6 @@ def plot_vz_three_way_p(
     cmap = mpl.cm.viridis
     colors = [cmap(i / max(1, len(bins) - 1)) for i in range(len(bins))]
 
-    col_titles = [lbl for _, lbl in THREE_WAY_CATEGORIES]
     n_cols = len(THREE_WAY_CATEGORIES)
     fig, axs = plt.subplots(
         len(species), n_cols,
@@ -357,33 +359,33 @@ def plot_vz_three_way_p(
         squeeze=False,
     )
 
+    rec_base_dirs = {
+        "A": lambda sp: f"Data/{sp}",
+        "B": lambda sp: f"Data/{sp}_NoCuts",
+        "C": lambda sp: f"Data/{sp}_Truth",
+    }
+
     with uproot.open(file_path) as f:
         for i, sp in enumerate(species):
-            # Pre-project the MC-truth 2D once per species.
-            cat_c_slices = _project_2d_slices(
+            # MC truth is a 2D (p, vz) histogram — project once per species.
+            cat_d_slices = _project_2d_slices(
                 f[f"MC/{sp}/vz_vs_p"], list(bins), density=density,
             )
             for j, (tag, lbl) in enumerate(THREE_WAY_CATEGORIES):
                 ax = axs[i][j]
                 for k, ((p_lo, p_hi), color) in enumerate(zip(bins, colors)):
                     legend = rf"${p_lo:.1f} \leq p < {p_hi:.1f}$ GeV"
-                    if tag == "A":
-                        h = f[f"Data/{sp}/vz_p{_fmt_edge(p_lo)}_{_fmt_edge(p_hi)}"]
-                        hep.histplot(
-                            h.to_numpy(), ax=ax, label=legend,
-                            color=color, histtype="step", density=density,
-                        )
-                    elif tag == "B":
-                        h = f[f"Data/{sp}_NoCuts/vz_p{_fmt_edge(p_lo)}_{_fmt_edge(p_hi)}"]
-                        hep.histplot(
-                            h.to_numpy(), ax=ax, label=legend,
-                            color=color, histtype="step", density=density,
-                        )
-                    else:  # C
-                        proj, vz_edges = cat_c_slices[k]
+                    if tag == "D":
+                        proj, vz_edges = cat_d_slices[k]
                         hep.histplot(
                             (proj, vz_edges), ax=ax, label=legend,
                             color=color, histtype="step",
+                        )
+                    else:
+                        h = f[f"{rec_base_dirs[tag](sp)}/vz_p{_fmt_edge(p_lo)}_{_fmt_edge(p_hi)}"]
+                        hep.histplot(
+                            h.to_numpy(), ax=ax, label=legend,
+                            color=color, histtype="step", density=density,
                         )
 
                 if i == 0:
@@ -395,7 +397,7 @@ def plot_vz_three_way_p(
                     ax.set_ylabel("PDF" if density else "Counts")
                 ax.legend(fontsize=7, ncol=1, loc="best")
 
-    fig.suptitle(r"$v_z$ by momentum bin: three-way comparison")
+    fig.suptitle(r"$v_z$ by momentum bin: four-way comparison")
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
 
@@ -427,7 +429,8 @@ def plot_vz_three_way_theta(
             cell_paths = {
                 "A": f[f"MC/{sp}/vz_CuSn_vs_theta"],
                 "B": f[f"MC/{sp}_NoCuts/vz_CuSn_vs_theta"],
-                "C": f[f"MC/{sp}/vz_vs_theta"],
+                "C": f[f"MC/{sp}_Truth/vz_CuSn_vs_theta"],
+                "D": f[f"MC/{sp}/vz_vs_theta"],
             }
             cell_projections = {
                 tag: _project_2d_slices(h2, list(slices),
@@ -452,7 +455,7 @@ def plot_vz_three_way_theta(
                     ax.set_ylabel("PDF" if density else "Counts")
                 ax.legend(fontsize=7, ncol=1, loc="best")
 
-    fig.suptitle(r"$v_z$ by $\theta$ bin: three-way comparison")
+    fig.suptitle(r"$v_z$ by $\theta$ bin: four-way comparison")
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
 

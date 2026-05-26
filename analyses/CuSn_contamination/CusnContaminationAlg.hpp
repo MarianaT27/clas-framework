@@ -215,6 +215,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
         declare_species_histograms(m_pim_q_hi);
         declare_species_histograms(m_pim_q_mid);
         declare_species_histograms(m_pim_q_lo);
+        declare_species_histograms(m_pip_truth);
+        declare_species_histograms(m_pim_truth);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -233,7 +235,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
             m_pim.book_rec_pbins(*m_hist);
             m_pim_nocuts.book_rec_pbins(*m_hist);
             m_pip_nocuts.book_rec_pbins(*m_hist);
-
+            m_pip_truth.book_rec_pbins(*m_hist);
+            m_pim_truth.book_rec_pbins(*m_hist);
         }
         return StatusCode::SUCCESS();
     }
@@ -327,6 +330,25 @@ class CuSnContaminationAlg : public framework::Algorithm {
                 }
             }
 
+            // Truth-pion sample: every rec track (any rec pid) whose MC
+            // match is a true pion. Catches pions that the reconstruction
+            // mis-PIDs as e.g. kaon or proton.
+            if (has_mc) {
+                const auto& MC_particles = event.get_bank("MC::Particle");
+                for (const auto& p : event.all_particles()) {
+                    auto match = get_mc_particle_index_diag(event, p.index());
+                    if (match.mc_index < 0) { continue; }
+                    int mc_pid = MC_particles.getInt("pid", match.mc_index);
+                    if (mc_pid == 211) {
+                        m_pip_truth.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
+                        m_pip_truth.fill_rec_pbin(p.vz(), p.p());
+                    } else if (mc_pid == -211) {
+                        m_pim_truth.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
+                        m_pim_truth.fill_rec_pbin(p.vz(), p.p());
+                    }
+                }
+            }
+
             // Bucket each selected pion by MC-match quality to diagnose
             // where the cut-sample broadening comes from. min_quality=0
             // so the actual quality is always returned; we bucket here.
@@ -388,6 +410,12 @@ class CuSnContaminationAlg : public framework::Algorithm {
     SpeciesHists m_pim_q_hi{"PiMinus_QHi"};
     SpeciesHists m_pim_q_mid{"PiMinus_QMid"};
     SpeciesHists m_pim_q_lo{"PiMinus_QLo"};
+    // Truth-pion samples: rec vz for every rec track (any rec pid) whose
+    // MC match is a true pion. Broader than _NoCuts (which requires rec
+    // pid == pion AND mc pid == pion); _Truth keeps tracks mis-identified
+    // by reconstruction as long as MC truth says they are pions.
+    SpeciesHists m_pip_truth{"PiPlus_Truth"};
+    SpeciesHists m_pim_truth{"PiMinus_Truth"};
 
     /// Queue every self-registering wrapper of one species for booking.
     auto declare_species_histograms(SpeciesHists& s) -> void {
