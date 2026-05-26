@@ -187,6 +187,75 @@ struct SpeciesHists {
 };
 
 /**
+ * @brief Reconstruction-vs-MC residuals for one species.
+ *
+ * Booked once per pion species (pi+, pi-). All histograms live under
+ * `/Residual/<species>/`. Residual conventions:
+ *   - dp/p = (p_rec - p_mc) / p_mc          (dimensionless)
+ *   - dphi = (phi_rec - phi_mc) wrapped to [-180, 180]  (deg)
+ *   - dtheta = theta_rec - theta_mc          (deg)
+ *   - dvz   = vz_rec - vz_mc                 (cm)
+ * Per quantity: an integrated 1-D and two 2-D (vs rec p, vs rec theta).
+ */
+struct ResidualHists {
+    explicit ResidualHists(std::string species)
+        : m_species(std::move(species)),
+          h_dp_over_p{"/Residual/" + m_species + "/dp_over_p", "#Delta p/p;#Delta p/p;Events", -0.5, 0.5, 100},
+          h_dphi{"/Residual/" + m_species + "/dphi", "#Delta #phi;#Delta #phi [deg];Events", -10.0, 10.0, 100},
+          h_dtheta{"/Residual/" + m_species + "/dtheta", "#Delta #theta;#Delta #theta [deg];Events", -5.0, 5.0, 100},
+          h_dvz{"/Residual/" + m_species + "/dvz", "#Delta v_{z};#Delta v_{z} [cm];Events", -5.0, 5.0, 100},
+          h_dp_over_p_vs_p{"/Residual/" + m_species + "/dp_over_p_vs_p", "#Delta p/p vs p;p [GeV];#Delta p/p", 0.0, 10.0, 50, -0.5, 0.5, 100},
+          h_dphi_vs_p{"/Residual/" + m_species + "/dphi_vs_p", "#Delta #phi vs p;p [GeV];#Delta #phi [deg]", 0.0, 10.0, 50, -10.0, 10.0, 100},
+          h_dtheta_vs_p{"/Residual/" + m_species + "/dtheta_vs_p", "#Delta #theta vs p;p [GeV];#Delta #theta [deg]", 0.0, 10.0, 50, -5.0, 5.0, 100},
+          h_dvz_vs_p{"/Residual/" + m_species + "/dvz_vs_p", "#Delta v_{z} vs p;p [GeV];#Delta v_{z} [cm]", 0.0, 10.0, 50, -5.0, 5.0, 100},
+          h_dp_over_p_vs_theta{"/Residual/" + m_species + "/dp_over_p_vs_theta", "#Delta p/p vs #theta;#theta [deg];#Delta p/p", 0.0, 40.0, 50, -0.5, 0.5, 100},
+          h_dphi_vs_theta{"/Residual/" + m_species + "/dphi_vs_theta", "#Delta #phi vs #theta;#theta [deg];#Delta #phi [deg]", 0.0, 40.0, 50, -10.0, 10.0, 100},
+          h_dtheta_vs_theta{"/Residual/" + m_species + "/dtheta_vs_theta", "#Delta #theta vs #theta;#theta [deg];#Delta #theta [deg]", 0.0, 40.0, 50, -5.0, 5.0, 100},
+          h_dvz_vs_theta{"/Residual/" + m_species + "/dvz_vs_theta", "#Delta v_{z} vs #theta;#theta [deg];#Delta v_{z} [cm]", 0.0, 40.0, 50, -5.0, 5.0, 100} {}
+
+    std::string m_species;
+    framework::Hist1<> h_dp_over_p;
+    framework::Hist1<> h_dphi;
+    framework::Hist1<> h_dtheta;
+    framework::Hist1<> h_dvz;
+    framework::Hist2<> h_dp_over_p_vs_p;
+    framework::Hist2<> h_dphi_vs_p;
+    framework::Hist2<> h_dtheta_vs_p;
+    framework::Hist2<> h_dvz_vs_p;
+    framework::Hist2<> h_dp_over_p_vs_theta;
+    framework::Hist2<> h_dphi_vs_theta;
+    framework::Hist2<> h_dtheta_vs_theta;
+    framework::Hist2<> h_dvz_vs_theta;
+
+    /// Fill all residual histograms for one (rec, mc) pair. Angles in degrees.
+    auto fill(double p_rec, double theta_rec, double phi_rec, double vz_rec,
+              double p_mc, double theta_mc, double phi_mc, double vz_mc) -> void {
+        if (p_mc <= 0.0) { return; }
+        double dp_over_p = (p_rec - p_mc) / p_mc;
+        double dphi = phi_rec - phi_mc;
+        while (dphi > 180.0) { dphi -= 360.0; }
+        while (dphi < -180.0) { dphi += 360.0; }
+        double dtheta = theta_rec - theta_mc;
+        double dvz = vz_rec - vz_mc;
+
+        h_dp_over_p.fill(dp_over_p);
+        h_dphi.fill(dphi);
+        h_dtheta.fill(dtheta);
+        h_dvz.fill(dvz);
+
+        h_dp_over_p_vs_p.fill(p_rec, dp_over_p);
+        h_dphi_vs_p.fill(p_rec, dphi);
+        h_dtheta_vs_p.fill(p_rec, dtheta);
+        h_dvz_vs_p.fill(p_rec, dvz);
+
+        h_dp_over_p_vs_theta.fill(theta_rec, dp_over_p);
+        h_dphi_vs_theta.fill(theta_rec, dphi);
+        h_dtheta_vs_theta.fill(theta_rec, dtheta);
+        h_dvz_vs_theta.fill(theta_rec, dvz);
+    }
+};
+
+/**
  * @brief Algorithm for Cu/Sn contamination analysis
  */
 class CuSnContaminationAlg : public framework::Algorithm {
@@ -217,6 +286,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
         declare_species_histograms(m_pim_q_lo);
         declare_species_histograms(m_pip_truth);
         declare_species_histograms(m_pim_truth);
+        declare_residual_histograms(m_pip_res);
+        declare_residual_histograms(m_pim_res);
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -339,13 +410,32 @@ class CuSnContaminationAlg : public framework::Algorithm {
                     auto match = get_mc_particle_index_diag(event, p.index());
                     if (match.mc_index < 0) { continue; }
                     int mc_pid = MC_particles.getInt("pid", match.mc_index);
+                    SpeciesHists* truth = nullptr;
+                    ResidualHists* res = nullptr;
                     if (mc_pid == 211) {
-                        m_pip_truth.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
-                        m_pip_truth.fill_rec_pbin(p.vz(), p.p());
+                        truth = &m_pip_truth;
+                        res = &m_pip_res;
                     } else if (mc_pid == -211) {
-                        m_pim_truth.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
-                        m_pim_truth.fill_rec_pbin(p.vz(), p.p());
+                        truth = &m_pim_truth;
+                        res = &m_pim_res;
+                    } else {
+                        continue;
                     }
+                    truth->fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
+                    truth->fill_rec_pbin(p.vz(), p.p());
+
+                    // Residuals (Δp/p, Δφ, Δθ, Δvz) in same units as rec
+                    // accessors (angles in deg, vz in cm).
+                    auto mc_px = static_cast<double>(MC_particles.getFloat("px", match.mc_index));
+                    auto mc_py = static_cast<double>(MC_particles.getFloat("py", match.mc_index));
+                    auto mc_pz = static_cast<double>(MC_particles.getFloat("pz", match.mc_index));
+                    auto mc_vz_track = static_cast<double>(MC_particles.getFloat("vz", match.mc_index));
+                    double mc_p_mag = std::sqrt((mc_px * mc_px) + (mc_py * mc_py) + (mc_pz * mc_pz));
+                    double mc_pt = std::sqrt((mc_px * mc_px) + (mc_py * mc_py));
+                    double mc_theta_deg = std::atan2(mc_pt, mc_pz) * 180.0 / M_PI;
+                    double mc_phi_deg = std::atan2(mc_py, mc_px) * 180.0 / M_PI;
+                    res->fill(p.p(), p.theta(), p.phi(), p.vz(),
+                              mc_p_mag, mc_theta_deg, mc_phi_deg, mc_vz_track);
                 }
             }
 
@@ -416,6 +506,9 @@ class CuSnContaminationAlg : public framework::Algorithm {
     // by reconstruction as long as MC truth says they are pions.
     SpeciesHists m_pip_truth{"PiPlus_Truth"};
     SpeciesHists m_pim_truth{"PiMinus_Truth"};
+    // Reconstruction-vs-MC residuals for truth-matched pions (any rec pid).
+    ResidualHists m_pip_res{"PiPlus"};
+    ResidualHists m_pim_res{"PiMinus"};
 
     /// Queue every self-registering wrapper of one species for booking.
     auto declare_species_histograms(SpeciesHists& s) -> void {
@@ -423,6 +516,14 @@ class CuSnContaminationAlg : public framework::Algorithm {
                            s.h_vz_CuSn, s.h_rec_vz_Cu, s.h_rec_vz_Sn, s.h_rec_vz_CuSn,
                            s.h_vz_vs_theta, s.h_vz_vs_p,
                            s.h_vz_Cu_vs_theta, s.h_vz_Sn_vs_theta, s.h_vz_CuSn_vs_theta);
+    }
+
+    /// Queue every residual-histogram wrapper of one species for booking.
+    auto declare_residual_histograms(ResidualHists& r) -> void {
+        declare_histograms(r.h_dp_over_p, r.h_dphi, r.h_dtheta, r.h_dvz,
+                           r.h_dp_over_p_vs_p, r.h_dphi_vs_p, r.h_dtheta_vs_p, r.h_dvz_vs_p,
+                           r.h_dp_over_p_vs_theta, r.h_dphi_vs_theta,
+                           r.h_dtheta_vs_theta, r.h_dvz_vs_theta);
     }
 };
 

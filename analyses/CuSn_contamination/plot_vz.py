@@ -262,46 +262,62 @@ def plot_vz_per_p_bin(
 def _project_2d_slices(
     h2,
     slice_edges: list[tuple[float, float]],
+    residual_axis: str = "auto",
     slice_unit_hint: str | None = None,
     density: bool = True,
 ) -> list[tuple[np.ndarray, np.ndarray]]:
-    """Project a 2-D (binning x vz) uproot histogram onto vz for each slice.
+    """Project a 2-D (binning x residual) uproot histogram onto residual per slice.
 
-    The vz axis is auto-detected by its negative range. When `slice_unit_hint`
-    is "theta_deg" and the histogram's binning axis turns out to be in
-    radians (max < 6.5), the slice edges are converted from deg to rad.
+    `residual_axis` selects which axis holds the projected quantity:
+      - "auto" (default): infer by which axis has min < -1.0 (works for vz).
+      - "x": x axis holds the residual; y axis is the binning.
+      - "y": y axis holds the residual; x axis is the binning.
+
+    Use "y" for the Residual/* 2-D histograms — Δp/p has |range| < 1
+    so the auto-detect can't tell which axis is the residual.
+
+    `slice_unit_hint="theta_deg"` converts deg slice edges to rad when the
+    histogram's binning axis turns out to be in radians.
     """
     values, xedges, yedges = h2.to_numpy()
-    x_is_vz = xedges.min() < -1.0
-    y_is_vz = yedges.min() < -1.0
-    if x_is_vz and not y_is_vz:
-        bin_edges, vz_edges = yedges, xedges
+    if residual_axis == "auto":
+        x_is_res = xedges.min() < -1.0
+        y_is_res = yedges.min() < -1.0
+        if x_is_res and not y_is_res:
+            residual_axis = "x"
+        elif y_is_res and not x_is_res:
+            residual_axis = "y"
+        else:
+            raise RuntimeError(
+                f"Cannot identify residual axis: "
+                f"xedges=[{xedges.min():.3g},{xedges.max():.3g}] "
+                f"yedges=[{yedges.min():.3g},{yedges.max():.3g}]"
+            )
+
+    if residual_axis == "x":
+        bin_edges, res_edges = yedges, xedges
         vals = values.T
-    elif y_is_vz and not x_is_vz:
-        bin_edges, vz_edges = xedges, yedges
+    elif residual_axis == "y":
+        bin_edges, res_edges = xedges, yedges
         vals = values
     else:
-        raise RuntimeError(
-            f"Cannot identify vz axis: "
-            f"xedges=[{xedges.min():.3g},{xedges.max():.3g}] "
-            f"yedges=[{yedges.min():.3g},{yedges.max():.3g}]"
-        )
+        raise ValueError(f"residual_axis must be 'auto', 'x', or 'y' (got {residual_axis!r})")
 
     if slice_unit_hint == "theta_deg" and bin_edges.max() < 6.5:
         slice_edges = [(np.deg2rad(lo), np.deg2rad(hi)) for lo, hi in slice_edges]
 
     out: list[tuple[np.ndarray, np.ndarray]] = []
-    widths = np.diff(vz_edges)
+    widths = np.diff(res_edges)
     for lo, hi in slice_edges:
         i_lo = np.searchsorted(bin_edges, lo, side="left")
         i_hi = np.searchsorted(bin_edges, hi, side="left")
         if i_hi <= i_lo:
-            out.append((np.zeros(len(vz_edges) - 1), vz_edges))
+            out.append((np.zeros(len(res_edges) - 1), res_edges))
             continue
         proj = vals[i_lo:i_hi, :].sum(axis=0)
         if density and proj.sum() > 0:
             proj = proj / (proj.sum() * widths)
-        out.append((proj, vz_edges))
+        out.append((proj, res_edges))
     return out
 
 
@@ -473,6 +489,136 @@ def plot_vz_three_way_theta(
     fig.savefig(out_path, bbox_inches="tight")
 
 
+RESIDUAL_VARS: tuple[tuple[str, str], ...] = (
+    ("dp_over_p", r"$\Delta p / p$"),
+    ("dphi",      r"$\Delta \phi$ [deg]"),
+    ("dtheta",    r"$\Delta \theta$ [deg]"),
+    ("dvz",       r"$\Delta v_z$ [cm]"),
+)
+
+
+def plot_residuals_integrated(
+    file_path: str = SIM_PATH,
+    species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    density: bool = True,
+    out_path: str = "residuals_integrated.pdf",
+):
+    """2x4 grid (rows = species, cols = vars): integrated residuals."""
+    fig, axs = plt.subplots(
+        len(species), len(RESIDUAL_VARS),
+        figsize=(4 * len(RESIDUAL_VARS), 3.5 * len(species)),
+        squeeze=False,
+    )
+    with uproot.open(file_path) as f:
+        for i, sp in enumerate(species):
+            for j, (var, xlabel) in enumerate(RESIDUAL_VARS):
+                ax = axs[i][j]
+                h = f[f"Residual/{sp}/{var}"]
+                hep.histplot(
+                    h.to_numpy(), ax=ax, histtype="step",
+                    color="tab:blue", density=density,
+                )
+                if i == 0:
+                    ax.set_title(xlabel)
+                ax.set_xlabel(xlabel)
+                ax.set_ylabel(
+                    rf"{SPECIES_LABEL.get(sp, sp)}    " + ("PDF" if density else "Counts")
+                    if j == 0 else ("PDF" if density else "Counts")
+                )
+    fig.suptitle(r"Reconstruction residuals (integrated)")
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+
+
+def plot_residuals_vs_p(
+    file_path: str = SIM_PATH,
+    species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    p_edges: tuple[float, ...] = tuple(np.arange(0.0, 6.5, 0.5)),
+    density: bool = True,
+    out_path: str = "residuals_vs_p.pdf",
+):
+    """2x4 grid; each cell overlays one residual per p slice (12 lines)."""
+    bins = list(zip(p_edges[:-1], p_edges[1:]))
+    colors = _bin_colors(len(bins))
+    fig, axs = plt.subplots(
+        len(species), len(RESIDUAL_VARS),
+        figsize=(4 * len(RESIDUAL_VARS), 3.5 * len(species)),
+        squeeze=False,
+    )
+    with uproot.open(file_path) as f:
+        for i, sp in enumerate(species):
+            for j, (var, xlabel) in enumerate(RESIDUAL_VARS):
+                ax = axs[i][j]
+                h2 = f[f"Residual/{sp}/{var}_vs_p"]
+                slices = _project_2d_slices(
+                    h2, list(bins), residual_axis="y", density=density,
+                )
+                for (p_lo, p_hi), color, (proj, edges) in zip(bins, colors, slices):
+                    hep.histplot(
+                        (proj, edges), ax=ax,
+                        label=rf"${p_lo:.1f} \leq p < {p_hi:.1f}$",
+                        color=color, histtype="step",
+                    )
+                if i == 0:
+                    ax.set_title(xlabel)
+                ax.set_xlabel(xlabel)
+                ax.set_ylabel(
+                    rf"{SPECIES_LABEL.get(sp, sp)}    " + ("PDF" if density else "Counts")
+                    if j == 0 else ("PDF" if density else "Counts")
+                )
+                ax.legend(fontsize=6, ncol=1, loc="best")
+    fig.suptitle(r"Reconstruction residuals by $p$ bin")
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+
+
+def plot_residuals_vs_theta(
+    file_path: str = SIM_PATH,
+    species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    theta_min: float = 5.0,
+    theta_max: float = 35.0,
+    theta_step: float = 5.0,
+    density: bool = True,
+    out_path: str = "residuals_vs_theta.pdf",
+):
+    """2x4 grid; each cell overlays one residual per theta slice (6 lines)."""
+    edges = np.arange(theta_min, theta_max + 1e-9, theta_step)
+    slices = list(zip(edges[:-1], edges[1:]))
+    cmap = mpl.cm.tab10
+    colors = [cmap(i % 10) for i in range(len(slices))]
+    fig, axs = plt.subplots(
+        len(species), len(RESIDUAL_VARS),
+        figsize=(4 * len(RESIDUAL_VARS), 3.5 * len(species)),
+        squeeze=False,
+    )
+    with uproot.open(file_path) as f:
+        for i, sp in enumerate(species):
+            for j, (var, xlabel) in enumerate(RESIDUAL_VARS):
+                ax = axs[i][j]
+                h2 = f[f"Residual/{sp}/{var}_vs_theta"]
+                projections = _project_2d_slices(
+                    h2, list(slices), residual_axis="y",
+                    slice_unit_hint="theta_deg", density=density,
+                )
+                for (t_lo, t_hi), color, (proj, edges_res) in zip(slices, colors, projections):
+                    hep.histplot(
+                        (proj, edges_res), ax=ax,
+                        label=rf"${t_lo:.0f} \leq \theta < {t_hi:.0f}^\circ$",
+                        color=color, histtype="step",
+                    )
+                if i == 0:
+                    ax.set_title(xlabel)
+                ax.set_xlabel(xlabel)
+                ax.set_ylabel(
+                    rf"{SPECIES_LABEL.get(sp, sp)}    " + ("PDF" if density else "Counts")
+                    if j == 0 else ("PDF" if density else "Counts")
+                )
+                ax.legend(fontsize=6, ncol=1, loc="best")
+    fig.suptitle(r"Reconstruction residuals by $\theta$ bin")
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+
+
 if __name__ == "__main__":
     main()
     plot_vz_theta_slices()
@@ -492,3 +638,6 @@ if __name__ == "__main__":
     plot_vz_three_way_integrated()
     plot_vz_three_way_p()
     plot_vz_three_way_theta()
+    plot_residuals_integrated()
+    plot_residuals_vs_p()
+    plot_residuals_vs_theta()
