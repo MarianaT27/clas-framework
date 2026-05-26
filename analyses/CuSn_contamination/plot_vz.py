@@ -35,6 +35,21 @@ def _fmt_edge(v: float) -> str:
     return f"{v:.1f}".replace(".", "p")
 
 
+# tab10 (10 hex codes) + black + saddle-brown so adjacent lines stay readable
+# for up to 12 bins (viridis washes out at the bright end).
+_BIN_PALETTE: list[str] = [
+    "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+    "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+    "#000000", "#8B4513",
+]
+
+
+def _bin_colors(n: int) -> list[str]:
+    if n <= len(_BIN_PALETTE):
+        return _BIN_PALETTE[:n]
+    raise ValueError(f"_bin_colors only supports up to {len(_BIN_PALETTE)} bins (asked for {n})")
+
+
 def main():
     with uproot.open(SIM_PATH) as f:
         h_pim_sn, h_pim_cu = f[PION_SIM_VZ_HIST["pim"][0]], f[PION_SIM_VZ_HIST["pim"][1]]
@@ -218,8 +233,7 @@ def plot_vz_per_p_bin(
     `CuSnContamination::fmt_p_edge`.
     """
     bins = list(zip(p_edges[:-1], p_edges[1:]))
-    cmap = mpl.cm.viridis
-    colors = [cmap(i / max(1, len(bins) - 1)) for i in range(len(bins))]
+    colors = _bin_colors(len(bins))
 
     fig, axs = plt.subplots(1, len(species), figsize=(5 * len(species), 5), squeeze=False)
     axs = axs[0]
@@ -349,8 +363,7 @@ def plot_vz_three_way_p(
 ):
     """Per-species grid (rows) x category (cols); overlay vz per p bin in each cell."""
     bins = list(zip(p_edges[:-1], p_edges[1:]))
-    cmap = mpl.cm.viridis
-    colors = [cmap(i / max(1, len(bins) - 1)) for i in range(len(bins))]
+    colors = _bin_colors(len(bins))
 
     n_cols = len(THREE_WAY_CATEGORIES)
     fig, axs = plt.subplots(
