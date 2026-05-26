@@ -290,6 +290,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
         declare_residual_histograms(m_pim_res);
         declare_residual_histograms(m_pip_res_truth);
         declare_residual_histograms(m_pim_res_truth);
+        for (auto& s : m_pip_cut_steps) { declare_species_histograms(s); }
+        for (auto& s : m_pim_cut_steps) { declare_species_histograms(s); }
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -310,6 +312,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
             m_pip_nocuts.book_rec_pbins(*m_hist);
             m_pip_truth.book_rec_pbins(*m_hist);
             m_pim_truth.book_rec_pbins(*m_hist);
+            for (auto& s : m_pip_cut_steps) { s.book_rec_pbins(*m_hist); }
+            for (auto& s : m_pim_cut_steps) { s.book_rec_pbins(*m_hist); }
         }
         return StatusCode::SUCCESS();
     }
@@ -418,6 +422,29 @@ class CuSnContaminationAlg : public framework::Algorithm {
                     if (pid == -211) {
                         m_pim_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
                         m_pim_nocuts.fill_rec_pbin(p.vz(), p.p());
+                    }
+                }
+            }
+
+            // Per-cut-step diagnostics: retrieve the cumulative samples
+            // produced by PionSelectionAlg (forward-only by construction)
+            // and fill the same vz / vz-per-p-bin histograms so we can
+            // watch the distribution evolve cut-by-cut.
+            for (std::size_t i = 0; i < PION_CUT_STEP_LABELS.size(); ++i) {
+                auto pip_key = framework::TypedKey<std::vector<Particle>>(
+                    fmt::format("PiPlus_{}", PION_CUT_STEP_LABELS[i]));
+                if (auto pip = event.retrieve_typed(pip_key)) {
+                    for (const auto& pion : *pip) {
+                        m_pip_cut_steps[i].fill_rec(pion.vz(), pion.theta(), mc_vz, has_mc);
+                        m_pip_cut_steps[i].fill_rec_pbin(pion.vz(), pion.p());
+                    }
+                }
+                auto pim_key = framework::TypedKey<std::vector<Particle>>(
+                    fmt::format("PiMinus_{}", PION_CUT_STEP_LABELS[i]));
+                if (auto pim = event.retrieve_typed(pim_key)) {
+                    for (const auto& pion : *pim) {
+                        m_pim_cut_steps[i].fill_rec(pion.vz(), pion.theta(), mc_vz, has_mc);
+                        m_pim_cut_steps[i].fill_rec_pbin(pion.vz(), pion.p());
                     }
                 }
             }
@@ -534,6 +561,29 @@ class CuSnContaminationAlg : public framework::Algorithm {
     ResidualHists m_pim_res{"PiMinus"};
     ResidualHists m_pip_res_truth{"PiPlus_Truth"};
     ResidualHists m_pim_res_truth{"PiMinus_Truth"};
+
+    // Cumulative pion-cut-step diagnostics. Each entry is forward-only
+    // (the PionSelectionAlg's `collect_passing_cumulative` filters
+    // non-forward up front). Step 0 = rec pid pion alone; later steps add
+    // DC fiducial → chi²PID → momentum → vz. The final +Δt step is the
+    // SelectedPiPlus / SelectedPiMinus sample already held by m_pip / m_pim.
+    static constexpr std::array<const char*, 5> PION_CUT_STEP_LABELS = {
+        "noPionCuts", "plusDCFiducial", "plusChi2PID", "plusMomentum", "plusVertexZ"
+    };
+    std::array<SpeciesHists, 5> m_pip_cut_steps{
+        SpeciesHists{"PiPlus_noPionCuts"},
+        SpeciesHists{"PiPlus_plusDCFiducial"},
+        SpeciesHists{"PiPlus_plusChi2PID"},
+        SpeciesHists{"PiPlus_plusMomentum"},
+        SpeciesHists{"PiPlus_plusVertexZ"},
+    };
+    std::array<SpeciesHists, 5> m_pim_cut_steps{
+        SpeciesHists{"PiMinus_noPionCuts"},
+        SpeciesHists{"PiMinus_plusDCFiducial"},
+        SpeciesHists{"PiMinus_plusChi2PID"},
+        SpeciesHists{"PiMinus_plusMomentum"},
+        SpeciesHists{"PiMinus_plusVertexZ"},
+    };
 
     /// Queue every self-registering wrapper of one species for booking.
     auto declare_species_histograms(SpeciesHists& s) -> void {

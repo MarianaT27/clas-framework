@@ -489,6 +489,65 @@ def plot_vz_three_way_theta(
     fig.savefig(out_path, bbox_inches="tight")
 
 
+# Cumulative pion-cut-step columns: (species suffix used by CusnContaminationAlg,
+# short column title). The last entry maps to the unsuffixed `Data/PiPlus/...`
+# i.e. the final SelectedPi* sample (also adds the Δt cut).
+PION_CUT_STEP_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("_noPionCuts",     r"rec pid pion"),
+    ("_plusDCFiducial", r"+ DC fid"),
+    ("_plusChi2PID",    r"+ $\chi^2_{\rm PID}$"),
+    ("_plusMomentum",   r"+ momentum"),
+    ("_plusVertexZ",    r"+ $v_z$"),
+    ("",                r"+ $\Delta t$ (cut)"),
+)
+
+
+def plot_vz_cut_steps_p(
+    file_path: str = SIM_PATH,
+    species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    p_edges: tuple[float, ...] = tuple(np.arange(0.0, 6.5, 0.5)),
+    density: bool = True,
+    out_path: str = "vz_cut_steps_p.pdf",
+    title: str = r"$v_z$ by momentum bin after each pion cut (forward pions only)",
+):
+    """2 rows (species) x 6 cols (cut steps); overlay vz per p bin in each cell.
+
+    Reads from `Data/{species}{suffix}/vz_p{lo}_{hi}` where the suffix walks
+    through the cumulative cut chain (PionSelectionAlg) and the final
+    unsuffixed entry is the SelectedPi* sample.
+    """
+    bins = list(zip(p_edges[:-1], p_edges[1:]))
+    colors = _bin_colors(len(bins))
+    n_cols = len(PION_CUT_STEP_COLUMNS)
+    fig, axs = plt.subplots(
+        len(species), n_cols,
+        figsize=(3.5 * n_cols, 4 * len(species)),
+        squeeze=False,
+    )
+    with uproot.open(file_path) as f:
+        for i, sp in enumerate(species):
+            for j, (suffix, label) in enumerate(PION_CUT_STEP_COLUMNS):
+                ax = axs[i][j]
+                for (p_lo, p_hi), color in zip(bins, colors):
+                    legend = rf"${p_lo:.1f} \leq p < {p_hi:.1f}$"
+                    h = f[f"Data/{sp}{suffix}/vz_p{_fmt_edge(p_lo)}_{_fmt_edge(p_hi)}"]
+                    hep.histplot(
+                        h.to_numpy(), ax=ax, label=legend,
+                        color=color, histtype="step", density=density,
+                    )
+                if i == 0:
+                    ax.set_title(label)
+                ax.set_xlabel(r"$v_z$ [cm]")
+                ax.set_ylabel(
+                    rf"{SPECIES_LABEL.get(sp, sp)}    " + ("PDF" if density else "Counts")
+                    if j == 0 else ("PDF" if density else "Counts")
+                )
+                ax.legend(fontsize=6, ncol=1, loc="best")
+    fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+
+
 RESIDUAL_VARS: tuple[tuple[str, str], ...] = (
     ("dp_over_p", r"$\Delta p / p$"),
     ("dphi",      r"$\Delta \phi$ [deg]"),
@@ -655,6 +714,13 @@ if __name__ == "__main__":
     plot_vz_three_way_integrated()
     plot_vz_three_way_p()
     plot_vz_three_way_theta()
+    plot_vz_cut_steps_p()
+    plot_vz_per_p_bin(
+        species=("PiMinus",),
+        species_suffix="_noPionCuts",
+        out_path="vz_per_p_bin_piminus_pid_only.pdf",
+        title=r"$\pi^-$ $v_z$ by momentum bin — forward, rec pid $= -211$ only (no other cuts)",
+    )
     plot_residuals_integrated()
     plot_residuals_vs_p()
     plot_residuals_vs_theta()
