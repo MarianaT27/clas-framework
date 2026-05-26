@@ -299,7 +299,10 @@ class CuSnContaminationAlg : public framework::Algorithm {
                 debug_match("pi+", p.index(), match);
                 if (match.mc_index >= 0) {
                     int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
-                    if (pid == 211) m_pip_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
+                    if (pid == 211) {
+                        m_pip_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
+                        m_pip_nocuts.fill_rec_pbin(p.vz(), p.p());
+                    }
                 }
             }
             auto pi_minus = event.pions_minus();
@@ -308,7 +311,10 @@ class CuSnContaminationAlg : public framework::Algorithm {
                 debug_match("pi-", p.index(), match);
                 if (match.mc_index >= 0) {
                     int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
-                    if (pid == -211) m_pim_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
+                    if (pid == -211) {
+                        m_pim_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
+                        m_pim_nocuts.fill_rec_pbin(p.vz(), p.p());
+                    }
                 }
             }
 
