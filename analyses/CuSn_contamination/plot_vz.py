@@ -563,9 +563,8 @@ def plot_vz_cut_steps_per_p(
     shape evolution after re-normalization.
     """
     bins = list(zip(p_edges[:-1], p_edges[1:]))
-    cmap = mpl.cm.viridis
-    cut_colors = [cmap(k / max(1, len(PION_CUT_STEP_COLUMNS) - 1))
-                  for k in range(len(PION_CUT_STEP_COLUMNS))]
+    cmap = mpl.cm.tab10
+    cut_colors = [cmap(k % 10) for k in range(len(PION_CUT_STEP_COLUMNS))]
 
     fig, axs = plt.subplots(
         len(species), len(bins),
