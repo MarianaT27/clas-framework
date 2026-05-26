@@ -21,7 +21,7 @@ PION_SIM_VZ_HIST: dict[str, tuple[str, str]] = {
     "pip": ("MC/PiPlus/vz_Sn",  "MC/PiPlus/vz_Cu"),
 }
 ELECTRON_SIM_VZ_HIST: tuple[str, str] = ("MC/Electron/vz_Sn", "MC/Electron/vz_Cu")
-SIM_PATH: str = "/work/clas12b/users/ouillon/clas-framework/CuSn_contamination_CuSn_Outbending.root"
+SIM_PATH: str = "/volatile/clas12/ouillon/CuSn_contamination/CuSn_contamination_CuSn_Outbending.root"
 
 SPECIES_LABEL: dict[str, str] = {
     "Electron": r"$e^-$",
