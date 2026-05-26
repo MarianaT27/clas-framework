@@ -548,6 +548,56 @@ def plot_vz_cut_steps_p(
     fig.savefig(out_path, bbox_inches="tight")
 
 
+def plot_vz_cut_steps_per_p(
+    file_path: str = SIM_PATH,
+    species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    p_edges: tuple[float, ...] = (0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0),
+    density: bool = False,
+    out_path: str = "vz_cut_steps_per_p_overlay.pdf",
+    title: str | None = None,
+):
+    """Per (species, p bin) panel: overlay every cut step as a separate line.
+
+    Designed for low-p diagnostic. Default `density=False` so the
+    cumulative yield reduction is visible — flip to True to compare
+    shape evolution after re-normalization.
+    """
+    bins = list(zip(p_edges[:-1], p_edges[1:]))
+    cmap = mpl.cm.viridis
+    cut_colors = [cmap(k / max(1, len(PION_CUT_STEP_COLUMNS) - 1))
+                  for k in range(len(PION_CUT_STEP_COLUMNS))]
+
+    fig, axs = plt.subplots(
+        len(species), len(bins),
+        figsize=(3.5 * len(bins), 4 * len(species)),
+        squeeze=False,
+    )
+    with uproot.open(file_path) as f:
+        for i, sp in enumerate(species):
+            for j, (p_lo, p_hi) in enumerate(bins):
+                ax = axs[i][j]
+                for (suffix, step_label), color in zip(PION_CUT_STEP_COLUMNS, cut_colors):
+                    h = f[f"Data/{sp}{suffix}/vz_p{_fmt_edge(p_lo)}_{_fmt_edge(p_hi)}"]
+                    hep.histplot(
+                        h.to_numpy(), ax=ax, label=step_label,
+                        color=color, histtype="step", density=density,
+                    )
+                if i == 0:
+                    ax.set_title(rf"${p_lo:.1f} \leq p < {p_hi:.1f}$ GeV")
+                ax.set_xlabel(r"$v_z$ [cm]")
+                ax.set_ylabel(
+                    rf"{SPECIES_LABEL.get(sp, sp)}    " + ("PDF" if density else "Counts")
+                    if j == 0 else ("PDF" if density else "Counts")
+                )
+                ax.legend(fontsize=6, ncol=1, loc="best")
+    fig.suptitle(title or (
+        r"$v_z$ — pion cuts applied successively per $p$ bin "
+        + ("(density=True, shape only)" if density else "(counts)")
+    ))
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+
+
 RESIDUAL_VARS: tuple[tuple[str, str], ...] = (
     ("dp_over_p", r"$\Delta p / p$"),
     ("dphi",      r"$\Delta \phi$ [deg]"),
@@ -715,6 +765,11 @@ if __name__ == "__main__":
     plot_vz_three_way_p()
     plot_vz_three_way_theta()
     plot_vz_cut_steps_p()
+    plot_vz_cut_steps_per_p()
+    plot_vz_cut_steps_per_p(
+        density=True,
+        out_path="vz_cut_steps_per_p_overlay_pdf.pdf",
+    )
     plot_vz_per_p_bin(
         species=("PiMinus",),
         species_suffix="_noPionCuts",
