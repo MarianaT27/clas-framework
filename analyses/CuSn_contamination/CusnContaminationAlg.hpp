@@ -256,6 +256,53 @@ struct ResidualHists {
 };
 
 /**
+ * @brief MC-truth PID composition of reconstructed pion candidates.
+ *
+ * Records the MC truth PID of every track selected as a pion (passed all
+ * cuts). Sentinel pid=0 means the rec track has no MC association — no
+ * real MC particle is ever written with pid=0, so the bin is unambiguous.
+ * Booked both integrated and per reconstructed-momentum bin to expose how
+ * the non-pion contamination changes with p.
+ */
+struct PidCompositionHists {
+    // |pid| <= 2212 covers every CLAS12 species; 1-unit bins resolve each.
+    static constexpr double PID_LO = -3000.5;
+    static constexpr double PID_HI = 3000.5;
+    static constexpr int    PID_N_BINS = 6001;
+
+    explicit PidCompositionHists(std::string species)
+        : m_species(std::move(species)),
+          h_mc_pid{"/PidContam/" + m_species + "/mc_pid",
+                   "MC PID of selected pion candidates;MC PID;Events",
+                   PID_LO, PID_HI, PID_N_BINS} {}
+
+    std::string m_species;
+    framework::Hist1<> h_mc_pid;
+    std::array<std::unique_ptr<framework::H1<>>, N_P_BINS> h_mc_pid_pbin{};
+
+    auto book_pbins(framework::HistogramService& hist) -> void {
+        for (int i = 0; i < N_P_BINS; ++i) {
+            auto plo = fmt_p_edge(p_bin_edges[i]);
+            auto phi = fmt_p_edge(p_bin_edges[i + 1]);
+            auto title = "MC PID (" + plo + "<p<" + phi + " GeV/c);MC PID;Events";
+            h_mc_pid_pbin[i] = std::make_unique<framework::H1<>>(mh::regular(PID_LO, PID_HI, PID_N_BINS));
+            hist.register_hist("/PidContam/" + m_species + "/mc_pid_p" + plo + "_" + phi, title, *h_mc_pid_pbin[i]);
+        }
+    }
+
+    /// `mc_pid` should be 0 when the rec track has no MC link.
+    auto fill(int mc_pid, double p_rec) -> void {
+        h_mc_pid.fill(static_cast<double>(mc_pid));
+        for (int i = 0; i < N_P_BINS; ++i) {
+            if (p_rec >= p_bin_edges[i] && p_rec < p_bin_edges[i + 1]) {
+                if (h_mc_pid_pbin[i]) { h_mc_pid_pbin[i]->fill(static_cast<double>(mc_pid)); }
+                break;
+            }
+        }
+    }
+};
+
+/**
  * @brief Algorithm for Cu/Sn contamination analysis
  */
 class CuSnContaminationAlg : public framework::Algorithm {
@@ -290,6 +337,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
         declare_residual_histograms(m_pim_res);
         declare_residual_histograms(m_pip_res_truth);
         declare_residual_histograms(m_pim_res_truth);
+        declare_histograms(m_pip_pid.h_mc_pid, m_pim_pid.h_mc_pid);
         for (auto& s : m_pip_cut_steps) { declare_species_histograms(s); }
         for (auto& s : m_pim_cut_steps) { declare_species_histograms(s); }
     }
@@ -312,6 +360,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
             m_pip_nocuts.book_rec_pbins(*m_hist);
             m_pip_truth.book_rec_pbins(*m_hist);
             m_pim_truth.book_rec_pbins(*m_hist);
+            m_pip_pid.book_pbins(*m_hist);
+            m_pim_pid.book_pbins(*m_hist);
             for (auto& s : m_pip_cut_steps) { s.book_rec_pbins(*m_hist); }
             for (auto& s : m_pim_cut_steps) { s.book_rec_pbins(*m_hist); }
         }
@@ -493,6 +543,12 @@ class CuSnContaminationAlg : public framework::Algorithm {
                     auto& slice = quality_slice(match.quality, m_pip_q_hi, m_pip_q_mid, m_pip_q_lo);
                     slice.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
                     if (has_mc) {
+                        // pid=0 sentinel = no MC link (no MC::RecMatch row, or row mc_index<0).
+                        int mc_pid = 0;
+                        if (match.mc_index >= 0) {
+                            mc_pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
+                        }
+                        m_pip_pid.fill(mc_pid, pion.p());
                         auto res_match = get_mc_particle_index_diag(event, pion.index());
                         if (res_match.mc_index >= 0) {
                             fill_residual(pion, res_match.mc_index, m_pip_res);
@@ -509,6 +565,11 @@ class CuSnContaminationAlg : public framework::Algorithm {
                     auto& slice = quality_slice(match.quality, m_pim_q_hi, m_pim_q_mid, m_pim_q_lo);
                     slice.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
                     if (has_mc) {
+                        int mc_pid = 0;
+                        if (match.mc_index >= 0) {
+                            mc_pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
+                        }
+                        m_pim_pid.fill(mc_pid, pion.p());
                         auto res_match = get_mc_particle_index_diag(event, pion.index());
                         if (res_match.mc_index >= 0) {
                             fill_residual(pion, res_match.mc_index, m_pim_res);
@@ -561,6 +622,10 @@ class CuSnContaminationAlg : public framework::Algorithm {
     ResidualHists m_pim_res{"PiMinus"};
     ResidualHists m_pip_res_truth{"PiPlus_Truth"};
     ResidualHists m_pim_res_truth{"PiMinus_Truth"};
+    // MC-truth PID composition of the cut sample. Diagnoses contamination:
+    // selected pions whose MC truth is e/K/p/etc., or that have no MC link.
+    PidCompositionHists m_pip_pid{"PiPlus"};
+    PidCompositionHists m_pim_pid{"PiMinus"};
 
     // Cumulative pion-cut-step diagnostics. Each entry is forward-only
     // (the PionSelectionAlg's `collect_passing_cumulative` filters

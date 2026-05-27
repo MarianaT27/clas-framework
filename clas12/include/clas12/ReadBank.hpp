@@ -34,9 +34,9 @@ struct McMatchResult {
  * Walks MC::RecMatch rows linked to `rec_pindex` and returns the first row
  * whose quality is at least `min_quality`. Returns -1 if no match is found.
  *
- * `min_quality` defaults to 0.92.
+ * `min_quality` defaults to 0.98.
  */
-inline auto get_mc_particle_index_diag(framework::Event& event, int rec_pindex, float min_quality = 0.92f) -> McMatchResult {
+inline auto get_mc_particle_index_diag(framework::Event& event, int rec_pindex, float min_quality = 0.98f) -> McMatchResult {
     McMatchResult out;
     auto& bank = event.bank<bankdefs::MC_RecMatch>();
     out.bank_rows = bank.rows();
