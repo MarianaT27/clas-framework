@@ -303,6 +303,81 @@ struct PidCompositionHists {
 };
 
 /**
+ * @brief Track-quality histograms (chi2pid, REC::Track chi2/NDF) per p bin.
+ *
+ * Same structure as the vz per-p-bin diagnostics: an integrated 1-D for
+ * each quantity plus one 1-D per momentum bin. `chi2` and `NDF` come from
+ * the DC row of REC::Track via `pion.track()`; when no DC row exists the
+ * TrackBank's chi2 is NaN and those slots are skipped (chi2pid is on
+ * REC::Particle so it always fills).
+ */
+struct TrackQualityHists {
+    explicit TrackQualityHists(std::string species)
+        : m_species(std::move(species)),
+          h_chi2pid{"/TrackQuality/" + m_species + "/chi2pid",
+                    "chi2pid;#chi^{2}_{PID};Events",
+                    -10.0, 10.0, 200},
+          h_chi2{"/TrackQuality/" + m_species + "/chi2",
+                 "REC::Track #chi^{2};#chi^{2};Events",
+                 0.0, 200.0, 200},
+          h_ndf{"/TrackQuality/" + m_species + "/ndf",
+                "REC::Track NDF;NDF;Events",
+                0.0, 50.0, 50} {}
+
+    std::string m_species;
+    framework::Hist1<> h_chi2pid;
+    framework::Hist1<> h_chi2;
+    framework::Hist1<> h_ndf;
+    std::array<std::unique_ptr<framework::H1<>>, N_P_BINS> h_chi2pid_pbin{};
+    std::array<std::unique_ptr<framework::H1<>>, N_P_BINS> h_chi2_pbin{};
+    std::array<std::unique_ptr<framework::H1<>>, N_P_BINS> h_ndf_pbin{};
+
+    auto book_pbins(framework::HistogramService& hist) -> void {
+        for (int i = 0; i < N_P_BINS; ++i) {
+            auto plo = fmt_p_edge(p_bin_edges[i]);
+            auto phi = fmt_p_edge(p_bin_edges[i + 1]);
+            auto suffix = "_p" + plo + "_" + phi;
+            auto prange = " (" + plo + "<p<" + phi + " GeV/c)";
+
+            h_chi2pid_pbin[i] = std::make_unique<framework::H1<>>(mh::regular(-10.0, 10.0, 200));
+            hist.register_hist("/TrackQuality/" + m_species + "/chi2pid" + suffix,
+                               "chi2pid" + prange + ";#chi^{2}_{PID};Events",
+                               *h_chi2pid_pbin[i]);
+
+            h_chi2_pbin[i] = std::make_unique<framework::H1<>>(mh::regular(0.0, 200.0, 200));
+            hist.register_hist("/TrackQuality/" + m_species + "/chi2" + suffix,
+                               "REC::Track #chi^{2}" + prange + ";#chi^{2};Events",
+                               *h_chi2_pbin[i]);
+
+            h_ndf_pbin[i] = std::make_unique<framework::H1<>>(mh::regular(0.0, 50.0, 50));
+            hist.register_hist("/TrackQuality/" + m_species + "/ndf" + suffix,
+                               "REC::Track NDF" + prange + ";NDF;Events",
+                               *h_ndf_pbin[i]);
+        }
+    }
+
+    /// `chi2` may be NaN (no DC row in REC::Track); those slots are skipped.
+    auto fill(double chi2pid, double chi2, int ndf, double p_rec) -> void {
+        h_chi2pid.fill(chi2pid);
+        const bool has_trk = !std::isnan(chi2);
+        if (has_trk) {
+            h_chi2.fill(chi2);
+            h_ndf.fill(static_cast<double>(ndf));
+        }
+        for (int i = 0; i < N_P_BINS; ++i) {
+            if (p_rec >= p_bin_edges[i] && p_rec < p_bin_edges[i + 1]) {
+                if (h_chi2pid_pbin[i]) { h_chi2pid_pbin[i]->fill(chi2pid); }
+                if (has_trk) {
+                    if (h_chi2_pbin[i]) { h_chi2_pbin[i]->fill(chi2); }
+                    if (h_ndf_pbin[i])  { h_ndf_pbin[i]->fill(static_cast<double>(ndf)); }
+                }
+                break;
+            }
+        }
+    }
+};
+
+/**
  * @brief Algorithm for Cu/Sn contamination analysis
  */
 class CuSnContaminationAlg : public framework::Algorithm {
@@ -338,6 +413,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
         declare_residual_histograms(m_pip_res_truth);
         declare_residual_histograms(m_pim_res_truth);
         declare_histograms(m_pip_pid.h_mc_pid, m_pim_pid.h_mc_pid);
+        declare_histograms(m_pip_trkq.h_chi2pid, m_pip_trkq.h_chi2, m_pip_trkq.h_ndf,
+                           m_pim_trkq.h_chi2pid, m_pim_trkq.h_chi2, m_pim_trkq.h_ndf);
         for (auto& s : m_pip_cut_steps) { declare_species_histograms(s); }
         for (auto& s : m_pim_cut_steps) { declare_species_histograms(s); }
     }
@@ -362,6 +439,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
             m_pim_truth.book_rec_pbins(*m_hist);
             m_pip_pid.book_pbins(*m_hist);
             m_pim_pid.book_pbins(*m_hist);
+            m_pip_trkq.book_pbins(*m_hist);
+            m_pim_trkq.book_pbins(*m_hist);
             for (auto& s : m_pip_cut_steps) { s.book_rec_pbins(*m_hist); }
             for (auto& s : m_pim_cut_steps) { s.book_rec_pbins(*m_hist); }
         }
@@ -539,6 +618,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
                     double theta_deg = pion.theta();
                     m_pip.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
                     m_pip.fill_rec_pbin(pion.vz(), pion.p());
+                    auto trk = pion.track();
+                    m_pip_trkq.fill(pion.chi2pid(), static_cast<double>(trk.chi2), trk.NDF, pion.p());
                     auto match = get_mc_particle_index_diag(event, pion.index(), 0.0f);
                     auto& slice = quality_slice(match.quality, m_pip_q_hi, m_pip_q_mid, m_pip_q_lo);
                     slice.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
@@ -561,6 +642,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
                     double theta_deg = pion.theta();
                     m_pim.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
                     m_pim.fill_rec_pbin(pion.vz(), pion.p());
+                    auto trk = pion.track();
+                    m_pim_trkq.fill(pion.chi2pid(), static_cast<double>(trk.chi2), trk.NDF, pion.p());
                     auto match = get_mc_particle_index_diag(event, pion.index(), 0.0f);
                     auto& slice = quality_slice(match.quality, m_pim_q_hi, m_pim_q_mid, m_pim_q_lo);
                     slice.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
@@ -626,6 +709,10 @@ class CuSnContaminationAlg : public framework::Algorithm {
     // selected pions whose MC truth is e/K/p/etc., or that have no MC link.
     PidCompositionHists m_pip_pid{"PiPlus"};
     PidCompositionHists m_pim_pid{"PiMinus"};
+    // Track-quality of the cut sample: chi2pid + DC track chi2 / NDF,
+    // integrated and per momentum bin.
+    TrackQualityHists m_pip_trkq{"PiPlus"};
+    TrackQualityHists m_pim_trkq{"PiMinus"};
 
     // Cumulative pion-cut-step diagnostics. Each entry is forward-only
     // (the PionSelectionAlg's `collect_passing_cumulative` filters

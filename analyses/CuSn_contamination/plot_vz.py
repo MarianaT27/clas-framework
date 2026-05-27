@@ -74,6 +74,8 @@ def main():
             ax.legend()
         fig.suptitle("Simulated $v_z$ distribution for pions")
         fig.savefig("simulated_vz_pions.pdf", bbox_inches="tight")
+        plt.close(fig)
+        print("Saved simulated_vz_pions.pdf")
 
 
 def plot_vz_theta_slices(
@@ -160,6 +162,8 @@ def plot_vz_theta_slices(
     fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 def plot_quality_sliced_vz(
@@ -214,6 +218,8 @@ def plot_quality_sliced_vz(
     fig.suptitle(r"$v_z$ by reconstruction quality")
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 def plot_vz_per_p_bin(
@@ -257,6 +263,8 @@ def plot_vz_per_p_bin(
     fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 def _project_2d_slices(
@@ -368,6 +376,8 @@ def plot_vz_three_way_integrated(
     fig.suptitle(r"Integrated $v_z$: four-way comparison")
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 def plot_vz_three_way_p(
@@ -429,6 +439,8 @@ def plot_vz_three_way_p(
     fig.suptitle(r"$v_z$ by momentum bin: four-way comparison")
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 def plot_vz_three_way_theta(
@@ -487,6 +499,8 @@ def plot_vz_three_way_theta(
     fig.suptitle(r"$v_z$ by $\theta$ bin: four-way comparison")
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 # Cumulative pion-cut-step columns: (species suffix used by CusnContaminationAlg,
@@ -546,6 +560,8 @@ def plot_vz_cut_steps_p(
     fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 def plot_vz_cut_steps_per_p(
@@ -595,6 +611,8 @@ def plot_vz_cut_steps_per_p(
     ))
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 RESIDUAL_VARS: tuple[tuple[str, str], ...] = (
@@ -643,6 +661,8 @@ def plot_residuals_integrated(
     fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 def plot_residuals_vs_p(
@@ -690,6 +710,8 @@ def plot_residuals_vs_p(
     fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 def plot_residuals_vs_theta(
@@ -742,6 +764,57 @@ def plot_residuals_vs_theta(
     fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
+
+
+TRACK_QUALITY_QUANTITIES: tuple[tuple[str, str], ...] = (
+    ("chi2pid", r"$\chi^2_{\rm PID}$"),
+    ("chi2",    r"REC::Track $\chi^2$"),
+    ("ndf",     r"REC::Track NDF"),
+)
+
+
+def plot_track_quality_per_p_bin(
+    file_path: str = SIM_PATH,
+    species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    p_edges: tuple[float, ...] = tuple(np.arange(0.0, 6.5, 0.5)),
+    density: bool = True,
+    out_path: str = "track_quality_per_p_bin.pdf",
+    title: str = r"Track quality by momentum bin (cut sample)",
+):
+    """2 rows (species) x 3 cols (chi2pid, REC::Track chi2, NDF); overlay per p bin."""
+    bins = list(zip(p_edges[:-1], p_edges[1:]))
+    colors = _bin_colors(len(bins))
+    fig, axs = plt.subplots(
+        len(species), len(TRACK_QUALITY_QUANTITIES),
+        figsize=(4.5 * len(TRACK_QUALITY_QUANTITIES), 4 * len(species)),
+        squeeze=False,
+    )
+    with uproot.open(file_path) as f:
+        for i, sp in enumerate(species):
+            for j, (qty, xlabel) in enumerate(TRACK_QUALITY_QUANTITIES):
+                ax = axs[i][j]
+                for (p_lo, p_hi), color in zip(bins, colors):
+                    h = f[f"TrackQuality/{sp}/{qty}_p{_fmt_edge(p_lo)}_{_fmt_edge(p_hi)}"]
+                    hep.histplot(
+                        h.to_numpy(), ax=ax,
+                        label=rf"${p_lo:.1f} \leq p < {p_hi:.1f}$ GeV",
+                        color=color, histtype="step", density=density,
+                    )
+                if i == 0:
+                    ax.set_title(xlabel)
+                ax.set_xlabel(xlabel)
+                ax.set_ylabel(
+                    rf"{SPECIES_LABEL.get(sp, sp)}    " + ("PDF" if density else "Counts")
+                    if j == 0 else ("PDF" if density else "Counts")
+                )
+                ax.legend(fontsize=6, ncol=1, loc="best")
+    fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 # Display order in the PID composition plots. pid=0 is the sentinel for
@@ -817,6 +890,8 @@ def plot_pid_composition_integrated(
     fig.suptitle(r"MC truth PID composition of pion cut sample (integrated)")
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 def plot_pid_composition_vs_p(
@@ -867,6 +942,8 @@ def plot_pid_composition_vs_p(
     fig.suptitle(r"MC truth PID fraction vs $p$ (cut sample)")
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved {out_path}")
 
 
 if __name__ == "__main__":
@@ -920,3 +997,4 @@ if __name__ == "__main__":
     )
     plot_pid_composition_integrated()
     plot_pid_composition_vs_p()
+    plot_track_quality_per_p_bin()
