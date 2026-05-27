@@ -744,6 +744,131 @@ def plot_residuals_vs_theta(
     fig.savefig(out_path, bbox_inches="tight")
 
 
+# Display order in the PID composition plots. pid=0 is the sentinel for
+# "no MC link" (no real MC::Particle row is ever written with pid=0).
+# Any PID not listed here is bucketed into "other".
+PID_CATEGORIES: tuple[tuple[int, str], ...] = (
+    (0,     "no MC match"),
+    (11,    r"$e^-$"),
+    (-11,   r"$e^+$"),
+    (13,    r"$\mu^-$"),
+    (-13,   r"$\mu^+$"),
+    (22,    r"$\gamma$"),
+    (211,   r"$\pi^+$"),
+    (-211,  r"$\pi^-$"),
+    (321,   r"$K^+$"),
+    (-321,  r"$K^-$"),
+    (2212,  r"$p$"),
+    (-2212, r"$\bar p$"),
+    (2112,  r"$n$"),
+)
+
+
+def _bucket_pid_counts(h_pid) -> tuple[np.ndarray, list[str], float]:
+    """Read a 1-D PID histogram into named counts + a single 'other' total.
+
+    Hist bins are 1-unit wide centered on integer PIDs (see PidCompositionHists
+    in CusnContaminationAlg.hpp), so the bin closest to each named PID is the
+    count for that species.
+    """
+    values, edges = h_pid.to_numpy()
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    labels = [lbl for _, lbl in PID_CATEGORIES]
+    counts = np.zeros(len(PID_CATEGORIES))
+    accounted = np.zeros(len(centers), dtype=bool)
+    for i, (pid, _) in enumerate(PID_CATEGORIES):
+        idx = int(np.argmin(np.abs(centers - pid)))
+        counts[i] = values[idx]
+        accounted[idx] = True
+    other = float(values[~accounted].sum())
+    return counts, labels, other
+
+
+def plot_pid_composition_integrated(
+    file_path: str = SIM_PATH,
+    species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    log_scale: bool = True,
+    out_path: str = "pid_composition_integrated.pdf",
+):
+    """Per-species bar chart of the MC truth PID composition of the cut sample."""
+    fig, axs = plt.subplots(1, len(species), figsize=(7 * len(species), 5), squeeze=False)
+    axs = axs[0]
+    with uproot.open(file_path) as f:
+        for ax, sp in zip(axs, species):
+            counts, labels, other = _bucket_pid_counts(f[f"PidContam/{sp}/mc_pid"])
+            heights = np.append(counts, other)
+            bar_labels = labels + ["other"]
+            xs = np.arange(len(heights))
+            ax.bar(xs, heights, color="tab:blue", edgecolor="black")
+            ax.set_xticks(xs)
+            ax.set_xticklabels(bar_labels, rotation=45, ha="right")
+            total = float(heights.sum())
+            ax.set_title(rf"{SPECIES_LABEL.get(sp, sp)} (total = {total:.0f})")
+            ax.set_ylabel("Counts")
+            if log_scale:
+                ax.set_yscale("log")
+            if total > 0:
+                for x, hval in zip(xs, heights):
+                    if hval > 0:
+                        ax.text(
+                            x, hval, f"{100 * hval / total:.2g}\\%",
+                            ha="center", va="bottom", fontsize=7,
+                        )
+    fig.suptitle(r"MC truth PID composition of pion cut sample (integrated)")
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+
+
+def plot_pid_composition_vs_p(
+    file_path: str = SIM_PATH,
+    species: tuple[str, ...] = ("PiPlus", "PiMinus"),
+    p_edges: tuple[float, ...] = tuple(np.arange(0.0, 10.0 + 1e-9, 0.5)),
+    out_path: str = "pid_composition_vs_p.pdf",
+):
+    """Per-species line plot: MC truth PID fraction in the cut sample vs p.
+
+    Exposes how the non-pion contamination evolves with momentum (low-p bins
+    typically carry the most contamination).
+    """
+    p_arr = np.asarray(p_edges, dtype=float)
+    p_centers = 0.5 * (p_arr[:-1] + p_arr[1:])
+    n_p = len(p_centers)
+    n_cat = len(PID_CATEGORIES) + 1   # +1 for "other"
+    cmap = mpl.cm.tab20
+    colors = [cmap(i % 20) for i in range(n_cat)]
+    labels = [lbl for _, lbl in PID_CATEGORIES] + ["other"]
+
+    fig, axs = plt.subplots(1, len(species), figsize=(7 * len(species), 5), squeeze=False)
+    axs = axs[0]
+
+    with uproot.open(file_path) as f:
+        for ax, sp in zip(axs, species):
+            cat_counts = np.zeros((n_cat, n_p))
+            totals = np.zeros(n_p)
+            for ip, (p_lo, p_hi) in enumerate(zip(p_arr[:-1], p_arr[1:])):
+                h = f[f"PidContam/{sp}/mc_pid_p{_fmt_edge(p_lo)}_{_fmt_edge(p_hi)}"]
+                counts, _, other = _bucket_pid_counts(h)
+                cat_counts[:-1, ip] = counts
+                cat_counts[-1, ip] = other
+                totals[ip] = counts.sum() + other
+            for ic, label in enumerate(labels):
+                if cat_counts[ic].sum() == 0:
+                    continue
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    frac = np.where(totals > 0, cat_counts[ic] / totals, 0.0)
+                ax.plot(p_centers, frac, marker="o", lw=1.2, ms=4,
+                        label=label, color=colors[ic])
+            ax.set_xlabel(r"$p$ [GeV/c]")
+            ax.set_ylabel("Fraction of selected pions with given MC PID")
+            ax.set_yscale("log")
+            ax.set_ylim(1e-5, 2.0)
+            ax.set_title(SPECIES_LABEL.get(sp, sp))
+            ax.legend(fontsize=7, ncol=2, loc="lower right")
+    fig.suptitle(r"MC truth PID fraction vs $p$ (cut sample)")
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+
+
 if __name__ == "__main__":
     main()
     plot_vz_theta_slices()
@@ -793,3 +918,5 @@ if __name__ == "__main__":
         out_path="residuals_vs_theta_truth.pdf",
         title=r"Reconstruction residuals by $\theta$ bin (truth pions any rec pid)",
     )
+    plot_pid_composition_integrated()
+    plot_pid_composition_vs_p()
