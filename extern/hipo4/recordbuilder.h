@@ -24,8 +24,11 @@
 
 #include "event.h"
 #include "utils.h"
+#include "constants.h"
 
 namespace hipo {
+
+    class dictionary;  // fwd decl for Phase 4 setDictionary
 
     class recordbuilder {
 
@@ -43,8 +46,27 @@ namespace hipo {
 	long               bufferUserWordOne = 0;
 	long               bufferUserWordTwo = 0;
 
+        compression_spec   activeSpec{compression_spec::lz4()};
+        // Phase 4 (Lz4ByPage): the writer pushes its dictionary here so
+        // buildByPage can resolve per-column type sizes. nullptr ⇒ ByPage
+        // builds fail with a record_error. Lifetime: caller (the writer)
+        // must keep the dictionary alive for the builder's lifetime.
+        const hipo::dictionary* activeDict{nullptr};
+
         int                compressRecord(int src_size);
         int                getRecordLengthRounding(int bufferSize);
+
+        // Phase 2: Lz4Chunked builder. Layout matches hipo-rs:
+        // [u32 num_chunks | u32 events_per_chunk | event_count×u32 event_sizes
+        //  | N×u32 compressed_chunk_sizes | N×u32 decompressed_chunk_sizes
+        //  | concatenated LZ4 chunk payloads]
+        void               buildChunked();
+
+        // Phase 3: Lz4ByBank builder. Layout matches hipo-rs.
+        void               buildByBank();
+
+        // Phase 4: Lz4ByPage builder. RNTuple-style per-(bank,col,page) LZ4.
+        void               buildByPage();
 
     public:
 
@@ -65,6 +87,16 @@ namespace hipo {
         std::vector<char> &getRecordBuffer(){ return bufferRecord;};
         void reset();
         void build();
+
+        // Configure compression for subsequent build() calls. Default is
+        // compression_spec::lz4() to keep round-trip with older C++ readers.
+        void setCompression(compression_spec spec) { activeSpec = spec; }
+        compression_spec getCompression() const    { return activeSpec; }
+
+        // Phase 4: Lz4ByPage requires per-column type info from the schema
+        // dictionary to slice column bytes from each event's bank data.
+        // Caller's dictionary must outlive the builder.
+        void setDictionary(const hipo::dictionary* dict) { activeDict = dict; }
     };
 }
 #endif /* HIPORECORD_H */

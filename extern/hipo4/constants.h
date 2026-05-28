@@ -72,11 +72,50 @@ enum class header_type : uint8_t {
 };
 
 // --- Compression type (bits[28-31] of compression word) ---
+// Tags 4 and 5 are wire-compatible with hipo-rs (the Rust port). Files
+// produced with tags 4/5 are NOT readable by hipo4 versions prior to the
+// chunked/by-bank port; older readers will see a record they cannot
+// decompress and abort.
 enum class compression_type : uint8_t {
-    none     = 0,
-    lz4      = 1,
-    lz4_best = 2,
-    gzip     = 3,
+    none         = 0,
+    lz4          = 1,
+    lz4_best     = 2,
+    gzip         = 3,
+    lz4_chunked  = 4,   // per-record payload split into independent LZ4 chunks
+    lz4_by_bank  = 5,   // per-record payload split into one LZ4 stream per bank
+    lz4_by_page  = 6,   // per-(bank,column,page) LZ4 streams (RNTuple-style)
+};
+
+// Default events-per-chunk for Lz4Chunked. The writer batches this many
+// events into a single LZ4 stream; chunks are decompressed in parallel.
+inline constexpr uint32_t DEFAULT_EVENTS_PER_CHUNK = 32;
+
+// Default events-per-page for Lz4ByPage. Each column inside each bank is
+// split into pages of this many events; each page is independently
+// LZ4-compressed. Tune this with the schema's row counts in mind — pages
+// of N events × ~30 rows × 4-8 bytes hit RNTuple's ~64KB sweet spot when
+// N ≈ 256-1024.
+inline constexpr uint32_t DEFAULT_EVENTS_PER_PAGE  = 1024;
+
+// Writer-facing compression knob. Carries the `events_per_chunk` parameter
+// that Lz4Chunked needs and the `events_per_page` parameter Lz4ByPage
+// needs (both irrelevant for the other variants).
+struct compression_spec {
+    compression_type type{compression_type::lz4};
+    uint32_t         events_per_chunk{DEFAULT_EVENTS_PER_CHUNK};
+    uint32_t         events_per_page{DEFAULT_EVENTS_PER_PAGE};
+
+    static compression_spec none()        { return {compression_type::none,     0, 0}; }
+    static compression_spec lz4()         { return {compression_type::lz4,      0, 0}; }
+    static compression_spec lz4_best()    { return {compression_type::lz4_best, 0, 0}; }
+    static compression_spec gzip()        { return {compression_type::gzip,     0, 0}; }
+    static compression_spec lz4_chunked(uint32_t epc = DEFAULT_EVENTS_PER_CHUNK) {
+        return {compression_type::lz4_chunked, epc, 0};
+    }
+    static compression_spec lz4_by_bank() { return {compression_type::lz4_by_bank, 0, 0}; }
+    static compression_spec lz4_by_page(uint32_t epp = DEFAULT_EVENTS_PER_PAGE) {
+        return {compression_type::lz4_by_page, 0, epp};
+    }
 };
 
 // --- Bit-info word layout ---

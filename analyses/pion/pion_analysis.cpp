@@ -2,8 +2,8 @@
 #include <clas12/algorithms/analysis/ElectronAnalysisAlg.hpp>
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
 #include <clas12/algorithms/analysis/PionAnalysisAlg.hpp>
-#include <clas12/framework/services/ElectronCutsService.hpp>
-#include <clas12/framework/services/VzCorrectorService.hpp>
+#include <clas12/services/ElectronCutsService.hpp>
+#include <clas12/services/VzCorrectorService.hpp>
 
 auto main(int argc, char* argv[]) -> int {
     return framework::AnalysisRunner::run(

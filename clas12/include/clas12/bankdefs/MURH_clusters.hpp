@@ -40,17 +40,23 @@ class MURH_clusters {
 
     MURH_clusters() = default;
 
-    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:
-    /// the first bind() in a thread resolves every column name to its item
-    /// index via schema.getEntryOrder(); subsequent bind()s for the same
-    /// schema hit the cache. Returns true on success.
+    /// Bind to a live hipo::bank. Per-thread cache keyed by the schema's
+    /// (group, item): the first bind() in a thread resolves every column
+    /// name to its item index via schema.getEntryOrder(); subsequent
+    /// bind()s hit the cache. Keying by (group,item) rather than the schema
+    /// POINTER is critical: the framework constructs a fresh hipo::bank
+    /// (copying its schema to a new address) every event, so a pointer key
+    /// would miss every event and re-resolve all columns by string. (group,
+    /// item) is stable across those copies, so resolution is paid once per
+    /// thread per bank type. Returns true on success.
     bool bind(const hipo::bank& view) noexcept {
         m_view = &view;
         // const_cast is OK: hipo::bank::getSchema() lacks a const overload
         // but only reads schemaEntriesMap; we never mutate the bank here.
         auto& schema = const_cast<hipo::bank&>(view).getSchema();
         struct ItemCache {
-            const hipo::schema* schema_ptr = nullptr;
+            int gi_group = -1;
+            int gi_item  = -2;
             int i_size = -1;
             int i_id = -1;
             int i_x = -1;
@@ -63,8 +69,9 @@ class MURH_clusters {
             int i_energy = -1;
         };
         static thread_local ItemCache cache;
-        if (cache.schema_ptr != &schema) {
-            cache.schema_ptr = &schema;
+        if (cache.gi_group != schema.getGroup() || cache.gi_item != schema.getItem()) {
+            cache.gi_group = schema.getGroup();
+            cache.gi_item  = schema.getItem();
             cache.i_size = schema.exists("size") ? schema.getEntryOrder("size") : -1;
             cache.i_id = schema.exists("id") ? schema.getEntryOrder("id") : -1;
             cache.i_x = schema.exists("x") ? schema.getEntryOrder("x") : -1;

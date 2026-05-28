@@ -151,16 +151,11 @@ namespace hipo {
 
    private:
 
-      // 64-bit cumulative counter — a `std::vector<int>` here was the cause
-      // of the silent "0 events to process" bug on skim files > ~2.1B
-      // cumulative events: addSize() overflowed the int accumulator and
-      // getMaxEvents() returned negative, which propagated up to the chain
-      // and gated all work-list entries off.
-      std::vector<long> recordEvents;
+     std::vector<int>  recordEvents;
       std::vector<long> recordPosition;
 
       int              currentRecord{};
-      long             currentEvent{};
+      int              currentEvent{};
       int              currentRecordEvent{};
 
    public:
@@ -174,13 +169,13 @@ namespace hipo {
       //dglazier
       bool canAdvanceInRecord();
       bool loadRecord(int irec);
-      bool  gotoEvent(long eventNumber);
+      bool  gotoEvent(int eventNumber);
       bool  gotoRecord(int irec);
 
-      long getEventNumber() { return currentEvent;}
+      int  getEventNumber() { return currentEvent;}
       int  getRecordNumber() { return currentRecord;}
       int  getRecordEventNumber() { return currentRecordEvent;}
-      long getMaxEvents();
+      int  getMaxEvents();
       void addSize(int size);
       void addPosition(long position){ recordPosition.push_back(position);}
       long getPosition(int index) { return recordPosition[index];}
@@ -220,6 +215,33 @@ namespace hipo {
       hipo::event event;
       hipo::dictionary  factory;
 
+      // mmap-backed zero-copy fast path for Lz4ByBank records (Phase 3 v2+).
+      // mmap_base_ is the mmap base pointer or nullptr if mmap failed; the
+      // ByBank-direct path uses bybankrecord::parse_view straight from the
+      // mmap region, skipping the ifstream copy that would otherwise cap
+      // throughput at memcpy speed (~6 GB/s).
+      const char*       mmap_base_{nullptr};
+      size_t            mmap_size_{0};
+      int               mmap_fd_{-1};
+      std::shared_ptr<class hipo::bybankrecord> mmap_currentByBank_;
+      std::shared_ptr<class hipo::bypagerecord> mmap_currentByPage_;  // Phase 4
+      int               mmap_currentRecord_{-1};
+
+      // Open/close the mmap (called from open() / dtor).
+      void  openMmap(const char* filename);
+      void  closeMmap();
+      // Parse the bybankrecord for record `irec` straight from mmap memory.
+      // Cached in mmap_currentByBank_/mmap_currentRecord_ — repeat calls
+      // for the same record are O(1).
+      void  ensureMmapByBank(int irec);
+      // Phase 4: same for ByPage records (tag 6). Requires the factory
+      // dictionary for schema lookups.
+      void  ensureMmapByPage(int irec);
+      // Unified per-record load: routes Lz4ByBank / Lz4ByPage through mmap
+      // (zero-copy) when mmap is up; everything else falls back to
+      // inputRecord+ifstream.
+      void  loadDataRecord(int irec);
+
       void  readHeader();
       void  readIndex();
 
@@ -256,10 +278,10 @@ namespace hipo {
 
       bool  hasNext();
       bool  next();
-      bool  gotoEvent(long eventNumber);
+      bool  gotoEvent(int eventNumber);
       bool  gotoRecord(int irec);
       bool  next(hipo::event &dataevent);
-
+      
       bool  next(std::vector<hipo::bank> &list);
       std::vector<hipo::bank> getBanks(std::vector<std::string> names);
 
@@ -270,7 +292,7 @@ namespace hipo {
       bool  nextInRecord();
       bool loadRecord(int irec);
       bool loadRecord(hipo::record &record, int irec);
-      long getEntries(){return readerEventIndex.getMaxEvents();}
+      int  getEntries(){return readerEventIndex.getMaxEvents();}
       std::vector<int>   getInt(  const char *bank, const char *column, int max = -1);
       std::vector<float> getFloat(const char *bank, const char *column, int max = -1);
    };

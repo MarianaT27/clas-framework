@@ -17,9 +17,9 @@
 #include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
 #include <clas12/algorithms/selection/PhotonSelectionAlg.hpp>
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
-#include <clas12/framework/services/ElectronCutsService.hpp>
-#include <clas12/framework/services/PhotonCutsService.hpp>
-#include <clas12/framework/services/VzCorrectorService.hpp>
+#include <clas12/services/ElectronCutsService.hpp>
+#include <clas12/services/PhotonCutsService.hpp>
+#include <clas12/services/VzCorrectorService.hpp>
 #include <clas12/framework/services/HipoFileService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 

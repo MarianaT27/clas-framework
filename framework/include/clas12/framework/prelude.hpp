@@ -13,7 +13,7 @@
  *
  * @code
  * #include <clas12/framework/prelude.hpp>
- * #include <clas12/framework/services/ElectronCutsService.hpp>  // alg-specific
+ * #include <clas12/services/ElectronCutsService.hpp>  // alg-specific
  * #include <clas12/Particle.hpp>                                 // alg-specific
  *
  * namespace algorithms {

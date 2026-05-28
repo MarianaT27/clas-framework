@@ -4221,8 +4221,8 @@ inline auto read_Calorimeter_bank(framework::Event& event, int pindex)
     auto& extras = event.bank<bankdefs::REC_CaloExtras>();
     const bool has_extras = extras.valid();
     const int extras_rows = extras.rows();
-    for (auto r : event.rows_for_pindex<bankdefs::REC_Calorimeter>(pindex)) {
-        if (r.detector() != ECAL) continue;
+    event.for_rows_with_pindex<bankdefs::REC_Calorimeter>(pindex, [&](auto r) {
+        if (r.detector() != ECAL) return;
         switch (r.layer()) {
             case PCAL: {
                 result.pcal_index = r.index();
@@ -4379,7 +4379,7 @@ inline auto read_Calorimeter_bank(framework::Event& event, int pindex)
             }
             default: break;
         }
-    }
+    });
     return result;
 }
 
@@ -4428,8 +4428,8 @@ struct DCTrajBank {
 inline auto read_Traj_bank(framework::Event& event, int pindex)
     -> DCTrajBank {
     DCTrajBank result;
-    for (auto r : event.rows_for_pindex<bankdefs::REC_Traj>(pindex)) {
-        if (r.detector() != DC) continue;
+    event.for_rows_with_pindex<bankdefs::REC_Traj>(pindex, [&](auto r) {
+        if (r.detector() != DC) return;
         switch (r.layer()) {
             case DC1: {
                 result.region1_pindex = r.pindex();
@@ -4478,7 +4478,7 @@ inline auto read_Traj_bank(framework::Event& event, int pindex)
             }
             default: break;
         }
-    }
+    });
     return result;
 }
 
@@ -4505,8 +4505,8 @@ struct CherenkovBank {
 inline auto read_Cherenkov_bank(framework::Event& event, int pindex)
     -> CherenkovBank {
     CherenkovBank result;
-    for (auto r : event.rows_for_pindex<bankdefs::REC_Cherenkov>(pindex)) {
-        if (r.detector() != HTCC) continue;
+    event.find_row_with_pindex<bankdefs::REC_Cherenkov>(pindex, [&](auto r) -> bool {
+        if (r.detector() != HTCC) return false;
         result.index = r.index();
         result.pindex = r.pindex();
         result.detector = r.detector();
@@ -4521,8 +4521,8 @@ inline auto read_Cherenkov_bank(framework::Event& event, int pindex)
         result.dtheta = r.dtheta();
         result.dphi = r.dphi();
         result.status = r.status();
-        break;
-    }
+        return true;
+    });
     return result;
 }
 
@@ -4544,8 +4544,8 @@ struct TrackBank {
 inline auto read_Track_bank(framework::Event& event, int pindex)
     -> TrackBank {
     TrackBank result;
-    for (auto r : event.rows_for_pindex<bankdefs::REC_Track>(pindex)) {
-        if (r.detector() != DC) continue;
+    event.find_row_with_pindex<bankdefs::REC_Track>(pindex, [&](auto r) -> bool {
+        if (r.detector() != DC) return false;
         result.index = r.index();
         result.pindex = r.pindex();
         result.detector = r.detector();
@@ -4555,8 +4555,8 @@ inline auto read_Track_bank(framework::Event& event, int pindex)
         result.chi2 = r.chi2();
         result.NDF = r.NDF();
         result.hbindex = r.hbindex();
-        break;
-    }
+        return true;
+    });
     return result;
 }
 
@@ -4591,20 +4591,20 @@ inline auto read_Scintillator_bank(framework::Event& event, int pindex)
     ScintillatorBank result;
     std::optional<bankdefs::REC_Scintillator::Row> best;
     int best_rank = -1;
-    for (auto r : event.rows_for_pindex<bankdefs::REC_Scintillator>(pindex)) {
-        if (r.detector() != FTOF) continue;
+    event.for_rows_with_pindex<bankdefs::REC_Scintillator>(pindex, [&](auto r) {
+        if (r.detector() != FTOF) return;
         int rank;
         switch (r.layer()) {
             case FTOF1B: rank = 0; break;
             case FTOF1A: rank = 1; break;
             case FTOF2: rank = 2; break;
-            default: continue;
+            default: return;
         }
         if (best_rank == -1 || rank < best_rank) {
             best = r;
             best_rank = rank;
         }
-    }
+    });
     if (!best.has_value()) return result;
     result.index = (*best).index();
     result.pindex = (*best).pindex();
@@ -4664,7 +4664,7 @@ struct RICHParticleBank {
 inline auto read_RICHParticle_bank(framework::Event& event, int pindex)
     -> RICHParticleBank {
     RICHParticleBank result;
-    for (auto r : event.rows_for_pindex<bankdefs::RICH_Particle>(pindex)) {
+    event.find_row_with_pindex<bankdefs::RICH_Particle>(pindex, [&](auto r) -> bool {
         result.id = r.id();
         result.hindex = r.hindex();
         result.pindex = r.pindex();
@@ -4686,8 +4686,8 @@ inline auto read_RICHParticle_bank(framework::Event& event, int pindex)
         result.best_RL = r.best_RL();
         result.best_ntot = r.best_ntot();
         result.best_mass = r.best_mass();
-        break;
-    }
+        return true;
+    });
     return result;
 }
 

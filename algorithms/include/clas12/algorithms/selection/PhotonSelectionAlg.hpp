@@ -35,7 +35,7 @@
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
-#include <clas12/framework/services/PhotonCutsService.hpp>
+#include <clas12/services/PhotonCutsService.hpp>
 #include "bank.h"
 
 namespace algorithms {

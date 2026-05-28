@@ -36,12 +36,12 @@
   */
 
 #include "record.h"
+#include "bybankrecord.h"
+#include "bypagerecord.h"
 #include "constants.h"
-#include "datastream.h"
-//#include "hipoexceptions.h"
+#include "hipoexceptions.h"
 
-#include <algorithm>
-#include <cstring>
+#include <future>
 
 #ifdef __LZ4__
 #include <lz4.h>
@@ -95,24 +95,52 @@ namespace hipo {
         recordHeader.compressionType            = (compressedWord>>COMP_TYPE_SHIFT)&COMP_TYPE_BYTE;
         recordHeader.indexDataLength            = 4*recordHeader.numberOfEvents;
 
-        /*printf(" allocating buffer for record, size = %d, padding = %d length = %d type = %d nevents = %d data length = %d\n",
-          dataBufferLengthBytes,
-          compressedDataLengthPadding, recordHeader.recordDataLengthCompressed*4,
-          recordHeader.compressionType, recordHeader.numberOfEvents, recordHeader.recordDataLength);
-          */
-        //char *compressedBuffer    = (char*) malloc(dataBufferLengthBytes);
+        long  dataposition = position + headerLengthBytes;
+
+        // ByBank-direct fast path: read compressed payload into an
+        // uninitialized unique_ptr<char[]> (no zero-init, no double copy
+        // through recordCompressedBuffer) and hand ownership to the
+        // bybankrecord. Saves the v2 reader hundreds of microseconds per
+        // record on multi-MB payloads.
+        if(useByBankDirect_
+           && recordHeader.compressionType == static_cast<int>(compression_type::lz4_by_bank)){
+          currentByBank_.reset();
+          std::unique_ptr<char[]> bbBuf(new char[dataBufferLengthBytes]);
+          stream.seekg(dataposition, std::ios::beg);
+          stream.read(bbBuf.get(), dataBufferLengthBytes);
+          currentByBank_ = hipo::bybankrecord::parse_take_raw(
+              recordHeader,
+              std::move(bbBuf),
+              dataBufferLengthBytes,
+              dataBufferLengthBytes,
+              compressedDataLengthPadding);
+          return;
+        }
+        // Phase 4: ByPage-direct fast path, same pattern.
+        if(useByPageDirect_
+           && recordHeader.compressionType == static_cast<int>(compression_type::lz4_by_page)){
+          if(!schemaDict_){
+            throw hipo::record_error("record::readRecord (ByPage): no dictionary set");
+          }
+          currentByPage_.reset();
+          std::unique_ptr<char[]> pBuf(new char[dataBufferLengthBytes]);
+          stream.seekg(dataposition, std::ios::beg);
+          stream.read(pBuf.get(), dataBufferLengthBytes);
+          currentByPage_ = hipo::bypagerecord::parse_take_raw(
+              recordHeader,
+              std::move(pBuf),
+              dataBufferLengthBytes,
+              dataBufferLengthBytes,
+              compressedDataLengthPadding,
+              *schemaDict_);
+          return;
+        }
 
         if(static_cast<size_t>(dataBufferLengthBytes)>recordCompressedBuffer.size()){
           int newSize = dataBufferLengthBytes + 5*1024;
-          //printf("---> resizing internal compressed buffer size to from %ld to %d\n",
-          //   recordCompressedBuffer.size(), newSize);
           recordCompressedBuffer.resize(newSize);
         }
-        //dataBufferLengthBytes    -= compressedDataLengthPadding;
-        long  dataposition = position + headerLengthBytes;
-        //printf("position = %ld data position = %ld\n",position, dataposition);
         stream.seekg(dataposition,std::ios::beg);
-        //stream.read( compressedBuffer, dataBufferLengthBytes);
         stream.read( (&recordCompressedBuffer[0]), dataBufferLengthBytes);
         //showBuffer(compressedBuffer, 10, 200);
         //printf("position = %ld data position = %ld \n",position, dataposition);
@@ -130,6 +158,23 @@ namespace hipo {
         //printf("****************** BEFORE padding = %d\n", compressedDataLengthPadding);
         //showBuffer(&recordBuffer[0], 10, 200);
         //unzipBenchmark.resume();
+        if(recordHeader.compressionType == static_cast<int>(compression_type::lz4_by_bank)){
+          // useByBankDirect_ case handled earlier (fast path). This is the
+          // v1 eager-decode fallback for callers without ByBank-direct.
+          currentByBank_.reset();
+          if(!decodeByBank(dataBufferLengthBytes - compressedDataLengthPadding)){
+            throw hipo::record_error("Lz4ByBank decode failed");
+          }
+          return;
+        }
+        currentByBank_.reset();
+        currentByPage_.reset();
+        if(recordHeader.compressionType == static_cast<int>(compression_type::lz4_chunked)){
+          if(!decodeChunked(dataBufferLengthBytes - compressedDataLengthPadding)){
+            throw hipo::record_error("Lz4Chunked decode failed");
+          }
+          return; // decodeChunked filled recordBuffer + offsets; skip legacy index rewrite
+        }
         if(recordHeader.compressionType==0){
           // printf("compression type = 0 data length = %d\n",decompressedLength);
           memcpy((&recordBuffer[0]),(&recordCompressedBuffer[0]),decompressedLength);
@@ -201,31 +246,71 @@ namespace hipo {
       recordHeader.compressionType            = (compressedWord>>COMP_TYPE_SHIFT)&COMP_TYPE_BYTE;
       recordHeader.indexDataLength            = 4*recordHeader.numberOfEvents;
 
-      /*printf(" allocating buffer for record, size = %d, padding = %d length = %d type = %d nevents = %d data length = %d\n",
-        dataBufferLengthBytes,
-        compressedDataLengthPadding, recordHeader.recordDataLengthCompressed*4,
-        recordHeader.compressionType, recordHeader.numberOfEvents, recordHeader.recordDataLength);
-        */
-      //char *compressedBuffer    = (char*) malloc(dataBufferLengthBytes);
-
-      if(static_cast<size_t>(dataBufferLengthBytes)>recordCompressedBuffer.size()){
-        //-- resize the buffer extending it by 500kB. hopefully
-        //-- will be enough not to resize too many times.
-        int newSize = dataBufferLengthBytes + 500*1024;
-        // printout commented out --- by G.G.
-        /* printf("---> resizing internal compressed buffer size to from %ld to %d\n",
-           recordCompressedBuffer.size(), newSize); */
-        recordCompressedBuffer.resize(newSize);
-      }
-
       long  dataposition = position + headerLengthBytes;
-      stream.seekg(dataposition,std::ios::beg);
 
       if(position+dataBufferLengthBytes+recordHeader.headerLength>inputSize){
         printf("**** warning : record at position %ld is incomplete.",position);
          return false;
       }
 
+      // ByBank-direct fast path (see void readRecord above for rationale).
+      if(useByBankDirect_
+         && recordHeader.compressionType == static_cast<int>(compression_type::lz4_by_bank)){
+        currentByBank_.reset();
+        try {
+          std::unique_ptr<char[]> bbBuf(new char[dataBufferLengthBytes]);
+          stream.seekg(dataposition, std::ios::beg);
+          stream.read(bbBuf.get(), dataBufferLengthBytes);
+          readBenchmark.pause();
+          unzipBenchmark.resume();
+          currentByBank_ = hipo::bybankrecord::parse_take_raw(
+              recordHeader,
+              std::move(bbBuf),
+              dataBufferLengthBytes,
+              dataBufferLengthBytes,
+              compressedDataLengthPadding);
+        } catch (const std::exception& e) {
+          printf("record::readRecord(byBankDirect): %s\n", e.what());
+          unzipBenchmark.pause();
+          return false;
+        }
+        unzipBenchmark.pause();
+        return true;
+      }
+      // Phase 4: ByPage-direct fast path.
+      if(useByPageDirect_
+         && recordHeader.compressionType == static_cast<int>(compression_type::lz4_by_page)){
+        if(!schemaDict_){
+          throw hipo::record_error("record::readRecord (ByPage): no dictionary set");
+        }
+        currentByPage_.reset();
+        try {
+          std::unique_ptr<char[]> pBuf(new char[dataBufferLengthBytes]);
+          stream.seekg(dataposition, std::ios::beg);
+          stream.read(pBuf.get(), dataBufferLengthBytes);
+          readBenchmark.pause();
+          unzipBenchmark.resume();
+          currentByPage_ = hipo::bypagerecord::parse_take_raw(
+              recordHeader,
+              std::move(pBuf),
+              dataBufferLengthBytes,
+              dataBufferLengthBytes,
+              compressedDataLengthPadding,
+              *schemaDict_);
+        } catch (const std::exception& e) {
+          printf("record::readRecord(byPageDirect): %s\n", e.what());
+          unzipBenchmark.pause();
+          return false;
+        }
+        unzipBenchmark.pause();
+        return true;
+      }
+
+      if(static_cast<size_t>(dataBufferLengthBytes)>recordCompressedBuffer.size()){
+        int newSize = dataBufferLengthBytes + 500*1024;
+        recordCompressedBuffer.resize(newSize);
+      }
+      stream.seekg(dataposition,std::ios::beg);
       stream.read( (&recordCompressedBuffer[0]), dataBufferLengthBytes);
 
       int decompressedLength = recordHeader.indexDataLength +
@@ -244,6 +329,20 @@ namespace hipo {
       //showBuffer(&recordBuffer[0], 10, 200);
       readBenchmark.pause();
       unzipBenchmark.resume();
+      if(recordHeader.compressionType == static_cast<int>(compression_type::lz4_by_bank)){
+        // useByBankDirect_ case handled in the fast path above.
+        currentByBank_.reset();
+        bool ok = decodeByBank(dataBufferLengthBytes - compressedDataLengthPadding);
+        unzipBenchmark.pause();
+        return ok;
+      }
+      currentByBank_.reset();
+      currentByPage_.reset();
+      if(recordHeader.compressionType == static_cast<int>(compression_type::lz4_chunked)){
+        bool ok = decodeChunked(dataBufferLengthBytes - compressedDataLengthPadding);
+        unzipBenchmark.pause();
+        return ok;
+      }
       if(recordHeader.compressionType==0){
         // printf("compression type = 0 data length = %d\n",decompressedLength);
         memcpy((&recordBuffer[0]),(&recordCompressedBuffer[0]),decompressedLength);
@@ -499,6 +598,228 @@ void record::getEventsMap(std::vector<std::pair<int,int>> &emap){
       printf("\n");
     }
     /**
+     * Decode an Lz4Chunked record's compressed-payload section into recordBuffer.
+     *
+     * The section sits in recordCompressedBuffer[0..section_bytes]; trailing
+     * compressed-data padding has already been stripped by the caller. The
+     * output layout in recordBuffer matches what the legacy getData() path
+     * expects: [4*event_count bytes of cumulative event end-positions]
+     * followed by [concatenated event bytes].
+     *
+     * Improvement over hipo-rs: each chunk's LZ4_decompress_safe runs in
+     * parallel via std::async when num_chunks > 1. Sequential fallback for
+     * num_chunks == 1.
+     */
+    bool record::decodeChunked(int section_bytes){
+#ifndef __LZ4__
+        printf("record::decodeChunked: LZ4 not available\n");
+        return false;
+#else
+        if (recordHeader.dataEndianness == 1) {
+            printf("record::decodeChunked: big-endian Lz4Chunked records are not supported\n");
+            return false;
+        }
+
+        const int event_count = recordHeader.numberOfEvents;
+        if (section_bytes < 8) {
+            printf("record::decodeChunked: chunk-table header truncated\n");
+            return false;
+        }
+        const uint32_t num_chunks = *reinterpret_cast<uint32_t*>(&recordCompressedBuffer[0]);
+        // events_per_chunk at +4 is informational; per-chunk decompressed sizes drive decode.
+
+        const int event_sizes_off  = 8;
+        const int comp_sizes_off   = event_sizes_off  + 4*event_count;
+        const int decomp_sizes_off = comp_sizes_off   + 4*static_cast<int>(num_chunks);
+        const int payload_off      = decomp_sizes_off + 4*static_cast<int>(num_chunks);
+
+        if (section_bytes < payload_off) {
+            printf("record::decodeChunked: chunk-table truncated (sizes)\n");
+            return false;
+        }
+
+        // Pass 1: total decompressed event bytes from event_sizes table.
+        uint32_t total_event_bytes = 0;
+        for (int e = 0; e < event_count; ++e) {
+            total_event_bytes +=
+                *reinterpret_cast<uint32_t*>(&recordCompressedBuffer[event_sizes_off + e*4]);
+        }
+
+        // Allocate recordBuffer: [4*event_count cumulative-position table | events]
+        const size_t total_bytes = static_cast<size_t>(4*event_count) + total_event_bytes;
+        if (recordBuffer.size() < total_bytes) {
+            recordBuffer.resize(total_bytes + 1024);
+        }
+
+        // Pass 2: write cumulative positions to recordBuffer[0..4*event_count].
+        uint32_t cum = 0;
+        for (int e = 0; e < event_count; ++e) {
+            cum += *reinterpret_cast<uint32_t*>(&recordCompressedBuffer[event_sizes_off + e*4]);
+            *reinterpret_cast<uint32_t*>(&recordBuffer[e*4]) = cum;
+        }
+
+        // Pass 3: split source & destination spans per chunk for parallel LZ4 decompress.
+        struct ChunkJob {
+            const char *src;
+            char       *dst;
+            int         comp;
+            int         decomp;
+        };
+        std::vector<ChunkJob> jobs;
+        jobs.reserve(num_chunks);
+        int src_off = payload_off;
+        int dst_off = 4*event_count;
+        for (uint32_t c = 0; c < num_chunks; ++c) {
+            uint32_t comp =
+                *reinterpret_cast<uint32_t*>(&recordCompressedBuffer[comp_sizes_off   + c*4]);
+            uint32_t decomp =
+                *reinterpret_cast<uint32_t*>(&recordCompressedBuffer[decomp_sizes_off + c*4]);
+            jobs.push_back({&recordCompressedBuffer[src_off], &recordBuffer[dst_off],
+                            static_cast<int>(comp), static_cast<int>(decomp)});
+            src_off += static_cast<int>(comp);
+            dst_off += static_cast<int>(decomp);
+        }
+
+        auto inflate = [](const ChunkJob& j) -> int {
+            return LZ4_decompress_safe(j.src, j.dst, j.comp, j.decomp);
+        };
+
+        if (num_chunks <= 1) {
+            for (const auto& j : jobs) {
+                int r = inflate(j);
+                if (r != j.decomp) {
+                    printf("record::decodeChunked: LZ4 chunk decompress failed (got %d, expected %d)\n",
+                           r, j.decomp);
+                    return false;
+                }
+            }
+        } else {
+            // Improvement over hipo-rs: fan out each chunk to std::async. The
+            // pool defaults to "deferred or async" — most stdlibs pick async
+            // when there's a free thread, deferred otherwise. For small N
+            // this is still faster than serial; for large N a real pool wins
+            // more, but adding the ThreadPool dep here is out of scope.
+            std::vector<std::future<int>> futures;
+            futures.reserve(jobs.size());
+            for (const auto& j : jobs) {
+                futures.push_back(std::async(std::launch::async, inflate, j));
+            }
+            for (size_t i = 0; i < futures.size(); ++i) {
+                int r = futures[i].get();
+                if (r != jobs[i].decomp) {
+                    printf("record::decodeChunked: LZ4 chunk %zu decompress failed (got %d, expected %d)\n",
+                           i, r, jobs[i].decomp);
+                    return false;
+                }
+            }
+        }
+
+        // Update header fields that getData() reads. The data section in our
+        // layout starts at offset = indexDataLength + userHeaderLength + padding
+        // = 4*event_count + 0 + 0.
+        recordHeader.indexDataLength         = 4*event_count;
+        recordHeader.userHeaderLength        = 0;
+        recordHeader.userHeaderLengthPadding = 0;
+        recordHeader.recordDataLength        = static_cast<int>(total_event_bytes);
+        return true;
+#endif
+    }
+
+    /**
+     * Decode an Lz4ByBank record's compressed-payload section into recordBuffer.
+     *
+     * Parses the directory through hipo::bybankrecord (which validates layout
+     * and copies an owned section), eagerly inflates every bank stream, then
+     * reassembles each event's structure list into the legacy
+     * [cumulative_event_positions | concatenated_events] layout that getData()
+     * expects.
+     *
+     * NOTE: This v1 inflates every bank stream up-front, sacrificing the
+     * lazy-per-bank-decompression win that hipo-rs gets on its read path. A
+     * future v2 will surface hipo::bybankrecord directly to callers via a
+     * dual-mode hipo::event, matching the Rust impl.
+     */
+    bool record::decodeByBank(int section_bytes){
+        try {
+            auto rec = hipo::bybankrecord::parse(recordHeader,
+                                                  recordCompressedBuffer.data(),
+                                                  section_bytes, /*padding=*/0);
+            const int event_count = static_cast<int>(rec->event_count());
+
+            // Pass 1: per event, compute reconstituted size = EVENT_HEADER_SIZE +
+            //   Σ (BANK_STRUCTURE_SIZE + bank_size) for every bank present.
+            std::vector<uint32_t> event_sizes(event_count, 0);
+            uint32_t total_event_bytes = 0;
+            const int num_banks = rec->num_banks();
+            for (int e = 0; e < event_count; ++e) {
+                uint32_t es = EVENT_HEADER_SIZE;
+                for (int b = 0; b < num_banks; ++b) {
+                    if (rec->has(e, b)) {
+                        es += BANK_STRUCTURE_SIZE + rec->bank_size(e, b);
+                    }
+                }
+                event_sizes[e]    = es;
+                total_event_bytes += es;
+            }
+
+            // Allocate recordBuffer for [4*event_count cumulative-position table | events].
+            const size_t total_bytes = static_cast<size_t>(4*event_count) + total_event_bytes;
+            if (recordBuffer.size() < total_bytes) recordBuffer.resize(total_bytes + 1024);
+
+            // Pass 2: write cumulative positions + reassemble each event in place.
+            uint32_t cum = 0;
+            uint32_t evt_write_off = 4 * event_count;
+            for (int e = 0; e < event_count; ++e) {
+                cum += event_sizes[e];
+                std::memcpy(&recordBuffer[e*4], &cum, 4);
+
+                // Event header — "EVNT\0" magic + size + tag + reserved.
+                char* evt = &recordBuffer[evt_write_off];
+                evt[0] = 'E'; evt[1] = 'V'; evt[2] = 'N'; evt[3] = 'T';
+                std::memcpy(evt + EH_SIZE_OFFSET, &event_sizes[e], 4);
+                uint32_t tag = rec->event_tag(e);
+                std::memcpy(evt + EH_TAG_OFFSET, &tag, 4);
+                uint32_t zero = 0;
+                std::memcpy(evt + EH_RESERVED_OFFSET, &zero, 4);
+
+                // Walk banks in sorted directory order; emit structures.
+                uint32_t struct_off = EVENT_HEADER_SIZE;
+                for (int b = 0; b < num_banks; ++b) {
+                    if (!rec->has(e, b)) continue;
+                    auto desc      = rec->descriptor(b);
+                    uint32_t blen  = rec->bank_size(e, b);
+                    char* hdr = evt + struct_off;
+                    std::memcpy(hdr + 0, &desc.group, 2);
+                    hdr[2] = static_cast<char>(desc.item);
+                    hdr[3] = static_cast<char>(desc.data_type);
+                    // size_word: low 24 bits = data length, upper 8 = 0 (bank type)
+                    uint32_t size_word = blen & STRUCT_SIZE_MASK;
+                    std::memcpy(hdr + 4, &size_word, 4);
+
+                    if (blen > 0) {
+                        const auto& stream = rec->bank_stream(b);
+                        auto range = rec->bank_byte_range(e, b);
+                        std::memcpy(hdr + BANK_STRUCTURE_SIZE,
+                                    stream.data() + range.first, blen);
+                    }
+                    struct_off += BANK_STRUCTURE_SIZE + blen;
+                }
+
+                evt_write_off += event_sizes[e];
+            }
+
+            recordHeader.indexDataLength         = 4 * event_count;
+            recordHeader.userHeaderLength        = 0;
+            recordHeader.userHeaderLengthPadding = 0;
+            recordHeader.recordDataLength        = static_cast<int>(total_event_bytes);
+            return true;
+        } catch (const std::exception& e) {
+            printf("record::decodeByBank: %s\n", e.what());
+            return false;
+        }
+    }
+
+    /**
      * decompresses the buffer given with pointed *data, into a destination array
      * provided. The arguments indicate the compressed data length (dataLength),
      * and maximum decompressed length.
@@ -600,128 +921,7 @@ void         dataframe::summary(){
   printf("frame size       : %d\n",*(reinterpret_cast<int *>(&dataBuffer[RH_RECORD_LENGTH_OFFSET])));
   printf("magic word       : %X\n",*(reinterpret_cast<int *>(&dataBuffer[RH_MAGIC_NUMBER_OFFSET])));
   printf("number of events : %d\n",*(reinterpret_cast<int *>(&dataBuffer[RH_EVENT_COUNT_OFFSET])));
-  printf("data length      : %d\n",*(reinterpret_cast<int *>(&dataBuffer[RH_DATA_LENGTH_OFFSET])));
-}
-
-// -------------------------------------------------------------------------
-// datastream-backed readRecord.
-//
-// Mirrors the ifstream version but does a single speculative coalesced read
-// (header + first chunk of data) and only issues a second read if the record
-// is larger than the speculative chunk. On a high-latency link this halves
-// the network round-trips per record vs. (read 80 B header, then read data).
-// -------------------------------------------------------------------------
-void record::readRecord(hipo::datastream &stream, long position, int /*dataOffset*/){
-
-    // Default speculative chunk: header(80) + 16 KB of data. Most CLAS12
-    // records are MBs, so this rarely covers the full data — but the
-    // coalesced read still removes one RTT for header parsing.
-    constexpr int kHeaderBytes        = 80;
-    constexpr int kSpeculativeDataLen = 16 * 1024;
-    constexpr int kSpeculativeTotal   = kHeaderBytes + kSpeculativeDataLen;
-
-    // 1) Read header + speculative chunk in one shot.
-    if (static_cast<size_t>(kSpeculativeTotal) > recordCompressedBuffer.size()) {
-        recordCompressedBuffer.resize(kSpeculativeTotal + 5 * 1024);
-    }
-    recordHeaderBuffer.resize(80);
-
-    std::vector<char> spec(static_cast<size_t>(kSpeculativeTotal));
-    stream.position(position);
-    int got = stream.read(spec.data(), kSpeculativeTotal);
-    if (got < kHeaderBytes) {
-        // Could not even fetch the header — let downstream handle it.
-        return;
-    }
-    std::memcpy(recordHeaderBuffer.data(), spec.data(), 80);
-
-    // 2) Parse header.
-    recordHeader.recordLength     = *(reinterpret_cast<int *>(&recordHeaderBuffer[RH_RECORD_LENGTH_OFFSET]));
-    recordHeader.headerLength     = *(reinterpret_cast<int *>(&recordHeaderBuffer[RH_HEADER_LENGTH_OFFSET]));
-    recordHeader.numberOfEvents   = *(reinterpret_cast<int *>(&recordHeaderBuffer[RH_EVENT_COUNT_OFFSET]));
-    recordHeader.bitInfo          = *(reinterpret_cast<int *>(&recordHeaderBuffer[RH_BIT_INFO_OFFSET]));
-    recordHeader.signatureString  = *(reinterpret_cast<int *>(&recordHeaderBuffer[RH_MAGIC_NUMBER_OFFSET]));
-    recordHeader.recordDataLength = *(reinterpret_cast<int *>(&recordHeaderBuffer[RH_DATA_LENGTH_OFFSET]));
-    recordHeader.userHeaderLength = *(reinterpret_cast<int *>(&recordHeaderBuffer[RH_USER_HEADER_LEN_OFFSET]));
-    int compressedWord            = *(reinterpret_cast<int *>(&recordHeaderBuffer[RH_COMP_WORD_OFFSET]));
-
-    if(static_cast<uint32_t>(recordHeader.signatureString)==HEADER_MAGIC)    recordHeader.dataEndianness = 0;
-    if(static_cast<uint32_t>(recordHeader.signatureString)==HEADER_MAGIC_BE) recordHeader.dataEndianness = 1;
-
-    if(static_cast<uint32_t>(recordHeader.signatureString)==HEADER_MAGIC_BE){
-        recordHeader.recordLength     = __builtin_bswap32(recordHeader.recordLength);
-        recordHeader.headerLength     = __builtin_bswap32(recordHeader.headerLength);
-        recordHeader.numberOfEvents   = __builtin_bswap32(recordHeader.numberOfEvents);
-        recordHeader.recordDataLength = __builtin_bswap32(recordHeader.recordDataLength);
-        recordHeader.userHeaderLength = __builtin_bswap32(recordHeader.userHeaderLength);
-        recordHeader.bitInfo          = __builtin_bswap32(recordHeader.bitInfo);
-        compressedWord                = __builtin_bswap32(compressedWord);
-    }
-
-    int compressedDataLengthPadding = (recordHeader.bitInfo>>BITINFO_PAD3_SHIFT)&BITINFO_PAD_MASK;
-    int headerLengthBytes     = recordHeader.headerLength*4;
-    int dataBufferLengthBytes = recordHeader.recordLength*4 - headerLengthBytes;
-
-    recordHeader.userHeaderLengthPadding    = (recordHeader.bitInfo>>BITINFO_PAD1_SHIFT)&BITINFO_PAD_MASK;
-    recordHeader.recordDataLengthCompressed = compressedWord&COMP_LENGTH_MASK;
-    recordHeader.compressionType            = (compressedWord>>COMP_TYPE_SHIFT)&COMP_TYPE_BYTE;
-    recordHeader.indexDataLength            = 4*recordHeader.numberOfEvents;
-
-    // 3) Resize compressed buffer.
-    if(static_cast<size_t>(dataBufferLengthBytes) > recordCompressedBuffer.size()){
-        int newSize = dataBufferLengthBytes + 5*1024;
-        recordCompressedBuffer.resize(newSize);
-    }
-
-    // 4) Compose the compressed data buffer from the speculative tail + any
-    //    additional read needed.
-    //
-    //    The HIPO record header may be longer than 80 bytes (headerLengthBytes
-    //    field). In that case the speculative chunk past offset 80 first
-    //    contains the rest of the header; data starts at offset headerLengthBytes.
-    int specDataAvailable = got - headerLengthBytes;       // bytes of data in spec
-    if (specDataAvailable < 0) specDataAvailable = 0;
-    int specDataOffset = headerLengthBytes;                // offset into spec
-    int copyFromSpec = std::min(specDataAvailable, dataBufferLengthBytes);
-
-    if (copyFromSpec > 0) {
-        std::memcpy(recordCompressedBuffer.data(),
-                    spec.data() + specDataOffset,
-                    static_cast<size_t>(copyFromSpec));
-    }
-
-    int remaining = dataBufferLengthBytes - copyFromSpec;
-    if (remaining > 0) {
-        long dataposition = position + headerLengthBytes + copyFromSpec;
-        stream.position(dataposition);
-        stream.read(recordCompressedBuffer.data() + copyFromSpec, remaining);
-    }
-
-    // 5) Decompress.
-    int decompressedLength = recordHeader.indexDataLength +
-                             recordHeader.userHeaderLength +
-                             recordHeader.userHeaderLengthPadding +
-                             recordHeader.recordDataLength;
-    if(recordBuffer.size() < static_cast<size_t>(decompressedLength)){
-        recordBuffer.resize(decompressedLength + 1024);
-    }
-    if(recordHeader.compressionType==0){
-        memcpy(recordBuffer.data(), recordCompressedBuffer.data(), decompressedLength);
-    } else {
-        getUncompressed(recordCompressedBuffer.data(), recordBuffer.data(),
-                        dataBufferLengthBytes - compressedDataLengthPadding,
-                        decompressedLength);
-    }
-
-    // 6) Convert per-event length array → cumulative positions.
-    int eventPosition = 0;
-    for(int i = 0; i < recordHeader.numberOfEvents; i++){
-        auto *ptr = reinterpret_cast<int*>(&recordBuffer[i*4]);
-        int size = *ptr;
-        if(recordHeader.dataEndianness==1) size = __builtin_bswap32(size);
-        eventPosition += size;
-        *ptr = eventPosition;
-    }
+  printf("data length      : %d\n",*(reinterpret_cast<int *>(&dataBuffer[RH_DATA_LENGTH_OFFSET]))); 
 }
 
 }

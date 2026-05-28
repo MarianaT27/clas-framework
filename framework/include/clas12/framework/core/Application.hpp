@@ -20,7 +20,6 @@
 #include <chain.h>
 #include <reader.h>
 #include <dictionary.h>
-#include <ioOptions.h>
 
 namespace framework {
 
@@ -46,7 +45,6 @@ class Application {
         , m_algorithms(std::move(other.m_algorithms))
         , m_input_files(std::move(other.m_input_files))
         , m_config(std::move(other.m_config))
-        , m_io_options(std::move(other.m_io_options))
         , m_record_first(other.m_record_first)
         , m_record_last(other.m_record_last)
         , m_progress_fd(other.m_progress_fd)
@@ -108,23 +106,6 @@ class Application {
      */
     auto set_num_threads(int num_threads) -> void {
         m_num_threads = num_threads;
-    }
-
-    /**
-     * @brief Set the hipo::chain I/O options.
-     *
-     * Drives the new prefetch / record-cache / I/O thread pool surface
-     * the chain exposes. Defaults preserve the legacy synchronous read
-     * path; opt in by setting prefetch_depth > 0 and / or
-     * record_cache_bytes > 0 (typical ifarm values: depth 4, cache 128MB,
-     * io_threads 2).
-     */
-    auto set_io_options(const hipo::IOOptions& opts) -> void {
-        m_io_options = opts;
-    }
-
-    [[nodiscard]] auto io_options() const -> const hipo::IOOptions& {
-        return m_io_options;
     }
 
     /**
@@ -341,20 +322,16 @@ class Application {
         unique_banks.insert("REC::Particle");
         auto all_required_banks = std::vector<std::string>(unique_banks.begin(), unique_banks.end());
 
-        // Create HIPO chain for parallel processing. The 4-arg ctor wires
-        // the I/O options (prefetch depth, record cache, async I/O thread
-        // count). With default IOOptions{} the chain falls back to the
-        // legacy synchronous read path.
-        const bool io_active = m_io_options.prefetch_depth > 0
-                            || m_io_options.record_cache_bytes > 0
-                            || m_io_options.io_threads > 0;
+        // Create HIPO chain for parallel processing. The Lz4ByPage v2 +
+        // mmap zero-copy fast path is wired in chain.h itself; no per-run
+        // I/O tuning surface remains.
+        //
         // Drive the chain's terminal progress bar based on quiet mode. When
         // `m_progress_fd >= 0` an external aggregator (tools/local_batch) is
         // rendering one bar across all worker processes, so the per-process
         // bar would just collide with it.
         const bool show_chain_progress = !m_quiet_mode && (m_progress_fd < 0);
-        hipo::chain chain(m_num_threads, show_chain_progress, /*verbose=*/false,
-                          m_io_options);
+        hipo::chain chain(m_num_threads, show_chain_progress, /*verbose=*/false);
         for (const auto& file : m_input_files) {
             chain.add(file);
         }
@@ -371,17 +348,6 @@ class Application {
                       "  Record range: [{}, {})",
                       m_record_first,
                       m_record_last < 0 ? std::string("end") : std::to_string(m_record_last));
-        }
-        if (io_active) {
-            Log::info("Application", "  I/O options: prefetch_depth={}, "
-                                      "record_cache={} MB, io_threads={}",
-                      m_io_options.prefetch_depth,
-                      m_io_options.record_cache_bytes / (1024 * 1024),
-                      m_io_options.io_threads);
-            if (!m_io_options.bank_filter.empty()) {
-                Log::info("Application", "  I/O bank filter ({} banks)",
-                          m_io_options.bank_filter.size());
-            }
         }
 
         // Optional out-of-band progress reporter for tools/local_batch.
@@ -510,10 +476,6 @@ class Application {
     /// Optional parsed TOML config; consulted once per algorithm at
     /// initialize() time. Null = use Property C++ defaults.
     std::shared_ptr<const toml::table> m_config;
-    /// hipo::chain I/O tuning (prefetch depth, record cache, async I/O
-    /// thread count, bank filter). Defaults preserve the legacy
-    /// synchronous read path.
-    hipo::IOOptions m_io_options{};
     /// Half-open record slice [m_record_first, m_record_last). Last < 0
     /// means "to end of file". Default = process the whole input.
     int m_record_first = 0;

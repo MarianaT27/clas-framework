@@ -53,11 +53,6 @@
 #include "event.h"
 #include "progresstracker.hpp"
 #include "threadpool.hpp"
-#include "ioOptions.h"
-#include "datastream.h"
-#include "filehandle.h"
-#include "recordcache.h"
-#include "recordprefetcher.h"
 
 namespace hipo {
 
@@ -105,13 +100,15 @@ using fileinfo = FileInfo;
 // ChainStatistics - Processing statistics
 //=============================================================================
 
-/// 
+///
 /// @brief Thread-safe statistics for chain processing
-/// 
+///
 struct ChainStatistics {
     std::atomic<long> total_events{0};
     std::atomic<long> events_processed{0};
     std::atomic<long> events_skipped{0};
+    std::atomic<long> total_records{0};
+    std::atomic<long> records_processed{0};
     std::chrono::steady_clock::time_point start_time;
     std::chrono::steady_clock::time_point end_time;
 
@@ -119,6 +116,8 @@ struct ChainStatistics {
         total_events = 0;
         events_processed = 0;
         events_skipped = 0;
+        total_records = 0;
+        records_processed = 0;
         start_time = std::chrono::steady_clock::now();
     }
 
@@ -131,6 +130,11 @@ struct ChainStatistics {
     [[nodiscard]] double throughput() const noexcept {
         double elapsed = elapsed_seconds();
         return elapsed > 0 ? static_cast<double>(events_processed) / elapsed : 0.0;
+    }
+
+    [[nodiscard]] double record_throughput() const noexcept {
+        double elapsed = elapsed_seconds();
+        return elapsed > 0 ? static_cast<double>(records_processed) / elapsed : 0.0;
     }
 };
 
@@ -149,18 +153,33 @@ public:
     chain_event() : m_event(nullptr), m_dict(nullptr) {}
     chain_event(event* ev, dictionary* dict) : m_event(ev), m_dict(dict) {}
 
-    /// Get a bank by name, reading it from the event
-    bank getBank(const std::string& name) {
+    /// Get a bank by name, reading it from the current event.
+    ///
+    /// Banks are reused across events via a per-thread cache: the bank (and
+    /// its schema copy) is built once per thread per name, then merely
+    /// re-pointed to the current event on each call. This avoids
+    /// reconstructing the bank — and re-copying its schema's column map — on
+    /// every event, which was the dominant per-event cost when the framework
+    /// drives the chain. Safe because the chain uses one uniform schema across
+    /// all files (the first file's dictionary). std::unordered_map is
+    /// node-based, so the returned reference stays valid across later inserts
+    /// of other bank names.
+    const bank& getBank(const std::string& name) {
         if (!m_event || !m_dict) {
             throw std::runtime_error("Invalid chain_event (no event data)");
         }
-        bank b(m_dict->getSchema(name.c_str()));
+        static thread_local std::unordered_map<std::string, bank> s_cache;
+        auto it = s_cache.find(name);
+        if (it == s_cache.end()) {
+            it = s_cache.emplace(name, bank(m_dict->getSchema(name.c_str()))).first;
+        }
+        bank& b = it->second;
         m_event->read(b);
         return b;
     }
 
     /// Alias for getBank (snake_case)
-    bank get_bank(const std::string& name) { return getBank(name); }
+    const bank& get_bank(const std::string& name) { return getBank(name); }
 
     /// Read event data into an existing banklist
     void readBanks(banklist& list) {
@@ -286,12 +305,12 @@ public:
     // Construction
     //=========================================================================
 
-    /// 
+    ///
     ///  @brief Construct a chain with specified thread count
     ///  @param threads Number of threads (0 = auto-detect hardware concurrency)
     ///  @param progress Show progress bar during processing
     ///  @param verbose Enable verbose output
-    /// 
+    ///
     explicit chain(int threads = 0, bool progress = true, bool verbose = false)
         : m_num_threads(threads == 0 ? static_cast<int>(std::thread::hardware_concurrency()) : threads),
           m_show_progress(progress),
@@ -302,49 +321,6 @@ public:
         }
     }
 
-    ///
-    /// @brief Construct a chain with tunable RNTuple-style I/O options.
-    ///
-    /// Use this when reading from low-bandwidth storage (ifarm, XRootD, HTTP)
-    /// or whenever you want the chain to open files once, share an LRU record
-    /// cache across workers, and overlap I/O with compute via a dedicated
-    /// prefetcher thread pool.
-    ///
-    /// @param threads  Number of worker threads (0 = hardware concurrency).
-    /// @param progress Show progress bar.
-    /// @param verbose  Verbose logging.
-    /// @param opts     I/O tuning. See hipo::IOOptions.
-    ///
-    explicit chain(int threads, bool progress, bool verbose, IOOptions opts)
-        : m_num_threads(threads == 0 ? static_cast<int>(std::thread::hardware_concurrency()) : threads),
-          m_show_progress(progress),
-          m_verbose(verbose),
-          m_thread_pool(m_num_threads, "ChainWorker"),
-          m_io_options(std::move(opts)) {
-        if (m_io_options.record_cache_bytes > 0) {
-            m_record_cache = std::make_unique<RecordCache>(m_io_options.record_cache_bytes);
-        }
-        if (m_verbose) {
-            fmt::print("[chain] Initialized with {} threads, "
-                       "prefetch_depth={}, cache={} MB, io_threads={}\n",
-                       m_num_threads,
-                       m_io_options.prefetch_depth,
-                       m_io_options.record_cache_bytes / (1024 * 1024),
-                       m_io_options.io_threads);
-        }
-    }
-
-    /// Update the IOOptions after construction.
-    void setIOOptions(IOOptions opts) {
-        m_io_options = std::move(opts);
-        if (m_io_options.record_cache_bytes > 0) {
-            if (m_record_cache) m_record_cache->set_capacity(m_io_options.record_cache_bytes);
-            else m_record_cache = std::make_unique<RecordCache>(m_io_options.record_cache_bytes);
-        }
-    }
-
-    /// Read-only view of the active IOOptions.
-    [[nodiscard]] const IOOptions& ioOptions() const noexcept { return m_io_options; }
 
     //=========================================================================
     // File Management
@@ -356,8 +332,7 @@ public:
     ///  @return Number of files in chain after addition
     /// 
     int add(std::string_view filename) {
-        const bool remote = hipo::is_remote_url(filename);
-        if (!remote && !std::filesystem::exists(filename)) {
+        if (!std::filesystem::exists(filename)) {
             fmt::print(stderr, "[chain] Warning: File not found: {}\n", filename);
             return static_cast<int>(m_files.size());
         }
@@ -488,32 +463,21 @@ public:
     /// Enable/disable verbose output
     void set_verbose(bool verbose) { m_verbose = verbose; }
 
-    /// Current per-event progress counter. Cheap atomic load; intended for
-    /// out-of-band watchers (e.g. tools/local_batch's parent-side aggregate
-    /// progress bar) that need to sample the chain's progress without
-    /// touching the internal ProgressTracker.
-    [[nodiscard]] long events_processed() const noexcept {
-        return m_stats.events_processed.load(std::memory_order_relaxed);
-    }
-    /// Total events the chain plans to process for this run, set after
-    /// `load_metadata_if_needed()` / the work-list build.
-    [[nodiscard]] long total_events() const noexcept {
-        return m_stats.total_events.load(std::memory_order_relaxed);
-    }
-
-    /// Restrict processing to the record-index range `[first, last)` within
-    /// each file. `last == -1` (the default) means "to the end of the file".
-    /// Workers initialise the shared `next_record` atomic to `first` and stop
-    /// when `rec_idx >= last`. Useful for splitting a single big file across
-    /// N independent processes that each handle a disjoint slice.
+    ///
+    /// @brief Restrict processing to the [first, last) record window per file.
+    ///
+    /// Useful for splitting a single big file across N independent processes
+    /// that each handle a disjoint slice (the tools/local_batch driver). Both
+    /// bounds are clamped against each file's actual record count at runtime.
+    /// `last < 0` means "to the end of each file" (the default).
+    ///
     void set_record_range(int first, int last) {
         m_record_first = std::max(0, first);
-        m_record_last  = last;  // negative = "to end"
+        m_record_last  = last;
     }
 
-    /// Read-only accessors for the current record-range bounds.
     [[nodiscard]] int record_range_first() const noexcept { return m_record_first; }
-    [[nodiscard]] int record_range_last()  const noexcept { return m_record_last; }
+    [[nodiscard]] int record_range_last()  const noexcept { return m_record_last;  }
 
     //=========================================================================
     // Validation and Scanning
@@ -793,145 +757,110 @@ public:
 
         percentage = std::clamp(percentage, 0.0, 100.0) / 100.0;
         load_metadata_if_needed();
-        const long target_events = static_cast<long>(m_stats.total_events * percentage);
 
-        // Flatten every (file, record) the run will touch into one index
-        // space so the worker team spans files instead of draining them
-        // one at a time.
-        long total_slots = 0;
-        long events_in_plan = 0;
-        const std::vector<RecordSlice> slices =
-            build_record_slices(total_slots, events_in_plan);
+        long target_events = static_cast<long>(m_stats.total_events * percentage);
 
-        m_stats.reset();
-        m_stats.total_events = std::min(target_events, events_in_plan);
+        struct WorkItem {
+            int  file_idx;
+            int  first_record;
+            int  last_record;
+            long max_events;
+        };
+        std::vector<WorkItem> work_list;
+        long events_accumulated  = 0;
+        long records_accumulated = 0;
 
-        if (m_verbose) {
-            fmt::print("[chain] Processing up to {} events from {} files / {} records "
-                       "({} threads, cross-file record-level parallelism, banklist)\n",
-                       m_stats.total_events.load(), slices.size(), total_slots, m_num_threads);
+        for (const auto& file : m_files) {
+            if (!file.is_valid || events_accumulated >= target_events) continue;
+            auto [first, last] = file_record_window(file);
+            if (first >= last) continue;
+            long events_needed    = target_events - events_accumulated;
+            long events_from_file = std::min(events_needed, file.total_events);
+            if (events_from_file <= 0) continue;
+            work_list.push_back({file.index, first, last, events_from_file});
+            events_accumulated  += events_from_file;
+            records_accumulated += (last - first);
         }
 
-        if (total_slots == 0 || m_stats.total_events == 0) {
-            m_stats.end_time = std::chrono::steady_clock::now();
-            return;
+        m_stats.reset();
+        m_stats.total_events  = events_accumulated;
+        m_stats.total_records = records_accumulated;
+
+        if (m_verbose) {
+            fmt::print("[chain] Processing {} records / {} events from {} files "
+                       "({} threads, ByPage v2 + mmap, banklist)\n",
+                records_accumulated, events_accumulated, work_list.size(), m_num_threads);
         }
 
         std::unique_ptr<ProgressTracker> progress;
-        if (m_show_progress && m_stats.total_events > 0) {
+        if (m_show_progress && records_accumulated > 0) {
             ProgressTracker::Config config;
-            config.label = fmt::format("Processing ({:.1f}%)", percentage * 100.0);
+            config.label    = fmt::format("Processing ({:.1f}%)", percentage * 100.0);
             config.show_eta = true;
             config.show_rate = true;
-            progress = std::make_unique<ProgressTracker>(m_stats.total_events, config);
+            progress = std::make_unique<ProgressTracker>(records_accumulated, config);
             progress->start();
         }
 
-        // Per-file FileHandle + prefetcher resources for the io-handle
-        // path, indexed parallel to `slices`. All files are live at once
-        // now, so the prefetchers are created up front rather than torn
-        // down between files.
-        std::vector<std::shared_ptr<FileHandle>>       handles(slices.size());
-        std::vector<std::unique_ptr<RecordPrefetcher>> prefetchers(slices.size());
-        for (size_t i = 0; i < slices.size(); ++i) {
-            if (!slices[i].use_io) continue;
-            const auto& file = m_files[slices[i].file_idx];
-            handles[i] = get_or_open_file_handle(slices[i].file_idx);
-            if (m_io_options.prefetch_depth > 0) {
-                const bool remote = hipo::is_remote_url(file.filename);
-                int io_threads = m_io_options.io_threads > 0
-                    ? m_io_options.io_threads : (remote ? 2 : 1);
-                prefetchers[i] = std::make_unique<RecordPrefetcher>(
-                    handles[i], slices[i].file_idx, m_record_cache.get(),
-                    io_threads, m_io_options.prefetch_depth);
-                int seed = std::min(slices[i].eff_last - slices[i].eff_first,
-                                    m_io_options.prefetch_depth * 2);
-                prefetchers[i]->prefetch_range(slices[i].eff_first,
-                                               slices[i].eff_first + seed);
-            }
-        }
+        for (const auto& work : work_list) {
+            const auto& file = m_files[work.file_idx];
+            std::atomic<int>  next_record{work.first_record};
+            std::atomic<long> events_processed_in_file{0};
+            std::vector<std::future<void>> futures;
 
-        std::atomic<long> next_slot{0};
-        std::atomic<long> events_done{0};
-        std::vector<std::future<void>> futures;
+            for (int t = 0; t < m_num_threads; t++) {
+                futures.push_back(m_thread_pool.submit([&, this]() {
+                    try {
+                        reader file_reader;
+                        file_reader.setTags(m_tags);
+                        file_reader.open(file.filename.c_str());
 
-        for (int t = 0; t < m_num_threads; t++) {
-            futures.push_back(m_thread_pool.submit([&, this]() {
-                try {
-                    event    temp_event;
-                    banklist thread_banks = banks;          // thread-local copy
-                    // Legacy per-worker reader: a single open reader,
-                    // re-opened when the worker crosses into a new file.
-                    // Safe because next_slot is monotonic, so each worker
-                    // sees a non-decreasing file index.
-                    std::unique_ptr<reader> legacy_reader;
-                    int                     legacy_file = -1;
-                    record                  legacy_rec;
+                        event    temp_event;
+                        banklist thread_banks = banks;  // thread-local copy
 
-                    while (true) {
-                        const long g = next_slot.fetch_add(1);
-                        if (g >= total_slots) break;
-                        if (events_done.load(std::memory_order_relaxed) >= target_events) break;
+                        while (true) {
+                            const int rec_idx = next_record.fetch_add(1);
+                            if (rec_idx >= work.last_record) break;
+                            if (events_processed_in_file.load(std::memory_order_relaxed)
+                                >= work.max_events) break;
 
-                        const auto [si, rec_idx] = decode_slice(slices, g);
-                        const RecordSlice& s = slices[si];
-                        const auto& file = m_files[s.file_idx];
+                            if (!file_reader.gotoRecord(rec_idx)) continue;
 
-                        record* rec_ptr = nullptr;
-                        std::shared_ptr<record> io_rec;  // keeps the io record alive
-
-                        if (s.use_io) {
-                            if (prefetchers[si]) {
-                                int look = rec_idx + 1 + m_io_options.prefetch_depth;
-                                prefetchers[si]->prefetch_range(
-                                    rec_idx + 1, std::min(look, s.eff_last));
-                                io_rec = prefetchers[si]->get(rec_idx);
-                            } else {
-                                io_rec = handles[si]->loadRecordShared(rec_idx);
+                            long events_in_this_record = 0;
+                            while (file_reader.nextInRecord()) {
+                                const long current_count = events_processed_in_file.fetch_add(1);
+                                if (current_count >= work.max_events) {
+                                    events_processed_in_file.fetch_sub(1);
+                                    break;
+                                }
+                                file_reader.read(temp_event);
+                                for (auto& b : thread_banks) {
+                                    // In ByPage v2 mode, this just binds each
+                                    // bank to the bypagerecord's (event, bank)
+                                    // — column inflate is deferred until the
+                                    // user lambda touches a column.
+                                    temp_event.read(b);
+                                }
+                                process_func(thread_banks, file.index, current_count);
+                                events_in_this_record++;
                             }
-                            if (!io_rec) continue;
-                            rec_ptr = io_rec.get();
-                        } else {
-                            if (s.file_idx != legacy_file) {
-                                legacy_reader = std::make_unique<reader>();
-                                legacy_reader->setTags(m_tags);
-                                legacy_reader->open(file.filename.c_str());
-                                legacy_file = s.file_idx;
-                            }
-                            if (!legacy_reader->loadRecord(legacy_rec, rec_idx)) continue;
-                            rec_ptr = &legacy_rec;
-                        }
 
-                        const int  events_in_record = rec_ptr->getEventCount();
-                        const long base = events_done.fetch_add(events_in_record);
-                        if (base >= target_events) {
-                            events_done.fetch_sub(events_in_record);
-                            break;
-                        }
-                        const int usable = static_cast<int>(std::min<long>(
-                            events_in_record, target_events - base));
-                        for (int evt_in_rec = 0; evt_in_rec < usable; evt_in_rec++) {
-                            rec_ptr->readHipoEvent(temp_event, evt_in_rec);
-                            for (auto& b : thread_banks) {
-                                temp_event.read(b);
+                            if (events_in_this_record > 0) {
+                                m_stats.events_processed.fetch_add(
+                                    events_in_this_record, std::memory_order_relaxed);
                             }
-                            process_func(thread_banks, file.index, base + evt_in_rec);
+                            m_stats.records_processed.fetch_add(1, std::memory_order_relaxed);
+                            if (progress) progress->increment();
                         }
-                        if (usable < events_in_record) {
-                            events_done.fetch_sub(events_in_record - usable);
-                        }
-                        m_stats.events_processed.fetch_add(usable, std::memory_order_relaxed);
-                        if (progress) progress->add(static_cast<std::size_t>(usable));
+                    } catch (const std::exception& e) {
+                        std::lock_guard stdout_lock{detail::get_stdout_mutex()};
+                        fmt::print(stderr, "[chain] Thread error: {}\n", e.what());
                     }
-                } catch (const std::exception& e) {
-                    std::lock_guard stdout_lock{detail::get_stdout_mutex()};
-                    fmt::print(stderr, "[chain] Thread error: {}\n", e.what());
-                }
-            }));
-        }
+                }));
+            }
 
-        for (auto& f : futures) f.get();
-        prefetchers.clear();  // tear down io threads before returning
+            for (auto& f : futures) f.get();
+        }
 
         m_stats.end_time = std::chrono::steady_clock::now();
         if (progress) progress->finish();
@@ -1015,15 +944,34 @@ public:
     /// Legacy alias
     [[nodiscard]] long total_events_count() const { return m_stats.total_events.load(); }
 
+    /// Total records to be processed across all files (loads metadata if needed)
+    [[nodiscard]] long total_records() {
+        load_metadata_if_needed();
+        return m_stats.total_records;
+    }
+
+    /// Snapshot of how many events the workers have completed so far
+    [[nodiscard]] long events_processed() const noexcept {
+        return m_stats.events_processed.load(std::memory_order_relaxed);
+    }
+
+    /// Snapshot of how many records the workers have completed so far
+    [[nodiscard]] long records_processed() const noexcept {
+        return m_stats.records_processed.load(std::memory_order_relaxed);
+    }
+
     /// Print processing statistics
     void print_statistics() const {
         fmt::print("\nChain Statistics\n");
-        fmt::print("  Files:            {}\n", m_files.size());
-        fmt::print("  Total events:     {}\n", m_stats.total_events.load());
-        fmt::print("  Events processed: {}\n", m_stats.events_processed.load());
-        fmt::print("  Processing time:  {:.2f} seconds\n", m_stats.elapsed_seconds());
+        fmt::print("  Files:             {}\n", m_files.size());
+        fmt::print("  Total records:     {}\n", m_stats.total_records.load());
+        fmt::print("  Records processed: {}\n", m_stats.records_processed.load());
+        fmt::print("  Total events:      {}\n", m_stats.total_events.load());
+        fmt::print("  Events processed:  {}\n", m_stats.events_processed.load());
+        fmt::print("  Processing time:   {:.2f} seconds\n", m_stats.elapsed_seconds());
         if (m_stats.elapsed_seconds() > 0) {
-            fmt::print("  Throughput:       {:.1f} events/sec\n", m_stats.throughput());
+            fmt::print("  Throughput:        {:.1f} records/sec ({:.1f} events/sec)\n",
+                       m_stats.record_throughput(), m_stats.throughput());
         }
     }
 
@@ -1104,155 +1052,90 @@ private:
     int m_num_threads;
     bool m_show_progress;
     bool m_verbose;
-    int m_record_first{0};
-    int m_record_last{-1};  // -1 = process to end of file
     bool m_metadata_loaded{false};
     ThreadPool m_thread_pool;
     ChainStatistics m_stats;
     mutable std::mutex m_mutex;
-
-    // RNTuple-style I/O pipeline state. Active only when m_io_options is set
-    // to a non-default value, or when the file URL is remote.
-    IOOptions                                                  m_io_options;
-    std::unique_ptr<RecordCache>                               m_record_cache;
-    mutable std::mutex                                         m_file_handles_mutex;
-    std::unordered_map<int, std::shared_ptr<FileHandle>>       m_file_handles;
+    int m_record_first{0};
+    int m_record_last{-1};   // negative = no upper bound
 
     //=========================================================================
     // Private Methods
     //=========================================================================
 
-    /// Load metadata for all files if not already loaded
+    /// Load metadata for all files if not already loaded. Runs in parallel on
+    /// the chain's thread pool so opening N files costs O(N / threads) instead
+    /// of O(N). Each file load is independent (separate reader instance), so
+    /// the only synchronisation is the final fold.
     void load_metadata_if_needed() {
         if (m_metadata_loaded) return;
 
-        if (m_verbose) fmt::print("[chain] Loading file metadata...\n");
+        if (m_verbose) fmt::print("[chain] Loading file metadata ({} files)...\n", m_files.size());
 
-        long total = 0;
+        std::vector<std::future<void>> futures;
+        futures.reserve(m_files.size());
         for (auto& file : m_files) {
             if (!file.is_valid) continue;
-            if (file.total_events < 0) {
+            if (file.total_events >= 0) continue;  // already populated
+            futures.push_back(m_thread_pool.submit([this, &file]() {
                 try {
-                    if (use_iohandle_for(file)) {
-                        // Open via FileHandle and cache it for the processing
-                        // step (single open per file across workers).
-                        auto fh = get_or_open_file_handle(file.index);
-                        file.total_events = fh->num_events();
-                        file.num_records = fh->num_records();
-                    } else {
-                        reader temp_reader;
-                        temp_reader.setTags(m_tags);
-                        temp_reader.open(file.filename.c_str());
-                        file.total_events = temp_reader.getEntries();
-                        file.num_records = temp_reader.getNRecords();
-                    }
+                    reader temp_reader;
+                    temp_reader.setTags(m_tags);
+                    temp_reader.open(file.filename.c_str());
+                    file.total_events = temp_reader.getEntries();
+                    file.num_records  = temp_reader.getNRecords();
                 } catch (const std::exception& e) {
-                    file.is_valid = false;
+                    file.is_valid      = false;
                     file.error_message = e.what();
-                    file.total_events = 0;
+                    file.total_events  = 0;
+                    file.num_records   = 0;
                 }
-            }
-            total += file.total_events;
+            }));
         }
-        m_stats.total_events = total;
-        m_metadata_loaded = true;
-    }
+        for (auto& f : futures) f.get();
 
-    /// Decide whether to use the FileHandle / prefetcher pipeline for a file.
-    /// Activated by any non-default IOOptions field, or by a remote URL.
-    [[nodiscard]] bool use_iohandle_for(const FileInfo& file) const noexcept {
-        if (hipo::is_remote_url(file.filename)) return true;
-        if (m_io_options.prefetch_depth > 0)    return true;
-        if (m_io_options.record_cache_bytes > 0) return true;
-        if (m_io_options.io_threads > 0)        return true;
-        return false;
-    }
-
-    /// Open (or fetch from cache) a FileHandle for a given file index.
-    /// Thread-safe; ensures the file is opened exactly once.
-    std::shared_ptr<FileHandle> get_or_open_file_handle(int file_idx) {
-        {
-            std::lock_guard<std::mutex> lock(m_file_handles_mutex);
-            auto it = m_file_handles.find(file_idx);
-            if (it != m_file_handles.end()) return it->second;
-        }
-        // Open outside the cache lock so a slow remote open doesn't block
-        // unrelated lookups.
-        auto fh = std::make_shared<FileHandle>();
-        fh->open(m_files[file_idx].filename, m_tags);
-        std::lock_guard<std::mutex> lock(m_file_handles_mutex);
-        auto [it, inserted] = m_file_handles.emplace(file_idx, fh);
-        return it->second;
-    }
-
-    // ------------------------------------------------------------------
-    // Cross-file record work plan
-    // ------------------------------------------------------------------
-    //
-    // Historically the worker team processed one file at a time: all
-    // threads drained the records of file N, joined, then moved to file
-    // N+1. With many small files (or a directory of skim slices) the last
-    // few records of every file left most threads idle while one finished.
-    //
-    // The plan below flattens every (file, record) pair the run will
-    // touch — honoring the m_record_first/m_record_last window per file —
-    // into a single contiguous index space [0, total_slots). One global
-    // atomic counter then feeds every worker, so a thread can be on
-    // record 5 of file 2 while another is on record 900 of file 0. The
-    // global counter is monotonic, so the file index any single worker
-    // observes is non-decreasing — that lets the legacy per-worker reader
-    // keep just one file open at a time (re-opened on file change),
-    // bounding open descriptors at O(threads) instead of O(threads*files).
-
-    struct RecordSlice {
-        int  file_idx;    ///< index into m_files
-        int  eff_first;   ///< first record of this file to process
-        int  eff_last;    ///< one-past-last record of this file
-        long flat_base;   ///< cumulative record count before this file
-        bool use_io;      ///< whether this file uses the FileHandle path
-    };
-
-    /// Flatten all valid files into the cross-file record index space.
-    /// `total_slots_out` receives the total record count; `events_out`
-    /// receives the sum of file event counts (progress-bar denominator).
-    auto build_record_slices(long& total_slots_out, long& events_out)
-        -> std::vector<RecordSlice>
-    {
-        std::vector<RecordSlice> slices;
-        long total = 0;
-        long events = 0;
+        long total_events  = 0;
+        long total_records = 0;
         for (const auto& file : m_files) {
             if (!file.is_valid) continue;
-            const int nrec = file.num_records;
-            const int ef = std::min(m_record_first, nrec);
-            const int el = (m_record_last < 0) ? nrec
-                                               : std::min(m_record_last, nrec);
-            if (el <= ef) continue;  // empty / out-of-range slice
-            slices.push_back({file.index, ef, el, total, use_iohandle_for(file)});
-            total  += static_cast<long>(el - ef);
-            events += file.total_events;
+            total_events  += file.total_events;
+            total_records += effective_records_in_file(file);
         }
-        total_slots_out = total;
-        events_out      = events;
-        return slices;
+        m_stats.total_events  = total_events;
+        m_stats.total_records = total_records;
+        m_metadata_loaded     = true;
     }
 
-    /// Map a flat record index to (slice index, record index in file).
-    /// Binary search over the slices' flat_base prefix sums.
-    static auto decode_slice(const std::vector<RecordSlice>& slices, long g)
-        -> std::pair<int, int>
-    {
-        int lo = 0;
-        int hi = static_cast<int>(slices.size());
-        while (lo + 1 < hi) {
-            const int mid = (lo + hi) / 2;
-            if (slices[mid].flat_base <= g) lo = mid;
-            else                            hi = mid;
-        }
-        return {lo, slices[lo].eff_first + static_cast<int>(g - slices[lo].flat_base)};
+    /// Number of records this file will actually contribute after applying
+    /// the [m_record_first, m_record_last) window. Clamped to the file's
+    /// own record count.
+    [[nodiscard]] int effective_records_in_file(const FileInfo& file) const noexcept {
+        if (file.num_records <= 0) return 0;
+        const int first = std::min(m_record_first, file.num_records);
+        const int last  = (m_record_last < 0)
+                          ? file.num_records
+                          : std::min(m_record_last, file.num_records);
+        return std::max(0, last - first);
+    }
+
+    /// Per-file [first, last) record window after clamping. Returned via a
+    /// small pair to keep call sites compact.
+    [[nodiscard]] std::pair<int,int> file_record_window(const FileInfo& file) const noexcept {
+        const int first = std::min(m_record_first, std::max(0, file.num_records));
+        const int last  = (m_record_last < 0)
+                          ? file.num_records
+                          : std::min(m_record_last, file.num_records);
+        return { first, std::max(first, last) };
     }
 
     /// Implementation for process() overloads
+    ///
+    /// Hot path: each worker holds its own `reader` for the file, which
+    /// independently mmap's the file (kernel page cache de-dups). The
+    /// reader's mmap-backed Lz4ByPage v2 / Lz4ByBank fast paths produce
+    /// shared_ptr<bypagerecord>/<bybankrecord> views straight from mmap
+    /// memory — no per-record memcpy, no eager LZ4 decode. Column inflate
+    /// happens lazily on the user lambda's first touch through chain_event.
     template<typename ProcessFunc>
     void process_impl(ProcessFunc&& process_func, long target_events,
                       const std::string& label) {
@@ -1261,145 +1144,111 @@ private:
             return;
         }
 
-        // Flatten every (file, record) the run will touch into one index
-        // space so the worker team spans files instead of draining them
-        // one at a time.
-        long total_slots = 0;
-        long events_in_plan = 0;
-        const std::vector<RecordSlice> slices =
-            build_record_slices(total_slots, events_in_plan);
+        // Build work list: records per file after applying [m_record_first,
+        // m_record_last). target_events caps the total events but we still
+        // process *whole* records (the progress bar measures records).
+        struct WorkItem {
+            int  file_idx;
+            int  first_record;
+            int  last_record;        // exclusive
+            long max_events;
+        };
+        std::vector<WorkItem> work_list;
+        long events_accumulated  = 0;
+        long records_accumulated = 0;
 
-        m_stats.reset();
-        m_stats.total_events = std::min(target_events, events_in_plan);
-
-        if (m_verbose) {
-            fmt::print("[chain] Processing up to {} events from {} files / {} records "
-                       "({} threads, cross-file record-level parallelism)\n",
-                       m_stats.total_events.load(), slices.size(), total_slots, m_num_threads);
+        for (const auto& file : m_files) {
+            if (!file.is_valid || events_accumulated >= target_events) continue;
+            auto [first, last] = file_record_window(file);
+            if (first >= last) continue;
+            long events_needed    = target_events - events_accumulated;
+            long events_from_file = std::min(events_needed, file.total_events);
+            if (events_from_file <= 0) continue;
+            work_list.push_back({file.index, first, last, events_from_file});
+            events_accumulated  += events_from_file;
+            records_accumulated += (last - first);
         }
 
-        if (total_slots == 0 || m_stats.total_events == 0) {
-            m_stats.end_time = std::chrono::steady_clock::now();
-            return;
+        m_stats.reset();
+        m_stats.total_events  = events_accumulated;
+        m_stats.total_records = records_accumulated;
+
+        if (m_verbose) {
+            fmt::print("[chain] Processing {} records / {} events from {} files "
+                       "({} threads, ByPage v2 + mmap fast path)\n",
+                records_accumulated, events_accumulated, work_list.size(), m_num_threads);
         }
 
         std::unique_ptr<ProgressTracker> progress;
-        if (m_show_progress && m_stats.total_events > 0) {
+        if (m_show_progress && records_accumulated > 0) {
             ProgressTracker::Config config;
-            config.label = label;
+            config.label    = label;
             config.show_eta = true;
             config.show_rate = true;
-            progress = std::make_unique<ProgressTracker>(m_stats.total_events, config);
+            progress = std::make_unique<ProgressTracker>(records_accumulated, config);
             progress->start();
         }
 
-        // Per-file FileHandle + prefetcher resources for the io-handle
-        // path, indexed parallel to `slices`.
-        std::vector<std::shared_ptr<FileHandle>>       handles(slices.size());
-        std::vector<std::unique_ptr<RecordPrefetcher>> prefetchers(slices.size());
-        for (size_t i = 0; i < slices.size(); ++i) {
-            if (!slices[i].use_io) continue;
-            const auto& file = m_files[slices[i].file_idx];
-            handles[i] = get_or_open_file_handle(slices[i].file_idx);
-            if (m_io_options.prefetch_depth > 0) {
-                const bool remote = hipo::is_remote_url(file.filename);
-                int io_threads = m_io_options.io_threads > 0
-                    ? m_io_options.io_threads : (remote ? 2 : 1);
-                prefetchers[i] = std::make_unique<RecordPrefetcher>(
-                    handles[i], slices[i].file_idx, m_record_cache.get(),
-                    io_threads, m_io_options.prefetch_depth);
-                int seed = std::min(slices[i].eff_last - slices[i].eff_first,
-                                    m_io_options.prefetch_depth * 2);
-                prefetchers[i]->prefetch_range(slices[i].eff_first,
-                                               slices[i].eff_first + seed);
-            }
-        }
+        for (const auto& work : work_list) {
+            const auto& file = m_files[work.file_idx];
+            std::atomic<int>  next_record{work.first_record};
+            std::atomic<long> events_processed_in_file{0};
+            std::vector<std::future<void>> futures;
 
-        std::atomic<long> next_slot{0};
-        std::atomic<long> events_done{0};
-        std::vector<std::future<void>> futures;
+            for (int t = 0; t < m_num_threads; t++) {
+                futures.push_back(m_thread_pool.submit([&, this]() {
+                    try {
+                        // One reader per worker per file. reader::open() does
+                        // the mmap, enables setUseByBankDirect/setUseByPageDirect,
+                        // and binds the per-file dictionary to inputRecord — so
+                        // reader::read(event) will route through the lazy
+                        // ByPage / ByBank path automatically.
+                        reader file_reader;
+                        file_reader.setTags(m_tags);
+                        file_reader.open(file.filename.c_str());
 
-        for (int t = 0; t < m_num_threads; t++) {
-            futures.push_back(m_thread_pool.submit([&, this]() {
-                try {
-                    event temp_event;
-                    // Legacy per-worker reader: one open reader + its own
-                    // dictionary, re-opened when the worker crosses into a
-                    // new file. next_slot is monotonic, so each worker sees
-                    // a non-decreasing file index — one reader is enough
-                    // and open descriptors stay at O(threads).
-                    std::unique_ptr<reader>     legacy_reader;
-                    std::unique_ptr<dictionary> legacy_dict;
-                    int                         legacy_file = -1;
-                    record                      legacy_rec;
+                        dictionary dict;
+                        file_reader.readDictionary(dict);
 
-                    while (true) {
-                        const long g = next_slot.fetch_add(1);
-                        if (g >= total_slots) break;
-                        if (events_done.load(std::memory_order_relaxed) >= target_events) break;
+                        event temp_event;
 
-                        const auto [si, rec_idx] = decode_slice(slices, g);
-                        const RecordSlice& s = slices[si];
-                        const auto& file = m_files[s.file_idx];
+                        while (true) {
+                            const int rec_idx = next_record.fetch_add(1);
+                            if (rec_idx >= work.last_record) break;
+                            if (events_processed_in_file.load(std::memory_order_relaxed)
+                                >= work.max_events) break;
 
-                        record*     rec_ptr  = nullptr;
-                        dictionary* dict_ptr = nullptr;
-                        std::shared_ptr<record> io_rec;  // keeps the io record alive
+                            if (!file_reader.gotoRecord(rec_idx)) continue;
 
-                        if (s.use_io) {
-                            if (prefetchers[si]) {
-                                int look = rec_idx + 1 + m_io_options.prefetch_depth;
-                                prefetchers[si]->prefetch_range(
-                                    rec_idx + 1, std::min(look, s.eff_last));
-                                io_rec = prefetchers[si]->get(rec_idx);
-                            } else {
-                                io_rec = handles[si]->loadRecordShared(rec_idx);
+                            long events_in_this_record = 0;
+                            while (file_reader.nextInRecord()) {
+                                const long current_count = events_processed_in_file.fetch_add(1);
+                                if (current_count >= work.max_events) {
+                                    events_processed_in_file.fetch_sub(1);
+                                    break;
+                                }
+                                file_reader.read(temp_event);
+                                chain_event evt(&temp_event, &dict);
+                                process_func(evt, file.index, current_count);
+                                events_in_this_record++;
                             }
-                            if (!io_rec) continue;
-                            rec_ptr  = io_rec.get();
-                            dict_ptr = &handles[si]->dictionary();
-                        } else {
-                            if (s.file_idx != legacy_file) {
-                                legacy_reader = std::make_unique<reader>();
-                                legacy_reader->setTags(m_tags);
-                                legacy_reader->open(file.filename.c_str());
-                                legacy_dict = std::make_unique<dictionary>();
-                                legacy_reader->readDictionary(*legacy_dict);
-                                legacy_file = s.file_idx;
-                            }
-                            if (!legacy_reader->loadRecord(legacy_rec, rec_idx)) continue;
-                            rec_ptr  = &legacy_rec;
-                            dict_ptr = legacy_dict.get();
-                        }
 
-                        const int  events_in_record = rec_ptr->getEventCount();
-                        const long base = events_done.fetch_add(events_in_record);
-                        if (base >= target_events) {
-                            events_done.fetch_sub(events_in_record);
-                            break;
+                            if (events_in_this_record > 0) {
+                                m_stats.events_processed.fetch_add(
+                                    events_in_this_record, std::memory_order_relaxed);
+                            }
+                            m_stats.records_processed.fetch_add(1, std::memory_order_relaxed);
+                            if (progress) progress->increment();
                         }
-                        const int usable = static_cast<int>(std::min<long>(
-                            events_in_record, target_events - base));
-                        for (int evt_in_rec = 0; evt_in_rec < usable; evt_in_rec++) {
-                            rec_ptr->readHipoEvent(temp_event, evt_in_rec);
-                            chain_event evt(&temp_event, dict_ptr);
-                            process_func(evt, file.index, base + evt_in_rec);
-                        }
-                        if (usable < events_in_record) {
-                            events_done.fetch_sub(events_in_record - usable);
-                        }
-                        m_stats.events_processed.fetch_add(usable, std::memory_order_relaxed);
-                        if (progress) progress->add(static_cast<std::size_t>(usable));
+                    } catch (const std::exception& e) {
+                        std::lock_guard stdout_lock{detail::get_stdout_mutex()};
+                        fmt::print(stderr, "[chain] Thread error: {}\n", e.what());
                     }
-                } catch (const std::exception& e) {
-                    std::lock_guard stdout_lock{detail::get_stdout_mutex()};
-                    fmt::print(stderr, "[chain] Thread error: {}\n", e.what());
-                }
-            }));
-        }
+                }));
+            }
 
-        for (auto& f : futures) f.get();
-        prefetchers.clear();  // tear down io threads before returning
+            for (auto& f : futures) f.get();
+        }
 
         m_stats.end_time = std::chrono::steady_clock::now();
         if (progress) progress->finish();
@@ -1415,9 +1264,17 @@ private:
             fmt::print(stderr, "[chain] Warning: No files to process.\n");
             return;
         }
+        load_metadata_if_needed();
+
+        long records_in_plan = 0;
+        for (const auto& f : m_files) {
+            if (!f.is_valid) continue;
+            records_in_plan += effective_records_in_file(f);
+        }
 
         m_stats.reset();
-        m_stats.total_events = target_events;
+        m_stats.total_events  = target_events;
+        m_stats.total_records = records_in_plan;
 
         if (m_verbose) {
             fmt::print("[chain] Filtered processing: requiring banks [");
@@ -1425,15 +1282,16 @@ private:
                 fmt::print("{}{}", required_banks[i],
                     i < required_banks.size() - 1 ? ", " : "");
             }
-            fmt::print("] (record-level parallelism)\n");
+            fmt::print("] over {} records (ByPage v2 + mmap)\n", records_in_plan);
         }
 
         std::unique_ptr<ProgressTracker> progress;
-        if (m_show_progress && target_events > 0) {
+        if (m_show_progress && records_in_plan > 0) {
             ProgressTracker::Config config;
-            config.label = "Filtered processing";
+            config.label    = "Filtered processing";
             config.show_eta = true;
-            progress = std::make_unique<ProgressTracker>(target_events, config);
+            config.show_rate = true;
+            progress = std::make_unique<ProgressTracker>(records_in_plan, config);
             progress->start();
         }
 
@@ -1441,125 +1299,63 @@ private:
 
         for (const auto& file : m_files) {
             if (!file.is_valid || events_found >= target_events) continue;
-            const bool use_io = use_iohandle_for(file);
+            auto [first, last] = file_record_window(file);
+            if (first >= last) continue;
 
-            std::atomic<int> next_record{0};
+            std::atomic<int> next_record{first};
             std::vector<std::future<void>> futures;
 
-            std::shared_ptr<FileHandle>       fh;
-            std::unique_ptr<RecordPrefetcher> prefetcher;
-            if (use_io) {
-                fh = get_or_open_file_handle(file.index);
-                if (m_io_options.prefetch_depth > 0) {
-                    const bool remote = hipo::is_remote_url(file.filename);
-                    int io_threads = m_io_options.io_threads > 0
-                        ? m_io_options.io_threads
-                        : (remote ? 2 : 1);
-                    prefetcher = std::make_unique<RecordPrefetcher>(
-                        fh, file.index, m_record_cache.get(),
-                        io_threads, m_io_options.prefetch_depth);
-                    int seed = std::min(file.num_records,
-                                        m_io_options.prefetch_depth * 2);
-                    prefetcher->prefetch_range(0, seed);
-                }
-            }
-
             for (int t = 0; t < m_num_threads && events_found < target_events; t++) {
-                futures.push_back(m_thread_pool.submit([&, this]() {
+                futures.push_back(m_thread_pool.submit([&, this, file_last = last]() {
                     try {
-                        if (use_io) {
-                            dictionary& dict = fh->dictionary();
+                        reader file_reader;
+                        file_reader.setTags(m_tags);
+                        file_reader.open(file.filename.c_str());
 
-                            std::vector<bank> banks;
-                            banks.reserve(required_banks.size());
-                            for (const auto& name : required_banks) {
-                                banks.emplace_back(dict.getSchema(name.c_str()));
-                            }
+                        dictionary dict;
+                        file_reader.readDictionary(dict);
 
-                            event temp_event;
+                        std::vector<bank> banks;
+                        banks.reserve(required_banks.size());
+                        for (const auto& name : required_banks) {
+                            banks.emplace_back(dict.getSchema(name.c_str()));
+                        }
 
-                            while (events_found < target_events) {
-                                int rec_idx = next_record.fetch_add(1);
-                                if (rec_idx >= file.num_records) break;
-                                if (prefetcher) {
-                                    int look_ahead = rec_idx + 1 + m_io_options.prefetch_depth;
-                                    prefetcher->prefetch_range(
-                                        rec_idx + 1,
-                                        std::min(look_ahead, file.num_records));
-                                }
-                                std::shared_ptr<record> rec_ptr =
-                                    prefetcher ? prefetcher->get(rec_idx)
-                                               : fh->loadRecordShared(rec_idx);
-                                if (!rec_ptr) continue;
-                                int events_in_record = rec_ptr->getEventCount();
-                                for (int evt_in_rec = 0; evt_in_rec < events_in_record; evt_in_rec++) {
-                                    if (events_found >= target_events) break;
-                                    rec_ptr->readHipoEvent(temp_event, evt_in_rec);
-                                    bool has_all_banks = true;
-                                    for (auto& b : banks) {
-                                        temp_event.read(b);
-                                        if (b.getRows() == 0) { has_all_banks = false; break; }
-                                    }
-                                    if (has_all_banks) {
-                                        long evt_count = events_found.fetch_add(1);
-                                        if (evt_count >= target_events) break;
-                                        chain_event evt(&temp_event, &dict);
-                                        process_func(evt, file.index, evt_count);
-                                        m_stats.events_processed++;
-                                        if (progress) progress->increment();
+                        event temp_event;
+
+                        while (events_found.load(std::memory_order_relaxed) < target_events) {
+                            const int rec_idx = next_record.fetch_add(1);
+                            if (rec_idx >= file_last) break;
+
+                            if (!file_reader.gotoRecord(rec_idx)) continue;
+
+                            while (file_reader.nextInRecord()) {
+                                if (events_found.load(std::memory_order_relaxed)
+                                    >= target_events) break;
+
+                                file_reader.read(temp_event);
+
+                                bool has_all_banks = true;
+                                for (auto& b : banks) {
+                                    temp_event.read(b);
+                                    if (b.getRows() == 0) {
+                                        has_all_banks = false;
+                                        break;
                                     }
                                 }
-                            }
-                        } else {
-                            reader file_reader;
-                            file_reader.setTags(m_tags);
-                            file_reader.open(file.filename.c_str());
 
-                            dictionary dict;
-                            file_reader.readDictionary(dict);
+                                if (has_all_banks) {
+                                    const long evt_count = events_found.fetch_add(1);
+                                    if (evt_count >= target_events) break;
 
-                            std::vector<bank> banks;
-                            banks.reserve(required_banks.size());
-                            for (const auto& name : required_banks) {
-                                banks.emplace_back(dict.getSchema(name.c_str()));
-                            }
-
-                            record rec;
-                            event temp_event;
-
-                            while (events_found < target_events) {
-                                int rec_idx = next_record.fetch_add(1);
-                                if (rec_idx >= file.num_records) break;
-
-                                if (!file_reader.loadRecord(rec, rec_idx)) continue;
-
-                                int events_in_record = rec.getEventCount();
-
-                                for (int evt_in_rec = 0; evt_in_rec < events_in_record; evt_in_rec++) {
-                                    if (events_found >= target_events) break;
-
-                                    rec.readHipoEvent(temp_event, evt_in_rec);
-
-                                    bool has_all_banks = true;
-                                    for (auto& b : banks) {
-                                        temp_event.read(b);
-                                        if (b.getRows() == 0) {
-                                            has_all_banks = false;
-                                            break;
-                                        }
-                                    }
-
-                                    if (has_all_banks) {
-                                        long evt_count = events_found.fetch_add(1);
-                                        if (evt_count >= target_events) break;
-
-                                        chain_event evt(&temp_event, &dict);
-                                        process_func(evt, file.index, evt_count);
-                                        m_stats.events_processed++;
-                                        if (progress) progress->increment();
-                                    }
+                                    chain_event evt(&temp_event, &dict);
+                                    process_func(evt, file.index, evt_count);
+                                    m_stats.events_processed.fetch_add(
+                                        1, std::memory_order_relaxed);
                                 }
                             }
+                            m_stats.records_processed.fetch_add(1, std::memory_order_relaxed);
+                            if (progress) progress->increment();
                         }
                     } catch (const std::exception& e) {
                         std::lock_guard stdout_lock{detail::get_stdout_mutex()};
@@ -1568,7 +1364,6 @@ private:
                 }));
             }
             for (auto& f : futures) f.get();
-            prefetcher.reset();
         }
 
         m_stats.end_time = std::chrono::steady_clock::now();

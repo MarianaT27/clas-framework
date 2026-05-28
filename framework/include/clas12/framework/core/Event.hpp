@@ -146,18 +146,49 @@ class Event {
      * @brief First electron whose |status| falls in @p status_range and
      *        whose status is negative with non-zero momentum.
      *
-     * Default range covers the forward detector band. Single O(N) scan over
-     * the cached `electrons()` vector — same cost as the old free function.
+     * Default range covers the full forward detector band: 2000 <= |status|
+     * < 4000 (FD = 2000 is the lower bound, BD = 4000 is the start of the
+     * next region). The earlier {FD, CD} = {2000, 3000} default truncated the
+     * upper half of the FD band. Single O(N) scan over the cached
+     * `electrons()` vector — same cost as the old free function.
      */
     auto find_trigger_electron(
-        std::pair<double, double> status_range = {FD, CD}
+        std::pair<double, double> status_range = {FD, BD}
     ) -> std::optional<Particle> {
-        for (const auto& e : electrons()) {
-            const double abs_status = std::abs(e.status());
-            if (e.status() < 0.0 && e.p() != 0.0 &&
-                status_range.first <= abs_status && abs_status < status_range.second) {
-                return e;
+        // If particles are already materialized, scan the cached vector.
+        if (m_particles_loaded) {
+            for (const auto& e : electrons()) {
+                const double abs_status = std::abs(e.status());
+                if (e.status() < 0.0 && e.p() != 0.0 &&
+                    status_range.first <= abs_status && abs_status < status_range.second) {
+                    return e;
+                }
             }
+            return std::nullopt;
+        }
+
+        // Lazy fast path: scan REC::Particle directly and build only the one
+        // matching electron, never materializing all particles. Mirrors the
+        // raw-chain benchmark loop; identical Particle via read_particle_at().
+        const auto& P = get_bank("REC::Particle");
+        const int n_rows = P.getRows();
+        if (n_rows == 0) return std::nullopt;
+        if (!m_particle_cols) m_particle_cols = ParticleColumns::resolve(P);
+        const ParticleColumns& c = *m_particle_cols;
+        if (!c.valid()) return std::nullopt;
+
+        for (int i = 0; i < n_rows; ++i) {
+            if (P.getInt(c.pid, i) != static_cast<int>(PIDs::ELECTRON)) continue;
+            const int status = c.status >= 0 ? P.getShort(c.status, i) : 0;
+            if (status >= 0) continue;
+            const double abs_status = std::abs(static_cast<double>(status));
+            if (!(status_range.first <= abs_status && abs_status < status_range.second)) continue;
+            // p != 0  <=>  not all momentum components zero.
+            const double px = c.px >= 0 ? static_cast<double>(P.getFloat(c.px, i)) : 0.0;
+            const double py = c.py >= 0 ? static_cast<double>(P.getFloat(c.py, i)) : 0.0;
+            const double pz = c.pz >= 0 ? static_cast<double>(P.getFloat(c.pz, i)) : 0.0;
+            if (px == 0.0 && py == 0.0 && pz == 0.0) continue;
+            return read_particle_at(P, c, i);
         }
         return std::nullopt;
     }
@@ -237,11 +268,11 @@ class Event {
      * remain safe to access unconditionally.
      */
     auto get_bank(const std::string& bank_name) -> const hipo::bank& {
-        auto it = m_raw_bank_cache.find(bank_name);
-        if (it == m_raw_bank_cache.end()) {
-            it = m_raw_bank_cache.emplace(bank_name, read_bank(bank_name)).first;
-        }
-        return it->second;
+        // chain_event::getBank now returns a reference to a per-thread reused
+        // bank (re-pointed to the current event), so there is nothing to cache
+        // per event — propagate the reference directly and skip the old
+        // per-event map (which copied the bank, and its schema, every event).
+        return read_bank(bank_name);
     }
 
     /**
@@ -561,6 +592,49 @@ class Event {
     }
 
     /**
+     * @brief Single forward scan over rows whose pindex column equals
+     *        @p pindex, calling `fn(T::Row)` for each match in ascending row
+     *        order. Does NOT build a PindexLinker — cheaper than
+     *        rows_for_pindex<T>() when only one pindex is queried per event
+     *        (the per-particle detector-access pattern that dominates the hot
+     *        path). The wrapper is still bound+cached via bank<T>(), so the
+     *        pindex column inflates (ByPage) exactly once.
+     *
+     * @tparam T  Generated wrapper with `view()`, `pindex_handle()`, `row(int)`.
+     * @tparam F  Callable `void(T::Row)`.
+     */
+    template <typename T, typename F>
+    void for_rows_with_pindex(int pindex, F&& fn) {
+        auto& bound = bank<T>();
+        const int h = bound.pindex_handle();
+        if (h < 0) return;
+        const hipo::bank& view = bound.view();
+        const int n = view.getRows();
+        for (int r = 0; r < n; ++r) {
+            if (view.getInt(h, r) == pindex) fn(bound.row(r));
+        }
+    }
+
+    /**
+     * @brief Single forward scan that calls `fn(T::Row)` for each pindex match
+     *        and stops at the first row for which `fn` returns true. No linker.
+     *        Used by the `first_matching` / `first_row` physics-view readers.
+     *
+     * @tparam F  Callable `bool(T::Row)` — return true to stop.
+     */
+    template <typename T, typename F>
+    void find_row_with_pindex(int pindex, F&& fn) {
+        auto& bound = bank<T>();
+        const int h = bound.pindex_handle();
+        if (h < 0) return;
+        const hipo::bank& view = bound.view();
+        const int n = view.getRows();
+        for (int r = 0; r < n; ++r) {
+            if (view.getInt(h, r) == pindex && fn(bound.row(r))) return;
+        }
+    }
+
+    /**
      * @brief Return a lazy view of `T::Row` proxies whose `index` column
      *        matches the given key.
      *
@@ -592,17 +666,78 @@ class Event {
         return s_empty;
     }
 
+    /// Pre-resolved REC::Particle column item indices (-1 = column absent).
+    /// Shared by load_particles() and the lazy find_trigger_electron() so the
+    /// two paths build identical Particle objects.
+    struct ParticleColumns {
+        int pid = -1, status = -1, charge = -1;
+        int px = -1, py = -1, pz = -1;
+        int vx = -1, vy = -1, vz = -1, vt = -1;
+        int beta = -1, chi2pid = -1;
+
+        [[nodiscard]] bool valid() const { return pid >= 0; }
+
+        // Resolve once per thread, keyed by the REC::Particle schema's
+        // (group, item). The framework hands a freshly-copied schema (new
+        // address) every event, so a per-event resolve would redo ~12
+        // std::map string lookups each event; (group, item) is stable across
+        // those copies, so the string resolution is paid once per thread.
+        static ParticleColumns resolve(const hipo::bank& bank) {
+            auto& schema = const_cast<hipo::bank&>(bank).getSchema();
+            static thread_local int s_group = -1;
+            static thread_local int s_item  = -2;
+            static thread_local ParticleColumns s_cached;
+            if (s_group != schema.getGroup() || s_item != schema.getItem()) {
+                s_group = schema.getGroup();
+                s_item  = schema.getItem();
+                auto r = [&](const char* n) {
+                    return schema.exists(n) ? schema.getEntryOrder(n) : -1;
+                };
+                s_cached.pid = r("pid");     s_cached.status = r("status"); s_cached.charge = r("charge");
+                s_cached.px = r("px");       s_cached.py = r("py");         s_cached.pz = r("pz");
+                s_cached.vx = r("vx");       s_cached.vy = r("vy");         s_cached.vz = r("vz");
+                s_cached.vt = r("vt");       s_cached.beta = r("beta");     s_cached.chi2pid = r("chi2pid");
+            }
+            return s_cached;
+        }
+    };
+
+    /// Build one fully-populated Particle from REC::Particle row `row`, using
+    /// pre-resolved column handles. The single source of truth for Particle
+    /// field/mass/energy semantics (used by both load_particles and the lazy
+    /// trigger finder), so the two can never diverge.
+    auto read_particle_at(const hipo::bank& P, const ParticleColumns& c, int row) -> Particle {
+        const int pid       = P.getInt(c.pid, row);
+        const int status    = c.status  >= 0 ? P.getShort(c.status, row) : 0;
+        const int charge    = c.charge  >= 0 ? P.getByte(c.charge, row)  : 0;
+        const double px     = c.px      >= 0 ? static_cast<double>(P.getFloat(c.px, row))   : 0.0;
+        const double py     = c.py      >= 0 ? static_cast<double>(P.getFloat(c.py, row))   : 0.0;
+        const double pz     = c.pz      >= 0 ? static_cast<double>(P.getFloat(c.pz, row))   : 0.0;
+        const double vx     = c.vx      >= 0 ? static_cast<double>(P.getFloat(c.vx, row))   : 0.0;
+        const double vy     = c.vy      >= 0 ? static_cast<double>(P.getFloat(c.vy, row))   : 0.0;
+        const double vz     = c.vz      >= 0 ? static_cast<double>(P.getFloat(c.vz, row))   : 0.0;
+        const double vt     = c.vt      >= 0 ? static_cast<double>(P.getFloat(c.vt, row))   : 0.0;
+        const double beta   = c.beta    >= 0 ? static_cast<double>(P.getFloat(c.beta, row)) : 0.0;
+        const double chi2pid = c.chi2pid >= 0 ? static_cast<double>(P.getFloat(c.chi2pid, row)) : 0.0;
+
+        const double mass = physics::ParticleUtils::get_mass(pid);
+        const double E    = physics::ParticleUtils::compute_energy(px, py, pz, pid);
+
+        Particle p(pid, status, row, charge, mass, px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
+        p.set_event(this);
+        return p;
+    }
+
     hipo::chain_event* m_chain_event{nullptr};
-    /// Lazy cache of raw HIPO banks (one per bank name). Populated on first
-    /// `get_bank(name)` for the event; never invalidated because the Event
-    /// is freshly stack-constructed per record in Application::run().
-    std::unordered_map<std::string, hipo::bank> m_raw_bank_cache;
     ParticleMap m_particles;
     /// Charge-indexed view of REC::Particle, slot index = charge + 1 so
     /// charges -1/0/+1 map to slots 0/1/2. Built in the same single pass
     /// as `m_particles` to avoid a second scan or map allocation.
     std::array<std::vector<Particle>, 3> m_by_charge;
     bool m_particles_loaded = false;
+    /// Resolved REC::Particle column handles, cached on first use so the lazy
+    /// trigger-electron finder and load_particles() share one resolve.
+    std::optional<ParticleColumns> m_particle_cols;
     std::optional<double> m_start_time;
     long m_event_number = -1;
     int m_file_index = -1;
@@ -632,15 +767,18 @@ class Event {
     /// Fetch a HIPO bank from the underlying chain_event by name. Returns a
     /// 0-row bank if the dictionary doesn't contain the schema, so callers
     /// can probe optional banks without checking dictionary membership.
-    auto read_bank(const std::string& bank_name) const -> hipo::bank {
-        if (!m_chain_event) return hipo::bank{};
+    auto read_bank(const std::string& bank_name) const -> const hipo::bank& {
+        static const hipo::bank s_empty{};
+        if (!m_chain_event) return s_empty;
         // chain_event::getBank throws when the dictionary is missing the
         // schema; treating that as "no rows" matches the legacy semantics
-        // of bank_view_set::get on an unknown name.
+        // of bank_view_set::get on an unknown name. The returned reference
+        // points into chain_event's per-thread reused bank, valid for the
+        // duration of this event.
         try {
             return m_chain_event->getBank(bank_name);
         } catch (const std::exception&) {
-            return hipo::bank{};
+            return s_empty;
         }
     }
 
@@ -665,33 +803,17 @@ class Event {
             return;
         }
 
-        // Resolve every column index once up front via getEntryOrder.
-        // -1 means the column is missing from this schema (legacy code
-        // tolerated that for everything but pid).
-        auto& schema = const_cast<hipo::bank&>(REC_Particle).getSchema();
-        auto resolve = [&](const char* name) -> int {
-            return schema.exists(name) ? schema.getEntryOrder(name) : -1;
-        };
-
-        const int i_pid = resolve("pid");
-        if (i_pid < 0) {
+        // Resolve every column index once (cached on the Event so a prior
+        // lazy find_trigger_electron() and this full load share one resolve).
+        if (!m_particle_cols) m_particle_cols = ParticleColumns::resolve(REC_Particle);
+        const ParticleColumns& c = *m_particle_cols;
+        if (!c.valid()) {
             m_particles_loaded = true;
             return;
         }
-        const int i_status  = resolve("status");
-        const int i_charge  = resolve("charge");
-        const int i_px      = resolve("px");
-        const int i_py      = resolve("py");
-        const int i_pz      = resolve("pz");
-        const int i_vx      = resolve("vx");
-        const int i_vy      = resolve("vy");
-        const int i_vz      = resolve("vz");
-        const int i_vt      = resolve("vt");
-        const int i_beta    = resolve("beta");
-        const int i_chi2pid = resolve("chi2pid");
 
         for (int i = 0; i < n_rows; ++i) {
-            const int pid = REC_Particle.getInt(i_pid, i);
+            const int pid = REC_Particle.getInt(c.pid, i);
 
             // Find matching particle type. target_types is small (9) and
             // sorted by selection frequency; linear scan is faster than a
@@ -707,30 +829,16 @@ class Event {
             }
             if (!found) continue;
 
-            const int status  = i_status  >= 0 ? REC_Particle.getShort(i_status, i) : 0;
-            const int charge  = i_charge  >= 0 ? REC_Particle.getByte(i_charge, i)  : 0;
-            const double px   = i_px      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_px, i))   : 0.0;
-            const double py   = i_py      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_py, i))   : 0.0;
-            const double pz   = i_pz      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_pz, i))   : 0.0;
-            const double vx   = i_vx      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_vx, i))   : 0.0;
-            const double vy   = i_vy      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_vy, i))   : 0.0;
-            const double vz   = i_vz      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_vz, i))   : 0.0;
-            const double vt   = i_vt      >= 0 ? static_cast<double>(REC_Particle.getFloat(i_vt, i))   : 0.0;
-            const double beta = i_beta    >= 0 ? static_cast<double>(REC_Particle.getFloat(i_beta, i)) : 0.0;
-            const double chi2pid = i_chi2pid >= 0 ? static_cast<double>(REC_Particle.getFloat(i_chi2pid, i)) : 0.0;
-
-            const double mass = physics::ParticleUtils::get_mass(pid);
-            const double E = physics::ParticleUtils::compute_energy(px, py, pz, pid);
-
+            // Shared builder — same field/mass/energy semantics as the lazy
+            // trigger-electron path (and sets the event back-pointer).
             auto& p = m_particles[particle_type].emplace_back(
-                pid, status, i, charge, mass,
-                px, py, pz, E, vx, vy, vz, vt, beta, chi2pid);
-            p.set_event(this);
+                read_particle_at(REC_Particle, c, i));
 
             // Charge index, populated in the same pass. Slot 0 = -1, 1 = 0,
             // 2 = +1. Anything outside that range is dropped (matches the
             // sign-of-charge model REC::Particle uses). The pushed copy
             // inherits `m_event` from `p`, no separate set_event needed.
+            const int charge = p.charge();
             if (charge >= -1 && charge <= 1) {
                 m_by_charge[charge + 1].push_back(p);
             }

@@ -20,11 +20,29 @@ namespace hipo {
       hipo::utils::tokenize(entries[i],entry, "/");
       schemaEntry_t e;
       e.name = hipo::utils::trim(entry[0]);
-      e.type = hipo::utils::trim(entry[1]);
-      e.typeId = getTypeByString(e.type);
+      std::string raw = hipo::utils::trim(entry[1]);
+      // Split optional "#N" array-length suffix: e.g. "F#6" -> type "F", length 6.
+      auto hash = raw.find('#');
+      if(hash == std::string::npos){
+        e.type = raw;
+        e.arrayLength = 1;
+      } else {
+        e.type = raw.substr(0, hash);
+        hipo::utils::trim(e.type);
+        std::string len_str = raw.substr(hash + 1);
+        hipo::utils::trim(len_str);
+        int len = std::atoi(len_str.c_str());
+        if(len <= 0){
+          throw hipo::schema_error(
+            std::string("hipo::schema: invalid array length for column '") +
+            e.name + "' in schema '" + schemaName + "' (must be > 0)");
+        }
+        e.arrayLength = len;
+      }
+      e.typeId   = getTypeByString(e.type);
       e.typeSize = getTypeSize(e.typeId);
       e.offset   = offset;
-      offset += e.typeSize;
+      offset    += e.typeSize * e.arrayLength;
       schemaEntries.push_back(e);
       schemaEntriesMap[e.name] = i;
    }
@@ -64,9 +82,10 @@ namespace hipo {
     printf("schema : %14s , group = %6d, item = %3d\n",
        schemaName.c_str(),groupid,itemid);
     for(auto & schemaEntrie : schemaEntries){
-      printf("%16s : (%3s) %5d %5d , offset = %3d --> [%s]\n",
+      printf("%16s : (%3s) %5d %5d , offset = %3d , length = %3d --> [%s]\n",
          schemaEntrie.name.c_str(),schemaEntrie.type.c_str(),
          schemaEntrie.typeId,schemaEntrie.typeSize, schemaEntrie.offset,
+         schemaEntrie.arrayLength,
          schemaEntrie.name.c_str()
          );
     }
@@ -75,7 +94,8 @@ namespace hipo {
 
   int   schema::getSizeForRows(int rows){
     int nentries = schemaEntries.size();
-    int offset   = getOffset(nentries-1,rows-1,rows) + schemaEntries[nentries-1].typeSize;
+    const auto &last = schemaEntries[nentries-1];
+    int offset   = getOffset(nentries-1,rows-1,rows) + last.typeSize * last.arrayLength;
     return offset;
   }
 
@@ -85,7 +105,12 @@ namespace hipo {
     snprintf(parts,256,"{%s/%d/%d}{",schemaName.c_str(),groupid,itemid);
     result.append(parts);
     for(size_t loop = 0; loop < schemaEntries.size(); loop++){
-      snprintf(parts,256,"%s/%s",schemaEntries[loop].name.c_str(), schemaEntries[loop].type.c_str());
+      const auto &e = schemaEntries[loop];
+      if(e.arrayLength > 1){
+        snprintf(parts,256,"%s/%s#%d", e.name.c_str(), e.type.c_str(), e.arrayLength);
+      } else {
+        snprintf(parts,256,"%s/%s", e.name.c_str(), e.type.c_str());
+      }
       if(loop!=0) result.append(",");
       result.append(parts);
     }
@@ -101,8 +126,14 @@ namespace hipo {
     result.append(parts);
     result.append("\"entries\": [ ");
     for(size_t loop = 0; loop < schemaEntries.size(); loop++){
-      snprintf(parts,256,"{\"name\":\"%s\", \"type\":\"%s\", \"info\":\" \"}",
-       schemaEntries[loop].name.c_str(), schemaEntries[loop].type.c_str());
+      const auto &e = schemaEntries[loop];
+      if(e.arrayLength > 1){
+        snprintf(parts,256,"{\"name\":\"%s\", \"type\":\"%s\", \"length\":%d, \"info\":\" \"}",
+         e.name.c_str(), e.type.c_str(), e.arrayLength);
+      } else {
+        snprintf(parts,256,"{\"name\":\"%s\", \"type\":\"%s\", \"info\":\" \"}",
+         e.name.c_str(), e.type.c_str());
+      }
       if(loop!=0) result.append(",");
       result.append(parts);
     }

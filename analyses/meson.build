@@ -11,6 +11,14 @@ executable(
   dependencies: analysis_deps,
 )
 
+# Lean electron-selection baseline (runs only ElectronSelectionAlg) — the
+# full-framework counterpart of tools/benchmark_electron for A/B benchmarking.
+executable(
+  'electron_selection',
+  files('electron_selection/electron_selection.cpp'),
+  dependencies: analysis_deps,
+)
+
 # Pion analysis
 executable(
   'pion_analysis',

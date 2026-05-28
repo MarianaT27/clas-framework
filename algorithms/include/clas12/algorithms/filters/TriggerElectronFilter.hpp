@@ -8,7 +8,7 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/Property.hpp>
-#include <clas12/framework/services/ElectronCutsService.hpp>
+#include <clas12/services/ElectronCutsService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 
 namespace algorithms {

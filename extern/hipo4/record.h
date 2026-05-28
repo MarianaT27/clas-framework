@@ -39,6 +39,7 @@
 #define HIPORECORD_H
 
 #include <iostream>
+#include <memory>
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -51,7 +52,10 @@
 
 namespace hipo {
 
-    class datastream; // forward declaration; full include in record.cpp
+    class bybankrecord;  // forward decl for ByBank-direct mode (see below)
+    class bypagerecord;  // forward decl for ByPage-direct mode (Phase 4)
+    class dictionary;    // forward decl for ByPage schema lookups
+
 
     typedef struct recordHeader_t {
       int signatureString{}; // 1) identifier string is HREC (int = 0x43455248
@@ -129,6 +133,22 @@ namespace hipo {
         std::vector<char>  recordBuffer;
         std::vector<char>  recordCompressedBuffer;
 
+        // ByBank-direct mode: when enabled, tag-5 records bypass the v1
+        // eager-decode path (decodeByBank) and produce a shared_ptr<bybankrecord>
+        // accessible via byBank(). The lazy per-bank inflate then happens
+        // through bybankrecord::bank_stream() when the user touches a bank.
+        // Default OFF for backward-compat with callers that depend on
+        // recordBuffer being filled after readRecord.
+        bool                            useByBankDirect_{false};
+        std::shared_ptr<bybankrecord>   currentByBank_;
+
+        // Phase 4: same pattern for Lz4ByPage (tag 6).
+        bool                            useByPageDirect_{false};
+        std::shared_ptr<bypagerecord>   currentByPage_;
+        // Dictionary required by bypagerecord to resolve column type sizes.
+        // Reader sets this at open() time. Lifetime: caller-owned.
+        const hipo::dictionary*         schemaDict_{nullptr};
+
         hipo::benchmark                 readBenchmark;
         hipo::benchmark                 unzipBenchmark;
         hipo::benchmark                 indexBenchmark;
@@ -136,6 +156,22 @@ namespace hipo {
         char *getUncompressed(const char *data, int dataLength, int dataLengthUncompressed);
         int   getUncompressed(const char *data, char *dest, int dataLength, int dataLengthUncompressed);
         void  showBuffer(const char *data, int wrapping, int maxsize);
+
+        // Lz4Chunked decoder (compression tag 4). Parses the directory
+        // table at recordCompressedBuffer[0..], inflates each chunk, and
+        // populates recordBuffer with the [cumulative_event_positions |
+        // concatenated_events] layout the legacy getData() path expects.
+        // Big-endian records are rejected explicitly. Returns true on
+        // success, false on any LZ4 or layout error.
+        bool  decodeChunked(int section_bytes);
+
+        // Lz4ByBank decoder (compression tag 5). Parses the by-bank
+        // directory via hipo::bybankrecord, decompresses every bank
+        // stream, then reassembles each event's [EH | structure...] blob
+        // into recordBuffer using the same legacy layout getData() expects.
+        // v1 is eager (decompresses all banks); a future v2 will surface
+        // hipo::bybankrecord directly to callers for lazy per-bank inflate.
+        bool  decodeByBank(int section_bytes);
 
     public:
 
@@ -146,10 +182,6 @@ namespace hipo {
         void   readRecord(std::ifstream &stream, long position, int dataOffset);
         void   readRecord__(std::ifstream &stream, long position, long recordLength);
         bool   readRecord(std::ifstream &stream, long position, int dataOffset, long inputSize);
-        /// datastream-backed overload (network/local). Performs the same parsing
-        /// as the ifstream version. NOT thread-safe on a shared datastream;
-        /// caller must serialize access if multiple threads use the same stream.
-        void   readRecord(hipo::datastream &stream, long position, int dataOffset);
         int    getEventCount();
         int    getRecordSizeCompressed();
         
@@ -167,6 +199,19 @@ namespace hipo {
         hipo::benchmark  &getReadBenchmark(){ return readBenchmark;}
         hipo::benchmark  &getUnzipBenchmark(){ return unzipBenchmark;}
         hipo::benchmark  &getIndexBenchmark(){ return indexBenchmark;}
+
+        // Toggle ByBank-direct mode (Phase 3 v2). When ON, readRecord()
+        // on a tag-5 record parses to currentByBank_ and skips the
+        // decodeByBank() reassembly. The user retrieves the bybankrecord
+        // via byBank() and threads it into hipo::event::initByBank().
+        void setUseByBankDirect(bool enable) { useByBankDirect_ = enable; }
+        std::shared_ptr<bybankrecord> byBank() const { return currentByBank_; }
+
+        // Phase 4: same toggle for Lz4ByPage (tag 6). Requires
+        // setDictionary() to have been called first.
+        void setUseByPageDirect(bool enable) { useByPageDirect_ = enable; }
+        std::shared_ptr<bypagerecord> byPage() const { return currentByPage_; }
+        void setDictionary(const hipo::dictionary* d) { schemaDict_ = d; }
     };
 }
 #endif /* HIPORECORD_H */

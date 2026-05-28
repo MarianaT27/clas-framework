@@ -41,6 +41,11 @@ namespace hipo {
  void writer::open(const char *filename){
     outputStream.open(filename);
 
+    // Phase 4 (Lz4ByPage): the main data-record builder needs the schema
+    // dictionary to slice per-column bytes from each event's bank data.
+    // Other compression variants ignore the dictionary; this is harmless.
+    recordBuilder.setDictionary(&writerDictionary);
+
     std::vector<std::string> schemaList = writerDictionary.getSchemaList();
 
     recordbuilder  builder;
@@ -129,15 +134,18 @@ void writer::addDictionary(hipo::dictionary &dict){
     if(status==false){
       writeRecord(recordBuilder);
       recordBuilder.addEvent(hevent);
-    } 
+    }
   } else {
     int tag = hevent.getTag();
-    extendedBuilder[tag].setUserWordOne(tag);
-    bool status = extendedBuilder[tag].addEvent(hevent);
+    auto& builder = extendedBuilder[tag]; // creates default-compression entry on first use
+    builder.setUserWordOne(tag);
+    builder.setCompression(pendingSpec);  // inherit the writer's active compression
+    builder.setDictionary(&writerDictionary); // for Lz4ByPage column-slice resolution
+    bool status = builder.addEvent(hevent);
     if(status==false){
-      writeRecord(extendedBuilder[tag]);
-      extendedBuilder[tag].addEvent(hevent);
-    } 
+      writeRecord(builder);
+      builder.addEvent(hevent);
+    }
   }
  }
 
@@ -202,31 +210,29 @@ void writer::writeIndexTable(){
 
   hipo::event indexEvent(eventSize);
   indexEvent.addStructure(indexBank);
+  // The trailer record carries `file::index` (group=32111) which the user's
+  // dictionary doesn't know about. Force plain Lz4 + clear any prior buildByPage
+  // wiring so the record compresses without needing the schema. The next
+  // recordBuilder use (if reused) would inherit this, but writeIndexTable
+  // is the last action before close().
+  auto savedSpec = recordBuilder.getCompression();
+  recordBuilder.setCompression(hipo::compression_spec::lz4());
   recordBuilder.reset();
   recordBuilder.addEvent(indexEvent);
   writeRecord(recordBuilder);
+  recordBuilder.setCompression(savedSpec);  // restore in case of reuse
   outputStream.seekp(FH_TRAILER_POS_OFFSET);
   outputStream.write(reinterpret_cast<char *> (&indexPosition), 8);
 }
 
 void writer::close(){
-  // Idempotent: a writer whose stream is already shut (because close()
-  // ran once, or the writer was never opened in the first place) is a
-  // no-op so the destructor can safely call this again.
-  if (!outputStream.is_open()) return;
-
   writeRecord(recordBuilder);
 
   std::map<int,hipo::recordbuilder>::iterator it;
   for(it = extendedBuilder.begin(); it != extendedBuilder.end(); it++){
     writeRecord(it->second);
-  }
+  } 
 
-  // ALWAYS emit the index/trailer + patch the file header's trailer
-  // position field. Even when no events were ever added — without this,
-  // the file's `trailerPosition` stays at the open-time 0 sentinel and
-  // hipo::reader::readIndex has to special-case "no trailer", which is
-  // exactly the bug local_batch hit on zero-pass-events skim slices.
   writeIndexTable();
   outputStream.close();
   writerRecordInfo.clear();

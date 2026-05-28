@@ -10,7 +10,6 @@ framework_sources = files(
   'src/services/DecayTreeFitterService.cpp',
   'src/services/HistogramService.cpp',
   'src/services/LoggingService.cpp',
-  'src/services/PhotonCutsService.cpp',
 )
 
 framework_lib = library(

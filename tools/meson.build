@@ -17,3 +17,13 @@ executable(
   files('local_batch.cpp'),
   dependencies: [hipo4_dep, fmt_dep, cxxopts_dep, toml_dep],
 )
+
+# Chain-only electron-selection throughput benchmark. Uses ONLY hipo::chain
+# (no framework) and replicates ElectronSelectionAlg's cuts, so its events/sec
+# is the ceiling the full framework is compared against. See
+# compare_electron_benchmark.sh.
+executable(
+  'benchmark_electron',
+  files('benchmark_electron.cpp'),
+  dependencies: [hipo4_dep, fmt_dep, cxxopts_dep],
+)

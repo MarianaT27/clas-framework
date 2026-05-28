@@ -6,33 +6,48 @@
 //*       ██║  ██║██║██║     ╚██████╔╝         ██║██╗╚██████╔╝                 *
 //*       ╚═╝  ╚═╝╚═╝╚═╝      ╚═════╝          ╚═╝╚═╝ ╚═════╝                  *
 //************************ Jefferson National Lab (2017) ***********************
-//
-// Polymorphic byte-stream abstraction backing hipo::reader / hipo::FileHandle.
-//
-// Three concrete backends:
-//   * datastreamLocalFile : std::ifstream-backed local read.
-//   * datastreamXrootd    : XRootD (`root://`) — gated on __XROOTD__.
-//   * datastreamROOT      : TFile-backed (`root://`, `http(s)://`, `davix://`,
-//                            and any other protocol ROOT supports) — gated on
-//                            __ROOT__.
-//
-// Use make_datastream(url) to construct the right backend from a URL/path.
-// All implementations expose the same minimal seek+read interface so callers
-// don't need to care whether the bytes live on local disk or across a network.
-//
+/*
+ *   Copyright (c) 2017.  Jefferson Lab (JLab). All rights reserved. Permission
+ *   to use, copy, modify, and distribute  this software and its documentation
+ *   for educational, research, and not-for-profit purposes, without fee and
+ *   without a signed licensing agreement.
+ *
+ *   IN NO EVENT SHALL JLAB BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL
+ *   INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING
+ *   OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF JLAB HAS
+ *   BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ *   JLAB SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ *   THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ *   PURPOSE. THE HIPO DATA FORMAT SOFTWARE AND ACCOMPANYING DOCUMENTATION, IF
+ *   ANY, PROVIDED HEREUNDER IS PROVIDED "AS IS". JLAB HAS NO OBLIGATION TO
+ *   PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+ *
+ *   This software was developed under the United States Government license.
+ *   For more information contact author at gavalian@jlab.org
+ *   Department of Experimental Nuclear Physics, Jefferson Lab.
+ */
+/*
+ * This class is generic class that is suppose to provide a data stream.
+ * it is implemented as a test case for xrootd, functionality to switch
+ * between the regular file and files provided by xrootd server.
+ * File:   datastream.h
+ * Author: gavalian
+ *
+ * Created on May 5, 2020, 9:18 PM
+ */
 
 #ifndef DATASTREAM_H
 #define DATASTREAM_H
 
-#include <climits>
-#include <cstdio>
-#include <cstdlib>
-#include <fstream>
-#include <memory>
-#include <string>
-#include <string_view>
+#include <iostream>
 #include <utility>
 #include <vector>
+#include <fstream>
+#include <cstdio>
+#include <cstdlib>
+#include <memory>
+#include <climits>
 
 #ifdef __XROOTD__
 #include <XrdClient/XrdClient.hh>
@@ -40,159 +55,83 @@
 #include "XrdSys/XrdSysHeaders.hh"
 #endif
 
-#ifdef __ROOT__
-class TFile;  // forward declare; full include lives in datastream.cpp
-#endif
-
 namespace hipo {
 
-///
-/// @brief Abstract base for a byte-stream reader.
-///
-/// All concrete datastreams support absolute-position seeking via `position(pos)`
-/// and synchronous `read()` into a caller-owned buffer. Implementations are NOT
-/// required to be thread-safe — wrap with a mutex if multiple threads share one.
-///
+
 class datastream {
-public:
-    datastream() = default;
-    datastream(const datastream&) = delete;
-    datastream& operator=(const datastream&) = delete;
-    virtual ~datastream() = default;
 
-    /// Open the backing file/URL. Throws hipo::file_error on failure.
-    virtual void open(const char* filename) = 0;
+    private:
 
-    /// Total size in bytes (or -1 if unknown).
-    virtual long size() = 0;
+       std::ifstream     inputStream;
+       std::string       remoteAddress;
+       int               streamType = 1;
 
-    /// Current read offset.
-    virtual long position() = 0;
 
-    /// Seek to absolute offset `pos`. Returns the new position.
-    virtual long position(long pos) = 0;
+    public:
 
-    /// Synchronous read of up to `size` bytes into `buffer`. Returns bytes read.
-    virtual int read(char* buffer, int size) = 0;
+        datastream();
+        //datastream(const char *address);
+        virtual ~datastream();
 
-    /// Vectored read: convenience helper. Default impl issues one seek+read per
-    /// range; backends with native scatter/gather (e.g. TFile::ReadBuffers) can
-    /// override to coalesce them into a single network round-trip.
-    /// Each request is {absolute_offset, byte_count, output_buffer}.
-    struct read_range {
-        long offset;
-        int  bytes;
-        char* buffer;
-    };
-    virtual void read_many(const std::vector<read_range>& requests);
-};
+        virtual long   size(){ return 0;}
+        virtual long   position(){ return 0;}
+        virtual long   position(long pos){ return 0;}
+        //virtual void  setAdress(const char *address){}
+        virtual void  open(const char *filename){}
+        virtual int   read(char *s, int size){return 0;}
+  };
 
-///
-/// @brief Local-file backend using std::ifstream.
-///
-class datastreamLocalFile : public datastream {
-public:
-    datastreamLocalFile() = default;
+class datastreamLocalFile {
 
-    ~datastreamLocalFile() override {
-        if (inputStream.is_open()) inputStream.close();
-    }
+  private:
+    std::ifstream     inputStream;
 
-    void open(const char* filename) override;
-    long size() override;
-    long position() override {
-        // After a partial read or EOF, tellg may return -1 unless we clear.
-        if (inputStream.fail() && !inputStream.bad()) inputStream.clear();
-        return static_cast<long>(inputStream.tellg());
-    }
-    long position(long pos) override {
-        // seekg fails silently on a streamthat already hit EOF/failbit; reset
-        // before seeking so the caller always lands at `pos`.
-        if (inputStream.fail() && !inputStream.bad()) inputStream.clear();
-        inputStream.seekg(pos, std::ios_base::beg);
-        return pos;
-    }
-    int  read(char* s, int n) override {
-        inputStream.read(s, n);
-        int actual = static_cast<int>(inputStream.gcount());
-        // A speculative read may legitimately overshoot EOF (e.g., when
-        // grabbing the trailer record near the end of the file). Clear the
-        // failbit so subsequent seek+read calls work.
-        if (inputStream.eof() || (inputStream.fail() && !inputStream.bad())) {
-            inputStream.clear();
+  public:
+
+      datastreamLocalFile();
+      ~datastreamLocalFile(){
+        if(inputStream.is_open()==true){
+          inputStream.close();
         }
-        return actual;
-    }
+      }
 
-private:
-    std::ifstream inputStream;
+      long   size(){
+          long pos = inputStream.tellg();
+          inputStream.seekg(0,std::ios_base::end);
+          long lastpos = inputStream.tellg();
+          inputStream.seekg(pos,std::ios_base::beg);
+          return lastpos;
+        }
+
+      void   open(const char *filename){
+        inputStream.open(filename, std::ios::binary);
+      }
+      long   position(){ return inputStream.tellg();}
+      long   position(long pos){ inputStream.seekg(pos,std::ios_base::beg); return pos; }
+      int    read(char *s, int size){inputStream.read(s,size); return size;}
 };
 
-///
-/// @brief XRootD backend. Skeleton; gated on __XROOTD__.
-///
-class datastreamXrootd : public datastream {
+class datastreamXrootd {
+
+private:
+  #ifdef __XROOTD__
+          kXR_unt16 open_mode = (kXR_ur);
+          kXR_unt16 open_opts = (1);
+          XrdClient *cli = NULL;
+  #endif
+  long streamPosition = 0;
+
 public:
-    datastreamXrootd();
-    ~datastreamXrootd() override;
+  datastreamXrootd();
+  ~datastreamXrootd();
 
-    void open(const char* filename) override;
-    long size() override;
-    long position() override { return streamPosition; }
-    long position(long pos) override { streamPosition = pos; return streamPosition; }
-    int  read(char* s, int n) override;
 
-private:
-#ifdef __XROOTD__
-    kXR_unt16 open_mode = (kXR_ur);
-    kXR_unt16 open_opts = (1);
-    XrdClient* cli = nullptr;
-#endif
-    long streamPosition = 0;
+   long   size();
+   long   position();
+   long   position(long pos);
+  //virtual void  setAdress(const char *address){}
+   void  open(const char *filename);
+   int   read(char *s, int size);
 };
-
-///
-/// @brief ROOT-TFile backend. Handles root://, http(s)://, davix://, etc. via
-/// ROOT's TFile::Open. Vectored reads use TFile::ReadBuffers when available.
-///
-/// Only compiled in when __ROOT__ is defined.
-///
-class datastreamROOT : public datastream {
-public:
-    datastreamROOT();
-    ~datastreamROOT() override;
-
-    void open(const char* filename) override;
-    long size() override;
-    long position() override { return streamPosition; }
-    long position(long pos) override { streamPosition = pos; return streamPosition; }
-    int  read(char* s, int n) override;
-    void read_many(const std::vector<read_range>& requests) override;
-
-private:
-#ifdef __ROOT__
-    TFile* file = nullptr;
-#endif
-    long streamPosition = 0;
-    long streamSize     = -1;
-};
-
-///
-/// @brief Factory: choose a backend based on the URL scheme.
-///
-/// Scheme rules:
-///   no-scheme / file://         -> datastreamLocalFile
-///   root://                     -> datastreamROOT if __ROOT__, else datastreamXrootd
-///   http://, https://, davix:// -> datastreamROOT (throws if not built with ROOT)
-///
-/// Returns nullptr only if `url` is empty.
-///
-std::unique_ptr<datastream> make_datastream(std::string_view url);
-
-///
-/// @brief Classify a URL/path as remote (true) or local (false).
-///
-bool is_remote_url(std::string_view url) noexcept;
-
-} // namespace hipo
+}
 #endif /* DATASTREAM_H */

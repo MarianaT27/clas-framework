@@ -38,6 +38,7 @@
 #define HIPO_EVENT_H
 
 #include <iostream>
+#include <memory>
 #include <vector>
 #include <cstring>
 #include <cstdint>
@@ -57,16 +58,56 @@
 
 namespace hipo {
 
+  class bybankrecord;  // forward decl for ByBank mode (Phase 3 v2)
+  class bypagerecord;  // forward decl for ByPage mode (Phase 4)
+
   //typedef std::auto_ptr<hipo::generic_node> node_pointer;
 
   class event {
 
     private:
         std::vector<char> dataBuffer;
+
+        // Phase 3 v2: dual-mode storage. Bytes mode is the default
+        // (dataBuffer holds raw event bytes). ByBank mode holds a
+        // shared pointer to the bybankrecord that produced this event
+        // plus the event index within that record. Bank lookups
+        // dispatch through the record's lazy-inflate API.
+        std::shared_ptr<bybankrecord> bbRecord_;
+        uint32_t                      bbEventIdx_{0};
+        // True once the lazy synthesizer has reassembled the event's
+        // full bytes into dataBuffer (paid only when callers ask for
+        // raw bytes via getEventBuffer/getSize/show etc.).
+        bool                          bbSynthDone_{false};
+        // Per-getStructure scratch buffer for the [8-byte header | data
+        // bytes] reassembly. Reused across calls; sized on demand.
+        std::vector<char>             bbScratch_;
+
+        // Phase 4: ByPage mode. Same idea but with finer per-(bank,col,page)
+        // lazy inflate. getStructure path A inflates ALL columns of the
+        // requested bank; getColumnView path B inflates only the column
+        // the caller asks for.
+        std::shared_ptr<bypagerecord> bpRecord_;
+        uint32_t                      bpEventIdx_{0};
+        bool                          bpSynthDone_{false};
+
+        // Lazy: reassemble bbRecord_/bbEventIdx_ into dataBuffer so
+        // getEventBuffer()/getSize() and any bytes-walking method works.
+        void synthesizeFromByBank();
+        // Same for ByPage (more expensive — inflates every column of every
+        // bank in this event).
+        void synthesizeFromByPage();
+        // Force ByBank/ByPage events back into Bytes mode before a mutation
+        // (addStructure/replace/remove/...) modifies dataBuffer.
+        void ensureBytesMode();
     public:
 
         event();
         event(int size);
+        event(const event&);
+        event(event&&) noexcept;
+        event& operator=(const event&);
+        event& operator=(event&&) noexcept;
         virtual ~event();
 
         void   show();
@@ -94,6 +135,32 @@ namespace hipo {
         std::vector<char>  &getEventBuffer();
         int                 getSize();
         void                reset();
+
+        // Phase 3 v2: switch this event into ByBank mode. The event
+        // becomes a lightweight view into an existing bybankrecord;
+        // bank lookups use the record's lazy-inflate API. Any prior
+        // Bytes-mode state is cleared.
+        void initByBank(std::shared_ptr<bybankrecord> rec, uint32_t event_idx);
+        bool isByBank() const { return bbRecord_ != nullptr; }
+
+        // Phase 4: same for ByPage. getStructure(bank) does an
+        // all-columns inflate of the requested bank; for the partial-
+        // column win, prefer the new getColumnView<T>() below.
+        void initByPage(std::shared_ptr<bypagerecord> rec, uint32_t event_idx);
+        bool isByPage() const { return bpRecord_ != nullptr; }
+
+        // Phase 4 Path B: lazy partial-column read. In ByPage mode this
+        // inflates *only* the column's page containing this event — banks
+        // and other columns of the same bank stay compressed. In Bytes or
+        // ByBank mode it falls back to walking the bank's structure bytes
+        // (correct but no partial-column win).
+        //
+        // Returns (pointer-to-first-element, element-count). Pointer
+        // stays valid until the next event/record advance.
+        // Explicit instantiations: int8_t, int16_t, int32_t, int64_t,
+        // float, double — the HIPO scalar types.
+        template<typename T>
+        std::pair<const T*, int> getColumnView(int group, int item, int col_idx);
         void                write(hipo::node &node);
         void                read(hipo::node  &node, int group, int item);
 

@@ -9,8 +9,8 @@
 
 #include <gtest/gtest.h>
 #include <clas12/framework/core/ServiceManager.hpp>
-#include <clas12/framework/services/ElectronCutsService.hpp>
-#include <clas12/framework/services/SamplingFractionService.hpp>
+#include <clas12/services/ElectronCutsService.hpp>
+#include <clas12/services/SamplingFractionService.hpp>
 
 using framework::ElectronCutsService;
 

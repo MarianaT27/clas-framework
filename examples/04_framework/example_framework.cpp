@@ -13,7 +13,7 @@
  */
 
 #include <clas12/framework/core/AnalysisRunner.hpp>
-#include <clas12/framework/services/SamplingFractionService.hpp>
+#include <clas12/services/SamplingFractionService.hpp>
 #include <clas12/framework/services/ConditionsService.hpp>
 #include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
 

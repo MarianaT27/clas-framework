@@ -5,8 +5,8 @@
 
 #include <clas12/framework/core/AnalysisRunner.hpp>
 #include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
-#include <clas12/framework/services/ElectronCutsService.hpp>
-#include <clas12/framework/services/VzCorrectorService.hpp>
+#include <clas12/services/ElectronCutsService.hpp>
+#include <clas12/services/VzCorrectorService.hpp>
 
 #include "CusnContaminationAlg.hpp"
 #include "clas12/algorithms/selection/DISSelectionAlg.hpp"

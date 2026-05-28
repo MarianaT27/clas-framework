@@ -17,7 +17,6 @@
 #include <vector>
 
 #include <toml++/toml.hpp>
-#include <ioOptions.h>
 
 #include <clas12/framework/core/Application.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
@@ -84,16 +83,6 @@ public:
     /// Set number of processing threads
     auto with_threads(int n) -> ApplicationBuilder& {
         m_num_threads = n;
-        return *this;
-    }
-
-    /// Set hipo::chain I/O tuning (prefetch depth, record cache, async
-    /// I/O thread count, bank filter). Default-constructed IOOptions
-    /// preserves the legacy synchronous read path; opt in for
-    /// ifarm-style remote reads. Typical TOML wiring at AnalysisRunner
-    /// level uses framework::io_options_from_toml().
-    auto with_io_options(const hipo::IOOptions& opts) -> ApplicationBuilder& {
-        m_io_options = opts;
         return *this;
     }
 
@@ -228,7 +217,6 @@ private:
     int m_num_threads = 1;
     bool m_add_standard_services = false;
     std::shared_ptr<const toml::table> m_config;
-    hipo::IOOptions m_io_options{};
     int m_record_first = 0;
     int m_record_last  = -1;
     int m_progress_fd  = -1;

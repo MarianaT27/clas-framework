@@ -149,13 +149,7 @@ class writer {
   public:
 
      writer(){};
-     // RAII auto-finalise: if the caller forgot to call close() (e.g. the
-     // analysis bailed via exception, or the writer was held in a
-     // unique_ptr that got dropped along an error path), make sure the
-     // trailer + index still land on disk. close() itself is idempotent
-     // — calling it again from finalize() after the explicit one is a
-     // no-op.
-     virtual ~writer(){ close(); }
+     virtual ~writer(){};
 
      void addEvent(hipo::event &hevent);
      void addEvent(std::vector<char> &vec, int size = -1);
@@ -171,6 +165,22 @@ class writer {
      void setUserIntegerTwo(long userIntTwo);
      void flush();
      void setVerbose(int level){ verbose = level;}
+
+     // Configure compression for data records written after this call.
+     // The dictionary record (written by open()) stays Lz4 regardless of
+     // this setting so older readers can always parse the header.
+     // Default is compression_spec::lz4() to preserve backward-compatibility.
+     void setCompression(compression_spec spec){
+         recordBuilder.setCompression(spec);
+         // Propagate to per-tag extended builders that already exist; new
+         // ones inherit from the default constructor on first use.
+         for(auto &kv : extendedBuilder) kv.second.setCompression(spec);
+         pendingSpec = spec;
+     }
+     compression_spec getCompression() const { return pendingSpec; }
+
+   private:
+     compression_spec pendingSpec{compression_spec::lz4()};
 };
 
 };

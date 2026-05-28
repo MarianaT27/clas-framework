@@ -16,8 +16,8 @@
 #include <clas12/algorithms/selection/PionSelectionAlg.hpp>
 #include <clas12/algorithms/reconstruction/Rho0ReconstructionAlg.hpp>
 #include <clas12/framework/services/DecayTreeFitterService.hpp>
-#include <clas12/framework/services/ElectronCutsService.hpp>
-#include <clas12/framework/services/VzCorrectorService.hpp>
+#include <clas12/services/ElectronCutsService.hpp>
+#include <clas12/services/VzCorrectorService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 #include <clas12/StringUtils.hpp>
 

@@ -17,7 +17,8 @@
 
 // Forward declarations for the detector-bank structs and the Event the
 // per-particle helpers route through. Full definitions live in
-// `clas12/bankdefs/generated_readers.hpp` (the bank structs) and
+// `clas12/bankdefs/generated_readers.hpp` (the bank structs and the
+// inline `read_*_bank` accessor functions) and
 // `clas12/framework/core/Event.hpp` (Event); both are pulled in
 // transitively by `clas12/ReadBank.hpp`, which is what callers should
 // include if they want `electron.calo()`-style access.
@@ -27,6 +28,18 @@ struct TrackBank;
 struct CherenkovBank;
 struct ScintillatorBank;
 namespace framework { class Event; }
+
+// Forward-declare the bank reader free functions so the templated
+// detector accessors below can pass two-phase lookup at the point
+// Particle.hpp is parsed (which is *before* Event.hpp has finished
+// including its dependencies). The full inline definitions live in
+// clas12/bankdefs/generated_readers.hpp and must be visible at the
+// call site of any detector accessor.
+inline auto read_Calorimeter_bank(framework::Event& event, int pindex) -> CalorimeterBank;
+inline auto read_Traj_bank        (framework::Event& event, int pindex) -> DCTrajBank;
+inline auto read_Track_bank       (framework::Event& event, int pindex) -> TrackBank;
+inline auto read_Cherenkov_bank   (framework::Event& event, int pindex) -> CherenkovBank;
+inline auto read_Scintillator_bank(framework::Event& event, int pindex) -> ScintillatorBank;
 
 class Particle {
 
@@ -59,7 +72,14 @@ class Particle {
    public:
     // ****** constructors and destructor
     Particle() = default;
-    Particle(int pdg, int status, int index, int charge, double mass, double px, double py, double pz, double E, double vx, double vy, double vz, double vt, double beta, double chi2pid);
+    Particle(int pdg, int status, int index, int charge, double mass,
+             double px, double py, double pz, double E,
+             double vx, double vy, double vz, double vt,
+             double beta, double chi2pid)
+        : m_pdgcode(pdg), m_status(status), m_index(index), m_charge(charge),
+          m_mass(mass), m_px(px), m_py(py), m_pz(pz), m_E(E),
+          m_vx(vx), m_vy(vy), m_vz(vz), m_vt(vt),
+          m_beta(beta), m_chi2pid(chi2pid) {}
 
     Particle(const Particle&) = default;
     Particle(Particle&&) = default;
@@ -68,34 +88,46 @@ class Particle {
     ~Particle() = default;
 
     // ****** public methods
-    auto index() const -> int;
-    auto charge() const -> int;
-    auto pdg() const -> int;
-    auto status() const -> int;
+    auto index()   const -> int { return m_index; }
+    auto charge()  const -> int { return m_charge; }
+    auto pdg()     const -> int { return m_pdgcode; }
+    auto status()  const -> int { return m_status; }
 
-    auto PxPyPzEVector() const -> ROOT::Math::PxPyPzEVector;
-    auto VxVyVzVtVector() const -> ROOT::Math::XYZTVector;
-    auto PxPyPzVector() const -> ROOT::Math::XYZVector;
-    auto VxVyVzVector() const -> ROOT::Math::XYZVector;
+    auto PxPyPzEVector()   const -> ROOT::Math::PxPyPzEVector { return {m_px, m_py, m_pz, m_E}; }
+    auto VxVyVzVtVector()  const -> ROOT::Math::XYZTVector    { return {m_vx, m_vy, m_vz, m_vt}; }
+    auto PxPyPzVector()    const -> ROOT::Math::XYZVector     { return {m_px, m_py, m_pz}; }
+    auto VxVyVzVector()    const -> ROOT::Math::XYZVector     { return {m_vx, m_vy, m_vz}; }
 
-    auto phi() const -> double;
-    auto theta() const -> double;
-    auto theta(const Particle& other) const -> double;
-    auto p() const -> double;
-    auto pt() const -> double;
-    auto r() const -> double;
-    auto rho() const -> double;
-    auto beta() const -> double;
-    auto chi2pid() const -> double;
-    auto E() const -> double;
-    auto vx() const -> double;
-    auto vy() const -> double;
-    auto vz() const -> double;
-    auto vt() const -> double;
-    auto px() const -> double;
-    auto py() const -> double;
-    auto pz() const -> double;
-    auto mass() const -> double;
+    auto phi() const -> double {
+        return m_px == 0.0 && m_py == 0.0 ? 0.0
+                                          : TMath::ATan2(m_py, m_px) * 180.0 / TMath::Pi();
+    }
+    auto theta() const -> double {
+        return (m_pz == 0) ? TMath::PiOver2() * 180.0 / TMath::Pi()
+                           : TMath::ACos(m_pz / p()) * 180.0 / TMath::Pi();
+    }
+    auto theta(const Particle& other) const -> double {
+        double product = p() * other.p();
+        product = product == 0 ? 1
+                               : (m_px * other.px() + m_py * other.py() + m_pz * other.pz()) / product;
+        product = std::max(std::min(product, 1.0), -1.0);
+        return TMath::ACos(product);
+    }
+    auto p()       const -> double { return TMath::Sqrt(m_px * m_px + m_py * m_py + m_pz * m_pz); }
+    auto pt()      const -> double { return TMath::Sqrt(m_px * m_px + m_py * m_py); }
+    auto r()       const -> double { return TMath::Sqrt(m_vx * m_vx + m_vy * m_vy); }
+    auto rho()     const -> double { return TMath::Sqrt(m_vx * m_vx + m_vy * m_vy + m_vz * m_vz); }
+    auto beta()    const -> double { return m_beta; }
+    auto chi2pid() const -> double { return m_chi2pid; }
+    auto E()       const -> double { return m_E; }
+    auto vx()      const -> double { return m_vx; }
+    auto vy()      const -> double { return m_vy; }
+    auto vz()      const -> double { return m_vz; }
+    auto vt()      const -> double { return m_vt; }
+    auto px()      const -> double { return m_px; }
+    auto py()      const -> double { return m_py; }
+    auto pz()      const -> double { return m_pz; }
+    auto mass()    const -> double { return m_mass; }
 
     auto is_valid() const -> bool {
         return !std::isnan(m_px) && !std::isnan(m_py) && !std::isnan(m_pz) && !std::isnan(m_E) && !std::isnan(m_vx) && !std::isnan(m_vy) && !std::isnan(m_vz) && !std::isnan(m_vt);
@@ -122,14 +154,42 @@ class Particle {
     // No internal caching: calling `calo()` twice does the work twice.
     // Capture in a local if you need to read multiple times.
     //
-    // Defined out-of-line in Particle.cpp, which pulls in the bank
-    // structs and Event so this header stays light.
+    // Each accessor is a defaulted-template member with a deduced
+    // return type so both the body AND the return type are parsed only
+    // at the call site (where the user has `clas12/ReadBank.hpp` fully
+    // included). This breaks the otherwise-circular include chain
+    // Particle.hpp ← Event.hpp ← read_X_bank → bank structs.
     // ============================================================
-    auto calo()         const -> CalorimeterBank;
-    auto traj()         const -> DCTrajBank;
-    auto track()        const -> TrackBank;
-    auto cherenkov()    const -> CherenkovBank;
-    auto scintillator() const -> ScintillatorBank;
+    // Defaulted template parameter Ev makes the call expression
+    // dependent (Ev& binds m_event), so both return-type deduction and
+    // body parsing happen at the call site — where the user has
+    // <clas12/ReadBank.hpp> included and the bank structs / read_X_bank
+    // definitions are complete.
+    template <typename Ev = framework::Event>
+    auto calo() const {
+        Ev& ev = *m_event;
+        return read_Calorimeter_bank(ev, m_index);
+    }
+    template <typename Ev = framework::Event>
+    auto traj() const {
+        Ev& ev = *m_event;
+        return read_Traj_bank(ev, m_index);
+    }
+    template <typename Ev = framework::Event>
+    auto track() const {
+        Ev& ev = *m_event;
+        return read_Track_bank(ev, m_index);
+    }
+    template <typename Ev = framework::Event>
+    auto cherenkov() const {
+        Ev& ev = *m_event;
+        return read_Cherenkov_bank(ev, m_index);
+    }
+    template <typename Ev = framework::Event>
+    auto scintillator() const {
+        Ev& ev = *m_event;
+        return read_Scintillator_bank(ev, m_index);
+    }
 
     /// Three DC region tracks for this particle's trajectory, in order
     /// {region1, region2, region3}. Reads `traj()` once internally,
@@ -137,7 +197,17 @@ class Particle {
     /// for REC::Track is cached on the Event after the first call from
     /// any particle, so subsequent particles in the same event reuse
     /// it.
-    auto region_tracks() const -> std::array<TrackBank, 3>;
+    template <typename Ev = framework::Event>
+    auto region_tracks() const {
+        Ev& ev = *m_event;
+        const auto t = read_Traj_bank(ev, m_index);
+        using bank_t = decltype(read_Track_bank(ev, 0));
+        return std::array<bank_t, 3>{
+            read_Track_bank(ev, t.region1_index),
+            read_Track_bank(ev, t.region2_index),
+            read_Track_bank(ev, t.region3_index),
+        };
+    }
 
     // ****** operators
     auto operator==(const Particle& other) const -> bool { return m_index == other.m_index; }

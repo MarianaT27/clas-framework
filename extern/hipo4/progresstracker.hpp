@@ -67,32 +67,27 @@ class ProgressTracker {
     auto add(std::size_t count) noexcept -> void;
 
     ///
-    ///  @brief Replace the absolute processed count (thread-safe).
-    ///         Useful when an external aggregator (e.g. tools/local_batch
-    ///         summing progress across N worker processes) is the source
-    ///         of truth, so increment/add don't fit.
+    ///  @brief Replace the absolute processed count (thread-safe). Used when
+    ///         the caller has its own counter and feeds the bar snapshots.
     ///
-    auto set_processed(std::size_t n) noexcept -> void {
-        m_processed.store(n, std::memory_order_release);
+    auto set_processed(std::size_t count) noexcept -> void {
+        m_processed.store(count, std::memory_order_release);
     }
 
     ///
-    ///  @brief Replace the bar's `total` denominator (thread-safe).
-    ///         Useful when the aggregator only learns the final total
-    ///         after the per-slice reporters have all phoned in their
-    ///         contribution. Bar redraws pick up the new total on the
-    ///         next refresh tick.
+    ///  @brief Replace the total item count (thread-safe). Useful when the
+    ///         total only becomes known partway through the run (e.g. the
+    ///         local_batch aggregator learns each slice's total lazily).
     ///
-    auto set_total(std::size_t n) noexcept -> void {
-        m_total = (n == 0) ? 1 : n;
+    auto set_total(std::size_t total) noexcept -> void {
+        const_cast<std::size_t&>(m_total) = total;
     }
 
     ///
-    ///  @brief Replace the bar label (thread-safe — bar redraw locks
-    ///         stdout, so the label is only read under that lock).
+    ///  @brief Replace the displayed label (thread-safe).
     ///
-    auto set_label(std::string label) noexcept -> void {
-        std::lock_guard lk(detail::get_stdout_mutex());
+    auto set_label(std::string label) -> void {
+        std::lock_guard lk{m_display_mutex};
         m_config.label = std::move(label);
     }
 
@@ -192,13 +187,7 @@ class ProgressTracker {
     [[nodiscard]] auto calculate_rate() const noexcept -> double;
     [[nodiscard]] auto get_progress_color() const noexcept -> std::string_view;
 
-    // Not `const` anymore: set_total() rebinds it when an external
-    // aggregator only learns the final total after construction (e.g.
-    // tools/local_batch waiting for every worker to report its slice
-    // size). The move-assignment operator below already mutates this
-    // via const_cast, so dropping const is a no-op for existing
-    // callers.
-    std::size_t m_total;
+    const std::size_t m_total;
     std::atomic<std::size_t> m_processed{0};
     std::chrono::steady_clock::time_point m_start_time;
     Config m_config;
@@ -233,7 +222,7 @@ inline ProgressTracker& ProgressTracker::operator=(ProgressTracker&& other) noex
         if (!m_finished) clear_line();
         other.stop_update_thread();
 
-        m_total = other.m_total;
+        const_cast<std::size_t&>(m_total) = other.m_total;
         m_processed.store(other.m_processed.load(std::memory_order_acquire), std::memory_order_release);
         m_start_time = other.m_start_time;
         m_config = other.m_config;

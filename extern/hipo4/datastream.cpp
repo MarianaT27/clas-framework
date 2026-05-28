@@ -6,236 +6,89 @@
 //*       ██║  ██║██║██║     ╚██████╔╝         ██║██╗╚██████╔╝                 *
 //*       ╚═╝  ╚═╝╚═╝╚═╝      ╚═════╝          ╚═╝╚═╝ ╚═════╝                  *
 //************************ Jefferson National Lab (2017) ***********************
+/*
+ *   Copyright (c) 2017.  Jefferson Lab (JLab). All rights reserved. Permission
+ *   to use, copy, modify, and distribute  this software and its documentation
+ *   for educational, research, and not-for-profit purposes, without fee and
+ *   without a signed licensing agreement.
+ *
+ *   IN NO EVENT SHALL JLAB BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT, SPECIAL
+ *   INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING
+ *   OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF JLAB HAS
+ *   BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ *   JLAB SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ *   THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ *   PURPOSE. THE HIPO DATA FORMAT SOFTWARE AND ACCOMPANYING DOCUMENTATION, IF
+ *   ANY, PROVIDED HEREUNDER IS PROVIDED "AS IS". JLAB HAS NO OBLIGATION TO
+ *   PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+ *
+ *   This software was developed under the United States Government license.
+ *   For more information contact author at gavalian@jlab.org
+ *   Department of Experimental Nuclear Physics, Jefferson Lab.
+ */
+ /*
+  * File:   datastream.cpp
+  * Author: gavalian
+  *
+  * Created on May 5, 2020, 9:24 PM
+  */
 
 #include "datastream.h"
 
-#include "hipoexceptions.h"
-
-#include <algorithm>
-#include <cctype>
 #include <cstdlib>
-#include <cstring>
-#include <stdexcept>
-
-#ifdef __ROOT__
-#include "TFile.h"
-#include "TROOT.h"
-#endif
 
 namespace hipo {
+ /**
+  * The constructor for reader, printWarning routine
+  * will printout a warning message if the library
+  * was not compiled with compression libraries LZ4 or GZIP
+  */
+  datastreamXrootd::datastreamXrootd(){
 
-// -------------------------------------------------------------------------
-// datastream base class: default vectored read = sequential reads.
-// -------------------------------------------------------------------------
-void datastream::read_many(const std::vector<read_range>& requests) {
-    for (const auto& r : requests) {
-        position(r.offset);
-        read(r.buffer, r.bytes);
-    }
-}
+  }
 
-// -------------------------------------------------------------------------
-// datastreamLocalFile
-// -------------------------------------------------------------------------
-void datastreamLocalFile::open(const char* filename) {
-    inputStream.open(filename, std::ios::binary);
-    if (!inputStream.is_open()) {
-        throw file_error(std::string("datastreamLocalFile: cannot open ") + filename);
-    }
-}
+  /*datastreamXrootd::datastreamXrootd(const char *address){
 
-long datastreamLocalFile::size() {
-    auto pos = inputStream.tellg();
-    inputStream.seekg(0, std::ios_base::end);
-    auto lastpos = inputStream.tellg();
-    inputStream.seekg(pos, std::ios_base::beg);
-    return static_cast<long>(lastpos);
-}
+  }*/
+  /**
+   * Default destructor. Does nothing
+   */
+  datastreamXrootd::~datastreamXrootd(){
+    #ifdef __XROOTD__
+     if(cli!=NULL) delete cli;
+    #endif
+  }
 
-// -------------------------------------------------------------------------
-// datastreamXrootd
-// -------------------------------------------------------------------------
-datastreamXrootd::datastreamXrootd() = default;
 
-datastreamXrootd::~datastreamXrootd() {
+  void  datastreamXrootd::open(const char *filename){
 #ifdef __XROOTD__
-    if (cli != nullptr) delete cli;
+      printf("[datastream::xrootd] >>> open : %s\n" + filename);
+      XrdClient *cli = new new XrdClient(filename);
+      cli->Open(open_mode,open_opts);
 #endif
+  }
+
+  long   datastreamXrootd::size(){
+    #ifdef __XROOTD__
+     XrdClientStatInfo stats;
+     cli->Stat(&stats);
+     return stats.size();
+     #endif
+     #ifndef __XROOTD__
+      return 0;
+     #endif
+  }
+
+  long   datastreamXrootd::position(){ return streamPosition;}
+  long   datastreamXrootd::position(long pos){ streamPosition = pos; return streamPosition;}
+  int datastreamXrootd::read(char *s, int size){
+      #ifdef __XROOTD__
+       cli->Read(s,streamPosition,size);
+       return size;
+      #endif
+      #ifndef __XROOTD__
+       return 0;
+      #endif
+  }
 }
-
-void datastreamXrootd::open(const char* filename) {
-#ifdef __XROOTD__
-    cli = new XrdClient(filename);
-    if (!cli->Open(open_mode, open_opts)) {
-        throw file_error(std::string("datastreamXrootd: cannot open ") + filename);
-    }
-#else
-    (void)filename;
-    throw file_error("datastreamXrootd: built without __XROOTD__ support");
-#endif
-}
-
-long datastreamXrootd::size() {
-#ifdef __XROOTD__
-    XrdClientStatInfo stats;
-    cli->Stat(&stats);
-    return stats.size;
-#else
-    return 0;
-#endif
-}
-
-int datastreamXrootd::read(char* s, int n) {
-#ifdef __XROOTD__
-    cli->Read(s, streamPosition, n);
-    streamPosition += n;
-    return n;
-#else
-    (void)s; (void)n;
-    return 0;
-#endif
-}
-
-// -------------------------------------------------------------------------
-// datastreamROOT
-// -------------------------------------------------------------------------
-datastreamROOT::datastreamROOT() = default;
-
-datastreamROOT::~datastreamROOT() {
-#ifdef __ROOT__
-    if (file != nullptr) {
-        file->Close();
-        delete file;
-        file = nullptr;
-    }
-#endif
-}
-
-void datastreamROOT::open(const char* filename) {
-#ifdef __ROOT__
-    file = TFile::Open(filename, "READ");
-    if (file == nullptr || file->IsZombie()) {
-        throw file_error(std::string("datastreamROOT: cannot open ") + filename);
-    }
-    streamSize = static_cast<long>(file->GetSize());
-    streamPosition = 0;
-#else
-    (void)filename;
-    throw file_error("datastreamROOT: built without __ROOT__ support");
-#endif
-}
-
-long datastreamROOT::size() {
-#ifdef __ROOT__
-    return streamSize;
-#else
-    return 0;
-#endif
-}
-
-int datastreamROOT::read(char* s, int n) {
-#ifdef __ROOT__
-    if (file == nullptr) return 0;
-    if (file->ReadBuffer(s, streamPosition, n)) {
-        // TFile::ReadBuffer returns true on FAILURE (kTRUE/1).
-        return 0;
-    }
-    streamPosition += n;
-    return n;
-#else
-    (void)s; (void)n;
-    return 0;
-#endif
-}
-
-void datastreamROOT::read_many(const std::vector<read_range>& requests) {
-#ifdef __ROOT__
-    if (requests.empty() || file == nullptr) return;
-
-    // Use TFile::ReadBuffers (vectored I/O) to coalesce into one network RTT.
-    std::vector<Long64_t> positions;
-    std::vector<Int_t>    lengths;
-    positions.reserve(requests.size());
-    lengths.reserve(requests.size());
-
-    // Compute total output size and pack into a single contiguous staging buffer.
-    long total = 0;
-    for (const auto& r : requests) {
-        positions.push_back(static_cast<Long64_t>(r.offset));
-        lengths.push_back(static_cast<Int_t>(r.bytes));
-        total += r.bytes;
-    }
-    std::vector<char> staging(static_cast<std::size_t>(total));
-    if (file->ReadBuffers(staging.data(),
-                          positions.data(),
-                          lengths.data(),
-                          static_cast<Int_t>(requests.size()))) {
-        // failure: fall back to sequential reads
-        datastream::read_many(requests);
-        return;
-    }
-    long off = 0;
-    for (const auto& r : requests) {
-        std::memcpy(r.buffer, staging.data() + off, r.bytes);
-        off += r.bytes;
-    }
-#else
-    datastream::read_many(requests);
-#endif
-}
-
-// -------------------------------------------------------------------------
-// URL scheme classification + factory
-// -------------------------------------------------------------------------
-namespace {
-
-bool starts_with(std::string_view s, std::string_view prefix) noexcept {
-    return s.size() >= prefix.size() &&
-           std::equal(prefix.begin(), prefix.end(), s.begin(),
-                      [](char a, char b) {
-                          return std::tolower(static_cast<unsigned char>(a)) ==
-                                 std::tolower(static_cast<unsigned char>(b));
-                      });
-}
-
-} // namespace
-
-bool is_remote_url(std::string_view url) noexcept {
-    if (url.empty()) return false;
-    return starts_with(url, "root://")  ||
-           starts_with(url, "http://")  ||
-           starts_with(url, "https://") ||
-           starts_with(url, "davix://") ||
-           starts_with(url, "dav://")   ||
-           starts_with(url, "s3://")    ||
-           starts_with(url, "gs://");
-}
-
-std::unique_ptr<datastream> make_datastream(std::string_view url) {
-    if (url.empty()) return nullptr;
-
-    // root:// — prefer ROOT TFile if available (more features), else XRootD.
-    if (starts_with(url, "root://")) {
-#ifdef __ROOT__
-        return std::make_unique<datastreamROOT>();
-#elif defined(__XROOTD__)
-        return std::make_unique<datastreamXrootd>();
-#else
-        throw file_error("hipo::make_datastream: 'root://' URL requires "
-                         "either __ROOT__ or __XROOTD__ build support");
-#endif
-    }
-    // Anything else web-like → ROOT TFile.
-    if (is_remote_url(url)) {
-#ifdef __ROOT__
-        return std::make_unique<datastreamROOT>();
-#else
-        throw file_error("hipo::make_datastream: remote URL requires "
-                         "__ROOT__ build support");
-#endif
-    }
-    // file:// or path → local.
-    return std::make_unique<datastreamLocalFile>();
-}
-
-} // namespace hipo

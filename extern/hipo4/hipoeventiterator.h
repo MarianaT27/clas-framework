@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bank.h>
-#include <dictionary.h>
-#include <event.h>
-#include <reader.h>
+#include "bank.h"
+#include "dictionary.h"
+#include "event.h"
+#include "reader.h"
 #include <iterator>
 #include <stdexcept>
 #include <string>

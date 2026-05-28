@@ -1,0 +1,38 @@
+# Configuration for the lean `electron_selection` baseline binary.
+#
+# Runs ONLY ElectronSelectionAlg, so its wall time / events-per-second is the
+# full-framework number compared against the chain-only tools/benchmark_electron.
+#
+# Run with:
+#   ./electron_selection --config config/electron_selection.toml
+#
+# tools/compare_electron_benchmark.sh patches [run].input / num_threads /
+# percentage at runtime, so the values here are just sensible defaults.
+
+[run]
+input       = "/Users/mathieuouillon/Documents/tmp/hipo-converter/rec0.hipo"
+output      = "electron_selection_LD2_Outbending.root"
+num_threads = 8
+percentage  = 100.0
+
+[analysis]
+target      = "LD2"
+polarity    = "Outbending"
+beam_energy = 10.53
+version     = "2.0"
+
+# ElectronSelection toggles. ntuple is disabled so the baseline measures the
+# selection + framework EDM cost without ROOT ntuple-writing overhead; the
+# in-memory histograms remain (intrinsic to the selection algorithm).
+[ElectronSelection]
+enable_ntuple            = false
+# Histograms cost only ~1-3% of wall time; leave on for a realistic framework
+# number, flip to false to isolate pure selection + EDM overhead vs the
+# chain-only benchmark (which fills no histograms).
+enable_histograms        = true
+enable_chi2pid_cut       = true
+enable_momentum_cut      = true
+enable_vz_cut            = true
+enable_sf_cut            = true
+enable_pcal_fiducial_cut = true
+enable_dc_edge_cut       = true

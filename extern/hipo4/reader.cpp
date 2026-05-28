@@ -36,11 +36,18 @@
   */
 
 #include "reader.h"
+#include "bybankrecord.h"
+#include "bypagerecord.h"
 #include "constants.h"
 #include "hipoexceptions.h"
 #include "record.h"
 
 #include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 /**
  * HIPO namespace is used for the classes that read/write
  * files and records.
@@ -63,6 +70,156 @@ namespace hipo {
     if(inputStream.is_open()==true){
       inputStream.close();
     }
+    closeMmap();
+  }
+
+  void reader::openMmap(const char* filename){
+    closeMmap();
+    int fd = ::open(filename, O_RDONLY);
+    if(fd < 0) return;  // fall back to ifstream path
+    struct stat st{};
+    if(::fstat(fd, &st) < 0){ ::close(fd); return; }
+    void* p = ::mmap(nullptr, st.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    if(p == MAP_FAILED){ ::close(fd); return; }
+    mmap_base_ = static_cast<const char*>(p);
+    mmap_size_ = static_cast<size_t>(st.st_size);
+    mmap_fd_   = fd;
+    // Hint the kernel: we'll walk this sequentially-ish but with random
+    // pokes into bank streams. MADV_RANDOM keeps the kernel from doing
+    // aggressive readahead for the byte ranges we never touch.
+    ::madvise(p, st.st_size, MADV_RANDOM);
+  }
+
+  void reader::closeMmap(){
+    if(mmap_base_){
+      ::munmap(const_cast<char*>(mmap_base_), mmap_size_);
+      mmap_base_ = nullptr;
+      mmap_size_ = 0;
+    }
+    if(mmap_fd_ >= 0){
+      ::close(mmap_fd_);
+      mmap_fd_ = -1;
+    }
+    mmap_currentByBank_.reset();
+    mmap_currentByPage_.reset();
+    mmap_currentRecord_ = -1;
+  }
+
+  void reader::ensureMmapByBank(int irec){
+    if(mmap_currentRecord_ == irec && mmap_currentByBank_) return;
+    long position = readerEventIndex.getPosition(irec);
+    // Decode just the 56-byte record header from mmap memory.
+    if(position + RECORD_HEADER_SIZE > static_cast<long>(mmap_size_)) {
+      throw hipo::record_error("reader::ensureMmapByBank: header beyond mmap end");
+    }
+    const char* hdr = mmap_base_ + position;
+    recordHeader_t rh{};
+    rh.recordLength     = *reinterpret_cast<const int*>(&hdr[RH_RECORD_LENGTH_OFFSET]);
+    rh.headerLength     = *reinterpret_cast<const int*>(&hdr[RH_HEADER_LENGTH_OFFSET]);
+    rh.numberOfEvents   = *reinterpret_cast<const int*>(&hdr[RH_EVENT_COUNT_OFFSET]);
+    rh.bitInfo          = *reinterpret_cast<const int*>(&hdr[RH_BIT_INFO_OFFSET]);
+    rh.signatureString  = *reinterpret_cast<const int*>(&hdr[RH_MAGIC_NUMBER_OFFSET]);
+    rh.recordDataLength = *reinterpret_cast<const int*>(&hdr[RH_DATA_LENGTH_OFFSET]);
+    rh.userHeaderLength = *reinterpret_cast<const int*>(&hdr[RH_USER_HEADER_LEN_OFFSET]);
+    int compressedWord  = *reinterpret_cast<const int*>(&hdr[RH_COMP_WORD_OFFSET]);
+
+    if(static_cast<uint32_t>(rh.signatureString)==HEADER_MAGIC) rh.dataEndianness = 0;
+    if(static_cast<uint32_t>(rh.signatureString)==HEADER_MAGIC_BE) rh.dataEndianness = 1;
+    if(rh.dataEndianness == 1){
+      rh.recordLength = __builtin_bswap32(rh.recordLength);
+      rh.headerLength = __builtin_bswap32(rh.headerLength);
+      rh.numberOfEvents = __builtin_bswap32(rh.numberOfEvents);
+      rh.recordDataLength = __builtin_bswap32(rh.recordDataLength);
+      rh.userHeaderLength = __builtin_bswap32(rh.userHeaderLength);
+      rh.bitInfo = __builtin_bswap32(rh.bitInfo);
+      compressedWord = __builtin_bswap32(compressedWord);
+    }
+    int compressedDataLengthPadding = (rh.bitInfo>>BITINFO_PAD3_SHIFT)&BITINFO_PAD_MASK;
+    int headerLengthBytes           = rh.headerLength*4;
+    int dataBufferLengthBytes       = rh.recordLength * 4 - headerLengthBytes;
+    rh.userHeaderLengthPadding      = (rh.bitInfo>>BITINFO_PAD1_SHIFT)&BITINFO_PAD_MASK;
+    rh.recordDataLengthCompressed   = compressedWord&COMP_LENGTH_MASK;
+    rh.compressionType              = (compressedWord>>COMP_TYPE_SHIFT)&COMP_TYPE_BYTE;
+    rh.indexDataLength              = 4*rh.numberOfEvents;
+    rh.compressedLengthPadding      = compressedDataLengthPadding;
+
+    if(rh.compressionType != static_cast<int>(compression_type::lz4_by_bank)){
+      throw hipo::record_error("reader::ensureMmapByBank called on non-Lz4ByBank record");
+    }
+    long dataposition = position + headerLengthBytes;
+    if(dataposition + dataBufferLengthBytes > static_cast<long>(mmap_size_)) {
+      throw hipo::record_error("reader::ensureMmapByBank: payload beyond mmap end");
+    }
+    // Zero-copy: bybankrecord holds a pointer into the mmap region. The
+    // mmap stays alive as long as the reader does, and the user only
+    // holds bybankrecord pointers as long as the reader is alive.
+    mmap_currentByBank_ = hipo::bybankrecord::parse_view(
+        rh,
+        mmap_base_ + dataposition,
+        dataBufferLengthBytes,
+        compressedDataLengthPadding);
+    mmap_currentRecord_ = irec;
+  }
+
+  void reader::ensureMmapByPage(int irec){
+    if(mmap_currentRecord_ == irec && mmap_currentByPage_) return;
+    long position = readerEventIndex.getPosition(irec);
+    if(position + RECORD_HEADER_SIZE > static_cast<long>(mmap_size_)) {
+      throw hipo::record_error("reader::ensureMmapByPage: header beyond mmap end");
+    }
+    const char* hdr = mmap_base_ + position;
+    recordHeader_t rh{};
+    rh.recordLength     = *reinterpret_cast<const int*>(&hdr[RH_RECORD_LENGTH_OFFSET]);
+    rh.headerLength     = *reinterpret_cast<const int*>(&hdr[RH_HEADER_LENGTH_OFFSET]);
+    rh.numberOfEvents   = *reinterpret_cast<const int*>(&hdr[RH_EVENT_COUNT_OFFSET]);
+    rh.bitInfo          = *reinterpret_cast<const int*>(&hdr[RH_BIT_INFO_OFFSET]);
+    rh.signatureString  = *reinterpret_cast<const int*>(&hdr[RH_MAGIC_NUMBER_OFFSET]);
+    rh.recordDataLength = *reinterpret_cast<const int*>(&hdr[RH_DATA_LENGTH_OFFSET]);
+    rh.userHeaderLength = *reinterpret_cast<const int*>(&hdr[RH_USER_HEADER_LEN_OFFSET]);
+    int compressedWord  = *reinterpret_cast<const int*>(&hdr[RH_COMP_WORD_OFFSET]);
+
+    if(static_cast<uint32_t>(rh.signatureString)==HEADER_MAGIC) rh.dataEndianness = 0;
+    if(static_cast<uint32_t>(rh.signatureString)==HEADER_MAGIC_BE) rh.dataEndianness = 1;
+    if(rh.dataEndianness == 1){
+      rh.recordLength = __builtin_bswap32(rh.recordLength);
+      rh.headerLength = __builtin_bswap32(rh.headerLength);
+      rh.numberOfEvents = __builtin_bswap32(rh.numberOfEvents);
+      rh.recordDataLength = __builtin_bswap32(rh.recordDataLength);
+      rh.userHeaderLength = __builtin_bswap32(rh.userHeaderLength);
+      rh.bitInfo = __builtin_bswap32(rh.bitInfo);
+      compressedWord = __builtin_bswap32(compressedWord);
+    }
+    int compressedDataLengthPadding = (rh.bitInfo>>BITINFO_PAD3_SHIFT)&BITINFO_PAD_MASK;
+    int headerLengthBytes           = rh.headerLength*4;
+    int dataBufferLengthBytes       = rh.recordLength * 4 - headerLengthBytes;
+    rh.userHeaderLengthPadding      = (rh.bitInfo>>BITINFO_PAD1_SHIFT)&BITINFO_PAD_MASK;
+    rh.recordDataLengthCompressed   = compressedWord&COMP_LENGTH_MASK;
+    rh.compressionType              = (compressedWord>>COMP_TYPE_SHIFT)&COMP_TYPE_BYTE;
+    rh.indexDataLength              = 4*rh.numberOfEvents;
+    rh.compressedLengthPadding      = compressedDataLengthPadding;
+
+    if(rh.compressionType != static_cast<int>(compression_type::lz4_by_page)){
+      throw hipo::record_error("reader::ensureMmapByPage called on non-Lz4ByPage record");
+    }
+    long dataposition = position + headerLengthBytes;
+    if(dataposition + dataBufferLengthBytes > static_cast<long>(mmap_size_)) {
+      throw hipo::record_error("reader::ensureMmapByPage: payload beyond mmap end");
+    }
+    // The reader's `factory` dictionary is populated by readDictionary()
+    // called by the user before iterating. It must outlive the reader.
+    if(factory.getSchemaList().empty()){
+      // Auto-load dictionary if the user hasn't called readDictionary yet.
+      // Records produced by buildByPage embed their schemas in the first
+      // record of the file (same as legacy); we need it for column types.
+      readDictionary(factory);
+    }
+    mmap_currentByPage_ = hipo::bypagerecord::parse_view(
+        rh,
+        mmap_base_ + dataposition,
+        dataBufferLengthBytes,
+        compressedDataLengthPadding,
+        factory);
+    mmap_currentRecord_ = irec;
   }
 
   void  reader::about(){
@@ -93,6 +250,24 @@ namespace hipo {
     }
     readHeader();
     readIndex();
+    // Phase 3 v2: from now on, data record reads route Lz4ByBank
+    // records into a shared_ptr<bybankrecord> instead of the v1 eager
+    // decode. readIndex() above runs WITHOUT this flag so the trailer
+    // record (which may be ByBank, depending on writer config) decodes
+    // through the legacy path that fills inputRecord's buffer.
+    inputRecord.setUseByBankDirect(true);
+    // Phase 4: same for Lz4ByPage. The reader pre-loads its dictionary
+    // (factory) on first ByPage record access; record::setDictionary
+    // points at the reader's factory so the ifstream fallback also works.
+    inputRecord.setUseByPageDirect(true);
+    inputRecord.setDictionary(&factory);
+    // Phase 3 v2+: mmap the file. The Lz4ByBank read path then parses
+    // bybankrecord straight from mmap memory — zero copy. The lazy
+    // bank_stream() inflate touches only the pages backing the banks the
+    // analysis actually asks for. Pages for never-touched banks remain
+    // un-faulted, breaking through the ifstream copy ceiling. Falls back
+    // to the ifstream/parse_take_raw path if mmap fails (e.g. network FS).
+    openMmap(filename);
 }
 
 /**
@@ -158,19 +333,6 @@ namespace hipo {
  */
 void  reader::readIndex(){
 
-    // The file header's trailer position field is documented to be 0 when
-    // no trailer was written (cf. reader.h FILE HEADER STRUCTURE: "0 = no
-    // offset available or no trailer exists"). This happens for files
-    // closed without emitting any record, e.g. a skim slice that produced
-    // zero passing events. Without this guard, `readRecord(stream, 0, 0)`
-    // tries to interpret the file header bytes as a record header, reads
-    // garbage row counts, and asserts out of vector::operator[] when the
-    // for-loop in this function then walks "rows" entries.
-    if (header.trailerPosition <= 0 ||
-        header.trailerPosition >= static_cast<long>(inputStreamSize)) {
-        return;
-    }
-
     inputRecord.readRecord(inputStream,header.trailerPosition,0);
     if(_verbose)printf("*** reader:: trailer record event count : %d\n",inputRecord.getEventCount());
 
@@ -222,20 +384,53 @@ bool  reader::hasNext(){ return readerEventIndex.canAdvance();}
  * @param reference to the event object to be filled from the record.
  * @return true if the event was successfully read, and false otherwise
  */
+// Per-record load. mmap path (zero-copy) for Lz4ByBank / Lz4ByPage; ifstream
+// path (existing) for everything else.
+void reader::loadDataRecord(int irec){
+    long position = readerEventIndex.getPosition(irec);
+    if(mmap_base_ && position + RECORD_HEADER_SIZE <= static_cast<long>(mmap_size_)){
+      const char* hdr = mmap_base_ + position;
+      int magic = *reinterpret_cast<const int*>(&hdr[RH_MAGIC_NUMBER_OFFSET]);
+      int compWord = *reinterpret_cast<const int*>(&hdr[RH_COMP_WORD_OFFSET]);
+      if(static_cast<uint32_t>(magic)==HEADER_MAGIC_BE) compWord = __builtin_bswap32(compWord);
+      int tag = (compWord>>COMP_TYPE_SHIFT)&COMP_TYPE_BYTE;
+      if(tag == static_cast<int>(compression_type::lz4_by_bank)){
+        mmap_currentByPage_.reset();
+        ensureMmapByBank(irec);
+        return;
+      }
+      if(tag == static_cast<int>(compression_type::lz4_by_page)){
+        mmap_currentByBank_.reset();
+        ensureMmapByPage(irec);
+        return;
+      }
+    }
+    mmap_currentByBank_.reset();
+    mmap_currentByPage_.reset();
+    mmap_currentRecord_ = -1;
+    inputRecord.readRecord(inputStream,position,0);
+}
+
 bool  reader::next(hipo::event &dataevent){
     if(readerEventIndex.canAdvance()==false) return false;
     int recordNumber = readerEventIndex.getRecordNumber();
     readerEventIndex.advance();
     int recordToBeRead = readerEventIndex.getRecordNumber();
     if(recordToBeRead!=recordNumber){
-      long position = readerEventIndex.getPosition(recordToBeRead);
-      inputRecord.readRecord(inputStream,position,0);
-      /*printf(" record changed from %d to %d at event %d total event # %d\n",
-        recordNumber, recordToBeRead,readerEventIndex.getEventNumber(),
-        readerEventIndex.getMaxEvents());*/
+      loadDataRecord(recordToBeRead);
     }
     int eventNumberInRecord = readerEventIndex.getRecordEventNumber();
-    inputRecord.readHipoEvent(dataevent,eventNumberInRecord);
+    if(mmap_currentByBank_){
+      dataevent.initByBank(mmap_currentByBank_, static_cast<uint32_t>(eventNumberInRecord));
+    } else if(mmap_currentByPage_){
+      dataevent.initByPage(mmap_currentByPage_, static_cast<uint32_t>(eventNumberInRecord));
+    } else if(auto bb = inputRecord.byBank()){
+      dataevent.initByBank(bb, static_cast<uint32_t>(eventNumberInRecord));
+    } else if(auto bp = inputRecord.byPage()){
+      dataevent.initByPage(bp, static_cast<uint32_t>(eventNumberInRecord));
+    } else {
+      inputRecord.readHipoEvent(dataevent,eventNumberInRecord);
+    }
     return true;
 }
 /**
@@ -245,7 +440,17 @@ bool  reader::next(hipo::event &dataevent){
  */
 void  reader::read(hipo::event &dataevent){
   int eventNumberInRecord = readerEventIndex.getRecordEventNumber();
-  inputRecord.readHipoEvent(dataevent,eventNumberInRecord);
+  if(mmap_currentByBank_){
+    dataevent.initByBank(mmap_currentByBank_, static_cast<uint32_t>(eventNumberInRecord));
+  } else if(mmap_currentByPage_){
+    dataevent.initByPage(mmap_currentByPage_, static_cast<uint32_t>(eventNumberInRecord));
+  } else if(auto bb = inputRecord.byBank()){
+    dataevent.initByBank(bb, static_cast<uint32_t>(eventNumberInRecord));
+  } else if(auto bp = inputRecord.byPage()){
+    dataevent.initByPage(bp, static_cast<uint32_t>(eventNumberInRecord));
+  } else {
+    inputRecord.readHipoEvent(dataevent,eventNumberInRecord);
+  }
 }
 /**
  * Reads the structure from the current event without copying the event
@@ -357,11 +562,7 @@ bool  reader::next(){
     readerEventIndex.advance();
     int recordToBeRead = readerEventIndex.getRecordNumber();
     if(recordToBeRead!=recordNumber){
-      long position = readerEventIndex.getPosition(recordToBeRead);
-      inputRecord.readRecord(inputStream,position,0);
-      /*printf(" record changed from %d to %d at event %d total event # %d\n",
-        recordNumber, recordToBeRead,readerEventIndex.getEventNumber(),
-        readerEventIndex.getMaxEvents());*/
+      loadDataRecord(recordToBeRead);
     }
     return true;
 }
@@ -372,12 +573,12 @@ bool  reader::next(){
  * @param eventNumber - number of event to jump to
  * @return true if event is available, false - otherwise
  */
-bool reader::gotoEvent(long eventNumber){
+bool reader::gotoEvent(int eventNumber){
   int recordNumber = readerEventIndex.getRecordNumber();
 
   //goto event in index if exists, if not return
   if(readerEventIndex.gotoEvent(eventNumber)==false){
-    printf("[WARNING] hipo::reader::gotoEvent event %ld greater than max events = %ld, will stay at current event\n",
+    printf("[WARNING] hipo::reader::gotoEvent event %d greater than max events = %d, will stay at current event\n",
 	   eventNumber, readerEventIndex.getMaxEvents());
     return false;
   }
@@ -385,12 +586,7 @@ bool reader::gotoEvent(long eventNumber){
   int recordToBeRead = readerEventIndex.getRecordNumber();
   
   if(recordToBeRead!=recordNumber){
-    //readerEventIndex.show(); - commented out by gg, this was for debugging
-    long position = readerEventIndex.getPosition(recordToBeRead);
-    inputRecord.readRecord(inputStream,position,0);
-    /*printf(" record changed from %d to %d at event %d total event # %d\n",
-      recordNumber, recordToBeRead,readerEventIndex.getEventNumber(),
-      readerEventIndex.getMaxEvents());*/
+    loadDataRecord(recordToBeRead);
   }
   return true;
 }
@@ -403,8 +599,7 @@ bool reader::gotoEvent(long eventNumber){
 bool reader::gotoRecord(int irec){
   bool status = readerEventIndex.gotoRecord(irec);
   if(status==false) return false;
-  long position = readerEventIndex.getPosition(irec);
-  inputRecord.readRecord(inputStream,position,0);
+  loadDataRecord(irec);
   return true;
 }
 
@@ -486,11 +681,9 @@ namespace hipo {
 void readerIndex::addSize(int size){
   if(recordEvents.size()==0){
     recordEvents.push_back(0);
-    recordEvents.push_back(static_cast<long>(size));
+    recordEvents.push_back(size);
   } else {
-    // 64-bit accumulator: int would overflow on files past ~2.1B
-    // cumulative events (skim files easily hit that).
-    long cz = recordEvents[recordEvents.size()-1] + static_cast<long>(size);
+    int cz = recordEvents[recordEvents.size()-1] + size;
     recordEvents.push_back(cz);
   }
 }
@@ -529,24 +722,24 @@ bool readerIndex::advance(){
  * @param event number to jump to
  * @return true - if event number is valid event, false - otherwise
  */
-bool readerIndex::gotoEvent(long eventNumber){
+bool readerIndex::gotoEvent(int eventNumber){
   //check if event exists
   if(eventNumber>=getMaxEvents()) return false;
   // The proper record number is found by binary search through records array
-  //------
+  //------ 
   // G.Gavalian (July 25/2022)
   // Changed the eventNumber -> eventNumber+1 in binary search. Now it changes the
   // record number properly and starts with record event number from 0
   // I think this was a bug.
-
-    auto l_bound =
+  
+    std::vector<int>::iterator l_bound =
       std::lower_bound(recordEvents.begin(), recordEvents.end(), eventNumber+1);
 
-
+  
     long  position = (l_bound - recordEvents.begin()) - 1;
-    //printf("event # %ld , lbound = %ld\n",eventNumber,position);
-    currentRecord       = static_cast<int>(position);
-    currentRecordEvent  = static_cast<int>(eventNumber - recordEvents[currentRecord]);
+    //printf("event # %d , lbound = %ld\n",eventNumber,position);
+    currentRecord       = position;
+    currentRecordEvent  = eventNumber - recordEvents[currentRecord];
     currentEvent        = eventNumber;
     return true;
 }
@@ -554,14 +747,14 @@ bool readerIndex::gotoEvent(long eventNumber){
 
   void readerIndex::show(){
     for(size_t i = 0; i < recordEvents.size(); i++){
-      printf("record = %8zu, %8ld\n",i,recordEvents[i]);
+      printf("record = %8zu, %8d\n",i,recordEvents[i]);
     }
   }
 /**
  * Returns maximum number of events available to read.
  * @return maximum number of events.
  */
-long readerIndex::getMaxEvents(){
+int readerIndex::getMaxEvents(){
   if(recordEvents.size()==0) return 0;
   return recordEvents[recordEvents.size()-1];
 }

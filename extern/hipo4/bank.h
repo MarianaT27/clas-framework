@@ -44,6 +44,7 @@
 #include <cstdlib>
 #include <map>
 #include <functional>
+#include <utility>
 #include "dictionary.h"
 #include "node.h"
 
@@ -58,6 +59,20 @@ namespace hipo {
       std::vector<char> structureBuffer;
       char *structureAddress{};
       void setAddress(const char *address);
+
+      // Used by the copy ctor/assignment to point `structureAddress` at THIS
+      // object's buffer when the source pointed at its own owned buffer, or to
+      // copy an external (initNoCopy) pointer verbatim.
+      void rebindAddressFrom(const structure& o) {
+          if (o.structureAddress == nullptr) {
+              structureAddress = nullptr;
+          } else if (!o.structureBuffer.empty() &&
+                     o.structureAddress == o.structureBuffer.data()) {
+              structureAddress = structureBuffer.data();  // owned -> our copy
+          } else {
+              structureAddress = o.structureAddress;       // external (initNoCopy)
+          }
+      }
 
     protected:
 
@@ -74,69 +89,45 @@ namespace hipo {
       structure(int size){ allocate(size);}
       structure(int __group, int __item, std::string &str);
 
+      // Copy/move must rebind `structureAddress`: it is a raw pointer that
+      // points either into our OWNED `structureBuffer` (after init /
+      // initStructureBySize) or to external memory (after initNoCopy). The
+      // implicitly-generated special members would copy the pointer verbatim,
+      // leaving it dangling into the source object once the source dies — which
+      // corrupts any code that returns/stores a populated bank by value (e.g.
+      // framework::Event::get_bank caching a bank read from a ByPage record).
+      structure(const structure& o)
+          : structureBuffer(o.structureBuffer), dataOffset(o.dataOffset) {
+          rebindAddressFrom(o);
+      }
+      structure& operator=(const structure& o) {
+          if (this != &o) {
+              structureBuffer = o.structureBuffer;
+              dataOffset      = o.dataOffset;
+              rebindAddressFrom(o);
+          }
+          return *this;
+      }
+      // std::vector move keeps the same heap allocation, so a pointer into the
+      // owned buffer stays valid after the move; an external pointer is copied
+      // as-is. Either way, null the source so it cannot alias our buffer.
+      structure(structure&& o) noexcept
+          : structureBuffer(std::move(o.structureBuffer)),
+            structureAddress(o.structureAddress),
+            dataOffset(o.dataOffset) {
+          o.structureAddress = nullptr;
+      }
+      structure& operator=(structure&& o) noexcept {
+          if (this != &o) {
+              structureBuffer  = std::move(o.structureBuffer);
+              structureAddress = o.structureAddress;
+              dataOffset       = o.dataOffset;
+              o.structureAddress = nullptr;
+          }
+          return *this;
+      }
+
       virtual     ~structure()= default;
-
-      /// Copy / move ops that keep the raw `structureAddress` pointer in sync
-      /// with `structureBuffer`. The default compiler-generated versions
-      /// leave `structureAddress` pointing at the *other* object's vector,
-      /// which becomes dangling once that vector is destroyed (in the copy
-      /// case) or relocated (in the move case). Callers that hold a
-      /// structure inside an STL container (e.g. unordered_map<string, bank>
-      /// in framework::Event's per-event cache) hit that bug as soon as
-      /// they read any field; the row count comes back zero or worse.
-      ///
-      /// Only the "internal buffer" case is fixed up: when initNoCopy() has
-      /// pointed `structureAddress` at an external buffer, we preserve the
-      /// raw pointer (no internal vector to relocate into).
-   private:
-      void rebind_address_(const structure& src) noexcept {
-         const char* old_base = src.structureBuffer.empty()
-             ? nullptr
-             : src.structureBuffer.data();
-         const char* old_end  = old_base + src.structureBuffer.size();
-         if (src.structureAddress && old_base
-             && src.structureAddress >= old_base
-             && src.structureAddress <  old_end) {
-            const std::ptrdiff_t off = src.structureAddress - old_base;
-            structureAddress = structureBuffer.data() + off;
-         } else {
-            structureAddress = src.structureAddress;
-         }
-      }
-
-   public:
-      structure(const structure& other)
-        : structureBuffer(other.structureBuffer),
-          dataOffset(other.dataOffset) {
-         rebind_address_(other);
-      }
-      structure(structure&& other) noexcept
-        : structureBuffer(std::move(other.structureBuffer)),
-          dataOffset(other.dataOffset) {
-         // After vector-move the buffer's heap address typically stays
-         // put, so the offset-based rebind handles both moves and copies
-         // correctly. We re-evaluate against the moved-into vector so the
-         // logic is identical for both code paths.
-         rebind_address_(other);
-         other.structureAddress = nullptr;
-      }
-      structure& operator=(const structure& other) {
-         if (this != &other) {
-            structureBuffer = other.structureBuffer;
-            dataOffset      = other.dataOffset;
-            rebind_address_(other);
-         }
-         return *this;
-      }
-      structure& operator=(structure&& other) noexcept {
-         if (this != &other) {
-            structureBuffer = std::move(other.structureBuffer);
-            dataOffset      = other.dataOffset;
-            rebind_address_(other);
-            other.structureAddress = nullptr;
-         }
-         return *this;
-      }
       bool         allocate(int size);
       
       int          getSize() const noexcept{
@@ -160,7 +151,7 @@ namespace hipo {
       void         init(const char *buffer, int size);
       void         initNoCopy(const char *buffer, int size);
 
-      const char    *getAddress();
+      const char    *getAddress() const;
       virtual void   show() const;
       void           setSize(int size);
       void           setHeaderSize(int size);
@@ -325,7 +316,36 @@ namespace hipo {
       int     bankRows{-1};
       rowlist bankRowList;
 
+      // ---- Phase 4 path B (lazy per-column inflate) ----
+      // When a bank is bound to a hipo::bypagerecord by event::getStructure
+      // in ByPage mode, we DO NOT pre-inflate its column data. Instead the
+      // bank holds a back-pointer; the first call to any per-column getter
+      // (getInt/getFloat/etc. for that column) triggers a lazy inflate of
+      // just that column's page and memcpys the bytes into the bank's
+      // structure buffer. Subsequent getter calls on the same column read
+      // directly from the buffer with no extra work.
+      //
+      // Fields are mutable so const noexcept getters can call ensureColumn().
+      mutable class bypagerecord*       bp_ref_{nullptr}; // non-owning; lifetime: bypagerecord outlives the bank
+      mutable uint32_t                  bp_event_idx_{0};
+      mutable int                       bp_bank_idx_{0};
+      mutable std::vector<char>         col_filled_;      // 0 = not yet inflated; 1 = filled
+
     public:
+
+        // Internal: called by event::getStructure(bank&) in ByPage mode.
+        // The bank reserves its structure buffer at full size (already
+        // done by the preceding initStructureBySize) but defers the
+        // per-column memcpys to ensureColumn() on first access.
+        void setByPageRef(class bypagerecord* p, uint32_t event_idx, int bank_idx);
+        void clearByPageRef() { bp_ref_ = nullptr; }
+        bool hasByPageRef() const { return bp_ref_ != nullptr; }
+
+        // First call inflates+copies the column's bytes; later calls are
+        // a single branch check. Cheap (O(rows × bytes_per_row) memcpy
+        // per column, one time). noexcept: swallows bypagerecord errors;
+        // the caller will read zero-initialized bytes if inflation fails.
+        void ensureColumn(int item) const noexcept;
 
         bank();
         // constructor initializes the nodes in the bank
@@ -342,6 +362,53 @@ namespace hipo {
           int size   = bankSchema.getSizeForRows(__rows);
           initStructureBySize(bankSchema.getGroup(),bankSchema.getItem(), 11, size);
           bankRowList.reset(bankRows);
+        }
+
+        // Copy/move rebind the structure buffer pointer (via the base class)
+        // AND re-point bankRowList's owner back-pointer at the new object.
+        // The ByPage lazy-binding members are value-copied (bp_ref_ is a
+        // non-owning pointer whose target outlives the bank).
+        bank(const bank& o)
+          : structure(o), bankSchema(o.bankSchema), bankRows(o.bankRows),
+            bankRowList(o.bankRowList), bp_ref_(o.bp_ref_),
+            bp_event_idx_(o.bp_event_idx_), bp_bank_idx_(o.bp_bank_idx_),
+            col_filled_(o.col_filled_) {
+          bankRowList.setOwnerBank(this);
+        }
+        bank& operator=(const bank& o) {
+          if (this != &o) {
+            structure::operator=(o);
+            bankSchema    = o.bankSchema;
+            bankRows      = o.bankRows;
+            bankRowList   = o.bankRowList;
+            bp_ref_       = o.bp_ref_;
+            bp_event_idx_ = o.bp_event_idx_;
+            bp_bank_idx_  = o.bp_bank_idx_;
+            col_filled_   = o.col_filled_;
+            bankRowList.setOwnerBank(this);
+          }
+          return *this;
+        }
+        bank(bank&& o) noexcept
+          : structure(std::move(o)), bankSchema(std::move(o.bankSchema)),
+            bankRows(o.bankRows), bankRowList(std::move(o.bankRowList)),
+            bp_ref_(o.bp_ref_), bp_event_idx_(o.bp_event_idx_),
+            bp_bank_idx_(o.bp_bank_idx_), col_filled_(std::move(o.col_filled_)) {
+          bankRowList.setOwnerBank(this);
+        }
+        bank& operator=(bank&& o) noexcept {
+          if (this != &o) {
+            structure::operator=(std::move(o));
+            bankSchema    = std::move(o.bankSchema);
+            bankRows      = o.bankRows;
+            bankRowList   = std::move(o.bankRowList);
+            bp_ref_       = o.bp_ref_;
+            bp_event_idx_ = o.bp_event_idx_;
+            bp_bank_idx_  = o.bp_bank_idx_;
+            col_filled_   = std::move(o.col_filled_);
+            bankRowList.setOwnerBank(this);
+          }
+          return *this;
         }
 
         ~bank() override;
@@ -362,6 +429,7 @@ namespace hipo {
         std::vector<double> getDouble( int item) const noexcept;
 
         template<typename T = double> T get(int item, int index) const noexcept {
+          ensureColumn(item);
           auto type   = bankSchema.getEntryType(item);
           auto offset = bankSchema.getOffset(item, index, bankRows);
           switch(type) {
@@ -409,6 +477,49 @@ namespace hipo {
         void    putFloat(int item, int index, float value);
         void    putDouble(int item, int index, double value);
         void    putLong(int item, int index, int64_t value);
+
+        // ---- Array accessors (for columns declared with /T#N syntax) ----
+        //
+        // The schema entry's `arrayLength` field must equal `len` or these
+        // throw `length_mismatch_error`. `dest`/`src` must point to at
+        // least `len` elements. Element order within a cell is
+        // element-major (consecutive bytes). Column-major across rows.
+
+        void    getIntArray   (int item, int row, int32_t *dest, int len) const;
+        void    getShortArray (int item, int row, int16_t *dest, int len) const;
+        void    getByteArray  (int item, int row, int8_t  *dest, int len) const;
+        void    getFloatArray (int item, int row, float   *dest, int len) const;
+        void    getDoubleArray(int item, int row, double  *dest, int len) const;
+        void    getLongArray  (int item, int row, int64_t *dest, int len) const;
+
+        void    getIntArray   (const char *name, int row, int32_t *dest, int len) const;
+        void    getShortArray (const char *name, int row, int16_t *dest, int len) const;
+        void    getByteArray  (const char *name, int row, int8_t  *dest, int len) const;
+        void    getFloatArray (const char *name, int row, float   *dest, int len) const;
+        void    getDoubleArray(const char *name, int row, double  *dest, int len) const;
+        void    getLongArray  (const char *name, int row, int64_t *dest, int len) const;
+
+        std::vector<int32_t> getIntArray   (int item, int row) const;
+        std::vector<int16_t> getShortArray (int item, int row) const;
+        std::vector<int8_t>  getByteArray  (int item, int row) const;
+        std::vector<float>   getFloatArray (int item, int row) const;
+        std::vector<double>  getDoubleArray(int item, int row) const;
+        std::vector<int64_t> getLongArray  (int item, int row) const;
+
+        void    putIntArray   (int item, int row, const int32_t *src, int len);
+        void    putShortArray (int item, int row, const int16_t *src, int len);
+        void    putByteArray  (int item, int row, const int8_t  *src, int len);
+        void    putFloatArray (int item, int row, const float   *src, int len);
+        void    putDoubleArray(int item, int row, const double  *src, int len);
+        void    putLongArray  (int item, int row, const int64_t *src, int len);
+
+        void    putIntArray   (const char *name, int row, const int32_t *src, int len);
+        void    putShortArray (const char *name, int row, const int16_t *src, int len);
+        void    putByteArray  (const char *name, int row, const int8_t  *src, int len);
+        void    putFloatArray (const char *name, int row, const float   *src, int len);
+        void    putDoubleArray(const char *name, int row, const double  *src, int len);
+        void    putLongArray  (const char *name, int row, const int64_t *src, int len);
+
         template<typename T> void put(int item, int index, T value) {
           auto type = bankSchema.getEntryType(item);
           switch(type) {
@@ -453,6 +564,11 @@ namespace hipo {
         /// @param row the row number
         void printValue(int schemaEntry, int row) const;
 
+        /// @brief calculate a checksum for this bank; useful for comparing two banks' equality
+        /// @param checkAllRows if true, checks all rows rather than just those from `getRowList()`
+        /// @returns the checksum
+        std::size_t checksum(bool checkAllRows=false) const;
+
         void reset();
 
         void notify() override;
@@ -462,6 +578,7 @@ namespace hipo {
     //inlined getters
 
     inline float  bank::getFloat(int item, int index) const noexcept{
+      ensureColumn(item);
       if(bankSchema.getEntryType(item)==kFloat){
         int offset = bankSchema.getOffset(item, index, bankRows);
         return getFloatAt(offset);
@@ -470,6 +587,7 @@ namespace hipo {
     }
 
     inline double  bank::getDouble(int item, int index) const noexcept{
+      ensureColumn(item);
       if(bankSchema.getEntryType(item)==kDouble){
         int offset = bankSchema.getOffset(item, index, bankRows);
         return getDoubleAt(offset);
@@ -482,6 +600,7 @@ namespace hipo {
     }
 
     inline long bank::getLong(int item, int index) const noexcept{
+      ensureColumn(item);
       if(bankSchema.getEntryType(item)==kLong){
         int offset = bankSchema.getOffset(item, index, bankRows);
         return getLongAt(offset);
@@ -490,6 +609,7 @@ namespace hipo {
     }
 
     inline int    bank::getInt(int item, int index) const noexcept{
+      ensureColumn(item);
       int type = bankSchema.getEntryType(item);
       int offset = bankSchema.getOffset(item, index, bankRows);
       switch(type){
@@ -503,8 +623,9 @@ namespace hipo {
     }
 
   inline std::vector<int>    bank::getInt(int item) const noexcept{
+      ensureColumn(item);
       int type = bankSchema.getEntryType(item);
-      
+
       std::vector<int> row;
       int nrows = getRows();
 
@@ -512,7 +633,7 @@ namespace hipo {
         int offset = bankSchema.getOffset(item, j, bankRows);
       switch(type){
           case kByte:  row.push_back((int) getByteAt(offset)); break;
-          case kShort: row.push_back((int) getShortAt(offset)); break; 
+          case kShort: row.push_back((int) getShortAt(offset)); break;
           case kInt:   row.push_back((int) getIntAt(offset)); break;
       default: printf("---> error : requested INT for [%s] type = %d\n",
 		      bankSchema.getEntryName(item).c_str(),type); break;
@@ -522,6 +643,7 @@ namespace hipo {
     }
 
     inline int    bank::getShort(int item, int index) const noexcept{
+      ensureColumn(item);
       int type = bankSchema.getEntryType(item);
       int offset = bankSchema.getOffset(item, index, bankRows);
       switch(type){
@@ -534,6 +656,7 @@ namespace hipo {
     }
 
     inline int    bank::getByte(int item, int index) const noexcept{
+      ensureColumn(item);
       int type = bankSchema.getEntryType(item);
       int offset = bankSchema.getOffset(item, index, bankRows);
       switch(type){
@@ -545,6 +668,7 @@ namespace hipo {
     }
     inline int    bank::getInt(const char *name, int index) const noexcept{
       int item = bankSchema.getEntryOrder(name);
+      ensureColumn(item);
       int type = bankSchema.getEntryType(item);
       int offset = bankSchema.getOffset(item, index, bankRows);
       switch(type){
@@ -558,6 +682,7 @@ namespace hipo {
 
     inline std::vector<int>    bank::getInt(const char *name) const noexcept{
       int item = bankSchema.getEntryOrder(name);
+      ensureColumn(item);
       int type = bankSchema.getEntryType(item);
       std::vector<int> row;
 
@@ -566,7 +691,7 @@ namespace hipo {
           int offset = bankSchema.getOffset(item, j, bankRows);
          switch(type){
              case kByte:  row.push_back((int) getByteAt(offset)); break;
-             case kShort: row.push_back((int) getShortAt(offset)); break; 
+             case kShort: row.push_back((int) getShortAt(offset)); break;
              case kInt:   row.push_back((int) getIntAt(offset)); break;
              default: printf("---> error : requested INT for [%s] type = %d\n",name,type); break;
          }
@@ -576,6 +701,7 @@ namespace hipo {
 
     inline int    bank::getShort(const char *name, int index) const noexcept{
       int item = bankSchema.getEntryOrder(name);
+      ensureColumn(item);
       int type = bankSchema.getEntryType(item);
       int offset = bankSchema.getOffset(item, index, bankRows);
       switch(type){
@@ -588,6 +714,7 @@ namespace hipo {
     }
     inline int    bank::getByte(const char *name, int index) const noexcept{
       int item = bankSchema.getEntryOrder(name);
+      ensureColumn(item);
       int type = bankSchema.getEntryType(item);
       int offset = bankSchema.getOffset(item, index, bankRows);
       switch(type){
@@ -600,6 +727,7 @@ namespace hipo {
 
     inline float  bank::getFloat(const char *name, int index) const noexcept{
       int item = bankSchema.getEntryOrder(name);
+      ensureColumn(item);
       if(bankSchema.getEntryType(item)==kFloat){
         int offset = bankSchema.getOffset(item, index, bankRows);
         return getFloatAt(offset);
@@ -609,6 +737,7 @@ namespace hipo {
 
   inline std::vector<float>  bank::getFloat(const char *name) const noexcept{
       int item = bankSchema.getEntryOrder(name);
+      ensureColumn(item);
       std::vector<float> row;
       int nrows = getRows();
       if(bankSchema.getEntryType(item)==kFloat){
@@ -619,8 +748,9 @@ namespace hipo {
       }
       return row;
     }
-    
+
     inline std::vector<float>  bank::getFloat(int item) const noexcept{
+      ensureColumn(item);
       std::vector<float> row;
       int nrows = getRows();
       if(bankSchema.getEntryType(item)==kFloat){
@@ -633,6 +763,7 @@ namespace hipo {
     }
     inline double  bank::getDouble(const char *name, int index) const noexcept{
       int item = bankSchema.getEntryOrder(name);
+      ensureColumn(item);
       if(bankSchema.getEntryType(item)==kDouble){
         int offset = bankSchema.getOffset(item, index, bankRows);
         return getDoubleAt(offset);
@@ -645,8 +776,9 @@ namespace hipo {
     }
 
     inline std::vector<double>  bank::getDouble(int item) const noexcept{
+      ensureColumn(item);
       std::vector<double> row;
-      int nrows = getRows();      
+      int nrows = getRows();
 
       if(bankSchema.getEntryType(item)==kDouble){
         for(int j = 0; j < nrows; j++){
@@ -667,6 +799,7 @@ namespace hipo {
       std::vector<double> row;
       int nrows = getRows();
       int item = bankSchema.getEntryOrder(name);
+      ensureColumn(item);
 
       if(bankSchema.getEntryType(item)==kDouble){
         for(int j = 0; j < nrows; j++){
@@ -682,9 +815,10 @@ namespace hipo {
       }
       return row;
     }
-    
+
     inline long bank::getLong(const char *name, int index) const noexcept{
       int item = bankSchema.getEntryOrder(name);
+      ensureColumn(item);
       if(bankSchema.getEntryType(item)==kLong){
         int offset = bankSchema.getOffset(item, index, bankRows);
         return getLongAt(offset);
@@ -692,33 +826,44 @@ namespace hipo {
       return 0;
     }
   inline void    bank::putInt(int item, int index, int32_t value){
-    //int type = bankSchema.getEntryType(item);
+      if(bankSchema.getEntryArrayLength(item) != 1)
+        throw hipo::length_mismatch_error("bank::putInt called on array column '" +
+          bankSchema.getEntryName(item) + "' — use putIntArray instead");
       int offset = bankSchema.getOffset(item, index, bankRows);
       putIntAt(offset,value);
     }
     inline void    bank::putShort(int item, int index, int16_t value){
-      //int type = bankSchema.getEntryType(item);
+      if(bankSchema.getEntryArrayLength(item) != 1)
+        throw hipo::length_mismatch_error("bank::putShort called on array column '" +
+          bankSchema.getEntryName(item) + "' — use putShortArray instead");
       int offset = bankSchema.getOffset(item, index, bankRows);
       putShortAt(offset,value);
     }
     inline void    bank::putByte(int item, int index, int8_t value){
-      //int type = bankSchema.getEntryType(item);
+      if(bankSchema.getEntryArrayLength(item) != 1)
+        throw hipo::length_mismatch_error("bank::putByte called on array column '" +
+          bankSchema.getEntryName(item) + "' — use putByteArray instead");
       int offset = bankSchema.getOffset(item, index, bankRows);
       putByteAt(offset,value);
     }
     inline  void    bank::putFloat(int item, int index, float value){
-      //int type = bankSchema.getEntryType(item);
+      if(bankSchema.getEntryArrayLength(item) != 1)
+        throw hipo::length_mismatch_error("bank::putFloat called on array column '" +
+          bankSchema.getEntryName(item) + "' — use putFloatArray instead");
       int offset = bankSchema.getOffset(item, index, bankRows);
-      //printf("---- put float %f at position = %d\n",value,offset);
       putFloatAt(offset,value);
     }
     inline void    bank::putDouble(int item, int index, double value){
-      //int type = bankSchema.getEntryType(item);
+      if(bankSchema.getEntryArrayLength(item) != 1)
+        throw hipo::length_mismatch_error("bank::putDouble called on array column '" +
+          bankSchema.getEntryName(item) + "' — use putDoubleArray instead");
       int offset = bankSchema.getOffset(item, index, bankRows);
       putDoubleAt(offset,value);
     }
     inline void    bank::putLong(int item, int index, int64_t value){
-      //int type = bankSchema.getEntryType(item);
+      if(bankSchema.getEntryArrayLength(item) != 1)
+        throw hipo::length_mismatch_error("bank::putLong called on array column '" +
+          bankSchema.getEntryName(item) + "' — use putLongArray instead");
       int offset = bankSchema.getOffset(item, index, bankRows);
       putLongAt(offset,value);
     }

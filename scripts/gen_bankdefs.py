@@ -302,23 +302,30 @@ def gen_header(bank_def: dict, source_file: str) -> str:
     lines.append("")
     lines.append(f"    {cls}() = default;")
     lines.append("")
-    lines.append("    /// Bind to a live hipo::bank. Per-thread cache keyed by schema pointer:")
-    lines.append("    /// the first bind() in a thread resolves every column name to its item")
-    lines.append("    /// index via schema.getEntryOrder(); subsequent bind()s for the same")
-    lines.append("    /// schema hit the cache. Returns true on success.")
+    lines.append("    /// Bind to a live hipo::bank. Per-thread cache keyed by the schema's")
+    lines.append("    /// (group, item): the first bind() in a thread resolves every column")
+    lines.append("    /// name to its item index via schema.getEntryOrder(); subsequent")
+    lines.append("    /// bind()s hit the cache. Keying by (group,item) rather than the schema")
+    lines.append("    /// POINTER is critical: the framework constructs a fresh hipo::bank")
+    lines.append("    /// (copying its schema to a new address) every event, so a pointer key")
+    lines.append("    /// would miss every event and re-resolve all columns by string. (group,")
+    lines.append("    /// item) is stable across those copies, so resolution is paid once per")
+    lines.append("    /// thread per bank type. Returns true on success.")
     lines.append("    bool bind(const hipo::bank& view) noexcept {")
     lines.append("        m_view = &view;")
     lines.append("        // const_cast is OK: hipo::bank::getSchema() lacks a const overload")
     lines.append("        // but only reads schemaEntriesMap; we never mutate the bank here.")
     lines.append("        auto& schema = const_cast<hipo::bank&>(view).getSchema();")
     lines.append("        struct ItemCache {")
-    lines.append("            const hipo::schema* schema_ptr = nullptr;")
+    lines.append("            int gi_group = -1;")
+    lines.append("            int gi_item  = -2;")
     for c in cols:
         lines.append(f"            int i_{c['cxx_name']} = -1;")
     lines.append("        };")
     lines.append("        static thread_local ItemCache cache;")
-    lines.append("        if (cache.schema_ptr != &schema) {")
-    lines.append("            cache.schema_ptr = &schema;")
+    lines.append("        if (cache.gi_group != schema.getGroup() || cache.gi_item != schema.getItem()) {")
+    lines.append("            cache.gi_group = schema.getGroup();")
+    lines.append("            cache.gi_item  = schema.getItem();")
     for c in cols:
         lines.append(f"            cache.i_{c['cxx_name']} = schema.exists(\"{c['raw_name']}\") ? schema.getEntryOrder(\"{c['raw_name']}\") : -1;")
     lines.append("        }")
@@ -551,38 +558,43 @@ def gen_physics_view(bank_def: dict, cfg: dict, banks_by_name: dict) -> list[str
     lines.append(f"    -> {view_name} {{")
     lines.append(f"    {view_name} result;")
 
+    # All strategies use a single forward scan over rows matching `pindex`
+    # (event.for_rows_with_pindex / find_row_with_pindex) instead of building a
+    # PindexLinker — for per-particle access (one pindex/event) the linker's
+    # 3-pass build is pure overhead. Selection semantics are preserved exactly:
+    # `continue` -> `return` (void lambda) and the first_* break -> `return true`.
     if strategy == "first_matching":
         f_col, f_val = cfg["filter"]
-        lines.append(f"    for (auto r : event.rows_for_pindex<bankdefs::{cls}>(pindex)) {{")
-        lines.append(f"        if (r.{f_col}() != {f_val}) continue;")
+        lines.append(f"    event.find_row_with_pindex<bankdefs::{cls}>(pindex, [&](auto r) -> bool {{")
+        lines.append(f"        if (r.{f_col}() != {f_val}) return false;")
         lines.extend(_assign_columns("result", "r", cols))
-        lines.append("        break;")
-        lines.append("    }")
+        lines.append("        return true;")
+        lines.append("    });")
 
     elif strategy == "first_row":
-        lines.append(f"    for (auto r : event.rows_for_pindex<bankdefs::{cls}>(pindex)) {{")
+        lines.append(f"    event.find_row_with_pindex<bankdefs::{cls}>(pindex, [&](auto r) -> bool {{")
         lines.extend(_assign_columns("result", "r", cols))
-        lines.append("        break;")
-        lines.append("    }")
+        lines.append("        return true;")
+        lines.append("    });")
 
     elif strategy == "best_by_priority":
         f_col, f_val       = cfg["filter"]
         p_col, p_values    = cfg["priority"]
         lines.append(f"    std::optional<bankdefs::{cls}::Row> best;")
         lines.append("    int best_rank = -1;")
-        lines.append(f"    for (auto r : event.rows_for_pindex<bankdefs::{cls}>(pindex)) {{")
-        lines.append(f"        if (r.{f_col}() != {f_val}) continue;")
+        lines.append(f"    event.for_rows_with_pindex<bankdefs::{cls}>(pindex, [&](auto r) {{")
+        lines.append(f"        if (r.{f_col}() != {f_val}) return;")
         lines.append("        int rank;")
         lines.append(f"        switch (r.{p_col}()) {{")
         for i, v in enumerate(p_values):
             lines.append(f"            case {v}: rank = {i}; break;")
-        lines.append("            default: continue;")
+        lines.append("            default: return;")
         lines.append("        }")
         lines.append("        if (best_rank == -1 || rank < best_rank) {")
         lines.append("            best = r;")
         lines.append("            best_rank = rank;")
         lines.append("        }")
-        lines.append("    }")
+        lines.append("    });")
         lines.append("    if (!best.has_value()) return result;")
         lines.extend(_assign_columns("result", "(*best)", cols, indent=4))
         if extras_bank:
@@ -600,8 +612,8 @@ def gen_physics_view(bank_def: dict, cfg: dict, banks_by_name: dict) -> list[str
             lines.append(f"    auto& extras = event.bank<bankdefs::{extras_cls}>();")
             lines.append("    const bool has_extras = extras.valid();")
             lines.append("    const int extras_rows = extras.rows();")
-        lines.append(f"    for (auto r : event.rows_for_pindex<bankdefs::{cls}>(pindex)) {{")
-        lines.append(f"        if (r.{f_col}() != {f_val}) continue;")
+        lines.append(f"    event.for_rows_with_pindex<bankdefs::{cls}>(pindex, [&](auto r) {{")
+        lines.append(f"        if (r.{f_col}() != {f_val}) return;")
         lines.append(f"        switch (r.{d_col}()) {{")
         for val, prefix in d_table:
             lines.append(f"            case {val}: {{")
@@ -618,7 +630,7 @@ def gen_physics_view(bank_def: dict, cfg: dict, banks_by_name: dict) -> list[str
             lines.append("            }")
         lines.append("            default: break;")
         lines.append("        }")
-        lines.append("    }")
+        lines.append("    });")
 
     else:
         raise ValueError(f"unknown strategy {strategy!r} in PHYSICS_VIEWS[{bank_name!r}]")

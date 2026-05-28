@@ -17,7 +17,7 @@
 #include <clas12/framework/core/SectorHistograms.hpp>
 #include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/services/ConditionsService.hpp>
-#include <clas12/framework/services/ElectronCutsService.hpp>
+#include <clas12/services/ElectronCutsService.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -130,8 +130,9 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         process_tracks(event.by_charge(-1), h_neg_tracks);
         process_tracks(event.by_charge(1), h_pos_tracks);
 
-        // Select trigger electron
-        if (event.electrons().empty()) return StatusCode::FILTERED();
+        // Select trigger electron. find_trigger_electron() returns nullopt when
+        // none qualifies, so no separate electrons().empty() guard is needed
+        // (that guard forced a full particle load before the lazy finder).
         std::optional<Particle> trigger_e = event.find_trigger_electron();
         if (!trigger_e.has_value()) return StatusCode::FILTERED();
         Particle electron = trigger_e.value();

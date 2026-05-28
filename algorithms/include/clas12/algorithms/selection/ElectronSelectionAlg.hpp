@@ -26,7 +26,7 @@
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/HistogramAliases.hpp>
-#include <clas12/framework/services/ElectronCutsService.hpp>
+#include <clas12/services/ElectronCutsService.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
@@ -37,15 +37,12 @@ namespace algorithms {
 using framework::Log;
 
 /// Configuration for ElectronSelectionAlg.
-///
-/// Compile-time fields (target, polarity) are passed to the constructor.
-/// Tunable fields are loaded from the algorithm's TOML sub-table by
-/// `declare_config(...)` and listed in `config_fields()`.
 struct ElectronSelectionConfig {
     Target target = Target::LD2;
     Polarity polarity = Polarity::Outbending;
 
     bool enable_ntuple = true;
+    bool enable_histograms = true;
     bool enable_chi2pid_cut = true;
     bool enable_momentum_cut = true;
     bool enable_vz_cut = true;
@@ -64,6 +61,7 @@ struct ElectronSelectionConfig {
             framework::field("target",                   &T::target),
             framework::field("polarity",                 &T::polarity),
             framework::field("enable_ntuple",            &T::enable_ntuple),
+            framework::field("enable_histograms",        &T::enable_histograms),
             framework::field("enable_chi2pid_cut",       &T::enable_chi2pid_cut),
             framework::field("enable_momentum_cut",      &T::enable_momentum_cut),
             framework::field("enable_vz_cut",            &T::enable_vz_cut),
@@ -100,11 +98,12 @@ class ElectronSelectionAlg : public framework::Algorithm {
         Log::info(name(), "Target: {}", to_string(m_config.target));
         Log::info(name(), "Polarity: {}", to_string(m_config.polarity));
         Log::info(name(), "NTuple output: {}", m_config.enable_ntuple ? "enabled" : "disabled");
+        Log::info(name(), "Histograms: {}", m_config.enable_histograms ? "enabled" : "disabled");
 
         m_electron_cuts->set_target(m_config.target);
         m_electron_cuts->set_polarity(m_config.polarity);
 
-        book_histograms();
+        if (m_config.enable_histograms) book_histograms();
 
         m_ntuple.init(m_ntuple_svc.get(), "electron_kinematics");
 
@@ -129,7 +128,6 @@ class ElectronSelectionAlg : public framework::Algorithm {
     auto process(framework::Event& event) -> StatusCode override {
         m_cutflow.pass("All Events");
 
-        if (event.electrons().empty()) return StatusCode::FILTERED();
         std::optional<Particle> trigger_e = event.find_trigger_electron();
         if (!trigger_e.has_value()) return StatusCode::FILTERED();
         Particle electron = trigger_e.value();
@@ -138,15 +136,10 @@ class ElectronSelectionAlg : public framework::Algorithm {
         CalorimeterBank calorimeter = electron.calo();
         DCTrajBank traj = electron.traj();
         double sampling_fraction = (calorimeter.pcal_energy + calorimeter.inner_energy + calorimeter.outer_energy) / electron.p();
-        // Pre-compute the corrected vz once so the same value flows into
-        // both the before- and after-cut histograms. Returns the raw vz
-        // when no VzCorrector variant is loaded (legacy LD2 path), so
-        // the corrected-vz plots remain populated unconditionally.
-        const double vz_corrected = m_electron_cuts->corrected_vz(
-            electron.vz(), electron.p(), electron.theta(),
-            electron.phi(), calorimeter.pcal_sector);
+        const double vz_corrected = m_electron_cuts->corrected_vz(electron.vz(), electron.p(), electron.theta(),electron.phi(), calorimeter.pcal_sector);
 
-        h_before.fill(electron, calorimeter, sampling_fraction, vz_corrected);
+        if (m_config.enable_histograms)
+            h_before.fill(electron, calorimeter, sampling_fraction, vz_corrected);
 
         if (m_config.enable_chi2pid_cut && !m_electron_cuts->pass_chi2pid_cut(electron.chi2pid())) return StatusCode::FILTERED();
         m_cutflow.pass("Chi2 PID");
@@ -168,7 +161,8 @@ class ElectronSelectionAlg : public framework::Algorithm {
         m_cutflow.pass("DC R2 Edge");
         m_cutflow.pass("DC R3 Edge");
 
-        h_after.fill(electron, calorimeter, sampling_fraction, vz_corrected);
+        if (m_config.enable_histograms)
+            h_after.fill(electron, calorimeter, sampling_fraction, vz_corrected);
 
         if (m_config.enable_ntuple) {
             m_ntuple.data().e_p = electron.p();
@@ -238,12 +232,7 @@ class ElectronSelectionAlg : public framework::Algorithm {
             svc->register_hist(dir + "/pt", "Electron p_{T};p_{T} [GeV/c];Events", pt);
             svc->register_hist(dir + "/sector", "Electron Sector;Sector;Events", sector);
             svc->register_hist(dir + "/vz", "Vertex Z;v_{z} [cm];Events", vz);
-            // VzCorrector-corrected vz: same binning as raw vz so 1:1
-            // comparison plots (raw vs corrected, target peak alignment)
-            // are trivial offline. Falls back to raw vz when no corrector
-            // variant is loaded (legacy LD2 path).
-            svc->register_hist(dir + "/vz_corr",
-                               "Corrected Vertex Z;v_{z}^{corr} [cm];Events", vz_corr);
+            svc->register_hist(dir + "/vz_corr", "Corrected Vertex Z;v_{z}^{corr} [cm];Events", vz_corr);
             svc->register_hist(dir + "/vx", "Vertex X;v_{x} [cm];Events", vx);
             svc->register_hist(dir + "/vy", "Vertex Y;v_{y} [cm];Events", vy);
             svc->register_hist(dir + "/chi2pid", "Electron #chi^{2}_{PID};#chi^{2}_{PID};Events", chi2pid);
@@ -253,16 +242,13 @@ class ElectronSelectionAlg : public framework::Algorithm {
             svc->register_hist(dir + "/chi2pid_vs_p", "#chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}", chi2pid_vs_p);
             svc->register_hist(dir + "/vz_vs_phi", "v_{z} vs #phi;#phi [deg];v_{z} [cm]", vz_vs_phi);
             svc->register_hist(dir + "/vz_vs_theta", "v_{z} vs #theta;#theta [deg];v_{z} [cm]", vz_vs_theta);
-            svc->register_hist(dir + "/vz_corr_vs_phi",
-                               "v_{z}^{corr} vs #phi;#phi [deg];v_{z}^{corr} [cm]", vz_corr_vs_phi);
-            svc->register_hist(dir + "/vz_corr_vs_theta",
-                               "v_{z}^{corr} vs #theta;#theta [deg];v_{z}^{corr} [cm]", vz_corr_vs_theta);
+            svc->register_hist(dir + "/vz_corr_vs_phi", "v_{z}^{corr} vs #phi;#phi [deg];v_{z}^{corr} [cm]", vz_corr_vs_phi);
+            svc->register_hist(dir + "/vz_corr_vs_theta", "v_{z}^{corr} vs #theta;#theta [deg];v_{z}^{corr} [cm]", vz_corr_vs_theta);
             svc->register_hist(dir + "/theta_vs_phi", "#theta vs #phi;#phi [deg];#theta [deg]", theta_vs_phi);
             svc->register_hist(dir + "/p_vs_theta", "p vs #theta;#theta [deg];p [GeV/c]", p_vs_theta);
         }
 
-        auto fill(const Particle& e, const CalorimeterBank& calo, double SF,
-                  double vz_corrected) -> void {
+        auto fill(const Particle& e, const CalorimeterBank& calo, double SF, double vz_corrected) -> void {
             p.fill(e.p());
             theta.fill(e.theta());
             phi.fill(e.phi());

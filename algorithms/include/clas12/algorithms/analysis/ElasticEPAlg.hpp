@@ -126,7 +126,8 @@ class ElasticEPAlg : public framework::Algorithm {
     auto process(framework::Event& event) -> StatusCode override {
         m_cutflow.pass("All Events");
 
-        if (event.electrons().empty()) return StatusCode::FILTERED();
+        // find_trigger_electron() returns nullopt when none qualifies; the old
+        // electrons().empty() guard was redundant and forced a full particle load.
         const auto possible_electron = event.find_trigger_electron({FD, BD});
         if (!possible_electron.has_value()) return StatusCode::FILTERED();
         const Particle& electron = possible_electron.value();

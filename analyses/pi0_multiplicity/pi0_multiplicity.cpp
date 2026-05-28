@@ -15,9 +15,9 @@
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
 #include <clas12/algorithms/reconstruction/Pi0ReconstructionAlg.hpp>
 #include <clas12/algorithms/analysis/Pi0AnalysisAlg.hpp>
-#include <clas12/framework/services/ElectronCutsService.hpp>
-#include <clas12/framework/services/PhotonCutsService.hpp>
-#include <clas12/framework/services/VzCorrectorService.hpp>
+#include <clas12/services/ElectronCutsService.hpp>
+#include <clas12/services/PhotonCutsService.hpp>
+#include <clas12/services/VzCorrectorService.hpp>
 #include <clas12/physics/DISAnalysis.hpp>
 
 auto main(int argc, char* argv[]) -> int {

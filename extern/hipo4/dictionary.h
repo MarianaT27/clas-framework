@@ -15,9 +15,11 @@
 #define DICTIONARY_H
 
 #include <cstdlib>
+#include <cstdint>
 #include <iostream>
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "hipoexceptions.h"
@@ -30,6 +32,7 @@ namespace hipo {
     int          typeId{};
     int          typeSize{};
     int          offset{};
+    int          arrayLength{1};   // 1 = scalar; N > 1 = fixed-length array per row
   } schemaEntry_t;
 
   enum Type {
@@ -89,14 +92,14 @@ class schema {
 
     void  parse(const std::string& schString);
     std::string   getName() const { return schemaName;}
-    int   getGroup(){ return groupid;}
-    int   getItem(){ return itemid;}
+    int   getGroup() const { return groupid;}
+    int   getItem() const { return itemid;}
     int   getSizeForRows(int rows);
      
     int  getRowLength()  const noexcept{
       const auto nentries = schemaEntries.size()-1;
       const auto &sch=schemaEntries[nentries];
-      return sch.offset + sch.typeSize;
+      return sch.offset + sch.typeSize * sch.arrayLength;
     }
 
     int   getEntryOrder(const char *name) const;
@@ -105,10 +108,26 @@ class schema {
       if(schemaEntriesMap.count(name)) return true;
       return false;
     }
-    
+
     int   getOffset(int item, int order, int rows) const  {
       const auto &sch=schemaEntries[item];
-      return  rows*sch.offset + order*sch.typeSize;
+      return  rows*sch.offset + order*sch.typeSize*sch.arrayLength;
+    }
+
+    int   getEntryArrayLength(int item) const noexcept {
+      return schemaEntries[item].arrayLength;
+    }
+    int   getEntryArrayLength(const char *name) const noexcept {
+      auto item = getEntryOrder(name);
+      return (item >= 0) ? schemaEntries[item].arrayLength : 0;
+    }
+
+    int   getEntryTypeSize(int item) const noexcept {
+      return schemaEntries[item].typeSize;
+    }
+
+    const schemaEntry_t& getEntry(int item) const {
+      return schemaEntries[item];
     }
 
     int   getOffset(const char *name, int order, int rows) const  {
@@ -157,18 +176,42 @@ class schema {
  class dictionary {
   private:
     std::map<std::string,schema> factory;
+    // (group, item) → schema* lookup index. Lazily (re)built on first
+    // findByGroupItem() call after addSchema(). Hot path for Lz4ByPage,
+    // which resolves (group, item) tuples to schemas at record-load time
+    // (one record may reference dozens of banks; without the index the
+    // lookup was O(num_schemas) per bank — up to a few hundred linear
+    // scans per record on CLAS12 files).
+    mutable std::unordered_map<uint32_t, schema*> by_gi_;
+    mutable bool                                  by_gi_dirty_{true};
   public:
     dictionary()= default;;
     virtual ~dictionary()= default;;
 
     std::vector<std::string> getSchemaList();
-    void    addSchema(schema sc){ factory[sc.getName()] = sc;}
+    void    addSchema(schema sc){ factory[sc.getName()] = sc; by_gi_dirty_ = true; }
     bool    hasSchema(const char *name) { return (factory.count(name)!=0);}
     schema &getSchema(const char *name){
       if(factory.count(name)==0){
         throw hipo::schema_error(std::string("hipo::dictionary: schema '") + name + "' does not exist");
       }
       return factory[name];
+    }
+    // O(1) lookup by (group, item). Returns nullptr if not found.
+    schema* findByGroupItem(uint16_t group, uint8_t item) const {
+      if(by_gi_dirty_){
+        by_gi_.clear();
+        by_gi_.reserve(factory.size());
+        for(auto& kv : factory){
+          // map<string, schema> stores schemas by value; entries' addresses
+          // are stable across other-key inserts (std::map guarantees this).
+          schema& sch = const_cast<schema&>(kv.second);
+          by_gi_[(static_cast<uint32_t>(sch.getGroup()) << 8) | static_cast<uint8_t>(sch.getItem())] = &sch;
+        }
+        by_gi_dirty_ = false;
+      }
+      auto it = by_gi_.find((static_cast<uint32_t>(group) << 8) | item);
+      return (it == by_gi_.end()) ? nullptr : it->second;
     }
     bool    parse(const char *schemaString);
     void    show();

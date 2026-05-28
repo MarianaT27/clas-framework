@@ -8,8 +8,8 @@
 #include <clas12/Target.hpp>
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
-#include <clas12/framework/services/SamplingFractionService.hpp>
-#include <clas12/framework/services/VzCorrectorService.hpp>
+#include <clas12/services/SamplingFractionService.hpp>
+#include <clas12/services/VzCorrectorService.hpp>
 
 namespace framework {
 

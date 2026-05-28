@@ -35,11 +35,13 @@
  */
 
 #include "bank.h"
+#include "bypagerecord.h"
 #include "constants.h"
 #include "parser.h"
 
 #include <algorithm>
 #include <cinttypes>
+#include <cstring>
 #include <numeric>
 
 namespace hipo {
@@ -137,7 +139,7 @@ namespace hipo {
       std::memcpy(&structureBuffer[8],&str[0],strLen);
     }
 
-    const char *structure::getAddress(){
+    const char *structure::getAddress() const{
       return structureAddress;
     }
 
@@ -427,58 +429,93 @@ bank::bank()= default;
 bank::~bank()= default;
 
 void    bank::setRows(int rows){
+   // setRows reallocates the structure buffer; any prior ByPage binding
+   // refers to an older buffer layout — clear it.
+   bp_ref_ = nullptr;
    bankRows = rows;
    int size = bankSchema.getSizeForRows(bankRows);
    initStructureBySize(bankSchema.getGroup(),bankSchema.getItem(), 11, size);
    bankRowList.reset(bankRows);
-   //allocate(size+12);
 }
 
 void bank::reset(){
+   bp_ref_ = nullptr;
    setSize(0);
    bankRows = 0;
    bankRowList.reset(bankRows);
 }
 
 void bank::notify(){
+  // notify is called by the framework AFTER raw bytes are copied into the
+  // bank's structure buffer (Bytes mode). Any ByPage binding is therefore
+  // stale and must be cleared so subsequent reads go through the freshly-
+  // copied bytes. event::getStructure(bank&) in ByPage mode calls
+  // setByPageRef *after* notify() to re-establish the binding when
+  // appropriate.
+  bp_ref_ = nullptr;
   int size = bankSchema.getRowLength();
   bankRows = getSize()/size;
   bankRowList.reset(bankRows);
-  //printf("---> bank notify called structure size = %8d (size = %5d)  rows = %d\n",
-  //    getSize(),size, bankRows);
+}
+
+void bank::setByPageRef(hipo::bypagerecord* p, uint32_t event_idx, int bank_idx) {
+  bp_ref_         = p;
+  bp_event_idx_   = event_idx;
+  bp_bank_idx_    = bank_idx;
+  col_filled_.assign(static_cast<size_t>(bankSchema.getEntries()), 0);
+}
+
+void bank::ensureColumn(int item) const noexcept {
+  // Fast path: not in ByPage lazy mode, or column already inflated.
+  if (!bp_ref_) return;
+  if (item < 0 || static_cast<size_t>(item) >= col_filled_.size()) return;
+  if (col_filled_[item]) return;
+
+  // Slow path (first touch of this column for this event): inflate the
+  // single page that backs it and memcpy bytes into the bank's column
+  // slot. After this, the column reads exactly like a Bytes-mode bank.
+  try {
+    auto view = bp_ref_->column_for_event(bp_event_idx_, bp_bank_idx_, item);
+    if (view.byte_len > 0 && bankRows > 0) {
+      // Bank's data section is at structureAddress + BANK_STRUCTURE_SIZE.
+      // Column `item` starts at byte offset `bankRows * schema_entry.offset`.
+      const auto& e = bankSchema.getEntry(item);
+      char* dst = const_cast<char*>(getAddress()) + BANK_STRUCTURE_SIZE +
+                  static_cast<size_t>(bankRows) * e.offset;
+      std::memcpy(dst, view.data, view.byte_len);
+    }
+  } catch (...) {
+    // noexcept contract: swallow. Caller reads the buffer's previous
+    // (likely zero) bytes.
+  }
+  col_filled_[item] = 1;
 }
 
 
 void    bank::putInt(const char *name, int index, int32_t value){
   int item = bankSchema.getEntryOrder(name);
-  int offset = bankSchema.getOffset(item, index, bankRows);
-  putIntAt(offset,value);
+  putInt(item, index, value);
 }
 void    bank::putShort(const char *name, int index, int16_t value){
   int item = bankSchema.getEntryOrder(name);
-  int offset = bankSchema.getOffset(item, index, bankRows);
-  putShortAt(offset,value);
+  putShort(item, index, value);
 }
 void    bank::putByte(const char *name, int index, int8_t value){
   int item = bankSchema.getEntryOrder(name);
-  int offset = bankSchema.getOffset(item, index, bankRows);
-  putByteAt(offset,value);
+  putByte(item, index, value);
 }
 void    bank::putFloat(const char *name, int index, float value){
   int item = bankSchema.getEntryOrder(name);
-  int offset = bankSchema.getOffset(item, index, bankRows);
-  putFloatAt(offset,value);
+  putFloat(item, index, value);
 }
 void    bank::putDouble(const char *name, int index, double value){
   int item = bankSchema.getEntryOrder(name);
-  int offset = bankSchema.getOffset(item, index, bankRows);
-  putDoubleAt(offset,value);
+  putDouble(item, index, value);
 }
 
 void    bank::putLong(const char *name, int index, int64_t value){
   int item = bankSchema.getEntryOrder(name);
-  int offset = bankSchema.getOffset(item, index, bankRows);
-  putLongAt(offset,value);
+  putLong(item, index, value);
 }
 
 bank::rowlist::list_t const& bank::getRowList() const {
@@ -546,11 +583,129 @@ void bank::printValue(int schemaEntry, int row) const {
   }
 }
 
+std::size_t bank::checksum(bool checkAllRows) const {
+  std::size_t seed = 0;
+  // hash combine adopted from boost
+  auto hash_combine = [&seed](auto const& val) {
+    seed ^= std::hash<std::decay_t<decltype(val)>>{}(val) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+  };
+  // hash name
+  for(char c : bankSchema.getName())
+    hash_combine(c);
+  // hash number of rows
+  if(checkAllRows)
+    hash_combine(getRows());
+  else
+    hash_combine(static_cast<int>(getRowList().size()));
+  // hash data
+  auto hash_val = [&](int col, int row) {
+    switch(bankSchema.getEntryType(col)) {
+      case kByte:
+      case kShort:
+      case kInt:    hash_combine(getInt(col, row));    break;
+      case kFloat:  hash_combine(getFloat(col, row));  break;
+      case kDouble: hash_combine(getDouble(col, row)); break;
+      case kLong:   hash_combine(getLong(col, row));   break;
+    }
+  };
+  for(int col = 0; col < bankSchema.getEntries(); col++) {
+    if(checkAllRows)
+      for(int row = 0; row < getRows(); row++)
+        hash_val(col, row);
+    else
+      for(auto const& row : getRowList())
+        hash_val(col, row);
+  }
+  return seed;
+}
+
 banklist::size_type getBanklistIndex(banklist& banks, std::string const& bankName) noexcept(false) {
   auto predicate = [&bankName](auto& bank) { return bank.getSchema().getName() == bankName; };
   if(auto it{std::find_if(banks.begin(), banks.end(), predicate)}; it != banks.end())
     return std::distance(banks.begin(), it);
   throw std::runtime_error("bank named '" + bankName + "' not found in banklist");
 }
+
+//////////////////////////////////////////////////////////////////////////////////
+// hipo::bank — array column accessors
+//////////////////////////////////////////////////////////////////////////////////
+
+namespace {
+  inline void check_array_call(const hipo::schema& s, int item, int len,
+                               int expected_type, const char* fn) {
+    const auto& e = s.getEntry(item);
+    if(e.arrayLength != len) {
+      throw hipo::length_mismatch_error(
+        std::string("bank::") + fn + " on column '" + e.name +
+        "': expected length " + std::to_string(e.arrayLength) +
+        ", got " + std::to_string(len));
+    }
+    if(e.typeId != expected_type) {
+      throw hipo::schema_error(
+        std::string("bank::") + fn + " on column '" + e.name +
+        "': type mismatch (column is " + e.type + ")");
+    }
+  }
+}
+
+// --- typed (item, row, ptr, len) getters ---
+#define HIPO_DEFINE_GET_ARRAY(METHOD, CTYPE, TYPE_ENUM, GETTER) \
+  void bank::METHOD(int item, int row, CTYPE *dest, int len) const { \
+    ensureColumn(item); \
+    check_array_call(bankSchema, item, len, TYPE_ENUM, #METHOD); \
+    int offset = bankSchema.getOffset(item, row, bankRows); \
+    int sz = bankSchema.getEntryTypeSize(item); \
+    for(int e = 0; e < len; e++) dest[e] = GETTER(offset + e * sz); \
+  } \
+  void bank::METHOD(const char *name, int row, CTYPE *dest, int len) const { \
+    METHOD(bankSchema.getEntryOrder(name), row, dest, len); \
+  }
+
+HIPO_DEFINE_GET_ARRAY(getIntArray,    int32_t, kInt,    getIntAt)
+HIPO_DEFINE_GET_ARRAY(getShortArray,  int16_t, kShort,  getShortAt)
+HIPO_DEFINE_GET_ARRAY(getByteArray,   int8_t,  kByte,   getByteAt)
+HIPO_DEFINE_GET_ARRAY(getFloatArray,  float,   kFloat,  getFloatAt)
+HIPO_DEFINE_GET_ARRAY(getDoubleArray, double,  kDouble, getDoubleAt)
+HIPO_DEFINE_GET_ARRAY(getLongArray,   int64_t, kLong,   getLongAt)
+
+#undef HIPO_DEFINE_GET_ARRAY
+
+// --- vector-returning getters ---
+#define HIPO_DEFINE_GET_ARRAY_VEC(METHOD, CTYPE) \
+  std::vector<CTYPE> bank::METHOD(int item, int row) const { \
+    std::vector<CTYPE> out(bankSchema.getEntryArrayLength(item)); \
+    METHOD(item, row, out.data(), static_cast<int>(out.size())); \
+    return out; \
+  }
+
+HIPO_DEFINE_GET_ARRAY_VEC(getIntArray,    int32_t)
+HIPO_DEFINE_GET_ARRAY_VEC(getShortArray,  int16_t)
+HIPO_DEFINE_GET_ARRAY_VEC(getByteArray,   int8_t)
+HIPO_DEFINE_GET_ARRAY_VEC(getFloatArray,  float)
+HIPO_DEFINE_GET_ARRAY_VEC(getDoubleArray, double)
+HIPO_DEFINE_GET_ARRAY_VEC(getLongArray,   int64_t)
+
+#undef HIPO_DEFINE_GET_ARRAY_VEC
+
+// --- typed (item, row, ptr, len) setters ---
+#define HIPO_DEFINE_PUT_ARRAY(METHOD, CTYPE, TYPE_ENUM, SETTER) \
+  void bank::METHOD(int item, int row, const CTYPE *src, int len) { \
+    check_array_call(bankSchema, item, len, TYPE_ENUM, #METHOD); \
+    int offset = bankSchema.getOffset(item, row, bankRows); \
+    int sz = bankSchema.getEntryTypeSize(item); \
+    for(int e = 0; e < len; e++) SETTER(offset + e * sz, src[e]); \
+  } \
+  void bank::METHOD(const char *name, int row, const CTYPE *src, int len) { \
+    METHOD(bankSchema.getEntryOrder(name), row, src, len); \
+  }
+
+HIPO_DEFINE_PUT_ARRAY(putIntArray,    int32_t, kInt,    putIntAt)
+HIPO_DEFINE_PUT_ARRAY(putShortArray,  int16_t, kShort,  putShortAt)
+HIPO_DEFINE_PUT_ARRAY(putByteArray,   int8_t,  kByte,   putByteAt)
+HIPO_DEFINE_PUT_ARRAY(putFloatArray,  float,   kFloat,  putFloatAt)
+HIPO_DEFINE_PUT_ARRAY(putDoubleArray, double,  kDouble, putDoubleAt)
+HIPO_DEFINE_PUT_ARRAY(putLongArray,   int64_t, kLong,   putLongAt)
+
+#undef HIPO_DEFINE_PUT_ARRAY
 
 }
