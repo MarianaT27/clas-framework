@@ -43,6 +43,7 @@
 #include <fmt/format.h>
 
 #include <any>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -54,6 +55,9 @@
 #include <utility>
 #include <vector>
 
+#include <pfr/core_name.hpp>
+
+#include <clas12/framework/core/Field.hpp>
 #include <clas12/framework/core/IService.hpp>
 #include <clas12/framework/core/ServiceManager.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -170,15 +174,21 @@ class NTupleService : public Service {
 
         pn.title  = title.empty() ? tree_name : title;
         pn.model  = ROOT::RNTupleModel::CreateBare();
-        // Walk T::ntuple_fields() once. Each field contributes (1) a
-        // typed field to the bare model and (2) a binder lambda that,
-        // given a void* to a Slot<T>'s `value` member and a fresh
-        // REntry, points the entry's field at the right T member.
-        std::apply(
-            [&](const auto&... f) {
-                (build_field<T>(pn, f), ...);
-            },
-            T::ntuple_fields());
+        // Each field contributes (1) a typed field to the bare model and
+        // (2) a binder lambda that, given a void* to a Slot<T>'s `value`
+        // member and a fresh REntry, points the entry's field at the right
+        // T member. Two sources of (name, member): the hand-written
+        // T::ntuple_fields() tuple, or — for a plain aggregate that omits it
+        // — Boost.PFR reflection (offset-based binder, see build_fields_pfr).
+        if constexpr (HasStaticNTupleFields<T>) {
+            std::apply(
+                [&](const auto&... f) {
+                    (build_field<T>(pn, f), ...);
+                },
+                T::ntuple_fields());
+        } else {
+            build_fields_pfr<T>(pn);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -315,6 +325,35 @@ class NTupleService : public Service {
                 entry.template BindRawPtr<FieldValue>(
                     std::string_view{fname}, &(typed->*member));
             });
+    }
+
+    /// Reflection path: build the model fields + binders for a plain-aggregate
+    /// ntuple struct that omits ntuple_fields(). Boost.PFR gives each field's
+    /// (name, reference); since PFR yields a reference (not a member pointer),
+    /// we capture the field's byte OFFSET — computed once against a probe
+    /// instance — and bind `slot_base + off` per thread slot. Requires
+    /// standard layout so the offset is well-defined (all current ntuple
+    /// structs are POD scalars).
+    template <typename T>
+    auto build_fields_pfr(PendingNtuple& pn) -> void {
+        static_assert(std::is_standard_layout_v<T>,
+                      "PFR ntuple struct must be standard-layout for offset binding; "
+                      "provide a static ntuple_fields() tuple otherwise.");
+        T probe{};
+        const auto* probe_base = reinterpret_cast<const std::byte*>(&probe);
+        pfr::for_each_field_with_name(probe, [&](std::string_view name, auto& field) {
+            using FieldValue = std::remove_cvref_t<decltype(field)>;
+            pn.model->MakeField<FieldValue>(std::string_view{name});
+            const std::size_t off =
+                static_cast<std::size_t>(reinterpret_cast<const std::byte*>(&field) - probe_base);
+            pn.binders.push_back(
+                [off, fname = std::string{name}](void* slot_value, ROOT::REntry& entry) {
+                    auto* base = static_cast<std::byte*>(slot_value);
+                    entry.template BindRawPtr<FieldValue>(
+                        std::string_view{fname},
+                        reinterpret_cast<FieldValue*>(base + off));
+                });
+        });
     }
 
     auto ensure_writer_locked(const std::string& tree_name, PendingNtuple& pn) -> bool {

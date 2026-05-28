@@ -9,9 +9,14 @@
  * - Kinematic cuts (momentum, vertex z)
  * - Sampling fraction cuts (calorimeter response)
  * - Fiducial cuts (PCAL lv/lw and DC region edge thresholds)
+ *
+ * The Config and NTuple structs are plain aggregates whose fields are reflected
+ * to TOML keys / RNTuple branches via Boost.PFR (no config_fields()/
+ * ntuple_fields() tuples). Cut logic and histograms are written explicitly.
  */
 
 #include <optional>
+#include <type_traits>
 #include <vector>
 
 #include <clas12/Banks.hpp>
@@ -36,7 +41,8 @@ namespace algorithms {
 
 using framework::Log;
 
-/// Configuration for ElectronSelectionAlg.
+/// Configuration for ElectronSelectionAlg. Plain aggregate — every member is
+/// reflected to a TOML key via Boost.PFR (see PropertyMixin::declare_config).
 struct ElectronSelectionConfig {
     Target target = Target::LD2;
     Polarity polarity = Polarity::Outbending;
@@ -54,27 +60,9 @@ struct ElectronSelectionConfig {
     double dc_r1_edge_min = 1.68;
     double dc_r2_edge_min = 2.0;
     double dc_r3_edge_min = 8.75;
-
-    static constexpr auto config_fields() {
-        using T = ElectronSelectionConfig;
-        return std::make_tuple(
-            framework::field("target",                   &T::target),
-            framework::field("polarity",                 &T::polarity),
-            framework::field("enable_ntuple",            &T::enable_ntuple),
-            framework::field("enable_histograms",        &T::enable_histograms),
-            framework::field("enable_chi2pid_cut",       &T::enable_chi2pid_cut),
-            framework::field("enable_momentum_cut",      &T::enable_momentum_cut),
-            framework::field("enable_vz_cut",            &T::enable_vz_cut),
-            framework::field("enable_sf_cut",            &T::enable_sf_cut),
-            framework::field("enable_pcal_fiducial_cut", &T::enable_pcal_fiducial_cut),
-            framework::field("enable_dc_edge_cut",       &T::enable_dc_edge_cut),
-            framework::field("pcal_lv_min",              &T::pcal_lv_min),
-            framework::field("pcal_lw_min",              &T::pcal_lw_min),
-            framework::field("dc_r1_edge_min",           &T::dc_r1_edge_min),
-            framework::field("dc_r2_edge_min",           &T::dc_r2_edge_min),
-            framework::field("dc_r3_edge_min",           &T::dc_r3_edge_min));
-    }
 };
+static_assert(std::is_aggregate_v<ElectronSelectionConfig>,
+              "ElectronSelectionConfig must stay a simple aggregate for PFR reflection");
 
 /**
  * @brief Algorithm for electron selection and kinematics
@@ -280,6 +268,7 @@ class ElectronSelectionAlg : public framework::Algorithm {
         h_after.book(m_hist.get(), "/Electron/Kinematics/after_cuts");
     }
 
+    // NTuple row — plain aggregate; branches reflected via Boost.PFR.
     struct ElectronNTupleData {
         double e_p = 0.0;
         double e_theta = 0.0;
@@ -287,12 +276,10 @@ class ElectronSelectionAlg : public framework::Algorithm {
         double e_vz = 0.0;
         double e_chi2pid = 0.0;
         int e_sector = 0;
-
-        static constexpr auto ntuple_fields() {
-            using T = ElectronNTupleData;
-            return std::make_tuple(framework::field("e_p", &T::e_p), framework::field("e_theta", &T::e_theta), framework::field("e_phi", &T::e_phi), framework::field("e_vz", &T::e_vz), framework::field("e_chi2pid", &T::e_chi2pid), framework::field("e_sector", &T::e_sector));
-        }
     };
+    static_assert(std::is_aggregate_v<ElectronNTupleData> &&
+                      std::is_standard_layout_v<ElectronNTupleData>,
+                  "ElectronNTupleData must be a standard-layout aggregate for PFR reflection");
 
     framework::NTupleWriter<ElectronNTupleData> m_ntuple;
 };

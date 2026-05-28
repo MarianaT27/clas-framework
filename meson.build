@@ -87,6 +87,10 @@ toml_dep    = subproject('tomlplusplus').get_variable('tomlplusplus_dep')
 lz4_dep     = subproject('lz4').get_variable('liblz4_dep')
 eigen_dep   = dependency('eigen3')
 cxxopts_dep = dependency('cxxopts')
+# Boost.PFR (non-Boost distribution): header-only static reflection used to
+# auto-derive config/ntuple field (name, &member) pairs from plain aggregates,
+# replacing the hand-written config_fields()/ntuple_fields() tuples.
+pfr_dep     = subproject('pfr_non_boost-2.3.2').get_variable('pfr_dep')
 
 #══════════════════════════════════════════════════════════════════════════════#
 #                              EXTERNAL LIBRARIES                               #

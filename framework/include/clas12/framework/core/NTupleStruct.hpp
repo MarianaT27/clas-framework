@@ -166,9 +166,10 @@ public:
         m_svc = svc;
         m_tree_name = tree_name;
         if (svc) {
-            static_assert(HasStaticNTupleFields<T>,
-                          "NTupleWriter<T>: T must expose a "
-                          "static constexpr auto ntuple_fields()");
+            static_assert(HasStaticNTupleFields<T> || std::is_aggregate_v<T>,
+                          "NTupleWriter<T>: T must either expose a static "
+                          "constexpr auto ntuple_fields(), or be a plain "
+                          "aggregate so its fields can be reflected via Boost.PFR");
             // Register the schema once; per-thread Slot<T> instances
             // (each carrying its own T storage + RNTupleFillContext +
             // pre-bound REntry) are lazily allocated on first access

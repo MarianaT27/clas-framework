@@ -18,9 +18,13 @@
 #include <variant>
 #include <vector>
 
+#include <type_traits>
+
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <toml++/toml.hpp>
+
+#include <pfr/core_name.hpp>
 
 #include <clas12/framework/core/Field.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
@@ -570,6 +574,31 @@ public:
                 (this->register_config_field_(cfg, f), ...);
             },
             Config::config_fields());
+        return cfg;
+    }
+
+    /**
+     * @brief Reflection-based overload: bind a plain-aggregate Config's fields
+     *        to TOML keys without a hand-written `config_fields()` tuple.
+     *
+     * Selected when the struct does NOT define `config_fields()`. Boost.PFR
+     * walks the aggregate, yielding each field's (name, reference); every
+     * field is registered as the same `ConfigFieldBinding<Member>` the tuple
+     * path uses, so the TOML type-switch (bool/int/double/string/vector/enum
+     * via ADL) is reused verbatim. The struct must be a simple aggregate.
+     */
+    template <typename Config>
+        requires (!HasStaticConfigFields<Config>)
+    auto declare_config(Config& cfg) -> Config& {
+        static_assert(std::is_aggregate_v<Config>,
+                      "declare_config: reflected Config must be a simple aggregate "
+                      "(no user-declared constructors, private data, or base classes), "
+                      "or provide a static config_fields() tuple.");
+        pfr::for_each_field_with_name(cfg, [this](std::string_view name, auto& member) {
+            using Member = std::remove_reference_t<decltype(member)>;
+            m_properties[std::string(name)] =
+                std::make_unique<ConfigFieldBinding<Member>>(std::string(name), &member);
+        });
         return cfg;
     }
 
