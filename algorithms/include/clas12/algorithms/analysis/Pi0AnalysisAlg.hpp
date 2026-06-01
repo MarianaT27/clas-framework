@@ -41,6 +41,7 @@
 #include <clas12/Particle.hpp>
 #include <clas12/bankdefs/REC_Event.hpp>
 #include <clas12/algorithms/reconstruction/Pi0ReconstructionAlg.hpp>
+#include <clas12/framework/core/AdaptiveBinner4D.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
 #include <clas12/framework/core/Decisions.hpp>
@@ -97,6 +98,22 @@ struct Pi0AnalysisConfig {
     int         quantile_sample_cap    = 1'000'000;  // reservoir size per variable
     std::string quantile_binning_output = "pi0_equal_stat_binning.toml";
 
+    // Adaptive (kd-tree) 4D binning. The product grid can't be made
+    // equal-occupancy when Q2/xB/z/pT2 are correlated; the adaptive binner
+    // partitions the 4D space into ~equal-count cells (no empty bins). Two
+    // knobs:
+    //   * scan_quantile_binning also builds the kd-tree from the sample and
+    //     writes it to `adaptive_binning_output`, with `adaptive_target_bins`
+    //     leaves (0 => match the product-grid bin count).
+    //   * set `adaptive_binning_file` to that tree on the real analysis run:
+    //     the 4D accumulators (counts/sum_pT2/sum_cosphi/sum_sinphi) are then
+    //     booked + filled on the adaptive leaves instead of the product grid.
+    //     The companion `<file>.boxes.csv` gives each leaf's 4D box for
+    //     offline interpretation.
+    std::string adaptive_binning_output = "pi0_adaptive_binning.txt";
+    std::string adaptive_binning_file   = "";   // empty => product grid
+    int         adaptive_target_bins    = 0;    // 0 => product-grid bin count
+
     static constexpr auto config_fields() {
         using T = Pi0AnalysisConfig;
         return std::make_tuple(
@@ -113,7 +130,10 @@ struct Pi0AnalysisConfig {
             framework::field("beam_energy",     &T::beam_energy),
             framework::field("scan_quantile_binning",   &T::scan_quantile_binning),
             framework::field("quantile_sample_cap",     &T::quantile_sample_cap),
-            framework::field("quantile_binning_output", &T::quantile_binning_output));
+            framework::field("quantile_binning_output", &T::quantile_binning_output),
+            framework::field("adaptive_binning_output", &T::adaptive_binning_output),
+            framework::field("adaptive_binning_file",   &T::adaptive_binning_file),
+            framework::field("adaptive_target_bins",    &T::adaptive_target_bins));
     }
 };
 
@@ -200,9 +220,32 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::info(name(), "Beam energy: {} GeV", m_config.beam_energy);
         Log::info(name(), "Max pool events: {}", m_config.max_pool_events);
-        Log::info(name(), "Multiplicity 4D bins (Q2 x xB x z x pT2): {} x {} x {} x {} = {}",
-                  m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1,
-                  m_config.z_edges.size() - 1, m_config.pT2_edges.size() - 1, total_mult_4D_bins());
+
+        // Load the adaptive 4D binning tree (if configured) up front so every
+        // subsequent total_mult_4D_bins() — the init log below + the 4D
+        // histogram booking — sees the leaf count.
+        if (!m_config.adaptive_binning_file.empty()) {
+            auto tree = std::make_unique<framework::AdaptiveBinner4D>();
+            if (tree->load(m_config.adaptive_binning_file) && tree->valid()) {
+                m_adaptive_bins = std::move(tree);
+                Log::info(name(),
+                          "Adaptive 4D binning ENABLED: {} leaf bins from '{}'",
+                          m_adaptive_bins->n_bins(), m_config.adaptive_binning_file);
+            } else {
+                Log::warning(name(),
+                             "Could not load adaptive binning '{}' — falling back "
+                             "to the product grid", m_config.adaptive_binning_file);
+            }
+        }
+
+        if (m_adaptive_bins) {
+            Log::info(name(), "Multiplicity 4D bins (adaptive kd-tree): {}",
+                      m_adaptive_bins->n_bins());
+        } else {
+            Log::info(name(), "Multiplicity 4D bins (Q2 x xB x z x pT2): {} x {} x {} x {} = {}",
+                      m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1,
+                      m_config.z_edges.size() - 1, m_config.pT2_edges.size() - 1, total_mult_4D_bins());
+        }
         Log::info(name(), "Mixing 4D bins (Q2 x xB x z_mix x pT_mix): {} x {} x {} x {} = {}",
                   m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1,
                   m_config.z_mix_edges.size() - 1, m_config.pT_mix_edges.size() - 1, total_mix_4D_bins());
@@ -438,6 +481,12 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                       (mn == LONG_MAX ? 0 : mn), mx, mean_all, mean_pop);
         }
 
+        // Adaptive (kd-tree) 4D binning: partition the joint sample into
+        // ~equal-count cells (no empty bins) and write the tree + a per-leaf
+        // box table for offline use. Adopt it on the analysis run via
+        // adaptive_binning_file.
+        build_and_write_adaptive_binning(rows);
+
         // Write the TOML snippet (only the axes that produced edges).
         const std::string& path = m_config.quantile_binning_output;
         std::ofstream out(path);
@@ -460,6 +509,64 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         }
         Log::info(name(), "Wrote equal-statistics binning to '{}'{}",
                   path, all_ok ? "" : " (some variables fell back to defaults)");
+    }
+
+    /// Build the adaptive (kd-tree) 4D binning from the joint sample, log its
+    /// leaf occupancy, and write the tree (+ a per-leaf box CSV) for the
+    /// analysis run to load via adaptive_binning_file.
+    auto build_and_write_adaptive_binning(
+        const std::vector<std::array<double, 4>>& rows) -> void {
+        const int target = (m_config.adaptive_target_bins > 0)
+                               ? m_config.adaptive_target_bins
+                               : product_mult_4D_bins();
+
+        framework::AdaptiveBinner4D tree;
+        std::vector<framework::AdaptiveBinner4D::Point> pts(rows.begin(), rows.end());
+        if (!tree.build(std::move(pts), target)) {
+            Log::warning(name(),
+                         "Adaptive 4D binning: too few samples ({}) for {} bins — skipped",
+                         rows.size(), target);
+            return;
+        }
+
+        // Leaf occupancy (should be ~flat, with no empties).
+        std::vector<long> occ(static_cast<std::size_t>(tree.n_bins()), 0);
+        for (const auto& r : rows) {
+            const int b = tree.bin_index(r);
+            if (b >= 0) occ[static_cast<std::size_t>(b)]++;
+        }
+        long mn = LONG_MAX, mx = 0, empty = 0;
+        for (long c : occ) { mn = std::min(mn, c); mx = std::max(mx, c); if (c == 0) ++empty; }
+        const double mean = occ.empty() ? 0.0 : static_cast<double>(rows.size()) / occ.size();
+        Log::blank();
+        Log::info(name(), "Adaptive 4D binning (kd-tree): {} leaf bins", tree.n_bins());
+        Log::info(name(),
+                  "      counts/bin: min {}, max {}, mean {:.2f}, empty {} ({:.1f}%)",
+                  (mn == LONG_MAX ? 0 : mn), mx, mean, empty,
+                  occ.empty() ? 0.0 : 100.0 * empty / occ.size());
+
+        const std::string& tpath = m_config.adaptive_binning_output;
+        if (!tree.save(tpath)) {
+            Log::warning(name(), "Could not write adaptive binning tree to '{}'", tpath);
+            return;
+        }
+        // Companion per-leaf box table for offline interpretation.
+        const std::string bpath = tpath + ".boxes.csv";
+        std::ofstream bcsv(bpath);
+        if (bcsv) {
+            bcsv << "leaf,Q2_lo,Q2_hi,xB_lo,xB_hi,z_lo,z_hi,pT2_lo,pT2_hi,count\n";
+            const auto boxes = tree.leaf_boxes();
+            for (std::size_t i = 0; i < boxes.size(); ++i) {
+                const auto& bx = boxes[i];
+                bcsv << i;
+                for (int d = 0; d < 4; ++d) bcsv << ',' << bx[d][0] << ',' << bx[d][1];
+                bcsv << ',' << (i < occ.size() ? occ[i] : 0) << '\n';
+            }
+        }
+        Log::info(name(),
+                  "Wrote adaptive binning tree to '{}' (+ leaf boxes '{}'). "
+                  "Set adaptive_binning_file to it on the analysis run.",
+                  tpath, bpath);
     }
 
    private:
@@ -526,6 +633,10 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         std::atomic<long>                 m_count{0};
     };
     std::unique_ptr<MultBinScan> m_mult_scan;
+
+    // Loaded adaptive 4D binning (kd-tree) used for the 4D accumulators when
+    // m_config.adaptive_binning_file is set. Null => product-grid binning.
+    std::unique_ptr<framework::AdaptiveBinner4D> m_adaptive_bins;
 
     framework::NTupleWriter<Pi0PairNTupleData>         m_ntuple_writer;
 
@@ -710,9 +821,15 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         return ((iQ2 * n_xB + ixB) * n_z + iz) * n_pT2 + ipT2;
     }
 
-    [[nodiscard]] auto total_mult_4D_bins() const -> int {
+    [[nodiscard]] auto product_mult_4D_bins() const -> int {
         return static_cast<int>((m_config.Q2_edges.size() - 1) * (m_config.xB_edges.size() - 1) *
                                 (m_config.z_edges.size() - 1)  * (m_config.pT2_edges.size() - 1));
+    }
+
+    /// Number of 4D multiplicity bins actually booked: the adaptive leaf
+    /// count when an adaptive tree is loaded, else the product-grid size.
+    [[nodiscard]] auto total_mult_4D_bins() const -> int {
+        return m_adaptive_bins ? m_adaptive_bins->n_bins() : product_mult_4D_bins();
     }
 
     [[nodiscard]] auto total_mix_4D_bins() const -> int {
@@ -802,9 +919,19 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             if (ixB >= 0) h_z_xBbin[ixB]->fill(z);
             if (iz  >= 0) h_pT2_zbin[iz]->fill(pT2);
 
-            if (iQ2 >= 0 && ixB >= 0 && iz >= 0 && ipT2 >= 0) {
+            // 4D accumulators. Adaptive (kd-tree) binning when a tree is
+            // loaded — every (Q2,xB,z,pT2) lands in a leaf, so there is no
+            // in-grid gate; otherwise the product-grid index, gated on all
+            // axes being in range.
+            int bin_4d = -1;
+            if (m_adaptive_bins) {
+                bin_4d = m_adaptive_bins->bin_index({Q2, xB, z, pT2});
+            } else if (iQ2 >= 0 && ixB >= 0 && iz >= 0 && ipT2 >= 0) {
+                bin_4d = flat_mult_4D_index(iQ2, ixB, iz, ipT2);
+            }
+            if (bin_4d >= 0) {
                 double phi_h_rad = phi_h * M_PI / 180.0;
-                double idx = static_cast<double>(flat_mult_4D_index(iQ2, ixB, iz, ipT2)) + 0.5;
+                double idx = static_cast<double>(bin_4d) + 0.5;
                 h_counts_4D->fill(idx);
                 h_sum_pT2_4D->fill_weighted(pT2, idx);
                 h_sum_cosphi_4D->fill_weighted(std::cos(phi_h_rad), idx);
