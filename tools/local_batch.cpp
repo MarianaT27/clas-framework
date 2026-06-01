@@ -248,6 +248,44 @@ struct AnalysisTomlInfo {
     return r.getNRecords();
 }
 
+/// Total event count of one file (reads only the index/trailer, not the
+/// data). Returns 0 on failure so a single bad file doesn't poison the sum.
+[[nodiscard]] auto probe_num_events(const std::string& input_file) -> long {
+    hipo::reader r;
+    r.open(input_file.c_str());
+    if (!r.is_open()) return 0;
+    const long n = r.getEntries();
+    return n > 0 ? n : 0;
+}
+
+/// Sum the event counts of every file, probed in parallel (the opens are
+/// I/O-bound and independent, so a small thread team hides the per-file
+/// latency on shared storage). Used to fix the aggregate progress-bar
+/// denominator up front, so the total doesn't grow as slices launch.
+[[nodiscard]] auto probe_total_events(const std::vector<std::string>& files,
+                                      int max_threads) -> long {
+    const std::size_t nf = files.size();
+    if (nf == 0) return 0;
+    std::vector<long> per_file(nf, 0);
+    std::atomic<std::size_t> next{0};
+    const int nthreads = std::min<int>(std::max(1, max_threads), static_cast<int>(nf));
+    std::vector<std::thread> probers;
+    probers.reserve(static_cast<std::size_t>(nthreads));
+    for (int t = 0; t < nthreads; ++t) {
+        probers.emplace_back([&]() {
+            for (;;) {
+                const std::size_t i = next.fetch_add(1);
+                if (i >= nf) break;
+                per_file[i] = probe_num_events(files[i]);
+            }
+        });
+    }
+    for (auto& th : probers) th.join();
+    long total = 0;
+    for (long e : per_file) total += e;
+    return total;
+}
+
 struct SliceResult {
     int slice;
     int exit_code;
@@ -638,6 +676,17 @@ int main(int argc, char* argv[]) {
         return EXIT_SUCCESS;
     }
 
+    // ---- Fixed progress-bar denominator ----------------------------------
+    //
+    // Sum the event count across every input file up front so the aggregate
+    // bar's total is correct from the start. (Summing the children's
+    // self-reported totals instead made the denominator grow as slices
+    // launched under the concurrency cap.) Probed in parallel; the per-file
+    // open only reads the index, not the data.
+    fmt::print("[local_batch] Probing total event count of {} file(s) ...\n", files.size());
+    const long grand_total_events = probe_total_events(files, cfg.concurrent);
+    fmt::print("[local_batch] Total events to process: {}\n\n", grand_total_events);
+
     // ---- Aggregate progress pipe -----------------------------------------
     //
     // One shared pipe. Each child dup2s the write end onto FD 3 + passes
@@ -660,14 +709,16 @@ int main(int argc, char* argv[]) {
     std::mutex                agg_mu;
     std::atomic<int>          completed_slices{0};
 
-    // Construct the tracker eagerly with a placeholder total of 1; the
-    // reader thread updates `tracker.set_total(sum)` as soon as the
-    // children begin reporting their per-slice totals.
+    // Fixed denominator from the up-front probe. Fall back to the
+    // children's self-reported totals only if the probe yielded nothing
+    // (e.g. all files unreadable here but the workers still ran).
+    const bool have_total = grand_total_events > 0;
     ProgressTracker::Config bar_cfg;
     bar_cfg.label = fmt::format("Local batch (0/{} slices)", n_slices);
     bar_cfg.show_eta = true;
     bar_cfg.show_rate = true;
-    ProgressTracker tracker(1, bar_cfg);
+    ProgressTracker tracker(have_total ? static_cast<std::size_t>(grand_total_events) : 1,
+                            bar_cfg);
     tracker.start();
 
     // Reader thread: parses incoming progress lines, updates the aggregate.
@@ -694,7 +745,12 @@ int main(int argc, char* argv[]) {
                     sum_done  += events_done [static_cast<std::size_t>(s)];
                     sum_total += events_total[static_cast<std::size_t>(s)];
                 }
-                if (sum_total > 0) tracker.set_total(static_cast<std::size_t>(sum_total));
+                // Keep the denominator fixed at the up-front grand total; only
+                // fall back to the (growing) child-reported sum if the probe
+                // failed.
+                if (!have_total && sum_total > 0) {
+                    tracker.set_total(static_cast<std::size_t>(sum_total));
+                }
                 tracker.set_processed(static_cast<std::size_t>(sum_done));
                 tracker.set_label(fmt::format("Local batch ({}/{} slices)",
                                               completed_slices.load(), n_slices));
