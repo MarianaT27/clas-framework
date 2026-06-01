@@ -4,10 +4,12 @@
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <string>
 #include <clas12/Constants.hpp>
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
+#include <clas12/bankdefs/REC_CovMat.hpp>
 #include <clas12/bankdefs/REC_Event.hpp>
 #include <clas12/bankdefs/REC_Particle.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
@@ -64,6 +66,10 @@ class PionAnalysisAlg : public framework::Algorithm {
         : Algorithm(std::move(name)), m_config(config), m_cutflow_piplus("π⁺ Analysis"), m_cutflow_piminus("π⁻ Analysis") {
         required_services(m_hist, m_ntuple);
         declare_banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Traj", "REC::Track", "REC::Scintillator");
+        // REC::CovMat (5x5 DC Kalman state cov: x, y, tx, ty, q/p) feeds the
+        // slope/angle resolution histograms; optional so files without it
+        // (e.g. some MC skims) just leave those plots empty.
+        declare_optional_bank("REC::CovMat");
         declare_config(m_config);
     }
 
@@ -104,8 +110,8 @@ class PionAnalysisAlg : public framework::Algorithm {
 
         const double start_time = static_cast<double>(rec_event.startTime(0));
 
-        for (const auto& pion : event.pions_plus()) process_pion(pion, electron, start_time, true);
-        for (const auto& pion : event.pions_minus()) process_pion(pion, electron, start_time, false);
+        for (const auto& pion : event.pions_plus()) process_pion(event, pion, electron, start_time, true);
+        for (const auto& pion : event.pions_minus()) process_pion(event, pion, electron, start_time, false);
 
         return StatusCode::SUCCESS();
     }
@@ -160,6 +166,9 @@ class PionAnalysisAlg : public framework::Algorithm {
     };
     MomentumScan m_pscan_piplus;
     MomentumScan m_pscan_piminus;
+
+    // Guards the one-time REC::CovMat schema (5x5 vs 6x6) warning.
+    mutable std::atomic<bool> m_covmat_schema_checked{false};
 
     /// Print, per momentum threshold, how many forward-detector pions a cut
     /// at that p_min would remove (and retain), as an absolute count and a
@@ -251,6 +260,19 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         framework::H1<> chi2pid{mh::regular(-10.0, 10.0, 200)};
         framework::H1<> beta{mh::regular(0.5, 1.1, 100)};
 
+        // Covariance-derived track resolutions from REC::CovMat (5x5 DC
+        // Kalman state x, y, tx, ty, q/p): sigma(tx)=sqrt(C33),
+        // sigma(ty)=sqrt(C44), sigma(theta) from (C33,C44,C34) propagated
+        // through the (theta) Jacobian at the lab direction [mrad]. The vs-p
+        // 2D views are the useful ones — they show how the slope/angle
+        // resolution degrades at low momentum.
+        framework::H1<> sigma_tx{mh::regular(0.0, 0.02, 200)};
+        framework::H1<> sigma_ty{mh::regular(0.0, 0.02, 200)};
+        framework::H1<> sigma_theta{mh::regular(0.0, 10.0, 200)};  // mrad
+        framework::H2<> sigma_tx_vs_p{mh::regular(0, 10, 100), mh::regular(0.0, 0.02, 200)};
+        framework::H2<> sigma_ty_vs_p{mh::regular(0, 10, 100), mh::regular(0.0, 0.02, 200)};
+        framework::H2<> sigma_theta_vs_p{mh::regular(0, 10, 100), mh::regular(0.0, 10.0, 200)};
+
         framework::H2<> vz_vs_phi{mh::regular(-180, 180, 180), mh::regular(-40, 40, 100)};
         framework::H2<> vz_vs_sector{mh::regular(0.5, 6.5, 6), mh::regular(-40, 40, 100)};
         framework::H2<> vz_vs_p_2d{mh::regular(0, 10, 100), mh::regular(-40, 40, 100)};
@@ -336,6 +358,7 @@ framework::ServiceRef<framework::HistogramService> m_hist;
     auto book_pion_histograms(const std::string& dir, PionHistograms& h, const std::string& label) -> void {
         auto* svc = m_hist.get();
         svc->register_hist(dir + "/p", fmt::format("{} Momentum;p [GeV/c];Events", label), h.p);        svc->register_hist(dir + "/theta", fmt::format("{} #theta;#theta [deg];Events", label), h.theta);        svc->register_hist(dir + "/phi", fmt::format("{} #phi;#phi [deg];Events", label), h.phi);        svc->register_hist(dir + "/vz", fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label), h.vz);        svc->register_hist(dir + "/chi2pid", fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), h.chi2pid);        svc->register_hist(dir + "/beta", fmt::format("{} #beta;#beta;Events", label), h.beta);
+        svc->register_hist(dir + "/sigma_tx", fmt::format("{} #sigma(t_{{x}});#sigma(t_{{x}});Tracks", label), h.sigma_tx);        svc->register_hist(dir + "/sigma_ty", fmt::format("{} #sigma(t_{{y}});#sigma(t_{{y}});Tracks", label), h.sigma_ty);        svc->register_hist(dir + "/sigma_theta", fmt::format("{} #sigma(#theta);#sigma(#theta) [mrad];Tracks", label), h.sigma_theta);        svc->register_hist(dir + "/sigma_tx_vs_p", fmt::format("{} #sigma(t_{{x}}) vs p;p [GeV/c];#sigma(t_{{x}})", label), h.sigma_tx_vs_p);        svc->register_hist(dir + "/sigma_ty_vs_p", fmt::format("{} #sigma(t_{{y}}) vs p;p [GeV/c];#sigma(t_{{y}})", label), h.sigma_ty_vs_p);        svc->register_hist(dir + "/sigma_theta_vs_p", fmt::format("{} #sigma(#theta) vs p;p [GeV/c];#sigma(#theta) [mrad]", label), h.sigma_theta_vs_p);
         svc->register_hist(dir + "/vz_vs_phi", fmt::format("{} v_{{z}} vs #phi;#phi [deg];v_{{z}} [cm]", label), h.vz_vs_phi);        svc->register_hist(dir + "/vz_vs_sector", fmt::format("{} v_{{z}} vs Sector;Sector;v_{{z}} [cm]", label), h.vz_vs_sector);        svc->register_hist(dir + "/vz_vs_p", fmt::format("{} v_{{z}} vs p;p [GeV/c];v_{{z}} [cm]", label), h.vz_vs_p_2d);        svc->register_hist(dir + "/vx_vs_vy", fmt::format("{} v_{{x}} vs v_{{y}};v_{{x}} [cm];v_{{y}} [cm]", label), h.vx_vs_vy);        svc->register_hist(dir + "/delta_vz", fmt::format("{} #Deltav_{{z}} (#pi - e);#Deltav_{{z}} [cm];Events", label), h.delta_vz);        svc->register_hist(dir + "/delta_vz_vs_p", fmt::format("{} #Deltav_{{z}} vs p;p [GeV/c];#Deltav_{{z}} [cm]", label), h.delta_vz_vs_p);
         svc->register_hist(dir + "/delta_t", fmt::format("{} #Deltat;#Deltat [ns];Events", label), h.delta_t);        svc->register_hist(dir + "/delta_t_vs_p_diag", fmt::format("{} #Deltat vs p;p [GeV/c];#Deltat [ns]", label), h.delta_t_vs_p_diag);        svc->register_hist(dir + "/tof_mass2", fmt::format("{} m^{{2}}_{{TOF}};m^{{2}} [GeV^{{2}}];Events", label), h.tof_mass2);        svc->register_hist(dir + "/tof_mass2_vs_p", fmt::format("{} m^{{2}}_{{TOF}} vs p;p [GeV/c];m^{{2}} [GeV^{{2}}]", label), h.tof_mass2_vs_p);        svc->register_hist(dir + "/tof_path", fmt::format("{} TOF Path Length;Path [cm];Events", label), h.tof_path);        svc->register_hist(dir + "/tof_path_vs_p", fmt::format("{} TOF Path vs p;p [GeV/c];Path [cm]", label), h.tof_path_vs_p);        svc->register_hist(dir + "/beta_vs_p", fmt::format("{} #beta vs p;p [GeV/c];#beta", label), h.beta_vs_p);        svc->register_hist(dir + "/beta_diff", fmt::format("{} #Delta#beta;#Delta#beta;Events", label), h.beta_diff);        svc->register_hist(dir + "/beta_diff_vs_p", fmt::format("{} #Delta#beta vs p;p [GeV/c];#Delta#beta", label), h.beta_diff_vs_p);
         svc->register_hist(dir + "/chi2pid_vs_p", fmt::format("{} #chi^{{2}}_{{PID}} vs p;p [GeV/c];#chi^{{2}}_{{PID}}", label), h.chi2pid_vs_p);        svc->register_hist(dir + "/chi2pid_vs_theta", fmt::format("{} #chi^{{2}}_{{PID}} vs #theta;#theta [deg];#chi^{{2}}_{{PID}}", label), h.chi2pid_vs_theta);        svc->register_hist(dir + "/chi2pid_vs_sector", fmt::format("{} #chi^{{2}}_{{PID}} vs Sector;Sector;#chi^{{2}}_{{PID}}", label), h.chi2pid_vs_sector);
@@ -359,7 +382,79 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         h.p_vs_theta_sector = g.add_hist2D("p_vs_theta_acceptance", fmt::format("{} p vs #theta Acceptance;#theta [deg];p [GeV/c]", label), 90, 0, 45, 100, 0, 10);
     }
 
-    auto process_pion(const Particle& pion, const Particle& electron, double start_time, bool is_piplus) -> void {
+    // Covariance-derived resolutions from REC::CovMat (5x5 DC Kalman state
+    // x, y, tx, ty, q/p at the last superlayer used in the fit). sigma_theta
+    // is in milliradians; all fields are NaN when the bank or the matching
+    // row is absent.
+    struct CovResolutions {
+        double sigma_tx    = std::numeric_limits<double>::quiet_NaN();
+        double sigma_ty    = std::numeric_limits<double>::quiet_NaN();
+        double sigma_theta = std::numeric_limits<double>::quiet_NaN();  // mrad
+    };
+
+    /// Port of the referenced Rust `covariance_resolutions`: sigma(tx) =
+    /// sqrt(C33), sigma(ty) = sqrt(C44), and sigma(theta) by propagating the
+    /// slope covariance (C33, C44, C34) through the theta Jacobian at the lab
+    /// direction. Approximate — it ignores the sector-tilt frame rotation, so
+    /// it is a *relative* low-p vs high-p resolution measure, not an absolute
+    /// calibration.
+    auto compute_cov_resolutions(framework::Event& event, const Particle& pion) const
+        -> CovResolutions {
+        CovResolutions r;
+
+        // One-time schema sanity check. We read C33/C44/C34 by name, which is
+        // correct for the 5x5 (x, y, tx, ty, q/p) state where C33=var(tx) etc.
+        // Some older files instead carry a 6x6 (x, y, z, theta, phi, p)
+        // REC::CovMat (it has a C66 column), where C33=var(z) — there these
+        // plots are NOT the slope/angle resolutions. Warn once if we see it.
+        if (!m_covmat_schema_checked.exchange(true)) {
+            const auto& cov = event.get_bank("REC::CovMat");
+            if (cov.getRows() > 0) {
+                if (const_cast<hipo::bank&>(cov).getSchema().exists("C66")) {
+                    Log::warning(name(),
+                                 "REC::CovMat is the 6x6 (x,y,z,theta,phi,p) layout; "
+                                 "sigma_tx/ty/theta assume the 5x5 (x,y,tx,ty,q/p) DC "
+                                 "state and are NOT physically meaningful on this file");
+                }
+            } else {
+                m_covmat_schema_checked.store(false);  // retry once the bank is populated
+            }
+        }
+
+        bool found = false;
+        double c33 = 0.0, c44 = 0.0, c34 = 0.0;
+        for (auto row : event.rows_for_pindex<bankdefs::REC_CovMat>(pion.index())) {
+            c33 = row.C33();
+            c44 = row.C44();
+            c34 = row.C34();
+            found = true;
+            break;  // pindex is unique
+        }
+        if (!found) return r;
+
+        r.sigma_tx = std::sqrt(std::max(0.0, c33));
+        r.sigma_ty = std::sqrt(std::max(0.0, c44));
+
+        const double px = pion.px(), py = pion.py(), pz = pion.pz();
+        if (pz > 0.0 && std::isfinite(c33) && std::isfinite(c44) && std::isfinite(c34)) {
+            const double a = px / pz;  // tx
+            const double b = py / pz;  // ty
+            const double rho2 = a * a + b * b;
+            if (rho2 > 1e-9) {
+                const double rho = std::sqrt(rho2);
+                // theta = atan(rho); d(theta)/d(tx), d(theta)/d(ty).
+                const double dth_da = a / (rho * (1.0 + rho2));
+                const double dth_db = b / (rho * (1.0 + rho2));
+                const double var_th = dth_da * dth_da * c33 +
+                                      dth_db * dth_db * c44 +
+                                      2.0 * dth_da * dth_db * c34;
+                r.sigma_theta = std::sqrt(std::max(0.0, var_th)) * 1000.0;  // mrad
+            }
+        }
+        return r;
+    }
+
+    auto process_pion(framework::Event& event, const Particle& pion, const Particle& electron, double start_time, bool is_piplus) -> void {
         auto& cutflow = is_piplus ? m_cutflow_piplus : m_cutflow_piminus;
         auto& h = is_piplus ? h_piplus : h_piminus;
         auto& ntuple = is_piplus ? m_ntuple_piplus : m_ntuple_piminus;
@@ -411,6 +506,14 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         h.vz.fill(pion.vz());
         h.chi2pid.fill(pion.chi2pid());
         h.beta.fill(pion.beta());
+
+        // Covariance-derived track resolutions from REC::CovMat (NaN when
+        // the bank is absent or has no row for this track — those fills are
+        // skipped so the histograms stay clean).
+        const CovResolutions res = compute_cov_resolutions(event, pion);
+        if (std::isfinite(res.sigma_tx))    { h.sigma_tx.fill(res.sigma_tx);    h.sigma_tx_vs_p.fill(p, res.sigma_tx); }
+        if (std::isfinite(res.sigma_ty))    { h.sigma_ty.fill(res.sigma_ty);    h.sigma_ty_vs_p.fill(p, res.sigma_ty); }
+        if (std::isfinite(res.sigma_theta)) { h.sigma_theta.fill(res.sigma_theta); h.sigma_theta_vs_p.fill(p, res.sigma_theta); }
 
         h.vz_vs_phi.fill(pion.phi(), pion.vz());
         h.vz_vs_p_2d.fill(p, pion.vz());

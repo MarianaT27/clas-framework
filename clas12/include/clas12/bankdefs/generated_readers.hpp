@@ -2947,22 +2947,16 @@ struct REC_CovMatRow {
     float C13 = std::numeric_limits<float>::quiet_NaN();
     float C14 = std::numeric_limits<float>::quiet_NaN();
     float C15 = std::numeric_limits<float>::quiet_NaN();
-    float C16 = std::numeric_limits<float>::quiet_NaN();
     float C22 = std::numeric_limits<float>::quiet_NaN();
     float C23 = std::numeric_limits<float>::quiet_NaN();
     float C24 = std::numeric_limits<float>::quiet_NaN();
     float C25 = std::numeric_limits<float>::quiet_NaN();
-    float C26 = std::numeric_limits<float>::quiet_NaN();
     float C33 = std::numeric_limits<float>::quiet_NaN();
     float C34 = std::numeric_limits<float>::quiet_NaN();
     float C35 = std::numeric_limits<float>::quiet_NaN();
-    float C36 = std::numeric_limits<float>::quiet_NaN();
     float C44 = std::numeric_limits<float>::quiet_NaN();
     float C45 = std::numeric_limits<float>::quiet_NaN();
-    float C46 = std::numeric_limits<float>::quiet_NaN();
     float C55 = std::numeric_limits<float>::quiet_NaN();
-    float C56 = std::numeric_limits<float>::quiet_NaN();
-    float C66 = std::numeric_limits<float>::quiet_NaN();
     int row_index = -1;
 };
 
@@ -2979,22 +2973,16 @@ inline auto read_REC_CovMat_rows(framework::Event& event, int pindex)
         s.C13 = r.C13();
         s.C14 = r.C14();
         s.C15 = r.C15();
-        s.C16 = r.C16();
         s.C22 = r.C22();
         s.C23 = r.C23();
         s.C24 = r.C24();
         s.C25 = r.C25();
-        s.C26 = r.C26();
         s.C33 = r.C33();
         s.C34 = r.C34();
         s.C35 = r.C35();
-        s.C36 = r.C36();
         s.C44 = r.C44();
         s.C45 = r.C45();
-        s.C46 = r.C46();
         s.C55 = r.C55();
-        s.C56 = r.C56();
-        s.C66 = r.C66();
         s.row_index = r.row_index();
         result.push_back(s);
     }
@@ -3014,22 +3002,16 @@ inline auto read_REC_CovMat_rows_by_index(framework::Event& event, int key)
         s.C13 = r.C13();
         s.C14 = r.C14();
         s.C15 = r.C15();
-        s.C16 = r.C16();
         s.C22 = r.C22();
         s.C23 = r.C23();
         s.C24 = r.C24();
         s.C25 = r.C25();
-        s.C26 = r.C26();
         s.C33 = r.C33();
         s.C34 = r.C34();
         s.C35 = r.C35();
-        s.C36 = r.C36();
         s.C44 = r.C44();
         s.C45 = r.C45();
-        s.C46 = r.C46();
         s.C55 = r.C55();
-        s.C56 = r.C56();
-        s.C66 = r.C66();
         s.row_index = r.row_index();
         result.push_back(s);
     }
