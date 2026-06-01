@@ -134,10 +134,55 @@ struct AnalysisTomlInfo {
     return info;
 }
 
-/// Resolve a raw [run].input value (path / directory / comma list) to a
-/// flat sorted list of HIPO files. Directories are scanned recursively
-/// for `*.hipo`. Comma-separated entries are split. Single-file paths
-/// pass through unchanged.
+/// Brace-expand "{a,b,c}" patterns (nested supported; numeric ranges are
+/// not — write them out). Mirrors clas12 StringUtils::expand_braces so a
+/// [run].input like
+///     /cache/.../recon/{018309,018310}/
+/// expands to
+///     /cache/.../recon/018309/   /cache/.../recon/018310/
+/// the same way the framework's AnalysisRunner does — instead of the comma
+/// split below shredding the brace group into broken fragments.
+[[nodiscard]] auto expand_braces(std::string_view s) -> std::vector<std::string> {
+    const auto open = s.find('{');
+    if (open == std::string_view::npos) return {std::string(s)};
+
+    int  depth = 1;
+    auto close = std::string_view::npos;
+    for (auto i = open + 1; i < s.size(); ++i) {
+        if (s[i] == '{') ++depth;
+        else if (s[i] == '}' && --depth == 0) { close = i; break; }
+    }
+    if (close == std::string_view::npos) return {std::string(s)};  // unmatched
+
+    const auto contents = s.substr(open + 1, close - open - 1);
+    std::vector<std::string_view> options;
+    int         d    = 0;
+    std::size_t last = 0;
+    for (std::size_t j = 0; j < contents.size(); ++j) {
+        if      (contents[j] == '{') ++d;
+        else if (contents[j] == '}') --d;
+        else if (contents[j] == ',' && d == 0) {
+            options.push_back(contents.substr(last, j - last));
+            last = j + 1;
+        }
+    }
+    options.push_back(contents.substr(last));
+
+    const std::string prefix(s.substr(0, open));
+    const std::string suffix(s.substr(close + 1));
+    std::vector<std::string> out;
+    for (const auto& opt : options) {
+        for (auto& expanded : expand_braces(prefix + std::string(opt) + suffix)) {
+            out.push_back(std::move(expanded));
+        }
+    }
+    return out;
+}
+
+/// Resolve a raw [run].input value (brace pattern / path / directory /
+/// comma list) to a flat sorted list of HIPO files. Brace groups are
+/// expanded first, then each result is comma-split; directories are scanned
+/// recursively for `*.hipo`, single files pass through.
 [[nodiscard]] auto expand_input_path(const std::string& raw)
     -> std::vector<std::string>
 {
@@ -163,15 +208,17 @@ struct AnalysisTomlInfo {
         }
     };
 
-    // Top-level comma split. We don't try to honour brace expansion here
-    // (the framework's AnalysisRunner does that for the actual run) —
-    // local_batch only needs an enumerable file list to shard.
-    std::string cur;
-    for (char c : raw) {
-        if (c == ',') { add_one(std::move(cur)); cur.clear(); }
-        else cur += c;
+    // Brace-expand FIRST so "{a,b}" survives, THEN comma-split each result
+    // (brace-free paths have no top-level commas unless the user really
+    // passed a comma-separated file list).
+    for (const auto& expanded : expand_braces(raw)) {
+        std::string cur;
+        for (char c : expanded) {
+            if (c == ',') { add_one(std::move(cur)); cur.clear(); }
+            else cur += c;
+        }
+        add_one(std::move(cur));
     }
-    add_one(std::move(cur));
     return out;
 }
 
