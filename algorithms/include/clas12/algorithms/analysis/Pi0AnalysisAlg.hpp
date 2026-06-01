@@ -18,7 +18,9 @@
 #include <cmath>
 #include <cstdint>
 #include <deque>
+#include <fstream>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
@@ -41,6 +43,7 @@
 #include <clas12/framework/core/HistogramAliases.hpp>
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
+#include <clas12/framework/core/QuantileBinner.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
@@ -70,6 +73,21 @@ struct Pi0AnalysisConfig {
     bool   enable_ntuple = true;
     double beam_energy   = 10.53;
 
+    // Equal-statistics binning scan. When enabled, the algorithm samples the
+    // real Q^2 / x_B (per DIS event) and z / p_T^2 (per pi0 candidate)
+    // distributions during the run and, at finalize, prints + writes
+    // quantile edges so that each bin holds ~the same number of entries —
+    // replacing the hand-chosen *_edges above. The emitted edges keep the
+    // same bin *count* as the current *_edges, so they are a drop-in. The
+    // scan is purely additive (it doesn't change the histograms produced by
+    // this run); adopt the edges by pasting the written TOML into the
+    // [Pi0Analysis] section, then re-run. Best run single-process over a
+    // representative subset (quantiles converge with ~1e5-1e6 samples), not
+    // sharded via local_batch.
+    bool        scan_quantile_binning  = false;
+    int         quantile_sample_cap    = 1'000'000;  // reservoir size per variable
+    std::string quantile_binning_output = "pi0_equal_stat_binning.toml";
+
     static constexpr auto config_fields() {
         using T = Pi0AnalysisConfig;
         return std::make_tuple(
@@ -83,7 +101,10 @@ struct Pi0AnalysisConfig {
             framework::field("W_edges",         &T::W_edges),
             framework::field("nu_edges",        &T::nu_edges),
             framework::field("enable_ntuple",   &T::enable_ntuple),
-            framework::field("beam_energy",     &T::beam_energy));
+            framework::field("beam_energy",     &T::beam_energy),
+            framework::field("scan_quantile_binning",   &T::scan_quantile_binning),
+            framework::field("quantile_sample_cap",     &T::quantile_sample_cap),
+            framework::field("quantile_binning_output", &T::quantile_binning_output));
     }
 };
 
@@ -192,6 +213,19 @@ class Pi0AnalysisAlg : public framework::Algorithm {
 
         book_histograms();
 
+        if (m_config.scan_quantile_binning) {
+            const auto cap = static_cast<std::size_t>(
+                std::max(1, m_config.quantile_sample_cap));
+            m_qb_Q2  = std::make_unique<framework::QuantileBinner>(cap);
+            m_qb_xB  = std::make_unique<framework::QuantileBinner>(cap);
+            m_qb_z   = std::make_unique<framework::QuantileBinner>(cap);
+            m_qb_pT2 = std::make_unique<framework::QuantileBinner>(cap);
+            Log::info(name(),
+                      "Equal-statistics binning scan ENABLED "
+                      "(reservoir cap {} / variable -> '{}')",
+                      cap, m_config.quantile_binning_output);
+        }
+
         return StatusCode::SUCCESS();
     }
 
@@ -281,11 +315,85 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         Log::info(name(), "Offline fit region: [{:.2f}, {:.2f}] GeV", FIT_RANGE_LOW, FIT_RANGE_HIGH);
         if (m_ntuple) Log::info(name(), "N-tuple 'pi0_pairs' has {} entries", m_ntuple->get_entries("pi0_pairs"));
 
+        report_equal_stat_binning();
+
         Log::blank();
         m_cutflow.print();
         Log::success(name(), "Finalization complete");
 
         return StatusCode::SUCCESS();
+    }
+
+    /// Format a list of edges as a TOML / C++ array literal, e.g. "[1, 1.5, 2]".
+    static auto format_edges(const std::vector<double>& edges) -> std::string {
+        std::string s = "[";
+        for (std::size_t i = 0; i < edges.size(); ++i) {
+            s += fmt::format("{}{:.4g}", i ? ", " : "", edges[i]);
+        }
+        s += "]";
+        return s;
+    }
+
+    /// Compute equal-statistics edges for Q2, xB, z and pT2 from the sampled
+    /// distributions, log them, and write a TOML snippet that can be pasted
+    /// straight into the [Pi0Analysis] config section. The bin *count* for
+    /// each variable matches the current *_edges, so the result is a drop-in
+    /// replacement. No-op unless scan_quantile_binning was enabled.
+    auto report_equal_stat_binning() -> void {
+        if (!m_qb_Q2) return;
+
+        struct Var {
+            const char*                name;
+            framework::QuantileBinner* binner;
+            int                        n_bins;
+            std::vector<double>        edges;  // filled below
+        };
+        std::array<Var, 4> vars{{
+            {"Q2_edges",  m_qb_Q2.get(),  static_cast<int>(m_config.Q2_edges.size())  - 1, {}},
+            {"xB_edges",  m_qb_xB.get(),  static_cast<int>(m_config.xB_edges.size())  - 1, {}},
+            {"z_edges",   m_qb_z.get(),   static_cast<int>(m_config.z_edges.size())   - 1, {}},
+            {"pT2_edges", m_qb_pT2.get(), static_cast<int>(m_config.pT2_edges.size()) - 1, {}},
+        }};
+
+        Log::blank();
+        Log::info(name(), "Equal-statistics binning scan results:");
+        bool all_ok = true;
+        for (auto& v : vars) {
+            v.edges = v.binner->equal_stat_edges(v.n_bins);
+            if (v.edges.empty()) {
+                all_ok = false;
+                Log::warning(name(),
+                             "  {}: too few samples ({}) for {} bins — keeping current edges",
+                             v.name, v.binner->count(), v.n_bins);
+                continue;
+            }
+            Log::info(name(), "  {} ({} bins, {} sampled / {} seen): {}",
+                      v.name, v.n_bins, v.binner->sample_size(), v.binner->count(),
+                      format_edges(v.edges));
+        }
+
+        // Write the TOML snippet (only the variables that produced edges).
+        const std::string& path = m_config.quantile_binning_output;
+        std::ofstream out(path);
+        if (!out) {
+            Log::warning(name(), "Could not open '{}' to write equal-stat binning", path);
+            return;
+        }
+        out << "# Equal-statistics (quantile) binning for Pi0AnalysisAlg,\n"
+               "# generated by the scan_quantile_binning pass. Each bin holds\n"
+               "# ~the same number of entries. Paste into the [Pi0Analysis]\n"
+               "# section of your analysis TOML (and set scan_quantile_binning\n"
+               "# = false) to adopt it on the next run.\n"
+               "[Pi0Analysis]\n";
+        for (const auto& v : vars) {
+            if (v.edges.empty()) {
+                out << fmt::format("# {} = (insufficient samples; left at default)\n", v.name);
+            } else {
+                out << fmt::format("{} = {}\n", v.name, format_edges(v.edges));
+            }
+        }
+        Log::info(name(), "Wrote equal-statistics binning to '{}'{}",
+                  path, all_ok ? "" : " (some variables fell back to defaults)");
     }
 
    private:
@@ -307,6 +415,15 @@ class Pi0AnalysisAlg : public framework::Algorithm {
 
     framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService>    m_ntuple;
+
+    // Equal-statistics binning samplers. Allocated in on_initialize only
+    // when m_config.scan_quantile_binning is set, so a normal run pays
+    // nothing. Q2/xB sample one value per DIS event; z/pT2 one per pi0
+    // candidate that fills the multiplicity histograms.
+    std::unique_ptr<framework::QuantileBinner> m_qb_Q2;
+    std::unique_ptr<framework::QuantileBinner> m_qb_xB;
+    std::unique_ptr<framework::QuantileBinner> m_qb_z;
+    std::unique_ptr<framework::QuantileBinner> m_qb_pT2;
     framework::NTupleWriter<Pi0PairNTupleData>         m_ntuple_writer;
 
     // -------- Pool ------------------------------------------------------------
@@ -517,6 +634,10 @@ class Pi0AnalysisAlg : public framework::Algorithm {
 
     // -------- DIS normalization ----------------------------------------------
     auto fill_dis_normalization(double Q2, double xB, int iQ2, int ixB) -> void {
+        // Equal-stat binning sample: one (Q2, xB) per DIS event — the same
+        // population the Q2/xB binning has to balance.
+        if (m_qb_Q2) { m_qb_Q2->add(Q2); m_qb_xB->add(xB); }
+
         h_n_DIS_events.fill(0.5);
         h_n_DIS_vs_Q2.fill(Q2);
         h_n_DIS_vs_xB.fill(xB);
@@ -552,6 +673,10 @@ class Pi0AnalysisAlg : public framework::Algorithm {
 
             if (z <= 0.0 || z >= 1.0) continue;
             m_cutflow.pass("z in range");
+
+            // Equal-stat binning sample: one (z, pT2) per pi0 candidate that
+            // enters the multiplicity histograms — same population as h_z/h_pT2.
+            if (m_qb_z) { m_qb_z->add(z); m_qb_pT2->add(pT2); }
 
             double pi0_mass = pi0.mass();
 
