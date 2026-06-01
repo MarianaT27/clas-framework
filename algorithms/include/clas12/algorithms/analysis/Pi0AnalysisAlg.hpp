@@ -73,14 +73,17 @@ struct Pi0AnalysisConfig {
     bool   enable_ntuple = true;
     double beam_energy   = 10.53;
 
-    // Equal-statistics binning scan. When enabled, the algorithm samples the
-    // real Q^2 / x_B (per DIS event) and z / p_T^2 (per pi0 candidate)
-    // distributions during the run and, at finalize, prints + writes
-    // quantile edges so that each bin holds ~the same number of entries —
-    // replacing the hand-chosen *_edges above. The emitted edges keep the
-    // same bin *count* as the current *_edges, so they are a drop-in. The
-    // scan is purely additive (it doesn't change the histograms produced by
-    // this run); adopt the edges by pasting the written TOML into the
+    // Equal-statistics binning scan for the multiplicity 4D grid
+    // (Q^2 x x_B x z x p_T^2). When enabled, the algorithm samples all four
+    // axes once per pi0 candidate that enters the multiplicity grid, then at
+    // finalize prints + writes quantile edges so that each of the 4D bins
+    // holds ~the same number of pi0 candidates — replacing the hand-chosen
+    // Q2_edges/xB_edges/z_edges/pT2_edges above. The emitted edges keep the
+    // same bin *count* as the current ones, so they are a drop-in; once
+    // adopted they apply wherever those edge vectors are used (the
+    // multiplicity grid, DIS normalization, mixing, and pool all share
+    // Q2/xB). The scan is purely additive (it doesn't change the histograms
+    // produced by this run); adopt by pasting the written TOML into the
     // [Pi0Analysis] section, then re-run. Best run single-process over a
     // representative subset (quantiles converge with ~1e5-1e6 samples), not
     // sharded via local_batch.
@@ -267,7 +270,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
 
         fill_dis_normalization(Q2, xB, iQ2, ixB);
 
-        fill_multiplicity_histograms(event, Q2, nu, q_hat, x_hat, y_hat, iQ2, ixB);
+        fill_multiplicity_histograms(event, Q2, xB, nu, q_hat, x_hat, y_hat, iQ2, ixB);
 
         const long event_id = event.event_number();
         // Reuse a thread-local row buffer instead of constructing a fresh
@@ -416,10 +419,12 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService>    m_ntuple;
 
-    // Equal-statistics binning samplers. Allocated in on_initialize only
-    // when m_config.scan_quantile_binning is set, so a normal run pays
-    // nothing. Q2/xB sample one value per DIS event; z/pT2 one per pi0
-    // candidate that fills the multiplicity histograms.
+    // Equal-statistics binning samplers for the multiplicity 4D grid.
+    // Allocated in on_initialize only when m_config.scan_quantile_binning is
+    // set, so a normal run pays nothing. All four are fed once per pi0
+    // candidate that enters the multiplicity grid (see
+    // fill_multiplicity_histograms), so the quantile edges balance the
+    // 8x7x10x8 grid's pi0-candidate counts.
     std::unique_ptr<framework::QuantileBinner> m_qb_Q2;
     std::unique_ptr<framework::QuantileBinner> m_qb_xB;
     std::unique_ptr<framework::QuantileBinner> m_qb_z;
@@ -634,10 +639,6 @@ class Pi0AnalysisAlg : public framework::Algorithm {
 
     // -------- DIS normalization ----------------------------------------------
     auto fill_dis_normalization(double Q2, double xB, int iQ2, int ixB) -> void {
-        // Equal-stat binning sample: one (Q2, xB) per DIS event — the same
-        // population the Q2/xB binning has to balance.
-        if (m_qb_Q2) { m_qb_Q2->add(Q2); m_qb_xB->add(xB); }
-
         h_n_DIS_events.fill(0.5);
         h_n_DIS_vs_Q2.fill(Q2);
         h_n_DIS_vs_xB.fill(xB);
@@ -651,7 +652,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
 
     // -------- Multiplicity histograms ----------------------------------------
     auto fill_multiplicity_histograms(framework::Event& event,
-                                      double Q2, double nu,
+                                      double Q2, double xB, double nu,
                                       const ROOT::Math::XYZVector& q_hat,
                                       const ROOT::Math::XYZVector& x_hat,
                                       const ROOT::Math::XYZVector& y_hat,
@@ -674,9 +675,19 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             if (z <= 0.0 || z >= 1.0) continue;
             m_cutflow.pass("z in range");
 
-            // Equal-stat binning sample: one (z, pT2) per pi0 candidate that
-            // enters the multiplicity histograms — same population as h_z/h_pT2.
-            if (m_qb_z) { m_qb_z->add(z); m_qb_pT2->add(pT2); }
+            // Equal-stat binning sample: all four 4D-grid axes (Q2, xB, z,
+            // pT2) sampled once per pi0 candidate — i.e. the exact population
+            // the 8x7x10x8 multiplicity grid bins. Q2/xB are event-level but
+            // sampled per candidate on purpose, so an event with N pi0
+            // candidates weights (Q2, xB) by N — matching how it contributes
+            // N entries to the 4D histogram. This makes the quantile edges
+            // balance the multiplicity 4D bins, not the DIS-event marginals.
+            if (m_qb_z) {
+                m_qb_Q2->add(Q2);
+                m_qb_xB->add(xB);
+                m_qb_z->add(z);
+                m_qb_pT2->add(pT2);
+            }
 
             double pi0_mass = pi0.mass();
 
