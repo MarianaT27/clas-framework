@@ -1,0 +1,62 @@
+# Farm submission for pion_analysis on the JLab cluster (SWIF2).
+#
+# Run with:
+#   ./build/tools/batch config/pion_analysis.farm.toml          # dry-run
+#   ./build/tools/batch config/pion_analysis.farm.toml --submit # submit
+#
+# Schema:
+#   [farm]               run-control + I/O paths
+#   [farm.swif2]         SWIF2 / scheduler resource ask
+#   [farm.swif2.modules] modules loaded at the top of every job's shell
+#   [farm.swif2.tags]    key/value labels propagated via `swif2 add-job -tag`
+#   [farm.env]           extra environment exports inside the job
+#
+# The batch tool synthesizes a per-job TOML (under batch_scripts/) that
+# inherits everything from `analysis_config` and overrides only
+# `[run].input` / `[run].output` / `[run].num_threads`. It does NOT touch
+# `[analysis].target`/`polarity` — see the NOTE below.
+
+[farm]
+analysis_config = "config/pion_analysis.toml"
+executable      = "build/analyses/pion_analysis"
+files_per_job   = 10
+
+# Scanned recursively for *.hipo. May also be an array of explicit files.
+# CuSn (RG-D pass1) reconstruction train output, read from /cache.
+inputs          = "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS"
+
+output_dir      = "/volatile/clas12/ouillon/pion_analysis_CuSn"
+log_dir         = "/volatile/clas12/ouillon/pion_analysis_CuSn/logs"
+
+# NOTE: this is CuSn data, but config/pion_analysis.toml ships with
+# [analysis].target = "LD2". Because the batch tool only overrides
+# [run].input/output/num_threads, the per-job TOMLs inherit whatever
+# target the referenced analysis_config declares. For correct Vz handling
+# (the cusn VzCorrector variant + the Voigt +/-3 sigma window instead of
+# the LD2 fixed range), set [analysis].target = "CuSn" in
+# config/pion_analysis.toml before submitting — or point analysis_config
+# at a CuSn-targeted copy.
+
+[farm.swif2]
+workflow   = "pion_analysis_CuSn_pass1"
+# `site` is only for cross-site workflows that move data between JLab and an
+# external compute facility (and require globus + login config). Leave unset
+# for normal in-house submission on the JLab ifarm.
+# site     = ""
+account    = "clas12"
+partition  = "production"
+cores      = 8
+ram_gb     = 16
+disk_gb    = 50
+time       = "12:00:00"
+
+[farm.swif2.modules]
+load = ["gcc/13.2.0", "root/6.36.04"]
+
+[farm.swif2.tags]
+stream   = "pion"
+target   = "CuSn"
+pass     = "pass1"
+
+[farm.env]
+ROOT_HIST = "0"
