@@ -89,12 +89,35 @@ class QuantileBinner {
     /// number) are nudged up by one ULP so the result is always strictly
     /// monotonic and usable as histogram edges.
     [[nodiscard]] std::vector<double> equal_stat_edges(int n_bins) const {
-        if (n_bins < 1) return {};
         std::vector<double> s;
         {
             std::lock_guard<std::mutex> lk(m_mutex);
             s = m_samples;
         }
+        return equal_stat_edges_of(std::move(s), n_bins);
+    }
+
+    /// Per-bin occupancy of this binner's sample under `edges` — one count
+    /// per (edges.size()-1) bin. The whole point of quantile edges is that
+    /// these come out ~equal; reporting them confirms that and exposes any
+    /// imbalance forced by a value spike.
+    [[nodiscard]] std::vector<long> bin_occupancy(const std::vector<double>& edges) const {
+        std::vector<double> s;
+        {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            s = m_samples;
+        }
+        return bin_occupancy_of(s, edges);
+    }
+
+    // ---- Free-standing helpers (so a joint multi-axis sampler can derive
+    // per-axis edges and occupancy from one shared sample) ----------------
+
+    /// Equal-frequency edges from an explicit (unsorted) sample. Same
+    /// algorithm as the instance method.
+    [[nodiscard]] static std::vector<double> equal_stat_edges_of(std::vector<double> s,
+                                                                 int n_bins) {
+        if (n_bins < 1) return {};
         if (s.size() < static_cast<std::size_t>(n_bins) + 1) return {};
         std::sort(s.begin(), s.end());
 
@@ -116,6 +139,31 @@ class QuantileBinner {
             }
         }
         return edges;
+    }
+
+    /// Bin index of `x` under `edges` (size = n_bins + 1), clamped into
+    /// [0, n_bins-1]. Returns -1 if `edges` doesn't define at least one bin.
+    [[nodiscard]] static int bin_index(double x, const std::vector<double>& edges) {
+        const int nb = static_cast<int>(edges.size()) - 1;
+        if (nb < 1) return -1;
+        int b = static_cast<int>(
+                    std::upper_bound(edges.begin(), edges.end(), x) - edges.begin()) - 1;
+        if (b < 0) b = 0;
+        if (b >= nb) b = nb - 1;
+        return b;
+    }
+
+    /// Per-bin counts of `samples` under `edges`.
+    [[nodiscard]] static std::vector<long> bin_occupancy_of(
+        const std::vector<double>& samples, const std::vector<double>& edges) {
+        const int nb = static_cast<int>(edges.size()) - 1;
+        if (nb < 1) return {};
+        std::vector<long> occ(static_cast<std::size_t>(nb), 0);
+        for (double x : samples) {
+            const int b = bin_index(x, edges);
+            if (b >= 0) occ[static_cast<std::size_t>(b)]++;
+        }
+        return occ;
     }
 
    private:

@@ -14,16 +14,22 @@
  *     signal rows (mixed pairs stay in histograms only — see process()).
  */
 
+#include <algorithm>
 #include <array>
+#include <atomic>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <deque>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <shared_mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -219,13 +225,10 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         if (m_config.scan_quantile_binning) {
             const auto cap = static_cast<std::size_t>(
                 std::max(1, m_config.quantile_sample_cap));
-            m_qb_Q2  = std::make_unique<framework::QuantileBinner>(cap);
-            m_qb_xB  = std::make_unique<framework::QuantileBinner>(cap);
-            m_qb_z   = std::make_unique<framework::QuantileBinner>(cap);
-            m_qb_pT2 = std::make_unique<framework::QuantileBinner>(cap);
+            m_mult_scan = std::make_unique<MultBinScan>(cap);
             Log::info(name(),
                       "Equal-statistics binning scan ENABLED "
-                      "(reservoir cap {} / variable -> '{}')",
+                      "(reservoir cap {} (Q2,xB,z,pT2) tuples -> '{}')",
                       cap, m_config.quantile_binning_output);
         }
 
@@ -337,45 +340,105 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         return s;
     }
 
-    /// Compute equal-statistics edges for Q2, xB, z and pT2 from the sampled
-    /// distributions, log them, and write a TOML snippet that can be pasted
-    /// straight into the [Pi0Analysis] config section. The bin *count* for
-    /// each variable matches the current *_edges, so the result is a drop-in
-    /// replacement. No-op unless scan_quantile_binning was enabled.
-    auto report_equal_stat_binning() -> void {
-        if (!m_qb_Q2) return;
+    /// Format a list of integer counts as "[a, b, c]".
+    static auto format_counts(const std::vector<long>& counts) -> std::string {
+        std::string s = "[";
+        for (std::size_t i = 0; i < counts.size(); ++i) {
+            s += fmt::format("{}{}", i ? ", " : "", counts[i]);
+        }
+        s += "]";
+        return s;
+    }
 
-        struct Var {
-            const char*                name;
-            framework::QuantileBinner* binner;
-            int                        n_bins;
-            std::vector<double>        edges;  // filled below
+    /// Compute equal-statistics edges for Q2, xB, z and pT2 from the joint
+    /// sampled distribution, log them with their per-bin occupancy + the
+    /// resulting 4D-grid occupancy (incl. empty bins), and write a TOML
+    /// snippet pasteable into [Pi0Analysis]. The bin count for each axis
+    /// matches the current *_edges, so the result is a drop-in replacement.
+    /// No-op unless scan_quantile_binning was enabled.
+    auto report_equal_stat_binning() -> void {
+        if (!m_mult_scan) return;
+
+        const auto rows = m_mult_scan->snapshot();
+        const long  seen = m_mult_scan->count();
+
+        struct Axis {
+            const char*         name;
+            int                 col;     // column in the (Q2,xB,z,pT2) tuple
+            int                 n_bins;
+            std::vector<double> edges;   // filled below
         };
-        std::array<Var, 4> vars{{
-            {"Q2_edges",  m_qb_Q2.get(),  static_cast<int>(m_config.Q2_edges.size())  - 1, {}},
-            {"xB_edges",  m_qb_xB.get(),  static_cast<int>(m_config.xB_edges.size())  - 1, {}},
-            {"z_edges",   m_qb_z.get(),   static_cast<int>(m_config.z_edges.size())   - 1, {}},
-            {"pT2_edges", m_qb_pT2.get(), static_cast<int>(m_config.pT2_edges.size()) - 1, {}},
+        std::array<Axis, 4> axes{{
+            {"Q2_edges",  0, static_cast<int>(m_config.Q2_edges.size())  - 1, {}},
+            {"xB_edges",  1, static_cast<int>(m_config.xB_edges.size())  - 1, {}},
+            {"z_edges",   2, static_cast<int>(m_config.z_edges.size())   - 1, {}},
+            {"pT2_edges", 3, static_cast<int>(m_config.pT2_edges.size()) - 1, {}},
         }};
 
         Log::blank();
-        Log::info(name(), "Equal-statistics binning scan results:");
+        Log::info(name(), "Equal-statistics binning scan ({} sampled / {} seen):",
+                  rows.size(), seen);
+
         bool all_ok = true;
-        for (auto& v : vars) {
-            v.edges = v.binner->equal_stat_edges(v.n_bins);
-            if (v.edges.empty()) {
+        for (auto& ax : axes) {
+            std::vector<double> col;
+            col.reserve(rows.size());
+            for (const auto& r : rows) col.push_back(r[static_cast<std::size_t>(ax.col)]);
+
+            ax.edges = framework::QuantileBinner::equal_stat_edges_of(col, ax.n_bins);
+            if (ax.edges.empty()) {
                 all_ok = false;
                 Log::warning(name(),
                              "  {}: too few samples ({}) for {} bins — keeping current edges",
-                             v.name, v.binner->count(), v.n_bins);
+                             ax.name, rows.size(), ax.n_bins);
                 continue;
             }
-            Log::info(name(), "  {} ({} bins, {} sampled / {} seen): {}",
-                      v.name, v.n_bins, v.binner->sample_size(), v.binner->count(),
-                      format_edges(v.edges));
+            const auto occ = framework::QuantileBinner::bin_occupancy_of(col, ax.edges);
+            long mn = occ.empty() ? 0 : occ.front(), mx = mn, sum = 0;
+            for (long c : occ) { mn = std::min(mn, c); mx = std::max(mx, c); sum += c; }
+            const double mean = occ.empty() ? 0.0 : static_cast<double>(sum) / occ.size();
+            Log::info(name(), "  {} ({} bins): {}", ax.name, ax.n_bins, format_edges(ax.edges));
+            Log::info(name(), "      per-bin counts {}  (min {}, max {}, mean {:.1f})",
+                      format_counts(occ), mn, mx, mean);
         }
 
-        // Write the TOML snippet (only the variables that produced edges).
+        // 4D grid occupancy: bin every sampled tuple into the joint
+        // (Q2, xB, z, pT2) grid and summarise how full it is. Marginal
+        // equal-stat edges balance each 1D axis, but kinematic correlations
+        // leave many 4D cells empty — this quantifies that.
+        if (all_ok) {
+            const int nQ2  = axes[0].n_bins, nxB = axes[1].n_bins;
+            const int nz   = axes[2].n_bins, npT2 = axes[3].n_bins;
+            const long total = static_cast<long>(nQ2) * nxB * nz * npT2;
+            std::vector<long> occ4d(static_cast<std::size_t>(total), 0);
+            for (const auto& r : rows) {
+                const int iq = framework::QuantileBinner::bin_index(r[0], axes[0].edges);
+                const int ix = framework::QuantileBinner::bin_index(r[1], axes[1].edges);
+                const int iz = framework::QuantileBinner::bin_index(r[2], axes[2].edges);
+                const int ip = framework::QuantileBinner::bin_index(r[3], axes[3].edges);
+                const long flat = ((static_cast<long>(iq) * nxB + ix) * nz + iz) * npT2 + ip;
+                occ4d[static_cast<std::size_t>(flat)]++;
+            }
+            long empty = 0, mn = LONG_MAX, mx = 0;
+            for (long c : occ4d) {
+                if (c == 0) ++empty;
+                mn = std::min(mn, c);
+                mx = std::max(mx, c);
+            }
+            const long populated = total - empty;
+            const double mean_all  = total ? static_cast<double>(rows.size()) / total : 0.0;
+            const double mean_pop  = populated ? static_cast<double>(rows.size()) / populated : 0.0;
+            Log::info(name(),
+                      "  4D grid occupancy ({} bins = {}x{}x{}x{}): populated {}, "
+                      "EMPTY {} ({:.1f}%)",
+                      total, nQ2, nxB, nz, npT2, populated, empty,
+                      total ? 100.0 * empty / total : 0.0);
+            Log::info(name(),
+                      "      counts/bin: min {}, max {}, mean(all) {:.2f}, mean(populated) {:.2f}",
+                      (mn == LONG_MAX ? 0 : mn), mx, mean_all, mean_pop);
+        }
+
+        // Write the TOML snippet (only the axes that produced edges).
         const std::string& path = m_config.quantile_binning_output;
         std::ofstream out(path);
         if (!out) {
@@ -383,16 +446,16 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             return;
         }
         out << "# Equal-statistics (quantile) binning for Pi0AnalysisAlg,\n"
-               "# generated by the scan_quantile_binning pass. Each bin holds\n"
-               "# ~the same number of entries. Paste into the [Pi0Analysis]\n"
-               "# section of your analysis TOML (and set scan_quantile_binning\n"
-               "# = false) to adopt it on the next run.\n"
+               "# generated by the scan_quantile_binning pass. Each 1D axis is\n"
+               "# split so its bins hold ~the same number of pi0 candidates.\n"
+               "# Paste into the [Pi0Analysis] section of your analysis TOML\n"
+               "# (and set scan_quantile_binning = false) to adopt it.\n"
                "[Pi0Analysis]\n";
-        for (const auto& v : vars) {
-            if (v.edges.empty()) {
-                out << fmt::format("# {} = (insufficient samples; left at default)\n", v.name);
+        for (const auto& ax : axes) {
+            if (ax.edges.empty()) {
+                out << fmt::format("# {} = (insufficient samples; left at default)\n", ax.name);
             } else {
-                out << fmt::format("{} = {}\n", v.name, format_edges(v.edges));
+                out << fmt::format("{} = {}\n", ax.name, format_edges(ax.edges));
             }
         }
         Log::info(name(), "Wrote equal-statistics binning to '{}'{}",
@@ -419,16 +482,51 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService>    m_ntuple;
 
-    // Equal-statistics binning samplers for the multiplicity 4D grid.
-    // Allocated in on_initialize only when m_config.scan_quantile_binning is
-    // set, so a normal run pays nothing. All four are fed once per pi0
-    // candidate that enters the multiplicity grid (see
-    // fill_multiplicity_histograms), so the quantile edges balance the
-    // 8x7x10x8 grid's pi0-candidate counts.
-    std::unique_ptr<framework::QuantileBinner> m_qb_Q2;
-    std::unique_ptr<framework::QuantileBinner> m_qb_xB;
-    std::unique_ptr<framework::QuantileBinner> m_qb_z;
-    std::unique_ptr<framework::QuantileBinner> m_qb_pT2;
+    // Equal-statistics binning sampler for the multiplicity 4D grid. A single
+    // thread-safe reservoir of (Q2, xB, z, pT2) tuples — sampled jointly so
+    // both the per-axis quantile edges AND the resulting 4D bin occupancy
+    // (incl. empty-bin count) come from one consistent sample. Fed once per
+    // pi0 candidate that enters the multiplicity grid (see
+    // fill_multiplicity_histograms). Allocated in on_initialize only when
+    // m_config.scan_quantile_binning is set, so a normal run pays nothing.
+    struct MultBinScan {
+        explicit MultBinScan(std::size_t cap) : m_cap(cap == 0 ? 1 : cap) {
+            m_rows.reserve(std::min<std::size_t>(m_cap, std::size_t{1} << 18));
+        }
+        void add(double q2, double xb, double z, double pt2) noexcept {
+            if (!(std::isfinite(q2) && std::isfinite(xb) &&
+                  std::isfinite(z) && std::isfinite(pt2))) return;
+            const long n = m_count.fetch_add(1, std::memory_order_relaxed);
+            if (n < static_cast<long>(m_cap)) {
+                std::lock_guard<std::mutex> lk(m_mutex);
+                m_rows.push_back({q2, xb, z, pt2});
+                return;
+            }
+            thread_local std::mt19937_64 rng{
+                std::hash<std::thread::id>{}(std::this_thread::get_id()) ^
+                0x9e3779b97f4a7c15ULL};
+            std::uniform_int_distribution<long> dist(0, n);
+            const long j = dist(rng);
+            if (j < static_cast<long>(m_cap)) {
+                std::lock_guard<std::mutex> lk(m_mutex);
+                if (j < static_cast<long>(m_rows.size()))
+                    m_rows[static_cast<std::size_t>(j)] = {q2, xb, z, pt2};
+            }
+        }
+        [[nodiscard]] long count() const noexcept {
+            return m_count.load(std::memory_order_relaxed);
+        }
+        [[nodiscard]] std::vector<std::array<double, 4>> snapshot() const {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            return m_rows;
+        }
+        std::size_t                       m_cap;
+        mutable std::mutex                m_mutex;
+        std::vector<std::array<double, 4>> m_rows;
+        std::atomic<long>                 m_count{0};
+    };
+    std::unique_ptr<MultBinScan> m_mult_scan;
+
     framework::NTupleWriter<Pi0PairNTupleData>         m_ntuple_writer;
 
     // -------- Pool ------------------------------------------------------------
@@ -675,19 +773,14 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             if (z <= 0.0 || z >= 1.0) continue;
             m_cutflow.pass("z in range");
 
-            // Equal-stat binning sample: all four 4D-grid axes (Q2, xB, z,
-            // pT2) sampled once per pi0 candidate — i.e. the exact population
-            // the 8x7x10x8 multiplicity grid bins. Q2/xB are event-level but
-            // sampled per candidate on purpose, so an event with N pi0
-            // candidates weights (Q2, xB) by N — matching how it contributes
-            // N entries to the 4D histogram. This makes the quantile edges
-            // balance the multiplicity 4D bins, not the DIS-event marginals.
-            if (m_qb_z) {
-                m_qb_Q2->add(Q2);
-                m_qb_xB->add(xB);
-                m_qb_z->add(z);
-                m_qb_pT2->add(pT2);
-            }
+            // Equal-stat binning sample: the (Q2, xB, z, pT2) tuple sampled
+            // once per pi0 candidate — i.e. the exact population the 8x7x10x8
+            // multiplicity grid bins. Q2/xB are event-level but sampled per
+            // candidate on purpose, so an event with N pi0 candidates weights
+            // (Q2, xB) by N — matching how it contributes N entries to the 4D
+            // histogram. Sampling jointly lets us report the 4D occupancy
+            // (and empty-bin count), not just the per-axis marginals.
+            if (m_mult_scan) m_mult_scan->add(Q2, xB, z, pT2);
 
             double pi0_mass = pi0.mass();
 
