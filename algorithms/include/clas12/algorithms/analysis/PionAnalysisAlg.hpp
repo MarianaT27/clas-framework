@@ -319,6 +319,11 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         framework::H2<> chi2ndf_vs_edge_r2_precut{mh::regular(0, 50, 200), mh::regular(0, 100, 200)};
         framework::H2<> chi2ndf_vs_edge_r3_precut{mh::regular(0, 50, 200), mh::regular(0, 100, 200)};
 
+        // delta_t vs p in the forward detector, before the momentum /
+        // calorimeter / DC cuts — inclusive + per sector (Forward/ subdir).
+        framework::H2<> delta_t_vs_p_precut{mh::regular(0, 10, 100), mh::regular(-2, 2, 200)};
+        framework::PerSectorHist2D<6> delta_t_vs_p_precut_sector;
+
         framework::PerSectorHist2D<6> delta_t_vs_p_sector;
         framework::PerSectorHist2D<6> p_vs_theta_sector;
 
@@ -380,6 +385,18 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         h.p_vs_theta = g.add_hist2D("p_vs_theta", fmt::format("{} p vs #theta;#theta [deg];p [GeV/c]", label), 90, 0, 45, 100, 0, 10);
         h.delta_t_vs_p_sector = g.add_hist2D("delta_t_vs_p", fmt::format("{} #Deltat vs p;p [GeV/c];#Deltat [ns]", label), 100, 0, 10, 200, -2, 2);
         h.p_vs_theta_sector = g.add_hist2D("p_vs_theta_acceptance", fmt::format("{} p vs #theta Acceptance;#theta [deg];p [GeV/c]", label), 90, 0, 45, 100, 0, 10);
+
+        // Pre-cut delta_t vs p, in the Forward/ subdirectory: inclusive +
+        // per sector (delta_t_vs_p_precut + delta_t_vs_p_precut_S1..S6).
+        const std::string fwd = dir + "/Forward";
+        svc->register_hist(fwd + "/delta_t_vs_p_precut",
+                           fmt::format("{} #Deltat vs p (pre-cut, forward);p [GeV/c];#Deltat [ns]", label),
+                           h.delta_t_vs_p_precut);
+        framework::SectorHistogramGroup<6> g_fwd(svc, fwd);
+        h.delta_t_vs_p_precut_sector = g_fwd.add_hist2D(
+            "delta_t_vs_p_precut",
+            fmt::format("{} #Deltat vs p (pre-cut, forward);p [GeV/c];#Deltat [ns]", label),
+            100, 0, 10, 200, -2, 2);
     }
 
     // Covariance-derived resolutions from REC::CovMat (5x5 DC Kalman state
@@ -470,6 +487,17 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         double E_tot = calo.pcal_energy + calo.inner_energy + calo.outer_energy;
         bool in_forward_detector = framework::CandidateUtils::is_forward_detector(pion.status());
 
+        // Timing is computed up front so the pre-cut delta_t-vs-p plots (in
+        // the forward detector, before the momentum / calorimeter / DC cuts)
+        // and the post-cut ones share the same value.
+        const double p = pion.p();
+        auto scintillator = pion.scintillator();
+        int sector = scintillator.sector;
+        double tof_time = scintillator.time;
+        double tof_path = scintillator.path;
+        auto timing = framework::CandidateUtils::compute_timing(
+            p, Constants::PIMASS, pion.beta(), tof_time, tof_path, start_time);
+
         if (in_forward_detector) {
             h.edge_r1_precut.fill(edge_r1);
             h.edge_r2_precut.fill(edge_r2);
@@ -478,26 +506,22 @@ framework::ServiceRef<framework::HistogramService> m_hist;
             h.chi2ndf_vs_edge_r2_precut.fill(edge_r2, chi2ndf);
             h.chi2ndf_vs_edge_r3_precut.fill(edge_r3, chi2ndf);
 
+            // delta_t vs p before any cut (inclusive + per sector).
+            h.delta_t_vs_p_precut.fill(p, timing.delta_t);
+            h.delta_t_vs_p_precut_sector.fill(sector, p, timing.delta_t);
+
             // Tally momentum-cut impact before any momentum filtering.
             (is_piplus ? m_pscan_piplus : m_pscan_piminus).record(pion.p());
         }
 
         if (!evaluate_cutflow(in_forward_detector, pion.p(), E_tot, track.NDF > 0, cutflow)) return;
 
-        double p = pion.p();
         double SF = E_tot / p;
         double lv = calo.pcal_lv;
         double lw = calo.pcal_lw;
 
         auto cherenkov = pion.cherenkov();
         double nphe = cherenkov.nphe;
-
-        auto scintillator = pion.scintillator();
-        int sector = scintillator.sector;
-        double tof_time = scintillator.time;
-        double tof_path = scintillator.path;
-
-        auto timing = framework::CandidateUtils::compute_timing(p, Constants::PIMASS, pion.beta(), tof_time, tof_path, start_time);
 
         const double dvz = pion.vz() - electron.vz();
         h.p.fill(p);
