@@ -90,7 +90,16 @@ cxxopts_dep = dependency('cxxopts')
 # Boost.PFR (non-Boost distribution): header-only static reflection used to
 # auto-derive config/ntuple field (name, &member) pairs from plain aggregates,
 # replacing the hand-written config_fields()/ntuple_fields() tuples.
-pfr_dep     = subproject('pfr_non_boost-2.3.2').get_variable('pfr_dep')
+#
+# Vendored under extern/pfr/ (same as mh/ and hipo4/) rather than fetched as a
+# meson subproject. The wrap-based subproject never committed a wrap file — the
+# extracted tree was git-ignored — so a fresh clone (e.g. on ifarm) had nothing
+# to build against. PFR upstream also ships no meson.build, so the subproject
+# relied on a hand-written one that lived only in the ignored directory.
+# Vendoring removes the network dependency and the foot-gun entirely.
+pfr_dep     = declare_dependency(
+  include_directories: include_directories('extern'),
+)
 
 #══════════════════════════════════════════════════════════════════════════════#
 #                              EXTERNAL LIBRARIES                               #
