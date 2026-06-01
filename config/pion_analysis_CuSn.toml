@@ -1,0 +1,69 @@
+# Configuration for the `pion_analysis` binary on RG-D CuSn data,
+# intended to be run LOCALLY (not SWIF2) via tools/local_batch.
+#
+# Single process:
+#   ./build/analyses/pion_analysis --config config/pion_analysis_CuSn.toml
+#
+# Sharded across N local processes (recommended for the full train):
+#   ./build/tools/local_batch \
+#       --exe        ./build/analyses/pion_analysis \
+#       --config     config/pion_analysis_CuSn.toml \
+#       --slices     64 \
+#       --concurrent 8 \
+#       --output-dir /volatile/clas12/ouillon/pion_analysis_CuSn
+#
+# local_batch reads [run].input below: a directory is recursively scanned
+# for *.hipo and sharded across processes (one whole file per slice when
+# slices <= files, otherwise per-file record sub-slicing). [run].output is
+# the per-slice base name; merge the results afterwards with `hadd`.
+
+[run]
+# RG-D pass1 CuSn reconstruction train output, read from /cache.
+input       = "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/train/SIDIS"
+output      = "pion_analysis_CuSn.root"
+# Threads PER worker process. Keep this modest so it multiplies sensibly
+# with local_batch's --concurrent (e.g. 4 threads x 8 concurrent = 32 cores).
+num_threads = 4
+percentage  = 100.0
+
+[analysis]
+target      = "CuSn"
+# NOTE: the RG-D CuSn train path carries no torus polarity in its name.
+# This selects the cusn_inbending VzCorrector variant + Voigt window.
+# Change to "Outbending" if this dataset is outbending.
+polarity    = "Inbending"
+beam_energy = 10.53
+version     = "2.0"
+
+# EventMonitor has no configurable properties today; the empty section is
+# tolerated (the framework only warns about *unknown* algorithm sections).
+[EventMonitor]
+
+# Trigger-electron selection. This binary registers ElectronSelectionAlg
+# under the instance name "ElectronAnalysis", so its keys are the
+# ElectronSelectionConfig fields.
+[ElectronAnalysis]
+enable_ntuple            = true
+enable_chi2pid_cut       = true
+enable_momentum_cut      = true
+enable_vz_cut            = true
+enable_sf_cut            = true
+enable_pcal_fiducial_cut = true
+enable_dc_edge_cut       = true
+pcal_lv_min              = 9.0
+pcal_lw_min              = 9.0
+dc_r1_edge_min           = 1.68
+dc_r2_edge_min           = 2.0
+dc_r3_edge_min           = 8.75
+
+# Pion analysis (pi+ / pi-). min_momentum is the active momentum cut applied
+# when enable_momentum_cut = true; min_calo_energy gates the "Has Calorimeter"
+# stage. The finalize summary additionally reports how many forward-detector
+# pions a cut at 0.3 / 0.5 / 0.7 / 1.0 GeV would remove.
+[PionAnalysis]
+min_momentum                = 0.3
+min_calo_energy             = 0.01
+enable_forward_detector_cut = true
+enable_momentum_cut         = true
+enable_calorimeter_cut      = true
+enable_dc_track_cut         = true
