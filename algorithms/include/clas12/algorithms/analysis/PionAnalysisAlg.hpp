@@ -1,7 +1,9 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <cmath>
+#include <cstddef>
 #include <string>
 #include <clas12/Constants.hpp>
 #include <clas12/ReadBank.hpp>
@@ -123,6 +125,9 @@ class PionAnalysisAlg : public framework::Algorithm {
             Log::info(name(), "     - π⁻ N-tuple entries: {}", m_ntuple->get_entries("pion_minus_analysis"));
         }
 
+        report_momentum_scan("π⁺", m_pscan_piplus);
+        report_momentum_scan("π⁻", m_pscan_piminus);
+
         return StatusCode::SUCCESS();
     }
 
@@ -131,6 +136,48 @@ class PionAnalysisAlg : public framework::Algorithm {
 
     framework::Cutflow m_cutflow_piplus;
     framework::Cutflow m_cutflow_piminus;
+
+    // Momentum-cut impact scan. For each candidate p_min threshold, count
+    // how many forward-detector pions would be removed (p < threshold) so
+    // the analyst can read off the cost of each momentum cut from the
+    // finalize summary without re-running. The denominator is every
+    // forward-detector pion, counted before any momentum filtering, so the
+    // numbers are independent of the active min_momentum cut.
+    static constexpr std::array<double, 4> kMomentumThresholds{0.3, 0.5, 0.7, 1.0};
+
+    struct MomentumScan {
+        std::atomic<long>                total{0};   // forward-detector pions seen
+        std::array<std::atomic<long>, 4> lost{};     // count with p < threshold[i]
+
+        void record(double p) noexcept {
+            total.fetch_add(1, std::memory_order_relaxed);
+            for (std::size_t i = 0; i < kMomentumThresholds.size(); ++i) {
+                if (p < kMomentumThresholds[i]) {
+                    lost[i].fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        }
+    };
+    MomentumScan m_pscan_piplus;
+    MomentumScan m_pscan_piminus;
+
+    /// Print, per momentum threshold, how many forward-detector pions a cut
+    /// at that p_min would remove (and retain), as an absolute count and a
+    /// fraction of the forward-detector sample.
+    auto report_momentum_scan(const char* label, const MomentumScan& scan) -> void {
+        const long total = scan.total.load(std::memory_order_relaxed);
+        Log::info(name(),
+                  "     - {} momentum-cut impact (forward-detector pions = {}):",
+                  label, total);
+        for (std::size_t i = 0; i < kMomentumThresholds.size(); ++i) {
+            const long lost = scan.lost[i].load(std::memory_order_relaxed);
+            const long kept = total - lost;
+            const double pct = total > 0 ? 100.0 * static_cast<double>(lost) / total : 0.0;
+            Log::info(name(),
+                      "         p < {:.1f} GeV -> lost {} ({:.2f}%), kept {}",
+                      kMomentumThresholds[i], lost, pct, kept);
+        }
+    }
 
 framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService> m_ntuple;
@@ -335,6 +382,9 @@ framework::ServiceRef<framework::HistogramService> m_hist;
             h.chi2ndf_vs_edge_r1_precut.fill(edge_r1, chi2ndf);
             h.chi2ndf_vs_edge_r2_precut.fill(edge_r2, chi2ndf);
             h.chi2ndf_vs_edge_r3_precut.fill(edge_r3, chi2ndf);
+
+            // Tally momentum-cut impact before any momentum filtering.
+            (is_piplus ? m_pscan_piplus : m_pscan_piminus).record(pion.p());
         }
 
         if (!evaluate_cutflow(in_forward_detector, pion.p(), E_tot, track.NDF > 0, cutflow)) return;
