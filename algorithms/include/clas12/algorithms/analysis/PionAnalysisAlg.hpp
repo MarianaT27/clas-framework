@@ -506,9 +506,14 @@ framework::ServiceRef<framework::HistogramService> m_hist;
             h.chi2ndf_vs_edge_r2_precut.fill(edge_r2, chi2ndf);
             h.chi2ndf_vs_edge_r3_precut.fill(edge_r3, chi2ndf);
 
-            // delta_t vs p before any cut (inclusive + per sector).
-            h.delta_t_vs_p_precut.fill(p, timing.delta_t);
-            h.delta_t_vs_p_precut_sector.fill(sector, p, timing.delta_t);
+            // delta_t vs p before any cut (inclusive + per sector). Skip
+            // pions whose delta_t is exactly 0.0 — those are tracks with no
+            // valid TOF hit (scintillator time/path = 0), which otherwise
+            // pile up as a spurious spike at delta_t = 0.
+            if (timing.delta_t != 0.0) {
+                h.delta_t_vs_p_precut.fill(p, timing.delta_t);
+                h.delta_t_vs_p_precut_sector.fill(sector, p, timing.delta_t);
+            }
 
             // Tally momentum-cut impact before any momentum filtering.
             (is_piplus ? m_pscan_piplus : m_pscan_piminus).record(pion.p());
@@ -546,7 +551,9 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         h.delta_vz_vs_p.fill(p, dvz);
 
         h.delta_t.fill(timing.delta_t);
-        h.delta_t_vs_p_diag.fill(p, timing.delta_t);
+        // Exclude TOF-less tracks (delta_t exactly 0.0) from the delta_t-vs-p
+        // plot — they otherwise form a spurious spike at delta_t = 0.
+        if (timing.delta_t != 0.0) h.delta_t_vs_p_diag.fill(p, timing.delta_t);
         h.tof_mass2.fill(timing.tof_mass2);
         h.tof_mass2_vs_p.fill(p, timing.tof_mass2);
         h.tof_path.fill(tof_path);
@@ -587,7 +594,7 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         h.chi2ndf_vs_edge_r2.fill(edge_r2, chi2ndf);
         h.chi2ndf_vs_edge_r3.fill(edge_r3, chi2ndf);
 
-        h.delta_t_vs_p_sector.fill(sector, p, timing.delta_t);
+        if (timing.delta_t != 0.0) h.delta_t_vs_p_sector.fill(sector, p, timing.delta_t);
         h.p_vs_theta_sector.fill(sector, pion.theta(), p);
 
         const int calo_sector = calo.pcal_sector;
