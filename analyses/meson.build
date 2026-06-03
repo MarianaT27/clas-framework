@@ -94,3 +94,10 @@ executable(
   files('ai_pid_hadron/ai_pid_hadron.cpp', 'ai_pid_hadron/AiPidHadronAlg.hpp'),
   dependencies: analysis_deps,
 )
+
+# AHDC t0 extraction (uncalibrated AHDC::adc, per wire)
+executable(
+  'ahdc_t0',
+  files('ahdc_t0/ahdc_t0.cpp', 'ahdc_t0/AhdcT0Alg.hpp'),
+  dependencies: analysis_deps,
+)

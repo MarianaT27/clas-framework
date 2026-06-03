@@ -1,0 +1,50 @@
+# Configuration for the `ahdc_t0` binary.
+#
+# Run with:
+#   ./build/analyses/ahdc_t0 --config config/ahdc_t0.toml
+#
+# Extracts the AHDC t0 (timing pedestal / leading edge of the drift-time
+# spectrum) from the UNCALIBRATED `AHDC::adc` bank, per wire, for two samples:
+#   - all hits, and
+#   - hits on tracks only (classified via the calibrated `AHDC::hits.trackid`
+#     joined to `AHDC::adc` by channel geometry).
+# The input must be a HIPO file that contains `AHDC::adc` (and ideally
+# `AHDC::hits` for the on-track sample).
+#
+# Schema:
+#   [run]       — input/output/num_threads/percentage
+#   [analysis]  — target/polarity (+ beam_energy/version metadata; unused here)
+#   [AhdcT0Alg] — algorithm knobs; keys match the AhdcT0Config Property names.
+
+[run]
+input       = "/path/to/ahdc_sample.hipo"   # set to a real AHDC file
+output      = "ahdc_t0.root"
+num_threads = 8
+percentage  = 100.0
+
+[analysis]
+# Parsed by the runner but not physically used by this analysis.
+target      = "LD2"
+polarity    = "Inbending"
+beam_energy = 2.2
+version     = "2.0"
+
+# AhdcT0Alg knobs.
+#   enable_histograms : master switch for booking + filling.
+#   require_good_wf   : keep only good waveforms (wfType <= 2).
+#   t0_min/t0_max/t0_bins : timing axis [ns] for every per-wire histogram.
+#                           Default [-100, 1000] ns, 550 bins (2 ns/bin) — wide
+#                           enough to hold all three columns (the max-ADC `time`
+#                           tail reaches past 700 ns); narrow after a first look.
+#   book_global       : also book the summed-over-wires spectra (/AHDC/t0/<col>/<sample>/global).
+#   debug_geometry    : one-shot dump of the first event's adc/hits rows + keys,
+#                       to validate the layer/wire convention on a new
+#                       production. Leave false for normal runs.
+[AhdcT0Alg]
+enable_histograms = true
+require_good_wf   = true
+t0_min            = -100.0
+t0_max            = 1000.0
+t0_bins           = 550
+book_global       = true
+# debug_geometry  = true
