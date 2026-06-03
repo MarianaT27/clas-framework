@@ -1,7 +1,10 @@
 #pragma once
 
+#include <glob.h>
+
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -56,6 +59,36 @@ inline auto read_recursive_hipo_files(const std::filesystem::path& directory,
     }
 
     return files;
+}
+
+/**
+ * @brief True if @p s contains shell glob metacharacters (`*`, `?`, `[`).
+ */
+inline auto is_glob(const std::string& s) -> bool {
+    return s.find_first_of("*?[") != std::string::npos;
+}
+
+/**
+ * @brief Expand a shell glob pattern (`*`, `?`, `[...]`, leading `~`) into the
+ *        sorted list of matching paths.
+ *
+ * Uses POSIX glob(3). Returns an empty vector when the pattern matches nothing
+ * (the caller decides whether that is an error) — note glob only ever returns
+ * paths that actually exist, so callers can treat each result as real.
+ */
+inline auto expand_glob(const std::string& pattern) -> std::vector<std::string> {
+    std::vector<std::string> matches;
+    glob_t g{};
+    const int rc = ::glob(pattern.c_str(), GLOB_TILDE | GLOB_NOSORT, nullptr, &g);
+    if (rc == 0) {
+        matches.reserve(g.gl_pathc);
+        for (std::size_t i = 0; i < g.gl_pathc; ++i) {
+            matches.emplace_back(g.gl_pathv[i]);
+        }
+    }
+    ::globfree(&g);
+    std::sort(matches.begin(), matches.end());
+    return matches;
 }
 
 /**

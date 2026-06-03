@@ -290,8 +290,17 @@ class Application {
         // for the first worker to fail.
         hipo::dictionary dict;
         {
+            const std::string& first = m_input_files.front();
             hipo::reader probe;
-            probe.open(m_input_files.front().c_str());
+            probe.open(first.c_str());
+            if (!probe.is_open()) {
+                Log::error("Application",
+                    "Cannot open input file '{}'. Check the path exists and is a "
+                    "readable HIPO file (a glob in [run].input that matches nothing "
+                    "is dropped, which can leave the list empty).",
+                    first);
+                return StatusCode::FAILURE();
+            }
             probe.readDictionary(dict);
         }
 

@@ -390,15 +390,19 @@ private:
         return cfg;
     }
 
-    /// `[run].input` may be either a single string (path or directory) or
-    /// an array of strings. Three convenience expansions are applied:
+    /// `[run].input` may be either a single string (path, directory, or glob)
+    /// or an array of strings. Convenience expansions are applied in order:
     ///
     ///   1. Brace-expansion `{a,b,c}` (StringUtils::expand_braces) lets
     ///      analysts write `/mss/.../recon/{018944,018945,018946}` to mean
     ///      three sibling paths.
-    ///   2. A path that resolves to a directory is recursively scanned for
+    ///   2. A comma-separated string is split into its parts.
+    ///   3. A shell glob (`*`, `?`, `[...]`) is expanded to its matching paths
+    ///      (FileUtils::expand_glob). A pattern that matches nothing is skipped
+    ///      with a warning rather than handed to the reader as a literal path
+    ///      (which would otherwise abort on open).
+    ///   4. A path that resolves to a directory is recursively scanned for
     ///      `.hipo` files (FileUtils::read_recursive_hipo_files).
-    ///   3. A comma-separated string is split into its parts.
     ///
     /// Anything else is treated as a literal file path and passed through.
     [[nodiscard]] static auto parse_input(const toml::table* run_tbl)
@@ -407,17 +411,35 @@ private:
         std::vector<std::string> out;
         if (!run_tbl) return out;
 
+        // Resolve a single comma-free token: a glob expands to its matches
+        // (each re-resolved, so a glob may yield directories too), a directory
+        // is scanned recursively for .hipo files, anything else is a literal.
+        std::function<void(const std::string&)> resolve_one =
+            [&](const std::string& s) {
+                if (s.empty()) return;
+                if (FileUtils::is_glob(s)) {
+                    auto matches = FileUtils::expand_glob(s);
+                    if (matches.empty()) {
+                        Log::warning("Config", "Input pattern matched no files: {}", s);
+                        return;
+                    }
+                    for (auto& m : matches) resolve_one(m);
+                    return;
+                }
+                if (std::filesystem::is_directory(s)) {
+                    auto more = FileUtils::read_recursive_hipo_files(s);
+                    out.insert(out.end(), more.begin(), more.end());
+                } else {
+                    out.push_back(s);
+                }
+            };
+
         auto add_resolved = [&](const std::string& s) {
             if (s.empty()) return;
-            if (std::filesystem::is_directory(s)) {
-                auto more = FileUtils::read_recursive_hipo_files(s);
-                out.insert(out.end(), more.begin(), more.end());
-            } else if (s.find(',') != std::string::npos) {
-                for (auto& part : StringUtils::split(s, ',')) {
-                    if (!part.empty()) out.push_back(part);
-                }
+            if (s.find(',') != std::string::npos) {
+                for (auto& part : StringUtils::split(s, ',')) resolve_one(part);
             } else {
-                out.push_back(s);
+                resolve_one(s);
             }
         };
 
