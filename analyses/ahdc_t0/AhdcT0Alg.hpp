@@ -177,34 +177,42 @@ class AhdcT0Alg : public framework::Algorithm {
 
     auto process(framework::Event& event) -> StatusCode override {
         if (!m_config.enable_histograms) return StatusCode::SUCCESS();
-        if (!event.has_bank("AHDC::adc")) return StatusCode::SUCCESS();
 
+        // Read AHDC::adc exactly once. get_bank() returns a 0-row bank when the
+        // bank is absent, so this also covers the "not present" case -- calling
+        // has_bank() first would extract the bank a second time every event.
+        const auto& adc_bank = event.get_bank("AHDC::adc");
+        if (adc_bank.getRows() == 0) return StatusCode::SUCCESS();
         bankdefs::AHDC_adc adc;
-        adc.bind(event.get_bank("AHDC::adc"));
-        if (adc.rows() == 0) return StatusCode::SUCCESS();
+        adc.bind(adc_bank);
 
-        // `wfType` is absent in some productions; the generated getter would
-        // then read an invalid item index. Apply the good-waveform cut only
-        // when the column is actually present in the bank schema.
-        const bool has_wftype =
-            const_cast<hipo::bank&>(adc.view()).getSchema().exists("wfType");
-        const bool apply_wf_cut = m_config.require_good_wf && has_wftype;
-        if (m_config.require_good_wf && !has_wftype) {
-            m_wftype_missing.store(true, std::memory_order_relaxed);
+        // Resolve the wfType-column presence once for the whole run (the chain
+        // uses one uniform schema) instead of a schema lookup every event.
+        int has_wf = m_has_wftype.load(std::memory_order_relaxed);
+        if (has_wf < 0) {
+            has_wf = const_cast<hipo::bank&>(adc_bank).getSchema().exists("wfType") ? 1 : 0;
+            m_has_wftype.store(has_wf, std::memory_order_relaxed);
+            if (m_config.require_good_wf && has_wf == 0) {
+                m_wftype_missing.store(true, std::memory_order_relaxed);
+            }
         }
+        const bool apply_wf_cut = m_config.require_good_wf && has_wf == 1;
 
-        // Build the on-track channel set from the calibrated hits (if present),
-        // tallying hits-bank occupancy for the finalize diagnostics.
-        std::unordered_set<int> on_track;
-        int hits_rows = 0;
-        if (event.has_bank("AHDC::hits")) {
+        // Build the on-track channel set from the calibrated hits. Reuse a
+        // per-thread set to avoid a heap allocation on every event; AHDC::hits
+        // is read once (0 rows when absent).
+        static thread_local std::unordered_set<int> on_track;
+        on_track.clear();
+        long n_hits = 0, n_hits_trk = 0;
+        const auto& hits_bank = event.get_bank("AHDC::hits");
+        const int hits_rows = hits_bank.getRows();
+        if (hits_rows > 0) {
             bankdefs::AHDC_hits hits;
-            hits.bind(event.get_bank("AHDC::hits"));
-            hits_rows = hits.rows();
+            hits.bind(hits_bank);
+            n_hits = hits_rows;
             for (int j = 0; j < hits_rows; ++j) {
-                m_n_hits_rows.fetch_add(1, std::memory_order_relaxed);
                 if (hits.trackid(j) < 0) continue;
-                m_n_hits_ontrack.fetch_add(1, std::memory_order_relaxed);
+                ++n_hits_trk;
                 const int packed = hits.superlayer(j) * 10 + hits.layer(j);
                 on_track.insert(channel_key(packed, hits.wire(j)));
             }
@@ -217,8 +225,11 @@ class AhdcT0Alg : public framework::Algorithm {
             dump_geometry(adc, event);
         }
 
-        m_n_events.fetch_add(1, std::memory_order_relaxed);
-        for (int i = 0; i < adc.rows(); ++i) {
+        // Accumulate counters locally and publish once per event, so the hot
+        // loop does plain increments instead of an atomic op per hit.
+        const int n_adc_rows = adc.rows();
+        long n_adc = 0, n_ontrack = 0, n_unmapped = 0;
+        for (int i = 0; i < n_adc_rows; ++i) {
             if (apply_wf_cut && adc.wfType(i) > 2) continue;
 
             const int   key = channel_key(adc.layer(i), adc.component(i));
@@ -228,20 +239,27 @@ class AhdcT0Alg : public framework::Algorithm {
 
             auto it = m_wires.find(key);
             if (it == m_wires.end()) {
-                m_n_unmapped.fetch_add(1, std::memory_order_relaxed);
+                ++n_unmapped;
                 continue;
             }
 
-            m_n_adc.fetch_add(1, std::memory_order_relaxed);
+            ++n_adc;
             it->second.all.fill(t, l, c);
             if (m_config.book_global) m_global.all.fill(t, l, c);
 
             if (on_track.count(key) != 0) {
-                m_n_ontrack.fetch_add(1, std::memory_order_relaxed);
+                ++n_ontrack;
                 it->second.on_track.fill(t, l, c);
                 if (m_config.book_global) m_global.on_track.fill(t, l, c);
             }
         }
+
+        m_n_events.fetch_add(1, std::memory_order_relaxed);
+        m_n_adc.fetch_add(n_adc, std::memory_order_relaxed);
+        m_n_ontrack.fetch_add(n_ontrack, std::memory_order_relaxed);
+        m_n_unmapped.fetch_add(n_unmapped, std::memory_order_relaxed);
+        m_n_hits_rows.fetch_add(n_hits, std::memory_order_relaxed);
+        m_n_hits_ontrack.fetch_add(n_hits_trk, std::memory_order_relaxed);
         return StatusCode::SUCCESS();
     }
 
@@ -348,6 +366,7 @@ class AhdcT0Alg : public framework::Algorithm {
     std::atomic<long> m_n_hits_ontrack{0};     ///< AHDC::hits rows with trackid>=0.
     std::atomic<bool> m_dumped{false};         ///< debug_geometry one-shot guard.
     std::atomic<bool> m_wftype_missing{false};  ///< set if the wfType cut was skipped.
+    std::atomic<int>  m_has_wftype{-1};         ///< wfType column present? -1=unknown,0=no,1=yes.
 };
 
 }  // namespace ahdc_t0
