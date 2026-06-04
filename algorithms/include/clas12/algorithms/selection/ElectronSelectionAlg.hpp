@@ -45,9 +45,8 @@
 namespace algorithms {
 
 using framework::Log;
+using StatusCode = framework::StatusCode;
 
-/// Configuration for ElectronSelectionAlg. Plain aggregate — every member is
-/// reflected to a TOML key via Boost.PFR (see PropertyMixin::declare_config).
 struct ElectronSelectionConfig {
     Target target = Target::LD2;
     Polarity polarity = Polarity::Outbending;
@@ -74,12 +73,12 @@ static_assert(std::is_aggregate_v<ElectronSelectionConfig>, "ElectronSelectionCo
  */
 class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSelectionConfig> {
    public:
-    using StatusCode = framework::StatusCode;
 
     explicit ElectronSelectionAlg(std::string name = "ElectronSelectionAlg", Config config = {})
         : ConfigurableAlgorithm(std::move(name), config), m_cutflow("Electron Selection") {
         framework::wire_services(*this);  // reflects ServiceRef members (refl-cpp)
         declare_banks_typed<bankdefs::REC_Particle, bankdefs::REC_Calorimeter, bankdefs::REC_Traj>();
+        declare_ntuple(m_ntuple, [this] { return m_config.enable_ntuple; });
     }
 
     auto on_initialize() -> StatusCode override {
@@ -97,14 +96,6 @@ class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSel
             framework::register_fields(*m_hist, "/Electron/Kinematics/before_cuts", h_before);
             framework::register_fields(*m_hist, "/Electron/Kinematics/after_cuts",  h_after);
         }
-
-        m_ntuple.init(m_ntuple_svc.get(), "electron_kinematics");
-
-        // Cuts register themselves on their first pass() in process() — no
-        // separate add_cut list to keep in sync with the pass() calls below.
-
-        auto vz_range = framework::ElectronCutsService::get_vz_range(RunGroup::RG_D, m_config.target);
-        log_info("Vz range: [{:.2f}, {:.2f}] cm", vz_range.min, vz_range.max);
 
         return StatusCode::SUCCESS();
     }
@@ -124,12 +115,13 @@ class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSel
 
         if (m_config.enable_histograms) h_before.fill(electron, calorimeter, sampling_fraction, vz_corrected);
 
-        const bool kept = m_cutflow.check("Chi2 PID", m_config.enable_chi2pid_cut, [&] { return m_electron_cuts->pass_chi2pid_cut(electron.chi2pid()); })
-                       && m_cutflow.check("Momentum > 0.8 GeV", m_config.enable_momentum_cut, [&] { return m_electron_cuts->pass_momentum_cut(electron.p()); }) 
-                       && m_cutflow.check("Vertex Z", m_config.enable_vz_cut, [&] { return m_electron_cuts->pass_vz_cut(electron.vz(), electron.p(), electron.theta(), electron.phi(), calorimeter.pcal_sector); }) 
-                       && m_cutflow.check("Sampling Fraction", m_config.enable_sf_cut, [&] { return m_electron_cuts->pass_sampling_fraction_cut(sampling_fraction, electron.p(), calorimeter.pcal_sector); }) 
-                       && m_cutflow.check("PCAL Fiducial", m_config.enable_pcal_fiducial_cut, [&] { return m_electron_cuts->pass_pcal_fiducial_cut(calorimeter.pcal_lv, calorimeter.pcal_lw); }) 
-                       && m_cutflow.check("DC Edge", m_config.enable_dc_edge_cut, [&] { return m_electron_cuts->pass_dc_edge_cut(traj.region1_edge, traj.region2_edge, traj.region3_edge); });
+        const bool kept = 
+           m_cutflow.check("Chi2 PID", m_config.enable_chi2pid_cut, [&] { return m_electron_cuts->pass_chi2pid_cut(electron.chi2pid()); })
+        && m_cutflow.check("Momentum > 0.8 GeV", m_config.enable_momentum_cut, [&] { return m_electron_cuts->pass_momentum_cut(electron.p()); }) 
+        && m_cutflow.check("Vertex Z", m_config.enable_vz_cut, [&] { return m_electron_cuts->pass_vz_cut(electron.vz(), electron.p(), electron.theta(), electron.phi(), calorimeter.pcal_sector); }) 
+        && m_cutflow.check("Sampling Fraction", m_config.enable_sf_cut, [&] { return m_electron_cuts->pass_sampling_fraction_cut(sampling_fraction, electron.p(), calorimeter.pcal_sector); }) 
+        && m_cutflow.check("PCAL Fiducial", m_config.enable_pcal_fiducial_cut, [&] { return m_electron_cuts->pass_pcal_fiducial_cut(calorimeter.pcal_lv, calorimeter.pcal_lw); }) 
+        && m_cutflow.check("DC Edge", m_config.enable_dc_edge_cut, [&] { return m_electron_cuts->pass_dc_edge_cut(traj.region1_edge, traj.region2_edge, traj.region3_edge); });
         if (!kept) return StatusCode::FILTERED();
 
         if (m_config.enable_histograms) h_after.fill(electron, calorimeter, sampling_fraction, vz_corrected);
@@ -153,9 +145,8 @@ class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSel
     auto on_finalize() -> StatusCode override {
         Log::subsection(fmt::format("{} Summary", name()));
 
-        if (m_config.enable_ntuple && m_ntuple_svc) {
-            auto entries = m_ntuple_svc->get_entries("electron_kinematics");
-            log_stat("N-tuple entries", entries);
+        if (m_config.enable_ntuple) {
+            log_stat("N-tuple entries", m_ntuple.entries());
         }
 
         Log::blank();
@@ -171,7 +162,6 @@ class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSel
     framework::Cutflow m_cutflow;
 
     framework::ServiceRef<framework::HistogramService> m_hist;
-    framework::ServiceRef<framework::NTupleService> m_ntuple_svc;
     framework::ServiceRef<framework::ElectronCutsService> m_electron_cuts;
 
     struct StageHistograms {
@@ -237,13 +227,9 @@ class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSel
 
     static_assert(std::is_aggregate_v<ElectronNTupleData> && std::is_standard_layout_v<ElectronNTupleData>, "ElectronNTupleData must be a standard-layout aggregate for PFR reflection");
 
-    framework::NTupleWriter<ElectronNTupleData> m_ntuple;
+    framework::NTupleWriter<ElectronNTupleData> m_ntuple{"electron_kinematics"};
 };
 
 }  // namespace algorithms
 
-// Reflection metadata for framework::wire_services (must be at global scope,
-// fully-qualified). Lists the members refl-cpp may reflect — only the
-// ServiceRef<T> ones are auto-wired.
-REFL_AUTO(type(algorithms::ElectronSelectionAlg),
-          field(m_hist), field(m_ntuple_svc), field(m_electron_cuts))
+REFL_AUTO(type(algorithms::ElectronSelectionAlg), field(m_hist), field(m_electron_cuts))
