@@ -113,7 +113,7 @@ class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSel
         const double sampling_fraction = (calorimeter.pcal_energy + calorimeter.inner_energy + calorimeter.outer_energy) / electron.p();
         const double vz_corrected = m_electron_cuts->corrected_vz(electron.vz(), electron.p(), electron.theta(), electron.phi(), calorimeter.pcal_sector);
 
-        if (m_config.enable_histograms) h_before.fill(electron, calorimeter, sampling_fraction, vz_corrected);
+        h_before.fill(electron, calorimeter, sampling_fraction, vz_corrected);
 
         const bool kept = 
            m_cutflow.check("Chi2 PID", m_config.enable_chi2pid_cut, [&] { return m_electron_cuts->pass_chi2pid_cut(electron.chi2pid()); })
@@ -124,17 +124,15 @@ class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSel
         && m_cutflow.check("DC Edge", m_config.enable_dc_edge_cut, [&] { return m_electron_cuts->pass_dc_edge_cut(traj.region1_edge, traj.region2_edge, traj.region3_edge); });
         if (!kept) return StatusCode::FILTERED();
 
-        if (m_config.enable_histograms) h_after.fill(electron, calorimeter, sampling_fraction, vz_corrected);
+        h_after.fill(electron, calorimeter, sampling_fraction, vz_corrected);
 
-        if (m_config.enable_ntuple) {
-            m_ntuple.data().e_p = electron.p();
-            m_ntuple.data().e_theta = electron.theta();
-            m_ntuple.data().e_phi = electron.phi();
-            m_ntuple.data().e_vz = electron.vz();
-            m_ntuple.data().e_chi2pid = electron.chi2pid();
-            m_ntuple.data().e_sector = calorimeter.pcal_sector;
-            m_ntuple.fill();
-        }
+        m_ntuple.data().e_p = electron.p();
+        m_ntuple.data().e_theta = electron.theta();
+        m_ntuple.data().e_phi = electron.phi();
+        m_ntuple.data().e_vz = electron.vz();
+        m_ntuple.data().e_chi2pid = electron.chi2pid();
+        m_ntuple.data().e_sector = calorimeter.pcal_sector;
+        m_ntuple.fill();
 
         event.store_typed(framework::Keys::TriggerElectron, electron);
         event.set_decision_typed(framework::Decisions::HasGoodElectron, true);

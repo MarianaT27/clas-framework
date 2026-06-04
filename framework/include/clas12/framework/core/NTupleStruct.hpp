@@ -202,13 +202,24 @@ public:
      * given thread takes a brief lock to allocate the slot; subsequent
      * calls hit a cached pointer.
      */
-    auto data() -> T& { return slot().value; }
+    auto data() -> T& {
+        // When the writer is disabled (declare_ntuple gated off, or no service
+        // attached) hand back a throwaway per-thread instance, so
+        // `writer.data().x = ...` is a harmless no-op and fill() (already gated
+        // below) does nothing. This lets process() assign the row fields and
+        // call fill() unconditionally, with no `if (enable_ntuple)` guard.
+        if (!is_initialized()) {
+            thread_local T scratch{};
+            return scratch;
+        }
+        return slot().value;
+    }
 
     /**
      * @brief Access the per-thread data struct (const).
      */
     [[nodiscard]] auto data() const -> const T& {
-        return const_cast<NTupleWriter*>(this)->slot().value;
+        return const_cast<NTupleWriter*>(this)->data();
     }
 
     /**

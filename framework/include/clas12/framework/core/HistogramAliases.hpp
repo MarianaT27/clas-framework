@@ -168,6 +168,11 @@ private:
 //
 // The title still carries the ROOT axis labels — that is the only metadata that
 // stays inline, and it lives in the value, so no attribute system is needed.
+//
+// fill() is a no-op until register_fields() enables the histogram. This lets an
+// algorithm call `h.fill(...)` unconditionally in process(): a stage that was
+// never registered (e.g. histograms disabled in the config, so register_fields
+// was skipped) simply costs nothing — no `if (enable_histograms)` guard needed.
 
 template <typename Acc = mh::CountAccumulator>
 class H1Auto {
@@ -180,7 +185,14 @@ public:
     [[nodiscard]] auto histogram() const noexcept -> const H1<Acc>& { return m_h; }
 
     template <typename... Args>
-    auto fill(Args&&... args) -> void { m_h.fill(std::forward<Args>(args)...); }
+    auto fill(Args&&... args) -> void {
+        if (m_enabled) m_h.fill(std::forward<Args>(args)...);
+    }
+
+    /// Enable filling. register_fields() calls this when the histogram is
+    /// registered with the service; until then fill() is a no-op.
+    auto enable() noexcept -> void { m_enabled = true; }
+    [[nodiscard]] auto enabled() const noexcept -> bool { return m_enabled; }
 
     [[nodiscard]] auto size() const noexcept { return m_h.size(); }
     [[nodiscard]] auto at(std::size_t i) const { return m_h.at(i); }
@@ -188,6 +200,7 @@ public:
 private:
     std::string m_title;
     H1<Acc>     m_h;
+    bool        m_enabled = false;
 };
 
 template <typename Acc = mh::CountAccumulator>
@@ -204,7 +217,14 @@ public:
     [[nodiscard]] auto histogram() const noexcept -> const H2<Acc>& { return m_h; }
 
     template <typename... Args>
-    auto fill(Args&&... args) -> void { m_h.fill(std::forward<Args>(args)...); }
+    auto fill(Args&&... args) -> void {
+        if (m_enabled) m_h.fill(std::forward<Args>(args)...);
+    }
+
+    /// Enable filling. register_fields() calls this when the histogram is
+    /// registered with the service; until then fill() is a no-op.
+    auto enable() noexcept -> void { m_enabled = true; }
+    [[nodiscard]] auto enabled() const noexcept -> bool { return m_enabled; }
 
     [[nodiscard]] auto size() const noexcept { return m_h.size(); }
     [[nodiscard]] auto at(std::size_t i) const { return m_h.at(i); }
@@ -212,6 +232,7 @@ public:
 private:
     std::string m_title;
     H2<Acc>     m_h;
+    bool        m_enabled = false;
 };
 
 template <typename Acc = mh::CountAccumulator>
@@ -231,7 +252,14 @@ public:
     [[nodiscard]] auto histogram() const noexcept -> const H3<Acc>& { return m_h; }
 
     template <typename... Args>
-    auto fill(Args&&... args) -> void { m_h.fill(std::forward<Args>(args)...); }
+    auto fill(Args&&... args) -> void {
+        if (m_enabled) m_h.fill(std::forward<Args>(args)...);
+    }
+
+    /// Enable filling. register_fields() calls this when the histogram is
+    /// registered with the service; until then fill() is a no-op.
+    auto enable() noexcept -> void { m_enabled = true; }
+    [[nodiscard]] auto enabled() const noexcept -> bool { return m_enabled; }
 
     [[nodiscard]] auto size() const noexcept { return m_h.size(); }
     [[nodiscard]] auto at(std::size_t i) const { return m_h.at(i); }
@@ -239,6 +267,7 @@ public:
 private:
     std::string m_title;
     H3<Acc>     m_h;
+    bool        m_enabled = false;
 };
 
 }  // namespace framework

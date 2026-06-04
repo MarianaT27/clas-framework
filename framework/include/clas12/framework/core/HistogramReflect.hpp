@@ -70,6 +70,12 @@ auto register_fields(HistogramService& svc, std::string_view dir_prefix, HistStr
             if (!path.empty() && path.back() != '/') path.push_back('/');
             path.append(name);
             svc.register_hist(std::move(path), member.title(), member.histogram());
+            // Enable the wrapper so its fill() is live. Until a histogram is
+            // registered its fill() is a no-op, which lets process() call
+            // h.fill(...) unconditionally — a stage that was never registered
+            // (histograms disabled) costs nothing. The requires-guard keeps this
+            // a no-op for path-carrying wrappers that lack enable().
+            if constexpr (requires { member.enable(); }) member.enable();
         }
     });
 }
