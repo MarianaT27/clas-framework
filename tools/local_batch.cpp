@@ -33,6 +33,7 @@
  *       --concurrent 4
  */
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -42,6 +43,8 @@
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
+#include <functional>
+#include <glob.h>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -188,8 +191,35 @@ struct AnalysisTomlInfo {
 {
     std::vector<std::string> out;
 
-    auto add_one = [&](std::string s) {
+    std::function<void(std::string)> add_one = [&](std::string s) {
         if (s.empty()) return;
+        // Shell glob (*, ?, [...]): expand to the matching paths and resolve
+        // each. File matches are filtered to *.hipo (so a broad pattern next to
+        // the per-slice .root outputs ignores them); directory matches are
+        // scanned. A pattern that matches nothing is skipped with a warning
+        // instead of being treated as a literal path.
+        if (s.find_first_of("*?[") != std::string::npos) {
+            glob_t g{};
+            const int rc = ::glob(s.c_str(), GLOB_TILDE | GLOB_NOSORT, nullptr, &g);
+            std::vector<std::string> matches;
+            if (rc == 0) {
+                matches.reserve(g.gl_pathc);
+                for (std::size_t i = 0; i < g.gl_pathc; ++i) matches.emplace_back(g.gl_pathv[i]);
+            }
+            ::globfree(&g);
+            std::sort(matches.begin(), matches.end());
+            if (matches.empty()) {
+                fmt::print(stderr,
+                    "[local_batch] Input pattern '{}' matched no files; skipping\n", s);
+                return;
+            }
+            for (auto& m : matches) {
+                if (fs::is_directory(m) || fs::path(m).extension() == ".hipo") {
+                    add_one(std::move(m));
+                }
+            }
+            return;
+        }
         if (fs::is_directory(s)) {
             std::vector<std::string> dir_files;
             for (auto& p : fs::recursive_directory_iterator(s)) {
