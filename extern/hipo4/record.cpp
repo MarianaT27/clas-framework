@@ -90,6 +90,24 @@ namespace hipo {
         int headerLengthBytes     = recordHeader.headerLength*4;
         int dataBufferLengthBytes = recordHeader.recordLength * 4 - headerLengthBytes;
 
+        // Defensive: validate the record-header signature and lengths. A read
+        // from a garbage offset (e.g. a corrupt or zero trailerPosition that
+        // still falls inside the file) parses nonsensical lengths; using them
+        // to size/read the data buffers indexes a std::vector<char> out of
+        // bounds -- a hard abort under _GLIBCXX_ASSERTIONS. A real record
+        // always carries the HIPO magic word, so bail with an empty record
+        // (0 events) when it is absent or the lengths are impossible.
+        if((static_cast<uint32_t>(recordHeader.signatureString) != HEADER_MAGIC &&
+            static_cast<uint32_t>(recordHeader.signatureString) != HEADER_MAGIC_BE) ||
+           recordHeader.recordLength <= 0 ||
+           recordHeader.numberOfEvents < 0 ||
+           headerLengthBytes < 0 ||
+           dataBufferLengthBytes < 0){
+            recordHeader.numberOfEvents = 0;
+            recordHeader.recordLength   = 0;
+            return;
+        }
+
         recordHeader.userHeaderLengthPadding    = (recordHeader.bitInfo>>BITINFO_PAD1_SHIFT)&BITINFO_PAD_MASK;
         recordHeader.recordDataLengthCompressed = compressedWord&COMP_LENGTH_MASK;
         recordHeader.compressionType            = (compressedWord>>COMP_TYPE_SHIFT)&COMP_TYPE_BYTE;

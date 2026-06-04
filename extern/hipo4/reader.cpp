@@ -278,6 +278,16 @@ namespace hipo {
 
     std::vector<char>               headerBuffer;
     headerBuffer.resize(80);
+    // A valid HIPO file begins with an 80-byte file header. A truncated or
+    // empty file (e.g. an incomplete skim slice) is shorter; reading it would
+    // leave the header fields uninitialised and produce a garbage
+    // trailerPosition. Bail with an empty index so getNRecords() reports -1
+    // instead of seeking to a bogus offset and reading out of bounds.
+    if(inputStreamSize < 80){
+       header.trailerPosition = 0;
+       header.recordCount     = 0;
+       return;
+    }
     inputStream.read(&headerBuffer[0],80);
 
     header.uniqueid     = *(reinterpret_cast<int *>(&headerBuffer[FH_UNIQUE_WORD_OFFSET]));
@@ -333,6 +343,16 @@ namespace hipo {
  */
 void  reader::readIndex(){
 
+    // Guard against a truncated / trailerless / corrupt file: a garbage
+    // trailerPosition makes readRecord() parse bogus record lengths and index
+    // past its buffer (a hard crash under _GLIBCXX_ASSERTIONS, garbage
+    // otherwise). Require room for at least an 80-byte record header at the
+    // trailer; otherwise leave the index empty so getNRecords() reports -1 and
+    // callers (e.g. local_batch) can skip the file cleanly.
+    if(header.trailerPosition <= 0 ||
+       header.trailerPosition + 80 > inputStreamSize){
+       return;
+    }
     inputRecord.readRecord(inputStream,header.trailerPosition,0);
     if(_verbose)printf("*** reader:: trailer record event count : %d\n",inputRecord.getEventCount());
 
