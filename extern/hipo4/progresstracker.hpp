@@ -6,8 +6,10 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <deque>
 #include <iostream>
 #include <mutex>
+#include <utility>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -35,9 +37,10 @@ class ProgressTracker {
         bool use_gradient;
         std::string label;
         std::chrono::milliseconds update_interval;
+        std::chrono::seconds instant_window;  // look-back window for the instant rate
 
         Config()
-            : bar_width(50), show_eta(true), show_rate(true), use_colors(true), use_gradient(true), label("Processing"), update_interval(100) {}
+            : bar_width(50), show_eta(true), show_rate(true), use_colors(true), use_gradient(true), label("Processing"), update_interval(100), instant_window(10) {}
     };
 
     ///
@@ -185,6 +188,8 @@ class ProgressTracker {
     [[nodiscard]] auto get_elapsed() const noexcept -> std::chrono::seconds;
     [[nodiscard]] auto calculate_eta() const noexcept -> std::chrono::seconds;
     [[nodiscard]] auto calculate_rate() const noexcept -> double;
+    [[nodiscard]] auto calculate_instant_rate() const noexcept -> double;
+    auto record_sample(std::size_t current) noexcept -> void;
     [[nodiscard]] auto get_progress_color() const noexcept -> std::string_view;
 
     const std::size_t m_total;
@@ -194,6 +199,9 @@ class ProgressTracker {
     mutable std::mutex m_display_mutex;
     bool m_finished{false};
     mutable std::size_t m_spinner_index{0};
+    // Sliding window of (timestamp, processed) snapshots backing the instant
+    // rate. Touched only from update_display(), under m_display_mutex.
+    std::deque<std::pair<std::chrono::steady_clock::time_point, std::size_t>> m_samples;
 
     // Background update thread
     std::atomic<bool> m_should_stop{false};
@@ -257,9 +265,35 @@ inline auto ProgressTracker::calculate_rate() const noexcept -> double {
     return elapsed > 0 ? static_cast<double>(current) / static_cast<double>(elapsed) : 0.0;
 }
 
+inline auto ProgressTracker::calculate_instant_rate() const noexcept -> double {
+    // Rate across the retained sliding window (~instant_window seconds), so it
+    // reflects the *current* throughput rather than the lifetime average — which
+    // typically starts high and decays as the run progresses.
+    if (m_samples.size() < 2) return 0.0;
+    const auto& oldest = m_samples.front();
+    const auto& newest = m_samples.back();
+    const auto dt = std::chrono::duration<double>(newest.first - oldest.first).count();
+    if (dt <= 0.0 || newest.second < oldest.second) return 0.0;
+    return static_cast<double>(newest.second - oldest.second) / dt;
+}
+
+inline auto ProgressTracker::record_sample(std::size_t current) noexcept -> void {
+    const auto now = std::chrono::steady_clock::now();
+    m_samples.emplace_back(now, current);
+    // Drop snapshots older than the window, keeping at least two so a rate can
+    // still be computed across the retained span.
+    const auto cutoff = now - m_config.instant_window;
+    while (m_samples.size() > 2 && m_samples.front().first < cutoff) {
+        m_samples.pop_front();
+    }
+}
+
 inline auto ProgressTracker::calculate_eta() const noexcept -> std::chrono::seconds {
     const auto current = m_processed.load(std::memory_order_acquire);
-    const auto rate = calculate_rate();
+    // Estimate from the instant (sliding-window) rate so the ETA tracks the
+    // current speed; fall back to the lifetime average until the window warms up.
+    auto rate = calculate_instant_rate();
+    if (rate <= 0.0) rate = calculate_rate();
 
     if (rate > 0.0 && current < m_total) {
         const auto remaining = m_total - current;
@@ -356,6 +390,7 @@ inline auto ProgressTracker::update_display() noexcept -> void {
 
     try {
         const auto current = m_processed.load(std::memory_order_acquire);
+        record_sample(current);  // feed the instant-rate sliding window
         const auto progress = get_progress();
         const auto elapsed = get_elapsed();
         const auto& colors = m_config.use_colors;
@@ -444,18 +479,29 @@ inline auto ProgressTracker::update_display() noexcept -> void {
             }
         }
 
-        // Rate
+        // Rate — instant (sliding window) as the headline, lifetime average as
+        // dim context. The instant rate reflects the *current* speed, which
+        // often starts high and drops as the run progresses.
         if (m_config.show_rate) {
-            const auto rate = calculate_rate();
-            if (rate > 0.0) {
+            const auto instant = calculate_instant_rate();
+            const auto average = calculate_rate();
+            const auto headline = instant > 0.0 ? instant : average;
+            if (headline > 0.0) {
                 fmt::print(" ");
                 if (colors) fmt::print("{}", AnsiCodes::DIM);
                 fmt::print("│ ⚡");
                 if (colors) fmt::print("{}", AnsiCodes::RESET);
                 fmt::print(" ");
                 if (colors) fmt::print("{}", AnsiCodes::BRIGHT_MAGENTA);
-                fmt::print("{:.1f}/s", rate);
+                fmt::print("{}/s", format_number(static_cast<std::size_t>(headline + 0.5)));
                 if (colors) fmt::print("{}", AnsiCodes::RESET);
+                // Lifetime average as quiet context next to the live rate.
+                if (average > 0.0) {
+                    fmt::print(" ");
+                    if (colors) fmt::print("{}", AnsiCodes::DIM);
+                    fmt::print("(avg {}/s)", format_number(static_cast<std::size_t>(average + 0.5)));
+                    if (colors) fmt::print("{}", AnsiCodes::RESET);
+                }
             }
         }
 
