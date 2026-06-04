@@ -340,7 +340,7 @@ inline auto ProgressTracker::get_progress_color() const noexcept -> std::string_
 inline auto ProgressTracker::render_bar(double progress) const noexcept -> void {
     std::lock_guard lock{detail::get_stdout_mutex()};
     try {
-        const auto& colors = m_config.use_colors;
+        const bool colors = m_config.use_colors;
         progress = std::clamp(progress, 0.0, 1.0);
 
         const auto filled_width = m_config.bar_width * progress;
@@ -348,34 +348,26 @@ inline auto ProgressTracker::render_bar(double progress) const noexcept -> void 
         const auto remainder = filled_width - static_cast<double>(full_blocks);
         const auto partial_block_idx = static_cast<std::size_t>(remainder * 8.0);
 
-        // Left bracket with color
-        if (colors) fmt::print("{}", AnsiCodes::DIM);
-        fmt::print("╢");
-        if (colors) fmt::print("{}", AnsiCodes::RESET);
+        // Solid "scrubber" bar: a single green fill over a dim slate remainder
+        // (no ╢ ╟ brackets, no ░ shading). The head cell paints the slate as its
+        // background so the partial block blends seamlessly into the track.
+        constexpr int track = 237;  // dim slate-grey (xterm-256)
 
-        // Render progress bar with gradient
         for (std::size_t i = 0; i < m_config.bar_width; ++i) {
             if (i < full_blocks) {
-                if (colors) {
-                    fmt::print("{}", get_progress_color());
-                }
-                fmt::print("{}", BLOCK_CHARS[8]);
-            } else if (i == full_blocks) {
-                if (colors) {
-                    fmt::print("{}", get_progress_color());
-                }
+                if (colors) fmt::print("{}", AnsiCodes::BRIGHT_GREEN);
+                fmt::print("█");
+            } else if (i == full_blocks && partial_block_idx > 0) {
+                if (colors) fmt::print("\033[48;5;{}m{}", track, AnsiCodes::BRIGHT_GREEN);
                 fmt::print("{}", BLOCK_CHARS[partial_block_idx]);
+                if (colors) fmt::print("{}", AnsiCodes::RESET);
+            } else if (colors) {
+                fmt::print("\033[38;5;{}m█", track);
             } else {
-                if (colors) fmt::print("{}", AnsiCodes::DIM);
                 fmt::print("░");
             }
         }
 
-        if (colors) fmt::print("{}", AnsiCodes::RESET);
-
-        // Right bracket
-        if (colors) fmt::print("{}", AnsiCodes::DIM);
-        fmt::print("╟");
         if (colors) fmt::print("{}", AnsiCodes::RESET);
         fmt::print(" ");
 
@@ -553,23 +545,38 @@ inline auto ProgressTracker::finish() noexcept -> void {
 
         clear_line();
 
-        // Completion line
-        if (colors) fmt::print("{}", AnsiCodes::BRIGHT_GREEN);
-        fmt::print(" {} Complete!   │   ", m_config.label);
+        // Completion line — checkmark + compact, dot-separated stats:
+        //   ✓ Processing (100.0%) complete  ·  4.9k items  ·  7s  ·  696/s
+        const auto average = calculate_rate();
+        const auto sep = [&] {
+            if (colors) fmt::print("{}", AnsiCodes::DIM);
+            fmt::print("  ·  ");
+            if (colors) fmt::print("{}", AnsiCodes::RESET);
+        };
+
+        if (colors) fmt::print("{}{}", AnsiCodes::BRIGHT_GREEN, AnsiCodes::BOLD);
+        fmt::print("✓ {} complete", m_config.label);
         if (colors) fmt::print("{}", AnsiCodes::RESET);
 
-        // Files processed
-        fmt::print(" Items: ");
+        sep();
         if (colors) fmt::print("{}", AnsiCodes::BRIGHT_CYAN);
         fmt::print("{}", format_number(m_total));
         if (colors) fmt::print("{}", AnsiCodes::RESET);
-        fmt::print("  │  ");
+        if (colors) fmt::print("{}", AnsiCodes::DIM);
+        fmt::print(" items");
+        if (colors) fmt::print("{}", AnsiCodes::RESET);
 
-        // Time elapsed
-        fmt::print("⏱  Time: ");
+        sep();
         if (colors) fmt::print("{}", AnsiCodes::MAGENTA);
         fmt::print("{}", format_duration(elapsed));
         if (colors) fmt::print("{}", AnsiCodes::RESET);
+
+        if (average > 0.0) {
+            sep();
+            if (colors) fmt::print("{}", AnsiCodes::BRIGHT_MAGENTA);
+            fmt::print("{}/s", format_number(static_cast<std::size_t>(average + 0.5)));
+            if (colors) fmt::print("{}", AnsiCodes::RESET);
+        }
 
         fmt::print("\n");
         std::cout.flush();
