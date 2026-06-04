@@ -155,6 +155,16 @@ public:
     }
 
     /**
+     * @brief Declare the writer with only its tree name; the NTupleService is
+     *        attached later by Algorithm::declare_ntuple at initialize time.
+     *
+     * Lets an algorithm write `NTupleWriter<T> m_ntuple{"tree_name"};` and then
+     * `declare_ntuple(m_ntuple)` in the constructor — the tree name lives in one
+     * place and no explicit init() call is needed in on_initialize().
+     */
+    explicit NTupleWriter(std::string tree_name) : m_tree_name(std::move(tree_name)) {}
+
+    /**
      * @brief Initialize the writer (register branches)
      *
      * Call this in on_initialize() after services are available.
@@ -228,6 +238,13 @@ public:
      * @brief Get the tree name
      */
     [[nodiscard]] auto tree_name() const -> const std::string& { return m_tree_name; }
+
+    /// Number of entries written to this writer's tree (0 if uninitialized).
+    /// Lets on_finalize() report yields without re-querying the NTupleService
+    /// by name: `m_ntuple.entries()` instead of `svc->get_entries("name")`.
+    [[nodiscard]] auto entries() const -> long long {
+        return (m_svc && m_initialized) ? m_svc->get_entries(m_tree_name) : 0;
+    }
 
     /**
      * @brief Get the underlying service

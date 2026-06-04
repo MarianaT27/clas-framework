@@ -6,6 +6,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <clas12/framework/core/Concepts.hpp>
@@ -248,6 +250,35 @@ protected:
             [this, &writer, tree_name = std::move(tree_name), &enabled]() {
                 if (!enabled.get()) return;
                 if (auto* s = this->svc<NTupleService>()) writer.init(s, tree_name);
+            });
+    }
+
+    /// Name-from-writer overload: the writer already carries its tree name
+    /// (declared as `NTupleWriter<T> m_ntuple{"tree_name"}`), so the call site
+    /// is just `declare_ntuple(m_ntuple)` — no repeated name, no init() in
+    /// on_initialize(). The writer is auto-initialized at initialize() time.
+    template <typename T>
+    void declare_ntuple(NTupleWriter<T>& writer, bool enabled = true) {
+        if (!enabled) return;
+        m_ntuple_init_hooks.push_back([this, &writer]() {
+            if (auto* s = this->svc<NTupleService>()) writer.init(s, writer.tree_name());
+        });
+    }
+
+    /// Lazily-gated overload: `gate` is a `bool`-returning callable evaluated at
+    /// initialize() time — i.e. AFTER the TOML config is applied. Use this to
+    /// gate on a config flag:
+    ///     declare_ntuple(m_ntuple, [this] { return m_config.enable_ntuple; });
+    /// Do NOT pass `m_config.enable_ntuple` to the bool overload above: the
+    /// constructor runs before TOML is applied, so it would capture the
+    /// pre-TOML default rather than the configured value.
+    template <typename T, typename Gate>
+        requires std::is_invocable_r_v<bool, Gate>
+    void declare_ntuple(NTupleWriter<T>& writer, Gate&& gate) {
+        m_ntuple_init_hooks.push_back(
+            [this, &writer, gate = std::forward<Gate>(gate)]() {
+                if (!gate()) return;
+                if (auto* s = this->svc<NTupleService>()) writer.init(s, writer.tree_name());
             });
     }
 
