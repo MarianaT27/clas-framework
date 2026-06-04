@@ -108,7 +108,7 @@ class PionAnalysisAlg : public framework::Algorithm {
         rec_event.bind(event.get_bank("REC::Event"));
         if (rec_event.rows() == 0) return StatusCode::FILTERED();
 
-        const double start_time = static_cast<double>(rec_event.startTime(0));
+        const double start_time = rec_event.startTime(0);
 
         for (const auto& pion : event.pions_plus()) process_pion(event, pion, electron, start_time, true);
         for (const auto& pion : event.pions_minus()) process_pion(event, pion, electron, start_time, false);

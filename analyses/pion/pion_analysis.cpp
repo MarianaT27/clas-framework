@@ -1,5 +1,5 @@
 #include <clas12/framework/core/AnalysisRunner.hpp>
-#include <clas12/algorithms/analysis/ElectronAnalysisAlg.hpp>
+#include <clas12/algorithms/selection/ElectronSelectionAlg.hpp>
 #include <clas12/algorithms/monitoring/EventMonitor.hpp>
 #include <clas12/algorithms/analysis/PionAnalysisAlg.hpp>
 #include <clas12/services/ElectronCutsService.hpp>
@@ -9,7 +9,7 @@ auto main(int argc, char* argv[]) -> int {
     return framework::AnalysisRunner::run(
         argc, argv, "Pion Analysis", "pion_analysis",
         [](auto& builder, const auto& config) {
-            algorithms::ElectronAnalysisConfig electron_config;
+            algorithms::ElectronSelectionConfig electron_config;
             electron_config.target = config.target;
             electron_config.polarity = config.polarity;
 
@@ -17,7 +17,7 @@ auto main(int argc, char* argv[]) -> int {
                 .template add_service<framework::VzCorrectorService>(framework::VzCorrectorService::Config{.target = config.target, .polarity = config.polarity})
                 .template add_service<framework::ElectronCutsService>()
                 .template add_algorithm<algorithms::EventMonitor>("EventMonitor")
-                .template add_algorithm<algorithms::ElectronAnalysisAlg>("ElectronAnalysis", electron_config)
+                .template add_algorithm<algorithms::ElectronSelectionAlg>("ElectronAnalysis", electron_config)
                 .template add_algorithm<algorithms::PionAnalysisAlg>("PionAnalysis", algorithms::PionAnalysisConfig{.target = config.target, .polarity = config.polarity});
         });
 }
