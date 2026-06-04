@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -31,13 +32,13 @@ class Cutflow {
    public:
     explicit Cutflow(std::string name) : m_name(std::move(name)) {}
 
-    /// Add a cut to the cutflow. Cuts must be added before any `pass()` calls
-    /// from worker threads — the underlying vector reserves the slot.
+    /// Add a cut to the cutflow up front (optional). Cuts also register
+    /// themselves the first time they are `pass()`ed, so explicit pre-
+    /// registration is only needed to force a cut to appear in the table even
+    /// when it is never reached. Thread-safe.
     auto add_cut(const std::string& cut_name) -> void {
-        if (m_index.find(cut_name) != m_index.end()) return;  // duplicate add
-        m_index.emplace(cut_name, m_cuts.size());
-        m_cuts.push_back(cut_name);
-        m_counters.push_back(std::make_unique<std::atomic<std::size_t>>(0));
+        std::lock_guard<std::mutex> lock(m_register_mutex);
+        resolve_locked(cut_name);
     }
 
     /// Number of cuts
@@ -50,13 +51,34 @@ class Cutflow {
 
     [[nodiscard]] auto get_cut_names() const -> const std::vector<std::string>& { return m_cuts; }
 
-    /// Increment counter for a cut (thread-safe). Hot path; resolves
-    /// `cut_name` to an index via the heterogeneous unordered_map and
-    /// performs a single relaxed atomic increment.
+    /// Increment a cut's counter, registering the cut on its first use so the
+    /// cutflow is built by the first pass over the cuts — no separate add_cut
+    /// list to keep in sync. Thread-safe and lock-free on the hot path: a
+    /// per-thread, per-instance cache resolves the name to a stable counter
+    /// pointer after the first encounter; only that first encounter touches the
+    /// shared registry under `m_register_mutex`.
+    ///
+    /// Registration order is the order cuts are first passed. Because each cut
+    /// is only passed after the previous one in the same event, that order is
+    /// the deterministic cut sequence regardless of which worker thread gets
+    /// there first.
     auto pass(std::string_view cut_name) -> void {
-        if (auto it = m_index.find(cut_name); it != m_index.end()) {
-            m_counters[it->second]->fetch_add(1, std::memory_order_relaxed);
+        thread_local std::unordered_map<
+            const Cutflow*,
+            std::unordered_map<std::string, std::atomic<std::size_t>*, StringHash, StringEq>>
+            cache;
+        auto& local = cache[this];
+        if (auto it = local.find(cut_name); it != local.end()) {
+            it->second->fetch_add(1, std::memory_order_relaxed);
+            return;
         }
+        std::atomic<std::size_t>* counter = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(m_register_mutex);
+            counter = resolve_locked(cut_name);
+        }
+        local.emplace(std::string(cut_name), counter);
+        counter->fetch_add(1, std::memory_order_relaxed);
     }
 
     auto pass(const std::string& cut_name) -> void {
@@ -65,6 +87,28 @@ class Cutflow {
 
     auto pass(const char* cut_name) -> void {
         pass(std::string_view{cut_name});
+    }
+
+    /// Evaluate one cut and record it. When `enabled` and `predicate()` is
+    /// false the cut fails: returns false and records nothing. Otherwise the
+    /// cut is counted via `pass(name)` and the call returns true. `predicate`
+    /// is a nullary callable (e.g. a `[&]` lambda capturing the event locals),
+    /// invoked only when `enabled`, so a disabled cut is a no-op pass.
+    ///
+    /// Chain one per cut with `&&` to apply a sequence with the same
+    /// short-circuit semantics as early returns — the first failing cut stops
+    /// the chain and no later predicate runs:
+    /// @code
+    /// const bool kept =
+    ///     cf.check("Chi2 PID", cfg.enable_chi2, [&]{ return cuts.pass_chi2(e.chi2pid()); }) &&
+    ///     cf.check("Momentum", cfg.enable_mom,  [&]{ return cuts.pass_p(e.p()); });
+    /// if (!kept) return StatusCode::FILTERED();
+    /// @endcode
+    template <typename Predicate>
+    [[nodiscard]] auto check(std::string_view name, bool enabled, Predicate&& predicate) -> bool {
+        if (enabled && !predicate()) return false;
+        pass(name);
+        return true;
     }
 
     /// Get count for a specific cut
@@ -166,6 +210,21 @@ class Cutflow {
     }
 
    private:
+    /// Find or append `name`, returning a stable pointer to its atomic counter.
+    /// Caller must hold `m_register_mutex`. The counter lives behind a
+    /// unique_ptr, so its heap address is stable even when `m_counters`
+    /// reallocates — the pointer cached by `pass()` stays valid for the run.
+    auto resolve_locked(std::string_view name) -> std::atomic<std::size_t>* {
+        if (auto it = m_index.find(name); it != m_index.end()) {
+            return m_counters[it->second].get();
+        }
+        const std::size_t idx = m_cuts.size();
+        m_index.emplace(std::string(name), idx);
+        m_cuts.emplace_back(name);
+        m_counters.push_back(std::make_unique<std::atomic<std::size_t>>(0));
+        return m_counters[idx].get();
+    }
+
     // Heterogeneous lookup: pass(string_view) and pass(const char*) hit
     // the unordered_map without allocating a temporary std::string. Requires
     // C++20 (transparent hashing for unordered associative containers).
@@ -194,6 +253,9 @@ class Cutflow {
     // dominated by the atomic RMW that follows.
     std::vector<std::unique_ptr<std::atomic<std::size_t>>> m_counters;
     std::unordered_map<std::string, std::size_t, StringHash, StringEq> m_index;
+    // Serialises the (rare) first-time registration of a cut from concurrent
+    // pass() calls. The hot path skips it via the per-thread cache in pass().
+    std::mutex m_register_mutex;
 };
 
 }  // namespace framework

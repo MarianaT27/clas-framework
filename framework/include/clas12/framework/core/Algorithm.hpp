@@ -140,6 +140,13 @@ public:
 
     [[nodiscard]] auto name() const -> const std::string& { return m_name; }
 
+    /// Public entry point for the reflection-based `framework::wire_services`
+    /// (ServiceReflect.hpp): forwards one reflected `ServiceRef<T>` member to
+    /// the protected `require_service`. Keeps the heavy refl-cpp include out of
+    /// Algorithm.hpp — only algorithms that opt into auto-wiring pull it in.
+    template <ServiceConcept T>
+    void require_service_ref(ServiceRef<T>& ref) { require_service(ref); }
+
     auto set_service_manager(ServiceManager* svc_mgr) -> void { m_svc_mgr = svc_mgr; }
 
     [[nodiscard]] auto state() const -> AlgorithmState {
@@ -273,6 +280,14 @@ protected:
         (declare_bank(std::forward<Args>(bank_names)), ...);
     }
 
+    /// Typed bank declaration: `declare_banks_typed<bankdefs::REC_Particle, ...>()`.
+    /// Pulls each name from the generated wrapper's `static constexpr bank_name`,
+    /// so a typo becomes a compile error and the bank string lives in one place.
+    template <typename... Banks>
+    void declare_banks_typed() {
+        (declare_bank(Banks::bank_name), ...);
+    }
+
     /// Declare a bank that this algorithm reads only if present in the
     /// input file's schema dictionary. Lets one source tree handle MC and
     /// real-data runs.
@@ -285,6 +300,41 @@ protected:
 
     template <typename T>
     void produces(const TypedKey<T>& key) { m_produced_keys.push_back(key.name); }
+
+    // ========================================================================
+    // Per-instance logging — binds name() so call sites drop the source arg:
+    //   Log::info(name(), "Target: {}", x)   ->   log_info("Target: {}", x)
+    // `fmt::format_string<Args...>` deduces from the trailing pack, preserving
+    // compile-time format-string checking (same shape as LoggingService::info).
+    // ========================================================================
+    template <typename... Args>
+    void log_info(fmt::format_string<Args...> f, Args&&... a) const {
+        Log::info(name(), f, std::forward<Args>(a)...);
+    }
+    template <typename... Args>
+    void log_warn(fmt::format_string<Args...> f, Args&&... a) const {
+        Log::warning(name(), f, std::forward<Args>(a)...);
+    }
+    template <typename... Args>
+    void log_error(fmt::format_string<Args...> f, Args&&... a) const {
+        Log::error(name(), f, std::forward<Args>(a)...);
+    }
+    template <typename... Args>
+    void log_debug(fmt::format_string<Args...> f, Args&&... a) const {
+        Log::debug(name(), f, std::forward<Args>(a)...);
+    }
+    template <typename... Args>
+    void log_success(fmt::format_string<Args...> f, Args&&... a) const {
+        Log::success(name(), f, std::forward<Args>(a)...);
+    }
+    template <typename T>
+    void log_stat(const std::string& stat_name, const T& value, const std::string& unit = "") const {
+        Log::stat(name(), stat_name, value, unit);
+    }
+    template <typename T>
+    void log_config(const std::string& key, const T& value) const {
+        Log::config(name(), key, value);
+    }
 
     auto set_state(AlgorithmState new_state) -> void {
         m_state.store(new_state, std::memory_order_release);
@@ -330,6 +380,52 @@ private:
     std::vector<std::function<bool()>> m_required_services;
     std::vector<std::function<void()>> m_ntuple_init_hooks;
     std::vector<std::function<void()>> m_hist_init_hooks;
+};
+
+/**
+ * @brief Algorithm base that owns a typed Config and its standard accessor.
+ *
+ * Nearly every algorithm carries a Config struct: it stores a copy in
+ * `m_config`, exposes it via `config()`, and binds it to TOML with
+ * `declare_config`. Deriving from `ConfigurableAlgorithm<Config>` instead of
+ * `Algorithm` provides all three once, so an algorithm only forwards
+ * `(name, config)` to this base and then does its own service / bank /
+ * histogram declarations. Each algorithm "specialises" the base with its own
+ * Config type.
+ *
+ * @code
+ * class MyAlg : public framework::ConfigurableAlgorithm<MyConfig> {
+ *  public:
+ *     explicit MyAlg(std::string name = "MyAlg", Config config = {})
+ *         : ConfigurableAlgorithm(std::move(name), std::move(config)) {
+ *         required_services(m_svc);
+ *         declare_banks("REC::Particle");
+ *     }
+ *     auto process(framework::Event& e) -> StatusCode override {
+ *         if (m_config.enable_cut) { ... }   // m_config is protected here
+ *         ...
+ *     }
+ * };
+ * @endcode
+ *
+ * The Config must be bindable by `declare_config` — i.e. a simple aggregate
+ * (Boost.PFR reflection) or expose a static `config_fields()` tuple.
+ */
+template <typename ConfigT>
+class ConfigurableAlgorithm : public Algorithm {
+   public:
+    using Config = ConfigT;
+
+    explicit ConfigurableAlgorithm(std::string name, ConfigT config = ConfigT{})
+        : Algorithm(std::move(name)), m_config(std::move(config)) {
+        this->declare_config(m_config);
+    }
+
+    /// The algorithm's configuration (final values once TOML has been applied).
+    [[nodiscard]] auto config() const -> const ConfigT& { return m_config; }
+
+   protected:
+    ConfigT m_config;
 };
 
 }  // namespace framework

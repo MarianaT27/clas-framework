@@ -150,4 +150,95 @@ private:
     H3<Acc>     m_h;
 };
 
+// ============================================================================
+// Reflection-friendly wrappers: title + binning only, NO path
+// ============================================================================
+//
+// `H1Auto<>/H2Auto<>/H3Auto<>` are like `Hist1<>/Hist2<>/Hist3<>` but carry no
+// path. They are meant to be members of a plain-aggregate struct; the ROOT path
+// is derived from the MEMBER NAME by `framework::register_fields(...)` (see
+// HistogramReflect.hpp), so the path is written exactly once — as the member's
+// name — instead of repeated in a hand-written book() method.
+//
+//     struct StageHists {
+//         framework::H1Auto<> p{"Electron Momentum;p [GeV/c];Events", 0, 12, 100};
+//         framework::H2Auto<> p_vs_theta{"p vs #theta;#theta;p", 0,45,90, 0,12,100};
+//     };
+//     // register_fields(svc, "/Electron/before", h) -> "/Electron/before/p", ...
+//
+// The title still carries the ROOT axis labels — that is the only metadata that
+// stays inline, and it lives in the value, so no attribute system is needed.
+
+template <typename Acc = mh::CountAccumulator>
+class H1Auto {
+public:
+    H1Auto(std::string title, double lo, double hi, std::size_t n)
+        : m_title(std::move(title)), m_h(mh::regular(lo, hi, n)) {}
+
+    [[nodiscard]] auto title() const noexcept -> const std::string& { return m_title; }
+    [[nodiscard]] auto histogram()       noexcept ->       H1<Acc>& { return m_h; }
+    [[nodiscard]] auto histogram() const noexcept -> const H1<Acc>& { return m_h; }
+
+    template <typename... Args>
+    auto fill(Args&&... args) -> void { m_h.fill(std::forward<Args>(args)...); }
+
+    [[nodiscard]] auto size() const noexcept { return m_h.size(); }
+    [[nodiscard]] auto at(std::size_t i) const { return m_h.at(i); }
+
+private:
+    std::string m_title;
+    H1<Acc>     m_h;
+};
+
+template <typename Acc = mh::CountAccumulator>
+class H2Auto {
+public:
+    H2Auto(std::string title,
+           double lo_x, double hi_x, std::size_t n_x,
+           double lo_y, double hi_y, std::size_t n_y)
+        : m_title(std::move(title)),
+          m_h(mh::regular(lo_x, hi_x, n_x), mh::regular(lo_y, hi_y, n_y)) {}
+
+    [[nodiscard]] auto title() const noexcept -> const std::string& { return m_title; }
+    [[nodiscard]] auto histogram()       noexcept ->       H2<Acc>& { return m_h; }
+    [[nodiscard]] auto histogram() const noexcept -> const H2<Acc>& { return m_h; }
+
+    template <typename... Args>
+    auto fill(Args&&... args) -> void { m_h.fill(std::forward<Args>(args)...); }
+
+    [[nodiscard]] auto size() const noexcept { return m_h.size(); }
+    [[nodiscard]] auto at(std::size_t i) const { return m_h.at(i); }
+
+private:
+    std::string m_title;
+    H2<Acc>     m_h;
+};
+
+template <typename Acc = mh::CountAccumulator>
+class H3Auto {
+public:
+    H3Auto(std::string title,
+           double lo_x, double hi_x, std::size_t n_x,
+           double lo_y, double hi_y, std::size_t n_y,
+           double lo_z, double hi_z, std::size_t n_z)
+        : m_title(std::move(title)),
+          m_h(mh::regular(lo_x, hi_x, n_x),
+              mh::regular(lo_y, hi_y, n_y),
+              mh::regular(lo_z, hi_z, n_z)) {}
+
+    [[nodiscard]] auto title() const noexcept -> const std::string& { return m_title; }
+    [[nodiscard]] auto histogram()       noexcept ->       H3<Acc>& { return m_h; }
+    [[nodiscard]] auto histogram() const noexcept -> const H3<Acc>& { return m_h; }
+
+    template <typename... Args>
+    auto fill(Args&&... args) -> void { m_h.fill(std::forward<Args>(args)...); }
+
+    [[nodiscard]] auto size() const noexcept { return m_h.size(); }
+    [[nodiscard]] auto at(std::size_t i) const { return m_h.at(i); }
+
+private:
+    std::string m_title;
+    H3<Acc>     m_h;
+};
+
 }  // namespace framework
