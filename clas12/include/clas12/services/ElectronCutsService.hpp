@@ -22,7 +22,7 @@ class VzCorrectorService;
  *
  * This service provides a unified interface for all electron identification cuts:
  * - Chi2 PID cuts (configurable range, default: -5.0 to 5.0)
- * - Momentum cuts (configurable minimum, default: 0.8 GeV)
+ * - Momentum cuts (configurable minimum, default: 2.0 GeV)
  * - Vertex cuts (run-group and target-specific)
  * - Sampling fraction cuts (run-group dependent, configurable n-sigma, default: 3.5)
  * - PCAL fiducial cuts (configurable: loose/medium/tight)
@@ -42,7 +42,7 @@ class VzCorrectorService;
  * - target: Target (default: LD2)
  * - polarity: Polarity (default: Outbending)
  * - run_group: RunGroup (default: RG_D)
- * - min_electron_momentum: default 0.8 GeV
+ * - min_electron_momentum: default 2.0 GeV
  * - min_chi2pid, max_chi2pid: default -5.0 to 5.0
  * - n_sigma: default 3.5
  * - pcal_level: Loose (9 cm), Medium (14 cm), or Tight (19 cm)
@@ -59,7 +59,7 @@ class VzCorrectorService;
  * config.target = Target::LD2;
  * config.polarity = Polarity::Outbending;
  * config.run_group = RunGroup::RG_D;
- * config.min_electron_momentum = 1.0;  // Tighter momentum cut
+ * config.min_electron_momentum = 3.0;  // Tighter momentum cut
  * config.pcal_level = ElectronCutsService::PCALFiducialLevel::Medium;
  * electron_cuts->set_config(config);
  *
@@ -67,7 +67,7 @@ class VzCorrectorService;
  * electron_cuts->set_target(Target::LD2);
  * electron_cuts->set_polarity(Polarity::Outbending);
  * electron_cuts->set_run_group(RunGroup::RG_D);
- * electron_cuts->set_min_electron_momentum(0.8);
+ * electron_cuts->set_min_electron_momentum(2.0);
  *
  * // Apply individual cuts
  * if (electron_cuts->pass_chi2pid_cut(chi2pid)) { ... }

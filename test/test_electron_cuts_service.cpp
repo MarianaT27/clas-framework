@@ -55,9 +55,11 @@ TEST(ElectronCutsServiceTest, Chi2PidHonoursCustomRange) {
 
 TEST(ElectronCutsServiceTest, MomentumStrictGreaterThan) {
     auto svc = make_default_service();
-    EXPECT_TRUE(svc.pass_momentum_cut(0.81));
+    // Default minimum is MIN_ELECTRON_MOMENTUM = 2.0 GeV.
+    EXPECT_TRUE(svc.pass_momentum_cut(2.01));
     EXPECT_TRUE(svc.pass_momentum_cut(5.0));
     // p == min should fail (strict >).
+    EXPECT_FALSE(svc.pass_momentum_cut(2.0));
     EXPECT_FALSE(svc.pass_momentum_cut(0.8));
     EXPECT_FALSE(svc.pass_momentum_cut(0.0));
     EXPECT_FALSE(svc.pass_momentum_cut(-1.0));
