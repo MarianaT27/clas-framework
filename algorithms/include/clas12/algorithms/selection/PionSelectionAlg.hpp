@@ -143,29 +143,25 @@ struct PionCandidate {
 /**
  * @brief Pion (π⁺/π⁻) selection and analysis algorithm
  */
-class PionSelectionAlg : public framework::Algorithm {
+class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionConfig> {
    public:
-    using Config = PionSelectionConfig;
     using StatusCode = framework::StatusCode;
 
-    explicit PionSelectionAlg(std::string name = "PionSelection", const Config& config = Config{})
-        : Algorithm(std::move(name)), m_config(config), m_cutflow_piplus("π⁺ Selection"), m_cutflow_piminus("π⁻ Selection") {
+    explicit PionSelectionAlg(std::string name = "PionSelection", Config config = {})
+        : ConfigurableAlgorithm(std::move(name), std::move(config)), m_cutflow_piplus("π⁺ Selection"), m_cutflow_piminus("π⁻ Selection") {
         if (!m_config.sigma_scan.empty()) m_config.sigma_scan_values = m_config.sigma_scan;
         required_services(m_hist, m_ntuple, m_vz_corrector);
         declare_banks("REC::Event", "REC::Particle", "REC::Scintillator", "REC::Calorimeter", "REC::Traj");
-        declare_config(m_config);
     }
-
-    [[nodiscard]] auto config() const -> const Config& { return m_config; }
 
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::info(name(), "Target: {}", m_config.target == Target::LD2 ? "LD2" : "Other");
-        Log::info(name(), "Chi2PID range: [{}, {}], Momentum range: [{}, {}] GeV", m_config.chi2pid_min, m_config.chi2pid_max, m_config.momentum_min, m_config.momentum_max);
-        Log::info(name(), "Cut toggles: detector_region={}, fiducial={}, chi2pid={}, momentum={}, vz={}, delta_t={}", m_config.enable_detector_region_cut, m_config.enable_fiducial_cuts, m_config.enable_chi2pid_cut, m_config.enable_momentum_cut, m_config.enable_vz_cut, m_config.enable_delta_t_cut);
-        Log::info(name(), "Central pions: {}", m_config.enable_central_pions ? "enabled" : "disabled");
-        Log::info(name(), "Delta-t sigma: {}", m_config.delta_t_sigma);
-        if (!m_config.sigma_scan_values.empty()) Log::info(name(), "Sigma scan enabled with values: [{}]", fmt::join(m_config.sigma_scan_values, ", "));
+        log_info("Target: {}", m_config.target == Target::LD2 ? "LD2" : "Other");
+        log_info("Chi2PID range: [{}, {}], Momentum range: [{}, {}] GeV", m_config.chi2pid_min, m_config.chi2pid_max, m_config.momentum_min, m_config.momentum_max);
+        log_info("Cut toggles: detector_region={}, fiducial={}, chi2pid={}, momentum={}, vz={}, delta_t={}", m_config.enable_detector_region_cut, m_config.enable_fiducial_cuts, m_config.enable_chi2pid_cut, m_config.enable_momentum_cut, m_config.enable_vz_cut, m_config.enable_delta_t_cut);
+        log_info("Central pions: {}", m_config.enable_central_pions ? "enabled" : "disabled");
+        log_info("Delta-t sigma: {}", m_config.delta_t_sigma);
+        if (!m_config.sigma_scan_values.empty()) log_info("Sigma scan enabled with values: [{}]", fmt::join(m_config.sigma_scan_values, ", "));
 
         for (auto* cf : {&m_cutflow_piplus, &m_cutflow_piminus}) {
             cf->add_cut("All Pions");
@@ -181,7 +177,7 @@ class PionSelectionAlg : public framework::Algorithm {
 
         m_ntuple_piplus.init(m_ntuple.get(), "pion_plus");
         m_ntuple_piminus.init(m_ntuple.get(), "pion_minus");
-        Log::info(name(), "N-tuple branches registered for π⁺ and π⁻");
+        log_info("N-tuple branches registered for π⁺ and π⁻");
 
         return StatusCode::SUCCESS();
     }
@@ -233,15 +229,15 @@ class PionSelectionAlg : public framework::Algorithm {
     }
 
     auto on_finalize() -> StatusCode override {
-        Log::info(name(), "Finalizing pion selection algorithm");
+        log_info("Finalizing pion selection algorithm");
 
         auto piplus_count = m_cutflow_piplus.get_count("Delta-t");
         auto piminus_count = m_cutflow_piminus.get_count("Delta-t");
-        Log::info(name(), "π⁺ passing all cuts: {}", piplus_count);
-        Log::info(name(), "π⁻ passing all cuts: {}", piminus_count);
+        log_info("π⁺ passing all cuts: {}", piplus_count);
+        log_info("π⁻ passing all cuts: {}", piminus_count);
 
         if (m_ntuple) {
-            Log::info(name(), "N-tuple entries: π⁺={}, π⁻={}", m_ntuple->get_entries("pion_plus"), m_ntuple->get_entries("pion_minus"));
+            log_info("N-tuple entries: π⁺={}, π⁻={}", m_ntuple->get_entries("pion_plus"), m_ntuple->get_entries("pion_minus"));
         }
 
         m_cutflow_piplus.print();
@@ -276,7 +272,6 @@ class PionSelectionAlg : public framework::Algorithm {
     }
 
    private:
-    Config m_config;
     framework::Cutflow m_cutflow_piplus;
     framework::Cutflow m_cutflow_piminus;
 

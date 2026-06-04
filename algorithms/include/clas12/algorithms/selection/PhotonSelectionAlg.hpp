@@ -56,26 +56,23 @@ struct PhotonSelectionConfig {
     }
 };
 
-class PhotonSelectionAlg : public framework::Algorithm {
+class PhotonSelectionAlg : public framework::ConfigurableAlgorithm<PhotonSelectionConfig> {
    public:
-    using Config = PhotonSelectionConfig;
     using StatusCode = framework::StatusCode;
 
-    explicit PhotonSelectionAlg(std::string name = "PhotonSelection", const Config& config = Config{}) : Algorithm(std::move(name)), m_config(config), m_cutflow("Photon Selection") {
+    explicit PhotonSelectionAlg(std::string name = "PhotonSelection", Config config = {})
+        : ConfigurableAlgorithm(std::move(name), std::move(config)), m_cutflow("Photon Selection") {
         required_services(m_hist, m_photon_cuts);
         declare_banks("RUN::config", "REC::Particle", "REC::Calorimeter");
-        declare_config(m_config);
         declare_histograms(m_h_n_photons_raw, m_h_energy_raw, m_h_theta_raw, m_h_phi_raw, m_h_n_photons_selected,
              m_h_energy_selected, m_h_theta_selected, m_h_phi_selected);
     }
 
-    [[nodiscard]] auto config() const -> const Config& { return m_config; }
-
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::info(name(), "Use AI selection: {}", m_config.use_ai ? "yes" : "no");
-        Log::info(name(), "Min photon energy: {} GeV", m_config.min_photon_energy);
-        Log::info(name(), "Beta range: [{}, {}]", m_config.min_beta, m_config.max_beta);
+        log_info("Use AI selection: {}", m_config.use_ai ? "yes" : "no");
+        log_info("Min photon energy: {} GeV", m_config.min_photon_energy);
+        log_info("Beta range: [{}, {}]", m_config.min_beta, m_config.max_beta);
 
         m_cutflow.add_cut("All Photons");
         m_cutflow.add_cut("AI / Energy Cut");
@@ -142,12 +139,11 @@ class PhotonSelectionAlg : public framework::Algorithm {
         Log::subsection(fmt::format("{} Summary", name()));
         Log::blank();
         m_cutflow.print();
-        Log::success(name(), "Finalization complete");
+        log_success("Finalization complete");
         return StatusCode::SUCCESS();
     }
 
    private:
-    Config m_config;
     framework::Cutflow m_cutflow;
 
     framework::ServiceRef<framework::HistogramService> m_hist;

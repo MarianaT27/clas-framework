@@ -77,25 +77,21 @@ struct DISSelectionConfig {
 /**
  * @brief Algorithm for DIS event selection
  */
-class DISSelectionAlg : public framework::Algorithm {
+class DISSelectionAlg : public framework::ConfigurableAlgorithm<DISSelectionConfig> {
    public:
-    using Config = DISSelectionConfig;
     using StatusCode = framework::StatusCode;
 
-    explicit DISSelectionAlg(std::string name = "DISSelectionAlg", const Config& config = Config{})
-        : Algorithm(std::move(name)), m_config(config), m_cutflow("DIS Selection") {
+    explicit DISSelectionAlg(std::string name = "DISSelectionAlg", Config config = {})
+        : ConfigurableAlgorithm(std::move(name), std::move(config)), m_cutflow("DIS Selection") {
         required_services(m_hist_svc, m_ntuple_svc);
-        declare_config(m_config);
         declare_histograms(m_h_Q2, m_h_W, m_h_nu, m_h_xB, m_h_y, m_h_Q2_precut, m_h_W_precut, m_h_nu_precut, m_h_xB_precut, m_h_y_precut,
              m_h_e_p_precut, m_h_e_theta_precut, m_h_e_phi_precut, m_h_Q2_vs_W_precut, m_h_Q2_vs_xB_precut, m_h_W_vs_y_precut,
               m_h_e_theta_vs_p_precut, m_h_Q2_vs_W, m_h_Q2_vs_xB, m_h_W_vs_y, m_h_Q2_nminus1, m_h_W_nminus1, m_h_y_nminus1);
     }
 
-    [[nodiscard]] auto config() const -> const Config& { return m_config; }
-
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
-        Log::info(name(), "Initializing DIS selection algorithm");
+        log_info("Initializing DIS selection algorithm");
 
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Has Good Electron");
@@ -105,11 +101,11 @@ class DISSelectionAlg : public framework::Algorithm {
 
         if (m_config.enable_ntuple) {
             m_ntuple.init(m_ntuple_svc.get(), "dis_kinematics");
-            Log::info(name(), "N-tuple branches registered for DIS kinematics");
+            log_info("N-tuple branches registered for DIS kinematics");
         }
 
-        Log::info(name(), "Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
-        Log::info(name(), "DIS region: Q2=[{}, {}], W=[{}, {}], y=[{}, {}]", m_config.q2_min, m_config.q2_max, m_config.w_min, m_config.w_max, m_config.y_min, m_config.y_max);
+        log_info("Initialized with {} cuts in cutflow", m_cutflow.num_cuts());
+        log_info("DIS region: Q2=[{}, {}], W=[{}, {}], y=[{}, {}]", m_config.q2_min, m_config.q2_max, m_config.w_min, m_config.w_max, m_config.y_min, m_config.y_max);
 
         return StatusCode::SUCCESS();
     }
@@ -192,11 +188,11 @@ class DISSelectionAlg : public framework::Algorithm {
     }
 
     auto on_finalize() -> StatusCode override {
-        Log::info(name(), "Finalizing DIS selection algorithm");
+        log_info("Finalizing DIS selection algorithm");
 
         if (m_ntuple_svc) {
             auto entries = m_ntuple_svc->get_entries("dis_kinematics");
-            Log::info(name(), "N-tuple has {} entries", entries);
+            log_info("N-tuple has {} entries", entries);
         }
 
         m_cutflow.print();
@@ -204,10 +200,9 @@ class DISSelectionAlg : public framework::Algorithm {
     }
 
    private:
-    Config m_config;
     framework::Cutflow m_cutflow;
 
-framework::ServiceRef<framework::HistogramService> m_hist_svc;
+    framework::ServiceRef<framework::HistogramService> m_hist_svc;
     framework::ServiceRef<framework::NTupleService> m_ntuple_svc;
 
     framework::Hist1<> m_h_Q2{"/DIS/Q2", "Q^{2};Q^{2} [GeV^{2}];Counts", 0.0, 12.0, 100};
