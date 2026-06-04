@@ -21,6 +21,7 @@
 #include <clas12/framework/services/MetadataService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/framework/services/OutputFileService.hpp>
+#include <clas12/framework/services/RunConditionsService.hpp>
 #include <clas12/services/SamplingFractionService.hpp>
 
 namespace framework {
@@ -66,6 +67,13 @@ auto ApplicationBuilder::add_standard_services_to(Application& app) -> void {
     auto conditions_svc = std::make_unique<ConditionsService>();
     auto sf_svc = std::make_unique<SamplingFractionService>();
 
+    // RCDB run-conditions snapshot reader. Soft by design: with no connection
+    // (m_rcdb_connection empty and RCDB_CONNECTION unset) it initializes
+    // disabled and every lookup returns empty, so analyses without RCDB are
+    // unaffected.
+    auto run_conditions_svc =
+        std::make_unique<RunConditionsService>(m_rcdb_connection);
+
     // File services
     auto hipo_svc = std::make_unique<HipoFileService>();
     auto metadata_svc = std::make_unique<MetadataService>();
@@ -96,6 +104,7 @@ auto ApplicationBuilder::add_standard_services_to(Application& app) -> void {
     mgr.add_service(std::move(output_svc));
     mgr.add_service(std::move(hipo_svc));
     mgr.add_service(std::move(conditions_svc));
+    mgr.add_service(std::move(run_conditions_svc));
     mgr.add_service(std::move(hist_svc),     {"OutputFileService"});
     mgr.add_service(std::move(sf_svc));
     mgr.add_service(std::move(metadata_svc), {"OutputFileService"});

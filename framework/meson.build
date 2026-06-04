@@ -10,13 +10,14 @@ framework_sources = files(
   'src/services/DecayTreeFitterService.cpp',
   'src/services/HistogramService.cpp',
   'src/services/LoggingService.cpp',
+  'src/services/RunConditionsService.cpp',
 )
 
 framework_lib = library(
   'clas12-framework',
   framework_sources,
   include_directories: framework_inc,
-  dependencies: [clas12_dep, fmt_dep, toml_dep, root_dep, hipo4_dep, eigen_dep, mh_dep, pfr_dep],
+  dependencies: [clas12_dep, fmt_dep, toml_dep, root_dep, hipo4_dep, eigen_dep, mh_dep, pfr_dep, sqlite3_dep],
   install: true,
 )
 

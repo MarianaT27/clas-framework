@@ -48,6 +48,14 @@ test_application_exception = executable(
   dependencies: test_deps,
 )
 
+# Unit tests for RunConditionsService (RCDB SQLite snapshot reader).
+# sqlite3_dep is added so the test can build a mock RCDB database via the C API.
+test_run_conditions = executable(
+  'test_run_conditions',
+  'test_run_conditions.cpp',
+  dependencies: [test_deps, sqlite3_dep],
+)
+
 # Register tests
 test('Cutflow Tests', test_cutflow)
 test('Service Tests', test_services)
@@ -55,6 +63,7 @@ test('Result Type Tests', test_result)
 test('Event Store Tests', test_event_store)
 test('Logging Service Tests', test_logging_service)
 test('Application Exception Tests', test_application_exception)
+test('Run Conditions Tests', test_run_conditions)
 
 # Unit tests for the Algorithm base class (hooks, properties, DI)
 test_simple_algorithm = executable(

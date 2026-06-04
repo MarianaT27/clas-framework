@@ -71,6 +71,7 @@
 #include <clas12/FileUtils.hpp>
 #include <clas12/StringUtils.hpp>
 #include <clas12/Target.hpp>
+#include <clas12/framework/algorithms/RunConditionsAlg.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
 #include <clas12/framework/services/WorkflowVisualizationService.hpp>
 
@@ -95,6 +96,16 @@ struct AnalysisConfig {
     std::string              version     = "2.0";
     std::string              output_file;
     std::vector<std::string> input_files;
+    /// RCDB SQLite snapshot connection (path or `sqlite:///…db` URL) from
+    /// `[analysis].rcdb_connection`. Empty falls back to the RCDB_CONNECTION
+    /// environment variable. When either is set, run conditions absent from the
+    /// TOML are auto-sourced per run from RCDB.
+    std::string              rcdb_connection;
+    /// Whether the corresponding `[analysis]` key was explicitly given in the
+    /// TOML. Drives the "TOML always wins; RCDB fills the gaps" merge: only
+    /// fields the analyst did *not* set are filled from RCDB.
+    bool                     beam_energy_set = false;
+    bool                     target_set      = false;
     /// Optional half-open record slice `[first, last)`. Set via the
     /// `[run].record_range = [first, last]` TOML key or the `--record-range
     /// first:last` CLI override. Default (0, -1) processes every record.
@@ -191,6 +202,25 @@ public:
         if (config->progress_fd >= 0) {
             builder.with_quiet_mode(true);
             builder.with_progress_reporter(config->progress_fd, config->slice_id);
+        }
+
+        // RCDB run conditions: resolve the connection from
+        // [analysis].rcdb_connection or the RCDB_CONNECTION environment
+        // variable. When set, point the standard RunConditionsService at the
+        // snapshot and prepend a RunConditionsAlg that resolves per-event
+        // conditions (multi-run aware). The analysis config always wins; RCDB
+        // fills only the gaps the TOML left open. With no connection, nothing is
+        // added and behaviour is unchanged.
+        std::string rcdb_conn = config->rcdb_connection;
+        if (rcdb_conn.empty()) {
+            if (const char* env = std::getenv("RCDB_CONNECTION")) rcdb_conn = env;
+        }
+        if (!rcdb_conn.empty()) {
+            builder.with_rcdb_connection(rcdb_conn);
+            RunConditionsOverrides overrides;
+            if (config->beam_energy_set) overrides.beam_energy = config->beam_energy;
+            if (config->target_set)      overrides.target      = to_string(config->target);
+            builder.add_algorithm<RunConditionsAlg>(std::move(overrides));
         }
 
         configure_fn(builder, *config);
@@ -379,12 +409,19 @@ private:
 
         // [analysis]
         if (auto an_tbl = tbl["analysis"].as_table()) {
-            if (auto v = (*an_tbl)["target"].value<std::string>())
+            if (auto v = (*an_tbl)["target"].value<std::string>()) {
                 cfg.target = string_to_target(*v);
+                cfg.target_set = true;
+            }
             if (auto v = (*an_tbl)["polarity"].value<std::string>())
                 cfg.polarity = string_to_polarity(*v);
-            if (auto v = (*an_tbl)["beam_energy"].value<double>())   cfg.beam_energy = *v;
+            if (auto v = (*an_tbl)["beam_energy"].value<double>()) {
+                cfg.beam_energy = *v;
+                cfg.beam_energy_set = true;
+            }
             if (auto v = (*an_tbl)["version"].value<std::string>())  cfg.version = *v;
+            if (auto v = (*an_tbl)["rcdb_connection"].value<std::string>())
+                cfg.rcdb_connection = *v;
         }
 
         return cfg;

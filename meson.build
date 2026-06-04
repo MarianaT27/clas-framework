@@ -87,6 +87,10 @@ toml_dep    = subproject('tomlplusplus').get_variable('tomlplusplus_dep')
 lz4_dep     = subproject('lz4').get_variable('liblz4_dep')
 eigen_dep   = dependency('eigen3')
 cxxopts_dep = dependency('cxxopts')
+# SQLite3 (system): read-only access to the RCDB run-conditions snapshot
+# (sqlite:////group/clas12/rcdb/*.db). Used only inside RunConditionsService.cpp;
+# the sqlite3.h include never leaks into a framework header.
+sqlite3_dep = dependency('sqlite3')
 # Boost.PFR (non-Boost distribution): header-only static reflection used to
 # auto-derive config/ntuple field (name, &member) pairs from plain aggregates,
 # replacing the hand-written config_fields()/ntuple_fields() tuples.

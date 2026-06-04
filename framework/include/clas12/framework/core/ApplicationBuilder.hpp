@@ -202,6 +202,14 @@ public:
         return *this;
     }
 
+    /// Set the RCDB SQLite snapshot connection (path or `sqlite:///…db` URL)
+    /// used by the standard RunConditionsService. Empty (the default) lets the
+    /// service fall back to the `RCDB_CONNECTION` environment variable.
+    auto with_rcdb_connection(std::string connection) -> ApplicationBuilder& {
+        m_rcdb_connection = std::move(connection);
+        return *this;
+    }
+
     // ========================================================================
     // Build
     // ========================================================================
@@ -227,6 +235,10 @@ private:
     std::string m_version = "1.0";
     double m_beam_energy = 10.53;
     std::string m_target;
+
+    // RCDB run-conditions snapshot connection (sqlite path or sqlite:// URL).
+    // Empty => RunConditionsService falls back to the RCDB_CONNECTION env var.
+    std::string m_rcdb_connection;
 
     // Deferred service/algorithm creation
     std::vector<std::function<void(ServiceManager&)>> m_service_factories;
