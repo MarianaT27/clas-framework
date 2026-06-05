@@ -35,6 +35,7 @@ class MC_User {
     static constexpr std::string_view bank_name = "MC::User";
     static constexpr int bank_group = 40;
     static constexpr int bank_item  = 5;
+    static constexpr std::string_view bank_schema = "userVar/F";
 
     class Row;
 

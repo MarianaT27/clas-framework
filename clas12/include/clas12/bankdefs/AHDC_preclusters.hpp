@@ -35,6 +35,7 @@ class AHDC_preclusters {
     static constexpr std::string_view bank_name = "AHDC::preclusters";
     static constexpr int bank_group = 23000;
     static constexpr int bank_item  = 24;
+    static constexpr std::string_view bank_schema = "x/F,y/F";
 
     class Row;
 

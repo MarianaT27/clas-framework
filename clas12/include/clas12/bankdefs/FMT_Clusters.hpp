@@ -35,6 +35,7 @@ class FMT_Clusters {
     static constexpr std::string_view bank_name = "FMT::Clusters";
     static constexpr int bank_group = 20800;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "index/S,sector/B,layer/B,size/S,centroid/F,centroidError/F,residual/F,doca/F,energy/F,time/F,seedStrip/S,seedIndex/S,trackIndex/S";
 
     class Row;
 

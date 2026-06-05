@@ -35,6 +35,7 @@ class RICH_Particle {
     static constexpr std::string_view bank_name = "RICH::Particle";
     static constexpr int bank_group = 21800;
     static constexpr int bank_item  = 37;
+    static constexpr std::string_view bank_schema = "id/B,hindex/S,pindex/B,emilay/B,emico/B,enico/B,emqua/S,mchi2/F,mass/F,best_PID/S,RQ/F,ReQ/F,el_logl/F,pi_logl/F,k_logl/F,pr_logl/F,best_ch/F,best_c2/F,best_RL/F,best_ntot/F,best_mass/F";
 
     class Row;
 

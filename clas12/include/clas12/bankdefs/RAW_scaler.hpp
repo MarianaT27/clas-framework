@@ -35,6 +35,7 @@ class RAW_scaler {
     static constexpr std::string_view bank_name = "RAW::scaler";
     static constexpr int bank_group = 20000;
     static constexpr int bank_item  = 13;
+    static constexpr std::string_view bank_schema = "crate/B,slot/B,channel/S,helicity/B,quartet/B,value/L";
 
     class Row;
 

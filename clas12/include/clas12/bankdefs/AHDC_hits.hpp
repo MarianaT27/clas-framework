@@ -35,6 +35,7 @@ class AHDC_hits {
     static constexpr std::string_view bank_name = "AHDC::hits";
     static constexpr int bank_group = 23000;
     static constexpr int bank_item  = 23;
+    static constexpr std::string_view bank_schema = "id/S,layer/B,superlayer/B,wire/I,doca/D,residual/D,time/D,adc/I,timeOverThreshold/D,trackid/I";
 
     class Row;
 

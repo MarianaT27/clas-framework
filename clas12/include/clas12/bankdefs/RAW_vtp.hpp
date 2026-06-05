@@ -35,6 +35,7 @@ class RAW_vtp {
     static constexpr std::string_view bank_name = "RAW::vtp";
     static constexpr int bank_group = 20000;
     static constexpr int bank_item  = 14;
+    static constexpr std::string_view bank_schema = "crate/B,word/I";
 
     class Row;
 

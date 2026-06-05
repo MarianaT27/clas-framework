@@ -35,6 +35,7 @@ class BST_Crosses {
     static constexpr std::string_view bank_name = "BST::Crosses";
     static constexpr int bank_group = 20200;
     static constexpr int bank_item  = 35;
+    static constexpr std::string_view bank_schema = "ID/S,sector/B,region/B,x/F,y/F,z/F,err_x/F,err_y/F,err_z/F,x0/F,y0/F,z0/F,err_x0/F,err_y0/F,err_z0/F,ux/F,uy/F,uz/F,Cluster1_ID/S,Cluster2_ID/S,trkID/S";
 
     class Row;
 

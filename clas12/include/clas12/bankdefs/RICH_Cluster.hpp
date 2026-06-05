@@ -35,6 +35,7 @@ class RICH_Cluster {
     static constexpr std::string_view bank_name = "RICH::Cluster";
     static constexpr int bank_group = 21800;
     static constexpr int bank_item  = 42;
+    static constexpr std::string_view bank_schema = "id/S,size/S,sector/S,tile/S,pmt/S,charge/F,time/F,rawtime/F,x/F,y/F,z/F,wtime/F,wx/F,wy/F,wz/F";
 
     class Row;
 

@@ -35,6 +35,7 @@ class RECHB_TrackCross {
     static constexpr std::string_view bank_name = "RECHB::TrackCross";
     static constexpr int bank_group = 300;
     static constexpr int bank_item  = 17;
+    static constexpr std::string_view bank_schema = "index/S,pindex/S,detector/B,sector/B,layer/B,c_x/F,c_y/F,c_z/F,c_ux/F,c_uy/F,c_uz/F,status/S";
 
     class Row;
 

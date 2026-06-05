@@ -35,6 +35,7 @@ class RAW_tdc {
     static constexpr std::string_view bank_name = "RAW::tdc";
     static constexpr int bank_group = 20000;
     static constexpr int bank_item  = 12;
+    static constexpr std::string_view bank_schema = "crate/B,slot/B,channel/S,order/B,TDC/I";
 
     class Row;
 

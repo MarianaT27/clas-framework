@@ -35,6 +35,7 @@ class FTTRK_crosses {
     static constexpr std::string_view bank_name = "FTTRK::crosses";
     static constexpr int bank_group = 21300;
     static constexpr int bank_item  = 23;
+    static constexpr std::string_view bank_schema = "size/S,id/S,sector/B,detector/B,x/F,y/F,z/F,energy/F,time/F,Cluster1ID/S,Cluster2ID/S";
 
     class Row;
 

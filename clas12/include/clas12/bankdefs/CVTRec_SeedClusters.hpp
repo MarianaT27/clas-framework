@@ -35,6 +35,7 @@ class CVTRec_SeedClusters {
     static constexpr std::string_view bank_name = "CVTRec::SeedClusters";
     static constexpr int bank_group = 20500;
     static constexpr int bank_item  = 44;
+    static constexpr std::string_view bank_schema = "id/S,Clus1_ID/S,Clus2_ID/S,Clus3_ID/S,Clus4_ID/S,Clus5_ID/S,Clus6_ID/S,Clus7_ID/S,Clus8_ID/S,Clus9_ID/S,Clus10_ID/S,Clus11_ID/S,Clus12_ID/S,prob/F";
 
     class Row;
 

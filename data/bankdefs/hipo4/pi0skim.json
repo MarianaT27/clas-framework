@@ -1,0 +1,34 @@
+[
+    {
+        "name": "PI0::event",
+        "group": 30000,
+        "item": 1,
+        "info": "Slim pi0 skim: per-event DIS kinematics + trigger electron 4-vector",
+        "entries": [
+            {"name":"run",      "type":"I", "info":"run number"},
+            {"name":"event",    "type":"L", "info":"event number"},
+            {"name":"helicity", "type":"I", "info":"beam helicity (HWP-corrected, +/-1)"},
+            {"name":"Q2",       "type":"F", "info":"DIS Q^2 (GeV^2)"},
+            {"name":"xB",       "type":"F", "info":"DIS Bjorken x"},
+            {"name":"nu",       "type":"F", "info":"DIS nu (GeV)"},
+            {"name":"W",        "type":"F", "info":"DIS W (GeV)"},
+            {"name":"y",        "type":"F", "info":"DIS inelasticity y"},
+            {"name":"ex",       "type":"F", "info":"trigger electron px (GeV)"},
+            {"name":"ey",       "type":"F", "info":"trigger electron py (GeV)"},
+            {"name":"ez",       "type":"F", "info":"trigger electron pz (GeV)"},
+            {"name":"eE",       "type":"F", "info":"trigger electron E (GeV)"}
+        ]
+    },
+    {
+        "name": "PI0::photons",
+        "group": 30000,
+        "item": 2,
+        "info": "Slim pi0 skim: selected photon 4-momenta (one row per photon)",
+        "entries": [
+            {"name":"px", "type":"F", "info":"photon px (GeV)"},
+            {"name":"py", "type":"F", "info":"photon py (GeV)"},
+            {"name":"pz", "type":"F", "info":"photon pz (GeV)"},
+            {"name":"E",  "type":"F", "info":"photon energy (GeV)"}
+        ]
+    }
+]

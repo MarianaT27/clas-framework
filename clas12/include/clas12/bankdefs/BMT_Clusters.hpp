@@ -35,6 +35,7 @@ class BMT_Clusters {
     static constexpr std::string_view bank_name = "BMT::Clusters";
     static constexpr int bank_group = 20100;
     static constexpr int bank_item  = 32;
+    static constexpr std::string_view bank_schema = "ID/S,sector/B,layer/B,size/S,ETot/F,time/F,seedE/F,seedStrip/S,centroid/F,centroidValue/F,centroidError/F,centroidResidual/F,seedResidual/F,Hit1_ID/S,Hit2_ID/S,Hit3_ID/S,Hit4_ID/S,Hit5_ID/S,trkID/S,x1/F,y1/F,z1/F,x2/F,y2/F,z2/F,cx/F,cy/F,cz/F,theta/F,ax1/F,ay1/F,az1/F,ax2/F,ay2/F,az2/F,lx/F,ly/F,lz/F,sx/F,sy/F,sz/F,nx/F,ny/F,nz/F,e/F";
 
     class Row;
 

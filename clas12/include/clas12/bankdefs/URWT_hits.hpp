@@ -35,6 +35,7 @@ class URWT_hits {
     static constexpr std::string_view bank_name = "URWT::hits";
     static constexpr int bank_group = 22300;
     static constexpr int bank_item  = 21;
+    static constexpr std::string_view bank_schema = "id/S,sector/B,layer/B,strip/S,energy/F,time/F,clusterId/S,status/S";
 
     class Row;
 

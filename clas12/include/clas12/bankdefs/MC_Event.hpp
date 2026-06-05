@@ -35,6 +35,7 @@ class MC_Event {
     static constexpr std::string_view bank_name = "MC::Event";
     static constexpr int bank_group = 40;
     static constexpr int bank_item  = 1;
+    static constexpr std::string_view bank_schema = "npart/S,atarget/S,ztarget/S,ptarget/F,pbeam/F,btype/S,ebeam/F,targetid/S,processid/S,weight/F";
 
     class Row;
 

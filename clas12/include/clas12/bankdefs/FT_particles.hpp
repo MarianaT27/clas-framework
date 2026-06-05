@@ -35,6 +35,7 @@ class FT_particles {
     static constexpr std::string_view bank_name = "FT::particles";
     static constexpr int bank_group = 20900;
     static constexpr int bank_item  = 24;
+    static constexpr std::string_view bank_schema = "id/S,charge/B,energy/F,cx/F,cy/F,cz/F,vx/F,vy/F,vz/F,time/F,calID/S,hodoID/S,trk0ID/S,trk1ID/S";
 
     class Row;
 

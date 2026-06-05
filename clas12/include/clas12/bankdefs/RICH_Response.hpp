@@ -35,6 +35,7 @@ class RICH_Response {
     static constexpr std::string_view bank_name = "RICH::Response";
     static constexpr int bank_group = 21800;
     static constexpr int bank_item  = 43;
+    static constexpr std::string_view bank_schema = "index/S,pindex/S,detector/B,sector/B,layer/B,energy/F,time/F,path/F,chi2/F,x/F,y/F,z/F,hx/F,hy/F,hz/F,status/S";
 
     class Row;
 

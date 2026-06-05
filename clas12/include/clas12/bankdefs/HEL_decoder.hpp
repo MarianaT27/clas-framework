@@ -35,6 +35,7 @@ class HEL_decoder {
     static constexpr std::string_view bank_name = "HEL::decoder";
     static constexpr int bank_group = 22000;
     static constexpr int bank_item  = 14;
+    static constexpr std::string_view bank_schema = "helicity/B,pair/B,pattern/B,tSettle/B,helicityPattern/B,polarity/B,phase/B,timestamp/L,helicitySeed/I,nTStableRE/I,nTStableFE/I,nPattern/I,nPair/I,tStableStart/I,tStableEnd/I,tStableTime/I,tSettleTime/I,patternArray/I,pairArray/I,helicityArray/I,helicityPArray/I";
 
     class Row;
 

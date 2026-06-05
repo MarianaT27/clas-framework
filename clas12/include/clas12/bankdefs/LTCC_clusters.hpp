@@ -35,6 +35,7 @@ class LTCC_clusters {
     static constexpr std::string_view bank_name = "LTCC::clusters";
     static constexpr int bank_group = 21600;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "id/S,status/B,sector/B,segment/S,x/F,y/F,z/F,nphe/F,time/F,nHits/S,minTheta/F,maxTheta/F,minPhi/F,maxPhi/F";
 
     class Row;
 

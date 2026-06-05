@@ -35,6 +35,7 @@ class RASTER_position {
     static constexpr std::string_view bank_name = "RASTER::position";
     static constexpr int bank_group = 22200;
     static constexpr int bank_item  = 21;
+    static constexpr std::string_view bank_schema = "x/F,y/F";
 
     class Row;
 

@@ -35,6 +35,7 @@ class ATOF_hits {
     static constexpr std::string_view bank_name = "ATOF::hits";
     static constexpr int bank_group = 22500;
     static constexpr int bank_item  = 21;
+    static constexpr std::string_view bank_schema = "id/S,sector/I,layer/I,component/I,time/F,x/F,y/F,z/F,energy/F,clusterid/S";
 
     class Row;
 

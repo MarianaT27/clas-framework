@@ -35,6 +35,7 @@ class FTTRK_clusters {
     static constexpr std::string_view bank_name = "FTTRK::clusters";
     static constexpr int bank_group = 21300;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "size/S,id/S,sector/B,layer/B,energy/F,maxEnergy/F,seed/S,centroid/F";
 
     class Row;
 

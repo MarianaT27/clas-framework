@@ -35,6 +35,7 @@ class CVT_Seeds {
     static constexpr std::string_view bank_name = "CVT::Seeds";
     static constexpr int bank_group = 20500;
     static constexpr int bank_item  = 35;
+    static constexpr std::string_view bank_schema = "ID/S,fittingMethod/B,q/B,p/F,pt/F,phi0/F,tandip/F,z0/F,d0/F,cov_d02/F,cov_d0phi0/F,cov_d0rho/F,cov_phi02/F,cov_phi0rho/F,cov_rho2/F,cov_z02/F,cov_z0tandip/F,cov_tandip2/F,circlefit_chi2_per_ndf/F,linefit_chi2_per_ndf/F,chi2/F,ndf/S,Cross1_ID/S,Cross2_ID/S,Cross3_ID/S,Cross4_ID/S,Cross5_ID/S,Cross6_ID/S,Cross7_ID/S,Cross8_ID/S,Cross9_ID/S,xb/F,yb/F,fracmctru/F,fracmcmatch/F";
 
     class Row;
 

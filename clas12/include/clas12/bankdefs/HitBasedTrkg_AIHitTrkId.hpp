@@ -35,6 +35,7 @@ class HitBasedTrkg_AIHitTrkId {
     static constexpr std::string_view bank_name = "HitBasedTrkg::AIHitTrkId";
     static constexpr int bank_group = 20600;
     static constexpr int bank_item  = 67;
+    static constexpr std::string_view bank_schema = "id/S,tid/S,B/F,TProp/F,TFlight/F";
 
     class Row;
 

@@ -35,6 +35,7 @@ class DC_doca {
     static constexpr std::string_view bank_name = "DC::doca";
     static constexpr int bank_group = 20600;
     static constexpr int bank_item  = 14;
+    static constexpr std::string_view bank_schema = "LR/B,doca/F,sdoca/F,time/F,stime/F";
 
     class Row;
 

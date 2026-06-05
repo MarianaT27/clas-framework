@@ -35,6 +35,7 @@ class RICH_calib {
     static constexpr std::string_view bank_name = "RICH::calib";
     static constexpr int bank_group = 21800;
     static constexpr int bank_item  = 51;
+    static constexpr std::string_view bank_schema = "hindex/S,pindex/B,sector/B,pmt/S,anode/S,x/F,y/F,z/F,time/F,rawtime/F,duration/S,status/S,used/B,emilay/B,emico/B,enico/B,emqua/S,start_time/F,traced_the/F,traced_phi/F,traced_hitx/F,traced_hity/F,traced_hitz/F,traced_path/F,traced_time/F,traced_nrfl/S,traced_nrfr/S,traced_1rfl/S,traced_layers/I,traced_compos/I,traced_etaC/F,etac_ref/F,etac_rms/F,prob/F";
 
     class Row;
 

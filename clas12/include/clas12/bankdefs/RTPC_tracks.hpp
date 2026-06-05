@@ -35,6 +35,7 @@ class RTPC_tracks {
     static constexpr std::string_view bank_name = "RTPC::tracks";
     static constexpr int bank_group = 21900;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "trkID/I,px/F,py/F,pz/F,vz/F,theta/F,phi/F,nhits/I,path/F,adcsum/F,dedx/F,r_helix/F,x_helix/F,y_helix/F,chi2_helix/F,min_row/F,min_col/F,max_row/F,max_col/F,min_time/F,max_time/F,min_radius/F,max_radius/F,min_phi/F,max_phi/F,tdiff/F";
 
     class Row;
 

@@ -35,6 +35,7 @@ class REC_Traj {
     static constexpr std::string_view bank_name = "REC::Traj";
     static constexpr int bank_group = 300;
     static constexpr int bank_item  = 40;
+    static constexpr std::string_view bank_schema = "pindex/S,index/S,detector/B,layer/B,x/F,y/F,z/F,cx/F,cy/F,cz/F,path/F,edge/F";
 
     class Row;
 

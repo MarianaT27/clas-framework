@@ -169,6 +169,39 @@ public:
     }
 
     /**
+     * @brief Register a custom bank schema to include in the output dictionary.
+     *
+     * Call before the output file is opened (e.g. in an algorithm's
+     * on_initialize). The schema is added to the writer's dictionary so banks
+     * of that type can be serialized via write_event(hipo::event&). This lets a
+     * skim write user-defined banks (e.g. PI0::event / PI0::photons) instead of
+     * the raw-passthrough of all input banks.
+     */
+    auto register_output_schema(const hipo::schema& s) -> void {
+        m_output_schemas.push_back(s);
+    }
+
+    /**
+     * @brief Peek at the first input file's dictionary for a bank schema.
+     *
+     * Opens a throwaway hipo::reader on the first file and checks whether the
+     * named bank is in its dictionary — without touching the service's own
+     * reader/dictionary state. Used by analyses to auto-detect a slim skim
+     * (PI0::event present) versus a full HIPO input. Returns false on an empty
+     * file list or an unopenable file.
+     */
+    static auto input_has_bank(const std::vector<std::string>& files,
+                               const std::string& bank_name) -> bool {
+        if (files.empty()) return false;
+        hipo::reader r;
+        r.open(files.front().c_str());
+        if (!r.is_open()) return false;
+        hipo::dictionary dict;
+        r.readDictionary(dict);
+        return dict.hasSchema(bank_name.c_str());
+    }
+
+    /**
      * @brief Get the dictionary from the first input file
      */
     auto get_dictionary() -> hipo::dictionary* {
@@ -215,6 +248,7 @@ private:
 
     std::unique_ptr<hipo::writer> m_writer;
     std::unique_ptr<hipo::dictionary> m_dictionary;
+    std::vector<hipo::schema> m_output_schemas;
     std::mutex m_write_mutex;
 
     size_t m_events_read = 0;
@@ -224,10 +258,19 @@ private:
         try {
             m_writer = std::make_unique<hipo::writer>();
 
-            // Copy dictionary from first input file if available
-            if (!m_input_files.empty()) {
-                auto dict = get_dictionary();
-                if (dict) {
+            // Two output modes:
+            //  - Custom-bank output (registered schemas, e.g. the slim pi0
+            //    skim): write a MINIMAL dictionary with only those schemas. The
+            //    file contains only those banks, so copying the full input
+            //    dictionary would just bloat every file's metadata.
+            //  - Raw passthrough (no registered schemas): preserve the input
+            //    dictionary so the original banks can be serialized/decoded.
+            if (!m_output_schemas.empty()) {
+                hipo::dictionary dict;
+                for (const auto& s : m_output_schemas) dict.addSchema(s);
+                m_writer->addDictionary(dict);
+            } else if (!m_input_files.empty()) {
+                if (auto* dict = get_dictionary()) {
                     m_writer->addDictionary(*dict);
                 }
             }

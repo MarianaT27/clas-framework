@@ -35,6 +35,7 @@ class RICH_Photon {
     static constexpr std::string_view bank_name = "RICH::Photon";
     static constexpr int bank_group = 21800;
     static constexpr int bank_item  = 39;
+    static constexpr std::string_view bank_schema = "id/S,hindex/S,pindex/B,type/S,used/B,start_time/F,traced_the/F,traced_phi/F,traced_hitx/F,traced_hity/F,traced_hitz/F,traced_path/F,traced_time/F,traced_stime/F,traced_nrfl/S,traced_nrfr/S,traced_1rfl/S,traced_layers/I,traced_compos/I,traced_etaC/F,traced_aeron/F,traced_dthe/F,traced_dphi/F,eff/F,back/F,hypo_pid/I,etac_ref/F,etac_rms/F,prob/F";
 
     class Row;
 

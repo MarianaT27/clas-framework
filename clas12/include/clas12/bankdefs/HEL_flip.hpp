@@ -35,6 +35,7 @@ class HEL_flip {
     static constexpr std::string_view bank_name = "HEL::flip";
     static constexpr int bank_group = 22000;
     static constexpr int bank_item  = 12;
+    static constexpr std::string_view bank_schema = "run/I,event/I,timestamp/L,helicity/B,helicityRaw/B,pair/B,pattern/B,status/B";
 
     class Row;
 

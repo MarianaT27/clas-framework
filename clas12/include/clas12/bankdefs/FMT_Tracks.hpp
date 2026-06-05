@@ -35,6 +35,7 @@ class FMT_Tracks {
     static constexpr std::string_view bank_name = "FMT::Tracks";
     static constexpr int bank_group = 20800;
     static constexpr int bank_item  = 36;
+    static constexpr std::string_view bank_schema = "index/S,status/B,sector/B,Vtx0_x/F,Vtx0_y/F,Vtx0_z/F,p0_x/F,p0_y/F,p0_z/F,q/B,chi2/F,NDF/B";
 
     class Row;
 

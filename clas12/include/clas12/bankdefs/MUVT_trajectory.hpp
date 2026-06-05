@@ -35,6 +35,7 @@ class MUVT_trajectory {
     static constexpr std::string_view bank_name = "MUVT::trajectory";
     static constexpr int bank_group = 22900;
     static constexpr int bank_item  = 37;
+    static constexpr std::string_view bank_schema = "index/S,detector/B,layer/B,x/F,y/F,z/F,tx/F,ty/F,tz/F,lx/F,ly/F,lz/F,dx/F,dy/F,dz/F,path/F";
 
     class Row;
 

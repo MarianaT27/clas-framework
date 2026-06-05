@@ -35,6 +35,7 @@ class ALERT_ai_prepid {
     static constexpr std::string_view bank_name = "ALERT::ai:prepid";
     static constexpr int bank_group = 23000;
     static constexpr int bank_item  = 33;
+    static constexpr std::string_view bank_schema = "trackid/I,clusterid/I,prepid/I,p2212/F,p45/F,p46/F,p47/F,p49/F";
 
     class Row;
 

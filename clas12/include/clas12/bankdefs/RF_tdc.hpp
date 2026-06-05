@@ -35,6 +35,7 @@ class RF_tdc {
     static constexpr std::string_view bank_name = "RF::tdc";
     static constexpr int bank_group = 21700;
     static constexpr int bank_item  = 12;
+    static constexpr std::string_view bank_schema = "sector/B,layer/B,component/S,order/B,TDC/I";
 
     class Row;
 

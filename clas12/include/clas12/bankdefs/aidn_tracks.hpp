@@ -35,6 +35,7 @@ class aidn_tracks {
     static constexpr std::string_view bank_name = "aidn::tracks";
     static constexpr int bank_group = 4200;
     static constexpr int bank_item  = 4;
+    static constexpr std::string_view bank_schema = "id/B,sector/B,charge/B,prob/F,c1/S,c2/S,c3/S,c4/S,c5/S,c6/S,p/F,theta/F,phi/F,vz/F";
 
     class Row;
 

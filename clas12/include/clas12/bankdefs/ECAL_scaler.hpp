@@ -35,6 +35,7 @@ class ECAL_scaler {
     static constexpr std::string_view bank_name = "ECAL::scaler";
     static constexpr int bank_group = 20700;
     static constexpr int bank_item  = 26;
+    static constexpr std::string_view bank_schema = "sector/B,layer/B,component/S,acount/I,tcount/I,avalue/I,tvalue/I";
 
     class Row;
 

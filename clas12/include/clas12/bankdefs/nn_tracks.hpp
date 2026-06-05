@@ -35,6 +35,7 @@ class nn_tracks {
     static constexpr std::string_view bank_name = "nn::tracks";
     static constexpr int bank_group = 4200;
     static constexpr int bank_item  = 1;
+    static constexpr std::string_view bank_schema = "id/B,x/F,y/F,tx/F,ty/F,qp/F";
 
     class Row;
 

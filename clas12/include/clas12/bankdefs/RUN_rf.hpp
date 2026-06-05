@@ -35,6 +35,7 @@ class RUN_rf {
     static constexpr std::string_view bank_name = "RUN::rf";
     static constexpr int bank_group = 10000;
     static constexpr int bank_item  = 12;
+    static constexpr std::string_view bank_schema = "id/S,time/F";
 
     class Row;
 

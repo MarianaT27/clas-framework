@@ -35,6 +35,7 @@ class CVTRec_TrackCovMat {
     static constexpr std::string_view bank_name = "CVTRec::TrackCovMat";
     static constexpr int bank_group = 20500;
     static constexpr int bank_item  = 28;
+    static constexpr std::string_view bank_schema = "ID/S,cov_xx/F,cov_xy/F,cov_xz/F,cov_xpx/F,cov_xpy/F,cov_xpz/F,cov_yx/F,cov_yy/F,cov_yz/F,cov_ypx/F,cov_ypy/F,cov_ypz/F,cov_zx/F,cov_zy/F,cov_zz/F,cov_zpx/F,cov_zpy/F,cov_zpz/F,cov_pxx/F,cov_pxy/F,cov_pxz/F,cov_pxpx/F,cov_pxpy/F,cov_pxpz/F,cov_pyx/F,cov_pyy/F,cov_pyz/F,cov_pypx/F,cov_pypy/F,cov_pypz/F,cov_pzx/F,cov_pzy/F,cov_pzz/F,cov_pzpx/F,cov_pzpy/F,cov_pzpz/F";
 
     class Row;
 

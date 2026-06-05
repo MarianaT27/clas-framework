@@ -35,6 +35,7 @@ class TimeBasedTrkg_Trajectory {
     static constexpr std::string_view bank_name = "TimeBasedTrkg::Trajectory";
     static constexpr int bank_group = 20600;
     static constexpr int bank_item  = 53;
+    static constexpr std::string_view bank_schema = "id/S,detector/B,sector/B,layer/B,x/F,y/F,z/F,tx/F,ty/F,tz/F,B/F,path/F,dx/F,edge/F";
 
     class Row;
 

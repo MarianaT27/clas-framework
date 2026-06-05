@@ -35,6 +35,7 @@ class REC_Cherenkov {
     static constexpr std::string_view bank_name = "REC::Cherenkov";
     static constexpr int bank_group = 300;
     static constexpr int bank_item  = 33;
+    static constexpr std::string_view bank_schema = "index/S,pindex/S,detector/B,sector/B,nphe/F,time/F,path/F,chi2/F,x/F,y/F,z/F,dtheta/F,dphi/F,status/S";
 
     class Row;
 

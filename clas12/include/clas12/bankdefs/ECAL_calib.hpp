@@ -35,6 +35,7 @@ class ECAL_calib {
     static constexpr std::string_view bank_name = "ECAL::calib";
     static constexpr int bank_group = 20700;
     static constexpr int bank_item  = 24;
+    static constexpr std::string_view bank_schema = "sector/B,layer/B,size/F,dbstU/S,dbstV/S,dbstW/S,rawEU/F,rawEV/F,rawEW/F,recEU/F,recEV/F,recEW/F,recDTU/F,recDTV/F,recDTW/F,recFTU/F,recFTV/F,recFTW/F";
 
     class Row;
 

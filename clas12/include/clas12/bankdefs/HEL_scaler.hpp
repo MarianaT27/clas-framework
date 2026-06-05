@@ -35,6 +35,7 @@ class HEL_scaler {
     static constexpr std::string_view bank_name = "HEL::scaler";
     static constexpr int bank_group = 10000;
     static constexpr int bank_item  = 16;
+    static constexpr std::string_view bank_schema = "fcupgated/F,fcup/F,slmgated/F,slm/F,clockgated/F,clock/F,helicity/B,helicityRaw/B";
 
     class Row;
 

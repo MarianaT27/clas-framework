@@ -35,6 +35,7 @@ class CTOF_rawhits {
     static constexpr std::string_view bank_name = "CTOF::rawhits";
     static constexpr int bank_group = 20400;
     static constexpr int bank_item  = 20;
+    static constexpr std::string_view bank_schema = "id/S,status/S,component/S,energy_up/F,energy_down/F,time_up/F,time_down/F,energy_up_unc/F,energy_down_unc/F,time_up_unc/F,time_down_unc/F";
 
     class Row;
 

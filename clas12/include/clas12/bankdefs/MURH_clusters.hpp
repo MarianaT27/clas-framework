@@ -35,6 +35,7 @@ class MURH_clusters {
     static constexpr std::string_view bank_name = "MURH::clusters";
     static constexpr int bank_group = 23100;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "size/S,id/S,x/F,y/F,z/F,widthX/F,widthY/F,radius/F,time/F,energy/F";
 
     class Row;
 

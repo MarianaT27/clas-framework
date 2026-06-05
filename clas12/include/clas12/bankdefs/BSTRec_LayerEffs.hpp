@@ -35,6 +35,7 @@ class BSTRec_LayerEffs {
     static constexpr std::string_view bank_name = "BSTRec::LayerEffs";
     static constexpr int bank_group = 20200;
     static constexpr int bank_item  = 29;
+    static constexpr std::string_view bank_schema = "sector/B,layer/B,residual/F,status/B";
 
     class Row;
 

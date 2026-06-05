@@ -35,6 +35,7 @@ class ALERT_ai_pid {
     static constexpr std::string_view bank_name = "ALERT::ai:pid";
     static constexpr int bank_group = 23000;
     static constexpr int bank_item  = 34;
+    static constexpr std::string_view bank_schema = "trackid/I,clusterid/I,pid/I,prob_2212/F,prob_45/F,prob_46/F,prob_47/F,prob_49/F";
 
     class Row;
 

@@ -35,6 +35,7 @@ class DECAYS_Particle {
     static constexpr std::string_view bank_name = "DECAYS::Particle";
     static constexpr int bank_group = 900;
     static constexpr int bank_item  = 11;
+    static constexpr std::string_view bank_schema = "idx/S,pid/I,emc/F,erec/F,e/F,ovx/F,ovy/F,ovz/F,px/F,py/F,pz/F,upx/F,upy/F,upz/F,vx/F,vy/F,vz/F,r/F,charge/B,mass/F,umass/F,ndau/B,dau1idx/S,dau2idx/S,dau3idx/S,det/B";
 
     class Row;
 

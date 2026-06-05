@@ -35,6 +35,7 @@ class CVTRec_Cosmics {
     static constexpr std::string_view bank_name = "CVTRec::Cosmics";
     static constexpr int bank_group = 20500;
     static constexpr int bank_item  = 30;
+    static constexpr std::string_view bank_schema = "ID/S,trkline_yx_slope/F,trkline_yx_interc/F,trkline_yz_slope/F,trkline_yz_interc/F,theta/F,phi/F,chi2/F,ndf/S,cov_x02/F,cov_x0z0/F,cov_x0tx/F,cov_x0tz/F,cov_z02/F,cov_z0tx/F,cov_z0tz/F,cov_tx2/F,cov_txtz/F,cov_tz2/F,Cross1_ID/S,Cross2_ID/S,Cross3_ID/S,Cross4_ID/S,Cross5_ID/S,Cross6_ID/S,Cross7_ID/S,Cross8_ID/S,Cross9_ID/S,Cross10_ID/S,Cross11_ID/S,Cross12_ID/S,Cross13_ID/S,Cross14_ID/S,Cross15_ID/S,Cross16_ID/S,Cross17_ID/S,Cross18_ID/S,status/S";
 
     class Row;
 

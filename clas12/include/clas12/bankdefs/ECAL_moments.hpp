@@ -35,6 +35,7 @@ class ECAL_moments {
     static constexpr std::string_view bank_name = "ECAL::moments";
     static constexpr int bank_group = 20700;
     static constexpr int bank_item  = 25;
+    static constexpr std::string_view bank_schema = "distU/F,distV/F,distW/F,m1u/F,m1v/F,m1w/F,m2u/F,m2v/F,m2w/F,m3u/F,m3v/F,m3w/F";
 
     class Row;
 

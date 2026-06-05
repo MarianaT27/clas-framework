@@ -35,6 +35,7 @@ class CVTRec_KFTrajectory {
     static constexpr std::string_view bank_name = "CVTRec::KFTrajectory";
     static constexpr int bank_group = 20500;
     static constexpr int bank_item  = 32;
+    static constexpr std::string_view bank_schema = "id/S,detector/B,layer/B,index/B,x/F,y/F,z/F,px/F,py/F,pz/F,path/F,dx/F,dE/F,trackRes/F,transportedRes/F,filteredRes/F,smoothedRes/F";
 
     class Row;
 

@@ -229,7 +229,11 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     explicit Pi0AnalysisAlg(std::string name = "Pi0Analysis", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Pi0 Analysis") {
         required_services(m_hist, m_ntuple);
-        declare_banks("REC::Event");
+        // REC::Event is OPTIONAL: the full chain reads helicity from it, but the
+        // slim pi0 skim carries no REC banks and supplies helicity via
+        // Keys::Helicity instead (see process()). Declaring it required would
+        // make Pi0Analysis refuse to run on a slim input.
+        declare_optional_bank("REC::Event");
         declare_config(m_config);
         declare_ntuple(m_ntuple_writer, "pi0_pairs", m_config.enable_ntuple);
     }
@@ -342,8 +346,15 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         auto electron_opt = framework::EventHelpers::get_selected_electron(event);
         if (!electron_opt) return StatusCode::SUCCESS();
 
-        auto& rec_event = event.bank<bankdefs::REC_Event>();
-        const int helicity = rec_event.rows() > 0 ? rec_event.helicity(0) : 0;
+        // Helicity: prefer the typed store (set by the slim pi0 reader, whose
+        // input carries no REC banks); fall back to REC::Event on the full chain.
+        int helicity = 0;
+        if (auto h = event.retrieve_typed(framework::Keys::Helicity)) {
+            helicity = *h;
+        } else {
+            auto& rec_event = event.bank<bankdefs::REC_Event>();
+            helicity = rec_event.rows() > 0 ? rec_event.helicity(0) : 0;
+        }
 
         ROOT::Math::PxPyPzEVector beam_4v(0.0, 0.0, m_config.beam_energy, m_config.beam_energy);
         ROOT::Math::PxPyPzEVector electron_4v = electron_opt->PxPyPzEVector();

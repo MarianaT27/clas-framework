@@ -35,6 +35,7 @@ class MUVT_tracks {
     static constexpr std::string_view bank_name = "MUVT::tracks";
     static constexpr int bank_group = 22900;
     static constexpr int bank_item  = 36;
+    static constexpr std::string_view bank_schema = "index/S,status/B,sector/B,vx/F,vy/F,vz/F,px/F,py/F,pz/F,charge/B,chi2/F,NDF/B";
 
     class Row;
 

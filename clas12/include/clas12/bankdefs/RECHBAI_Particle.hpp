@@ -35,6 +35,7 @@ class RECHBAI_Particle {
     static constexpr std::string_view bank_name = "RECHBAI::Particle";
     static constexpr int bank_group = 400;
     static constexpr int bank_item  = 11;
+    static constexpr std::string_view bank_schema = "pid/I,px/F,py/F,pz/F,vx/F,vy/F,vz/F,vt/F,charge/B,beta/F,chi2pid/F,status/S";
 
     class Row;
 

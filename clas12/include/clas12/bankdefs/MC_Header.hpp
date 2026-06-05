@@ -35,6 +35,7 @@ class MC_Header {
     static constexpr std::string_view bank_name = "MC::Header";
     static constexpr int bank_group = 40;
     static constexpr int bank_item  = 0;
+    static constexpr std::string_view bank_schema = "run/I,event/I,type/B,helicity/F";
 
     class Row;
 

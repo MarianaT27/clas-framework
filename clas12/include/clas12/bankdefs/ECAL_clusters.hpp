@@ -35,6 +35,7 @@ class ECAL_clusters {
     static constexpr std::string_view bank_name = "ECAL::clusters";
     static constexpr int bank_group = 20700;
     static constexpr int bank_item  = 23;
+    static constexpr std::string_view bank_schema = "id/S,status/S,sector/B,layer/B,x/F,y/F,z/F,energy/F,time/F,widthU/F,widthV/F,widthW/F,idU/B,idV/B,idW/B,coordU/I,coordV/I,coordW/I";
 
     class Row;
 

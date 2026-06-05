@@ -35,6 +35,7 @@ class HTCC_rec {
     static constexpr std::string_view bank_name = "HTCC::rec";
     static constexpr int bank_group = 21500;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "id/S,nhits/S,nphe/F,ntheta/S,nphi/S,mintheta/S,maxtheta/S,minphi/S,maxphi/S,time/F,theta/F,dtheta/F,phi/F,dphi/F,x/F,y/F,z/F";
 
     class Row;
 

@@ -35,6 +35,7 @@ class RICH_Signal {
     static constexpr std::string_view bank_name = "RICH::Signal";
     static constexpr int bank_group = 21800;
     static constexpr int bank_item  = 41;
+    static constexpr std::string_view bank_schema = "id/S,hindex/S,sector/S,pmt/S,anode/S,size/S,status/S,x/F,y/F,z/F,time/F,rawtime/F,charge/F";
 
     class Row;
 

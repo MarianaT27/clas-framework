@@ -35,6 +35,7 @@ class BAND_rawhits {
     static constexpr std::string_view bank_name = "BAND::rawhits";
     static constexpr int bank_group = 22100;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "id/S,sector/B,layer/B,component/S,side/S,adc/F,ampl/F,time/F,timeFadc/F,timeCorr/F,indexTdc/S,indexAdc/S";
 
     class Row;
 

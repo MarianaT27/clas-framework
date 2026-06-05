@@ -35,6 +35,7 @@ class TimeBasedTrkg_TBClusters {
     static constexpr std::string_view bank_name = "TimeBasedTrkg::TBClusters";
     static constexpr int bank_group = 20600;
     static constexpr int bank_item  = 32;
+    static constexpr std::string_view bank_schema = "id/S,status/S,sector/B,superlayer/B,Hit1_ID/S,Hit2_ID/S,Hit3_ID/S,Hit4_ID/S,Hit5_ID/S,Hit6_ID/S,Hit7_ID/S,Hit8_ID/S,Hit9_ID/S,Hit10_ID/S,Hit11_ID/S,Hit12_ID/S,avgWire/F,fitChisqProb/F,fitSlope/F,fitSlopeErr/F,fitInterc/F,fitIntercErr/F,size/B";
 
     class Row;
 

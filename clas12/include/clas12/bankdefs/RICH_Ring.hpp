@@ -35,6 +35,7 @@ class RICH_Ring {
     static constexpr std::string_view bank_name = "RICH::Ring";
     static constexpr int bank_group = 21800;
     static constexpr int bank_item  = 36;
+    static constexpr std::string_view bank_schema = "id/S,hindex/S,pindex/B,sector/B,pmt/S,anode/B,hypo/I,dtime/F,etaC/F,prob/F,use/B,dangle/F,layers/I,compos/I";
 
     class Row;
 

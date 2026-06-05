@@ -35,6 +35,7 @@ class FTCAL_clusters {
     static constexpr std::string_view bank_name = "FTCAL::clusters";
     static constexpr int bank_group = 21000;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "size/S,id/S,x/F,y/F,z/F,widthX/F,widthY/F,radius/F,time/F,energy/F,maxEnergy/F,recEnergy/F";
 
     class Row;
 

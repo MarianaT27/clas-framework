@@ -35,6 +35,7 @@ class TimeBasedTrkg_AICrosses {
     static constexpr std::string_view bank_name = "TimeBasedTrkg::AICrosses";
     static constexpr int bank_group = 20600;
     static constexpr int bank_item  = 75;
+    static constexpr std::string_view bank_schema = "id/S,status/S,sector/B,region/B,x/F,y/F,z/F,err_x/F,err_y/F,err_z/F,ux/F,uy/F,uz/F,err_ux/F,err_uy/F,err_uz/F,Segment1_ID/S,Segment2_ID/S";
 
     class Row;
 

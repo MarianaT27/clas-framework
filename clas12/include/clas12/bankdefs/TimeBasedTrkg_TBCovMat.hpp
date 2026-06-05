@@ -35,6 +35,7 @@ class TimeBasedTrkg_TBCovMat {
     static constexpr std::string_view bank_name = "TimeBasedTrkg::TBCovMat";
     static constexpr int bank_group = 20600;
     static constexpr int bank_item  = 37;
+    static constexpr std::string_view bank_schema = "id/S,C11/F,C12/F,C13/F,C14/F,C15/F,C16/F,C21/F,C22/F,C23/F,C24/F,C25/F,C26/F,C31/F,C32/F,C33/F,C34/F,C35/F,C36/F,C41/F,C42/F,C43/F,C44/F,C45/F,C46/F,C51/F,C52/F,C53/F,C54/F,C55/F,C56/F,C61/F,C62/F,C63/F,C64/F,C65/F,C66/F";
 
     class Row;
 

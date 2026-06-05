@@ -35,6 +35,7 @@ class RECHBAI_ScintExtras {
     static constexpr std::string_view bank_name = "RECHBAI::ScintExtras";
     static constexpr int bank_group = 400;
     static constexpr int bank_item  = 23;
+    static constexpr std::string_view bank_schema = "dedx/F,size/S,layermult/B";
 
     class Row;
 

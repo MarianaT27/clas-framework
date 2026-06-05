@@ -35,6 +35,7 @@ class HitBasedTrkg_HBTracks {
     static constexpr std::string_view bank_name = "HitBasedTrkg::HBTracks";
     static constexpr int bank_group = 20600;
     static constexpr int bank_item  = 26;
+    static constexpr std::string_view bank_schema = "id/S,status/S,sector/B,c1_x/F,c1_y/F,c1_z/F,c1_ux/F,c1_uy/F,c1_uz/F,c3_x/F,c3_y/F,c3_z/F,c3_ux/F,c3_uy/F,c3_uz/F,t1_x/F,t1_y/F,t1_z/F,t1_px/F,t1_py/F,t1_pz/F,Vtx0_x/F,Vtx0_y/F,Vtx0_z/F,p0_x/F,p0_y/F,p0_z/F,x/F,y/F,z/F,tx/F,ty/F,Cross1_ID/S,Cross2_ID/S,Cross3_ID/S,Cluster1_ID/S,Cluster2_ID/S,Cluster3_ID/S,Cluster4_ID/S,Cluster5_ID/S,Cluster6_ID/S,q/B,pathlength/F,chi2/F,ndf/S";
 
     class Row;
 

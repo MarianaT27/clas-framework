@@ -35,6 +35,7 @@ class DECAYS_Event {
     static constexpr std::string_view bank_name = "DECAYS::Event";
     static constexpr int bank_group = 900;
     static constexpr int bank_item  = 10;
+    static constexpr std::string_view bank_schema = "tarmass/F,beamenergy/F";
 
     class Row;
 

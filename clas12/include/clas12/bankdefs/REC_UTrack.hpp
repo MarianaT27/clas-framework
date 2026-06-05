@@ -35,6 +35,7 @@ class REC_UTrack {
     static constexpr std::string_view bank_name = "REC::UTrack";
     static constexpr int bank_group = 300;
     static constexpr int bank_item  = 44;
+    static constexpr std::string_view bank_schema = "index/S,pindex/S,detector/B,sector/B,status/S,q/B,chi2/F,NDF/S,hbindex/S,px/F,py/F,pz/F,vx/F,vy/F,vz/F";
 
     class Row;
 

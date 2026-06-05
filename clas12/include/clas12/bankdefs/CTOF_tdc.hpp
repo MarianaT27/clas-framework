@@ -35,6 +35,7 @@ class CTOF_tdc {
     static constexpr std::string_view bank_name = "CTOF::tdc";
     static constexpr int bank_group = 20400;
     static constexpr int bank_item  = 12;
+    static constexpr std::string_view bank_schema = "sector/B,layer/B,component/S,order/B,TDC/I";
 
     class Row;
 

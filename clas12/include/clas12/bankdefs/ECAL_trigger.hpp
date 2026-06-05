@@ -35,6 +35,7 @@ class ECAL_trigger {
     static constexpr std::string_view bank_name = "ECAL::trigger";
     static constexpr int bank_group = 20700;
     static constexpr int bank_item  = 27;
+    static constexpr std::string_view bank_schema = "bit/S,counts/I";
 
     class Row;
 

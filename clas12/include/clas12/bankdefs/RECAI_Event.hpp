@@ -35,6 +35,7 @@ class RECAI_Event {
     static constexpr std::string_view bank_name = "RECAI::Event";
     static constexpr int bank_group = 400;
     static constexpr int bank_item  = 30;
+    static constexpr std::string_view bank_schema = "category/L,topology/L,beamCharge/F,liveTime/D,startTime/F,RFTime/F,helicity/B,helicityRaw/B,procTime/F";
 
     class Row;
 

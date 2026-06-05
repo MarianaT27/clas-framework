@@ -35,6 +35,7 @@ class RECAIFT_Event {
     static constexpr std::string_view bank_name = "RECAIFT::Event";
     static constexpr int bank_group = 400;
     static constexpr int bank_item  = 41;
+    static constexpr std::string_view bank_schema = "category/L,startTime/F";
 
     class Row;
 

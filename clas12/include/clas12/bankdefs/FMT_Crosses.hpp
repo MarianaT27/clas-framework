@@ -35,6 +35,7 @@ class FMT_Crosses {
     static constexpr std::string_view bank_name = "FMT::Crosses";
     static constexpr int bank_group = 20800;
     static constexpr int bank_item  = 25;
+    static constexpr std::string_view bank_schema = "index/S,sector/B,region/B,x/F,y/F,z/F,err_x/F,err_y/F,err_z/F,ux/F,uy/F,uz/F,cluster1Index/S,cluster2Index/S,trkID/S";
 
     class Row;
 

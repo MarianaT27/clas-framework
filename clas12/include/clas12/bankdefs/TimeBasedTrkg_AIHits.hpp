@@ -35,6 +35,7 @@ class TimeBasedTrkg_AIHits {
     static constexpr std::string_view bank_name = "TimeBasedTrkg::AIHits";
     static constexpr int bank_group = 20600;
     static constexpr int bank_item  = 71;
+    static constexpr std::string_view bank_schema = "id/S,status/S,sector/B,superlayer/B,layer/B,wire/S,TDC/I,jitter/B,doca/F,docaError/F,trkDoca/F,timeResidual/F,fitResidual/F,dDoca/F,DAFWeight/F,LR/B,X/F,Z/F,B/F,Alpha/F,TProp/F,TFlight/F,T0/F,TStart/F,clusterID/S,trkID/B,time/F,beta/F,tBeta/F";
 
     class Row;
 

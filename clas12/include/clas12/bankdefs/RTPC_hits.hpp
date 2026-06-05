@@ -35,6 +35,7 @@ class RTPC_hits {
     static constexpr std::string_view bank_name = "RTPC::hits";
     static constexpr int bank_group = 21900;
     static constexpr int bank_item  = 21;
+    static constexpr std::string_view bank_schema = "trkID/I,id/I,time/F,x/F,y/F,z/F,adc/F";
 
     class Row;
 

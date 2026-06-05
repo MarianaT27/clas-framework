@@ -35,6 +35,7 @@ class REC_Scintillator {
     static constexpr std::string_view bank_name = "REC::Scintillator";
     static constexpr int bank_group = 300;
     static constexpr int bank_item  = 35;
+    static constexpr std::string_view bank_schema = "index/S,pindex/S,detector/B,sector/B,layer/B,component/S,energy/F,time/F,path/F,chi2/F,x/F,y/F,z/F,hx/F,hy/F,hz/F,status/S";
 
     class Row;
 

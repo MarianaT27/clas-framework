@@ -35,6 +35,7 @@ class CVTRec_Trajectory {
     static constexpr std::string_view bank_name = "CVTRec::Trajectory";
     static constexpr int bank_group = 20500;
     static constexpr int bank_item  = 31;
+    static constexpr std::string_view bank_schema = "id/S,detector/B,sector/B,layer/B,x/F,y/F,z/F,cx/F,cy/F,cz/F,p/F,phi/F,theta/F,langle/F,centroid/F,path/F,dx/F,edge/F";
 
     class Row;
 

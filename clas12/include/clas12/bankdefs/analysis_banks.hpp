@@ -28,3 +28,5 @@
 #include <clas12/bankdefs/MC_Lund.hpp>
 #include <clas12/bankdefs/MC_GenMatch.hpp>
 #include <clas12/bankdefs/MC_RecMatch.hpp>
+#include <clas12/bankdefs/PI0_event.hpp>
+#include <clas12/bankdefs/PI0_photons.hpp>

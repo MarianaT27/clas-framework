@@ -35,6 +35,7 @@ class RAW_epics {
     static constexpr std::string_view bank_name = "RAW::epics";
     static constexpr int bank_group = 20000;
     static constexpr int bank_item  = 15;
+    static constexpr std::string_view bank_schema = "json/B";
 
     class Row;
 

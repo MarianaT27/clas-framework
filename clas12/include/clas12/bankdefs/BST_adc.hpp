@@ -35,6 +35,7 @@ class BST_adc {
     static constexpr std::string_view bank_name = "BST::adc";
     static constexpr int bank_group = 20200;
     static constexpr int bank_item  = 11;
+    static constexpr std::string_view bank_schema = "sector/B,layer/B,component/S,order/B,ADC/I,time/F,ped/S,timestamp/L";
 
     class Row;
 

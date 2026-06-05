@@ -35,6 +35,7 @@ class AHDC_ai_prediction {
     static constexpr std::string_view bank_name = "AHDC::ai:prediction";
     static constexpr int bank_group = 23000;
     static constexpr int bank_item  = 30;
+    static constexpr std::string_view bank_schema = "x1/F,y1/F,x2/F,y2/F,x3/F,y3/F,x4/F,y4/F,x5/F,y5/F,pred/F";
 
     class Row;
 

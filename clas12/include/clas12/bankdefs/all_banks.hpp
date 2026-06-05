@@ -247,6 +247,8 @@
 #include <clas12/bankdefs/nn_dchits.hpp>
 #include <clas12/bankdefs/ai_tracks.hpp>
 #include <clas12/bankdefs/aidn_tracks.hpp>
+#include <clas12/bankdefs/PI0_event.hpp>
+#include <clas12/bankdefs/PI0_photons.hpp>
 #include <clas12/bankdefs/RASTER_position.hpp>
 #include <clas12/bankdefs/RECOIL_hits.hpp>
 #include <clas12/bankdefs/RECOIL_clusters.hpp>

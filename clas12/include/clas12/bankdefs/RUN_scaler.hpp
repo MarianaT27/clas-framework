@@ -35,6 +35,7 @@ class RUN_scaler {
     static constexpr std::string_view bank_name = "RUN::scaler";
     static constexpr int bank_group = 10000;
     static constexpr int bank_item  = 14;
+    static constexpr std::string_view bank_schema = "fcupgated/F,fcup/F,livetime/F";
 
     class Row;
 

@@ -35,6 +35,7 @@ class ATOF_clusters {
     static constexpr std::string_view bank_name = "ATOF::clusters";
     static constexpr int bank_group = 22500;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "id/S,n_bar/I,n_wedge/I,time/F,x/F,y/F,z/F,energy/F,pathlength/F,inpathlength/F,projID/S";
 
     class Row;
 

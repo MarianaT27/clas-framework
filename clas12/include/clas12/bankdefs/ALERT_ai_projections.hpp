@@ -35,6 +35,7 @@ class ALERT_ai_projections {
     static constexpr std::string_view bank_name = "ALERT::ai:projections";
     static constexpr int bank_group = 23000;
     static constexpr int bank_item  = 32;
+    static constexpr std::string_view bank_schema = "trackid/I,matched_atof_hit_id/I";
 
     class Row;
 

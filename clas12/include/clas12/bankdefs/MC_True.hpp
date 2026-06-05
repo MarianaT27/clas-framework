@@ -35,6 +35,7 @@ class MC_True {
     static constexpr std::string_view bank_name = "MC::True";
     static constexpr int bank_group = 40;
     static constexpr int bank_item  = 4;
+    static constexpr std::string_view bank_schema = "detector/B,pid/I,mpid/I,tid/I,mtid/I,otid/I,trackE/F,totEdep/F,avgX/F,avgY/F,avgZ/F,avgLx/F,avgLy/F,avgLz/F,px/F,py/F,pz/F,vx/F,vy/F,vz/F,mvx/F,mvy/F,mvz/F,avgT/F,nsteps/I,procID/I,hitn/I";
 
     class Row;
 

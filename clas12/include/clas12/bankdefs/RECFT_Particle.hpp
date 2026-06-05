@@ -35,6 +35,7 @@ class RECFT_Particle {
     static constexpr std::string_view bank_name = "RECFT::Particle";
     static constexpr int bank_group = 300;
     static constexpr int bank_item  = 42;
+    static constexpr std::string_view bank_schema = "pid/I,vt/F,beta/F,chi2pid/F,status/S,px/F,py/F,pz/F";
 
     class Row;
 

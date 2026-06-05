@@ -35,6 +35,7 @@ class nn_dchits {
     static constexpr std::string_view bank_name = "nn::dchits";
     static constexpr int bank_group = 4200;
     static constexpr int bank_item  = 2;
+    static constexpr std::string_view bank_schema = "id/B,index/S";
 
     class Row;
 

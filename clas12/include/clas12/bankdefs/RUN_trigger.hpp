@@ -35,6 +35,7 @@ class RUN_trigger {
     static constexpr std::string_view bank_name = "RUN::trigger";
     static constexpr int bank_group = 10000;
     static constexpr int bank_item  = 13;
+    static constexpr std::string_view bank_schema = "id/I,trigger/I";
 
     class Row;
 

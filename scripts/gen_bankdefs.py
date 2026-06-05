@@ -100,6 +100,8 @@ UMBRELLA_BANKS = {
     "RUN::config",
     # Decays
     "DECAYS::Particle",
+    # Slim pi0 skim custom banks
+    "PI0::event", "PI0::photons",
 }
 
 
@@ -297,6 +299,10 @@ def gen_header(bank_def: dict, source_file: str) -> str:
     lines.append(f"    static constexpr std::string_view bank_name = \"{name}\";")
     lines.append(f"    static constexpr int bank_group = {group};")
     lines.append(f"    static constexpr int bank_item  = {item};")
+    # hipo schema format string ("name/Type,...") so a writer can construct the")
+    # schema from the same source of truth as this reader.
+    schema_str = ",".join(f"{e['name']}/{e['type']}" for e in bank_def["entries"])
+    lines.append(f"    static constexpr std::string_view bank_schema = \"{schema_str}\";")
     lines.append("")
     lines.append("    class Row;")
     lines.append("")

@@ -35,6 +35,7 @@ class RECAI_FTrack {
     static constexpr std::string_view bank_name = "RECAI::FTrack";
     static constexpr int bank_group = 400;
     static constexpr int bank_item  = 47;
+    static constexpr std::string_view bank_schema = "index/S,pindex/S,detector/B,sector/B,status/S,q/B,chi2/F,NDF/S,px/F,py/F,pz/F,vx/F,vy/F,vz/F";
 
     class Row;
 

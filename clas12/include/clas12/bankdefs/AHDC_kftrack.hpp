@@ -35,6 +35,7 @@ class AHDC_kftrack {
     static constexpr std::string_view bank_name = "AHDC::kftrack";
     static constexpr int bank_group = 23000;
     static constexpr int bank_item  = 26;
+    static constexpr std::string_view bank_schema = "trackid/I,x/F,y/F,z/F,px/F,py/F,pz/F,n_hits/I,sum_adc/I,path/F,dEdx/F,p_drift/F,chi2/F,sum_residuals/F";
 
     class Row;
 

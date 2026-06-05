@@ -35,6 +35,7 @@ class RUN_config {
     static constexpr std::string_view bank_name = "RUN::config";
     static constexpr int bank_group = 10000;
     static constexpr int bank_item  = 11;
+    static constexpr std::string_view bank_schema = "run/I,event/I,unixtime/I,trigger/L,timestamp/L,type/B,mode/B,torus/F,solenoid/F";
 
     class Row;
 

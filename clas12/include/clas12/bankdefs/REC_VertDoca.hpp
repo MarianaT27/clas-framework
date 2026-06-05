@@ -35,6 +35,7 @@ class REC_VertDoca {
     static constexpr std::string_view bank_name = "REC::VertDoca";
     static constexpr int bank_group = 300;
     static constexpr int bank_item  = 39;
+    static constexpr std::string_view bank_schema = "index1/S,index2/S,x/F,y/F,z/F,x1/F,y1/F,z1/F,cx1/F,cy1/F,cz1/F,x2/F,y2/F,z2/F,cx2/F,cy2/F,cz2/F,r/F";
 
     class Row;
 

@@ -35,6 +35,7 @@ class FTOF_matchedclusters {
     static constexpr std::string_view bank_name = "FTOF::matchedclusters";
     static constexpr int bank_group = 21200;
     static constexpr int bank_item  = 33;
+    static constexpr std::string_view bank_schema = "sector/B,paddle_id1A/S,paddle_id1B/S,clus_1Aid/S,clus_1Bid/S,clusSize_1A/S,clusSize_1B/S,tminAlgo_1B_tCorr/F,midbarAlgo_1B_tCorr/F,EmaxAlgo_1B_tCorr/F";
 
     class Row;
 

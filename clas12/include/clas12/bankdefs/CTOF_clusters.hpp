@@ -35,6 +35,7 @@ class CTOF_clusters {
     static constexpr std::string_view bank_name = "CTOF::clusters";
     static constexpr int bank_group = 20400;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "id/S,status/S,trackid/S,size/S,sector/B,layer/B,component/S,energy/F,time/F,energy_unc/F,time_unc/F,x/F,y/F,z/F,pathLengthThruBar/F";
 
     class Row;
 

@@ -35,6 +35,7 @@ class RUN_filter {
     static constexpr std::string_view bank_name = "RUN::filter";
     static constexpr int bank_group = 10000;
     static constexpr int bank_item  = 15;
+    static constexpr std::string_view bank_schema = "json/B";
 
     class Row;
 

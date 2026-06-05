@@ -35,6 +35,7 @@ class REC_ScintExtras {
     static constexpr std::string_view bank_name = "REC::ScintExtras";
     static constexpr int bank_group = 300;
     static constexpr int bank_item  = 43;
+    static constexpr std::string_view bank_schema = "dedx/F,size/S,layermult/B";
 
     class Row;
 

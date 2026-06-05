@@ -35,6 +35,7 @@ class CVTRec_UTracks {
     static constexpr std::string_view bank_name = "CVTRec::UTracks";
     static constexpr int bank_group = 20500;
     static constexpr int bank_item  = 27;
+    static constexpr std::string_view bank_schema = "ID/S,nKFIters/B,c_x/F,c_y/F,c_z/F,c_ux/F,c_uy/F,c_uz/F,pathlength/F,q/B,p/F,pt/F,phi0/F,tandip/F,z0/F,d0/F,cov_d02/F,cov_d0phi0/F,cov_d0rho/F,cov_phi02/F,cov_phi0rho/F,cov_rho2/F,cov_z02/F,cov_z0tandip/F,cov_tandip2/F,chi2/F,ndf/S,pid/I,seedID/S,xb/F,yb/F,status/S";
 
     class Row;
 

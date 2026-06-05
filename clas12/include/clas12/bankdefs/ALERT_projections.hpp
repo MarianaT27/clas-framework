@@ -35,6 +35,7 @@ class ALERT_projections {
     static constexpr std::string_view bank_name = "ALERT::projections";
     static constexpr int bank_group = 23000;
     static constexpr int bank_item  = 31;
+    static constexpr std::string_view bank_schema = "id/S,trackid/S,x_at_bar/F,y_at_bar/F,z_at_bar/F,l_at_bar/F,l_in_bar/F,x_at_wedge/F,y_at_wedge/F,z_at_wedge/F,l_at_wedge/F,l_in_wedge/F";
 
     class Row;
 

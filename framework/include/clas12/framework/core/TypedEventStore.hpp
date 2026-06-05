@@ -299,6 +299,11 @@ inline const TypedKey<Particle> BestElectron{"best_electron"};
 inline const TypedKey<double> BeamEnergy{"beam_energy"};
 inline const TypedKey<double> TargetMass{"target_mass"};
 
+// Beam helicity (HWP-corrected, +/-1; 0 = undefined). Set by the slim pi0
+// reader so Pi0AnalysisAlg can prefer it over REC::Event when the raw bank is
+// absent (slim skim input carries no REC banks).
+inline const TypedKey<int> Helicity{"helicity"};
+
 // =============================================================================
 // DIS kinematic variables (algorithm-compatible naming)
 // =============================================================================

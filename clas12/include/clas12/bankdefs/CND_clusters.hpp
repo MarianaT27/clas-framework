@@ -35,6 +35,7 @@ class CND_clusters {
     static constexpr std::string_view bank_name = "CND::clusters";
     static constexpr int bank_group = 20300;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "id/S,sector/B,layer/B,component/S,size/S,energy/F,x/F,y/F,z/F,time/F,status/S,layermult/B,layer1/B,layer2/B,layer3/B,pathLengthThruBar/F";
 
     class Row;
 

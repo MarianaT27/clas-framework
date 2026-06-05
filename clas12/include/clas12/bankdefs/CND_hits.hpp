@@ -35,6 +35,7 @@ class CND_hits {
     static constexpr std::string_view bank_name = "CND::hits";
     static constexpr int bank_group = 20300;
     static constexpr int bank_item  = 21;
+    static constexpr std::string_view bank_schema = "id/S,status/S,trkID/S,clusterid/S,sector/B,layer/B,component/S,energy/F,time/F,energy_unc/F,time_unc/F,x/F,y/F,z/F,x_unc/F,y_unc/F,z_unc/F,tx/F,ty/F,tz/F,tlength/F,pathlength/F,indexLadc/S,indexRadc/S,indexLtdc/S,indexRtdc/S";
 
     class Row;
 

@@ -35,6 +35,7 @@ class AHDC_adc {
     static constexpr std::string_view bank_name = "AHDC::adc";
     static constexpr int bank_group = 22400;
     static constexpr int bank_item  = 11;
+    static constexpr std::string_view bank_schema = "sector/B,layer/B,component/S,order/B,ADC/I,time/F,ped/F,windex/S,integral/I,leadingEdgeTime/F,timeOverThreshold/F,constantFractionTime/F,wfType/S";
 
     class Row;
 

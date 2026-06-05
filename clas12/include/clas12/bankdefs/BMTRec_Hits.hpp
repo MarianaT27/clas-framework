@@ -35,6 +35,7 @@ class BMTRec_Hits {
     static constexpr std::string_view bank_name = "BMTRec::Hits";
     static constexpr int bank_group = 20100;
     static constexpr int bank_item  = 21;
+    static constexpr std::string_view bank_schema = "ID/S,sector/B,layer/B,strip/S,energy/F,time/F,fitResidual/F,trkingStat/B,clusterID/S,trkID/S,status/B";
 
     class Row;
 

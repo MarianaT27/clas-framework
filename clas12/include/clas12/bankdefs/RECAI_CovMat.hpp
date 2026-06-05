@@ -35,6 +35,7 @@ class RECAI_CovMat {
     static constexpr std::string_view bank_name = "RECAI::CovMat";
     static constexpr int bank_group = 400;
     static constexpr int bank_item  = 38;
+    static constexpr std::string_view bank_schema = "index/S,pindex/S,C11/F,C12/F,C13/F,C14/F,C15/F,C16/F,C22/F,C23/F,C24/F,C25/F,C26/F,C33/F,C34/F,C35/F,C36/F,C44/F,C45/F,C46/F,C55/F,C56/F,C66/F";
 
     class Row;
 

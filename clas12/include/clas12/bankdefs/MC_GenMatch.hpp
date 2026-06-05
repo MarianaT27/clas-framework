@@ -35,6 +35,7 @@ class MC_GenMatch {
     static constexpr std::string_view bank_name = "MC::GenMatch";
     static constexpr int bank_group = 40;
     static constexpr int bank_item  = 6;
+    static constexpr std::string_view bank_schema = "mcindex/S,pindex/S,mclayer1/L,mclayer2/L,player1/L,player2/L,quality/F";
 
     class Row;
 

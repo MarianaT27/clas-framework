@@ -35,6 +35,7 @@ class FTCAL_adc {
     static constexpr std::string_view bank_name = "FTCAL::adc";
     static constexpr int bank_group = 21000;
     static constexpr int bank_item  = 11;
+    static constexpr std::string_view bank_schema = "sector/B,layer/B,component/S,order/B,ADC/I,time/F,ped/S";
 
     class Row;
 

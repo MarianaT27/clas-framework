@@ -35,6 +35,7 @@ class REC_CaloExtras {
     static constexpr std::string_view bank_name = "REC::CaloExtras";
     static constexpr int bank_group = 300;
     static constexpr int bank_item  = 46;
+    static constexpr std::string_view bank_schema = "dbstU/S,dbstV/S,dbstW/S,rawEU/F,rawEV/F,rawEW/F,recEU/F,recEV/F,recEW/F,recDTU/F,recDTV/F,recDTW/F,recFTU/F,recFTV/F,recFTW/F,size/F";
 
     class Row;
 

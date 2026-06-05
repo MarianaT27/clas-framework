@@ -35,6 +35,7 @@ class AHDC_clusters {
     static constexpr std::string_view bank_name = "AHDC::clusters";
     static constexpr int bank_group = 23000;
     static constexpr int bank_item  = 25;
+    static constexpr std::string_view bank_schema = "x/F,y/F,z/F";
 
     class Row;
 

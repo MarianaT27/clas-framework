@@ -35,6 +35,7 @@ class DC_tot {
     static constexpr std::string_view bank_name = "DC::tot";
     static constexpr int bank_group = 20600;
     static constexpr int bank_item  = 15;
+    static constexpr std::string_view bank_schema = "sector/B,layer/B,component/S,order/B,TDC/I,ToT/S";
 
     class Row;
 

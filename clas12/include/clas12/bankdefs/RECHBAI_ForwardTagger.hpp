@@ -35,6 +35,7 @@ class RECHBAI_ForwardTagger {
     static constexpr std::string_view bank_name = "RECHBAI::ForwardTagger";
     static constexpr int bank_group = 400;
     static constexpr int bank_item  = 14;
+    static constexpr std::string_view bank_schema = "index/S,pindex/S,detector/B,layer/B,energy/F,time/F,path/F,chi2/F,x/F,y/F,z/F,dx/F,dy/F,radius/F,size/S,status/S";
 
     class Row;
 

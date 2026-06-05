@@ -35,6 +35,7 @@ class RECHB_Calorimeter {
     static constexpr std::string_view bank_name = "RECHB::Calorimeter";
     static constexpr int bank_group = 300;
     static constexpr int bank_item  = 12;
+    static constexpr std::string_view bank_schema = "index/S,pindex/S,detector/B,sector/B,layer/B,energy/F,time/F,path/F,chi2/F,x/F,y/F,z/F,hx/F,hy/F,hz/F,lu/F,lv/F,lw/F,du/F,dv/F,dw/F,m2u/F,m2v/F,m2w/F,m3u/F,m3v/F,m3w/F,status/S";
 
     class Row;
 

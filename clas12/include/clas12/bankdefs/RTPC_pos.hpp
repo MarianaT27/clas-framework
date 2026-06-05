@@ -35,6 +35,7 @@ class RTPC_pos {
     static constexpr std::string_view bank_name = "RTPC::pos";
     static constexpr int bank_group = 21900;
     static constexpr int bank_item  = 14;
+    static constexpr std::string_view bank_schema = "step/I,time/F,energy/F,posx/F,posy/F,posz/F,phi/F,tid/I";
 
     class Row;
 

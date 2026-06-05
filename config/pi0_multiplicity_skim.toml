@@ -11,8 +11,16 @@
 #       --output-dir /volatile/clas12/ouillon/pi0_skim_slices
 #
 # Pipeline (skim): EventMonitor -> ElectronSelectionAlg -> DISSelection
-#                  -> PhotonSelection -> HipoEventWriter
+#                  -> PhotonSelection -> SlimWriter
 # Services: VzCorrectorService, ElectronCutsService, PhotonCutsService.
+#
+# SlimWriter reduces each passing event to two tiny custom banks instead of a
+# raw passthrough of all REC banks:
+#   PI0::event   (1 row):  run, event, helicity, DIS Q2/xB/nu/W/y, e- 4-vector
+#   PI0::photons (N rows): selected photon px/py/pz/E (Catboost AI applied)
+# The output is ~100x smaller than a passthrough (~87 B/event) and is read back
+# by pi0_multiplicity's auto-detected slim path (Pi0SlimReaderAlg), skipping the
+# whole selection chain + AI on re-analysis.
 
 [run]
 input       = "/Users/mathieuouillon/Documents/tmp/cj2/rec_clas_022050.evio.00000.hipo"

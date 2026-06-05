@@ -35,6 +35,7 @@ class MC_Particle {
     static constexpr std::string_view bank_name = "MC::Particle";
     static constexpr int bank_group = 40;
     static constexpr int bank_item  = 2;
+    static constexpr std::string_view bank_schema = "pid/I,px/F,py/F,pz/F,vx/F,vy/F,vz/F,vt/F";
 
     class Row;
 

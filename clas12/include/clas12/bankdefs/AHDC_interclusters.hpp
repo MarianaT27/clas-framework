@@ -35,6 +35,7 @@ class AHDC_interclusters {
     static constexpr std::string_view bank_name = "AHDC::interclusters";
     static constexpr int bank_group = 23000;
     static constexpr int bank_item  = 27;
+    static constexpr std::string_view bank_schema = "trackid/I,x/F,y/F";
 
     class Row;
 

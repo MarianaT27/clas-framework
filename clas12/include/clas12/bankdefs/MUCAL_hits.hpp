@@ -35,6 +35,7 @@ class MUCAL_hits {
     static constexpr std::string_view bank_name = "MUCAL::hits";
     static constexpr int bank_group = 22800;
     static constexpr int bank_item  = 21;
+    static constexpr std::string_view bank_schema = "idx/B,idy/B,x/F,y/F,z/F,energy/F,time/F,hitID/S,clusterID/S";
 
     class Row;
 

@@ -35,6 +35,7 @@ class MC_RecMatch {
     static constexpr std::string_view bank_name = "MC::RecMatch";
     static constexpr int bank_group = 40;
     static constexpr int bank_item  = 7;
+    static constexpr std::string_view bank_schema = "pindex/S,mcindex/S,player1/L,player2/L,mclayer1/L,mclayer2/L,quality/F";
 
     class Row;
 

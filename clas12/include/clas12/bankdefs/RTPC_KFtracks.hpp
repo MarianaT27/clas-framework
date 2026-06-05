@@ -35,6 +35,7 @@ class RTPC_KFtracks {
     static constexpr std::string_view bank_name = "RTPC::KFtracks";
     static constexpr int bank_group = 21900;
     static constexpr int bank_item  = 23;
+    static constexpr std::string_view bank_schema = "trkID/I,px/F,py/F,pz/F,vz/F,dEdx/F,p_drift/F";
 
     class Row;
 

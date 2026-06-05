@@ -35,6 +35,7 @@ class DC_jitter {
     static constexpr std::string_view bank_name = "DC::jitter";
     static constexpr int bank_group = 20600;
     static constexpr int bank_item  = 13;
+    static constexpr std::string_view bank_schema = "crate/B,slot/B,timestamp/L";
 
     class Row;
 

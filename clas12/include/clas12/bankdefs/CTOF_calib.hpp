@@ -35,6 +35,7 @@ class CTOF_calib {
     static constexpr std::string_view bank_name = "CTOF::calib";
     static constexpr int bank_group = 20400;
     static constexpr int bank_item  = 25;
+    static constexpr std::string_view bank_schema = "id/S,status/S,trackid/S,component/S,energy/F,time/F,x/F,y/F,z/F,tx/F,ty/F,tz/F,adc1/I,adc2/I,tdc1/I,tdc2/I,pindex/S,pid/I,charge/B,px/F,py/F,pz/F,vx/F,vy/F,vz/F,vt/F,chi2/F,NDF/S,pathLength/F,pathLengthThruBar/F";
 
     class Row;
 

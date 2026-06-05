@@ -35,6 +35,7 @@ class RICH_Hadron {
     static constexpr std::string_view bank_name = "RICH::Hadron";
     static constexpr int bank_group = 21800;
     static constexpr int bank_item  = 38;
+    static constexpr std::string_view bank_schema = "id/S,hindex/S,pindex/B,sector/B,traced_the/F,traced_phi/F,traced_hitx/F,traced_hity/F,traced_hitz/F,traced_time/F,traced_path/F,traced_mchi2/F,traced_ilay/S,traced_ico/S,traced_emix/F,traced_emiy/F,traced_emiz/F,etaC_dir/F,etaC_lat/F,etaC_sphe/F,etaC_rms/F";
 
     class Row;
 

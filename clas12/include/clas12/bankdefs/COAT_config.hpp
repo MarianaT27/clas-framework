@@ -35,6 +35,7 @@ class COAT_config {
     static constexpr std::string_view bank_name = "COAT::config";
     static constexpr int bank_group = 10000;
     static constexpr int bank_item  = 17;
+    static constexpr std::string_view bank_schema = "json/B";
 
     class Row;
 

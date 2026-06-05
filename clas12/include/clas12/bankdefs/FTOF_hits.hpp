@@ -35,6 +35,7 @@ class FTOF_hits {
     static constexpr std::string_view bank_name = "FTOF::hits";
     static constexpr int bank_group = 21200;
     static constexpr int bank_item  = 31;
+    static constexpr std::string_view bank_schema = "id/S,status/S,trackid/S,sector/B,layer/B,component/S,energy/F,time/F,energy_unc/F,time_unc/F,x/F,y/F,z/F,x_unc/F,y_unc/F,z_unc/F,tx/F,ty/F,tz/F,adc_idx1/S,adc_idx2/S,tdc_idx1/S,tdc_idx2/S,clusterid/S,pathLength/F,pathLengthThruBar/F";
 
     class Row;
 

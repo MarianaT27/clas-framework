@@ -35,6 +35,7 @@ class URWT_clusters {
     static constexpr std::string_view bank_name = "URWT::clusters";
     static constexpr int bank_group = 22300;
     static constexpr int bank_item  = 22;
+    static constexpr std::string_view bank_schema = "id/S,sector/B,layer/B,strip/S,energy/F,time/F,xo/F,yo/F,zo/F,xe/F,ye/F,ze/F,size/S,status/S";
 
     class Row;
 
