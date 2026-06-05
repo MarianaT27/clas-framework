@@ -44,8 +44,7 @@
 
 namespace algorithms {
 
-using framework::Log;
-using StatusCode = framework::StatusCode;
+using namespace framework;
 
 struct ElectronSelectionConfig {
     Target target = Target::LD2;
@@ -71,12 +70,12 @@ static_assert(std::is_aggregate_v<ElectronSelectionConfig>, "ElectronSelectionCo
 /**
  * @brief Algorithm for electron selection and kinematics
  */
-class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSelectionConfig> {
+class ElectronSelectionAlg : public ConfigurableAlgorithm<ElectronSelectionConfig> {
    public:
 
     explicit ElectronSelectionAlg(std::string name = "ElectronSelectionAlg", Config config = {})
         : ConfigurableAlgorithm(std::move(name), config), m_cutflow("Electron Selection") {
-        framework::wire_services(*this);  // reflects ServiceRef members (refl-cpp)
+        wire_services(*this);  // reflects ServiceRef members (refl-cpp)
         declare_banks_typed<bankdefs::REC_Particle, bankdefs::REC_Calorimeter, bankdefs::REC_Traj>();
         declare_ntuple(m_ntuple, [this] { return m_config.enable_ntuple; });
     }
@@ -91,16 +90,15 @@ class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSel
         m_electron_cuts->set_target(m_config.target);
         m_electron_cuts->set_polarity(m_config.polarity);
 
-        // Histograms auto-register by member name (Boost.PFR) — no book() method.
         if (m_config.enable_histograms) {
-            framework::register_fields(*m_hist, "/Electron/Kinematics/before_cuts", h_before);
-            framework::register_fields(*m_hist, "/Electron/Kinematics/after_cuts",  h_after);
+            register_fields(*m_hist, "/Electron/Kinematics/before_cuts", h_before);
+            register_fields(*m_hist, "/Electron/Kinematics/after_cuts",  h_after);
         }
 
         return StatusCode::SUCCESS();
     }
 
-    auto process(framework::Event& event) -> StatusCode override {
+    auto process(Event& event) -> StatusCode override {
         m_cutflow.pass("All Events");
 
         std::optional<Particle> trigger_e = event.find_trigger_electron();
@@ -134,22 +132,16 @@ class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSel
         m_ntuple.data().e_sector = calorimeter.pcal_sector;
         m_ntuple.fill();
 
-        event.store_typed(framework::Keys::TriggerElectron, electron);
-        event.set_decision_typed(framework::Decisions::HasGoodElectron, true);
+        event.store_typed(Keys::TriggerElectron, electron);
+        event.set_decision_typed(Decisions::HasGoodElectron, true);
 
         return StatusCode::SUCCESS();
     }
 
     auto on_finalize() -> StatusCode override {
         Log::subsection(fmt::format("{} Summary", name()));
-
-        if (m_config.enable_ntuple) {
-            log_stat("N-tuple entries", m_ntuple.entries());
-        }
-
-        Log::blank();
+        if (m_config.enable_ntuple) log_stat("N-tuple entries", m_ntuple.entries());
         m_cutflow.print();
-
         log_success("Finalization complete");
         return StatusCode::SUCCESS();
     }
@@ -157,34 +149,32 @@ class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSel
    private:
     FRAMEWORK_REFLECT_FRIEND;  // let refl-cpp reflect the private ServiceRef members
 
-    framework::Cutflow m_cutflow;
+    Cutflow m_cutflow;
 
-    framework::ServiceRef<framework::HistogramService> m_hist;
-    framework::ServiceRef<framework::ElectronCutsService> m_electron_cuts;
+    ServiceRef<HistogramService> m_hist;
+    ServiceRef<ElectronCutsService> m_electron_cuts;
 
     struct StageHistograms {
-        // Each member's NAME is its ROOT path (set by register_fields); the
-        // title (axis labels) + binning live inline. No book() method.
-        framework::H1Auto<> p{"Electron Momentum;p [GeV/c];Events", 0.0, 12.0, 100};
-        framework::H1Auto<> theta{"Electron #theta;#theta [deg];Events", 0.0, 45.0, 90};
-        framework::H1Auto<> phi{"Electron #phi;#phi [deg];Events", -180.0, 180.0, 360};
-        framework::H1Auto<> pt{"Electron p_{T};p_{T} [GeV/c];Events", 0.0, 4.0, 100};
-        framework::H1Auto<> sector{"Electron Sector;Sector;Events", 0.5, 7.5, 7};
-        framework::H1Auto<> vz{"Vertex Z;v_{z} [cm];Events", -20.0, 5.0, 200};
-        framework::H1Auto<> vz_corr{"Corrected Vertex Z;v_{z}^{corr} [cm];Events", -20.0, 5.0, 200};
-        framework::H1Auto<> vx{"Vertex X;v_{x} [cm];Events", -2.0, 2.0, 100};
-        framework::H1Auto<> vy{"Vertex Y;v_{y} [cm];Events", -2.0, 2.0, 100};
-        framework::H1Auto<> chi2pid{"Electron #chi^{2}_{PID};#chi^{2}_{PID};Events", -10.0, 10.0, 200};
-        framework::H1Auto<> pcal_lv{"PCAL Local V;PCAL_{lv} [cm];Events", 0.0, 450.0, 100};
-        framework::H1Auto<> pcal_lw{"PCAL Local W;PCAL_{lw} [cm];Events", 0.0, 450.0, 100};
-        framework::H2Auto<> sf_vs_p{"SF vs p;p [GeV/c];SF", 0.0, 12.0, 100, 0.0, 0.5, 100};
-        framework::H2Auto<> chi2pid_vs_p{"#chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}", 0.0, 12.0, 100, -10.0, 10.0, 200};
-        framework::H2Auto<> vz_vs_phi{"v_{z} vs #phi;#phi [deg];v_{z} [cm]", -180.0, 180.0, 180, -20.0, 5.0, 100};
-        framework::H2Auto<> vz_vs_theta{"v_{z} vs #theta;#theta [deg];v_{z} [cm]", 0.0, 45.0, 90, -20.0, 5.0, 100};
-        framework::H2Auto<> vz_corr_vs_phi{"v_{z}^{corr} vs #phi;#phi [deg];v_{z}^{corr} [cm]", -180.0, 180.0, 180, -20.0, 5.0, 100};
-        framework::H2Auto<> vz_corr_vs_theta{"v_{z}^{corr} vs #theta;#theta [deg];v_{z}^{corr} [cm]", 0.0, 45.0, 90, -20.0, 5.0, 100};
-        framework::H2Auto<> theta_vs_phi{"#theta vs #phi;#phi [deg];#theta [deg]", -180.0, 180.0, 180, 0.0, 45.0, 90};
-        framework::H2Auto<> p_vs_theta{"p vs #theta;#theta [deg];p [GeV/c]", 0.0, 45.0, 90, 0.0, 12.0, 100};
+        H1Auto p{"Electron Momentum;p [GeV/c];Events", 0.0, 12.0, 100};
+        H1Auto theta{"Electron #theta;#theta [deg];Events", 0.0, 45.0, 90};
+        H1Auto phi{"Electron #phi;#phi [deg];Events", -180.0, 180.0, 360};
+        H1Auto pt{"Electron p_{T};p_{T} [GeV/c];Events", 0.0, 4.0, 100};
+        H1Auto sector{"Electron Sector;Sector;Events", 0.5, 7.5, 7};
+        H1Auto vz{"Vertex Z;v_{z} [cm];Events", -20.0, 5.0, 200};
+        H1Auto vz_corr{"Corrected Vertex Z;v_{z}^{corr} [cm];Events", -20.0, 5.0, 200};
+        H1Auto vx{"Vertex X;v_{x} [cm];Events", -2.0, 2.0, 100};
+        H1Auto vy{"Vertex Y;v_{y} [cm];Events", -2.0, 2.0, 100};
+        H1Auto chi2pid{"Electron #chi^{2}_{PID};#chi^{2}_{PID};Events", -10.0, 10.0, 200};
+        H1Auto pcal_lv{"PCAL Local V;PCAL_{lv} [cm];Events", 0.0, 450.0, 100};
+        H1Auto pcal_lw{"PCAL Local W;PCAL_{lw} [cm];Events", 0.0, 450.0, 100};
+        H2Auto sf_vs_p{"SF vs p;p [GeV/c];SF", 0.0, 12.0, 100, 0.0, 0.5, 100};
+        H2Auto chi2pid_vs_p{"#chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}", 0.0, 12.0, 100, -10.0, 10.0, 200};
+        H2Auto vz_vs_phi{"v_{z} vs #phi;#phi [deg];v_{z} [cm]", -180.0, 180.0, 180, -20.0, 5.0, 100};
+        H2Auto vz_vs_theta{"v_{z} vs #theta;#theta [deg];v_{z} [cm]", 0.0, 45.0, 90, -20.0, 5.0, 100};
+        H2Auto vz_corr_vs_phi{"v_{z}^{corr} vs #phi;#phi [deg];v_{z}^{corr} [cm]", -180.0, 180.0, 180, -20.0, 5.0, 100};
+        H2Auto vz_corr_vs_theta{"v_{z}^{corr} vs #theta;#theta [deg];v_{z}^{corr} [cm]", 0.0, 45.0, 90, -20.0, 5.0, 100};
+        H2Auto theta_vs_phi{"#theta vs #phi;#phi [deg];#theta [deg]", -180.0, 180.0, 180, 0.0, 45.0, 90};
+        H2Auto p_vs_theta{"p vs #theta;#theta [deg];p [GeV/c]", 0.0, 45.0, 90, 0.0, 12.0, 100};
 
         auto fill(const Particle& e, const CalorimeterBank& calo, double SF, double vz_corrected) -> void {
             p.fill(e.p());
@@ -225,7 +215,7 @@ class ElectronSelectionAlg : public framework::ConfigurableAlgorithm<ElectronSel
 
     static_assert(std::is_aggregate_v<ElectronNTupleData> && std::is_standard_layout_v<ElectronNTupleData>, "ElectronNTupleData must be a standard-layout aggregate for PFR reflection");
 
-    framework::NTupleWriter<ElectronNTupleData> m_ntuple{"electron_kinematics"};
+    NTupleWriter<ElectronNTupleData> m_ntuple{"electron_kinematics"};
 };
 
 }  // namespace algorithms

@@ -175,9 +175,9 @@ private:
 // was skipped) simply costs nothing — no `if (enable_histograms)` guard needed.
 
 template <typename Acc = mh::CountAccumulator>
-class H1Auto {
+class H1AutoT {
 public:
-    H1Auto(std::string title, double lo, double hi, std::size_t n)
+    H1AutoT(std::string title, double lo, double hi, std::size_t n)
         : m_title(std::move(title)), m_h(mh::regular(lo, hi, n)) {}
 
     [[nodiscard]] auto title() const noexcept -> const std::string& { return m_title; }
@@ -204,9 +204,9 @@ private:
 };
 
 template <typename Acc = mh::CountAccumulator>
-class H2Auto {
+class H2AutoT {
 public:
-    H2Auto(std::string title,
+    H2AutoT(std::string title,
            double lo_x, double hi_x, std::size_t n_x,
            double lo_y, double hi_y, std::size_t n_y)
         : m_title(std::move(title)),
@@ -236,9 +236,9 @@ private:
 };
 
 template <typename Acc = mh::CountAccumulator>
-class H3Auto {
+class H3AutoT {
 public:
-    H3Auto(std::string title,
+    H3AutoT(std::string title,
            double lo_x, double hi_x, std::size_t n_x,
            double lo_y, double hi_y, std::size_t n_y,
            double lo_z, double hi_z, std::size_t n_z)
@@ -269,5 +269,12 @@ private:
     H3<Acc>     m_h;
     bool        m_enabled = false;
 };
+
+// Default-accumulator aliases so the reflection-friendly wrappers can be
+// declared without `<>` — e.g. `framework::H1Auto p{"title", 0, 12, 100}`.
+// For a non-default accumulator use H1AutoT<Acc> / H2AutoT<Acc> / H3AutoT<Acc>.
+using H1Auto = H1AutoT<>;
+using H2Auto = H2AutoT<>;
+using H3Auto = H3AutoT<>;
 
 }  // namespace framework
