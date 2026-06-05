@@ -3,12 +3,19 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <type_traits>
 #include <vector>
 #include <clas12/Constants.hpp>
 #include <clas12/ReadBank.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/bankdefs/REC_Event.hpp>
 #include <clas12/bankdefs/REC_Particle.hpp>
+#include <clas12/bankdefs/REC_Scintillator.hpp>
+#include <clas12/bankdefs/REC_Calorimeter.hpp>
+#include <clas12/bankdefs/REC_Traj.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/CandidateUtils.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
@@ -17,14 +24,17 @@
 #include <clas12/framework/core/NTupleStruct.hpp>
 #include <clas12/framework/core/Property.hpp>
 #include <clas12/framework/core/HistogramAliases.hpp>
+#include <clas12/framework/core/HistogramReflect.hpp>
+#include <clas12/framework/core/ServiceReflect.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
 #include <clas12/services/VzCorrectorService.hpp>
+#include "clas12/bankdefs/generated_readers.hpp"
 
 namespace algorithms {
 
-using framework::Log;
+using namespace framework;
 
 /// Configuration for PionSelectionAlg.
 struct PionSelectionConfig {
@@ -47,26 +57,40 @@ struct PionSelectionConfig {
     double delta_t_sigma = 3.0;
     std::vector<double> sigma_scan_values = {};
 
+    // Keep an explicit config_fields() so the TOML-binding surface is preserved
+    // exactly: `target`, `sigma_scan`, etc. stay deliberately unbound. (Dropping
+    // it and relying on PFR would newly bind every aggregate field to TOML.)
     static constexpr auto config_fields() {
         using T = PionSelectionConfig;
         return std::make_tuple(
-            framework::field("polarity",                   &T::polarity),
-            framework::field("chi2pid_min",                &T::chi2pid_min),
-            framework::field("chi2pid_max",                &T::chi2pid_max),
-            framework::field("momentum_min",               &T::momentum_min),
-            framework::field("momentum_max",               &T::momentum_max),
-            framework::field("enable_ntuple",              &T::enable_ntuple),
-            framework::field("enable_detector_region_cut", &T::enable_detector_region_cut),
-            framework::field("enable_fiducial_cuts",       &T::enable_fiducial_cuts),
-            framework::field("enable_chi2pid_cut",         &T::enable_chi2pid_cut),
-            framework::field("enable_momentum_cut",        &T::enable_momentum_cut),
-            framework::field("enable_vz_cut",              &T::enable_vz_cut),
-            framework::field("enable_delta_t_cut",         &T::enable_delta_t_cut),
-            framework::field("enable_central_pions",       &T::enable_central_pions),
-            framework::field("delta_t_sigma",              &T::delta_t_sigma),
-            framework::field("sigma_scan_values",          &T::sigma_scan_values));
+            field("polarity",                   &T::polarity),
+            field("chi2pid_min",                &T::chi2pid_min),
+            field("chi2pid_max",                &T::chi2pid_max),
+            field("momentum_min",               &T::momentum_min),
+            field("momentum_max",               &T::momentum_max),
+            field("enable_ntuple",              &T::enable_ntuple),
+            field("enable_detector_region_cut", &T::enable_detector_region_cut),
+            field("enable_fiducial_cuts",       &T::enable_fiducial_cuts),
+            field("enable_chi2pid_cut",         &T::enable_chi2pid_cut),
+            field("enable_momentum_cut",        &T::enable_momentum_cut),
+            field("enable_vz_cut",              &T::enable_vz_cut),
+            field("enable_delta_t_cut",         &T::enable_delta_t_cut),
+            field("enable_central_pions",       &T::enable_central_pions),
+            field("delta_t_sigma",              &T::delta_t_sigma),
+            field("sigma_scan_values",          &T::sigma_scan_values));
     }
 };
+
+static_assert(std::is_aggregate_v<PionSelectionConfig>, "PionSelectionConfig must stay a simple aggregate for PFR reflection");
+
+/// Pion species tag — selects the per-species histogram label/directory at
+/// compile time so one templated histogram struct serves both π⁺ and π⁻.
+enum class PionSpecies { Plus, Minus };
+
+/// Compile-time ROOT title label ("#pi^{+}" / "#pi^{-}") for a species, so one
+/// templated histogram struct reproduces the per-species titles verbatim.
+template <PionSpecies Sp>
+inline constexpr std::string_view pion_label = (Sp == PionSpecies::Plus) ? std::string_view{"#pi^{+}"} : std::string_view{"#pi^{-}"};
 
 /**
  * @brief N-Tuple data structure for pion kinematics
@@ -103,7 +127,7 @@ struct PionNTupleData {
 
     static constexpr auto ntuple_fields() {
         using T = PionNTupleData;
-        return std::make_tuple(framework::field("p", &T::p), framework::field("theta", &T::theta), framework::field("phi", &T::phi), framework::field("vz", &T::vz), framework::field("vx", &T::vx), framework::field("vy", &T::vy), framework::field("chi2pid", &T::chi2pid), framework::field("beta", &T::beta), framework::field("delta_t", &T::delta_t), framework::field("tof_mass2", &T::tof_mass2), framework::field("tof_path", &T::tof_path), framework::field("sector", &T::sector), framework::field("beta_expected", &T::beta_expected), framework::field("beta_diff", &T::beta_diff), framework::field("is_forward", &T::is_forward), framework::field("pcal_lv", &T::pcal_lv), framework::field("pcal_lw", &T::pcal_lw));
+        return std::make_tuple(field("p", &T::p), field("theta", &T::theta), field("phi", &T::phi), field("vz", &T::vz), field("vx", &T::vx), field("vy", &T::vy), field("chi2pid", &T::chi2pid), field("beta", &T::beta), field("delta_t", &T::delta_t), field("tof_mass2", &T::tof_mass2), field("tof_path", &T::tof_path), field("sector", &T::sector), field("beta_expected", &T::beta_expected), field("beta_diff", &T::beta_diff), field("is_forward", &T::is_forward), field("pcal_lv", &T::pcal_lv), field("pcal_lw", &T::pcal_lw));
     }
 };
 
@@ -143,15 +167,16 @@ struct PionCandidate {
 /**
  * @brief Pion (π⁺/π⁻) selection and analysis algorithm
  */
-class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionConfig> {
+class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
    public:
-    using StatusCode = framework::StatusCode;
 
     explicit PionSelectionAlg(std::string name = "PionSelection", Config config = {})
         : ConfigurableAlgorithm(std::move(name), std::move(config)), m_cutflow_piplus("π⁺ Selection"), m_cutflow_piminus("π⁻ Selection") {
         if (!m_config.sigma_scan.empty()) m_config.sigma_scan_values = m_config.sigma_scan;
-        required_services(m_hist, m_ntuple, m_vz_corrector);
-        declare_banks("REC::Event", "REC::Particle", "REC::Scintillator", "REC::Calorimeter", "REC::Traj");
+        wire_services(*this);  // reflects ServiceRef members (refl-cpp)
+        declare_banks_typed<bankdefs::REC_Event, bankdefs::REC_Particle, bankdefs::REC_Scintillator, bankdefs::REC_Calorimeter, bankdefs::REC_Traj>();
+        declare_ntuple(m_ntuple_piplus, [this] { return m_config.enable_ntuple; });
+        declare_ntuple(m_ntuple_piminus, [this] { return m_config.enable_ntuple; });
     }
 
     auto on_initialize() -> StatusCode override {
@@ -163,27 +188,24 @@ class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionCo
         log_info("Delta-t sigma: {}", m_config.delta_t_sigma);
         if (!m_config.sigma_scan_values.empty()) log_info("Sigma scan enabled with values: [{}]", fmt::join(m_config.sigma_scan_values, ", "));
 
-        for (auto* cf : {&m_cutflow_piplus, &m_cutflow_piminus}) {
-            cf->add_cut("All Pions");
-            cf->add_cut("Detector Region");
-            cf->add_cut("DC Fiducial");
-            cf->add_cut("Chi2 PID");
-            cf->add_cut("Momentum");
-            cf->add_cut("Vertex Z");
-            cf->add_cut("Delta-t");
-        }
-
-        book_histograms();
-
-        m_ntuple_piplus.init(m_ntuple.get(), "pion_plus");
-        m_ntuple_piminus.init(m_ntuple.get(), "pion_minus");
-        log_info("N-tuple branches registered for π⁺ and π⁻");
+        // PionSelectionConfig has no enable_histograms flag, so (as before)
+        // histograms are always booked. register_fields() derives each ROOT
+        // path from the member name under the directory prefix; the per-sector
+        // arrays carry runtime names (_S1.._S6) and are booked by hand.
+        register_fields(*m_hist, "/Pion/PiPlus/Forward",          h_piplus_fwd);
+        register_fields(*m_hist, "/Pion/PiPlus/Central",          h_piplus_central);
+        register_fields(*m_hist, "/Pion/PiPlus/Forward/NMinus1",  h_piplus_nm1);
+        register_fields(*m_hist, "/Pion/PiMinus/Forward",         h_piminus_fwd);
+        register_fields(*m_hist, "/Pion/PiMinus/Central",         h_piminus_central);
+        register_fields(*m_hist, "/Pion/PiMinus/Forward/NMinus1", h_piminus_nm1);
+        book_sector_histograms(h_piplus_sectors,  "/Pion/PiPlus/Forward",  "#pi^{+}");
+        book_sector_histograms(h_piminus_sectors, "/Pion/PiMinus/Forward", "#pi^{-}");
 
         return StatusCode::SUCCESS();
     }
 
-    auto process(framework::Event& event) -> StatusCode override {
-        if (!event.passes_decision_typed(framework::Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
+    auto process(Event& event) -> StatusCode override {
+        if (!event.passes_decision_typed(Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
 
         auto& rec_event = event.bank<bankdefs::REC_Event>();
         if (rec_event.rows() == 0) return StatusCode::SUCCESS();
@@ -205,24 +227,24 @@ class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionCo
         fill_ntuple(piminus_candidates, false);
         auto selected_piminus = collect_passing_particles(piminus_candidates);
 
-        event.store_typed(framework::Keys::SelectedPiPlus, selected_piplus);
-        event.store_typed(framework::Keys::SelectedPiMinus, selected_piminus);
-        event.set_decision_typed(framework::Decisions::HasGoodPiMinus, !selected_piminus.empty());
-        event.set_decision_typed(framework::Decisions::HasGoodPiPlus, !selected_piplus.empty());
+        event.store_typed(Keys::SelectedPiPlus, selected_piplus);
+        event.store_typed(Keys::SelectedPiMinus, selected_piminus);
+        event.set_decision_typed(Decisions::HasGoodPiMinus, !selected_piminus.empty());
+        event.set_decision_typed(Decisions::HasGoodPiPlus, !selected_piplus.empty());
 
         if (!m_config.sigma_scan_values.empty()) {
             for (double scan_sigma : m_config.sigma_scan_values) {
                 auto scan_piplus = collect_passing_with_sigma(piplus_candidates, true, scan_sigma);
-                event.store_typed(framework::TypedKey<std::vector<Particle>>(format_sigma_key("SelectedPiPlus", scan_sigma)), std::move(scan_piplus));
+                event.store_typed(TypedKey<std::vector<Particle>>(format_sigma_key("SelectedPiPlus", scan_sigma)), std::move(scan_piplus));
                 auto scan_piminus = collect_passing_with_sigma(piminus_candidates, false, scan_sigma);
-                event.store_typed(framework::TypedKey<std::vector<Particle>>(format_sigma_key("SelectedPiMinus", scan_sigma)), std::move(scan_piminus));
+                event.store_typed(TypedKey<std::vector<Particle>>(format_sigma_key("SelectedPiMinus", scan_sigma)), std::move(scan_piminus));
             }
         }
 
         static constexpr std::array<std::pair<int, const char*>, 5> CUMULATIVE_STEPS = {{{0, "noPionCuts"}, {1, "plusDCFiducial"}, {2, "plusChi2PID"}, {3, "plusMomentum"}, {4, "plusVertexZ"}}};
         for (const auto& [step, label] : CUMULATIVE_STEPS) {
-            event.store_typed(framework::TypedKey<std::vector<Particle>>(fmt::format("PiPlus_{}", label)), collect_passing_cumulative(piplus_candidates, step));
-            event.store_typed(framework::TypedKey<std::vector<Particle>>(fmt::format("PiMinus_{}", label)), collect_passing_cumulative(piminus_candidates, step));
+            event.store_typed(TypedKey<std::vector<Particle>>(fmt::format("PiPlus_{}", label)), collect_passing_cumulative(piplus_candidates, step));
+            event.store_typed(TypedKey<std::vector<Particle>>(fmt::format("PiMinus_{}", label)), collect_passing_cumulative(piminus_candidates, step));
         }
 
         return StatusCode::SUCCESS();
@@ -236,8 +258,8 @@ class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionCo
         log_info("π⁺ passing all cuts: {}", piplus_count);
         log_info("π⁻ passing all cuts: {}", piminus_count);
 
-        if (m_ntuple) {
-            log_info("N-tuple entries: π⁺={}, π⁻={}", m_ntuple->get_entries("pion_plus"), m_ntuple->get_entries("pion_minus"));
+        if (m_config.enable_ntuple) {
+            log_info("N-tuple entries: π⁺={}, π⁻={}", m_ntuple_piplus.entries(), m_ntuple_piminus.entries());
         }
 
         m_cutflow_piplus.print();
@@ -262,8 +284,8 @@ class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionCo
         std::vector<std::vector<std::string>> sector_rows;
         for (int sector = 1; sector <= 6; ++sector) {
             int idx = sector - 1;
-            std::size_t pip = sum_entries(h_piplus.momentum_sector[idx]);
-            std::size_t pim = sum_entries(h_piminus.momentum_sector[idx]);
+            std::size_t pip = sum_entries(h_piplus_sectors.momentum_sector[idx]);
+            std::size_t pim = sum_entries(h_piminus_sectors.momentum_sector[idx]);
             sector_rows.push_back({fmt::format("{}", sector), fmt::format("{}", pip), fmt::format("{}", pim)});
         }
         Log::print_yield_summary_table("Per-Sector Counts (post-cut)", {"Sector", "π⁺", "π⁻"}, sector_rows);
@@ -272,8 +294,10 @@ class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionCo
     }
 
    private:
-    framework::Cutflow m_cutflow_piplus;
-    framework::Cutflow m_cutflow_piminus;
+    FRAMEWORK_REFLECT_FRIEND;  // let refl-cpp reflect the private ServiceRef members
+
+    Cutflow m_cutflow_piplus;
+    Cutflow m_cutflow_piminus;
 
     std::atomic<size_t> m_piplus_pcal_nan{0};
     std::atomic<size_t> m_piminus_pcal_nan{0};
@@ -284,130 +308,130 @@ class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionCo
     std::atomic<size_t> m_piminus_central{0};
     std::atomic<size_t> m_piminus_other{0};
 
-    framework::ServiceRef<framework::HistogramService>    m_hist;
-    framework::ServiceRef<framework::NTupleService>       m_ntuple;
-    framework::ServiceRef<framework::VzCorrectorService>  m_vz_corrector;
+    ServiceRef<HistogramService>    m_hist;
+    ServiceRef<VzCorrectorService>  m_vz_corrector;
 
-    framework::NTupleWriter<PionNTupleData> m_ntuple_piplus;
-    framework::NTupleWriter<PionNTupleData> m_ntuple_piminus;
+    NTupleWriter<PionNTupleData> m_ntuple_piplus{"pion_plus"};
+    NTupleWriter<PionNTupleData> m_ntuple_piminus{"pion_minus"};
 
-    struct PionHistograms {
-        framework::H1<> momentum{mh::regular(0.0, 11.0, 100)};
-        framework::H1<> theta{mh::regular(0.0, 180.0, 180)};
-        framework::H1<> phi{mh::regular(-180.0, 180.0, 360)};
-        framework::H1<> vz{mh::regular(-40, 40, 200)};
-        framework::H1<> chi2pid{mh::regular(-10, 10, 200)};
-        framework::H1<> beta{mh::regular(0.7, 1.05, 100)};
+    // Forward-detector histograms (prefix "/Pion/Pi{Plus,Minus}/Forward"). The
+    // member name reproduces the original leaf; titles carry the species label.
+    // Pure H*Auto aggregate so register_fields()/Boost.PFR walks it cleanly; the
+    // runtime-named per-sector histograms live in a separate, non-reflected
+    // struct (ForwardSectorHistograms) booked by book_sector_histograms().
+    template <PionSpecies Sp>
+    struct ForwardHistograms {
+        static constexpr std::string_view L = pion_label<Sp>;
 
-        framework::H1<> momentum_precut{mh::regular(0.0, 11.0, 100)};
-        framework::H1<> theta_precut{mh::regular(0.0, 180.0, 180)};
-        framework::H1<> phi_precut{mh::regular(-180.0, 180.0, 360)};
-        framework::H1<> vz_precut{mh::regular(-40, 40, 200)};
-        framework::H1<> chi2pid_precut{mh::regular(-10, 10, 200)};
-        framework::H1<> delta_t_precut{mh::regular(-2, 2, 200)};
+        H1Auto momentum{std::string(L) + " Forward Momentum;Momentum [GeV/c];Counts", 0.0, 11.0, 100};
+        H1Auto theta{std::string(L) + " Forward #theta;#theta [deg];Counts", 0.0, 180.0, 180};
+        H1Auto phi{std::string(L) + " Forward #phi;#phi [deg];Counts", -180.0, 180.0, 360};
+        H1Auto vz{std::string(L) + " Forward v_{z};v_{z} [cm];Events", -40, 40, 200};
+        H1Auto chi2pid{std::string(L) + " Forward #chi^{2}_{PID};#chi^{2};Events", -10, 10, 200};
+        H1Auto beta{std::string(L) + " Forward #beta;#beta;Events", 0.7, 1.05, 100};
 
-        framework::H2<> beta_vs_p{mh::regular(0, 10, 100), mh::regular(0.7, 1.05, 100)};
-        framework::H2<> delta_t_vs_p{mh::regular(0, 10, 100), mh::regular(-2, 2, 1000)};
-        framework::H2<> p_vs_theta{mh::regular(0, 50, 200), mh::regular(0, 10, 200)};
+        H1Auto momentum_precut{std::string(L) + " Forward Momentum (pre-cut);Momentum [GeV/c];Counts", 0.0, 11.0, 100};
+        H1Auto theta_precut{std::string(L) + " Forward #theta (pre-cut);#theta [deg];Counts", 0.0, 180.0, 180};
+        H1Auto phi_precut{std::string(L) + " Forward #phi (pre-cut);#phi [deg];Counts", -180.0, 180.0, 360};
+        H1Auto vz_precut{std::string(L) + " Forward v_{z} (pre-cut);v_{z} [cm];Events", -40, 40, 200};
+        H1Auto chi2pid_precut{std::string(L) + " Forward #chi^{2}_{PID} (pre-cut);#chi^{2};Events", -10, 10, 200};
+        H1Auto delta_t_precut{std::string(L) + " Forward #Deltat (pre-cut);#Deltat [ns];Events", -2, 2, 200};
 
-        framework::H1<> pcal_lv_precut{mh::regular(0, 450, 200)};
-        framework::H1<> pcal_lw_precut{mh::regular(0, 450, 200)};
-        framework::H2<> pcal_lw_vs_lv{mh::regular(0, 450, 200), mh::regular(0, 450, 200)};
+        H1Auto pcal_lv_precut{std::string(L) + " Forward PCAL lv (pre-cut);lv [cm];Events", 0, 450, 200};
+        H1Auto pcal_lw_precut{std::string(L) + " Forward PCAL lw (pre-cut);lw [cm];Events", 0, 450, 200};
+        H2Auto pcal_lw_vs_lv{std::string(L) + " Forward PCAL lw vs lv (pre-cut);lv [cm];lw [cm]", 0, 450, 200, 0, 450, 200};
 
-        framework::H2<> chi2pid_vs_p{mh::regular(0, 10, 100), mh::regular(-10, 10, 100)};
-        framework::H2<> vz_vs_theta{mh::regular(0, 45, 90), mh::regular(-40, 40, 100)};
-        framework::H2<> delta_t_vs_theta{mh::regular(0, 45, 90), mh::regular(-2, 2, 100)};
-        framework::H2<> delta_t_vs_p_precut{mh::regular(0, 10, 100), mh::regular(-2, 2, 1000)};
+        H2Auto beta_vs_p{std::string(L) + " Forward #beta vs p;p [GeV/c];#beta", 0, 10, 100, 0.7, 1.05, 100};
+        H2Auto delta_t_vs_p{std::string(L) + " Forward #Deltat vs p;p [GeV/c];#Deltat [ns]", 0, 10, 100, -2, 2, 1000};
+        H2Auto p_vs_theta{std::string(L) + " Forward p vs #theta", 0, 50, 200, 0, 10, 200};
 
-        framework::H1<> momentum_central{mh::regular(0.0, 11.0, 100)};
-        framework::H1<> theta_central{mh::regular(0.0, 180.0, 180)};
-        framework::H1<> phi_central{mh::regular(-180.0, 180.0, 360)};
-        framework::H1<> vz_central{mh::regular(-40, 40, 200)};
-        framework::H1<> chi2pid_central{mh::regular(-10, 10, 200)};
-        framework::H1<> beta_central{mh::regular(0.0, 1.2, 100)};
-        framework::H1<> delta_t_central{mh::regular(-2, 2, 200)};
-        framework::H2<> beta_vs_p_central{mh::regular(0, 10, 100), mh::regular(0.0, 1.2, 100)};
-        framework::H2<> delta_t_vs_p_central{mh::regular(0, 10, 100), mh::regular(-2, 2, 1000)};
-        framework::H2<> p_vs_theta_central{mh::regular(0, 140, 200), mh::regular(0, 5, 200)};
+        H2Auto chi2pid_vs_p{std::string(L) + " Forward #chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}", 0, 10, 100, -10, 10, 100};
+        H2Auto vz_vs_theta{std::string(L) + " Forward v_{z} vs #theta;#theta [deg];v_{z} [cm]", 0, 45, 90, -40, 40, 100};
+        H2Auto delta_t_vs_theta{std::string(L) + " Forward #Deltat vs #theta;#theta [deg];#Deltat [ns]", 0, 45, 90, -2, 2, 100};
+        H2Auto delta_t_vs_p_precut{std::string(L) + " Forward #Deltat vs p (pre-cut);p [GeV/c];#Deltat [ns]", 0, 10, 100, -2, 2, 1000};
 
-        std::array<std::unique_ptr<framework::H1<>>, 6> momentum_sector = {};
-        std::array<std::unique_ptr<framework::H1<>>, 6> theta_sector = {};
-        std::array<std::unique_ptr<framework::H2<>>, 6> delta_t_vs_p_sector = {};
-        std::array<std::unique_ptr<framework::H2<>>, 6> delta_t_vs_p_precut_sector = {};
-
-        framework::H1<> chi2pid_nminus1{mh::regular(-10, 10, 200)};
-        framework::H1<> momentum_nminus1{mh::regular(0.0, 11.0, 100)};
-        framework::H1<> vz_nminus1{mh::regular(-40, 40, 200)};
-        framework::H2<> delta_t_vs_p_nminus1{mh::regular(0, 10, 100), mh::regular(-2, 2, 200)};
-        framework::H2<> beta_vs_p_nminus1{mh::regular(0, 10, 100), mh::regular(0.7, 1.05, 100)};
-
-        framework::H2<> beta_diff_vs_p{mh::regular(0, 10, 100), mh::regular(-0.1, 0.1, 200)};
-        framework::H1<> tof_mass2{mh::regular(-0.5, 1.5, 200)};
-        framework::H1<> tof_mass2_precut{mh::regular(-0.5, 1.5, 200)};
+        H2Auto beta_diff_vs_p{std::string(L) + " Forward #Delta#beta vs p;p [GeV/c];#beta_{meas} - #beta_{exp}", 0, 10, 100, -0.1, 0.1, 200};
+        H1Auto tof_mass2{std::string(L) + " Forward TOF m^{2};m^{2} [GeV^{2}];Events", -0.5, 1.5, 200};
+        H1Auto tof_mass2_precut{std::string(L) + " Forward TOF m^{2} (pre-cut);m^{2} [GeV^{2}];Events", -0.5, 1.5, 200};
     };
 
-    PionHistograms h_piplus;
-    PionHistograms h_piminus;
+    // Per-sector (S1..S6) forward histograms. Their ROOT names are built at
+    // runtime, so they cannot be reflected; kept OUT of the register_fields()
+    // structs and booked by hand in book_sector_histograms().
+    struct ForwardSectorHistograms {
+        std::array<std::unique_ptr<H1<>>, 6> momentum_sector = {};
+        std::array<std::unique_ptr<H1<>>, 6> theta_sector = {};
+        std::array<std::unique_ptr<H2<>>, 6> delta_t_vs_p_sector = {};
+        std::array<std::unique_ptr<H2<>>, 6> delta_t_vs_p_precut_sector = {};
+    };
+
+    // Central-detector histograms (prefix "/Pion/Pi{Plus,Minus}/Central").
+    template <PionSpecies Sp>
+    struct CentralHistograms {
+        static constexpr std::string_view L = pion_label<Sp>;
+
+        H1Auto momentum{std::string(L) + " Central Momentum;Momentum [GeV/c];Counts", 0.0, 11.0, 100};
+        H1Auto theta{std::string(L) + " Central #theta;#theta [deg];Counts", 0.0, 180.0, 180};
+        H1Auto phi{std::string(L) + " Central #phi;#phi [deg];Counts", -180.0, 180.0, 360};
+        H1Auto vz{std::string(L) + " Central v_{z};v_{z} [cm];Events", -40, 40, 200};
+        H1Auto chi2pid{std::string(L) + " Central #chi^{2}_{PID};#chi^{2};Events", -10, 10, 200};
+        H1Auto beta{std::string(L) + " Central #beta;#beta;Events", 0.0, 1.2, 100};
+        H1Auto delta_t{std::string(L) + " Central #Deltat;#Deltat [ns];Events", -2, 2, 200};
+        H2Auto beta_vs_p{std::string(L) + " Central #beta vs p;p [GeV/c];#beta", 0, 10, 100, 0.0, 1.2, 100};
+        H2Auto delta_t_vs_p{std::string(L) + " Central #Deltat vs p;p [GeV/c];#Deltat [ns]", 0, 10, 100, -2, 2, 1000};
+        H2Auto p_vs_theta{std::string(L) + " Central p vs #theta;#theta [deg];p [GeV/c]", 0, 140, 200, 0, 5, 200};
+    };
+
+    // N-1 histograms (prefix "/Pion/Pi{Plus,Minus}/Forward/NMinus1").
+    template <PionSpecies Sp>
+    struct NMinus1Histograms {
+        static constexpr std::string_view L = pion_label<Sp>;
+
+        H1Auto chi2pid{std::string(L) + " Forward #chi^{2}_{PID} (N-1);#chi^{2};Events", -10, 10, 200};
+        H1Auto momentum{std::string(L) + " Forward Momentum (N-1);Momentum [GeV/c];Counts", 0.0, 11.0, 100};
+        H1Auto vz{std::string(L) + " Forward v_{z} (N-1);v_{z} [cm];Events", -40, 40, 200};
+        H2Auto delta_t_vs_p{std::string(L) + " Forward #Deltat vs p (N-1);p [GeV/c];#Deltat [ns]", 0, 10, 100, -2, 2, 200};
+        H2Auto beta_vs_p{std::string(L) + " Forward #beta vs p (N-1);p [GeV/c];#beta", 0, 10, 100, 0.7, 1.05, 100};
+    };
+
+    ForwardHistograms<PionSpecies::Plus>   h_piplus_fwd;
+    CentralHistograms<PionSpecies::Plus>   h_piplus_central;
+    NMinus1Histograms<PionSpecies::Plus>   h_piplus_nm1;
+    ForwardHistograms<PionSpecies::Minus>  h_piminus_fwd;
+    CentralHistograms<PionSpecies::Minus>  h_piminus_central;
+    NMinus1Histograms<PionSpecies::Minus>  h_piminus_nm1;
+    ForwardSectorHistograms                h_piplus_sectors;
+    ForwardSectorHistograms                h_piminus_sectors;
 
     /// Pass cand through the cutflow stages, incrementing counters and
-    /// returning whether all enabled cuts pass.
-    auto evaluate_cutflow(const PionCandidate& c, framework::Cutflow& cf) const -> bool {
+    /// returning whether all enabled cuts pass. Expressed as a short-circuit
+    /// chain of Cutflow::check (same names/order/predicates/flags as before:
+    /// each stage counts only when reached and only when its cut passes).
+    auto evaluate_cutflow(const PionCandidate& c, Cutflow& cf) const -> bool {
         cf.pass("All Pions");
-
-        bool pass_det = !m_config.enable_detector_region_cut || c.is_forward_detector || (c.is_central_detector && m_config.enable_central_pions);
-        if (!pass_det) return false;
-        cf.pass("Detector Region");
-
-        bool pass_fid = !m_config.enable_fiducial_cuts || !c.is_forward_detector || c.passes_dc_fiducial;
-        if (!pass_fid) return false;
-        cf.pass("DC Fiducial");
-
-        if (m_config.enable_chi2pid_cut && !c.passes_chi2pid) return false;
-        cf.pass("Chi2 PID");
-
-        if (m_config.enable_momentum_cut && !c.passes_momentum) return false;
-        cf.pass("Momentum");
-
-        if (m_config.enable_vz_cut && !c.passes_vz) return false;
-        cf.pass("Vertex Z");
-
-        bool pass_dt = !m_config.enable_delta_t_cut || !c.is_forward_detector || c.passes_delta_t;
-        if (!pass_dt) return false;
-        cf.pass("Delta-t");
-
-        return true;
+        return cf.check("Detector Region", m_config.enable_detector_region_cut, [&] { return c.is_forward_detector || (c.is_central_detector && m_config.enable_central_pions); })
+            && cf.check("DC Fiducial", m_config.enable_fiducial_cuts, [&] { return !c.is_forward_detector || c.passes_dc_fiducial; })
+            && cf.check("Chi2 PID", m_config.enable_chi2pid_cut, [&] { return c.passes_chi2pid; })
+            && cf.check("Momentum", m_config.enable_momentum_cut, [&] { return c.passes_momentum; })
+            && cf.check("Vertex Z", m_config.enable_vz_cut, [&] { return c.passes_vz; })
+            && cf.check("Delta-t", m_config.enable_delta_t_cut, [&] { return !c.is_forward_detector || c.passes_delta_t; });
     }
 
-    auto book_histograms() -> void {
+    /// Book the per-sector (S1..S6) forward histograms by hand: their ROOT names
+    /// are built at runtime, so register_fields() cannot derive them.
+    auto book_sector_histograms(ForwardSectorHistograms& h, const std::string& fwd, const std::string& label) -> void {
         auto* svc = m_hist.get();
-
-        auto book_pion_histograms = [svc](PionHistograms& h, const std::string& dir, const std::string& label) {
-            std::string fwd = dir + "/Forward";
-            svc->register_hist(fwd + "/momentum", std::string{label + " Forward Momentum"} + ";Momentum [GeV/c];Counts", h.momentum);            svc->register_hist(fwd + "/theta", std::string{label + " Forward #theta"} + ";#theta [deg];Counts", h.theta);            svc->register_hist(fwd + "/phi", std::string{label + " Forward #phi"} + ";#phi [deg];Counts", h.phi);            svc->register_hist(fwd + "/vz", label + " Forward v_{z};v_{z} [cm];Events", h.vz);            svc->register_hist(fwd + "/chi2pid", label + " Forward #chi^{2}_{PID};#chi^{2};Events", h.chi2pid);            svc->register_hist(fwd + "/beta", label + " Forward #beta;#beta;Events", h.beta);
-            svc->register_hist(fwd + "/momentum_precut", std::string{label + " Forward Momentum (pre-cut)"} + ";Momentum [GeV/c];Counts", h.momentum_precut);            svc->register_hist(fwd + "/theta_precut", std::string{label + " Forward #theta (pre-cut)"} + ";#theta [deg];Counts", h.theta_precut);            svc->register_hist(fwd + "/phi_precut", std::string{label + " Forward #phi (pre-cut)"} + ";#phi [deg];Counts", h.phi_precut);            svc->register_hist(fwd + "/vz_precut", label + " Forward v_{z} (pre-cut);v_{z} [cm];Events", h.vz_precut);            svc->register_hist(fwd + "/chi2pid_precut", label + " Forward #chi^{2}_{PID} (pre-cut);#chi^{2};Events", h.chi2pid_precut);            svc->register_hist(fwd + "/delta_t_precut", label + " Forward #Deltat (pre-cut);#Deltat [ns];Events", h.delta_t_precut);
-            svc->register_hist(fwd + "/pcal_lv_precut", label + " Forward PCAL lv (pre-cut);lv [cm];Events", h.pcal_lv_precut);            svc->register_hist(fwd + "/pcal_lw_precut", label + " Forward PCAL lw (pre-cut);lw [cm];Events", h.pcal_lw_precut);            svc->register_hist(fwd + "/pcal_lw_vs_lv", label + " Forward PCAL lw vs lv (pre-cut);lv [cm];lw [cm]", h.pcal_lw_vs_lv);
-            svc->register_hist(fwd + "/beta_vs_p", label + " Forward #beta vs p;p [GeV/c];#beta", h.beta_vs_p);            svc->register_hist(fwd + "/delta_t_vs_p", label + " Forward #Deltat vs p;p [GeV/c];#Deltat [ns]", h.delta_t_vs_p);            svc->register_hist(fwd + "/p_vs_theta", label + " Forward p vs #theta", h.p_vs_theta);
-            svc->register_hist(fwd + "/chi2pid_vs_p", label + " Forward #chi^{2}_{PID} vs p;p [GeV/c];#chi^{2}_{PID}", h.chi2pid_vs_p);            svc->register_hist(fwd + "/vz_vs_theta", label + " Forward v_{z} vs #theta;#theta [deg];v_{z} [cm]", h.vz_vs_theta);            svc->register_hist(fwd + "/delta_t_vs_theta", label + " Forward #Deltat vs #theta;#theta [deg];#Deltat [ns]", h.delta_t_vs_theta);            svc->register_hist(fwd + "/delta_t_vs_p_precut", label + " Forward #Deltat vs p (pre-cut);p [GeV/c];#Deltat [ns]", h.delta_t_vs_p_precut);
-            svc->register_hist(dir + "/Central/momentum", std::string{label + " Central Momentum"} + ";Momentum [GeV/c];Counts", h.momentum_central);            svc->register_hist(dir + "/Central/theta", std::string{label + " Central #theta"} + ";#theta [deg];Counts", h.theta_central);            svc->register_hist(dir + "/Central/phi", std::string{label + " Central #phi"} + ";#phi [deg];Counts", h.phi_central);            svc->register_hist(dir + "/Central/vz", label + " Central v_{z};v_{z} [cm];Events", h.vz_central);            svc->register_hist(dir + "/Central/chi2pid", label + " Central #chi^{2}_{PID};#chi^{2};Events", h.chi2pid_central);            svc->register_hist(dir + "/Central/beta", label + " Central #beta;#beta;Events", h.beta_central);            svc->register_hist(dir + "/Central/delta_t", label + " Central #Deltat;#Deltat [ns];Events", h.delta_t_central);            svc->register_hist(dir + "/Central/beta_vs_p", label + " Central #beta vs p;p [GeV/c];#beta", h.beta_vs_p_central);            svc->register_hist(dir + "/Central/delta_t_vs_p", label + " Central #Deltat vs p;p [GeV/c];#Deltat [ns]", h.delta_t_vs_p_central);            svc->register_hist(dir + "/Central/p_vs_theta", label + " Central p vs #theta;#theta [deg];p [GeV/c]", h.p_vs_theta_central);
-
-            for (int sector = 1; sector <= 6; ++sector) {
-                std::string sec_suffix = fmt::format("_S{}", sector);
-                h.momentum_sector[sector - 1] = std::make_unique<framework::H1<>>(mh::regular(0.0, 11.0, 100));
-                svc->register_hist(fwd + "/momentum" + sec_suffix, std::string{fmt::format("{} Forward Momentum (Sector {})", label, sector)} + ";Momentum [GeV/c];Counts", *h.momentum_sector[sector - 1]);
-                h.theta_sector[sector - 1] = std::make_unique<framework::H1<>>(mh::regular(0.0, 180.0, 180));
-                svc->register_hist(fwd + "/theta" + sec_suffix, std::string{fmt::format("{} Forward #theta (Sector {})", label, sector)} + ";#theta [deg];Counts", *h.theta_sector[sector - 1]);
-                h.delta_t_vs_p_sector[sector - 1] = std::make_unique<framework::H2<>>(mh::regular(0, 10, 100), mh::regular(-2, 2, 200));
-                svc->register_hist(fwd + "/delta_t_vs_p" + sec_suffix, fmt::format("{} Forward #Deltat vs p (Sector {});p [GeV/c];#Deltat [ns]", label, sector), *h.delta_t_vs_p_sector[sector - 1]);
-                h.delta_t_vs_p_precut_sector[sector - 1] = std::make_unique<framework::H2<>>(mh::regular(0, 10, 100), mh::regular(-2, 2, 200));
-                svc->register_hist(fwd + "/delta_t_vs_p_precut" + sec_suffix, fmt::format("{} Forward #Deltat vs p pre-cut (Sector {});p [GeV/c];#Deltat [ns]", label, sector), *h.delta_t_vs_p_precut_sector[sector - 1]);
-            }
-
-            std::string nm1 = fwd + "/NMinus1";            svc->register_hist(nm1 + "/chi2pid", label + " Forward #chi^{2}_{PID} (N-1);#chi^{2};Events", h.chi2pid_nminus1);            svc->register_hist(nm1 + "/momentum", std::string{label + " Forward Momentum (N-1)"} + ";Momentum [GeV/c];Counts", h.momentum_nminus1);            svc->register_hist(nm1 + "/vz", label + " Forward v_{z} (N-1);v_{z} [cm];Events", h.vz_nminus1);            svc->register_hist(nm1 + "/delta_t_vs_p", label + " Forward #Deltat vs p (N-1);p [GeV/c];#Deltat [ns]", h.delta_t_vs_p_nminus1);            svc->register_hist(nm1 + "/beta_vs_p", label + " Forward #beta vs p (N-1);p [GeV/c];#beta", h.beta_vs_p_nminus1);
-            svc->register_hist(fwd + "/beta_diff_vs_p", label + " Forward #Delta#beta vs p;p [GeV/c];#beta_{meas} - #beta_{exp}", h.beta_diff_vs_p);            svc->register_hist(fwd + "/tof_mass2", label + " Forward TOF m^{2};m^{2} [GeV^{2}];Events", h.tof_mass2);            svc->register_hist(fwd + "/tof_mass2_precut", label + " Forward TOF m^{2} (pre-cut);m^{2} [GeV^{2}];Events", h.tof_mass2_precut);
-        };
-
-        book_pion_histograms(h_piplus, "/Pion/PiPlus", "#pi^{+}");
-        book_pion_histograms(h_piminus, "/Pion/PiMinus", "#pi^{-}");
+        for (int sector = 1; sector <= 6; ++sector) {
+            std::string sec_suffix = fmt::format("_S{}", sector);
+            h.momentum_sector[sector - 1] = std::make_unique<H1<>>(mh::regular(0.0, 11.0, 100));
+            svc->register_hist(fwd + "/momentum" + sec_suffix, std::string{fmt::format("{} Forward Momentum (Sector {})", label, sector)} + ";Momentum [GeV/c];Counts", *h.momentum_sector[sector - 1]);
+            h.theta_sector[sector - 1] = std::make_unique<H1<>>(mh::regular(0.0, 180.0, 180));
+            svc->register_hist(fwd + "/theta" + sec_suffix, std::string{fmt::format("{} Forward #theta (Sector {})", label, sector)} + ";#theta [deg];Counts", *h.theta_sector[sector - 1]);
+            h.delta_t_vs_p_sector[sector - 1] = std::make_unique<H2<>>(mh::regular(0, 10, 100), mh::regular(-2, 2, 200));
+            svc->register_hist(fwd + "/delta_t_vs_p" + sec_suffix, fmt::format("{} Forward #Deltat vs p (Sector {});p [GeV/c];#Deltat [ns]", label, sector), *h.delta_t_vs_p_sector[sector - 1]);
+            h.delta_t_vs_p_precut_sector[sector - 1] = std::make_unique<H2<>>(mh::regular(0, 10, 100), mh::regular(-2, 2, 200));
+            svc->register_hist(fwd + "/delta_t_vs_p_precut" + sec_suffix, fmt::format("{} Forward #Deltat vs p pre-cut (Sector {});p [GeV/c];#Deltat [ns]", label, sector), *h.delta_t_vs_p_precut_sector[sector - 1]);
+        }
     }
 
     auto build_pion_candidates(const std::vector<Particle>& pions, double start_time, bool is_piplus) -> std::vector<PionCandidate> {
@@ -429,8 +453,8 @@ class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionCo
             cand.chi2pid = pion.chi2pid();
             cand.beta = pion.beta();
 
-            cand.is_forward_detector = framework::CandidateUtils::is_forward_detector(pion.status());
-            cand.is_central_detector = framework::CandidateUtils::is_central_detector(pion.status());
+            cand.is_forward_detector = CandidateUtils::is_forward_detector(pion.status());
+            cand.is_central_detector = CandidateUtils::is_central_detector(pion.status());
             if (is_piplus) {
                 if (cand.is_forward_detector) m_piplus_forward++;
                 else if (cand.is_central_detector) m_piplus_central++;
@@ -448,7 +472,7 @@ class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionCo
                 cand.tof_path = scintillator.path;
             }
 
-            auto timing = framework::CandidateUtils::compute_timing(cand.p, Constants::PIMASS, cand.beta, cand.tof_time, cand.tof_path, start_time);
+            auto timing = CandidateUtils::compute_timing(cand.p, Constants::PIMASS, cand.beta, cand.tof_time, cand.tof_path, start_time);
             cand.beta_expected = timing.beta_expected;
             cand.delta_t = timing.delta_t;
             cand.tof_mass2 = timing.tof_mass2;
@@ -476,78 +500,90 @@ class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionCo
         return candidates;
     }
 
-    auto fill_pre_cut_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
-        auto& h = is_piplus ? h_piplus : h_piminus;
-
+    // The π⁺ and π⁻ histogram structs are distinct template instantiations (so
+    // each can carry its own species label as a compile-time title and stay a
+    // PFR-walkable aggregate with no base class). The fill helpers are therefore
+    // templated on the concrete struct types and dispatched by is_piplus.
+    template <typename FwdH, typename CentralH>
+    auto fill_pre_cut_histograms_impl(const std::vector<PionCandidate>& candidates, FwdH& fwd, CentralH& central, ForwardSectorHistograms& sec) -> void {
         for (const auto& cand : candidates) {
             if (cand.is_forward_detector) {
-                h.momentum_precut.fill(cand.p);
-                h.theta_precut.fill(cand.theta);
-                h.phi_precut.fill(cand.phi);
-                h.vz_precut.fill(cand.vz);
-                h.chi2pid_precut.fill(cand.chi2pid);
-                if (cand.delta_t != 0.0) h.delta_t_precut.fill(cand.delta_t);
-                h.pcal_lv_precut.fill(cand.pcal_lv);
-                h.pcal_lw_precut.fill(cand.pcal_lw);
-                h.pcal_lw_vs_lv.fill(cand.pcal_lv, cand.pcal_lw);
-                h.chi2pid_vs_p.fill(cand.p, cand.chi2pid);
-                h.vz_vs_theta.fill(cand.theta, cand.vz);
-                if (cand.delta_t != 0.0) h.delta_t_vs_theta.fill(cand.theta, cand.delta_t);
-                if (cand.delta_t != 0.0) h.delta_t_vs_p_precut.fill(cand.p, cand.delta_t);
+                fwd.momentum_precut.fill(cand.p);
+                fwd.theta_precut.fill(cand.theta);
+                fwd.phi_precut.fill(cand.phi);
+                fwd.vz_precut.fill(cand.vz);
+                fwd.chi2pid_precut.fill(cand.chi2pid);
+                if (cand.delta_t != 0.0) fwd.delta_t_precut.fill(cand.delta_t);
+                fwd.pcal_lv_precut.fill(cand.pcal_lv);
+                fwd.pcal_lw_precut.fill(cand.pcal_lw);
+                fwd.pcal_lw_vs_lv.fill(cand.pcal_lv, cand.pcal_lw);
+                fwd.chi2pid_vs_p.fill(cand.p, cand.chi2pid);
+                fwd.vz_vs_theta.fill(cand.theta, cand.vz);
+                if (cand.delta_t != 0.0) fwd.delta_t_vs_theta.fill(cand.theta, cand.delta_t);
+                if (cand.delta_t != 0.0) fwd.delta_t_vs_p_precut.fill(cand.p, cand.delta_t);
                 if (cand.sector >= 1 && cand.sector <= 6) {
                     int idx = cand.sector - 1;
-                    if (cand.delta_t != 0.0) h.delta_t_vs_p_precut_sector[idx]->fill(cand.p, cand.delta_t);
+                    if (cand.delta_t != 0.0) sec.delta_t_vs_p_precut_sector[idx]->fill(cand.p, cand.delta_t);
                 }
 
-                h.beta_diff_vs_p.fill(cand.p, cand.beta_diff);
-                h.tof_mass2_precut.fill(cand.tof_mass2);
+                fwd.beta_diff_vs_p.fill(cand.p, cand.beta_diff);
+                fwd.tof_mass2_precut.fill(cand.tof_mass2);
             }
 
             if (cand.is_central_detector) {
-                h.momentum_central.fill(cand.p);
-                h.theta_central.fill(cand.theta);
-                h.phi_central.fill(cand.phi);
-                h.vz_central.fill(cand.vz);
-                h.chi2pid_central.fill(cand.chi2pid);
-                h.beta_central.fill(cand.beta);
-                if (cand.delta_t != 0.0) h.delta_t_central.fill(cand.delta_t);
-                h.beta_vs_p_central.fill(cand.p, cand.beta);
-                if (cand.delta_t != 0.0) h.delta_t_vs_p_central.fill(cand.p, cand.delta_t);
-                h.p_vs_theta_central.fill(cand.theta, cand.p);
+                central.momentum.fill(cand.p);
+                central.theta.fill(cand.theta);
+                central.phi.fill(cand.phi);
+                central.vz.fill(cand.vz);
+                central.chi2pid.fill(cand.chi2pid);
+                central.beta.fill(cand.beta);
+                if (cand.delta_t != 0.0) central.delta_t.fill(cand.delta_t);
+                central.beta_vs_p.fill(cand.p, cand.beta);
+                if (cand.delta_t != 0.0) central.delta_t_vs_p.fill(cand.p, cand.delta_t);
+                central.p_vs_theta.fill(cand.theta, cand.p);
+            }
+        }
+    }
+
+    auto fill_pre_cut_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
+        if (is_piplus) fill_pre_cut_histograms_impl(candidates, h_piplus_fwd, h_piplus_central, h_piplus_sectors);
+        else           fill_pre_cut_histograms_impl(candidates, h_piminus_fwd, h_piminus_central, h_piminus_sectors);
+    }
+
+    template <typename FwdH>
+    auto fill_post_cut_histograms_impl(const std::vector<PionCandidate>& candidates, FwdH& fwd, ForwardSectorHistograms& sec) -> void {
+        for (const auto& cand : candidates) {
+            if (!cand.passes_all_cuts) continue;
+            fwd.momentum.fill(cand.p);
+            fwd.theta.fill(cand.theta);
+            fwd.phi.fill(cand.phi);
+            fwd.vz.fill(cand.vz);
+            fwd.chi2pid.fill(cand.chi2pid);
+            fwd.beta.fill(cand.beta);
+            fwd.beta_vs_p.fill(cand.p, cand.beta);
+            if (cand.delta_t != 0.0) fwd.delta_t_vs_p.fill(cand.p, cand.delta_t);
+            fwd.p_vs_theta.fill(cand.theta, cand.p);
+            fwd.tof_mass2.fill(cand.tof_mass2);
+            if (cand.sector >= 1 && cand.sector <= 6) {
+                int idx = cand.sector - 1;
+                sec.momentum_sector[idx]->fill(cand.p);
+                sec.theta_sector[idx]->fill(cand.theta);
+                if (cand.delta_t != 0.0) sec.delta_t_vs_p_sector[idx]->fill(cand.p, cand.delta_t);
             }
         }
     }
 
     auto fill_post_cut_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
-        auto& h = is_piplus ? h_piplus : h_piminus;
-        for (const auto& cand : candidates) {
-            if (!cand.passes_all_cuts) continue;
-            h.momentum.fill(cand.p);
-            h.theta.fill(cand.theta);
-            h.phi.fill(cand.phi);
-            h.vz.fill(cand.vz);
-            h.chi2pid.fill(cand.chi2pid);
-            h.beta.fill(cand.beta);
-            h.beta_vs_p.fill(cand.p, cand.beta);
-            if (cand.delta_t != 0.0) h.delta_t_vs_p.fill(cand.p, cand.delta_t);
-            h.p_vs_theta.fill(cand.theta, cand.p);
-            h.tof_mass2.fill(cand.tof_mass2);
-            if (cand.sector >= 1 && cand.sector <= 6) {
-                int idx = cand.sector - 1;
-                h.momentum_sector[idx]->fill(cand.p);
-                h.theta_sector[idx]->fill(cand.theta);
-                if (cand.delta_t != 0.0) h.delta_t_vs_p_sector[idx]->fill(cand.p, cand.delta_t);
-            }
-        }
+        if (is_piplus) fill_post_cut_histograms_impl(candidates, h_piplus_fwd, h_piplus_sectors);
+        else           fill_post_cut_histograms_impl(candidates, h_piminus_fwd, h_piminus_sectors);
     }
 
     auto fill_ntuple(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
         auto& ntuple = is_piplus ? m_ntuple_piplus : m_ntuple_piminus;
-        if (!ntuple) return;
         for (const auto& cand : candidates) {
             if (!cand.passes_all_cuts) continue;
             ntuple.data().from(cand);
-            ntuple.fill();
+            ntuple.fill();  // self-gates when the writer is disabled
         }
     }
 
@@ -561,18 +597,23 @@ class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionCo
         return pass_det && pass_fid && pass_chi2 && pass_mom && pass_vz && pass_dt;
     }
 
-    auto fill_nminus1_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
-        auto& h = is_piplus ? h_piplus : h_piminus;
+    template <typename NM1H>
+    auto fill_nminus1_histograms_impl(const std::vector<PionCandidate>& candidates, NM1H& nm1) -> void {
         for (const auto& cand : candidates) {
             if (!cand.is_forward_detector) continue;
-            if (passes_all_except_pion(cand, 2)) h.chi2pid_nminus1.fill(cand.chi2pid);
-            if (passes_all_except_pion(cand, 3)) h.momentum_nminus1.fill(cand.p);
-            if (passes_all_except_pion(cand, 4)) h.vz_nminus1.fill(cand.vz);
+            if (passes_all_except_pion(cand, 2)) nm1.chi2pid.fill(cand.chi2pid);
+            if (passes_all_except_pion(cand, 3)) nm1.momentum.fill(cand.p);
+            if (passes_all_except_pion(cand, 4)) nm1.vz.fill(cand.vz);
             if (passes_all_except_pion(cand, 5)) {
-                if (cand.delta_t != 0.0) h.delta_t_vs_p_nminus1.fill(cand.p, cand.delta_t);
-                h.beta_vs_p_nminus1.fill(cand.p, cand.beta);
+                if (cand.delta_t != 0.0) nm1.delta_t_vs_p.fill(cand.p, cand.delta_t);
+                nm1.beta_vs_p.fill(cand.p, cand.beta);
             }
         }
+    }
+
+    auto fill_nminus1_histograms(const std::vector<PionCandidate>& candidates, bool is_piplus) -> void {
+        if (is_piplus) fill_nminus1_histograms_impl(candidates, h_piplus_nm1);
+        else           fill_nminus1_histograms_impl(candidates, h_piminus_nm1);
     }
 
     auto collect_passing_particles(const std::vector<PionCandidate>& candidates) -> std::vector<Particle> {
@@ -720,3 +761,5 @@ class PionSelectionAlg : public framework::ConfigurableAlgorithm<PionSelectionCo
 };
 
 }  // namespace algorithms
+
+REFL_AUTO(type(algorithms::PionSelectionAlg), field(m_hist), field(m_vz_corrector))

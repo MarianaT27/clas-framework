@@ -16,10 +16,16 @@
  * Outputs:
  * - Keys::SelectedPhotons_Pi0: selected photons after all cuts
  * - Decisions::HasGoodPhoton: true if at least one good photon found
+ *
+ * The Config struct is a plain aggregate whose fields are reflected to TOML
+ * keys via Boost.PFR (no config_fields() tuple). Histograms live in a plain
+ * aggregate and are registered by member name via register_fields; their fill()
+ * is a no-op until registration, so process() fills unconditionally.
  */
 
 #include <cmath>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <clas12/Constants.hpp>
@@ -31,16 +37,19 @@
 #include <clas12/framework/core/Decisions.hpp>
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/HistogramAliases.hpp>
-#include <clas12/framework/core/Property.hpp>
+#include <clas12/framework/core/HistogramReflect.hpp>
+#include <clas12/framework/core/ServiceReflect.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/services/PhotonCutsService.hpp>
-#include "bank.h"
+#include <clas12/bankdefs/RUN_config.hpp>
+#include <clas12/bankdefs/REC_Particle.hpp>
+#include <clas12/bankdefs/REC_Calorimeter.hpp>
 
 namespace algorithms {
 
-using framework::Log;
+using namespace framework;
 
 /// Configuration for PhotonSelectionAlg.
 struct PhotonSelectionConfig {
@@ -49,23 +58,16 @@ struct PhotonSelectionConfig {
     double min_photon_energy = 0.2;
     double min_beta = 0.9;
     double max_beta = 1.1;
-
-    static constexpr auto config_fields() {
-        using T = PhotonSelectionConfig;
-        return std::make_tuple(framework::field("use_ai", &T::use_ai), framework::field("min_photon_energy", &T::min_photon_energy), framework::field("min_beta", &T::min_beta), framework::field("max_beta", &T::max_beta));
-    }
 };
 
-class PhotonSelectionAlg : public framework::ConfigurableAlgorithm<PhotonSelectionConfig> {
-   public:
-    using StatusCode = framework::StatusCode;
+static_assert(std::is_aggregate_v<PhotonSelectionConfig>, "PhotonSelectionConfig must stay a simple aggregate for PFR reflection");
 
+class PhotonSelectionAlg : public ConfigurableAlgorithm<PhotonSelectionConfig> {
+   public:
     explicit PhotonSelectionAlg(std::string name = "PhotonSelection", Config config = {})
-        : ConfigurableAlgorithm(std::move(name), std::move(config)), m_cutflow("Photon Selection") {
-        required_services(m_hist, m_photon_cuts);
-        declare_banks("RUN::config", "REC::Particle", "REC::Calorimeter");
-        declare_histograms(m_h_n_photons_raw, m_h_energy_raw, m_h_theta_raw, m_h_phi_raw, m_h_n_photons_selected,
-             m_h_energy_selected, m_h_theta_selected, m_h_phi_selected);
+        : ConfigurableAlgorithm(std::move(name), config), m_cutflow("Photon Selection") {
+        wire_services(*this);  // reflects ServiceRef members (refl-cpp)
+        declare_banks_typed<bankdefs::RUN_config, bankdefs::REC_Particle, bankdefs::REC_Calorimeter>();
     }
 
     auto on_initialize() -> StatusCode override {
@@ -79,11 +81,13 @@ class PhotonSelectionAlg : public framework::ConfigurableAlgorithm<PhotonSelecti
         m_cutflow.add_cut("PCAL Fiducial");
         m_cutflow.add_cut("Beta Cut");
 
+        register_fields(*m_hist, "/PhotonSelection", h);
+
         return StatusCode::SUCCESS();
     }
 
-    auto process(framework::Event& event) -> StatusCode override {
-        if (!event.passes_decision_typed(framework::Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
+    auto process(Event& event) -> StatusCode override {
+        if (!event.passes_decision_typed(Decisions::HasGoodDISElectron)) return StatusCode::FILTERED();
 
         const auto& RUN_config = event.get_bank("RUN::config");
         const auto& REC_Particle = event.get_bank("REC::Particle");
@@ -91,12 +95,12 @@ class PhotonSelectionAlg : public framework::ConfigurableAlgorithm<PhotonSelecti
 
         const auto& all_photons = event.particles(PIDs::PHOTON);
 
-        m_h_n_photons_raw.fill(static_cast<double>(all_photons.size()));
+        h.n_photons_raw.fill(static_cast<double>(all_photons.size()));
         for (const auto& photon : all_photons) {
             m_cutflow.pass("All Photons");
-            m_h_energy_raw.fill(photon.E());
-            m_h_theta_raw.fill(photon.theta());
-            m_h_phi_raw.fill(photon.phi());
+            h.energy_raw.fill(photon.E());
+            h.theta_raw.fill(photon.theta());
+            h.phi_raw.fill(photon.phi());
         }
 
         std::vector<Particle> candidates;
@@ -113,7 +117,7 @@ class PhotonSelectionAlg : public framework::ConfigurableAlgorithm<PhotonSelecti
         std::vector<Particle> selected;
         for (const auto& photon : candidates) {
             CalorimeterBank calo = read_Calorimeter_bank(event, photon.index());
-            if (!framework::PhotonCutsService::pass_pcal_fiducial_cut(calo.pcal_lv, calo.pcal_lw)) continue;
+            if (!PhotonCutsService::pass_pcal_fiducial_cut(calo.pcal_lv, calo.pcal_lw)) continue;
             m_cutflow.pass("PCAL Fiducial");
 
             if (photon.beta() <= m_config.min_beta || photon.beta() >= m_config.max_beta) continue;
@@ -122,15 +126,15 @@ class PhotonSelectionAlg : public framework::ConfigurableAlgorithm<PhotonSelecti
             selected.push_back(photon);
         }
 
-        m_h_n_photons_selected.fill(static_cast<double>(selected.size()));
+        h.n_photons_selected.fill(static_cast<double>(selected.size()));
         for (const auto& photon : selected) {
-            m_h_energy_selected.fill(photon.E());
-            m_h_theta_selected.fill(photon.theta());
-            m_h_phi_selected.fill(photon.phi());
+            h.energy_selected.fill(photon.E());
+            h.theta_selected.fill(photon.theta());
+            h.phi_selected.fill(photon.phi());
         }
 
-        event.store_typed(framework::Keys::SelectedPhotons_Pi0, selected);
-        event.set_decision_typed(framework::Decisions::HasGoodPhoton, !selected.empty());
+        event.store_typed(Keys::SelectedPhotons_Pi0, selected);
+        event.set_decision_typed(Decisions::HasGoodPhoton, !selected.empty());
 
         return StatusCode::SUCCESS();
     }
@@ -144,19 +148,27 @@ class PhotonSelectionAlg : public framework::ConfigurableAlgorithm<PhotonSelecti
     }
 
    private:
-    framework::Cutflow m_cutflow;
+    FRAMEWORK_REFLECT_FRIEND;  // let refl-cpp reflect the private ServiceRef members
 
-    framework::ServiceRef<framework::HistogramService> m_hist;
-    framework::ServiceRef<framework::PhotonCutsService> m_photon_cuts;
+    Cutflow m_cutflow;
 
-    framework::Hist1<> m_h_n_photons_raw{"/PhotonSelection/n_photons_raw", "Number of Photons (raw);N_{#gamma};Events", 0, 20, 20};
-    framework::Hist1<> m_h_energy_raw{"/PhotonSelection/energy_raw", "Photon Energy (raw);E [GeV];Photons", 0, 5, 100};
-    framework::Hist1<> m_h_theta_raw{"/PhotonSelection/theta_raw", "Photon #theta (raw);#theta [deg];Photons", 0, 40, 180};
-    framework::Hist1<> m_h_phi_raw{"/PhotonSelection/phi_raw", "Photon #phi (raw);#phi [deg];Counts", -180.0, 180.0, 360};
-    framework::Hist1<> m_h_n_photons_selected{"/PhotonSelection/n_photons_selected", "Number of Photons (selected);N_{#gamma};Events", 0, 20, 20};
-    framework::Hist1<> m_h_energy_selected{"/PhotonSelection/energy_selected", "Photon Energy (selected);E [GeV];Photons", 0, 5, 100};
-    framework::Hist1<> m_h_theta_selected{"/PhotonSelection/theta_selected", "Photon #theta (selected);#theta [deg];Photons", 0, 40, 180};
-    framework::Hist1<> m_h_phi_selected{"/PhotonSelection/phi_selected", "Photon #phi (selected);#phi [deg];Counts", -180.0, 180.0, 360};
+    ServiceRef<HistogramService> m_hist;
+    ServiceRef<PhotonCutsService> m_photon_cuts;
+
+    struct Histograms {
+        H1Auto n_photons_raw{"Number of Photons (raw);N_{#gamma};Events", 0, 20, 20};
+        H1Auto energy_raw{"Photon Energy (raw);E [GeV];Photons", 0, 5, 100};
+        H1Auto theta_raw{"Photon #theta (raw);#theta [deg];Photons", 0, 40, 180};
+        H1Auto phi_raw{"Photon #phi (raw);#phi [deg];Counts", -180.0, 180.0, 360};
+        H1Auto n_photons_selected{"Number of Photons (selected);N_{#gamma};Events", 0, 20, 20};
+        H1Auto energy_selected{"Photon Energy (selected);E [GeV];Photons", 0, 5, 100};
+        H1Auto theta_selected{"Photon #theta (selected);#theta [deg];Photons", 0, 40, 180};
+        H1Auto phi_selected{"Photon #phi (selected);#phi [deg];Counts", -180.0, 180.0, 360};
+    };
+
+    Histograms h;
 };
 
 }  // namespace algorithms
+
+REFL_AUTO(type(algorithms::PhotonSelectionAlg), field(m_hist), field(m_photon_cuts))
