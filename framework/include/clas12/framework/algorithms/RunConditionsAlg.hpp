@@ -50,7 +50,12 @@ class RunConditionsAlg : public Algorithm {
     explicit RunConditionsAlg(RunConditionsOverrides overrides = {},
                               std::string name = "RunConditions")
         : Algorithm(std::move(name)), m_overrides(std::move(overrides)) {
-        declare_bank("RUN::config");
+        // OPTIONAL, not required: a missing RUN::config must not abort the run.
+        // process() already handles its absence (run = 0 -> no RCDB lookup,
+        // only the TOML overrides flow). Inputs without RUN::config (e.g. the
+        // slim PI0 skim, which carries only PI0::event / PI0::photons) would
+        // otherwise fail the required-bank check at startup.
+        declare_optional_bank("RUN::config");
     }
 
     auto on_initialize() -> StatusCode override {
