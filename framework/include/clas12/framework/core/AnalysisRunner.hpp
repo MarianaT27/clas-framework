@@ -72,6 +72,7 @@
 #include <clas12/StringUtils.hpp>
 #include <clas12/Target.hpp>
 #include <clas12/framework/algorithms/RunConditionsAlg.hpp>
+#include <clas12/framework/services/HipoFileService.hpp>
 #include <clas12/framework/core/ApplicationBuilder.hpp>
 #include <clas12/framework/services/WorkflowVisualizationService.hpp>
 
@@ -106,6 +107,7 @@ struct AnalysisConfig {
     /// fields the analyst did *not* set are filled from RCDB.
     bool                     beam_energy_set = false;
     bool                     target_set      = false;
+    bool                     polarity_set    = false;
     /// Optional half-open record slice `[first, last)`. Set via the
     /// `[run].record_range = [first, last]` TOML key or the `--record-range
     /// first:last` CLI override. Default (0, -1) processes every record.
@@ -182,6 +184,19 @@ public:
             return EXIT_FAILURE;
         }
 
+        // RCDB connection: [analysis].rcdb_connection or the RCDB_CONNECTION
+        // env var. When set, fill any target / polarity / beam_energy the TOML
+        // left open from RCDB for THIS run, BEFORE the services are configured
+        // below — so the resolved run conditions actually drive the cuts, not
+        // just the output metadata. The analyst's TOML values always win.
+        std::string rcdb_conn = config->rcdb_connection;
+        if (rcdb_conn.empty()) {
+            if (const char* env = std::getenv("RCDB_CONNECTION")) rcdb_conn = env;
+        }
+        if (!rcdb_conn.empty()) {
+            resolve_unset_from_rcdb(*config, rcdb_conn);
+        }
+
         auto builder = make_application(analysis_name)
             .with_input_files(config->input_files)
             .with_output(config->output_file)
@@ -204,22 +219,18 @@ public:
             builder.with_progress_reporter(config->progress_fd, config->slice_id);
         }
 
-        // RCDB run conditions: resolve the connection from
-        // [analysis].rcdb_connection or the RCDB_CONNECTION environment
-        // variable. When set, point the standard RunConditionsService at the
-        // snapshot and prepend a RunConditionsAlg that resolves per-event
-        // conditions (multi-run aware). The analysis config always wins; RCDB
-        // fills only the gaps the TOML left open. With no connection, nothing is
-        // added and behaviour is unchanged.
-        std::string rcdb_conn = config->rcdb_connection;
-        if (rcdb_conn.empty()) {
-            if (const char* env = std::getenv("RCDB_CONNECTION")) rcdb_conn = env;
-        }
+        // Per-event run conditions: point the standard RunConditionsService at
+        // the connection resolved above and prepend a RunConditionsAlg that
+        // publishes RunConditionsData per event (multi-run aware) + populates
+        // the output metadata. The analysis config always wins; RCDB fills only
+        // the gaps the TOML left open. With no connection, nothing is added.
         if (!rcdb_conn.empty()) {
             builder.with_rcdb_connection(rcdb_conn);
             RunConditionsOverrides overrides;
             if (config->beam_energy_set) overrides.beam_energy = config->beam_energy;
             if (config->target_set)      overrides.target      = to_string(config->target);
+            if (config->polarity_set)
+                overrides.torus = (config->polarity == Polarity::Outbending) ? 1.0 : -1.0;
             builder.add_algorithm<RunConditionsAlg>(std::move(overrides));
         }
 
@@ -265,6 +276,52 @@ private:
     static inline std::string s_config_path;
 
     static auto config_path_for_log() -> const std::string& { return s_config_path; }
+
+    /// Fill the target / polarity / beam_energy that the TOML left unset from
+    /// RCDB, for the run about to be processed (peeked from the first input
+    /// file). These are the fields that CONFIGURE the services (vz windows,
+    /// sampling fraction, …), so resolving them here — before the builder reads
+    /// the config — makes RCDB actually drive the cuts. The analyst's TOML
+    /// values always win: only `!*_set` fields are touched. A messy RCDB target
+    /// string that maps to no known Target is ignored (keeps the default).
+    static auto resolve_unset_from_rcdb(AnalysisConfig& cfg,
+                                        const std::string& rcdb_conn) -> void {
+        if (cfg.beam_energy_set && cfg.target_set && cfg.polarity_set) return;
+        const int run = HipoFileService::peek_run_number(cfg.input_files);
+        if (run <= 0) return;
+        RunConditionsService svc(rcdb_conn);
+        if (svc.initialize().is_failure() || !svc.is_open()) { svc.finalize(); return; }
+        const RunConditions rc = svc.conditions(run);
+        svc.finalize();
+
+        bool filled = false;
+        if (!cfg.beam_energy_set && rc.beam_energy) {
+            cfg.beam_energy = *rc.beam_energy;
+            filled = true;
+        }
+        if (!cfg.polarity_set && rc.polarity()) {
+            cfg.polarity = (*rc.polarity() > 0) ? Polarity::Outbending
+                                                : Polarity::Inbending;
+            filled = true;
+        }
+        if (!cfg.target_set && rc.target) {
+            if (const Target t = string_to_target(*rc.target); t != Target::Undefined) {
+                cfg.target = t;
+                filled = true;
+            } else {
+                Log::warning("RCDB",
+                             "Run {} target '{}' is not a recognised Target; "
+                             "keeping {}.", run, *rc.target, to_string(cfg.target));
+            }
+        }
+        if (filled) {
+            Log::info("RCDB",
+                      "Run {}: filled config gaps from RCDB -> target={}, "
+                      "polarity={}, beam_energy={:.4f} GeV (TOML wins where set).",
+                      run, to_string(cfg.target), to_string(cfg.polarity),
+                      cfg.beam_energy);
+        }
+    }
 
     static auto emit_service_graph(Application& app, const std::string& output_prefix) -> void {
         WorkflowVisualizationService viz;
@@ -413,8 +470,10 @@ private:
                 cfg.target = string_to_target(*v);
                 cfg.target_set = true;
             }
-            if (auto v = (*an_tbl)["polarity"].value<std::string>())
+            if (auto v = (*an_tbl)["polarity"].value<std::string>()) {
                 cfg.polarity = string_to_polarity(*v);
+                cfg.polarity_set = true;
+            }
             if (auto v = (*an_tbl)["beam_energy"].value<double>()) {
                 cfg.beam_energy = *v;
                 cfg.beam_energy_set = true;

@@ -11,6 +11,7 @@
 #include <writer.h>
 #include <dictionary.h>
 #include <event.h>
+#include <bank.h>
 
 namespace framework {
 
@@ -199,6 +200,41 @@ public:
         hipo::dictionary dict;
         r.readDictionary(dict);
         return dict.hasSchema(bank_name.c_str());
+    }
+
+    /**
+     * @brief Peek the run number from the first input file (RUN::config row 0).
+     *
+     * Opens a throwaway reader on the first file and returns the run number of
+     * the first event that carries a RUN::config row — without touching the
+     * service's own state. Used to resolve per-run RCDB conditions (target /
+     * polarity / beam energy) before the event loop starts. Returns 0 on an
+     * empty file list, an unopenable file, or a missing bank.
+     */
+    static auto peek_run_number(const std::vector<std::string>& files) -> int {
+        if (files.empty()) return 0;
+        hipo::reader r;
+        r.open(files.front().c_str());
+        if (!r.is_open()) return 0;
+        hipo::dictionary dict;
+        r.readDictionary(dict);
+        if (!dict.hasSchema("RUN::config")) return 0;
+        hipo::schema& sch = dict.getSchema("RUN::config");
+        const int run_idx = sch.getEntryOrder("run");
+        if (run_idx < 0) return 0;
+        hipo::bank cfg(sch);
+        hipo::event ev;
+        // The first events of a HIPO file are often header/config records whose
+        // RUN::config carries run = 0; scan until a real (nonzero) run appears.
+        for (int guard = 0; r.next() && guard < 1000; ++guard) {
+            r.read(ev);
+            ev.getStructure(cfg);
+            if (cfg.getRows() > 0) {
+                const int run = cfg.getInt(run_idx, 0);
+                if (run > 0) return run;
+            }
+        }
+        return 0;
     }
 
     /**
