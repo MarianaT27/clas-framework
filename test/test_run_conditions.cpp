@@ -21,9 +21,14 @@ namespace {
 
 const std::string kMockDb = "/tmp/clas12_mock_rcdb_test.db";
 
-// Write a minimal RCDB-schema SQLite snapshot with two physics runs:
-//   run 810  : 6.423 GeV, torus -1, solenoid -1, target LH2  (inbending)
-//   run 5038 : 10.6  GeV, torus +1, solenoid -1, target LD2  (outbending)
+// Write a minimal RCDB-schema SQLite snapshot mirroring PRODUCTION RCDB exactly
+// (validated against a clasdb dump):
+//   - numeric value columns are NOT NULL (0 when unused); only text_value is nullable
+//   - beam_energy is stored in MeV (the service converts to GeV)
+//   - target is operator-entered free-text and may carry surrounding whitespace
+//     (the service trims it)
+//   run 810  : 6423 MeV -> 6.423 GeV, torus -1, solenoid -1, target "LH2 " (inbending)
+//   run 5038 : 10600 MeV -> 10.6 GeV, torus +1, solenoid -1, target " LD2" (outbending)
 void make_mock_rcdb(const std::string& path) {
     std::remove(path.c_str());
     sqlite3* db = nullptr;
@@ -33,13 +38,14 @@ void make_mock_rcdb(const std::string& path) {
         "  id INTEGER PRIMARY KEY, name TEXT, value_type TEXT);"
         "CREATE TABLE conditions ("
         "  id INTEGER PRIMARY KEY, run_number INTEGER, condition_type_id INTEGER,"
-        "  float_value REAL, int_value INTEGER, text_value TEXT, bool_value INTEGER);"
+        "  float_value REAL NOT NULL DEFAULT 0, int_value INTEGER NOT NULL DEFAULT 0,"
+        "  text_value TEXT, bool_value INTEGER NOT NULL DEFAULT 0);"
         "INSERT INTO condition_types (id,name,value_type) VALUES"
         "  (1,'beam_energy','float'),(2,'torus_scale','float'),"
         "  (3,'solenoid_scale','float'),(4,'target','string');"
         "INSERT INTO conditions (run_number,condition_type_id,float_value,text_value) VALUES"
-        "  (810, 1, 6.423, NULL),(810, 2, -1.0, NULL),(810, 3, -1.0, NULL),(810, 4, NULL,'LH2'),"
-        "  (5038,1, 10.6,  NULL),(5038,2,  1.0, NULL),(5038,3, -1.0, NULL),(5038,4, NULL,'LD2');";
+        "  (810, 1, 6423.0, NULL),(810, 2, -1.0, NULL),(810, 3, -1.0, NULL),(810, 4, 0.0,'LH2 '),"
+        "  (5038,1, 10600.0,NULL),(5038,2,  1.0, NULL),(5038,3, -1.0, NULL),(5038,4, 0.0,' LD2');";
     char* err = nullptr;
     const int rc = sqlite3_exec(db, sql, nullptr, nullptr, &err);
     const std::string msg = err ? err : "";
@@ -137,11 +143,39 @@ TEST(RunConditionsSoftFailure, MissingDatabaseIsSoft) {
     svc.finalize();
 }
 
-TEST(RunConditionsSoftFailure, MysqlConnectionIsDisabled) {
-    framework::RunConditionsService svc("mysql://rcdb@clasdb.jlab.org/rcdb");
+TEST(RunConditionsSoftFailure, UnreachableMysqlIsSoft) {
+    // Port 1 refuses immediately, so this stays fast whether the framework was
+    // built with a MySQL client (connect fails -> disabled) or without it
+    // (mysql:// unsupported -> disabled). Either way: never abort the job.
+    framework::RunConditionsService svc("mysql://rcdb@127.0.0.1:1/rcdb");
     EXPECT_TRUE(svc.initialize().is_success());
-    EXPECT_FALSE(svc.is_open());  // snapshot reader does not speak MySQL
+    EXPECT_FALSE(svc.is_open());
     EXPECT_FALSE(svc.conditions(810).any());
+    svc.finalize();
+}
+
+TEST(RunConditionsSoftFailure, MalformedMysqlUrlIsSoft) {
+    // Missing database component -> rejected before any connection attempt.
+    framework::RunConditionsService svc("mysql://rcdb@somehost");
+    EXPECT_TRUE(svc.initialize().is_success());
+    EXPECT_FALSE(svc.is_open());
+    svc.finalize();
+}
+
+// Live MySQL integration test — runs only when RCDB_MYSQL_TEST_URL points at a
+// reachable RCDB (e.g. mysql://rcdb@clasdb/rcdb on ifarm, or a local snapshot
+// server). Skipped otherwise so the suite stays hermetic.
+TEST(RunConditionsMysql, LiveServerResolvesRgdRun) {
+    const char* url = std::getenv("RCDB_MYSQL_TEST_URL");
+    if (url == nullptr) GTEST_SKIP() << "set RCDB_MYSQL_TEST_URL to run";
+    framework::RunConditionsService svc(url);
+    ASSERT_TRUE(svc.initialize().is_success());
+    if (!svc.is_open()) GTEST_SKIP() << "could not open " << url;
+    const auto rc = svc.conditions(18445);  // RG-D CxC, outbending
+    ASSERT_TRUE(rc.beam_energy.has_value());
+    EXPECT_NEAR(*rc.beam_energy, 10.5322, 1e-3);  // 10532.2 MeV -> GeV
+    EXPECT_EQ(rc.target.value_or(""), "CxC");      // trimmed from "CxC "
+    EXPECT_EQ(rc.polarity().value_or(0), 1);        // torus +1 -> outbending
     svc.finalize();
 }
 

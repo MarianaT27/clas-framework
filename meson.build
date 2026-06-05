@@ -91,6 +91,38 @@ cxxopts_dep = dependency('cxxopts')
 # (sqlite:////group/clas12/rcdb/*.db). Used only inside RunConditionsService.cpp;
 # the sqlite3.h include never leaks into a framework header.
 sqlite3_dep = dependency('sqlite3')
+# MySQL / MariaDB client (optional): direct access to the live RCDB MySQL
+# server (mysql://rcdb@clasdb/rcdb), as an alternative to a SQLite snapshot.
+# Detection order: pkg-config 'mariadb', pkg-config 'mysqlclient', then the
+# mariadb_config/mysql_config helper (homebrew & older installs ship no .pc on
+# the default pkg-config path). When none is found the framework still builds
+# SQLite-only and a mysql:// connection soft-disables. Used only inside
+# RunConditionsService.cpp; mysql.h never leaks into a framework header.
+mysql_dep = dependency('mariadb', required: false)
+if not mysql_dep.found()
+  mysql_dep = dependency('mysqlclient', required: false)
+endif
+if not mysql_dep.found()
+  mysql_config_prog = find_program('mariadb_config', 'mysql_config', required: false)
+  if mysql_config_prog.found()
+    mysql_cflags = run_command(mysql_config_prog, '--cflags', check: true).stdout().strip().split()
+    # `mysql_config --libs` lists transitive static deps (-lzstd -lssl -lcrypto …)
+    # without their -L paths. For a DYNAMIC client library those are unnecessary
+    # (the shared lib resolves them via its own load commands) and the bare -l
+    # flags fail to link (e.g. homebrew's keg-only zstd/openssl). Keep only the
+    # search path(s) and the client library itself.
+    mysql_libs_raw = run_command(mysql_config_prog, '--libs', check: true).stdout().strip().split()
+    mysql_libs = []
+    foreach a : mysql_libs_raw
+      if a.startswith('-L') or a == '-lmysqlclient' or a == '-lmariadb' or a == '-lmariadbclient' or a == '-lperconaserverclient'
+        mysql_libs += a
+      endif
+    endforeach
+    mysql_dep = declare_dependency(compile_args: mysql_cflags, link_args: mysql_libs)
+  endif
+endif
+have_mysql = mysql_dep.found()
+message('RCDB MySQL client support: ' + (have_mysql ? 'ENABLED' : 'disabled (SQLite snapshot only)'))
 # Boost.PFR (non-Boost distribution): header-only static reflection used to
 # auto-derive config/ntuple field (name, &member) pairs from plain aggregates,
 # replacing the hand-written config_fields()/ntuple_fields() tuples.

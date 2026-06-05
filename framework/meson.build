@@ -13,11 +13,19 @@ framework_sources = files(
   'src/services/RunConditionsService.cpp',
 )
 
+framework_deps = [clas12_dep, fmt_dep, toml_dep, root_dep, hipo4_dep, eigen_dep, mh_dep, pfr_dep, sqlite3_dep]
+framework_cpp_args = []
+if have_mysql
+  framework_deps += mysql_dep
+  framework_cpp_args += '-DHAVE_MYSQL'
+endif
+
 framework_lib = library(
   'clas12-framework',
   framework_sources,
   include_directories: framework_inc,
-  dependencies: [clas12_dep, fmt_dep, toml_dep, root_dep, hipo4_dep, eigen_dep, mh_dep, pfr_dep, sqlite3_dep],
+  dependencies: framework_deps,
+  cpp_args: framework_cpp_args,
   install: true,
 )
 

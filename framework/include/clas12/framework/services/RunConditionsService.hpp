@@ -39,6 +39,10 @@
 // translation unit that merely includes this header pays for (or links against
 // the symbols of) the SQLite C API beyond the framework library itself.
 struct sqlite3;
+// The live-RCDB handle is held as an opaque void* so <mysql.h> stays confined
+// to the .cpp. A forward-declared struct can't be used here because the client
+// type differs by vendor (MariaDB/old MySQL: `struct st_mysql`; MySQL 8:
+// `struct MYSQL`); void* sidesteps that and is cast back in the .cpp.
 
 namespace framework {
 
@@ -56,8 +60,12 @@ struct RunConditions {
     std::optional<double> solenoid;     ///< RCDB `solenoid_scale` (signed, -1..1)
     std::optional<std::string> target;  ///< RCDB `target` (e.g. "LH2", "LD2")
 
-    /// Field polarity = sign of the torus scale: -1, 0, or +1; nullopt if torus
-    /// is unknown. (The CLAS12 convention encodes bending direction in the sign.)
+    /// Field polarity from the sign of the torus scale, per the CLAS12
+    /// convention:
+    ///   torus_scale < 0  ->  -1  (Inbending)
+    ///   torus_scale > 0  ->  +1  (Outbending)
+    ///   torus_scale == 0 ->   0  (no torus field)
+    /// Returns nullopt when the torus scale is unknown.
     [[nodiscard]] auto polarity() const -> std::optional<int> {
         if (!torus) return std::nullopt;
         return (*torus < 0.0) ? -1 : (*torus > 0.0 ? 1 : 0);
@@ -104,11 +112,13 @@ struct RunConditionsOverrides {
  *   1. the string passed to the constructor / set_connection()
  *   2. the `RCDB_CONNECTION` environment variable
  *
- * Accepted forms: a plain filesystem path, or the RCDB URL
- * `sqlite:///relative.db` / `sqlite:////absolute/path.db`. A `mysql://…`
- * connection (the live JLab server) is **not** supported by this snapshot
- * reader: it is reported once and the service runs disabled — every lookup then
- * returns empty conditions, so TOML-specified values still flow unchanged.
+ * Accepted forms:
+ *   - a plain filesystem path, or `sqlite:///relative.db` / `sqlite:////abs.db`
+ *     — read-only SQLite snapshot (always available);
+ *   - `mysql://user[:password]@host[:port]/database` — the live JLab RCDB
+ *     server, available when the build found a MySQL/MariaDB client. Without
+ *     that client a mysql:// connection is reported once and the service runs
+ *     disabled (every lookup returns empty, so TOML values still flow).
  *
  * All failure modes are *soft*: a missing/unopenable snapshot logs a warning and
  * leaves the service disabled rather than aborting the job. RCDB is a
@@ -143,8 +153,10 @@ class RunConditionsService : public Service {
      */
     [[nodiscard]] auto conditions(int run) -> RunConditions;
 
-    /// True when a SQLite snapshot was opened successfully.
-    [[nodiscard]] auto is_open() const -> bool { return m_db != nullptr; }
+    /// True when a SQLite snapshot OR a live MySQL connection was opened.
+    [[nodiscard]] auto is_open() const -> bool {
+        return m_db != nullptr || m_mysql != nullptr;
+    }
 
     /// The filesystem path actually opened (empty when disabled).
     [[nodiscard]] auto connection() const -> const std::string& { return m_resolved; }
@@ -158,10 +170,11 @@ class RunConditionsService : public Service {
     auto query_double(int run, const char* condition) -> std::optional<double>;
     auto query_text(int run, const char* condition) -> std::optional<std::string>;
 
-    std::string m_connection;  ///< as configured (path or sqlite:// URL)
-    std::string m_resolved;    ///< actual file path opened (post URL-strip)
+    std::string m_connection;  ///< as configured (path, sqlite:// or mysql:// URL)
+    std::string m_resolved;    ///< SQLite path opened, or "host/db" for MySQL
     sqlite3* m_db = nullptr;   ///< opaque SQLite handle (opened READONLY)
-    std::mutex m_mutex;        ///< guards m_db access + m_cache
+    void* m_mysql = nullptr;   ///< opaque live-RCDB MySQL handle (MYSQL*; null unless mysql://)
+    std::mutex m_mutex;        ///< guards backend access + m_cache
     std::unordered_map<int, RunConditions> m_cache;
 };
 
