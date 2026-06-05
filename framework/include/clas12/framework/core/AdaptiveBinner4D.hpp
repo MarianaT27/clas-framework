@@ -38,9 +38,9 @@
 
 namespace framework {
 
-class AdaptiveBinner4D {
+template <int NDIM>
+class AdaptiveBinnerND {
    public:
-    static constexpr int NDIM = 4;
     using Point = std::array<double, NDIM>;
     using Box   = std::array<std::array<double, 2>, NDIM>;  // [dim][0=lo,1=hi]
 
@@ -52,7 +52,7 @@ class AdaptiveBinner4D {
         int    leaf_index = -1;   ///< valid when split_dim == -1
     };
 
-    AdaptiveBinner4D() = default;
+    AdaptiveBinnerND() = default;
 
     /// Build a tree with up to `target_bins` equal-occupancy leaves from
     /// `points` (consumed). Returns false if target_bins < 1 or there are
@@ -161,7 +161,7 @@ class AdaptiveBinner4D {
     bool save(const std::string& path) const {
         std::ofstream out(path);
         if (!out) return false;
-        out << "# AdaptiveBinner4D tree v1 (Q2, xB, z, pT2)\n";
+        out << "# AdaptiveBinnerND tree v1, ndim=" << NDIM << "\n";
         out << "ndim " << NDIM << "\n";
         out << "n_leaves " << m_n_leaves << "\n";
         out << "global_lo";
@@ -189,7 +189,7 @@ class AdaptiveBinner4D {
         std::size_t node_count = 0;
         while (in >> tok) {
             if (tok == "#") { std::string rest; std::getline(in, rest); continue; }
-            if (tok == "ndim")     { int v; in >> v; continue; }
+            if (tok == "ndim")     { int v; in >> v; if (v != NDIM) return false; continue; }
             if (tok == "n_leaves") { in >> m_n_leaves; continue; }
             if (tok == "global_lo") { for (int d = 0; d < NDIM; ++d) in >> m_global[d][0]; continue; }
             if (tok == "global_hi") { for (int d = 0; d < NDIM; ++d) in >> m_global[d][1]; continue; }
@@ -255,5 +255,10 @@ class AdaptiveBinner4D {
     int               m_n_leaves = 0;
     Box               m_global{};    ///< global bounding box of the build sample
 };
+
+/// 4D (Q2, xB, z, pT2) — pi0 multiplicity-ratio and azimuthal-modulation trees.
+using AdaptiveBinner4D = AdaptiveBinnerND<4>;
+/// 3D (Q2, xB, z) — pi0 pT-broadening tree (integrates over pT).
+using AdaptiveBinner3D = AdaptiveBinnerND<3>;
 
 }  // namespace framework

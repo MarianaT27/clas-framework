@@ -112,7 +112,20 @@ struct Pi0AnalysisConfig {
     //     offline interpretation.
     std::string adaptive_binning_output = "pi0_adaptive_binning.txt";
     std::string adaptive_binning_file   = "";   // empty => product grid
-    int         adaptive_target_bins    = 0;    // 0 => product-grid bin count
+    int         adaptive_target_bins    = 1000; // multiplicity 4D leaves (0 => product grid)
+
+    // pT-broadening 3D (Q2, xB, z) kd-tree: pT is the measured quantity, so it
+    // is integrated within each leaf (binned in 3D, not the 4D tree that splits pT2).
+    std::string pT_binning_output = "pi0_adaptive_binning_pT3d.txt";
+    std::string pT_binning_file   = "";
+    int         pT_target_bins    = 1000;
+
+    // Azimuthal-modulation 4D (Q2, xB, z, pT2) kd-tree, deliberately coarser
+    // (fewer/larger leaves) so each leaf holds enough pi0 to re-bin in phi_h.
+    std::string phi_binning_output = "pi0_adaptive_binning_phi4d.txt";
+    std::string phi_binning_file   = "";
+    int         phi_target_bins    = 250;
+    int         phih_n_bins        = 12;   // phi_h sub-bins per leaf, over [-180, 180]
 
     static constexpr auto config_fields() {
         using T = Pi0AnalysisConfig;
@@ -133,7 +146,14 @@ struct Pi0AnalysisConfig {
             framework::field("quantile_binning_output", &T::quantile_binning_output),
             framework::field("adaptive_binning_output", &T::adaptive_binning_output),
             framework::field("adaptive_binning_file",   &T::adaptive_binning_file),
-            framework::field("adaptive_target_bins",    &T::adaptive_target_bins));
+            framework::field("adaptive_target_bins",    &T::adaptive_target_bins),
+            framework::field("pT_binning_output",  &T::pT_binning_output),
+            framework::field("pT_binning_file",    &T::pT_binning_file),
+            framework::field("pT_target_bins",     &T::pT_target_bins),
+            framework::field("phi_binning_output", &T::phi_binning_output),
+            framework::field("phi_binning_file",   &T::phi_binning_file),
+            framework::field("phi_target_bins",    &T::phi_target_bins),
+            framework::field("phih_n_bins",        &T::phih_n_bins));
     }
 };
 
@@ -237,6 +257,28 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                              "to the product grid", m_config.adaptive_binning_file);
             }
         }
+        if (!m_config.pT_binning_file.empty()) {
+            auto tree = std::make_unique<framework::AdaptiveBinner3D>();
+            if (tree->load(m_config.pT_binning_file) && tree->valid()) {
+                m_pT_bins = std::move(tree);
+                Log::info(name(), "pT-broadening 3D binning ENABLED: {} leaf bins from '{}'",
+                          m_pT_bins->n_bins(), m_config.pT_binning_file);
+            } else {
+                Log::warning(name(), "Could not load pT-broadening 3D binning '{}'",
+                             m_config.pT_binning_file);
+            }
+        }
+        if (!m_config.phi_binning_file.empty()) {
+            auto tree = std::make_unique<framework::AdaptiveBinner4D>();
+            if (tree->load(m_config.phi_binning_file) && tree->valid()) {
+                m_phi_bins = std::move(tree);
+                Log::info(name(), "Azimuthal 4D binning ENABLED: {} leaf bins from '{}'",
+                          m_phi_bins->n_bins(), m_config.phi_binning_file);
+            } else {
+                Log::warning(name(), "Could not load azimuthal 4D binning '{}'",
+                             m_config.phi_binning_file);
+            }
+        }
 
         if (m_adaptive_bins) {
             Log::info(name(), "Multiplicity 4D bins (adaptive kd-tree): {}",
@@ -246,9 +288,14 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                       m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1,
                       m_config.z_edges.size() - 1, m_config.pT2_edges.size() - 1, total_mult_4D_bins());
         }
-        Log::info(name(), "Mixing 4D bins (Q2 x xB x z_mix x pT_mix): {} x {} x {} x {} = {}",
-                  m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1,
-                  m_config.z_mix_edges.size() - 1, m_config.pT_mix_edges.size() - 1, total_mix_4D_bins());
+        if (m_adaptive_bins) {
+            Log::info(name(), "Mixing 4D bins (adaptive kd-tree, shared with accumulators): {}",
+                      m_adaptive_bins->n_bins());
+        } else {
+            Log::info(name(), "Mixing 4D bins (Q2 x xB x z_mix x pT_mix): {} x {} x {} x {} = {}",
+                      m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1,
+                      m_config.z_mix_edges.size() - 1, m_config.pT_mix_edges.size() - 1, total_mix_4D_bins());
+        }
         Log::info(name(), "Pool bins (Q2 x xB x W x mult x nu): {} x {} x {} x {} x {} = {}",
                   m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1,
                   m_config.W_edges.size() - 1, N_MULT_BINS, m_config.nu_edges.size() - 1,
@@ -481,11 +528,23 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                       (mn == LONG_MAX ? 0 : mn), mx, mean_all, mean_pop);
         }
 
-        // Adaptive (kd-tree) 4D binning: partition the joint sample into
-        // ~equal-count cells (no empty bins) and write the tree + a per-leaf
-        // box table for offline use. Adopt it on the analysis run via
-        // adaptive_binning_file.
-        build_and_write_adaptive_binning(rows);
+        // Adaptive (kd-tree) binning: partition the joint sample into
+        // ~equal-count cells (no empty bins) and write each tree + a per-leaf
+        // box table. Adopt them on the analysis run via the *_binning_file keys.
+        //   - multiplicity ratio + azimuthal modulation: 4D (Q2,xB,z,pT2);
+        //   - pT broadening: 3D (Q2,xB,z), since pT is integrated within a leaf.
+        const int mult_target = (m_config.adaptive_target_bins > 0)
+                                    ? m_config.adaptive_target_bins
+                                    : product_mult_4D_bins();
+        build_and_write_tree<4>(rows, mult_target, m_config.adaptive_binning_output,
+                                {{"Q2", "xB", "z", "pT2"}}, "multiplicity");
+        build_and_write_tree<4>(rows, m_config.phi_target_bins, m_config.phi_binning_output,
+                                {{"Q2", "xB", "z", "pT2"}}, "azimuthal");
+        std::vector<std::array<double, 3>> rows3d;
+        rows3d.reserve(rows.size());
+        for (const auto& r : rows) rows3d.push_back({{r[0], r[1], r[2]}});
+        build_and_write_tree<3>(rows3d, m_config.pT_target_bins, m_config.pT_binning_output,
+                                {{"Q2", "xB", "z"}}, "pT-broadening");
 
         // Write the TOML snippet (only the axes that produced edges).
         const std::string& path = m_config.quantile_binning_output;
@@ -511,21 +570,20 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                   path, all_ok ? "" : " (some variables fell back to defaults)");
     }
 
-    /// Build the adaptive (kd-tree) 4D binning from the joint sample, log its
-    /// leaf occupancy, and write the tree (+ a per-leaf box CSV) for the
-    /// analysis run to load via adaptive_binning_file.
-    auto build_and_write_adaptive_binning(
-        const std::vector<std::array<double, 4>>& rows) -> void {
-        const int target = (m_config.adaptive_target_bins > 0)
-                               ? m_config.adaptive_target_bins
-                               : product_mult_4D_bins();
-
-        framework::AdaptiveBinner4D tree;
-        std::vector<framework::AdaptiveBinner4D::Point> pts(rows.begin(), rows.end());
+    /// Build one adaptive (kd-tree) tree of dimensionality NDIM from `rows`, log
+    /// its leaf occupancy, and write the tree (+ a per-leaf box CSV) for the
+    /// analysis run to load via the matching *_binning_file key.
+    template <int NDIM>
+    auto build_and_write_tree(const std::vector<std::array<double, NDIM>>& rows,
+                              int target, const std::string& out_path,
+                              const std::array<const char*, NDIM>& dim_names,
+                              const char* label) -> void {
+        framework::AdaptiveBinnerND<NDIM> tree;
+        std::vector<typename framework::AdaptiveBinnerND<NDIM>::Point> pts(rows.begin(), rows.end());
         if (!tree.build(std::move(pts), target)) {
             Log::warning(name(),
-                         "Adaptive 4D binning: too few samples ({}) for {} bins — skipped",
-                         rows.size(), target);
+                         "Adaptive {} binning ({}D): too few samples ({}) for {} bins — skipped",
+                         label, NDIM, rows.size(), target);
             return;
         }
 
@@ -539,34 +597,33 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         for (long c : occ) { mn = std::min(mn, c); mx = std::max(mx, c); if (c == 0) ++empty; }
         const double mean = occ.empty() ? 0.0 : static_cast<double>(rows.size()) / occ.size();
         Log::blank();
-        Log::info(name(), "Adaptive 4D binning (kd-tree): {} leaf bins", tree.n_bins());
+        Log::info(name(), "Adaptive {} binning (kd-tree, {}D): {} leaf bins", label, NDIM, tree.n_bins());
         Log::info(name(),
                   "      counts/bin: min {}, max {}, mean {:.2f}, empty {} ({:.1f}%)",
                   (mn == LONG_MAX ? 0 : mn), mx, mean, empty,
                   occ.empty() ? 0.0 : 100.0 * empty / occ.size());
 
-        const std::string& tpath = m_config.adaptive_binning_output;
-        if (!tree.save(tpath)) {
-            Log::warning(name(), "Could not write adaptive binning tree to '{}'", tpath);
+        if (!tree.save(out_path)) {
+            Log::warning(name(), "Could not write adaptive {} tree to '{}'", label, out_path);
             return;
         }
         // Companion per-leaf box table for offline interpretation.
-        const std::string bpath = tpath + ".boxes.csv";
+        const std::string bpath = out_path + ".boxes.csv";
         std::ofstream bcsv(bpath);
         if (bcsv) {
-            bcsv << "leaf,Q2_lo,Q2_hi,xB_lo,xB_hi,z_lo,z_hi,pT2_lo,pT2_hi,count\n";
+            bcsv << "leaf";
+            for (int d = 0; d < NDIM; ++d)
+                bcsv << ',' << dim_names[d] << "_lo," << dim_names[d] << "_hi";
+            bcsv << ",count\n";
             const auto boxes = tree.leaf_boxes();
             for (std::size_t i = 0; i < boxes.size(); ++i) {
-                const auto& bx = boxes[i];
                 bcsv << i;
-                for (int d = 0; d < 4; ++d) bcsv << ',' << bx[d][0] << ',' << bx[d][1];
+                for (int d = 0; d < NDIM; ++d) bcsv << ',' << boxes[i][d][0] << ',' << boxes[i][d][1];
                 bcsv << ',' << (i < occ.size() ? occ[i] : 0) << '\n';
             }
         }
-        Log::info(name(),
-                  "Wrote adaptive binning tree to '{}' (+ leaf boxes '{}'). "
-                  "Set adaptive_binning_file to it on the analysis run.",
-                  tpath, bpath);
+        Log::info(name(), "Wrote adaptive {} tree to '{}' (+ leaf boxes '{}'). "
+                          "Set its *_binning_file on the analysis run.", label, out_path, bpath);
     }
 
    private:
@@ -637,6 +694,8 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     // Loaded adaptive 4D binning (kd-tree) used for the 4D accumulators when
     // m_config.adaptive_binning_file is set. Null => product-grid binning.
     std::unique_ptr<framework::AdaptiveBinner4D> m_adaptive_bins;
+    std::unique_ptr<framework::AdaptiveBinner3D> m_pT_bins;   // pT-broadening (Q2,xB,z)
+    std::unique_ptr<framework::AdaptiveBinner4D> m_phi_bins;  // azimuthal (coarser 4D)
 
     framework::NTupleWriter<Pi0PairNTupleData>         m_ntuple_writer;
 
@@ -716,9 +775,12 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     std::vector<std::unique_ptr<framework::H1<>>> h_pT2_zbin;
 
     std::unique_ptr<framework::H1<>> h_counts_4D;
-    std::unique_ptr<framework::H1<mh::WeightedAccumulator>> h_sum_pT2_4D;
-    std::unique_ptr<framework::H1<mh::WeightedAccumulator>> h_sum_cosphi_4D;
-    std::unique_ptr<framework::H1<mh::WeightedAccumulator>> h_sum_sinphi_4D;
+    // pT-broadening per-leaf accumulators (3D tree): <pT2>=sum_pT2/counts, error via sum_pT4.
+    std::unique_ptr<framework::H1<>> h_pT_counts_3D;
+    std::unique_ptr<framework::H1<mh::WeightedAccumulator>> h_pT_sum_pT2_3D;
+    std::unique_ptr<framework::H1<mh::WeightedAccumulator>> h_pT_sum_pT4_3D;
+    // Azimuthal per-leaf phi_h distribution (4D leaf x phi_h) for the modulation fit.
+    std::unique_ptr<framework::H2<>> h_phih_vs_leaf;
 
     // -------- Mixing histograms (Pi0EventMixing directory) --------------------
     framework::H1<> h_mgg_same_all{mh::regular(0.0, 0.3, 200)};
@@ -803,6 +865,15 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     }
 
     auto find_mix_4d_bin(double Q2, double xB, double z, double pT) const -> int {
+        // Adaptive (kd-tree) binning when a tree is loaded: the same/mixed
+        // mgg spectra share the equal-occupancy leaves used by the 4D
+        // accumulators, so the multiplicity ratio is extracted per leaf. The
+        // tree's 4th dimension is pT^2, so square the pair pT here. Every
+        // point lands in a leaf (out-of-range falls to the nearest edge leaf),
+        // matching the un-gated 4D accumulator fill.
+        if (m_adaptive_bins) {
+            return m_adaptive_bins->bin_index({Q2, xB, z, pT * pT});
+        }
         int iq = find_1d_bin(Q2, m_config.Q2_edges);
         int ix = find_1d_bin(xB, m_config.xB_edges);
         int iz = find_1d_bin(z,  m_config.z_mix_edges);
@@ -929,13 +1000,22 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             } else if (iQ2 >= 0 && ixB >= 0 && iz >= 0 && ipT2 >= 0) {
                 bin_4d = flat_mult_4D_index(iQ2, ixB, iz, ipT2);
             }
-            if (bin_4d >= 0) {
-                double phi_h_rad = phi_h * M_PI / 180.0;
-                double idx = static_cast<double>(bin_4d) + 0.5;
-                h_counts_4D->fill(idx);
-                h_sum_pT2_4D->fill_weighted(pT2, idx);
-                h_sum_cosphi_4D->fill_weighted(std::cos(phi_h_rad), idx);
-                h_sum_sinphi_4D->fill_weighted(std::sin(phi_h_rad), idx);
+            if (bin_4d >= 0) h_counts_4D->fill(static_cast<double>(bin_4d) + 0.5);
+
+            // pT broadening: 3D (Q2,xB,z) leaf — pT is integrated within the leaf.
+            if (m_pT_bins) {
+                const int b3 = m_pT_bins->bin_index({Q2, xB, z});
+                if (b3 >= 0) {
+                    const double idx3 = static_cast<double>(b3) + 0.5;
+                    h_pT_counts_3D->fill(idx3);
+                    h_pT_sum_pT2_3D->fill_weighted(pT2, idx3);
+                    h_pT_sum_pT4_3D->fill_weighted(pT2 * pT2, idx3);
+                }
+            }
+            // Azimuthal modulation: 4D leaf x phi_h distribution (fit offline).
+            if (m_phi_bins) {
+                const int bp = m_phi_bins->bin_index({Q2, xB, z, pT2});
+                if (bp >= 0) h_phih_vs_leaf->fill(static_cast<double>(bp) + 0.5, phi_h);
             }
         }
     }
@@ -1210,29 +1290,66 @@ class Pi0AnalysisAlg : public framework::Algorithm {
 
         int n4D_mult = total_mult_4D_bins();
         const auto axis_mult_4d = mh::regular(0.0, static_cast<double>(n4D_mult), n4D_mult);
-        h_counts_4D     = std::make_unique<framework::H1<>>(axis_mult_4d);
-        h_sum_pT2_4D    = std::make_unique<framework::H1<mh::WeightedAccumulator>>(axis_mult_4d);
-        h_sum_cosphi_4D = std::make_unique<framework::H1<mh::WeightedAccumulator>>(axis_mult_4d);
-        h_sum_sinphi_4D = std::make_unique<framework::H1<mh::WeightedAccumulator>>(axis_mult_4d);
-        svc->register_hist(mult_dir + "/4D/counts",     "4D bin counts (Q^{2}, x_{B}, z, p_{T}^{2});flat bin;Counts", *h_counts_4D);
-        svc->register_hist(mult_dir + "/4D/sum_pT2",    "#Sigma p_{T}^{2} per 4D bin;flat bin;#Sigma p_{T}^{2}", *h_sum_pT2_4D);
-        svc->register_hist(mult_dir + "/4D/sum_cosphi", "#Sigma cos(#phi_{h}) per 4D bin;flat bin;#Sigma cos#phi_{h}", *h_sum_cosphi_4D);
-        svc->register_hist(mult_dir + "/4D/sum_sinphi", "#Sigma sin(#phi_{h}) per 4D bin;flat bin;#Sigma sin#phi_{h}", *h_sum_sinphi_4D);
+        h_counts_4D = std::make_unique<framework::H1<>>(axis_mult_4d);
+        svc->register_hist(mult_dir + "/4D/counts", "4D bin counts (Q^{2}, x_{B}, z, p_{T}^{2});flat bin;Counts", *h_counts_4D);
+
+        // pT-broadening per-leaf accumulators on the 3D (Q^2,x_B,z) tree
+        // (booked iff that tree is loaded). <pT2> = sum_pT2/counts; the error
+        // needs <pT4>, hence sum_pT4.
+        if (m_pT_bins) {
+            const int n3 = m_pT_bins->n_bins();
+            const auto ax3 = mh::regular(0.0, static_cast<double>(n3), n3);
+            h_pT_counts_3D  = std::make_unique<framework::H1<>>(ax3);
+            h_pT_sum_pT2_3D = std::make_unique<framework::H1<mh::WeightedAccumulator>>(ax3);
+            h_pT_sum_pT4_3D = std::make_unique<framework::H1<mh::WeightedAccumulator>>(ax3);
+            svc->register_hist(mult_dir + "/pT3D/counts",  "#pi^{0} count per 3D (Q^{2},x_{B},z) leaf;leaf;Counts", *h_pT_counts_3D);
+            svc->register_hist(mult_dir + "/pT3D/sum_pT2", "#Sigma p_{T}^{2} per 3D leaf;leaf;#Sigma p_{T}^{2}", *h_pT_sum_pT2_3D);
+            svc->register_hist(mult_dir + "/pT3D/sum_pT4", "#Sigma p_{T}^{4} per 3D leaf;leaf;#Sigma p_{T}^{4}", *h_pT_sum_pT4_3D);
+        }
+        // Azimuthal phi_h distribution per 4D leaf (booked iff the azimuthal
+        // tree is loaded): a 2D histogram (leaf index x phi_h) so the modulation
+        // is fit within each kinematic leaf offline.
+        if (m_phi_bins) {
+            const int nphi = m_phi_bins->n_bins();
+            h_phih_vs_leaf = std::make_unique<framework::H2<>>(
+                mh::regular(0.0, static_cast<double>(nphi), nphi),
+                mh::regular(-180.0, 180.0, m_config.phih_n_bins));
+            svc->register_hist("/Pi0Azimuthal/phih_vs_leaf",
+                               "#phi_{h} per 4D leaf;leaf;#phi_{h} [deg]", *h_phih_vs_leaf);
+        }
 
         // -------- Pi0EventMixing directory -----------------------------------
         const std::string mix_dir = "/Pi0EventMixing";
         svc->register_hist(mix_dir + "/mgg_same_all",  "Same-event M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts",  h_mgg_same_all);
         svc->register_hist(mix_dir + "/mgg_mixed_all", "Mixed-event M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts", h_mgg_mixed_all);
 
-        int n_mix = total_mix_4D_bins();
+        // When the adaptive (kd-tree) tree is loaded the mgg spectra are booked
+        // per leaf (same equal-occupancy bins as the 4D accumulators); the
+        // title carries the leaf's 4D box (note: pT^2, the tree's 4th dim).
+        // Otherwise fall back to the product mixing grid.
+        const std::vector<framework::AdaptiveBinner4D::Box> leaf_boxes =
+            m_adaptive_bins ? m_adaptive_bins->leaf_boxes()
+                            : std::vector<framework::AdaptiveBinner4D::Box>{};
+        const int n_mix = m_adaptive_bins ? m_adaptive_bins->n_bins()
+                                          : total_mix_4D_bins();
         for (int idx = 0; idx < n_mix; ++idx) {
-            auto [iq, ix, iz, ip] = decompose_mix_4d_bin(idx);
-            const std::string range = fmt::format(
-                "Q^{{2}}#in[{:.1f},{:.1f}] x_{{B}}#in[{:.2f},{:.2f}] z#in[{:.2f},{:.2f}] p_{{T}}#in[{:.2f},{:.2f}]",
-                m_config.Q2_edges[iq], m_config.Q2_edges[iq + 1],
-                m_config.xB_edges[ix], m_config.xB_edges[ix + 1],
-                m_config.z_mix_edges[iz], m_config.z_mix_edges[iz + 1],
-                m_config.pT_mix_edges[ip], m_config.pT_mix_edges[ip + 1]);
+            std::string range;
+            if (m_adaptive_bins) {
+                const auto& bx = leaf_boxes[static_cast<std::size_t>(idx)];
+                range = fmt::format(
+                    "Q^{{2}}#in[{:.3f},{:.3f}] x_{{B}}#in[{:.3f},{:.3f}] "
+                    "z#in[{:.3f},{:.3f}] p_{{T}}^{{2}}#in[{:.4f},{:.4f}]",
+                    bx[0][0], bx[0][1], bx[1][0], bx[1][1],
+                    bx[2][0], bx[2][1], bx[3][0], bx[3][1]);
+            } else {
+                auto [iq, ix, iz, ip] = decompose_mix_4d_bin(idx);
+                range = fmt::format(
+                    "Q^{{2}}#in[{:.1f},{:.1f}] x_{{B}}#in[{:.2f},{:.2f}] z#in[{:.2f},{:.2f}] p_{{T}}#in[{:.2f},{:.2f}]",
+                    m_config.Q2_edges[iq], m_config.Q2_edges[iq + 1],
+                    m_config.xB_edges[ix], m_config.xB_edges[ix + 1],
+                    m_config.z_mix_edges[iz], m_config.z_mix_edges[iz + 1],
+                    m_config.pT_mix_edges[ip], m_config.pT_mix_edges[ip + 1]);
+            }
 
             h_mgg_same[idx]  = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, 200));
             h_mgg_mixed[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, 200));
