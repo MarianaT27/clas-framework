@@ -75,10 +75,25 @@ class RunConditionsAlg : public Algorithm {
         cfg.bind(event.get_bank("RUN::config"));
         const int run = cfg.rows() > 0 ? cfg.run(0) : 0;
 
-        RunConditions rc;
-        rc.run = run;
-        if (m_rcdb) rc = m_rcdb->conditions(run);  // cached per run, thread-safe
-        rc = apply_overrides(std::move(rc), m_overrides);  // TOML wins
+        // Per-thread cache of the RCDB conditions for the last-seen run. The
+        // service already caches per run (MySQL is hit at most once per run),
+        // but reading that shared cache locks a mutex on EVERY event, which
+        // serialises all worker threads. Run numbers arrive in contiguous
+        // blocks, so caching the last run per thread collapses the shared-cache
+        // (and any MySQL round-trip) access to once per run per thread — the
+        // common per-event path becomes lock-free. RCDB conditions are
+        // instance-independent, so the cheap per-event apply_overrides still
+        // layers this instance's TOML overrides on top.
+        thread_local int           tl_run = -2;
+        thread_local RunConditions tl_base;
+        if (run != tl_run) {
+            RunConditions base;
+            base.run = run;
+            if (m_rcdb) base = m_rcdb->conditions(run);  // shared cache / MySQL only on run change
+            tl_base = std::move(base);
+            tl_run  = run;
+        }
+        RunConditions rc = apply_overrides(tl_base, m_overrides);  // TOML wins (cheap, per event)
         rc.run = run;
 
         event.store_typed(RunConditionsData, rc);
