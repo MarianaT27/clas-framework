@@ -17,6 +17,7 @@
 #include <clas12/framework/core/ServiceManager.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
+#include <clas12/framework/core/PerformanceMonitor.hpp>
 #include <chain.h>
 #include <reader.h>
 #include <dictionary.h>
@@ -52,7 +53,9 @@ class Application {
         , m_quiet_mode(other.m_quiet_mode)
         , m_percentage(other.m_percentage)
         , m_num_threads(other.m_num_threads)
-        , m_exception_count(other.m_exception_count.load()) {}
+        , m_exception_count(other.m_exception_count.load())
+        , m_profiling(other.m_profiling)
+        , m_perf(std::move(other.m_perf)) {}
     Application& operator=(Application&&) = delete;
     Application(const Application&) = delete;
     Application& operator=(const Application&) = delete;
@@ -152,6 +155,15 @@ class Application {
      */
     auto set_quiet_mode(bool quiet) -> void {
         m_quiet_mode = quiet;
+    }
+
+    /**
+     * @brief Enable opt-in per-step performance profiling (wall vs thread-CPU
+     *        per algorithm + a synthetic "Input" step), reported at finalize.
+     *        Off by default → the event loop uses its untimed path.
+     */
+    auto set_profiling(bool enable) -> void {
+        m_profiling = enable;
     }
 
     /**
@@ -392,37 +404,79 @@ class Application {
             });
         }
 
-        // Process events
-        chain.process([this](hipo::chain_event& chain_evt, int file_idx, long evt_idx) {
-            // Create Event wrapper around the chain's per-callback view
-            Event event(chain_evt);
-            event.set_event_number(evt_idx);
-            event.set_file_index(file_idx);
-
-            // Execute algorithm sequence
-            for (auto& alg : m_algorithms) {
-                try {
-                    auto sc = alg->execute(event);
-                    if (sc.is_failure()) {
-                        fmt::print(stderr, "ERROR: Algorithm '{}' failed on event {}\n", alg->name(), evt_idx);
-                        m_exception_count++;
-                        break;  // Stop processing this event on failure
-                    }
-                    if (sc.is_filtered()) {
-                        // Event filtered out by this algorithm, skip remaining algorithms
-                        break;
-                    }
-                } catch (const std::exception& e) {
-                    fmt::print(stderr, "ERROR: Exception in algorithm '{}': {}\n", alg->name(), e.what());
+        // Run one algorithm with the established exception handling.
+        // Returns: 0 = ok (continue), 1 = filtered (stop event), 2 = failure.
+        auto exec_one = [this](Algorithm& alg, Event& event, long evt_idx) -> int {
+            try {
+                auto sc = alg.execute(event);
+                if (sc.is_failure()) {
+                    fmt::print(stderr, "ERROR: Algorithm '{}' failed on event {}\n", alg.name(), evt_idx);
                     m_exception_count++;
-                    break;
-                } catch (...) {
-                    fmt::print(stderr, "ERROR: Unknown exception in algorithm '{}'\n", alg->name());
-                    m_exception_count++;
-                    break;
+                    return 2;
                 }
+                if (sc.is_filtered()) return 1;
+                return 0;
+            } catch (const std::exception& e) {
+                fmt::print(stderr, "ERROR: Exception in algorithm '{}': {}\n", alg.name(), e.what());
+                m_exception_count++;
+                return 2;
+            } catch (...) {
+                fmt::print(stderr, "ERROR: Unknown exception in algorithm '{}'\n", alg.name());
+                m_exception_count++;
+                return 2;
             }
-        }, m_percentage);
+        };
+
+        // Process events. Two event-loop bodies selected ONCE here, outside the
+        // hot path: the untimed default (zero added overhead) and, under
+        // --profile, a timed body that records per-algorithm wall + thread-CPU
+        // (plus a synthetic "Input (read+decode)" step = the gap between
+        // consecutive events on a worker thread) into the PerformanceMonitor.
+        if (m_profiling) {
+            m_perf = std::make_unique<perf::PerformanceMonitor>();
+            std::vector<std::string> step_names;
+            step_names.reserve(m_algorithms.size() + 1);
+            for (auto& alg : m_algorithms) step_names.push_back(alg->name());
+            step_names.emplace_back("Input (read+decode)");
+            m_perf->init(std::move(step_names));
+            const std::size_t input_idx = m_perf->input_index();
+
+            chain.process([this, &exec_one, input_idx](hipo::chain_event& chain_evt, int file_idx, long evt_idx) {
+                Event event(chain_evt);
+                event.set_event_number(evt_idx);
+                event.set_file_index(file_idx);
+
+                auto* ts = m_perf->thread_state();
+                const std::uint64_t ev_w0 = perf::now_wall_ns();
+                const std::uint64_t ev_c0 = perf::now_cpu_ns();
+                if (ts->have_last) {  // time the chain spent reading+decoding since the last event
+                    ts->steps[input_idx].wall_ns += ev_w0 - ts->last_wall;
+                    ts->steps[input_idx].cpu_ns  += ev_c0 - ts->last_cpu;
+                    ts->steps[input_idx].count   += 1;
+                }
+                for (std::size_t i = 0; i < m_algorithms.size(); ++i) {
+                    const std::uint64_t w0 = perf::now_wall_ns();
+                    const std::uint64_t c0 = perf::now_cpu_ns();
+                    const int r = exec_one(*m_algorithms[i], event, evt_idx);
+                    ts->steps[i].wall_ns += perf::now_wall_ns() - w0;
+                    ts->steps[i].cpu_ns  += perf::now_cpu_ns()  - c0;
+                    ts->steps[i].count   += 1;
+                    if (r != 0) break;
+                }
+                ts->last_wall = perf::now_wall_ns();
+                ts->last_cpu  = perf::now_cpu_ns();
+                ts->have_last = true;
+            }, m_percentage);
+        } else {
+            chain.process([this, &exec_one](hipo::chain_event& chain_evt, int file_idx, long evt_idx) {
+                Event event(chain_evt);
+                event.set_event_number(evt_idx);
+                event.set_file_index(file_idx);
+                for (auto& alg : m_algorithms) {
+                    if (exec_one(*alg, event, evt_idx) != 0) break;
+                }
+            }, m_percentage);
+        }
         (void)all_required_banks;  // kept around for the dictionary probe / future banklist pre-binding
 
         if (report_progress) {
@@ -466,6 +520,18 @@ class Application {
         Log::info("Application", "");
         Log::info("Application", "Finalization complete!");
         Log::info("Application", "═══════════════════════════════════════════════════════════════");
+
+        // Opt-in per-step performance report. Printed last so it's the final
+        // thing on screen / in the per-slice log. Under local_batch we also
+        // stream the per-step PERF records back over the progress pipe (already
+        // joined in run(), so no interleaving) for the aggregated batch table.
+        if (m_profiling && m_perf) {
+            m_perf->report();
+            if (m_progress_fd >= 0) {
+                const std::string lines = m_perf->perf_lines(m_slice_id);
+                (void)::write(m_progress_fd, lines.data(), lines.size());
+            }
+        }
         return sc;
     }
 
@@ -499,6 +565,10 @@ class Application {
     double m_percentage = 100;
     int m_num_threads = 1;
     mutable std::atomic<long> m_exception_count{0};
+    /// Opt-in per-step profiling (--profile / [analysis].profile). When true
+    /// run() uses a timed event-loop lambda feeding m_perf; finalize() reports.
+    bool m_profiling = false;
+    std::unique_ptr<perf::PerformanceMonitor> m_perf;
 };
 
 }  // namespace framework

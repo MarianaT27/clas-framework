@@ -15,6 +15,9 @@ executable(
 executable(
   'local_batch',
   files('local_batch.cpp'),
+  # framework_inc (include-only, no link) lets local_batch reuse the header-only
+  # perf:: helpers (parse_perf_line / render_table) to aggregate per-slice timing.
+  include_directories: framework_inc,
   dependencies: [hipo4_dep, fmt_dep, cxxopts_dep, toml_dep],
 )
 

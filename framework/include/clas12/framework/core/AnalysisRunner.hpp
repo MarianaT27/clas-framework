@@ -108,6 +108,9 @@ struct AnalysisConfig {
     bool                     beam_energy_set = false;
     bool                     target_set      = false;
     bool                     polarity_set    = false;
+    /// Per-step performance profiling (--profile / [analysis].profile). Off by
+    /// default — the event loop then takes its untimed path (zero overhead).
+    bool                     profile         = false;
     /// Optional half-open record slice `[first, last)`. Set via the
     /// `[run].record_range = [first, last]` TOML key or the `--record-range
     /// first:last` CLI override. Default (0, -1) processes every record.
@@ -209,6 +212,7 @@ public:
             .with_config(config->config_table);
 
         builder.with_record_range(config->record_first, config->record_last);
+        builder.with_profiling(config->profile);
 
         // Local-batch progress mode: silence per-process logging + pipe
         // progress updates to the parent. Only takes effect when the
@@ -383,6 +387,11 @@ private:
                 "Slice tag used as the first column in progress-fd lines. "
                 "Required when --progress-fd is set; ignored otherwise.",
                 cxxopts::value<int>())
+            ("profile",
+                "Per-step performance profiling: measure wall vs thread-CPU "
+                "time per algorithm (+ a synthetic Input read step) and print an "
+                "IO-bound/CPU-bound + slowest-step table at the end. Also "
+                "settable via [analysis].profile. Off by default (zero overhead).")
             ("h,help",   "Show help");
 
         auto args = options.parse(argc, argv);
@@ -481,7 +490,11 @@ private:
             if (auto v = (*an_tbl)["version"].value<std::string>())  cfg.version = *v;
             if (auto v = (*an_tbl)["rcdb_connection"].value<std::string>())
                 cfg.rcdb_connection = *v;
+            if (auto v = (*an_tbl)["profile"].value<bool>())         cfg.profile = *v;
         }
+
+        // CLI --profile wins over the TOML key.
+        if (args.count("profile")) cfg.profile = true;
 
         return cfg;
     }

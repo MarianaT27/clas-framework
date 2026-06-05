@@ -46,6 +46,7 @@
 #include <functional>
 #include <glob.h>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -61,6 +62,7 @@
 
 #include <progresstracker.hpp>
 #include <reader.h>
+#include <clas12/framework/core/PerformanceMonitor.hpp>  // header-only perf:: helpers
 
 namespace fs = std::filesystem;
 
@@ -73,6 +75,7 @@ struct DriverConfig {
     int         concurrent   = 0;
     bool        no_run       = false;
     bool        automerge    = false; // run hadd (and hipo-utils -merge) on success
+    bool        profile      = false; // pass --profile to slices + aggregate the per-step timing
     std::string output_dir;          // optional: overrides what's in the TOML
     std::string slice_suffix = "_slice"; // <output_base>_slice<i>.root
 };
@@ -346,7 +349,8 @@ struct SlicePlan {
     const std::string& analysis_toml,
     const SlicePlan& plan,
     int progress_pipe_write_fd,
-    const std::string& log_path) -> int
+    const std::string& log_path,
+    bool profile) -> int
 {
     // String storage lives in the caller's frame, but the argv vector is
     // built per call so we own the lifetimes locally and only pass
@@ -415,6 +419,7 @@ struct SlicePlan {
             argv.push_back("--progress-fd"); argv.push_back(progress_fd_arg.c_str());
             argv.push_back("--slice-id");    argv.push_back(slice_id_arg.c_str());
         }
+        if (profile) argv.push_back("--profile");
         argv.push_back(nullptr);
         execv(exe.c_str(), const_cast<char* const*>(argv.data()));
         // Only reached on exec failure.
@@ -491,6 +496,10 @@ int main(int argc, char* argv[]) {
                          "[skim].hipo_output is configured) to produce the "
                          "merged output automatically",
             cxxopts::value<bool>()->default_value("false"))
+        ("profile",      "Run each slice with --profile and print an aggregated "
+                         "per-step (wall vs CPU, IO/CPU-bound, slowest) table at "
+                         "the end, summed across all slices.",
+            cxxopts::value<bool>()->default_value("false"))
         ("h,help",       "Show help");
 
     auto args = opts.parse(argc, argv);
@@ -507,6 +516,7 @@ int main(int argc, char* argv[]) {
     if (args.count("output-dir")) { cfg.output_dir = args["output-dir"].as<std::string>(); }
     cfg.no_run        = args["dry-run"].as<bool>();
     cfg.automerge     = args["automerge"].as<bool>();
+    cfg.profile       = args["profile"].as<bool>();
 
     if (cfg.slices < 1 || cfg.concurrent < 1) {
         fmt::print(stderr,
@@ -738,6 +748,9 @@ int main(int argc, char* argv[]) {
     std::vector<long> events_total(static_cast<std::size_t>(n_slices), 0);
     std::mutex                agg_mu;
     std::atomic<int>          completed_slices{0};
+    // Per-step timing aggregated across all slices from PERF pipe records
+    // (only populated under --profile). Keyed by step index → (name, summed).
+    std::map<int, std::pair<std::string, framework::perf::StepAccum>> perf_agg;
 
     // Fixed denominator from the up-front probe. Fall back to the
     // children's self-reported totals only if the probe yielded nothing
@@ -763,6 +776,21 @@ int main(int argc, char* argv[]) {
             while ((pos = carry.find('\n')) != std::string::npos) {
                 std::string line = carry.substr(0, pos);
                 carry.erase(0, pos + 1);
+                // PERF records (per-step timing, --profile) — aggregate by step.
+                {
+                    int s_id = -1, idx = -1;
+                    framework::perf::StepAccum a;
+                    std::string name;
+                    if (framework::perf::parse_perf_line(line, s_id, idx, a, name)) {
+                        std::lock_guard lk(agg_mu);
+                        auto& slot = perf_agg[idx];
+                        slot.first = name;
+                        slot.second.wall_ns += a.wall_ns;
+                        slot.second.cpu_ns  += a.cpu_ns;
+                        slot.second.count   += a.count;
+                        continue;
+                    }
+                }
                 int  slice_id = -1;
                 long ev = 0, tot = 0;
                 if (std::sscanf(line.c_str(), "%d %ld %ld", &slice_id, &ev, &tot) != 3) continue;
@@ -815,7 +843,7 @@ int main(int argc, char* argv[]) {
             const std::string log_path =
                 (logs_dir / fmt::format("slice{:03d}.log", p.index)).string();
             const int rc = run_one_slice(cfg.executable, cfg.analysis_toml,
-                                         p, pipe_write_fd, log_path);
+                                         p, pipe_write_fd, log_path, cfg.profile);
             const auto t1 = std::chrono::steady_clock::now();
             const long ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
             std::string desc = !p.input_files.empty()
@@ -864,6 +892,19 @@ int main(int argc, char* argv[]) {
         "══════════════════════════════════════════════════════════════════\n\n",
         wall_ms / 1000.0, results.size(),
         static_cast<int>(results.size()) - failures, failures);
+
+    // Aggregated per-step timing, summed across every slice's PERF records.
+    if (cfg.profile) {
+        std::vector<std::pair<std::string, framework::perf::StepAccum>> rows;
+        {
+            std::lock_guard lk(agg_mu);
+            for (const auto& [idx, named] : perf_agg) rows.emplace_back(named.first, named.second);
+        }
+        if (!rows.empty()) {
+            fmt::print("{}\n", framework::perf::render_table(
+                "local_batch — aggregated per-step timing (summed over all slices)", rows));
+        }
+    }
 
     if (failures == 0) {
         const fs::path base{info.output_base};

@@ -115,6 +115,13 @@ public:
         return *this;
     }
 
+    /// Enable opt-in per-step performance profiling (wall vs thread-CPU per
+    /// algorithm + a synthetic Input step), reported at the end of the run.
+    auto with_profiling(bool enable) -> ApplicationBuilder& {
+        m_profiling = enable;
+        return *this;
+    }
+
     /// Attach the parsed TOML config table. The Application will look
     /// up `[<algorithm.name()>]` for every registered algorithm and
     /// apply matching `Property` values via
@@ -230,6 +237,7 @@ private:
     int m_progress_fd  = -1;
     int m_slice_id     = -1;
     bool m_quiet_mode  = false;
+    bool m_profiling   = false;
 
     // Metadata
     std::string m_version = "1.0";
