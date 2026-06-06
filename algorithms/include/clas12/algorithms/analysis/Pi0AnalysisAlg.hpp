@@ -84,16 +84,7 @@ struct Pi0AnalysisConfig {
     // (Q^2 x x_B x z x p_T^2). When enabled, the algorithm samples all four
     // axes once per pi0 candidate that enters the multiplicity grid, then at
     // finalize prints + writes quantile edges so that each of the 4D bins
-    // holds ~the same number of pi0 candidates — replacing the hand-chosen
-    // Q2_edges/xB_edges/z_edges/pT2_edges above. The emitted edges keep the
-    // same bin *count* as the current ones, so they are a drop-in; once
-    // adopted they apply wherever those edge vectors are used (the
-    // multiplicity grid, DIS normalization, mixing, and pool all share
-    // Q2/xB). The scan is purely additive (it doesn't change the histograms
-    // produced by this run); adopt by pasting the written TOML into the
-    // [Pi0Analysis] section, then re-run. Best run single-process over a
-    // representative subset (quantiles converge with ~1e5-1e6 samples), not
-    // sharded via local_batch.
+    // holds ~the same number of pi0 candidates.
     bool        scan_quantile_binning  = false;
     int         quantile_sample_cap    = 1'000'000;  // reservoir size per variable
     std::string quantile_binning_output = "pi0_equal_stat_binning.toml";
@@ -112,7 +103,7 @@ struct Pi0AnalysisConfig {
     //     offline interpretation.
     std::string adaptive_binning_output = "pi0_adaptive_binning.txt";
     std::string adaptive_binning_file   = "";   // empty => product grid
-    int         adaptive_target_bins    = 1000; // multiplicity 4D leaves (0 => product grid)
+    int         adaptive_target_bins    = 1000; // multiplicity 4D leaves 
 
     // pT-broadening 3D (Q2, xB, z) kd-tree: pT is the measured quantity, so it
     // is integrated within each leaf (binned in 3D, not the 4D tree that splits pT2).
@@ -229,10 +220,6 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     explicit Pi0AnalysisAlg(std::string name = "Pi0Analysis", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow("Pi0 Analysis") {
         required_services(m_hist, m_ntuple);
-        // REC::Event is OPTIONAL: the full chain reads helicity from it, but the
-        // slim pi0 skim carries no REC banks and supplies helicity via
-        // Keys::Helicity instead (see process()). Declaring it required would
-        // make Pi0Analysis refuse to run on a slim input.
         declare_optional_bank("REC::Event");
         declare_config(m_config);
         declare_ntuple(m_ntuple_writer, "pi0_pairs", m_config.enable_ntuple);
