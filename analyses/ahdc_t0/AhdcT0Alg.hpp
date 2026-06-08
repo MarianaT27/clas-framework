@@ -160,11 +160,14 @@ struct AhdcT0Config {
     int    track_ndf_offset    = 5;      ///< ndf = n_hits - this (helix fit: 5 params).
 
     // ---- Quality-plot axes (used only for the "before cut" diagnostics) -----
-    int    q_nhits_max    = 40;        ///< n_hits axis upper edge.
-    double q_chi2_max     = 50.0;      ///< chi2 axis upper edge [mm^2].
-    double q_chi2ndf_max  = 20.0;      ///< chi2/ndf axis upper edge.
-    double q_sumres_max   = 10.0;      ///< sum_residuals axis upper edge [mm].
-    double q_p_max        = 400.0;     ///< momentum axis upper edge [MeV].
+    // chi2/p/sum_residuals are heavy-tailed in real data; widen these (or read
+    // the overflow bin) if the bulk spills past the upper edge. sum_residuals is
+    // SIGNED, so its axis is symmetric [-q_sumres_abs, +q_sumres_abs].
+    int    q_nhits_max    = 50;        ///< n_hits axis upper edge.
+    double q_chi2_max     = 200.0;     ///< chi2 axis upper edge [mm^2].
+    double q_chi2ndf_max  = 50.0;      ///< chi2/ndf axis upper edge.
+    double q_sumres_abs   = 30.0;      ///< sum_residuals axis half-width [mm] ([-abs,+abs]).
+    double q_p_max        = 2000.0;    ///< momentum axis upper edge [MeV].
     double q_dedx_max     = 5000.0;    ///< dEdx axis upper edge [adc/mm].
     int    q_bins         = 200;       ///< bin count for the quality plots.
 
@@ -185,7 +188,7 @@ struct AhdcT0Config {
             framework::field("q_nhits_max",         &T::q_nhits_max),
             framework::field("q_chi2_max",          &T::q_chi2_max),
             framework::field("q_chi2ndf_max",       &T::q_chi2ndf_max),
-            framework::field("q_sumres_max",        &T::q_sumres_max),
+            framework::field("q_sumres_abs",        &T::q_sumres_abs),
             framework::field("q_p_max",             &T::q_p_max),
             framework::field("q_dedx_max",          &T::q_dedx_max),
             framework::field("q_bins",              &T::q_bins));
@@ -198,7 +201,7 @@ inline void TrackQualityHists::create(const AhdcT0Config& c) {
     n_hits        = std::make_unique<framework::H1<>>(mh::regular(0.0, static_cast<double>(c.q_nhits_max), nh));
     chi2          = std::make_unique<framework::H1<>>(mh::regular(0.0, c.q_chi2_max, nbins));
     chi2ndf       = std::make_unique<framework::H1<>>(mh::regular(0.0, c.q_chi2ndf_max, nbins));
-    sum_residuals = std::make_unique<framework::H1<>>(mh::regular(0.0, c.q_sumres_max, nbins));
+    sum_residuals = std::make_unique<framework::H1<>>(mh::regular(-c.q_sumres_abs, c.q_sumres_abs, nbins));
     p             = std::make_unique<framework::H1<>>(mh::regular(0.0, c.q_p_max, nbins));
     dEdx          = std::make_unique<framework::H1<>>(mh::regular(0.0, c.q_dedx_max, nbins));
 }
