@@ -474,33 +474,6 @@ class CuSnContaminationAlg : public Algorithm {
                          mc_p_mag, mc_theta_deg, mc_phi_deg, mc_vz_track);
             };
 
-            // MC-truth-matched "no cuts" pion samples: every rec pi+/pi- whose
-            // MC match is a true pion. Gated on has_mc — they require a match,
-            // and reading MC::Particle here without the guard is an
-            // out-of-bounds risk if MC::RecMatch exists but MC::Particle does not.
-            if (has_mc) {
-                for (auto p : event.pions_plus()) {
-                    auto match = get_mc_particle_index_diag(event, p.index());
-                    if (match.mc_index >= 0) {
-                        int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
-                        if (pid == 211) {
-                            m_pip_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
-                            m_pip_nocuts.fill_rec_pbin(p.vz(), p.p());
-                        }
-                    }
-                }
-                for (auto p : event.pions_minus()) {
-                    auto match = get_mc_particle_index_diag(event, p.index());
-                    if (match.mc_index >= 0) {
-                        int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
-                        if (pid == -211) {
-                            m_pim_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
-                            m_pim_nocuts.fill_rec_pbin(p.vz(), p.p());
-                        }
-                    }
-                }
-            }
-
             // Per-cut-step diagnostics: retrieve the cumulative samples
             // produced by PionSelectionAlg (forward-only by construction)
             // and fill the same vz / vz-per-p-bin histograms so we can
@@ -524,9 +497,6 @@ class CuSnContaminationAlg : public Algorithm {
                 }
             }
 
-            // Truth-pion sample: every rec track (any rec pid) whose MC
-            // match is a true pion. Catches pions that the reconstruction
-            // mis-PIDs as e.g. kaon or proton.
             if (has_mc) {
                 const auto& MC_particles = event.get_bank("MC::Particle");
                 for (const auto& p : event.all_particles()) {
@@ -548,11 +518,29 @@ class CuSnContaminationAlg : public Algorithm {
                     truth->fill_rec_pbin(p.vz(), p.p());
                     fill_residual(p, match.mc_index, *res);
                 }
+
+                for (auto p : event.pions_plus()) {
+                    auto match = get_mc_particle_index_diag(event, p.index());
+                    if (match.mc_index >= 0) {
+                        int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
+                        if (pid == 211) {
+                            m_pip_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
+                            m_pip_nocuts.fill_rec_pbin(p.vz(), p.p());
+                        }
+                    }
+                }
+                for (auto p : event.pions_minus()) {
+                    auto match = get_mc_particle_index_diag(event, p.index());
+                    if (match.mc_index >= 0) {
+                        int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
+                        if (pid == -211) {
+                            m_pim_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
+                            m_pim_nocuts.fill_rec_pbin(p.vz(), p.p());
+                        }
+                    }
+                }
             }
 
-            // Bucket each selected pion by MC-match quality to diagnose
-            // where the cut-sample broadening comes from. min_quality=0
-            // so the actual quality is always returned; we bucket here.
             auto quality_slice = [](float q, SpeciesHists& hi, SpeciesHists& mid, SpeciesHists& lo) -> SpeciesHists& {
                 if (q >= 0.92f) { return hi; }
                 if (q >= 0.50f) { return mid; }
@@ -570,15 +558,12 @@ class CuSnContaminationAlg : public Algorithm {
                     auto& slice = quality_slice(match.quality, m_pip_q_hi, m_pip_q_mid, m_pip_q_lo);
                     slice.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
                     if (has_mc) {
-                        // pid=0 sentinel = no MC link (no MC::RecMatch row, or row mc_index<0).
                         int mc_pid = 0;
                         if (match.mc_index >= 0) {
                             mc_pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
                         }
                         m_pip_pid.fill(mc_pid, pion.p());
-                        // Same single MC::RecMatch row as `match` (0.0f) above; the
-                        // default-quality (0.98f) lookup yields mc_index>=0 IFF that
-                        // row passed quality>=0.98 with mc_index>=0. Reuse `match`.
+
                         if (match.mc_index >= 0 && match.quality >= 0.98f) {
                             fill_residual(pion, match.mc_index, m_pip_res);
                         }
@@ -600,9 +585,8 @@ class CuSnContaminationAlg : public Algorithm {
                         if (match.mc_index >= 0) {
                             mc_pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
                         }
+
                         m_pim_pid.fill(mc_pid, pion.p());
-                        // Reuse `match` (see pi+ block): default-quality lookup would
-                        // return mc_index>=0 IFF this row has quality>=0.98 & mc_index>=0.
                         if (match.mc_index >= 0 && match.quality >= 0.98f) {
                             fill_residual(pion, match.mc_index, m_pim_res);
                         }
@@ -642,9 +626,6 @@ class CuSnContaminationAlg : public Algorithm {
     SpeciesHists m_pip_truth{"PiPlus_Truth"};
     SpeciesHists m_pim_truth{"PiMinus_Truth"};
 
-    // ResidualHists/PidCompositionHists/TrackQualityHists are plain aggregates
-    // now (no stored species); the species is supplied at registration in
-    // on_initialize() (path prefix and book_pbins(..., species)).
     ResidualHists m_pip_res;
     ResidualHists m_pim_res;
     ResidualHists m_pip_res_truth;
