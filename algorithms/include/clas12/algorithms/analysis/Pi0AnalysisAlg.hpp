@@ -110,6 +110,15 @@ struct Pi0AnalysisConfig {
     std::string pT_binning_output = "pi0_adaptive_binning_pT3d.txt";
     std::string pT_binning_file   = "";
     int         pT_target_bins    = 1000;
+    // STRATIFIED broadening tree (default): split Q2 then xB then z with a fixed
+    // count per level, so every (Q2,xB) cell carries pT_nz z bins — the structure
+    // a Delta<pT2>-vs-z series per (Q2,xB) needs. A free equal-occupancy 3D split
+    // (pT_target_bins) instead collapses z to <=1 bin per (Q2,xB) box. Set any of
+    // these to 0 to fall back to the free pT_target_bins split. z is integrated
+    // over pT, so no pT2 level here.
+    int         pT_nQ2 = 8;   // Q2 bins
+    int         pT_nxB = 8;   // xB bins
+    int         pT_nz  = 5;   // z bins PER (Q2,xB) cell (>= 5 for a real z series)
 
     // Azimuthal-modulation 4D (Q2, xB, z, pT2) kd-tree, deliberately coarser
     // (fewer/larger leaves) so each leaf holds enough pi0 to re-bin in phi_h.
@@ -141,6 +150,9 @@ struct Pi0AnalysisConfig {
             framework::field("pT_binning_output",  &T::pT_binning_output),
             framework::field("pT_binning_file",    &T::pT_binning_file),
             framework::field("pT_target_bins",     &T::pT_target_bins),
+            framework::field("pT_nQ2",             &T::pT_nQ2),
+            framework::field("pT_nxB",             &T::pT_nxB),
+            framework::field("pT_nz",              &T::pT_nz),
             framework::field("phi_binning_output", &T::phi_binning_output),
             framework::field("phi_binning_file",   &T::phi_binning_file),
             framework::field("phi_target_bins",    &T::phi_target_bins),
@@ -541,8 +553,13 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         std::vector<std::array<double, 3>> rows3d;
         rows3d.reserve(rows.size());
         for (const auto& r : rows) rows3d.push_back({{r[0], r[1], r[2]}});
+        // Stratified (Q2 x xB x z) so every (Q2,xB) cell keeps pT_nz z bins for a
+        // Delta<pT2>-vs-z series; 0 on any count falls back to the free split.
+        const std::array<int, 3> pT_strat = {{m_config.pT_nQ2, m_config.pT_nxB, m_config.pT_nz}};
+        const bool pT_use_strat = m_config.pT_nQ2 > 0 && m_config.pT_nxB > 0 && m_config.pT_nz > 0;
         build_and_write_tree<3>(rows3d, m_config.pT_target_bins, m_config.pT_binning_output,
-                                {{"Q2", "xB", "z"}}, "pT-broadening");
+                                {{"Q2", "xB", "z"}}, "pT-broadening",
+                                pT_use_strat ? &pT_strat : nullptr);
 
         // Write the TOML snippet (only the axes that produced edges).
         const std::string& path = m_config.quantile_binning_output;
@@ -575,14 +592,28 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     auto build_and_write_tree(const std::vector<std::array<double, NDIM>>& rows,
                               int target, const std::string& out_path,
                               const std::array<const char*, NDIM>& dim_names,
-                              const char* label) -> void {
+                              const char* label,
+                              const std::array<int, NDIM>* strat = nullptr) -> void {
         framework::AdaptiveBinnerND<NDIM> tree;
         std::vector<typename framework::AdaptiveBinnerND<NDIM>::Point> pts(rows.begin(), rows.end());
-        if (!tree.build(std::move(pts), target)) {
+        const bool ok = strat ? tree.build_stratified(std::move(pts), *strat)
+                              : tree.build(std::move(pts), target);
+        if (!ok) {
+            long want = target;
+            if (strat) { want = 1; for (int d = 0; d < NDIM; ++d) want *= (*strat)[d]; }
             Log::warning(name(),
-                         "Adaptive {} binning ({}D): too few samples ({}) for {} bins — skipped",
-                         label, NDIM, rows.size(), target);
+                         "{} {} binning ({}D): too few samples ({}) for {} bins — skipped",
+                         strat ? "Stratified" : "Adaptive", label, NDIM, rows.size(), want);
             return;
+        }
+        if (strat) {
+            std::string grid, dims;
+            for (int d = 0; d < NDIM; ++d) {
+                grid += (d ? "x" : "") + std::to_string((*strat)[d]);
+                dims += (d ? " x " : "") + std::string(dim_names[d]);
+            }
+            Log::info(name(), "Stratified {} binning: {} grid over {} = {} leaves",
+                      label, grid, dims, tree.n_bins());
         }
 
         // Leaf occupancy (should be ~flat, with no empties).

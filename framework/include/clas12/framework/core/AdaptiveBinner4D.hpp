@@ -30,6 +30,7 @@
 #include <array>
 #include <cstddef>
 #include <fstream>
+#include <iomanip>
 #include <limits>
 #include <numeric>
 #include <queue>
@@ -131,6 +132,53 @@ class AdaptiveBinnerND {
         return m_n_leaves > 0;
     }
 
+    /// Build a STRATIFIED tree: split the dimensions IN ORDER 0,1,...,NDIM-1,
+    /// each into a FIXED number of equal-occupancy groups `bins_per_dim[d]`.
+    /// Within every cell of the earlier dimensions, dimension d is cut into
+    /// bins_per_dim[d] equal-count sub-ranges, so the leaves form an
+    /// n0 x n1 x ... grid and EVERY (dim0..dim_k) cell carries the full
+    /// bins_per_dim[k+1] sub-bins — e.g. exactly `nz` z bins per (Q2,xB) cell,
+    /// the structure a Delta<pT2>-vs-z series per (Q2,xB) needs. Unlike build(),
+    /// which splits the globally-widest dimension and can leave a (Q2,xB) box
+    /// with <=1 z bin. Cut positions are data quantiles (adaptive per cell), so
+    /// occupancy stays ~flat; leaf_boxes() reports each bin's extent. A per-dim
+    /// count of 1 leaves that dimension unsplit. Returns false if any count < 1
+    /// or there are fewer points than the product of the counts.
+    bool build_stratified(std::vector<Point> points, const std::array<int, NDIM>& bins_per_dim) {
+        m_nodes.clear();
+        m_n_leaves = 0;
+        long total = 1;
+        for (int d = 0; d < NDIM; ++d) {
+            if (bins_per_dim[d] < 1) return false;
+            total *= bins_per_dim[d];
+        }
+        if (points.size() < static_cast<std::size_t>(total)) return false;
+
+        const std::size_t n = points.size();
+        for (int d = 0; d < NDIM; ++d) {
+            m_global[d][0] = std::numeric_limits<double>::infinity();
+            m_global[d][1] = -std::numeric_limits<double>::infinity();
+        }
+        for (const auto& p : points) {
+            for (int d = 0; d < NDIM; ++d) {
+                m_global[d][0] = std::min(m_global[d][0], p[d]);
+                m_global[d][1] = std::max(m_global[d][1], p[d]);
+            }
+        }
+
+        std::vector<int> idx(n);
+        std::iota(idx.begin(), idx.end(), 0);
+        m_nodes.reserve(static_cast<std::size_t>(2 * total + 1));
+        strat_build(idx, 0, static_cast<int>(n), 0, bins_per_dim, points);  // node 0 = root
+
+        int leaf = 0;
+        for (auto& node : m_nodes) {
+            if (node.split_dim < 0) node.leaf_index = leaf++;
+        }
+        m_n_leaves = leaf;
+        return m_n_leaves > 0;
+    }
+
     /// Leaf index for a point (0 .. n_bins-1), or -1 if the tree is empty.
     /// Points outside the training range fall into the nearest edge leaf.
     [[nodiscard]] int bin_index(const Point& p) const noexcept {
@@ -161,6 +209,10 @@ class AdaptiveBinnerND {
     bool save(const std::string& path) const {
         std::ofstream out(path);
         if (!out) return false;
+        // Full double precision so split values round-trip EXACTLY: at 6-digit
+        // default precision, points within ~1e-6 of a boundary would reload into
+        // a different leaf than the built tree assigned them.
+        out << std::setprecision(std::numeric_limits<double>::max_digits10);
         out << "# AdaptiveBinnerND tree v1, ndim=" << NDIM << "\n";
         out << "ndim " << NDIM << "\n";
         out << "n_leaves " << m_n_leaves << "\n";
@@ -235,6 +287,53 @@ class AdaptiveBinnerND {
             if (spread > best) { best = spread; best_dim = d; }
         }
         return best_dim;
+    }
+
+    /// Stratified subtree for idx[begin,end) at dimension `dim`: sort on `dim`,
+    /// then cut into bins_per_dim[dim] equal-count groups via strat_cascade,
+    /// each group recursing to dim+1. A leaf (split_dim=-1) is emitted once all
+    /// dimensions are split (dim == NDIM). Returns the subtree's root node index;
+    /// the FIRST node pushed (index 0) is the whole tree's root.
+    int strat_build(std::vector<int>& idx, int begin, int end, int dim,
+                    const std::array<int, NDIM>& bins_per_dim,
+                    const std::vector<Point>& points) {
+        if (dim >= NDIM) {
+            const int leaf_idx = static_cast<int>(m_nodes.size());
+            m_nodes.push_back(Node{});  // leaf (split_dim stays -1)
+            return leaf_idx;
+        }
+        std::sort(idx.begin() + begin, idx.begin() + end,
+                  [&](int a, int b) { return points[a][dim] < points[b][dim]; });
+        return strat_cascade(idx, begin, end, dim, 0,
+                             std::max(1, bins_per_dim[dim]), bins_per_dim, points);
+    }
+
+    /// Left-leaning binary cascade over groups [g, k) of dimension `dim` within
+    /// the (already `dim`-sorted) range idx[begin,end): peel group g to the left
+    /// (recurse to dim+1), the remaining groups to the right (continue the
+    /// cascade). k-1 split nodes on `dim` realise the k-way equal-count split.
+    /// The split value is read from the next group's first element BEFORE the
+    /// recursions re-sort sub-ranges on dim+1, which never cross group bounds.
+    int strat_cascade(std::vector<int>& idx, int begin, int end, int dim, int g, int k,
+                      const std::array<int, NDIM>& bins_per_dim,
+                      const std::vector<Point>& points) {
+        const int size = end - begin;
+        const int g_lo = begin + static_cast<int>(static_cast<long>(g)     * size / k);
+        const int g_hi = begin + static_cast<int>(static_cast<long>(g + 1) * size / k);
+        if (g == k - 1) {  // last group: no more splits on this dim
+            return strat_build(idx, g_lo, end, dim + 1, bins_per_dim, points);
+        }
+        const int node_idx = static_cast<int>(m_nodes.size());
+        m_nodes.push_back(Node{});
+        const double split_val = points[idx[g_hi]][dim];  // first value of group g+1
+        const int left  = strat_build(idx, g_lo, g_hi, dim + 1, bins_per_dim, points);
+        const int right = strat_cascade(idx, begin, end, dim, g + 1, k, bins_per_dim, points);
+        Node& nd = m_nodes[node_idx];  // re-fetch: recursions may have grown m_nodes
+        nd.split_dim = dim;
+        nd.split_val = split_val;
+        nd.left      = left;
+        nd.right     = right;
+        return node_idx;
     }
 
     void descend_box(int node, Box box, std::vector<Box>& out) const {

@@ -105,3 +105,15 @@ min_photon_energy = 0.1
 [Pi0Analysis]
 max_pool_events = 50
 enable_ntuple   = true
+
+# pT-broadening (Q2,xB,z) binning, built during the scan_quantile_binning pass.
+# STRATIFIED by default: split Q2 then xB then z with a fixed count per level, so
+# every (Q2,xB) cell carries pT_nz z bins — the structure a Delta<pT2>-vs-z
+# series per (Q2,xB) needs. (A free equal-occupancy 3D split collapses z to <=1
+# bin per (Q2,xB) box.) Cut positions are data quantiles (equal stats per leaf);
+# the companion <pT_binning_output>.boxes.csv gives each leaf's (Q2,xB,z) box.
+# Set any of these to 0 to fall back to the free pT_target_bins split. The values
+# below are also the built-in defaults.
+pT_nQ2 = 8     # Q2 cells
+pT_nxB = 8     # xB cells
+pT_nz  = 5     # z bins per (Q2,xB) cell  (>= 5 for a real z series)
