@@ -152,11 +152,12 @@ struct AhdcT0Config {
     // the hits of tracks passing every enabled cut contribute to the on-track
     // t0 sample. Each track's variables are ALWAYS histogrammed BEFORE the cuts
     // so the thresholds below can be chosen by inspecting the plots. A cut value
-    // of 0 disables that individual cut, so the defaults leave the on-track
-    // sample unchanged until thresholds are filled in.
+    // of 0 disables that individual cut. The defaults keep tracks with n_hits>=8
+    // ("n_hits > 7"), chi2/ndf <= 2, and |sum_residuals| <= 2.5 mm.
     bool   apply_track_quality = true;   ///< master switch for the cuts below.
-    int    track_nhits_min     = 0;      ///< keep tracks with n_hits >= this (0 = off).
-    double track_chi2ndf_max   = 0.0;    ///< keep tracks with chi2/ndf <= this (0 = off).
+    int    track_nhits_min     = 8;      ///< keep tracks with n_hits >= this (0 = off). 8 => "n_hits > 7".
+    double track_chi2ndf_max   = 2.0;    ///< keep tracks with chi2/ndf <= this (0 = off).
+    double track_sumres_max    = 2.5;    ///< keep tracks with |sum_residuals| <= this [mm] (0 = off).
     int    track_ndf_offset    = 5;      ///< ndf = n_hits - this (helix fit: 5 params).
 
     // ---- Quality-plot axes (used only for the "before cut" diagnostics) -----
@@ -184,6 +185,7 @@ struct AhdcT0Config {
             framework::field("apply_track_quality", &T::apply_track_quality),
             framework::field("track_nhits_min",     &T::track_nhits_min),
             framework::field("track_chi2ndf_max",   &T::track_chi2ndf_max),
+            framework::field("track_sumres_max",    &T::track_sumres_max),
             framework::field("track_ndf_offset",    &T::track_ndf_offset),
             framework::field("q_nhits_max",         &T::q_nhits_max),
             framework::field("q_chi2_max",          &T::q_chi2_max),
@@ -294,7 +296,8 @@ class AhdcT0Alg : public framework::Algorithm {
         // the default (no thresholds set) the on-track sample is unchanged.
         const bool track_cuts_active =
             m_config.apply_track_quality &&
-            (m_config.track_nhits_min > 0 || m_config.track_chi2ndf_max > 0.0);
+            (m_config.track_nhits_min > 0 || m_config.track_chi2ndf_max > 0.0 ||
+             m_config.track_sumres_max > 0.0);
 
         static thread_local std::unordered_set<int> good_tracks;
         good_tracks.clear();
@@ -315,7 +318,7 @@ class AhdcT0Alg : public framework::Algorithm {
                 const double mom    = std::sqrt(px * px + py * py + pz * pz);
                 m_track_quality.fill(nh, c2, c2ndf, sumres, mom, kf.dEdx(t));
 
-                if (!m_config.apply_track_quality || passes_track(nh, c2ndf)) {
+                if (!m_config.apply_track_quality || passes_track(nh, c2ndf, sumres)) {
                     ++n_trk_pass;
                     good_tracks.insert(kf.trackid(t));
                 }
@@ -488,9 +491,10 @@ class AhdcT0Alg : public framework::Algorithm {
     /// True if a KF track clears every ENABLED quality cut. A threshold of 0
     /// disables that individual cut (see AhdcT0Config). Called only when
     /// m_config.apply_track_quality is set.
-    [[nodiscard]] bool passes_track(int n_hits, double chi2ndf) const noexcept {
+    [[nodiscard]] bool passes_track(int n_hits, double chi2ndf, double sum_residuals) const noexcept {
         if (m_config.track_nhits_min   > 0   && n_hits  < m_config.track_nhits_min)  return false;
         if (m_config.track_chi2ndf_max > 0.0 && chi2ndf > m_config.track_chi2ndf_max) return false;
+        if (m_config.track_sumres_max  > 0.0 && std::abs(sum_residuals) > m_config.track_sumres_max) return false;
         return true;
     }
 
@@ -499,7 +503,8 @@ class AhdcT0Alg : public framework::Algorithm {
         bool any = false;
         if (m_config.track_nhits_min   > 0)   { Log::info(name(), "  cut: track n_hits >= {}", m_config.track_nhits_min); any = true; }
         if (m_config.track_chi2ndf_max > 0.0) { Log::info(name(), "  cut: track chi2/ndf <= {} (ndf = n_hits - {})", m_config.track_chi2ndf_max, m_config.track_ndf_offset); any = true; }
-        if (!any) Log::info(name(), "  (no cut thresholds set — inspect /AHDC/quality plots, then set track_nhits_min / track_chi2ndf_max)");
+        if (m_config.track_sumres_max  > 0.0) { Log::info(name(), "  cut: track |sum_residuals| <= {} mm", m_config.track_sumres_max); any = true; }
+        if (!any) Log::info(name(), "  (no cut thresholds set — inspect /AHDC/quality plots, then set track_nhits_min / track_chi2ndf_max / track_sumres_max)");
     }
 
     /// Create + register the per-track quality-variable histograms (from the
