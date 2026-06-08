@@ -52,6 +52,7 @@
 #include <clas12/bankdefs/AHDC_adc.hpp>
 #include <clas12/bankdefs/AHDC_hits.hpp>
 #include <clas12/bankdefs/AHDC_kftrack.hpp>
+#include <clas12/bankdefs/REC_Event.hpp>
 
 #include <mh/mh.hpp>
 
@@ -110,6 +111,39 @@ struct SampleHists {
     ColumnSet on_track;
 };
 
+/// Raw vs start-time-subtracted on-track `leadingEdgeTime` for one (SL,layer)
+/// or the global sum. Booked regardless of the `subtract_start_time` toggle so
+/// a SINGLE run shows the before/after: whether subtracting the per-event
+/// `REC::Event.startTime` collapses the high-luminosity dome back into a peak.
+struct StartTimeCheck {
+    std::unique_ptr<framework::H1<>> raw;        ///< leadingEdgeTime (as in the bank).
+    std::unique_ptr<framework::H1<>> corrected;  ///< leadingEdgeTime - REC::Event.startTime.
+};
+
+/// Time-walk 2D triad for one (SL,layer) or the global sum: each pickoff
+/// (start-time-subtracted when available) vs the pulse amplitude
+/// `AHDC::adc.ADC`. After the start-time subtraction this exposes any residual
+/// AMPLITUDE dependence (time walk): `leadingEdgeTime` (a 50% constant fraction)
+/// should be ~flat vs ADC, `constantFractionTime` flat by construction; a slope
+/// flags walk. x = ADC, y = pickoff time. On-track sample.
+struct WalkColumnSet {
+    std::unique_ptr<framework::H2<>> time;
+    std::unique_ptr<framework::H2<>> let;
+    std::unique_ptr<framework::H2<>> cft;
+
+    void create(double ax_lo, double ax_hi, std::size_t ax_n,
+                double ay_lo, double ay_hi, std::size_t ay_n) {
+        time = std::make_unique<framework::H2<>>(mh::regular(ax_lo, ax_hi, ax_n), mh::regular(ay_lo, ay_hi, ay_n));
+        let  = std::make_unique<framework::H2<>>(mh::regular(ax_lo, ax_hi, ax_n), mh::regular(ay_lo, ay_hi, ay_n));
+        cft  = std::make_unique<framework::H2<>>(mh::regular(ax_lo, ax_hi, ax_n), mh::regular(ay_lo, ay_hi, ay_n));
+    }
+    void fill(float adc, float t, float l, float c) const {
+        time->fill(adc, t);
+        let->fill(adc, l);
+        cft->fill(adc, c);
+    }
+};
+
 struct AhdcT0Config;  // forward declaration for TrackQualityHists::create.
 
 /// Per-track quality variables (from the reconstructed `AHDC::track` bank).
@@ -145,6 +179,32 @@ struct AhdcT0Config {
     int    t0_bins           = 550;    ///< timing-axis bin count (2 ns/bin default).
     bool   book_global       = true;   ///< also book the summed-over-wires spectra.
     bool   debug_geometry    = false;  ///< one-shot dump of the first event's adc/hits rows.
+
+    // ---- Event start-time subtraction ---------------------------------------
+    // The AHDC reconstruction computes the drift time as
+    //   time = leadingEdgeTime - t0 - REC::Event.startTime
+    // (alert/.../Hit/HitReader.java), exactly as the DC subtracts its
+    // RF-corrected start time. The t0 calibration must measure the SAME
+    // quantity, so it subtracts the per-event start time here (the t0 term is
+    // omitted — that is what the calibration solves for). Without it, the
+    // per-event start-time spread smears every per-wire spectrum at high
+    // luminosity (the 10.6 GeV dome) while a stable elastic start time stays
+    // sharp. A missing REC::Event falls back to raw times with a warning.
+    bool   subtract_start_time = true;  ///< fill spectra with pickoff - REC::Event.startTime.
+    double st_min  = -50.0;   ///< /AHDC/diagnostics/start_time axis lower [ns].
+    double st_max  = 150.0;   ///< /AHDC/diagnostics/start_time axis upper [ns].
+    int    st_bins = 200;     ///< /AHDC/diagnostics/start_time bin count.
+
+    // ---- Time-walk 2D ((pickoff - startTime) vs ADC amplitude) ---------------
+    // After the start-time subtraction, plot each pickoff against the pulse
+    // amplitude (AHDC::adc.ADC) to expose residual time walk (on-track, per
+    // SL,layer + global). leadingEdgeTime should be ~flat vs ADC; a slope = walk.
+    // y reuses the [t0_min, t0_max] axis; tune adc_max after a first look.
+    bool   book_timewalk = true;   ///< book the (pickoff - startTime) vs ADC 2D triad.
+    double adc_min  = 0.0;     ///< amplitude (ADC) axis lower edge.
+    double adc_max  = 4000.0;  ///< amplitude (ADC) axis upper edge (tune to the data).
+    int    adc_bins = 100;     ///< amplitude (ADC) axis bin count.
+    int    tw_time_bins = 275; ///< time (y) axis bins over [t0_min, t0_max] for the 2D.
 
     // ---- Track quality cuts (gate the on-track sample) ----------------------
     // The quality variables come from the reconstructed AHDC::kftrack bank and
@@ -182,6 +242,15 @@ struct AhdcT0Config {
             framework::field("t0_bins",             &T::t0_bins),
             framework::field("book_global",         &T::book_global),
             framework::field("debug_geometry",      &T::debug_geometry),
+            framework::field("subtract_start_time", &T::subtract_start_time),
+            framework::field("st_min",              &T::st_min),
+            framework::field("st_max",              &T::st_max),
+            framework::field("st_bins",             &T::st_bins),
+            framework::field("book_timewalk",       &T::book_timewalk),
+            framework::field("adc_min",             &T::adc_min),
+            framework::field("adc_max",             &T::adc_max),
+            framework::field("adc_bins",            &T::adc_bins),
+            framework::field("tw_time_bins",        &T::tw_time_bins),
             framework::field("apply_track_quality", &T::apply_track_quality),
             framework::field("track_nhits_min",     &T::track_nhits_min),
             framework::field("track_chi2ndf_max",   &T::track_chi2ndf_max),
@@ -228,6 +297,10 @@ class AhdcT0Alg : public framework::Algorithm {
         // ...) used to gate the on-track sample — optional (absent on files
         // without reconstructed tracks; then no track-quality cut is applied).
         declare_optional_bank("AHDC::kftrack");
+        // REC::Event carries the per-event start time subtracted from every
+        // pickoff (see subtract_start_time) — optional: a missing bank falls
+        // back to raw times (with a warning).
+        declare_optional_bank("REC::Event");
         declare_config(m_config);
         // Per-wire histograms are dynamic; they are booked in on_initialize().
     }
@@ -254,6 +327,36 @@ class AhdcT0Alg : public framework::Algorithm {
         if (m_config.book_global) {
             book_sample(svc, "all",      "global", "all wires", m_global.all,      nbins);
             book_sample(svc, "on_track", "global", "all wires", m_global.on_track, nbins);
+        }
+
+        // Event start-time diagnostics (always booked, cheap, toggle-independent).
+        // The start_time distribution shows the per-event spread that smears the
+        // raw per-wire spectra at high luminosity; the raw-vs-corrected
+        // leadingEdgeTime pair (per SL,layer + global) is the before/after that
+        // proves whether subtracting it recovers the leading edge.
+        const auto st_nbins = static_cast<std::size_t>(m_config.st_bins > 0 ? m_config.st_bins : 1);
+        m_start_time = std::make_unique<framework::H1<>>(mh::regular(m_config.st_min, m_config.st_max, st_nbins));
+        svc.register_hist("/AHDC/diagnostics/start_time",
+                          "AHDC event start time;REC::Event.startTime [ns];Events", *m_start_time);
+        for (const auto& g : kAhdcGeom) {
+            const int packed = g.superlayer * 10 + g.layer;
+            book_st_check(svc, fmt::format("SL{}_L{}", g.superlayer, g.layer),
+                          fmt::format("SL{} L{}", g.superlayer, g.layer), m_st_check[packed], nbins);
+        }
+        book_st_check(svc, "global", "all wires", m_st_check_global, nbins);
+
+        // Time-walk 2D ((pickoff - startTime) vs ADC), on-track, per (SL,layer)
+        // + global. The residual amplitude dependence after the start-time
+        // subtraction: leadingEdgeTime should be flat vs ADC, a slope = walk.
+        if (m_config.book_timewalk) {
+            const auto adc_n = static_cast<std::size_t>(m_config.adc_bins > 0 ? m_config.adc_bins : 1);
+            const auto tw_n  = static_cast<std::size_t>(m_config.tw_time_bins > 0 ? m_config.tw_time_bins : 1);
+            for (const auto& g : kAhdcGeom) {
+                const int packed = g.superlayer * 10 + g.layer;
+                book_walk(svc, fmt::format("SL{}_L{}", g.superlayer, g.layer),
+                          fmt::format("SL{} L{}", g.superlayer, g.layer), m_walk[packed], adc_n, tw_n);
+            }
+            book_walk(svc, "global", "all wires", m_walk_global, adc_n, tw_n);
         }
 
         // Track quality diagnostics: per-track variables from AHDC::kftrack,
@@ -288,6 +391,26 @@ class AhdcT0Alg : public framework::Algorithm {
             }
         }
         const bool apply_wf_cut = m_config.require_good_wf && has_wf == 1;
+
+        // Per-event start time (REC::Event.startTime), mirroring the AHDC reco
+        // (Hit/HitReader.java: time = leadingEdgeTime - t0 - startTime). The t0
+        // calibration subtracts the SAME start time, so the per-wire spectra
+        // measure the drift edge instead of being smeared by the per-event
+        // start-time spread. The t0 term is omitted — it is what we solve for.
+        float start_time = 0.0f;
+        bool  have_st    = false;
+        const auto& rec_bank = event.get_bank("REC::Event");
+        if (rec_bank.getRows() > 0) {
+            bankdefs::REC_Event re;
+            re.bind(rec_bank);
+            start_time = re.startTime(0);
+            have_st    = true;
+            m_start_time->fill(start_time);
+            m_n_st_events.fetch_add(1, std::memory_order_relaxed);
+        } else if (m_config.subtract_start_time) {
+            m_rec_event_missing.store(true, std::memory_order_relaxed);
+        }
+        const bool do_sub = m_config.subtract_start_time && have_st;
 
         // Read the reconstructed KF tracks. Each track's quality variables are
         // histogrammed BEFORE the cuts (so thresholds can be read off the plots),
@@ -381,13 +504,43 @@ class AhdcT0Alg : public framework::Algorithm {
             }
 
             ++n_adc;
-            it->second.all.fill(t, l, c);
-            if (m_config.book_global) m_global.all.fill(t, l, c);
+            // Subtract the event start time when available (mirrors the reco);
+            // otherwise histogram the raw pickoff.
+            const float ts = do_sub ? t - start_time : t;
+            const float ls = do_sub ? l - start_time : l;
+            const float cs = do_sub ? c - start_time : c;
+            it->second.all.fill(ts, ls, cs);
+            if (m_config.book_global) m_global.all.fill(ts, ls, cs);
 
             if (on_track.count(key) != 0) {
                 ++n_ontrack;
-                it->second.on_track.fill(t, l, c);
-                if (m_config.book_global) m_global.on_track.fill(t, l, c);
+                it->second.on_track.fill(ts, ls, cs);
+                if (m_config.book_global) m_global.on_track.fill(ts, ls, cs);
+
+                // Before/after diagnostic (on-track leadingEdgeTime, per
+                // SL,layer + global): raw always; corrected only when a start
+                // time is available. Independent of subtract_start_time, so one
+                // run shows whether the subtraction collapses the dome.
+                auto stit = m_st_check.find(adc.layer(i));
+                if (stit != m_st_check.end()) {
+                    stit->second.raw->fill(l);
+                    if (have_st) stit->second.corrected->fill(l - start_time);
+                }
+                m_st_check_global.raw->fill(l);
+                if (have_st) m_st_check_global.corrected->fill(l - start_time);
+
+                // Time-walk 2D: each pickoff (start-time-subtracted when a start
+                // time is available, else raw) vs ADC amplitude. Toggle-
+                // independent of subtract_start_time, like the before/after.
+                if (m_config.book_timewalk) {
+                    const float adc_amp = static_cast<float>(adc.ADC(i));
+                    const float t_st = have_st ? t - start_time : t;
+                    const float l_st = have_st ? l - start_time : l;
+                    const float c_st = have_st ? c - start_time : c;
+                    auto wit = m_walk.find(adc.layer(i));
+                    if (wit != m_walk.end()) wit->second.fill(adc_amp, t_st, l_st, c_st);
+                    m_walk_global.fill(adc_amp, t_st, l_st, c_st);
+                }
             }
         }
 
@@ -448,6 +601,26 @@ class AhdcT0Alg : public framework::Algorithm {
             Log::warning(name(),
                          "wfType column absent in AHDC::adc — the good-waveform cut "
                          "(require_good_wf) was NOT applied; all waveforms were kept.");
+        }
+
+        // Event start-time subtraction status (see /AHDC/diagnostics/start_time
+        // for the distribution and /AHDC/start_time_check/{raw,corrected} for the
+        // before/after).
+        Log::info(name(), "Events with REC::Event start time: {}", m_n_st_events.load());
+        if (m_config.subtract_start_time) {
+            if (m_rec_event_missing.load()) {
+                Log::warning(name(),
+                             "subtract_start_time=true but REC::Event was absent on some events — those hits "
+                             "were histogrammed RAW. The per-wire spectra then MIX corrected and raw times; "
+                             "run on a file that carries REC::Event for a clean calibration.");
+            } else {
+                Log::info(name(),
+                          "Start-time subtraction: ON — per-wire spectra hold leadingEdgeTime - REC::Event.startTime.");
+            }
+        } else {
+            Log::info(name(),
+                      "Start-time subtraction: OFF — per-wire spectra hold raw pickoff times "
+                      "(see /AHDC/start_time_check/corrected for the would-be effect).");
         }
         return StatusCode::SUCCESS();
     }
@@ -545,6 +718,38 @@ class AhdcT0Alg : public framework::Algorithm {
             *cs.cft);
     }
 
+    /// Create + register the raw and start-time-subtracted on-track
+    /// leadingEdgeTime for one (SL,layer) or the global sum — the before/after
+    /// that shows whether subtracting REC::Event.startTime recovers the edge.
+    void book_st_check(framework::HistogramService& svc, const std::string& dir,
+                       const std::string& chan, StartTimeCheck& sc, std::size_t nbins) {
+        sc.raw       = std::make_unique<framework::H1<>>(mh::regular(m_config.t0_min, m_config.t0_max, nbins));
+        sc.corrected = std::make_unique<framework::H1<>>(mh::regular(m_config.t0_min, m_config.t0_max, nbins));
+        svc.register_hist(
+            fmt::format("/AHDC/start_time_check/raw/{}", dir),
+            fmt::format("AHDC leadingEdgeTime {} [on_track, raw];t [ns];Hits", chan), *sc.raw);
+        svc.register_hist(
+            fmt::format("/AHDC/start_time_check/corrected/{}", dir),
+            fmt::format("AHDC leadingEdgeTime {} [on_track, start-time subtracted];t - t_{{start}} [ns];Hits", chan),
+            *sc.corrected);
+    }
+
+    /// Create + register the time-walk 2D triad for one (SL,layer) or the global
+    /// sum: each pickoff (start-time-subtracted when available) vs ADC amplitude.
+    void book_walk(framework::HistogramService& svc, const std::string& dir,
+                   const std::string& chan, WalkColumnSet& w, std::size_t adc_n, std::size_t tw_n) {
+        w.create(m_config.adc_min, m_config.adc_max, adc_n, m_config.t0_min, m_config.t0_max, tw_n);
+        svc.register_hist(
+            fmt::format("/AHDC/timewalk/time_vs_adc/on_track/{}", dir),
+            fmt::format("AHDC (time - t_{{start}}) vs ADC {} [on_track];ADC;t - t_{{start}} [ns]", chan), *w.time);
+        svc.register_hist(
+            fmt::format("/AHDC/timewalk/leadingEdgeTime_vs_adc/on_track/{}", dir),
+            fmt::format("AHDC (leadingEdgeTime - t_{{start}}) vs ADC {} [on_track];ADC;t - t_{{start}} [ns]", chan), *w.let);
+        svc.register_hist(
+            fmt::format("/AHDC/timewalk/constantFractionTime_vs_adc/on_track/{}", dir),
+            fmt::format("AHDC (constantFractionTime - t_{{start}}) vs ADC {} [on_track];ADC;t - t_{{start}} [ns]", chan), *w.cft);
+    }
+
     Config m_config;
 
     framework::ServiceRef<framework::HistogramService> m_hist;
@@ -555,6 +760,15 @@ class AhdcT0Alg : public framework::Algorithm {
     // AtomicStorage; the map is read-only during process()).
     std::unordered_map<int, SampleHists> m_wires;
     SampleHists m_global;
+
+    // Event start-time diagnostics. Booked in on_initialize(), read-only during
+    // process() (lock-free AtomicStorage fills). m_st_check is keyed by the
+    // packed layer (superlayer*10+layer), matching AHDC::adc.layer.
+    std::unique_ptr<framework::H1<>> m_start_time;          ///< /AHDC/diagnostics/start_time.
+    std::unordered_map<int, StartTimeCheck> m_st_check;     ///< per-(SL,layer) raw/corrected on-track let.
+    StartTimeCheck m_st_check_global;                       ///< global raw/corrected on-track let.
+    std::unordered_map<int, WalkColumnSet> m_walk;          ///< per-(SL,layer) (pickoff-startTime) vs ADC.
+    WalkColumnSet m_walk_global;                            ///< global (pickoff-startTime) vs ADC.
 
     // Per-track quality diagnostics (AHDC::kftrack). Booked in on_initialize()
     // and read-only during process() (fills use lock-free AtomicStorage).
@@ -573,6 +787,8 @@ class AhdcT0Alg : public framework::Algorithm {
     std::atomic<bool> m_wftype_missing{false};  ///< set if the wfType cut was skipped.
     std::atomic<bool> m_kftrack_missing{false}; ///< set if a track cut couldn't be evaluated.
     std::atomic<int>  m_has_wftype{-1};         ///< wfType column present? -1=unknown,0=no,1=yes.
+    std::atomic<bool> m_rec_event_missing{false}; ///< set if start-time subtraction was asked but REC::Event absent.
+    std::atomic<long> m_n_st_events{0};         ///< events carrying a REC::Event start time.
 };
 
 }  // namespace ahdc_t0

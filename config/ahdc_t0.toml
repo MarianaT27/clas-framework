@@ -41,6 +41,19 @@ version     = "2.0"
 #                       to validate the layer/wire convention on a new
 #                       production. Leave false for normal runs.
 #
+# Event start-time subtraction. The AHDC reconstruction computes the drift time
+# as `time = leadingEdgeTime - t0 - REC::Event.startTime` (exactly as the DC
+# subtracts its RF-corrected start time), so the t0 calibration subtracts the
+# SAME per-event start time here — otherwise the per-event start-time spread
+# smears every per-wire spectrum at high luminosity (the 10.6 GeV "dome") while
+# a stable elastic start time stays sharp. The t0 term is omitted (that is what
+# the calibration solves for). A missing REC::Event falls back to raw times
+# (with a warning). The before/after is always available without re-running:
+#   /AHDC/diagnostics/start_time                      — the startTime spread
+#   /AHDC/start_time_check/{raw,corrected}/<SL_L|global> — on-track let, raw vs corrected
+#   subtract_start_time : fill the per-wire/global spectra with pickoff - startTime.
+#   st_min/st_max/st_bins : axis for /AHDC/diagnostics/start_time [ns].
+#
 # Track-quality cuts (gate the on_track sample using the reconstructed
 # AHDC::kftrack bank). The per-track variables are ALWAYS histogrammed under
 # /AHDC/quality/ BEFORE the cuts, so inspect those plots (n_hits, chi2ndf, ...)
@@ -60,6 +73,21 @@ t0_max            = 1000.0
 t0_bins           = 550
 book_global       = true
 # debug_geometry  = true
+
+subtract_start_time = true     # fill spectra with leadingEdgeTime - REC::Event.startTime
+st_min              = -50.0
+st_max              = 150.0
+st_bins             = 200
+
+# Time-walk 2D: (pickoff - startTime) vs ADC amplitude, for all three pickoffs,
+# on-track, per (SL,layer) + global, under /AHDC/timewalk/<col>_vs_adc/on_track/.
+# leadingEdgeTime should be flat vs ADC; a slope = residual time walk. Tune
+# adc_max to the data (read the overflow on a first look).
+book_timewalk = true
+adc_min       = 0.0
+adc_max       = 4000.0
+adc_bins      = 100
+tw_time_bins  = 275
 
 apply_track_quality = true
 track_nhits_min     = 8       # "n_hits > 7"
