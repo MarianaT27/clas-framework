@@ -40,6 +40,17 @@ version     = "2.0"
 #   debug_geometry    : one-shot dump of the first event's adc/hits rows + keys,
 #                       to validate the layer/wire convention on a new
 #                       production. Leave false for normal runs.
+#
+# Track-quality cuts (gate the on_track sample using the reconstructed
+# AHDC::kftrack bank). The per-track variables are ALWAYS histogrammed under
+# /AHDC/quality/ BEFORE the cuts, so inspect those plots (n_hits, chi2ndf, ...)
+# first, then set the thresholds below. A cut of 0 disables that cut, so the
+# defaults leave the on_track sample unchanged.
+#   apply_track_quality : master switch for the cuts below.
+#   track_nhits_min     : keep tracks with n_hits >= this (0 = off). e.g. 8 for ">7".
+#   track_chi2ndf_max   : keep tracks with chi2/ndf <= this (0 = off).
+#   track_ndf_offset    : ndf = n_hits - this (helix fit has 5 params).
+#   q_* / q_bins        : axis ranges + bin count for the /AHDC/quality plots.
 [AhdcT0Alg]
 enable_histograms = true
 require_good_wf   = true
@@ -48,3 +59,8 @@ t0_max            = 1000.0
 t0_bins           = 550
 book_global       = true
 # debug_geometry  = true
+
+apply_track_quality = true
+# track_nhits_min   = 8       # ">7 hits"
+# track_chi2ndf_max = 5.0
+track_ndf_offset    = 5

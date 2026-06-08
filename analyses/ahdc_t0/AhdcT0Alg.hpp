@@ -20,11 +20,18 @@
  * `trackid`, -1 when the hit is not on a track). The join key is the channel
  * identity (superlayer, layer, wire); `AHDC::hits` has no sector column, so
  * sector is intentionally not part of the key.
+ *
+ * Track-quality cuts gate the `on_track` sample: the per-track quality variables
+ * (n_hits, chi2/ndf, ...) come from the reconstructed `AHDC::kftrack` bank and
+ * are histogrammed (under `/AHDC/quality/`) for every track BEFORE the cuts, so
+ * the thresholds can be read off the plots. A hit stays on-track only if its KF
+ * track passes every enabled cut (a cut threshold of 0 disables that cut).
  */
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <set>
@@ -44,6 +51,7 @@
 
 #include <clas12/bankdefs/AHDC_adc.hpp>
 #include <clas12/bankdefs/AHDC_hits.hpp>
+#include <clas12/bankdefs/AHDC_kftrack.hpp>
 
 #include <mh/mh.hpp>
 
@@ -102,6 +110,32 @@ struct SampleHists {
     ColumnSet on_track;
 };
 
+struct AhdcT0Config;  // forward declaration for TrackQualityHists::create.
+
+/// Per-track quality variables (from the reconstructed `AHDC::track` bank).
+/// Filled once per track BEFORE the track-quality cuts are applied, so the cut
+/// thresholds (n_hits, chi2/ndf, ...) can be read off the plots. Only the
+/// hits of tracks that pass the cuts contribute to the on-track t0 sample.
+struct TrackQualityHists {
+    std::unique_ptr<framework::H1<>> n_hits;         ///< hits on the track.
+    std::unique_ptr<framework::H1<>> chi2;           ///< sum of squared residuals [mm^2].
+    std::unique_ptr<framework::H1<>> chi2ndf;        ///< chi2 / ndf.
+    std::unique_ptr<framework::H1<>> sum_residuals;  ///< sum of residuals [mm].
+    std::unique_ptr<framework::H1<>> p;              ///< momentum magnitude [MeV].
+    std::unique_ptr<framework::H1<>> dEdx;           ///< deposited energy / path [adc/mm].
+
+    void create(const AhdcT0Config& c);  // defined after AhdcT0Config below.
+
+    void fill(int nh, double c2, double c2ndf, double sumres, double mom, double de) const {
+        n_hits->fill(static_cast<double>(nh));
+        chi2->fill(c2);
+        chi2ndf->fill(c2ndf);
+        sum_residuals->fill(sumres);
+        p->fill(mom);
+        dEdx->fill(de);
+    }
+};
+
 /// Configuration for AhdcT0Alg (reflected to the `[AhdcT0Alg]` TOML section).
 struct AhdcT0Config {
     bool   enable_histograms = true;   ///< master switch for booking + filling.
@@ -112,18 +146,62 @@ struct AhdcT0Config {
     bool   book_global       = true;   ///< also book the summed-over-wires spectra.
     bool   debug_geometry    = false;  ///< one-shot dump of the first event's adc/hits rows.
 
+    // ---- Track quality cuts (gate the on-track sample) ----------------------
+    // The quality variables come from the reconstructed AHDC::kftrack bank and
+    // are properties of the WHOLE track (number of hits, chi2/ndf, ...). Only
+    // the hits of tracks passing every enabled cut contribute to the on-track
+    // t0 sample. Each track's variables are ALWAYS histogrammed BEFORE the cuts
+    // so the thresholds below can be chosen by inspecting the plots. A cut value
+    // of 0 disables that individual cut, so the defaults leave the on-track
+    // sample unchanged until thresholds are filled in.
+    bool   apply_track_quality = true;   ///< master switch for the cuts below.
+    int    track_nhits_min     = 0;      ///< keep tracks with n_hits >= this (0 = off).
+    double track_chi2ndf_max   = 0.0;    ///< keep tracks with chi2/ndf <= this (0 = off).
+    int    track_ndf_offset    = 5;      ///< ndf = n_hits - this (helix fit: 5 params).
+
+    // ---- Quality-plot axes (used only for the "before cut" diagnostics) -----
+    int    q_nhits_max    = 40;        ///< n_hits axis upper edge.
+    double q_chi2_max     = 50.0;      ///< chi2 axis upper edge [mm^2].
+    double q_chi2ndf_max  = 20.0;      ///< chi2/ndf axis upper edge.
+    double q_sumres_max   = 10.0;      ///< sum_residuals axis upper edge [mm].
+    double q_p_max        = 400.0;     ///< momentum axis upper edge [MeV].
+    double q_dedx_max     = 5000.0;    ///< dEdx axis upper edge [adc/mm].
+    int    q_bins         = 200;       ///< bin count for the quality plots.
+
     static constexpr auto config_fields() {
         using T = AhdcT0Config;
         return std::make_tuple(
-            framework::field("enable_histograms", &T::enable_histograms),
-            framework::field("require_good_wf",   &T::require_good_wf),
-            framework::field("t0_min",            &T::t0_min),
-            framework::field("t0_max",            &T::t0_max),
-            framework::field("t0_bins",           &T::t0_bins),
-            framework::field("book_global",       &T::book_global),
-            framework::field("debug_geometry",    &T::debug_geometry));
+            framework::field("enable_histograms",  &T::enable_histograms),
+            framework::field("require_good_wf",     &T::require_good_wf),
+            framework::field("t0_min",              &T::t0_min),
+            framework::field("t0_max",              &T::t0_max),
+            framework::field("t0_bins",             &T::t0_bins),
+            framework::field("book_global",         &T::book_global),
+            framework::field("debug_geometry",      &T::debug_geometry),
+            framework::field("apply_track_quality", &T::apply_track_quality),
+            framework::field("track_nhits_min",     &T::track_nhits_min),
+            framework::field("track_chi2ndf_max",   &T::track_chi2ndf_max),
+            framework::field("track_ndf_offset",    &T::track_ndf_offset),
+            framework::field("q_nhits_max",         &T::q_nhits_max),
+            framework::field("q_chi2_max",          &T::q_chi2_max),
+            framework::field("q_chi2ndf_max",       &T::q_chi2ndf_max),
+            framework::field("q_sumres_max",        &T::q_sumres_max),
+            framework::field("q_p_max",             &T::q_p_max),
+            framework::field("q_dedx_max",          &T::q_dedx_max),
+            framework::field("q_bins",              &T::q_bins));
     }
 };
+
+inline void TrackQualityHists::create(const AhdcT0Config& c) {
+    const auto nbins = static_cast<std::size_t>(c.q_bins > 0 ? c.q_bins : 1);
+    const auto nh    = static_cast<std::size_t>(c.q_nhits_max > 0 ? c.q_nhits_max : 1);
+    n_hits        = std::make_unique<framework::H1<>>(mh::regular(0.0, static_cast<double>(c.q_nhits_max), nh));
+    chi2          = std::make_unique<framework::H1<>>(mh::regular(0.0, c.q_chi2_max, nbins));
+    chi2ndf       = std::make_unique<framework::H1<>>(mh::regular(0.0, c.q_chi2ndf_max, nbins));
+    sum_residuals = std::make_unique<framework::H1<>>(mh::regular(0.0, c.q_sumres_max, nbins));
+    p             = std::make_unique<framework::H1<>>(mh::regular(0.0, c.q_p_max, nbins));
+    dEdx          = std::make_unique<framework::H1<>>(mh::regular(0.0, c.q_dedx_max, nbins));
+}
 
 /**
  * @brief AHDC per-wire t0 extraction algorithm.
@@ -141,6 +219,10 @@ class AhdcT0Alg : public framework::Algorithm {
         // raw ADC but no calibrated hits; then every hit is "all" only).
         declare_banks("AHDC::adc");
         declare_optional_bank("AHDC::hits");
+        // AHDC::kftrack carries the per-track quality variables (n_hits, chi2,
+        // ...) used to gate the on-track sample — optional (absent on files
+        // without reconstructed tracks; then no track-quality cut is applied).
+        declare_optional_bank("AHDC::kftrack");
         declare_config(m_config);
         // Per-wire histograms are dynamic; they are booked in on_initialize().
     }
@@ -168,6 +250,10 @@ class AhdcT0Alg : public framework::Algorithm {
             book_sample(svc, "all",      "global", "all wires", m_global.all,      nbins);
             book_sample(svc, "on_track", "global", "all wires", m_global.on_track, nbins);
         }
+
+        // Track quality diagnostics: per-track variables from AHDC::kftrack,
+        // filled once per track before the quality cuts are applied.
+        book_track_quality(svc, m_track_quality);
 
         Log::info(name(), "Booked {} per-wire channels = {} histograms{}",
                   m_wires.size(), m_wires.size() * 6,
@@ -198,12 +284,49 @@ class AhdcT0Alg : public framework::Algorithm {
         }
         const bool apply_wf_cut = m_config.require_good_wf && has_wf == 1;
 
+        // Read the reconstructed KF tracks. Each track's quality variables are
+        // histogrammed BEFORE the cuts (so thresholds can be read off the plots),
+        // and the trackids that pass every enabled cut are collected. Only the
+        // cuts being ACTIVE makes us gate the on-track sample by this set; with
+        // the default (no thresholds set) the on-track sample is unchanged.
+        const bool track_cuts_active =
+            m_config.apply_track_quality &&
+            (m_config.track_nhits_min > 0 || m_config.track_chi2ndf_max > 0.0);
+
+        static thread_local std::unordered_set<int> good_tracks;
+        good_tracks.clear();
+        long n_trk_rows = 0, n_trk_pass = 0;
+        const auto& kf_bank = event.get_bank("AHDC::kftrack");
+        const int kf_rows = kf_bank.getRows();
+        if (kf_rows > 0) {
+            bankdefs::AHDC_kftrack kf;
+            kf.bind(kf_bank);
+            n_trk_rows = kf_rows;
+            for (int t = 0; t < kf_rows; ++t) {
+                const int    nh     = kf.n_hits(t);
+                const double c2     = kf.chi2(t);
+                const int    ndf    = std::max(nh - m_config.track_ndf_offset, 1);
+                const double c2ndf  = c2 / static_cast<double>(ndf);
+                const double sumres = kf.sum_residuals(t);
+                const double px = kf.px(t), py = kf.py(t), pz = kf.pz(t);
+                const double mom    = std::sqrt(px * px + py * py + pz * pz);
+                m_track_quality.fill(nh, c2, c2ndf, sumres, mom, kf.dEdx(t));
+
+                if (!m_config.apply_track_quality || passes_track(nh, c2ndf)) {
+                    ++n_trk_pass;
+                    good_tracks.insert(kf.trackid(t));
+                }
+            }
+        } else if (track_cuts_active) {
+            m_kftrack_missing.store(true, std::memory_order_relaxed);
+        }
+
         // Build the on-track channel set from the calibrated hits. Reuse a
         // per-thread set to avoid a heap allocation on every event; AHDC::hits
         // is read once (0 rows when absent).
         static thread_local std::unordered_set<int> on_track;
         on_track.clear();
-        long n_hits = 0, n_hits_trk = 0;
+        long n_hits = 0, n_hits_trk = 0, n_hits_pass = 0;
         const auto& hits_bank = event.get_bank("AHDC::hits");
         const int hits_rows = hits_bank.getRows();
         if (hits_rows > 0) {
@@ -211,8 +334,16 @@ class AhdcT0Alg : public framework::Algorithm {
             hits.bind(hits_bank);
             n_hits = hits_rows;
             for (int j = 0; j < hits_rows; ++j) {
-                if (hits.trackid(j) < 0) continue;
+                const int trackid = hits.trackid(j);
+                if (trackid < 0) continue;
                 ++n_hits_trk;
+
+                // Drop the hit when its track failed the quality cuts. Only gate
+                // when a cut is actually active AND the KF tracks are present;
+                // otherwise the hit stays on-track (trackid>=0) as before.
+                if (track_cuts_active && kf_rows > 0 && good_tracks.count(trackid) == 0) continue;
+
+                ++n_hits_pass;
                 const int packed = hits.superlayer(j) * 10 + hits.layer(j);
                 on_track.insert(channel_key(packed, hits.wire(j)));
             }
@@ -260,6 +391,9 @@ class AhdcT0Alg : public framework::Algorithm {
         m_n_unmapped.fetch_add(n_unmapped, std::memory_order_relaxed);
         m_n_hits_rows.fetch_add(n_hits, std::memory_order_relaxed);
         m_n_hits_ontrack.fetch_add(n_hits_trk, std::memory_order_relaxed);
+        m_n_hits_pass.fetch_add(n_hits_pass, std::memory_order_relaxed);
+        m_n_trk_rows.fetch_add(n_trk_rows, std::memory_order_relaxed);
+        m_n_trk_pass.fetch_add(n_trk_pass, std::memory_order_relaxed);
         return StatusCode::SUCCESS();
     }
 
@@ -273,8 +407,29 @@ class AhdcT0Alg : public framework::Algorithm {
         Log::info(name(), "Good AHDC::adc hits:     {}", n_adc);
         Log::info(name(), "  on track:              {} ({:.1f}%)",
                   n_trk, n_adc > 0 ? 100.0 * static_cast<double>(n_trk) / static_cast<double>(n_adc) : 0.0);
+        const long n_trk_hits  = m_n_hits_ontrack.load();
+        const long n_pass_hits = m_n_hits_pass.load();
+        const long n_trk_rows  = m_n_trk_rows.load();
+        const long n_trk_pass  = m_n_trk_pass.load();
         Log::info(name(), "AHDC::hits rows seen:    {} (with trackid>=0: {})",
-                  m_n_hits_rows.load(), m_n_hits_ontrack.load());
+                  m_n_hits_rows.load(), n_trk_hits);
+        Log::info(name(), "AHDC::kftrack rows seen: {}", n_trk_rows);
+        if (m_config.apply_track_quality) {
+            Log::info(name(), "KF tracks passing quality cuts: {} / {} ({:.1f}%)",
+                      n_trk_pass, n_trk_rows,
+                      n_trk_rows > 0 ? 100.0 * static_cast<double>(n_trk_pass) / static_cast<double>(n_trk_rows) : 0.0);
+            Log::info(name(), "On-track hits kept (track passed): {} / {} ({:.1f}%)",
+                      n_pass_hits, n_trk_hits,
+                      n_trk_hits > 0 ? 100.0 * static_cast<double>(n_pass_hits) / static_cast<double>(n_trk_hits) : 0.0);
+            log_active_cuts();
+        } else {
+            Log::info(name(), "Track quality cuts: disabled (apply_track_quality=false)");
+        }
+        if (m_kftrack_missing.load()) {
+            Log::warning(name(),
+                         "AHDC::kftrack absent on events with track-associated hits — the "
+                         "track-quality cut could not be evaluated; those hits were kept as on-track.");
+        }
         if (n_unmapped > 0) {
             Log::warning(name(),
                          "Unmapped hits (no geometry slot): {} — check the layer/wire "
@@ -327,6 +482,41 @@ class AhdcT0Alg : public framework::Algorithm {
         }
     }
 
+    /// True if a KF track clears every ENABLED quality cut. A threshold of 0
+    /// disables that individual cut (see AhdcT0Config). Called only when
+    /// m_config.apply_track_quality is set.
+    [[nodiscard]] bool passes_track(int n_hits, double chi2ndf) const noexcept {
+        if (m_config.track_nhits_min   > 0   && n_hits  < m_config.track_nhits_min)  return false;
+        if (m_config.track_chi2ndf_max > 0.0 && chi2ndf > m_config.track_chi2ndf_max) return false;
+        return true;
+    }
+
+    /// Report which track-quality cuts were actually active (non-zero thresholds).
+    void log_active_cuts() const {
+        bool any = false;
+        if (m_config.track_nhits_min   > 0)   { Log::info(name(), "  cut: track n_hits >= {}", m_config.track_nhits_min); any = true; }
+        if (m_config.track_chi2ndf_max > 0.0) { Log::info(name(), "  cut: track chi2/ndf <= {} (ndf = n_hits - {})", m_config.track_chi2ndf_max, m_config.track_ndf_offset); any = true; }
+        if (!any) Log::info(name(), "  (no cut thresholds set — inspect /AHDC/quality plots, then set track_nhits_min / track_chi2ndf_max)");
+    }
+
+    /// Create + register the per-track quality-variable histograms (from the
+    /// reconstructed AHDC::kftrack bank), filled before the cuts.
+    void book_track_quality(framework::HistogramService& svc, TrackQualityHists& q) {
+        q.create(m_config);
+        svc.register_hist("/AHDC/quality/n_hits",
+                          "AHDC KF-track n_hits;hits on track;Tracks", *q.n_hits);
+        svc.register_hist("/AHDC/quality/chi2",
+                          "AHDC KF-track chi2;#chi^{2} [mm^{2}];Tracks", *q.chi2);
+        svc.register_hist("/AHDC/quality/chi2ndf",
+                          "AHDC KF-track chi2/ndf;#chi^{2}/ndf;Tracks", *q.chi2ndf);
+        svc.register_hist("/AHDC/quality/sum_residuals",
+                          "AHDC KF-track sum_residuals;#Sigma residuals [mm];Tracks", *q.sum_residuals);
+        svc.register_hist("/AHDC/quality/p",
+                          "AHDC KF-track momentum;p [MeV];Tracks", *q.p);
+        svc.register_hist("/AHDC/quality/dEdx",
+                          "AHDC KF-track dE/dx;dE/dx [adc/mm];Tracks", *q.dEdx);
+    }
+
     /// Create + register the three timing histograms of one sample for one
     /// channel (or the global spectra when dir == "global").
     void book_sample(framework::HistogramService& svc, const std::string& sample,
@@ -358,14 +548,22 @@ class AhdcT0Alg : public framework::Algorithm {
     std::unordered_map<int, SampleHists> m_wires;
     SampleHists m_global;
 
+    // Per-track quality diagnostics (AHDC::kftrack). Booked in on_initialize()
+    // and read-only during process() (fills use lock-free AtomicStorage).
+    TrackQualityHists m_track_quality;
+
     std::atomic<long> m_n_events{0};
     std::atomic<long> m_n_adc{0};
     std::atomic<long> m_n_ontrack{0};
     std::atomic<long> m_n_unmapped{0};
     std::atomic<long> m_n_hits_rows{0};        ///< total AHDC::hits rows seen.
     std::atomic<long> m_n_hits_ontrack{0};     ///< AHDC::hits rows with trackid>=0.
+    std::atomic<long> m_n_hits_pass{0};        ///< on-track hits kept (track passed cuts).
+    std::atomic<long> m_n_trk_rows{0};         ///< total AHDC::kftrack rows seen.
+    std::atomic<long> m_n_trk_pass{0};         ///< KF tracks passing the quality cuts.
     std::atomic<bool> m_dumped{false};         ///< debug_geometry one-shot guard.
     std::atomic<bool> m_wftype_missing{false};  ///< set if the wfType cut was skipped.
+    std::atomic<bool> m_kftrack_missing{false}; ///< set if a track cut couldn't be evaluated.
     std::atomic<int>  m_has_wftype{-1};         ///< wfType column present? -1=unknown,0=no,1=yes.
 };
 
