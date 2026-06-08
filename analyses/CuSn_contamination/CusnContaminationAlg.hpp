@@ -10,6 +10,7 @@
 #include <cmath>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <clas12/Constants.hpp>
 #include <clas12/Particle.hpp>
 #include <clas12/ReadBank.hpp>
@@ -18,17 +19,18 @@
 #include <clas12/framework/core/Event.hpp>
 #include <clas12/framework/core/EventHelpers.hpp>
 #include <clas12/framework/core/HistogramAliases.hpp>
+#include <clas12/framework/core/HistogramReflect.hpp>
 #include <clas12/framework/core/Property.hpp>
+#include <clas12/framework/core/ServiceReflect.hpp>
 #include <clas12/framework/core/StatusCode.hpp>
 #include <clas12/framework/core/TypedEventStore.hpp>
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include "Math/GenVector/PxPyPzE4D.h"
-#include "Math/Vector3Dfwd.h"
 
 namespace CuSnContamination {
 
-using framework::Log;
+using namespace framework;
 
 // Momentum binning shared by every species' vz-vs-theta breakdown.
 static constexpr int N_P_BINS = 20;
@@ -46,14 +48,9 @@ struct CuSnContaminationConfig {
 
     double example_cut = 1.0;
     bool enable_histograms = true;
-
-    static constexpr auto config_fields() {
-        using T = CuSnContaminationConfig;
-        return std::make_tuple(
-            framework::field("example_cut", &T::example_cut),
-            framework::field("enable_histograms", &T::enable_histograms));
-    }
 };
+
+static_assert(std::is_aggregate_v<CuSnContaminationConfig>, "CuSnContaminationConfig must stay a simple aggregate for PFR reflection");
 
 /**
  * @brief Per-species set of vertex/kinematics histograms.
@@ -62,60 +59,61 @@ struct CuSnContaminationConfig {
  * live under `/MC/<species>/`, the reconstructed ones under `/Data/<species>/`.
  */
 struct SpeciesHists {
-    explicit SpeciesHists(std::string species)
-        : m_species(std::move(species)),
-          h_p{"/MC/" + m_species + "/p", "p;p;Events", 0.0, 10.0, 100},
-          h_phi{"/MC/" + m_species + "/phi", "#phi;#phi;Events", -180.0, 180.0, 100},
-          h_theta{"/MC/" + m_species + "/theta", "#theta;#theta;Events", 0.0, 90.0, 100},
-          h_vz{"/MC/" + m_species + "/vz", "vz;vz;Events", -13.0, 0.0, 100},
-          h_vz_Cu{"/MC/" + m_species + "/vz_Cu", "vz_Cu;vz_Cu;Events", -13.0, 0.0, 100},
-          h_vz_Sn{"/MC/" + m_species + "/vz_Sn", "vz_Sn;vz_Sn;Events", -13.0, 0.0, 100},
-          h_vz_CuSn{"/MC/" + m_species + "/vz_CuSn", "vz_CuSn;vz_CuSn;Events", -13.0, 0.0, 100},
-          h_rec_vz_Cu{"/Data/" + m_species + "/vz_Cu", "vz_Cu;vz_Cu;Events", -13.0, 0.0, 100},
-          h_rec_vz_Sn{"/Data/" + m_species + "/vz_Sn", "vz_Sn;vz_Sn;Events", -13.0, 0.0, 100},
-          h_rec_vz_CuSn{"/Data/" + m_species + "/vz_CuSn", "vz_CuSn;vz_CuSn;Events", -13.0, 0.0, 100},
-          h_vz_vs_theta{"/MC/" + m_species + "/vz_vs_theta", "vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100},
-          h_vz_vs_p{"/MC/" + m_species + "/vz_vs_p", "vz vs p;p [GeV/c];vz [cm]", 0.0, 10.0, 100, -13.0, 0.0, 100},
-          h_vz_Cu_vs_theta{"/MC/" + m_species + "/vz_Cu_vs_theta", "Cu vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100},
-          h_vz_Sn_vs_theta{"/MC/" + m_species + "/vz_Sn_vs_theta", "Sn vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100},
-          h_vz_CuSn_vs_theta{"/MC/" + m_species + "/vz_CuSn_vs_theta", "CuSn vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100} {}
-    // Declared first: the histogram initializers below reference it.
-    std::string m_species;
+    /// MC-truth histograms, registered under `/MC/<species>/<member>`.
+    struct McH {
+        H1Auto p{"p;p;Events", 0.0, 10.0, 100};
+        H1Auto phi{"#phi;#phi;Events", -180.0, 180.0, 100};
+        H1Auto theta{"#theta;#theta;Events", 0.0, 90.0, 100};
+        H1Auto vz{"vz;vz;Events", -13.0, 0.0, 100};
+        // MC-truth-target gated: reconstructed vz for events whose MC vertex is in the region.
+        H1Auto vz_Cu{"vz_Cu;vz_Cu;Events", -13.0, 0.0, 100};
+        H1Auto vz_Sn{"vz_Sn;vz_Sn;Events", -13.0, 0.0, 100};
+        H1Auto vz_CuSn{"vz_CuSn;vz_CuSn;Events", -13.0, 0.0, 100};
+        H2Auto vz_vs_theta{"vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100};
+        H2Auto vz_vs_p{"vz vs p;p [GeV/c];vz [cm]", 0.0, 10.0, 100, -13.0, 0.0, 100};
+        // Per-target vz vs theta: reconstructed vz vs theta, gated by MC truth vertex region.
+        H2Auto vz_Cu_vs_theta{"Cu vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100};
+        H2Auto vz_Sn_vs_theta{"Sn vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100};
+        H2Auto vz_CuSn_vs_theta{"CuSn vz vs #theta;#theta [deg];vz [cm]", 0.0, 40.0, 100, -13.0, 0.0, 100};
+    };
 
-    // MC truth histograms.
-    framework::Hist1<> h_p;
-    framework::Hist1<> h_phi;
-    framework::Hist1<> h_theta;
-    framework::Hist1<> h_vz;
-    // MC-truth-target gated: reconstructed vz for events whose MC vertex is in the region.
-    framework::Hist1<> h_vz_Cu;
-    framework::Hist1<> h_vz_Sn;
-    framework::Hist1<> h_vz_CuSn;
-    // Reconstructed-vz gated: reconstructed vz for tracks whose own vz is in the region.
-    framework::Hist1<> h_rec_vz_Cu;
-    framework::Hist1<> h_rec_vz_Sn;
-    framework::Hist1<> h_rec_vz_CuSn;
-    framework::Hist2<> h_vz_vs_theta;
-    framework::Hist2<> h_vz_vs_p;
-    // Per-target vz vs theta: reconstructed vz vs theta, gated by MC truth vertex region.
-    framework::Hist2<> h_vz_Cu_vs_theta;
-    framework::Hist2<> h_vz_Sn_vs_theta;
-    framework::Hist2<> h_vz_CuSn_vs_theta;
+    /// Reconstructed-vz-gated histograms, registered under `/Data/<species>/<member>`.
+    struct DataH {
+        // Reconstructed-vz gated: reconstructed vz for tracks whose own vz is in the region.
+        H1Auto vz_Cu{"vz_Cu;vz_Cu;Events", -13.0, 0.0, 100};
+        H1Auto vz_Sn{"vz_Sn;vz_Sn;Events", -13.0, 0.0, 100};
+        H1Auto vz_CuSn{"vz_CuSn;vz_CuSn;Events", -13.0, 0.0, 100};
+    };
+
+    explicit SpeciesHists(std::string species) : m_species(std::move(species)) {}
+
+    std::string m_species;
+    McH mc;
+    DataH data;
+
     // Variable-sized arrays of histograms need indirection: heap-allocate so
     // each slot has a stable address for register_hist.
-    std::array<std::unique_ptr<framework::H2<>>, N_P_BINS> h_vz_vs_theta_pbin{};
+    std::array<std::unique_ptr<H2<>>, N_P_BINS> h_vz_vs_theta_pbin{};
     // Reconstructed vz sliced per momentum bin, for the cut sample.
     // Used to diagnose p-dependent vz bias (apparent broadening vs real
     // intrinsic resolution at a given p).
-    std::array<std::unique_ptr<framework::H1<>>, N_P_BINS> h_rec_vz_pbin{};
+    std::array<std::unique_ptr<H1<>>, N_P_BINS> h_rec_vz_pbin{};
+
+    /// Register the reflected MC/Data named histograms with the service.
+    /// (The per-p-bin arrays are booked explicitly by the algorithm — only
+    /// some species get them — via book_pbins/book_rec_pbins below.)
+    auto register_with(HistogramService& hist) -> void {
+        register_fields(hist, "/MC/" + m_species, mc);
+        register_fields(hist, "/Data/" + m_species, data);
+    }
 
     /// Register the per-momentum-bin vz-vs-theta histograms with the service.
-    auto book_pbins(framework::HistogramService& hist) -> void {
+    auto book_pbins(HistogramService& hist) -> void {
         for (int i = 0; i < N_P_BINS; ++i) {
             auto plo = fmt_p_edge(p_bin_edges[i]);
             auto phi = fmt_p_edge(p_bin_edges[i + 1]);
             auto title = "vz vs #theta (" + plo + "<p<" + phi + " GeV/c);#theta [deg];vz [cm]";
-            h_vz_vs_theta_pbin[i] = std::make_unique<framework::H2<>>(
+            h_vz_vs_theta_pbin[i] = std::make_unique<H2<>>(
                 mh::regular(0.0, 40.0, 100), mh::regular(-13.0, 0.0, 100)
             );
             hist.register_hist("/MC/" + m_species + "/vz_vs_theta_p" + plo + "_" + phi, title, *h_vz_vs_theta_pbin[i]);
@@ -123,12 +121,12 @@ struct SpeciesHists {
     }
 
     /// Register per-momentum-bin reconstructed-vz histograms.
-    auto book_rec_pbins(framework::HistogramService& hist) -> void {
+    auto book_rec_pbins(HistogramService& hist) -> void {
         for (int i = 0; i < N_P_BINS; ++i) {
             auto plo = fmt_p_edge(p_bin_edges[i]);
             auto phi = fmt_p_edge(p_bin_edges[i + 1]);
             auto title = "rec vz (" + plo + "<p<" + phi + " GeV/c);vz [cm];Events";
-            h_rec_vz_pbin[i] = std::make_unique<framework::H1<>>(mh::regular(-13.0, 0.0, 100));
+            h_rec_vz_pbin[i] = std::make_unique<H1<>>(mh::regular(-13.0, 0.0, 100));
             hist.register_hist("/Data/" + m_species + "/vz_p" + plo + "_" + phi, title, *h_rec_vz_pbin[i]);
         }
     }
@@ -139,12 +137,12 @@ struct SpeciesHists {
         ROOT::Math::PxPyPzE4D p4(px, py, pz, E);
         double theta_deg = p4.Theta() * 180.0 / M_PI;
         double mom = p4.P();
-        h_p.fill(mom);
-        h_phi.fill(p4.Phi() * 180.0 / M_PI);
-        h_theta.fill(theta_deg);
-        h_vz.fill(vz);
-        h_vz_vs_theta.fill(theta_deg, vz);
-        h_vz_vs_p.fill(mom, vz);
+        mc.p.fill(mom);
+        mc.phi.fill(p4.Phi() * 180.0 / M_PI);
+        mc.theta.fill(theta_deg);
+        mc.vz.fill(vz);
+        mc.vz_vs_theta.fill(theta_deg, vz);
+        mc.vz_vs_p.fill(mom, vz);
         for (int i = 0; i < N_P_BINS; ++i) {
             if (mom >= p_bin_edges[i] && mom < p_bin_edges[i + 1]) {
                 h_vz_vs_theta_pbin[i]->fill(theta_deg, vz);
@@ -157,21 +155,21 @@ struct SpeciesHists {
     /// `mc_vz` is the event's MC vertex z (only used when `has_mc`).
     auto fill_rec(double rec_vz, double theta_deg, double mc_vz, bool has_mc) -> void {
         // RG-D vz ranges: Cu [-10.6, -6.5], Sn [-5.5, 5.0], CuSn [-10.6, 5.0]
-        if (-10.6 < rec_vz && rec_vz < -6.5) h_rec_vz_Cu.fill(rec_vz);
-        if (-5.5 < rec_vz && rec_vz < 5.0) h_rec_vz_Sn.fill(rec_vz);
-        
-        h_rec_vz_CuSn.fill(rec_vz);
+        if (-10.6 < rec_vz && rec_vz < -6.5) data.vz_Cu.fill(rec_vz);
+        if (-5.5 < rec_vz && rec_vz < 5.0) data.vz_Sn.fill(rec_vz);
+
+        data.vz_CuSn.fill(rec_vz);
         if (has_mc) {
             if (-10.6 < mc_vz && mc_vz < -6.5) {
-                h_vz_Cu.fill(rec_vz);
-                h_vz_Cu_vs_theta.fill(theta_deg, rec_vz);
+                mc.vz_Cu.fill(rec_vz);
+                mc.vz_Cu_vs_theta.fill(theta_deg, rec_vz);
             }
             if (-5.5 < mc_vz && mc_vz < 5.0) {
-                h_vz_Sn.fill(rec_vz);
-                h_vz_Sn_vs_theta.fill(theta_deg, rec_vz);
+                mc.vz_Sn.fill(rec_vz);
+                mc.vz_Sn_vs_theta.fill(theta_deg, rec_vz);
             }
-            h_vz_CuSn.fill(rec_vz);
-            h_vz_CuSn_vs_theta.fill(theta_deg, rec_vz);
+            mc.vz_CuSn.fill(rec_vz);
+            mc.vz_CuSn_vs_theta.fill(theta_deg, rec_vz);
         }
     }
 
@@ -198,60 +196,44 @@ struct SpeciesHists {
  * Per quantity: an integrated 1-D and two 2-D (vs rec p, vs rec theta).
  */
 struct ResidualHists {
-    explicit ResidualHists(std::string species)
-        : m_species(std::move(species)),
-          h_dp_over_p{"/Residual/" + m_species + "/dp_over_p", "#Delta p/p;#Delta p/p;Events", -0.05, 0.05, 100},
-          h_dphi{"/Residual/" + m_species + "/dphi", "#Delta #phi;#Delta #phi [deg];Events", -5.0, 5.0, 100},
-          h_dtheta{"/Residual/" + m_species + "/dtheta", "#Delta #theta;#Delta #theta [deg];Events", -2.0, 2.0, 100},
-          h_dvz{"/Residual/" + m_species + "/dvz", "#Delta v_{z};#Delta v_{z} [cm];Events", -5.0, 5.0, 100},
-          h_dp_over_p_vs_p{"/Residual/" + m_species + "/dp_over_p_vs_p", "#Delta p/p vs p;p [GeV];#Delta p/p", 0.0, 10.0, 50, -0.05, 0.05, 100},
-          h_dphi_vs_p{"/Residual/" + m_species + "/dphi_vs_p", "#Delta #phi vs p;p [GeV];#Delta #phi [deg]", 0.0, 10.0, 50, -5.0, 5.0, 100},
-          h_dtheta_vs_p{"/Residual/" + m_species + "/dtheta_vs_p", "#Delta #theta vs p;p [GeV];#Delta #theta [deg]", 0.0, 10.0, 50, -2.0, 2.0, 100},
-          h_dvz_vs_p{"/Residual/" + m_species + "/dvz_vs_p", "#Delta v_{z} vs p;p [GeV];#Delta v_{z} [cm]", 0.0, 10.0, 50, -5.0, 5.0, 100},
-          h_dp_over_p_vs_theta{"/Residual/" + m_species + "/dp_over_p_vs_theta", "#Delta p/p vs #theta;#theta [deg];#Delta p/p", 0.0, 40.0, 50, -0.05, 0.05, 100},
-          h_dphi_vs_theta{"/Residual/" + m_species + "/dphi_vs_theta", "#Delta #phi vs #theta;#theta [deg];#Delta #phi [deg]", 0.0, 40.0, 50, -5.0, 5.0, 100},
-          h_dtheta_vs_theta{"/Residual/" + m_species + "/dtheta_vs_theta", "#Delta #theta vs #theta;#theta [deg];#Delta #theta [deg]", 0.0, 40.0, 50, -2.0, 2.0, 100},
-          h_dvz_vs_theta{"/Residual/" + m_species + "/dvz_vs_theta", "#Delta v_{z} vs #theta;#theta [deg];#Delta v_{z} [cm]", 0.0, 40.0, 50, -5.0, 5.0, 100} {}
-
-    std::string m_species;
-    framework::Hist1<> h_dp_over_p;
-    framework::Hist1<> h_dphi;
-    framework::Hist1<> h_dtheta;
-    framework::Hist1<> h_dvz;
-    framework::Hist2<> h_dp_over_p_vs_p;
-    framework::Hist2<> h_dphi_vs_p;
-    framework::Hist2<> h_dtheta_vs_p;
-    framework::Hist2<> h_dvz_vs_p;
-    framework::Hist2<> h_dp_over_p_vs_theta;
-    framework::Hist2<> h_dphi_vs_theta;
-    framework::Hist2<> h_dtheta_vs_theta;
-    framework::Hist2<> h_dvz_vs_theta;
+    H1Auto dp_over_p{"#Delta p/p;#Delta p/p;Events", -0.05, 0.05, 100};
+    H1Auto dphi{"#Delta #phi;#Delta #phi [deg];Events", -5.0, 5.0, 100};
+    H1Auto dtheta{"#Delta #theta;#Delta #theta [deg];Events", -2.0, 2.0, 100};
+    H1Auto dvz{"#Delta v_{z};#Delta v_{z} [cm];Events", -5.0, 5.0, 100};
+    H2Auto dp_over_p_vs_p{"#Delta p/p vs p;p [GeV];#Delta p/p", 0.0, 10.0, 50, -0.05, 0.05, 100};
+    H2Auto dphi_vs_p{"#Delta #phi vs p;p [GeV];#Delta #phi [deg]", 0.0, 10.0, 50, -5.0, 5.0, 100};
+    H2Auto dtheta_vs_p{"#Delta #theta vs p;p [GeV];#Delta #theta [deg]", 0.0, 10.0, 50, -2.0, 2.0, 100};
+    H2Auto dvz_vs_p{"#Delta v_{z} vs p;p [GeV];#Delta v_{z} [cm]", 0.0, 10.0, 50, -5.0, 5.0, 100};
+    H2Auto dp_over_p_vs_theta{"#Delta p/p vs #theta;#theta [deg];#Delta p/p", 0.0, 40.0, 50, -0.05, 0.05, 100};
+    H2Auto dphi_vs_theta{"#Delta #phi vs #theta;#theta [deg];#Delta #phi [deg]", 0.0, 40.0, 50, -5.0, 5.0, 100};
+    H2Auto dtheta_vs_theta{"#Delta #theta vs #theta;#theta [deg];#Delta #theta [deg]", 0.0, 40.0, 50, -2.0, 2.0, 100};
+    H2Auto dvz_vs_theta{"#Delta v_{z} vs #theta;#theta [deg];#Delta v_{z} [cm]", 0.0, 40.0, 50, -5.0, 5.0, 100};
 
     /// Fill all residual histograms for one (rec, mc) pair. Angles in degrees.
     auto fill(double p_rec, double theta_rec, double phi_rec, double vz_rec,
               double p_mc, double theta_mc, double phi_mc, double vz_mc) -> void {
         if (p_mc <= 0.0) { return; }
-        double dp_over_p = (p_rec - p_mc) / p_mc;
-        double dphi = phi_rec - phi_mc;
-        while (dphi > 180.0) { dphi -= 360.0; }
-        while (dphi < -180.0) { dphi += 360.0; }
-        double dtheta = theta_rec - theta_mc;
-        double dvz = vz_rec - vz_mc;
+        double dp_over_p_val = (p_rec - p_mc) / p_mc;
+        double dphi_val = phi_rec - phi_mc;
+        while (dphi_val > 180.0) { dphi_val -= 360.0; }
+        while (dphi_val < -180.0) { dphi_val += 360.0; }
+        double dtheta_val = theta_rec - theta_mc;
+        double dvz_val = vz_rec - vz_mc;
 
-        h_dp_over_p.fill(dp_over_p);
-        h_dphi.fill(dphi);
-        h_dtheta.fill(dtheta);
-        h_dvz.fill(dvz);
+        dp_over_p.fill(dp_over_p_val);
+        dphi.fill(dphi_val);
+        dtheta.fill(dtheta_val);
+        dvz.fill(dvz_val);
 
-        h_dp_over_p_vs_p.fill(p_rec, dp_over_p);
-        h_dphi_vs_p.fill(p_rec, dphi);
-        h_dtheta_vs_p.fill(p_rec, dtheta);
-        h_dvz_vs_p.fill(p_rec, dvz);
+        dp_over_p_vs_p.fill(p_rec, dp_over_p_val);
+        dphi_vs_p.fill(p_rec, dphi_val);
+        dtheta_vs_p.fill(p_rec, dtheta_val);
+        dvz_vs_p.fill(p_rec, dvz_val);
 
-        h_dp_over_p_vs_theta.fill(theta_rec, dp_over_p);
-        h_dphi_vs_theta.fill(theta_rec, dphi);
-        h_dtheta_vs_theta.fill(theta_rec, dtheta);
-        h_dvz_vs_theta.fill(theta_rec, dvz);
+        dp_over_p_vs_theta.fill(theta_rec, dp_over_p_val);
+        dphi_vs_theta.fill(theta_rec, dphi_val);
+        dtheta_vs_theta.fill(theta_rec, dtheta_val);
+        dvz_vs_theta.fill(theta_rec, dvz_val);
     }
 };
 
@@ -270,32 +252,25 @@ struct PidCompositionHists {
     static constexpr double PID_HI = 3000.5;
     static constexpr int    PID_N_BINS = 6001;
 
-    explicit PidCompositionHists(std::string species)
-        : m_species(std::move(species)),
-          h_mc_pid{"/PidContam/" + m_species + "/mc_pid",
-                   "MC PID of selected pion candidates;MC PID;Events",
-                   PID_LO, PID_HI, PID_N_BINS} {}
+    H1Auto mc_pid{"MC PID of selected pion candidates;MC PID;Events", PID_LO, PID_HI, PID_N_BINS};
+    std::array<std::unique_ptr<H1<>>, N_P_BINS> h_mc_pid_pbin{};
 
-    std::string m_species;
-    framework::Hist1<> h_mc_pid;
-    std::array<std::unique_ptr<framework::H1<>>, N_P_BINS> h_mc_pid_pbin{};
-
-    auto book_pbins(framework::HistogramService& hist) -> void {
+    auto book_pbins(HistogramService& hist, const std::string& species) -> void {
         for (int i = 0; i < N_P_BINS; ++i) {
             auto plo = fmt_p_edge(p_bin_edges[i]);
             auto phi = fmt_p_edge(p_bin_edges[i + 1]);
             auto title = "MC PID (" + plo + "<p<" + phi + " GeV/c);MC PID;Events";
-            h_mc_pid_pbin[i] = std::make_unique<framework::H1<>>(mh::regular(PID_LO, PID_HI, PID_N_BINS));
-            hist.register_hist("/PidContam/" + m_species + "/mc_pid_p" + plo + "_" + phi, title, *h_mc_pid_pbin[i]);
+            h_mc_pid_pbin[i] = std::make_unique<H1<>>(mh::regular(PID_LO, PID_HI, PID_N_BINS));
+            hist.register_hist("/PidContam/" + species + "/mc_pid_p" + plo + "_" + phi, title, *h_mc_pid_pbin[i]);
         }
     }
 
     /// `mc_pid` should be 0 when the rec track has no MC link.
-    auto fill(int mc_pid, double p_rec) -> void {
-        h_mc_pid.fill(static_cast<double>(mc_pid));
+    auto fill(int mc_pid_val, double p_rec) -> void {
+        mc_pid.fill(static_cast<double>(mc_pid_val));
         for (int i = 0; i < N_P_BINS; ++i) {
             if (p_rec >= p_bin_edges[i] && p_rec < p_bin_edges[i + 1]) {
-                if (h_mc_pid_pbin[i]) { h_mc_pid_pbin[i]->fill(static_cast<double>(mc_pid)); }
+                if (h_mc_pid_pbin[i]) { h_mc_pid_pbin[i]->fill(static_cast<double>(mc_pid_val)); }
                 break;
             }
         }
@@ -312,64 +287,51 @@ struct PidCompositionHists {
  * REC::Particle so it always fills).
  */
 struct TrackQualityHists {
-    explicit TrackQualityHists(std::string species)
-        : m_species(std::move(species)),
-          h_chi2pid{"/TrackQuality/" + m_species + "/chi2pid",
-                    "chi2pid;#chi^{2}_{PID};Events",
-                    -10.0, 10.0, 200},
-          h_chi2{"/TrackQuality/" + m_species + "/chi2",
-                 "REC::Track #chi^{2};#chi^{2};Events",
-                 0.0, 200.0, 200},
-          h_ndf{"/TrackQuality/" + m_species + "/ndf",
-                "REC::Track NDF;NDF;Events",
-                0.0, 50.0, 50} {}
+    H1Auto chi2pid{"chi2pid;#chi^{2}_{PID};Events", -10.0, 10.0, 200};
+    H1Auto chi2{"REC::Track #chi^{2};#chi^{2};Events", 0.0, 200.0, 200};
+    H1Auto ndf{"REC::Track NDF;NDF;Events", 0.0, 50.0, 50};
+    std::array<std::unique_ptr<H1<>>, N_P_BINS> h_chi2pid_pbin{};
+    std::array<std::unique_ptr<H1<>>, N_P_BINS> h_chi2_pbin{};
+    std::array<std::unique_ptr<H1<>>, N_P_BINS> h_ndf_pbin{};
 
-    std::string m_species;
-    framework::Hist1<> h_chi2pid;
-    framework::Hist1<> h_chi2;
-    framework::Hist1<> h_ndf;
-    std::array<std::unique_ptr<framework::H1<>>, N_P_BINS> h_chi2pid_pbin{};
-    std::array<std::unique_ptr<framework::H1<>>, N_P_BINS> h_chi2_pbin{};
-    std::array<std::unique_ptr<framework::H1<>>, N_P_BINS> h_ndf_pbin{};
-
-    auto book_pbins(framework::HistogramService& hist) -> void {
+    auto book_pbins(HistogramService& hist, const std::string& species) -> void {
         for (int i = 0; i < N_P_BINS; ++i) {
             auto plo = fmt_p_edge(p_bin_edges[i]);
             auto phi = fmt_p_edge(p_bin_edges[i + 1]);
             auto suffix = "_p" + plo + "_" + phi;
             auto prange = " (" + plo + "<p<" + phi + " GeV/c)";
 
-            h_chi2pid_pbin[i] = std::make_unique<framework::H1<>>(mh::regular(-10.0, 10.0, 200));
-            hist.register_hist("/TrackQuality/" + m_species + "/chi2pid" + suffix,
+            h_chi2pid_pbin[i] = std::make_unique<H1<>>(mh::regular(-10.0, 10.0, 200));
+            hist.register_hist("/TrackQuality/" + species + "/chi2pid" + suffix,
                                "chi2pid" + prange + ";#chi^{2}_{PID};Events",
                                *h_chi2pid_pbin[i]);
 
-            h_chi2_pbin[i] = std::make_unique<framework::H1<>>(mh::regular(0.0, 200.0, 200));
-            hist.register_hist("/TrackQuality/" + m_species + "/chi2" + suffix,
+            h_chi2_pbin[i] = std::make_unique<H1<>>(mh::regular(0.0, 200.0, 200));
+            hist.register_hist("/TrackQuality/" + species + "/chi2" + suffix,
                                "REC::Track #chi^{2}" + prange + ";#chi^{2};Events",
                                *h_chi2_pbin[i]);
 
-            h_ndf_pbin[i] = std::make_unique<framework::H1<>>(mh::regular(0.0, 50.0, 50));
-            hist.register_hist("/TrackQuality/" + m_species + "/ndf" + suffix,
+            h_ndf_pbin[i] = std::make_unique<H1<>>(mh::regular(0.0, 50.0, 50));
+            hist.register_hist("/TrackQuality/" + species + "/ndf" + suffix,
                                "REC::Track NDF" + prange + ";NDF;Events",
                                *h_ndf_pbin[i]);
         }
     }
 
     /// `chi2` may be NaN (no DC row in REC::Track); those slots are skipped.
-    auto fill(double chi2pid, double chi2, int ndf, double p_rec) -> void {
-        h_chi2pid.fill(chi2pid);
-        const bool has_trk = !std::isnan(chi2);
+    auto fill(double chi2pid_val, double chi2_val, int ndf_val, double p_rec) -> void {
+        chi2pid.fill(chi2pid_val);
+        const bool has_trk = !std::isnan(chi2_val);
         if (has_trk) {
-            h_chi2.fill(chi2);
-            h_ndf.fill(static_cast<double>(ndf));
+            chi2.fill(chi2_val);
+            ndf.fill(static_cast<double>(ndf_val));
         }
         for (int i = 0; i < N_P_BINS; ++i) {
             if (p_rec >= p_bin_edges[i] && p_rec < p_bin_edges[i + 1]) {
-                if (h_chi2pid_pbin[i]) { h_chi2pid_pbin[i]->fill(chi2pid); }
+                if (h_chi2pid_pbin[i]) { h_chi2pid_pbin[i]->fill(chi2pid_val); }
                 if (has_trk) {
-                    if (h_chi2_pbin[i]) { h_chi2_pbin[i]->fill(chi2); }
-                    if (h_ndf_pbin[i])  { h_ndf_pbin[i]->fill(static_cast<double>(ndf)); }
+                    if (h_chi2_pbin[i]) { h_chi2_pbin[i]->fill(chi2_val); }
+                    if (h_ndf_pbin[i])  { h_ndf_pbin[i]->fill(static_cast<double>(ndf_val)); }
                 }
                 break;
             }
@@ -380,43 +342,20 @@ struct TrackQualityHists {
 /**
  * @brief Algorithm for Cu/Sn contamination analysis
  */
-class CuSnContaminationAlg : public framework::Algorithm {
+class CuSnContaminationAlg : public Algorithm {
    public:
     using Config = CuSnContaminationConfig;
     using StatusCode = framework::StatusCode;
 
     explicit CuSnContaminationAlg(std::string name = "CuSnContaminationAlg", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config) {
-        required_services(m_hist);
+        wire_services(*this);  // reflects ServiceRef members (refl-cpp)
         declare_optional_bank("MC::Particle");
         // MC::RecMatch carries the (REC::Particle -> MC::Particle) link
         // used by `get_mc_particle_index` below; the framework warns
         // upfront if the input file's dictionary lacks it.
         declare_optional_bank("MC::RecMatch");
         declare_config(m_config);
-        declare_species_histograms(m_e);
-        declare_species_histograms(m_pip);
-        declare_species_histograms(m_pim);
-        declare_species_histograms(m_e_nocuts);
-        declare_species_histograms(m_pip_nocuts);
-        declare_species_histograms(m_pim_nocuts);
-        declare_species_histograms(m_pip_q_hi);
-        declare_species_histograms(m_pip_q_mid);
-        declare_species_histograms(m_pip_q_lo);
-        declare_species_histograms(m_pim_q_hi);
-        declare_species_histograms(m_pim_q_mid);
-        declare_species_histograms(m_pim_q_lo);
-        declare_species_histograms(m_pip_truth);
-        declare_species_histograms(m_pim_truth);
-        declare_residual_histograms(m_pip_res);
-        declare_residual_histograms(m_pim_res);
-        declare_residual_histograms(m_pip_res_truth);
-        declare_residual_histograms(m_pim_res_truth);
-        declare_histograms(m_pip_pid.h_mc_pid, m_pim_pid.h_mc_pid);
-        declare_histograms(m_pip_trkq.h_chi2pid, m_pip_trkq.h_chi2, m_pip_trkq.h_ndf,
-                           m_pim_trkq.h_chi2pid, m_pim_trkq.h_chi2, m_pim_trkq.h_ndf);
-        for (auto& s : m_pip_cut_steps) { declare_species_histograms(s); }
-        for (auto& s : m_pim_cut_steps) { declare_species_histograms(s); }
     }
 
     [[nodiscard]] auto config() const -> const Config& { return m_config; }
@@ -424,30 +363,61 @@ class CuSnContaminationAlg : public framework::Algorithm {
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
         if (m_config.enable_histograms) {
+            // Named MC/Data histograms for every species (matches the original
+            // declare_species_histograms set).
+            m_e.register_with(*m_hist);
+            m_e_nocuts.register_with(*m_hist);
+            m_pip.register_with(*m_hist);
+            m_pim.register_with(*m_hist);
+            m_pip_nocuts.register_with(*m_hist);
+            m_pim_nocuts.register_with(*m_hist);
+            m_pip_q_hi.register_with(*m_hist);
+            m_pip_q_mid.register_with(*m_hist);
+            m_pip_q_lo.register_with(*m_hist);
+            m_pim_q_hi.register_with(*m_hist);
+            m_pim_q_mid.register_with(*m_hist);
+            m_pim_q_lo.register_with(*m_hist);
+            m_pip_truth.register_with(*m_hist);
+            m_pim_truth.register_with(*m_hist);
+            for (auto& s : m_pip_cut_steps) { s.register_with(*m_hist); }
+            for (auto& s : m_pim_cut_steps) { s.register_with(*m_hist); }
+
+            // Per-p-bin MC vz-vs-theta arrays (only these species in the original).
             m_e.book_pbins(*m_hist);
             m_pip.book_pbins(*m_hist);
             m_pim.book_pbins(*m_hist);
             m_e_nocuts.book_pbins(*m_hist);
             m_pip_nocuts.book_pbins(*m_hist);
             m_pim_nocuts.book_pbins(*m_hist);
-            // Per-p-bin reconstructed-vz for the cut sample (diagnostic).
+            // Per-p-bin reconstructed-vz arrays for the cut sample (diagnostic).
             m_pip.book_rec_pbins(*m_hist);
             m_pim.book_rec_pbins(*m_hist);
             m_pim_nocuts.book_rec_pbins(*m_hist);
             m_pip_nocuts.book_rec_pbins(*m_hist);
             m_pip_truth.book_rec_pbins(*m_hist);
             m_pim_truth.book_rec_pbins(*m_hist);
-            m_pip_pid.book_pbins(*m_hist);
-            m_pim_pid.book_pbins(*m_hist);
-            m_pip_trkq.book_pbins(*m_hist);
-            m_pim_trkq.book_pbins(*m_hist);
             for (auto& s : m_pip_cut_steps) { s.book_rec_pbins(*m_hist); }
             for (auto& s : m_pim_cut_steps) { s.book_rec_pbins(*m_hist); }
+
+            register_fields(*m_hist, "/Residual/PiPlus", m_pip_res);
+            register_fields(*m_hist, "/Residual/PiMinus", m_pim_res);
+            register_fields(*m_hist, "/Residual/PiPlus_Truth", m_pip_res_truth);
+            register_fields(*m_hist, "/Residual/PiMinus_Truth", m_pim_res_truth);
+
+            register_fields(*m_hist, "/PidContam/PiPlus", m_pip_pid);
+            register_fields(*m_hist, "/PidContam/PiMinus", m_pim_pid);
+            m_pip_pid.book_pbins(*m_hist, "PiPlus");
+            m_pim_pid.book_pbins(*m_hist, "PiMinus");
+
+            register_fields(*m_hist, "/TrackQuality/PiPlus", m_pip_trkq);
+            register_fields(*m_hist, "/TrackQuality/PiMinus", m_pim_trkq);
+            m_pip_trkq.book_pbins(*m_hist, "PiPlus");
+            m_pim_trkq.book_pbins(*m_hist, "PiMinus");
         }
         return StatusCode::SUCCESS();
     }
 
-    auto process(framework::Event& event) -> StatusCode override {
+    auto process(Event& event) -> StatusCode override {
         double mc_vz = 0;
         const bool has_mc = event.has_bank("MC::Particle");
         if (has_mc && m_config.enable_histograms) {
@@ -480,7 +450,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
             }
         }
 
-        auto electron_opt = framework::EventHelpers::get_selected_electron(event);
+        auto electron_opt = EventHelpers::get_selected_electron(event);
         if (!electron_opt) return StatusCode::FILTERED();
 
         if (m_config.enable_histograms) {
@@ -489,31 +459,6 @@ class CuSnContaminationAlg : public framework::Algorithm {
             auto electron = event.find_trigger_electron();
             if (electron) m_e_nocuts.fill_rec(electron->vz(), electron->theta(), mc_vz, has_mc);
 
-            // Bounded one-shot diagnostic for the MC matching path. The
-            // first few hundred pions across the run get a one-line
-            // breakdown of (bank_rows, row_found?, quality, mc_index) so
-            // we can tell at a glance whether the file is missing
-            // MC::RecMatch (bank_rows=0), produced no rows for these
-            // pindices (row_found=false), or produced rows below the
-            // quality cut. Then it goes quiet. Bumping kDebugMax to 0
-            // disables the dump entirely.
-            static constexpr int kDebugMax = 200;
-            static std::atomic<int> dbg_remaining{kDebugMax};
-            auto debug_match = [&](const char* species, int rec_pindex,
-                                   const McMatchResult& r) {
-                int n = dbg_remaining.fetch_sub(1, std::memory_order_relaxed);
-                if (n > 0) {
-                    fmt::print(
-                        "[mc_match] {} pindex={} bank_rows={} row_found={} q={:.3f} mcindex={}\n",
-                        species, rec_pindex, r.bank_rows,
-                        r.row_found ? 'Y' : 'N', r.quality, r.mc_index);
-                }
-            };
-
-            // Compute and fill residuals (Δp/p, Δφ, Δθ, Δvz) for one
-            // (rec particle, MC index) pair. Caller has already verified
-            // the MC match. Angles end up in degrees so they line up with
-            // Particle::theta()/phi() returned by the framework.
             auto fill_residual = [&](const auto& rec_particle, int mc_idx,
                                      ResidualHists& dst) {
                 const auto& mc_bank = event.get_bank("MC::Particle");
@@ -529,28 +474,29 @@ class CuSnContaminationAlg : public framework::Algorithm {
                          mc_p_mag, mc_theta_deg, mc_phi_deg, mc_vz_track);
             };
 
-            auto pi_plus = event.pions_plus();
-            for (auto p : pi_plus) {
-                // Check that the rec pion really came from a generated pion.
-                auto match = get_mc_particle_index_diag(event, p.index());
-                // debug_match("pi+", p.index(), match);
-                if (match.mc_index >= 0) {
-                    int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
-                    if (pid == 211) {
-                        m_pip_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
-                        m_pip_nocuts.fill_rec_pbin(p.vz(), p.p());
+            // MC-truth-matched "no cuts" pion samples: every rec pi+/pi- whose
+            // MC match is a true pion. Gated on has_mc — they require a match,
+            // and reading MC::Particle here without the guard is an
+            // out-of-bounds risk if MC::RecMatch exists but MC::Particle does not.
+            if (has_mc) {
+                for (auto p : event.pions_plus()) {
+                    auto match = get_mc_particle_index_diag(event, p.index());
+                    if (match.mc_index >= 0) {
+                        int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
+                        if (pid == 211) {
+                            m_pip_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
+                            m_pip_nocuts.fill_rec_pbin(p.vz(), p.p());
+                        }
                     }
                 }
-            }
-            auto pi_minus = event.pions_minus();
-            for (auto p : pi_minus) {
-                auto match = get_mc_particle_index_diag(event, p.index());
-                // debug_match("pi-", p.index(), match);
-                if (match.mc_index >= 0) {
-                    int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
-                    if (pid == -211) {
-                        m_pim_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
-                        m_pim_nocuts.fill_rec_pbin(p.vz(), p.p());
+                for (auto p : event.pions_minus()) {
+                    auto match = get_mc_particle_index_diag(event, p.index());
+                    if (match.mc_index >= 0) {
+                        int pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
+                        if (pid == -211) {
+                            m_pim_nocuts.fill_rec(p.vz(), p.theta(), mc_vz, has_mc);
+                            m_pim_nocuts.fill_rec_pbin(p.vz(), p.p());
+                        }
                     }
                 }
             }
@@ -560,7 +506,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
             // and fill the same vz / vz-per-p-bin histograms so we can
             // watch the distribution evolve cut-by-cut.
             for (std::size_t i = 0; i < PION_CUT_STEP_LABELS.size(); ++i) {
-                auto pip_key = framework::TypedKey<std::vector<Particle>>(
+                auto pip_key = TypedKey<std::vector<Particle>>(
                     fmt::format("PiPlus_{}", PION_CUT_STEP_LABELS[i]));
                 if (auto pip = event.retrieve_typed(pip_key)) {
                     for (const auto& pion : *pip) {
@@ -568,7 +514,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
                         m_pip_cut_steps[i].fill_rec_pbin(pion.vz(), pion.p());
                     }
                 }
-                auto pim_key = framework::TypedKey<std::vector<Particle>>(
+                auto pim_key = TypedKey<std::vector<Particle>>(
                     fmt::format("PiMinus_{}", PION_CUT_STEP_LABELS[i]));
                 if (auto pim = event.retrieve_typed(pim_key)) {
                     for (const auto& pion : *pim) {
@@ -613,7 +559,7 @@ class CuSnContaminationAlg : public framework::Algorithm {
                 return lo;
             };
 
-            if (auto pip = event.retrieve_typed(framework::Keys::SelectedPiPlus)) {
+            if (auto pip = event.retrieve_typed(Keys::SelectedPiPlus)) {
                 for (const auto& pion : *pip) {
                     double theta_deg = pion.theta();
                     m_pip.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
@@ -630,14 +576,16 @@ class CuSnContaminationAlg : public framework::Algorithm {
                             mc_pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
                         }
                         m_pip_pid.fill(mc_pid, pion.p());
-                        auto res_match = get_mc_particle_index_diag(event, pion.index());
-                        if (res_match.mc_index >= 0) {
-                            fill_residual(pion, res_match.mc_index, m_pip_res);
+                        // Same single MC::RecMatch row as `match` (0.0f) above; the
+                        // default-quality (0.98f) lookup yields mc_index>=0 IFF that
+                        // row passed quality>=0.98 with mc_index>=0. Reuse `match`.
+                        if (match.mc_index >= 0 && match.quality >= 0.98f) {
+                            fill_residual(pion, match.mc_index, m_pip_res);
                         }
                     }
                 }
             }
-            if (auto pim = event.retrieve_typed(framework::Keys::SelectedPiMinus)) {
+            if (auto pim = event.retrieve_typed(Keys::SelectedPiMinus)) {
                 for (const auto& pion : *pim) {
                     double theta_deg = pion.theta();
                     m_pim.fill_rec(pion.vz(), theta_deg, mc_vz, has_mc);
@@ -653,9 +601,10 @@ class CuSnContaminationAlg : public framework::Algorithm {
                             mc_pid = event.get_bank("MC::Particle").getInt("pid", match.mc_index);
                         }
                         m_pim_pid.fill(mc_pid, pion.p());
-                        auto res_match = get_mc_particle_index_diag(event, pion.index());
-                        if (res_match.mc_index >= 0) {
-                            fill_residual(pion, res_match.mc_index, m_pim_res);
+                        // Reuse `match` (see pi+ block): default-quality lookup would
+                        // return mc_index>=0 IFF this row has quality>=0.98 & mc_index>=0.
+                        if (match.mc_index >= 0 && match.quality >= 0.98f) {
+                            fill_residual(pion, match.mc_index, m_pim_res);
                         }
                     }
                 }
@@ -670,9 +619,11 @@ class CuSnContaminationAlg : public framework::Algorithm {
     }
 
    private:
+    FRAMEWORK_REFLECT_FRIEND;  // let refl-cpp reflect the private ServiceRef members
+
     Config m_config;
 
-    framework::ServiceRef<framework::HistogramService> m_hist;
+    ServiceRef<HistogramService> m_hist;
 
     SpeciesHists m_e{"Electron"};
     SpeciesHists m_e_nocuts{"Electron_NoCuts"};
@@ -680,48 +631,35 @@ class CuSnContaminationAlg : public framework::Algorithm {
     SpeciesHists m_pim{"PiMinus"};
     SpeciesHists m_pip_nocuts{"PiPlus_NoCuts"};
     SpeciesHists m_pim_nocuts{"PiMinus_NoCuts"};
-    // Quality-sliced copies of the cut sample, bucketed by MC-match
-    // quality from get_mc_particle_index_diag. QHi (>=0.92) matches the
-    // existing "no cuts MC pid" sample's hidden quality threshold;
-    // QMid (0.5-0.92) and QLo (<0.5, including no-match) are normally
-    // invisible. Used to diagnose whether the cut-sample broadening is
-    // dominated by low-quality MC matches.
+
     SpeciesHists m_pip_q_hi{"PiPlus_QHi"};
     SpeciesHists m_pip_q_mid{"PiPlus_QMid"};
     SpeciesHists m_pip_q_lo{"PiPlus_QLo"};
     SpeciesHists m_pim_q_hi{"PiMinus_QHi"};
     SpeciesHists m_pim_q_mid{"PiMinus_QMid"};
     SpeciesHists m_pim_q_lo{"PiMinus_QLo"};
-    // Truth-pion samples: rec vz for every rec track (any rec pid) whose
-    // MC match is a true pion. Broader than _NoCuts (which requires rec
-    // pid == pion AND mc pid == pion); _Truth keeps tracks mis-identified
-    // by reconstruction as long as MC truth says they are pions.
+
     SpeciesHists m_pip_truth{"PiPlus_Truth"};
     SpeciesHists m_pim_truth{"PiMinus_Truth"};
-    // Reconstruction-vs-MC residuals. _res = cut sample (passes the pion
-    // selection in SelectedPiPlus/Minus). _res_truth = every rec track,
-    // any rec pid, whose MC match is a true pion.
-    ResidualHists m_pip_res{"PiPlus"};
-    ResidualHists m_pim_res{"PiMinus"};
-    ResidualHists m_pip_res_truth{"PiPlus_Truth"};
-    ResidualHists m_pim_res_truth{"PiMinus_Truth"};
-    // MC-truth PID composition of the cut sample. Diagnoses contamination:
-    // selected pions whose MC truth is e/K/p/etc., or that have no MC link.
-    PidCompositionHists m_pip_pid{"PiPlus"};
-    PidCompositionHists m_pim_pid{"PiMinus"};
-    // Track-quality of the cut sample: chi2pid + DC track chi2 / NDF,
-    // integrated and per momentum bin.
-    TrackQualityHists m_pip_trkq{"PiPlus"};
-    TrackQualityHists m_pim_trkq{"PiMinus"};
 
-    // Cumulative pion-cut-step diagnostics. Each entry is forward-only
-    // (the PionSelectionAlg's `collect_passing_cumulative` filters
-    // non-forward up front). Step 0 = rec pid pion alone; later steps add
-    // DC fiducial → chi²PID → momentum → vz. The final +Δt step is the
-    // SelectedPiPlus / SelectedPiMinus sample already held by m_pip / m_pim.
+    // ResidualHists/PidCompositionHists/TrackQualityHists are plain aggregates
+    // now (no stored species); the species is supplied at registration in
+    // on_initialize() (path prefix and book_pbins(..., species)).
+    ResidualHists m_pip_res;
+    ResidualHists m_pim_res;
+    ResidualHists m_pip_res_truth;
+    ResidualHists m_pim_res_truth;
+
+    PidCompositionHists m_pip_pid;
+    PidCompositionHists m_pim_pid;
+
+    TrackQualityHists m_pip_trkq;
+    TrackQualityHists m_pim_trkq;
+
     static constexpr std::array<const char*, 5> PION_CUT_STEP_LABELS = {
         "noPionCuts", "plusDCFiducial", "plusChi2PID", "plusMomentum", "plusVertexZ"
     };
+
     std::array<SpeciesHists, 5> m_pip_cut_steps{
         SpeciesHists{"PiPlus_noPionCuts"},
         SpeciesHists{"PiPlus_plusDCFiducial"},
@@ -736,22 +674,8 @@ class CuSnContaminationAlg : public framework::Algorithm {
         SpeciesHists{"PiMinus_plusMomentum"},
         SpeciesHists{"PiMinus_plusVertexZ"},
     };
-
-    /// Queue every self-registering wrapper of one species for booking.
-    auto declare_species_histograms(SpeciesHists& s) -> void {
-        declare_histograms(s.h_p, s.h_phi, s.h_theta, s.h_vz, s.h_vz_Cu, s.h_vz_Sn,
-                           s.h_vz_CuSn, s.h_rec_vz_Cu, s.h_rec_vz_Sn, s.h_rec_vz_CuSn,
-                           s.h_vz_vs_theta, s.h_vz_vs_p,
-                           s.h_vz_Cu_vs_theta, s.h_vz_Sn_vs_theta, s.h_vz_CuSn_vs_theta);
-    }
-
-    /// Queue every residual-histogram wrapper of one species for booking.
-    auto declare_residual_histograms(ResidualHists& r) -> void {
-        declare_histograms(r.h_dp_over_p, r.h_dphi, r.h_dtheta, r.h_dvz,
-                           r.h_dp_over_p_vs_p, r.h_dphi_vs_p, r.h_dtheta_vs_p, r.h_dvz_vs_p,
-                           r.h_dp_over_p_vs_theta, r.h_dphi_vs_theta,
-                           r.h_dtheta_vs_theta, r.h_dvz_vs_theta);
-    }
 };
 
 }  // namespace CuSnContamination
+
+REFL_AUTO(type(CuSnContamination::CuSnContaminationAlg), field(m_hist))
