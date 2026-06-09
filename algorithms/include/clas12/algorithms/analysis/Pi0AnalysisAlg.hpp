@@ -62,6 +62,10 @@ namespace algorithms {
 using framework::Log;
 
 struct Pi0AnalysisConfig {
+    // Target event-mixing depth N: each event is mixed against the up-to-N most
+    // recent events in its (Q^2, x_B, mult) pool bin (FIFO). Once a bin holds N
+    // events every later event mixes against exactly N; finalize lists any bin
+    // that never reached N. Larger N => smoother background, more memory.
     int max_pool_events = 50;
 
     std::vector<double> Q2_edges  = {1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 11.0};
@@ -255,7 +259,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::info(name(), "Beam energy: {} GeV", m_config.beam_energy);
-        Log::info(name(), "Max pool events: {}", m_config.max_pool_events);
+        Log::info(name(), "Event-mixing depth N (max_pool_events): {}", m_config.max_pool_events);
 
         // Load the adaptive 4D binning tree (if configured) up front so every
         // subsequent total_mult_4D_bins() — the init log below + the 4D
@@ -312,11 +316,9 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                       m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1,
                       m_config.z_mix_edges.size() - 1, m_config.pT_mix_edges.size() - 1, total_mix_4D_bins());
         }
-        Log::info(name(), "Pool bins (Q2 x xB x W x mult x nu): {} x {} x {} x {} x {} = {}",
-                  m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1,
-                  m_config.W_edges.size() - 1, N_MULT_BINS, m_config.nu_edges.size() - 1,
-                  (m_config.Q2_edges.size() - 1) * (m_config.xB_edges.size() - 1) *
-                      (m_config.W_edges.size() - 1) * N_MULT_BINS * (m_config.nu_edges.size() - 1));
+        Log::info(name(), "Pool bins (Q2 x xB x mult): {} x {} x {} = {}",
+                  m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1, N_MULT_BINS,
+                  (m_config.Q2_edges.size() - 1) * (m_config.xB_edges.size() - 1) * N_MULT_BINS);
 
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Has DIS Electron");
@@ -412,6 +414,9 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         size_t max_occupancy = 0;
         size_t total_photons = 0;
         size_t max_photons = 0;
+        // Pool bins that never reached the target mixing depth N (= max_pool_events):
+        // their mixed background was built from fewer than N partner events.
+        std::vector<std::pair<int, size_t>> underfilled;  // (pool bin, depth)
         for (auto& shard : m_pool_shards) {
             std::shared_lock lock(shard.mutex);
             for (const auto& [bin, pool] : shard.pools) {
@@ -421,6 +426,8 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                 max_occupancy = std::max(max_occupancy, pool.event_sizes.size());
                 total_photons += pool.photons.size();
                 max_photons = std::max(max_photons, pool.photons.size());
+                if (static_cast<int>(pool.event_sizes.size()) < m_config.max_pool_events)
+                    underfilled.emplace_back(bin, pool.event_sizes.size());
             }
         }
         double avg_occupancy = bins_used > 0 ? static_cast<double>(total_stored) / bins_used : 0.0;
@@ -430,6 +437,34 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         Log::info(name(), "Avg event occupancy: {:.1f}", avg_occupancy);
         Log::info(name(), "Max event occupancy: {}", max_occupancy);
         Log::info(name(), "Max photon pool size: {}", max_photons);
+        // Flag every pool bin that did NOT reach the target mixing depth N: those
+        // bins mixed against fewer than N partner events, so their mixed-event
+        // background is shallower (still usable after the sideband normalization,
+        // but worth knowing offline). N = max_pool_events.
+        if (!underfilled.empty()) {
+            std::sort(underfilled.begin(), underfilled.end());
+            Log::warning(name(),
+                         "{} of {} pool bins below the target mixing depth N={}:",
+                         underfilled.size(), bins_used, m_config.max_pool_events);
+            const int n_xB = static_cast<int>(m_config.xB_edges.size() - 1);
+            for (const auto& [bin, depth] : underfilled) {
+                const int im = bin % N_MULT_BINS;
+                const int qx = bin / N_MULT_BINS;
+                const int ix = qx % n_xB;
+                const int iq = qx / n_xB;
+                const std::string mult =
+                    (im == N_MULT_BINS - 1) ? fmt::format(">={}", N_MULT_BINS)
+                                            : std::to_string(im + 1);
+                Log::info(name(),
+                          "  Q2[{:.2f},{:.2f}) xB[{:.3f},{:.3f}) mult={:<3} : {}/{} events",
+                          m_config.Q2_edges[iq], m_config.Q2_edges[iq + 1],
+                          m_config.xB_edges[ix], m_config.xB_edges[ix + 1],
+                          mult, depth, m_config.max_pool_events);
+            }
+        } else if (bins_used > 0) {
+            Log::info(name(), "All {} pool bins reached the target mixing depth N={}.",
+                      bins_used, m_config.max_pool_events);
+        }
         Log::info(name(), "Offline normalization: scale mixed to same in sideband [{:.2f}, {:.2f}] GeV", SIDEBAND_LOW, SIDEBAND_HIGH);
         Log::info(name(), "Offline fit region: [{:.2f}, {:.2f}] GeV", FIT_RANGE_LOW, FIT_RANGE_HIGH);
         if (m_ntuple) Log::info(name(), "N-tuple 'pi0_pairs' has {} entries", m_ntuple->get_entries("pi0_pairs"));
@@ -906,17 +941,17 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         return static_cast<int>(n_photons) - 1;
     }
 
-    auto find_pool_bin(double Q2, double xB, double W, size_t n_photons, double nu) const -> int {
-        int iq  = find_1d_bin(Q2, m_config.Q2_edges);
-        int ix  = find_1d_bin(xB, m_config.xB_edges);
-        int iw  = find_1d_bin(W,  m_config.W_edges);
-        int im  = find_multiplicity_bin(n_photons);
-        int inu = find_1d_bin(nu, m_config.nu_edges);
-        if (iq < 0 || ix < 0 || iw < 0 || im < 0 || inu < 0) return -1;
+    // Event-mixing pool key: the SAME (Q^2, x_B) kinematic bins as the
+    // multiplicity ratio, plus photon multiplicity so mixed partners share the
+    // pair combinatorics. W and nu are dropped (largely redundant with Q^2/x_B);
+    // fewer pool dimensions => bins fill to the target depth faster.
+    auto find_pool_bin(double Q2, double xB, size_t n_photons) const -> int {
+        int iq = find_1d_bin(Q2, m_config.Q2_edges);
+        int ix = find_1d_bin(xB, m_config.xB_edges);
+        int im = find_multiplicity_bin(n_photons);
+        if (iq < 0 || ix < 0 || im < 0) return -1;
         int n_xB = static_cast<int>(m_config.xB_edges.size() - 1);
-        int n_W  = static_cast<int>(m_config.W_edges.size() - 1);
-        int n_nu = static_cast<int>(m_config.nu_edges.size() - 1);
-        return (((iq * n_xB + ix) * n_W + iw) * N_MULT_BINS + im) * n_nu + inu;
+        return (iq * n_xB + ix) * N_MULT_BINS + im;
     }
 
     auto find_mix_4d_bin(double Q2, double xB, double z, double pT) const -> int {
@@ -1098,7 +1133,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
 
         const auto& photons = *photons_opt;
         const int n_photons = static_cast<int>(photons.size());
-        const int pool_bin = find_pool_bin(Q2, xB, W, photons.size(), nu);
+        const int pool_bin = find_pool_bin(Q2, xB, photons.size());
 
         // Cache the kinematic snapshots once per event, plus the e-γ
         // angle precheck for each current-event photon. Same-event pairs
