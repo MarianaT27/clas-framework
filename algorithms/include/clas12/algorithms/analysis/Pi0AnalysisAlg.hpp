@@ -998,6 +998,11 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         if (!pi0_opt || pi0_opt->empty()) return;
         m_cutflow.pass("Has Pi0");
 
+        // "z in range" is an EVENT-level cutflow row (counted once per event, on
+        // the first in-range pi0) so it stays consistent with the per-event rows
+        // above it -- counting it per-pi0 made an N-pi0 event add N, pushing the
+        // row above 100%. The per-pi0 z cut still gates every histogram fill below.
+        bool z_in_range_counted = false;
         for (const auto& pi0 : *pi0_opt) {
             double E_pi0 = pi0.energy();
             double z = E_pi0 / nu;
@@ -1009,7 +1014,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             double phi_h = std::atan2(p_perp.Dot(y_hat), p_perp.Dot(x_hat)) * 180.0 / M_PI;
 
             if (z <= 0.0 || z >= 1.0) continue;
-            m_cutflow.pass("z in range");
+            if (!z_in_range_counted) { m_cutflow.pass("z in range"); z_in_range_counted = true; }
 
             // Equal-stat binning sample: the (Q2, xB, z, pT2) tuple sampled
             // once per pi0 candidate — i.e. the exact population the 8x7x10x8
