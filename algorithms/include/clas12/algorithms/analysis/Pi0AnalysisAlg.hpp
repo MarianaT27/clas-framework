@@ -103,7 +103,16 @@ struct Pi0AnalysisConfig {
     //     offline interpretation.
     std::string adaptive_binning_output = "pi0_adaptive_binning.txt";
     std::string adaptive_binning_file   = "";   // empty => product grid
-    int         adaptive_target_bins    = 1000; // multiplicity 4D leaves 
+    int         adaptive_target_bins    = 1000; // multiplicity 4D leaves (free split)
+    // STRATIFIED multiplicity 4D tree (default): split Q2 then xB then z then pT2
+    // with a fixed count per level, so the leaves form an nQ2 x nxB x nz x npT2
+    // grid (every (Q2,xB,z) cell carries mult_npT2 pT2 bins, every (Q2,xB) cell
+    // mult_nz x mult_npT2 bins, ...). Set any to 0 to fall back to the free
+    // adaptive_target_bins split. Shared with the event-mixing bins.
+    int         mult_nQ2  = 8;   // Q2 bins
+    int         mult_nxB  = 8;   // xB bins
+    int         mult_nz   = 5;   // z  bins per (Q2,xB) cell
+    int         mult_npT2 = 5;   // pT2 bins per (Q2,xB,z) cell
 
     // pT-broadening 3D (Q2, xB, z) kd-tree: pT is the measured quantity, so it
     // is integrated within each leaf (binned in 3D, not the 4D tree that splits pT2).
@@ -147,6 +156,10 @@ struct Pi0AnalysisConfig {
             framework::field("adaptive_binning_output", &T::adaptive_binning_output),
             framework::field("adaptive_binning_file",   &T::adaptive_binning_file),
             framework::field("adaptive_target_bins",    &T::adaptive_target_bins),
+            framework::field("mult_nQ2",                &T::mult_nQ2),
+            framework::field("mult_nxB",                &T::mult_nxB),
+            framework::field("mult_nz",                 &T::mult_nz),
+            framework::field("mult_npT2",               &T::mult_npT2),
             framework::field("pT_binning_output",  &T::pT_binning_output),
             framework::field("pT_binning_file",    &T::pT_binning_file),
             framework::field("pT_target_bins",     &T::pT_target_bins),
@@ -546,8 +559,16 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         const int mult_target = (m_config.adaptive_target_bins > 0)
                                     ? m_config.adaptive_target_bins
                                     : product_mult_4D_bins();
+        // Stratified (Q2 x xB x z x pT2) by default so the multiplicity (and the
+        // shared event-mixing) leaves form a fixed grid; 0 on any count falls
+        // back to the free mult_target split.
+        const std::array<int, 4> mult_strat = {{m_config.mult_nQ2, m_config.mult_nxB,
+                                                 m_config.mult_nz, m_config.mult_npT2}};
+        const bool mult_use_strat = m_config.mult_nQ2 > 0 && m_config.mult_nxB > 0 &&
+                                    m_config.mult_nz > 0 && m_config.mult_npT2 > 0;
         build_and_write_tree<4>(rows, mult_target, m_config.adaptive_binning_output,
-                                {{"Q2", "xB", "z", "pT2"}}, "multiplicity");
+                                {{"Q2", "xB", "z", "pT2"}}, "multiplicity",
+                                mult_use_strat ? &mult_strat : nullptr);
         build_and_write_tree<4>(rows, m_config.phi_target_bins, m_config.phi_binning_output,
                                 {{"Q2", "xB", "z", "pT2"}}, "azimuthal");
         std::vector<std::array<double, 3>> rows3d;
