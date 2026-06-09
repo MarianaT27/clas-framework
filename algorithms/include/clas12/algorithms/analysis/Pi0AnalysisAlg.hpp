@@ -818,6 +818,11 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     framework::H2<> h_z_vs_Q2{mh::regular(0, 12, 100), mh::regular(0, 1, 100)};
     framework::H2<> h_z_vs_pT2{mh::regular(0, 2, 100), mh::regular(0, 1, 100)};
     framework::H2<> h_pT2_vs_Q2{mh::regular(0, 12, 100), mh::regular(0, 2, 100)};
+    // Fine (x_B, Q^2) density of the binned pi0 candidates, written to
+    // /DIS/Q2_vs_xB as the smooth background for the adaptive-binning tiling
+    // plot (the coarse /Pi0Multiplicity/norm/n_DIS_Q2_vs_xB is the ratio
+    // denominator on the physics edges, too blocky for that overlay).
+    framework::H2<> h_Q2_vs_xB{mh::regular(0, 1, 100), mh::regular(0, 12, 100)};
 
     std::vector<std::unique_ptr<framework::H1<>>> h_z_Q2bin;
     std::vector<std::unique_ptr<framework::H1<>>> h_pT2_Q2bin;
@@ -1034,6 +1039,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             h_z_vs_Q2.fill(Q2, z);
             h_z_vs_pT2.fill(pT2, z);
             h_pT2_vs_Q2.fill(Q2, pT2);
+            h_Q2_vs_xB.fill(xB, Q2);
 
             int iz   = find_1d_bin(z,   m_config.z_edges);
             int ipT2 = find_1d_bin(pT2, m_config.pT2_edges);
@@ -1309,6 +1315,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         svc->register_hist(mult_dir + "/z_vs_Q2",  "z vs Q^{2};Q^{2} [GeV^{2}];z", h_z_vs_Q2);
         svc->register_hist(mult_dir + "/z_vs_pT2", "z vs p_{T}^{2};p_{T}^{2} [GeV^{2}];z", h_z_vs_pT2);
         svc->register_hist(mult_dir + "/pT2_vs_Q2","p_{T}^{2} vs Q^{2};Q^{2} [GeV^{2}];p_{T}^{2} [GeV^{2}]", h_pT2_vs_Q2);
+        svc->register_hist("/DIS/Q2_vs_xB", "DIS Q^{2} vs x_{B} (per #pi^{0});x_{B};Q^{2} [GeV^{2}]", h_Q2_vs_xB);
 
         h_z_Q2bin.resize(m_config.Q2_edges.size() - 1);
         h_pT2_Q2bin.resize(m_config.Q2_edges.size() - 1);
