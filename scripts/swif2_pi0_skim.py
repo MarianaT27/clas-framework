@@ -2,44 +2,50 @@
 """
 Generate (and optionally submit) a SWIF2 workflow that runs the pi0 skim over a
 list of /mss HIPO files on the JLab batch farm, copying each slim skim back to
-/volatile.
+/volatile, organized one subdirectory per run.
 
-For each chunk of `--files-per-job` input files it emits one `swif2 add-job` that:
+For each chunk of `--files-per-job` input files FROM THE SAME RUN it emits one
+`swif2 add-job` that:
   * stages the /mss files onto the worker node as input_0.hipo, input_1.hipo, ...
     (SWIF2 -input routes /mss paths through the tape system automatically),
   * runs `pi0_multiplicity_skim --input <staged,...> --hipo-output result.hipo`
-    via a shared `wrapper.sh` (module loads + the skim command; the runner's
-    --input takes the comma-separated list the wrapper builds by globbing the
-    staged files),
-  * copies `result.hipo` back to <output-dir>/<stem>.hipo (named from the first
-    file in the chunk) and the log to <output-dir>/logs/ (SWIF2 -output).
+    via a shared `wrapper.sh` (module loads + the skim; the runner's --input takes
+    the comma-separated list the wrapper builds by globbing the staged files),
+  * copies `result.hipo` back to <output-dir>/<run>/<stem>.hipo and the log to
+    <output-dir>/logs/ (SWIF2 -output).
+
+The run number is parsed from each filename (`rec_clas_<run>.evio...`, falling
+back to a numeric parent directory). The generated script creates every
+<output-dir>/<run>/ subdirectory before submitting.
 
 Inputs come from a plain text list (one path per line, '#' comments ignored) such
 as `ld2_files.dat`. This complements the general `./build/tools/batch` tool,
-which targets .root analyses (directory/array inputs, single .root output); the
-skim needs a file list and the .hipo output, which is what this script handles.
+which targets .root analyses; the skim needs a file list and the .hipo output.
 
 Run from the repository root ON the JLab login node (ifarm). Dry-run by default:
 it writes `batch_scripts/<workflow>.swif2.sh` + `wrapper.sh` and prints a summary;
-add --submit to actually run the generated script.
+add --submit to actually run it.
 
 Examples:
     python scripts/swif2_pi0_skim.py ld2_files.dat --module gcc/13.2.0 root/6.36.04
     python scripts/swif2_pi0_skim.py ld2_files.dat --files-per-job 10 --disk 60G --time 8:00:00
-    python scripts/swif2_pi0_skim.py ld2_files.dat --max-jobs 2          # tiny dry-run
-    python scripts/swif2_pi0_skim.py ld2_files.dat --submit
+    python scripts/swif2_pi0_skim.py ld2_files.dat --debug --module ...      # 10 jobs, priority
+    python scripts/swif2_pi0_skim.py ld2_files.dat --module ... --submit
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 import shlex
 import stat
 import subprocess
 import sys
+from collections import OrderedDict
 from pathlib import Path
 
 REPO = Path.cwd()
+RUN_RE = re.compile(r"(?:rec_clas|clas)_(\d+)")
 
 
 def read_file_list(path: Path) -> list[str]:
@@ -57,6 +63,16 @@ def stem_of(mss_path: str) -> str:
         if name.endswith(ext):
             name = name[: -len(ext)]
     return name
+
+
+def run_of(mss_path: str) -> str:
+    """Run number for the per-run output subdirectory: from the filename, else a
+    numeric parent directory, else 'misc'."""
+    m = RUN_RE.search(Path(mss_path).name)
+    if m:
+        return m.group(1)
+    parent = Path(mss_path).parent.name
+    return parent if parent.isdigit() else "misc"
 
 
 def wrapper_text(exe: str, config: str, modules: list[str], setup: str) -> str:
@@ -78,9 +94,9 @@ def wrapper_text(exe: str, config: str, modules: list[str], setup: str) -> str:
     return "\n".join(lines)
 
 
-def add_job_block(args, idx: int, chunk: list[str], wrapper_abs: str) -> tuple[str, str]:
+def add_job_block(args, idx: int, run: str, chunk: list[str], wrapper_abs: str) -> str:
     job = f"{args.workflow}_job_{idx}"
-    out_hipo = f"{args.output_dir.rstrip('/')}/{stem_of(chunk[0])}.hipo"
+    out_hipo = f"{args.output_dir.rstrip('/')}/{run}/{stem_of(chunk[0])}.hipo"
     out_log = f"{args.output_dir.rstrip('/')}/logs/{job}.log"
     parts = [
         "swif2 add-job",
@@ -103,7 +119,7 @@ def add_job_block(args, idx: int, chunk: list[str], wrapper_abs: str) -> tuple[s
         f"-output log.txt {shlex.quote(out_log)}",
         "bash wrapper.sh",
     ]
-    return " \\\n    ".join(parts), out_hipo
+    return " \\\n    ".join(parts)
 
 
 def main() -> None:
@@ -112,9 +128,11 @@ def main() -> None:
     ap.add_argument("file_list", help="text file, one /mss HIPO path per line (e.g. ld2_files.dat)")
     ap.add_argument("--workflow", default="pi0_skim_ld2", help="SWIF2 workflow name (default: %(default)s)")
     ap.add_argument("--output-dir", default="/volatile/clas12/ouillon/pi0_skim_LD2",
-                    help="where the slim skims + logs land (default: %(default)s)")
+                    help="output root; skims land in <output-dir>/<run>/<stem>.hipo (default: %(default)s)")
     ap.add_argument("--files-per-job", type=int, default=1,
-                    help="input files chained per job (default: %(default)s; bump to cut job count)")
+                    help="input files chained per job, within one run (default: %(default)s)")
+    ap.add_argument("--debug", action="store_true",
+                    help="quick test: 10 jobs, 1 file/job, partition 'priority'")
     ap.add_argument("--exe", default=str(REPO / "build/analyses/pi0_multiplicity_skim"),
                     help="skim executable, absolute (default: %(default)s)")
     ap.add_argument("--config", default=str(REPO / "config/pi0_multiplicity_skim.toml"),
@@ -136,16 +154,34 @@ def main() -> None:
     ap.add_argument("--submit", action="store_true", help="run the generated swif2 script (default: just write it)")
     args = ap.parse_args()
 
+    if args.debug:
+        args.files_per_job = 1
+        args.max_jobs = 10
+        args.partition = "priority"
+
     flist = Path(args.file_list)
     if not flist.exists():
         sys.exit(f"error: file list '{flist}' not found.")
     files = read_file_list(flist)
     if not files:
         sys.exit(f"error: no input paths in '{flist}'.")
+
+    # Group by run (preserving order), then chunk within each run so a job never
+    # mixes runs and every output lands in its run's subdirectory.
+    by_run: "OrderedDict[str, list[str]]" = OrderedDict()
+    for f in files:
+        by_run.setdefault(run_of(f), []).append(f)
     fpj = max(1, args.files_per_job)
-    chunks = [files[i:i + fpj] for i in range(0, len(files), fpj)]
+    chunks = []  # (run, [files])
+    for run, rfiles in by_run.items():
+        for i in range(0, len(rfiles), fpj):
+            chunks.append((run, rfiles[i:i + fpj]))
     if args.max_jobs > 0:
         chunks = chunks[: args.max_jobs]
+    if not chunks:
+        sys.exit("error: nothing to do.")
+    runs = list(OrderedDict.fromkeys(run for run, _ in chunks))
+
     if not args.submit and not Path(args.exe).exists():
         print(f"note: skim exe '{args.exe}' not found locally (fine if you build before --submit).")
 
@@ -157,16 +193,23 @@ def main() -> None:
     wrapper_path.write_text(wrapper_text(args.exe, args.config, args.module, args.setup))
     wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IEXEC)
 
-    blocks = []
-    for idx, chunk in enumerate(chunks):
-        block, _out = add_job_block(args, idx, chunk, str(wrapper_path))
-        blocks.append(f"# job {idx}: {len(chunk)} file(s), first = {chunk[0]}\n{block}")
+    blocks = [
+        f"# job {idx}: run {run}, {len(chunk)} file(s), first = {chunk[0]}\n"
+        + add_job_block(args, idx, run, chunk, str(wrapper_path))
+        for idx, (run, chunk) in enumerate(chunks)
+    ]
 
+    out_base = args.output_dir.rstrip("/")
+    run_tokens = " ".join(shlex.quote(r) for r in runs)
     swif2 = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         "",
-        f"mkdir -p {shlex.quote(args.output_dir)} {shlex.quote(args.output_dir.rstrip('/') + '/logs')}",
+        "# Create the output root, the log dir, and one subdirectory per run so",
+        "# SWIF2's -output copies have a valid destination.",
+        f'out_base={shlex.quote(out_base)}',
+        'mkdir -p "$out_base/logs"',
+        f'for r in {run_tokens}; do mkdir -p "$out_base/$r"; done',
         "",
         f"swif2 create -workflow {shlex.quote(args.workflow)}",
         "",
@@ -178,11 +221,11 @@ def main() -> None:
     swif2_path.write_text("\n".join(swif2))
     swif2_path.chmod(swif2_path.stat().st_mode | stat.S_IEXEC)
 
-    print(f"Workflow : {args.workflow}")
-    print(f"Files    : {len(files)}  ->  {len(chunks)} jobs ({fpj} file(s)/job)")
-    print(f"Inputs   : staged from the paths in {flist} (SWIF2 routes /mss via tape)")
-    print(f"Output   : {args.output_dir}/<stem>.hipo  (+ logs/)")
-    print(f"Resources: {args.cores} core, {args.ram} ram, {args.disk} disk, {args.time}")
+    print(f"Workflow : {args.workflow}{'   [DEBUG]' if args.debug else ''}")
+    print(f"Files    : {len(files)} across {len(by_run)} run(s)")
+    print(f"Jobs     : {len(chunks)} ({fpj} file(s)/job, within a run) over {len(runs)} run dir(s)")
+    print(f"Output   : {out_base}/<run>/<stem>.hipo  (+ logs/)")
+    print(f"Resources: {args.cores} core, {args.ram} ram, {args.disk} disk, {args.time}, partition '{args.partition}'")
     print(f"Wrapper  : {wrapper_path}")
     print(f"Script   : {swif2_path}")
     if not args.module:
