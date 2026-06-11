@@ -159,11 +159,15 @@ def add_job_block(args, idx: int, run: str, chunk: list[str], wrapper_abs: str) 
         parts.append(f"-constraint {shlex.quote(args.constraint)}")
     for j, mss in enumerate(chunk):
         parts.append(f"-input input_{j}.hipo {shlex.quote(mss)}")
+    # Run the wrapper by absolute path rather than SWIF2 -input-staging it: the
+    # compute node reads /work (/w) directly -- that's already how it reaches the
+    # frozen exe/libs/config -- and SWIF2 won't tape-stage a CephFS path like it
+    # does /mss. The wrapper's CWD is still the job dir, so it sees the staged
+    # input_*.hipo and writes result.hipo / log.txt there for the -output copies.
     parts += [
-        f"-input wrapper.sh {shlex.quote(wrapper_abs)}",
         f"-output result.hipo {shlex.quote(out_hipo)}",
         f"-output log.txt {shlex.quote(out_log)}",
-        "bash wrapper.sh",
+        f"bash {shlex.quote(wrapper_abs)}",
     ]
     return " \\\n    ".join(parts)
 
