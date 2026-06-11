@@ -127,7 +127,7 @@ def main() -> None:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("file_list", help="text file, one /mss HIPO path per line (e.g. ld2_files.dat)")
     ap.add_argument("--workflow", default="pi0_skim_ld2", help="SWIF2 workflow name (default: %(default)s)")
-    ap.add_argument("--output-dir", default="/volatile/clas12/ouillon/pi0_skim_LD2",
+    ap.add_argument("-o", "--output-dir", default="/volatile/clas12/ouillon/pi0_skim_LD2",
                     help="output root; skims land in <output-dir>/<run>/<stem>.hipo (default: %(default)s)")
     ap.add_argument("--files-per-job", type=int, default=1,
                     help="input files chained per job, within one run (default: %(default)s)")
