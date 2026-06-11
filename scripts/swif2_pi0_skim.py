@@ -101,8 +101,14 @@ def snapshot_program(exe: str, config: str, build_dir: str, snap_dir: Path):
     shutil.copy2(config, cfg_dst)
     nlibs = 0
     bd = Path(build_dir)
+    seen = set()
     for pat in ("*.so", "*.so.*", "*.dylib"):
         for lib in bd.rglob(pat):
+            # Skip meson's private build dirs (e.g. libclas12.so.p) and any other
+            # non-regular-file match; copy each library basename once.
+            if not lib.is_file() or lib.name in seen:
+                continue
+            seen.add(lib.name)
             shutil.copy2(lib, snap / lib.name)
             nlibs += 1
     return str(exe_dst), str(cfg_dst), str(snap), nlibs
