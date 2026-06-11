@@ -85,13 +85,14 @@ def run_of(mss_path: str) -> str:
     return parent if parent.isdigit() else "misc"
 
 
-def snapshot_program(exe: str, config: str, build_dir: str, snap_dir: Path):
+def snapshot_program(exe: str, config: str, build_dir: str, data_dir: str, snap_dir: Path):
     """Freeze the program so the workflow is immune to later rebuilds: copy the
-    executable, the config, and every user-built shared library from build_dir
-    into snap_dir. The wrapper then runs the copy with LD_LIBRARY_PATH=snap_dir
-    (the binary links libclas12-framework/algorithms/hipo as shared objects, so
-    the libs must be frozen too). Returns (exe_copy, config_copy, snap_dir, nlibs)
-    as absolute paths."""
+    executable, the config, every user-built shared library from build_dir, and
+    the data/ directory into snap_dir. The wrapper then runs the copy with
+    LD_LIBRARY_PATH=snap_dir (the binary links libclas12-framework/algorithms/hipo
+    as shared objects) and symlinks snap_dir/data into the job cwd (the framework
+    opens data/... relative to cwd). Returns (exe, config, snap_dir, nlibs, data)
+    as absolute paths (data is None if data_dir doesn't exist)."""
     snap = snap_dir.resolve()
     snap.mkdir(parents=True, exist_ok=True)
     exe_dst = snap / Path(exe).name
@@ -111,11 +112,15 @@ def snapshot_program(exe: str, config: str, build_dir: str, snap_dir: Path):
             seen.add(lib.name)
             shutil.copy2(lib, snap / lib.name)
             nlibs += 1
-    return str(exe_dst), str(cfg_dst), str(snap), nlibs
+    data_dst = None
+    if data_dir and Path(data_dir).is_dir():
+        data_dst = snap / "data"
+        shutil.copytree(data_dir, data_dst, dirs_exist_ok=True)
+    return str(exe_dst), str(cfg_dst), str(snap), nlibs, (str(data_dst) if data_dst else None)
 
 
 def wrapper_text(exe: str, config: str, modules: list[str], setup: str,
-                 lib_dir: str | None = None) -> str:
+                 lib_dir: str | None = None, data_dir: str | None = None) -> str:
     lines = ["#!/usr/bin/env bash", "set -uo pipefail", ""]
     # --setup runs FIRST so it can `module use <path>` before the module loads
     # (e.g. the clas12 stack: 'source /etc/profile.d/modules.sh; module use ...').
@@ -124,6 +129,9 @@ def wrapper_text(exe: str, config: str, modules: list[str], setup: str,
     lines += [f"module load {m}" for m in modules]
     if lib_dir:
         lines.append(f"export LD_LIBRARY_PATH={shlex.quote(lib_dir)}:${{LD_LIBRARY_PATH:-}}")
+    if data_dir:
+        # The framework opens data/... relative to cwd; surface it in the job dir.
+        lines.append(f"ln -sfn {shlex.quote(data_dir)} data")
     lines += [
         "",
         "# SWIF2 stages this job's files as input_0.hipo, input_1.hipo, ...;",
@@ -196,6 +204,9 @@ def main() -> None:
                     help="where to freeze the program (default: <scripts-dir>/<workflow>_prog)")
     ap.add_argument("--build-dir", default="build",
                     help="build dir to copy shared libraries from for the snapshot (default: %(default)s)")
+    ap.add_argument("--data-dir", default="data",
+                    help="framework data/ dir (params the skim opens as data/...); frozen + symlinked into "
+                         "the job cwd (default: %(default)s)")
     ap.add_argument("--module", nargs="*", default=[], metavar="MOD",
                     help="module(s) to 'module load' in the job (e.g. gcc/13.2.0 root/6.36.04)")
     ap.add_argument("--setup", default="",
@@ -250,16 +261,20 @@ def main() -> None:
     swif2_path = scripts_dir / f"{args.workflow}.swif2.sh"
 
     # Freeze the program so the queued workflow is immune to later rebuilds.
-    exe, config, lib_dir, snap_note = args.exe, args.config, None, ""
+    # data_dir defaults to the live repo data/ (absolute); the snapshot overrides
+    # it with the frozen copy.
+    live_data = str(Path(args.data_dir).resolve()) if Path(args.data_dir).is_dir() else None
+    exe, config, lib_dir, data_dir, snap_note = args.exe, args.config, None, live_data, ""
     if not args.no_snapshot:
         if Path(args.exe).exists() and Path(args.config).exists():
             snap_dir = Path(args.snapshot_dir) if args.snapshot_dir else scripts_dir / f"{args.workflow}_prog"
-            exe, config, lib_dir, nlibs = snapshot_program(args.exe, args.config, args.build_dir, snap_dir)
-            snap_note = f"{lib_dir}  (exe + config + {nlibs} libs)"
+            exe, config, lib_dir, nlibs, data_dir = snapshot_program(
+                args.exe, args.config, args.build_dir, args.data_dir, snap_dir)
+            snap_note = f"{lib_dir}  (exe + config + {nlibs} libs{' + data' if data_dir else ''})"
         else:
             snap_note = "SKIPPED (exe/config not found locally; build first, or this is a remote dry-run)"
 
-    wrapper_path.write_text(wrapper_text(exe, config, args.module, args.setup, lib_dir))
+    wrapper_path.write_text(wrapper_text(exe, config, args.module, args.setup, lib_dir, data_dir))
     wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IEXEC)
 
     blocks = [
