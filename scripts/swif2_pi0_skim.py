@@ -197,7 +197,8 @@ def main() -> None:
     ap.add_argument("--scripts-dir", default="batch_scripts",
                     help="dir for the generated wrapper.sh + swif2 script (default: %(default)s)")
     ap.add_argument("--account", default="clas12")
-    ap.add_argument("--partition", default="production")
+    ap.add_argument("--partition", default="",
+                    help="SWIF2 partition (default: 'priority' with --debug, else 'production')")
     ap.add_argument("--cores", type=int, default=1)
     ap.add_argument("--ram", default="4G")
     ap.add_argument("--disk", default="20G")
@@ -210,7 +211,8 @@ def main() -> None:
     if args.debug:
         args.files_per_job = 1
         args.max_jobs = 10
-        args.partition = "priority"
+    if not args.partition:
+        args.partition = "priority" if args.debug else "production"
 
     flist = Path(args.file_list)
     if not flist.exists():
