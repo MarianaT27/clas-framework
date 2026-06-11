@@ -18,6 +18,15 @@ The run number is parsed from each filename (`rec_clas_<run>.evio...`, falling
 back to a numeric parent directory). The generated script creates every
 <output-dir>/<run>/ subdirectory before submitting.
 
+To decouple a queued workflow from ongoing development, the program is FROZEN at
+generation time: the executable, its user-built shared libraries (the binary
+links libclas12-framework/algorithms/hipo as .so), and the config are copied into
+<scripts-dir>/<workflow>_prog, and the wrapper runs that copy with
+LD_LIBRARY_PATH pointed there. So you can rebuild / switch branches while jobs sit
+in the queue and they still run the program as it was when you submitted. Keep
+that dir until the workflow finishes. Use --no-snapshot to reference the live
+build instead.
+
 Inputs come from a plain text list (one path per line, '#' comments ignored) such
 as `ld2_files.dat`. This complements the general `./build/tools/batch` tool,
 which targets .root analyses; the skim needs a file list and the .hipo output.
@@ -38,6 +47,7 @@ from __future__ import annotations
 import argparse
 import re
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -75,11 +85,37 @@ def run_of(mss_path: str) -> str:
     return parent if parent.isdigit() else "misc"
 
 
-def wrapper_text(exe: str, config: str, modules: list[str], setup: str) -> str:
+def snapshot_program(exe: str, config: str, build_dir: str, snap_dir: Path):
+    """Freeze the program so the workflow is immune to later rebuilds: copy the
+    executable, the config, and every user-built shared library from build_dir
+    into snap_dir. The wrapper then runs the copy with LD_LIBRARY_PATH=snap_dir
+    (the binary links libclas12-framework/algorithms/hipo as shared objects, so
+    the libs must be frozen too). Returns (exe_copy, config_copy, snap_dir, nlibs)
+    as absolute paths."""
+    snap = snap_dir.resolve()
+    snap.mkdir(parents=True, exist_ok=True)
+    exe_dst = snap / Path(exe).name
+    shutil.copy2(exe, exe_dst)
+    exe_dst.chmod(exe_dst.stat().st_mode | stat.S_IEXEC)
+    cfg_dst = snap / Path(config).name
+    shutil.copy2(config, cfg_dst)
+    nlibs = 0
+    bd = Path(build_dir)
+    for pat in ("*.so", "*.so.*", "*.dylib"):
+        for lib in bd.rglob(pat):
+            shutil.copy2(lib, snap / lib.name)
+            nlibs += 1
+    return str(exe_dst), str(cfg_dst), str(snap), nlibs
+
+
+def wrapper_text(exe: str, config: str, modules: list[str], setup: str,
+                 lib_dir: str | None = None) -> str:
     lines = ["#!/usr/bin/env bash", "set -uo pipefail", ""]
     lines += [f"module load {m}" for m in modules]
     if setup:
         lines.append(setup)
+    if lib_dir:
+        lines.append(f"export LD_LIBRARY_PATH={shlex.quote(lib_dir)}:${{LD_LIBRARY_PATH:-}}")
     lines += [
         "",
         "# SWIF2 stages this job's files as input_0.hipo, input_1.hipo, ...;",
@@ -137,6 +173,13 @@ def main() -> None:
                     help="skim executable, absolute (default: %(default)s)")
     ap.add_argument("--config", default=str(REPO / "config/pi0_multiplicity_skim.toml"),
                     help="skim config TOML, absolute (default: %(default)s)")
+    ap.add_argument("--no-snapshot", action="store_true",
+                    help="reference the live exe/config instead of freezing a copy (NOT recommended: a "
+                         "rebuild would change what queued jobs run)")
+    ap.add_argument("--snapshot-dir", default="",
+                    help="where to freeze the program (default: <scripts-dir>/<workflow>_prog)")
+    ap.add_argument("--build-dir", default="build",
+                    help="build dir to copy shared libraries from for the snapshot (default: %(default)s)")
     ap.add_argument("--module", nargs="*", default=[], metavar="MOD",
                     help="module(s) to 'module load' in the job (e.g. gcc/13.2.0 root/6.36.04)")
     ap.add_argument("--setup", default="",
@@ -190,7 +233,17 @@ def main() -> None:
     wrapper_path = (scripts_dir / f"{args.workflow}_wrapper.sh").resolve()
     swif2_path = scripts_dir / f"{args.workflow}.swif2.sh"
 
-    wrapper_path.write_text(wrapper_text(args.exe, args.config, args.module, args.setup))
+    # Freeze the program so the queued workflow is immune to later rebuilds.
+    exe, config, lib_dir, snap_note = args.exe, args.config, None, ""
+    if not args.no_snapshot:
+        if Path(args.exe).exists() and Path(args.config).exists():
+            snap_dir = Path(args.snapshot_dir) if args.snapshot_dir else scripts_dir / f"{args.workflow}_prog"
+            exe, config, lib_dir, nlibs = snapshot_program(args.exe, args.config, args.build_dir, snap_dir)
+            snap_note = f"{lib_dir}  (exe + config + {nlibs} libs)"
+        else:
+            snap_note = "SKIPPED (exe/config not found locally; build first, or this is a remote dry-run)"
+
+    wrapper_path.write_text(wrapper_text(exe, config, args.module, args.setup, lib_dir))
     wrapper_path.chmod(wrapper_path.stat().st_mode | stat.S_IEXEC)
 
     blocks = [
@@ -226,8 +279,11 @@ def main() -> None:
     print(f"Jobs     : {len(chunks)} ({fpj} file(s)/job, within a run) over {len(runs)} run dir(s)")
     print(f"Output   : {out_base}/<run>/<stem>.hipo  (+ logs/)")
     print(f"Resources: {args.cores} core, {args.ram} ram, {args.disk} disk, {args.time}, partition '{args.partition}'")
+    print(f"Program  : {snap_note if snap_note else exe + ' (LIVE -- a rebuild will change queued jobs)'}")
     print(f"Wrapper  : {wrapper_path}")
     print(f"Script   : {swif2_path}")
+    if lib_dir:
+        print(f"           frozen at generation time -- keep this dir until the workflow finishes.")
     if not args.module:
         print("warning: no --module given; the job env may lack ROOT/compiler libs. "
               "Pass --module (e.g. --module gcc/13.2.0 root/6.36.04) or --setup.")
