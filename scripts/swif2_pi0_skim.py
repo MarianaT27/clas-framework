@@ -117,9 +117,11 @@ def snapshot_program(exe: str, config: str, build_dir: str, snap_dir: Path):
 def wrapper_text(exe: str, config: str, modules: list[str], setup: str,
                  lib_dir: str | None = None) -> str:
     lines = ["#!/usr/bin/env bash", "set -uo pipefail", ""]
-    lines += [f"module load {m}" for m in modules]
+    # --setup runs FIRST so it can `module use <path>` before the module loads
+    # (e.g. the clas12 stack: 'source /etc/profile.d/modules.sh; module use ...').
     if setup:
         lines.append(setup)
+    lines += [f"module load {m}" for m in modules]
     if lib_dir:
         lines.append(f"export LD_LIBRARY_PATH={shlex.quote(lib_dir)}:${{LD_LIBRARY_PATH:-}}")
     lines += [
