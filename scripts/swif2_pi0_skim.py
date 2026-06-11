@@ -201,7 +201,7 @@ def main() -> None:
     ap.add_argument("--cores", type=int, default=1)
     ap.add_argument("--ram", default="4G")
     ap.add_argument("--disk", default="20G")
-    ap.add_argument("--time", default="4:00:00")
+    ap.add_argument("--time", default="4h", help="SWIF2 -time duration, e.g. 4h, 8h, 240m (default: %(default)s)")
     ap.add_argument("--constraint", default="", help="optional SWIF2 -constraint (e.g. el9)")
     ap.add_argument("--max-jobs", type=int, default=0, help="cap the number of jobs (0 = all; for testing)")
     ap.add_argument("--submit", action="store_true", help="run the generated swif2 script (default: just write it)")
