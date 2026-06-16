@@ -127,3 +127,17 @@ mult_npT2 = 5
 pT_nQ2 = 8     # Q2 cells
 pT_nxB = 8     # xB cells
 pT_nz  = 5     # z bins per (Q2,xB) cell  (>= 5 for a real z series)
+
+# Azimuthal / BSA (Q2,xB,z,pT2) 4D binning, built during the
+# scan_quantile_binning pass. Deliberately COARSER than the multiplicity grid so
+# each leaf holds enough pi0 to re-bin in phi_h (helicity-resolved). STRATIFIED
+# by default: split Q2 then xB then z then pT2 with a fixed count per level, so
+# every (Q2,xB) cell carries phi_nz x phi_npT2 bins — the structure an
+# A_LU-vs-z / pT2 series per (Q2,xB) needs. (The free phi_target_bins split
+# collapses z/pT2 to <=1 bin per (Q2,xB) box.) Cut positions are data quantiles
+# (equal stats per leaf). 5x5x3x3 = 225 leaves. Set any to 0 to fall back to the
+# free phi_target_bins split.
+phi_nQ2  = 5   # Q2 cells
+phi_nxB  = 5   # xB cells
+phi_nz   = 3   # z bins per (Q2,xB) cell
+phi_npT2 = 3   # pT2 bins per (Q2,xB,z) cell

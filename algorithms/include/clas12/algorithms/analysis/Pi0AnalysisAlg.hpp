@@ -138,6 +138,16 @@ struct Pi0AnalysisConfig {
     std::string phi_binning_output = "pi0_adaptive_binning_phi4d.txt";
     std::string phi_binning_file   = "";
     int         phi_target_bins    = 250;
+    // Stratified (Q2 x xB x z x pT2) by default so every (Q2,xB) cell carries
+    // phi_nz x phi_npT2 bins — the structure an A_LU-vs-z / pT2 series per
+    // (Q2,xB) needs. Unlike the free phi_target_bins split (widest dimension),
+    // which can leave a (Q2,xB) box with <=1 z or pT2 bin. Coarser counts than
+    // the multiplicity grid so each leaf still holds enough pi0 to re-bin in
+    // phi_h. Set any to 0 to fall back to the free phi_target_bins split.
+    int         phi_nQ2  = 5;   // Q2 bins
+    int         phi_nxB  = 5;   // xB bins
+    int         phi_nz   = 3;   // z  bins per (Q2,xB) cell
+    int         phi_npT2 = 3;   // pT2 bins per (Q2,xB,z) cell
     int         phih_n_bins        = 12;   // phi_h sub-bins per leaf, over [-180, 180]
 
     static constexpr auto config_fields() {
@@ -173,6 +183,10 @@ struct Pi0AnalysisConfig {
             framework::field("phi_binning_output", &T::phi_binning_output),
             framework::field("phi_binning_file",   &T::phi_binning_file),
             framework::field("phi_target_bins",    &T::phi_target_bins),
+            framework::field("phi_nQ2",            &T::phi_nQ2),
+            framework::field("phi_nxB",            &T::phi_nxB),
+            framework::field("phi_nz",             &T::phi_nz),
+            framework::field("phi_npT2",           &T::phi_npT2),
             framework::field("phih_n_bins",        &T::phih_n_bins));
     }
 };
@@ -604,8 +618,16 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         build_and_write_tree<4>(rows, mult_target, m_config.adaptive_binning_output,
                                 {{"Q2", "xB", "z", "pT2"}}, "multiplicity",
                                 mult_use_strat ? &mult_strat : nullptr);
+        // Stratified (Q2 x xB x z x pT2) so every (Q2,xB) cell carries
+        // phi_nz x phi_npT2 bins for an A_LU-vs-z / pT2 series; 0 on any count
+        // falls back to the free phi_target_bins split.
+        const std::array<int, 4> phi_strat = {{m_config.phi_nQ2, m_config.phi_nxB,
+                                               m_config.phi_nz, m_config.phi_npT2}};
+        const bool phi_use_strat = m_config.phi_nQ2 > 0 && m_config.phi_nxB > 0 &&
+                                   m_config.phi_nz > 0 && m_config.phi_npT2 > 0;
         build_and_write_tree<4>(rows, m_config.phi_target_bins, m_config.phi_binning_output,
-                                {{"Q2", "xB", "z", "pT2"}}, "azimuthal");
+                                {{"Q2", "xB", "z", "pT2"}}, "azimuthal",
+                                phi_use_strat ? &phi_strat : nullptr);
         std::vector<std::array<double, 3>> rows3d;
         rows3d.reserve(rows.size());
         for (const auto& r : rows) rows3d.push_back({{r[0], r[1], r[2]}});
