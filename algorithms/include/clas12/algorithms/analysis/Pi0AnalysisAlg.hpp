@@ -81,6 +81,13 @@ struct Pi0AnalysisConfig {
     std::vector<double> W_edges      = {2.0, 2.5, 3.0, 3.5, 4.0, 5.0};
     std::vector<double> nu_edges     = {2.0, 4.0, 5.5, 7.0, 9.0, 11.0};
 
+    // "Enhanced" mixing pool binning. In addition to the baseline pool keyed
+    // by (Q^2, x_B, mult), a second pool is keyed by (Q^2, x_B, vertex-z,
+    // electron sector) so the two mixed-event backgrounds can be compared
+    // offline. Only vertex-z needs its own edges here; the sector count is a
+    // detector constant (N_SECTORS).
+    std::vector<double> vz_edges = {-15.0, -5.0, -1.0, 3.0, 7.0};  // 4 vertex-z bins
+
     bool   enable_ntuple = true;
     double beam_energy   = 10.53;
 
@@ -162,6 +169,7 @@ struct Pi0AnalysisConfig {
             framework::field("pT_mix_edges",    &T::pT_mix_edges),
             framework::field("W_edges",         &T::W_edges),
             framework::field("nu_edges",        &T::nu_edges),
+            framework::field("vz_edges",        &T::vz_edges),
             framework::field("enable_ntuple",   &T::enable_ntuple),
             framework::field("beam_energy",     &T::beam_energy),
             framework::field("scan_quantile_binning",   &T::scan_quantile_binning),
@@ -333,6 +341,11 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         Log::info(name(), "Pool bins (Q2 x xB x mult): {} x {} x {} = {}",
                   m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1, N_MULT_BINS,
                   (m_config.Q2_edges.size() - 1) * (m_config.xB_edges.size() - 1) * N_MULT_BINS);
+        Log::info(name(), "Enhanced pool bins (Q2 x xB x vz x sector): {} x {} x {} x {} = {}",
+                  m_config.Q2_edges.size() - 1, m_config.xB_edges.size() - 1,
+                  m_config.vz_edges.size() - 1, N_SECTORS,
+                  (m_config.Q2_edges.size() - 1) * (m_config.xB_edges.size() - 1) *
+                  (m_config.vz_edges.size() - 1) * N_SECTORS);
 
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Has DIS Electron");
@@ -400,6 +413,12 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         const int iQ2 = find_1d_bin(Q2, m_config.Q2_edges);
         const int ixB = find_1d_bin(xB, m_config.xB_edges);
 
+        // Enhanced-pool bin (Q^2, x_B, electron vertex-z, electron sector).
+        // Depends only on the event/electron, so it is computed once here and
+        // handed to process_photon_pairs alongside the multiplicity pool.
+        const int enh_bin = find_enhanced_bin(Q2, xB, electron_opt->vz(),
+                                              phi_to_sector(electron_opt->phi()));
+
         fill_dis_normalization(Q2, xB, iQ2, ixB);
 
         fill_multiplicity_histograms(event, Q2, xB, nu, q_hat, x_hat, y_hat, iQ2, ixB);
@@ -413,7 +432,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         thread_local std::vector<Pi0PairNTupleData> local_rows;
         local_rows.clear();
         process_photon_pairs(event, Q2, xB, nu, W, y, q_hat, x_hat, y_hat,
-                             electron_4v, iQ2, ixB, event_id, helicity, local_rows);
+                             electron_4v, iQ2, ixB, enh_bin, event_id, helicity, local_rows);
 
         flush_rows_to_ntuple(local_rows);
 
@@ -479,6 +498,27 @@ class Pi0AnalysisAlg : public framework::Algorithm {
             Log::info(name(), "All {} pool bins reached the target mixing depth N={}.",
                       bins_used, m_config.max_pool_events);
         }
+
+        // Enhanced pool (Q^2, x_B, vertex-z, sector) summary — a compact
+        // counterpart to the baseline pool stats above, for comparing how the
+        // finer keying spreads the same events across more (shallower) bins.
+        {
+            size_t enh_stored = 0, enh_bins = 0, enh_max = 0, enh_photons = 0;
+            for (auto& shard : m_enhanced_pool_shards) {
+                std::shared_lock lock(shard.mutex);
+                for (const auto& [bin, pool] : shard.pools) {
+                    if (pool.event_sizes.empty()) continue;
+                    enh_bins++;
+                    enh_stored += pool.event_sizes.size();
+                    enh_max = std::max(enh_max, pool.event_sizes.size());
+                    enh_photons += pool.photons.size();
+                }
+            }
+            const double enh_avg = enh_bins > 0 ? static_cast<double>(enh_stored) / enh_bins : 0.0;
+            Log::info(name(), "Enhanced pool bins used: {} (events {}, photons {}, avg occ {:.1f}, max occ {})",
+                      enh_bins, enh_stored, enh_photons, enh_avg, enh_max);
+        }
+
         Log::info(name(), "Offline normalization: scale mixed to same in sideband [{:.2f}, {:.2f}] GeV", SIDEBAND_LOW, SIDEBAND_HIGH);
         Log::info(name(), "Offline fit region: [{:.2f}, {:.2f}] GeV", FIT_RANGE_LOW, FIT_RANGE_HIGH);
         if (m_ntuple) Log::info(name(), "N-tuple 'pi0_pairs' has {} entries", m_ntuple->get_entries("pi0_pairs"));
@@ -837,7 +877,20 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         return m_pool_shards[static_cast<unsigned>(bin) % static_cast<unsigned>(N_POOL_SHARDS)];
     }
 
+    // Second, "enhanced" photon pool, keyed by (Q^2, x_B, vertex-z, electron
+    // sector) instead of (Q^2, x_B, mult). Maintained in parallel with the
+    // baseline pool above (same sharding scheme, its own mutexes) so its
+    // mixed-event background can be compared against the baseline offline.
+    std::array<PoolShard, N_POOL_SHARDS> m_enhanced_pool_shards;
+    [[nodiscard]] auto enhanced_pool_shard_for(int bin) noexcept -> PoolShard& {
+        return m_enhanced_pool_shards[static_cast<unsigned>(bin) % static_cast<unsigned>(N_POOL_SHARDS)];
+    }
+    [[nodiscard]] auto enhanced_pool_shard_for(int bin) const noexcept -> const PoolShard& {
+        return m_enhanced_pool_shards[static_cast<unsigned>(bin) % static_cast<unsigned>(N_POOL_SHARDS)];
+    }
+
     static constexpr int N_MULT_BINS = 4;
+    static constexpr int N_SECTORS   = 6;  // CLAS12 forward detector sectors 1-6
 
     // -------- Constants -------------------------------------------------------
     static constexpr double SIDEBAND_LOW   = 0.19;
@@ -899,6 +952,10 @@ class Pi0AnalysisAlg : public framework::Algorithm {
     framework::H1<> h_mgg_mixed_all{mh::regular(0.0, 0.3, 200)};
     std::map<int, std::unique_ptr<framework::H1<>>> h_mgg_same;
     std::map<int, std::unique_ptr<framework::H1<>>> h_mgg_mixed;
+    // Enhanced-pool mixed-event spectra, on the same 4D mixing bins as the
+    // baseline mixed histograms above but filled from m_enhanced_pool_shards.
+    framework::H1<> h_mgg_mixed_enhanced_all{mh::regular(0.0, 0.3, 200)};
+    std::map<int, std::unique_ptr<framework::H1<>>> h_mgg_mixed_enhanced;
 
     // -------- Helpers ---------------------------------------------------------
     static auto min_photon_opening_angle(double momentum) -> double {
@@ -974,6 +1031,28 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         if (iq < 0 || ix < 0 || im < 0) return -1;
         int n_xB = static_cast<int>(m_config.xB_edges.size() - 1);
         return (iq * n_xB + ix) * N_MULT_BINS + im;
+    }
+
+    /// Derive CLAS12 sector (0-5) from azimuthal angle phi (radians, [-pi, pi]).
+    static auto phi_to_sector(double phi_rad) -> int {
+        double phi_deg = phi_rad * 180.0 / M_PI;
+        if (phi_deg < -30.0) phi_deg += 360.0;  // wrap to [-30, 330)
+        int sector = static_cast<int>(phi_deg / 60.0);  // 0-5
+        if (sector < 0) sector = 0;
+        if (sector > 5) sector = 5;
+        return sector;
+    }
+
+    /// Enhanced pool key: (Q^2, x_B, vertex-z, electron sector). Returns -1 when
+    /// any coordinate falls outside its binning (event is not pooled/mixed here).
+    auto find_enhanced_bin(double Q2, double xB, double vz, int sector) const -> int {
+        int iq = find_1d_bin(Q2, m_config.Q2_edges);
+        int ix = find_1d_bin(xB, m_config.xB_edges);
+        int iv = find_1d_bin(vz, m_config.vz_edges);
+        if (iq < 0 || ix < 0 || iv < 0 || sector < 0 || sector >= N_SECTORS) return -1;
+        int n_xB = static_cast<int>(m_config.xB_edges.size() - 1);
+        int n_vz = static_cast<int>(m_config.vz_edges.size() - 1);
+        return ((iq * n_xB + ix) * n_vz + iv) * N_SECTORS + sector;
     }
 
     auto find_mix_4d_bin(double Q2, double xB, double z, double pT) const -> int {
@@ -1145,7 +1224,7 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                               const ROOT::Math::XYZVector& x_hat,
                               const ROOT::Math::XYZVector& y_hat,
                               const ROOT::Math::PxPyPzEVector& electron_4v,
-                              int iQ2, int ixB,
+                              int iQ2, int ixB, int enh_bin,
                               long event_id,
                               int helicity,
                               std::vector<Pi0PairNTupleData>& local_rows) -> void {
@@ -1212,57 +1291,97 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         // photon pool. Histogram-only (no TTree row): the per-pair fill
         // rate here dwarfs every other path. The pool stores photons as
         // pre-computed `PhotonCache`s so the j-loop never reconstructs
-        // a 4-vector that ends up rejected.
+        // a 4-vector that ends up rejected. Two independent pools are
+        // mixed: the baseline (Q^2, x_B, mult) and the enhanced
+        // (Q^2, x_B, vertex-z, sector); each fills its own histograms.
+        bool mixed_any = false;
         if (pool_bin >= 0 && !photons.empty()) {
-            auto& shard = pool_shard_for(pool_bin);
-            std::shared_lock lock(shard.mutex);
-            auto pool_it = shard.pools.find(pool_bin);
-            if (pool_it != shard.pools.end() && !pool_it->second.photons.empty()) {
-                const auto& pool_photons = pool_it->second.photons;
-                for (size_t i = 0; i < photons.size(); ++i) {
-                    if (!current_e_g_ok[i]) continue;
-                    const auto& g1 = current_cache[i];
-                    for (size_t j = 0; j < pool_photons.size(); ++j) {
-                        const auto& g2 = pool_photons[j];
+            mixed_any |= mix_against_pool(pool_shard_for(pool_bin), pool_bin,
+                                          current_cache, current_e_g_ok,
+                                          Q2, xB, nu, q_hat, x_hat, y_hat,
+                                          h_mgg_mixed_all, h_mgg_mixed);
+        }
+        if (enh_bin >= 0 && !photons.empty()) {
+            mix_against_pool(enhanced_pool_shard_for(enh_bin), enh_bin,
+                             current_cache, current_e_g_ok,
+                             Q2, xB, nu, q_hat, x_hat, y_hat,
+                             h_mgg_mixed_enhanced_all, h_mgg_mixed_enhanced);
+        }
+        // Cutflow counts an event once if either pool produced mixed pairs.
+        if (mixed_any) m_cutflow.pass("Mixed-event pairs");
 
-                        const double mass_sq = mgg_squared(g1, g2);
-                        if (mass_sq < MIN_INVARIANT_MASS_SQUARED) continue;
-                        const double momentum = pair_momentum(g1, g2);
-                        const double cos_min_open =
-                            std::cos(min_photon_opening_angle(momentum) * M_PI / 180.0);
-                        if (!angle_exceeds(g1, g2, cos_min_open)) continue;
+        // Pool update: append current event's PhotonCache snapshots to both
+        // pools, evicting oldest FIFO if full. Storing the cache (not the
+        // heavier Particle) makes the mixed-pair iteration purely arithmetic.
+        // The shard lock is held only for the duration of the update on this
+        // bin's shard; other shards stay independently writable.
+        if (pool_bin >= 0 && !photons.empty()) {
+            add_to_pool(pool_shard_for(pool_bin), pool_bin, current_cache, photons.size());
+        }
+        if (enh_bin >= 0 && !photons.empty()) {
+            add_to_pool(enhanced_pool_shard_for(enh_bin), enh_bin, current_cache, photons.size());
+        }
+    }
 
-                        auto pi0_4v = g1.PxPyPzEVector() + g2.PxPyPzEVector();
-                        PairKinematics k = compute_pair_kinematics(pi0_4v, q_hat, x_hat, y_hat, nu);
+    /// Mix the current event's cached photons against one pool bin's stored
+    /// photons, filling the given inclusive + per-4D-bin mixed histograms.
+    /// Shared by the baseline and enhanced pools (they differ only in which
+    /// shard/bin and which histograms they target). Returns true if the bin
+    /// held any partner photons to mix against.
+    auto mix_against_pool(PoolShard& shard, int bin,
+                          const std::vector<PhotonCache>& current_cache,
+                          const std::vector<char>& current_e_g_ok,
+                          double Q2, double xB, double nu,
+                          const ROOT::Math::XYZVector& q_hat,
+                          const ROOT::Math::XYZVector& x_hat,
+                          const ROOT::Math::XYZVector& y_hat,
+                          framework::H1<>& h_incl,
+                          std::map<int, std::unique_ptr<framework::H1<>>>& h_binned) -> bool {
+        std::shared_lock lock(shard.mutex);
+        auto pool_it = shard.pools.find(bin);
+        if (pool_it == shard.pools.end() || pool_it->second.photons.empty()) return false;
+        const auto& pool_photons = pool_it->second.photons;
+        for (size_t i = 0; i < current_cache.size(); ++i) {
+            if (!current_e_g_ok[i]) continue;
+            const auto& g1 = current_cache[i];
+            for (size_t j = 0; j < pool_photons.size(); ++j) {
+                const auto& g2 = pool_photons[j];
 
-                        h_mgg_mixed_all.fill(k.mgg);
-                        int bin_4d = find_mix_4d_bin(Q2, xB, k.z, k.pT);
-                        if (bin_4d >= 0) {
-                            auto it = h_mgg_mixed.find(bin_4d);
-                            if (it != h_mgg_mixed.end()) it->second->fill(k.mgg);
-                        }
-                    }
+                const double mass_sq = mgg_squared(g1, g2);
+                if (mass_sq < MIN_INVARIANT_MASS_SQUARED) continue;
+                const double momentum = pair_momentum(g1, g2);
+                const double cos_min_open =
+                    std::cos(min_photon_opening_angle(momentum) * M_PI / 180.0);
+                if (!angle_exceeds(g1, g2, cos_min_open)) continue;
+
+                auto pi0_4v = g1.PxPyPzEVector() + g2.PxPyPzEVector();
+                PairKinematics k = compute_pair_kinematics(pi0_4v, q_hat, x_hat, y_hat, nu);
+
+                h_incl.fill(k.mgg);
+                int bin_4d = find_mix_4d_bin(Q2, xB, k.z, k.pT);
+                if (bin_4d >= 0) {
+                    auto it = h_binned.find(bin_4d);
+                    if (it != h_binned.end()) it->second->fill(k.mgg);
                 }
-                m_cutflow.pass("Mixed-event pairs");
             }
         }
+        return true;
+    }
 
-        // Pool update: append current event's PhotonCache snapshots,
-        // evict oldest FIFO if full. Storing the cache (not the heavier
-        // Particle) makes the mixed-pair iteration purely arithmetic.
-        // The shard lock is held only for the duration of the update on
-        // this bin's shard; other shards stay independently writable.
-        if (pool_bin >= 0 && !photons.empty()) {
-            auto& shard = pool_shard_for(pool_bin);
-            std::unique_lock lock(shard.mutex);
-            auto& pool = shard.pools[pool_bin];
-            pool.photons.insert(pool.photons.end(), current_cache.begin(), current_cache.end());
-            pool.event_sizes.push_back(photons.size());
-            while (static_cast<int>(pool.event_sizes.size()) > m_config.max_pool_events) {
-                size_t n = pool.event_sizes.front();
-                pool.photons.erase(pool.photons.begin(), pool.photons.begin() + static_cast<ptrdiff_t>(n));
-                pool.event_sizes.pop_front();
-            }
+    /// Append the current event's cached photons to one pool bin, evicting the
+    /// oldest events FIFO once the bin holds more than max_pool_events events.
+    /// Holds the shard's write lock only for the append/evict on that bin.
+    auto add_to_pool(PoolShard& shard, int bin,
+                     const std::vector<PhotonCache>& current_cache,
+                     size_t n_event_photons) -> void {
+        std::unique_lock lock(shard.mutex);
+        auto& pool = shard.pools[bin];
+        pool.photons.insert(pool.photons.end(), current_cache.begin(), current_cache.end());
+        pool.event_sizes.push_back(n_event_photons);
+        while (static_cast<int>(pool.event_sizes.size()) > m_config.max_pool_events) {
+            size_t n = pool.event_sizes.front();
+            pool.photons.erase(pool.photons.begin(), pool.photons.begin() + static_cast<ptrdiff_t>(n));
+            pool.event_sizes.pop_front();
         }
     }
 
@@ -1440,7 +1559,8 @@ class Pi0AnalysisAlg : public framework::Algorithm {
         // -------- Pi0EventMixing directory -----------------------------------
         const std::string mix_dir = "/Pi0EventMixing";
         svc->register_hist(mix_dir + "/mgg_same_all",  "Same-event M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts",  h_mgg_same_all);
-        svc->register_hist(mix_dir + "/mgg_mixed_all", "Mixed-event M_{#gamma#gamma};M_{#gamma#gamma} [GeV/c^{2}];Counts", h_mgg_mixed_all);
+        svc->register_hist(mix_dir + "/mgg_mixed_all", "Mixed-event M_{#gamma#gamma} (baseline);M_{#gamma#gamma} [GeV/c^{2}];Counts", h_mgg_mixed_all);
+        svc->register_hist(mix_dir + "/mgg_mixed_enhanced_all", "Mixed-event M_{#gamma#gamma} (enhanced);M_{#gamma#gamma} [GeV/c^{2}];Counts", h_mgg_mixed_enhanced_all);
 
         // When the adaptive (kd-tree) tree is loaded the mgg spectra are booked
         // per leaf (same equal-occupancy bins as the 4D accumulators); the
@@ -1470,16 +1590,19 @@ class Pi0AnalysisAlg : public framework::Algorithm {
                     m_config.pT_mix_edges[ip], m_config.pT_mix_edges[ip + 1]);
             }
 
-            h_mgg_same[idx]  = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, 200));
-            h_mgg_mixed[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, 200));
+            h_mgg_same[idx]           = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, 200));
+            h_mgg_mixed[idx]          = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, 200));
+            h_mgg_mixed_enhanced[idx] = std::make_unique<framework::H1<>>(mh::regular(0.0, 0.3, 200));
 
             svc->register_hist(fmt::format("{}/same/mgg_same_bin{}",   mix_dir, idx),
                                fmt::format("Same M_{{#gamma#gamma}} {};M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts",  range), *h_mgg_same[idx]);
             svc->register_hist(fmt::format("{}/mixed/mgg_mixed_bin{}", mix_dir, idx),
-                               fmt::format("Mixed M_{{#gamma#gamma}} {};M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts", range), *h_mgg_mixed[idx]);
+                               fmt::format("Mixed M_{{#gamma#gamma}} (baseline) {};M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts", range), *h_mgg_mixed[idx]);
+            svc->register_hist(fmt::format("{}/mixed_enhanced/mgg_mixed_enhanced_bin{}", mix_dir, idx),
+                               fmt::format("Mixed M_{{#gamma#gamma}} (enhanced) {};M_{{#gamma#gamma}} [GeV/c^{{2}}];Counts", range), *h_mgg_mixed_enhanced[idx]);
         }
 
-        Log::info(name(), "Booked {} multiplicity 4D bins + {} mixing 4D bins (same/mixed)",
+        Log::info(name(), "Booked {} multiplicity 4D bins + {} mixing 4D bins (same/mixed/mixed_enhanced)",
                   n4D_mult, n_mix);
     }
 };
