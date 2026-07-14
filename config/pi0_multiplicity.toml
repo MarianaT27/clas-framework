@@ -98,7 +98,7 @@ pi0_mass_window   = 0.2
 min_photon_energy = 0.1
 
 # Merged event-mixing + multiplicity algorithm.
-#   max_pool_events: photon-pool depth per (Q², x_B, W, multiplicity, ν)
+#   max_pool_events: photon-pool depth per (Q², x_B, multiplicity)
 #                    bin used for mixed-event background. Larger →
 #                    smoother background, more memory.
 #   enable_ntuple:   write the `pi0_pairs` flat per-pair RNTuple.
@@ -106,38 +106,24 @@ min_photon_energy = 0.1
 max_pool_events = 50
 enable_ntuple   = true
 
-# Multiplicity-ratio (Q2,xB,z,pT2) 4D binning, built during the
-# scan_quantile_binning pass (shared with the event-mixing bins). STRATIFIED by
-# default: split Q2 then xB then z then pT2 with a fixed count per level, so the
-# leaves form an 8x8x5x5 = 1600 grid (every (Q2,xB,z) cell carries mult_npT2 pT2
-# bins). Set any to 0 to fall back to the free adaptive_target_bins split.
-mult_nQ2  = 8
-mult_nxB  = 8
-mult_nz   = 5
-mult_npT2 = 5
-
-# pT-broadening (Q2,xB,z) binning, built during the scan_quantile_binning pass.
-# STRATIFIED by default: split Q2 then xB then z with a fixed count per level, so
-# every (Q2,xB) cell carries pT_nz z bins — the structure a Delta<pT2>-vs-z
-# series per (Q2,xB) needs. (A free equal-occupancy 3D split collapses z to <=1
-# bin per (Q2,xB) box.) Cut positions are data quantiles (equal stats per leaf);
-# the companion <pT_binning_output>.boxes.csv gives each leaf's (Q2,xB,z) box.
-# Set any of these to 0 to fall back to the free pT_target_bins split. The values
-# below are also the built-in defaults.
-pT_nQ2 = 8     # Q2 cells
-pT_nxB = 8     # xB cells
-pT_nz  = 5     # z bins per (Q2,xB) cell  (>= 5 for a real z series)
-
-# Azimuthal / BSA (Q2,xB,z,pT2) 4D binning, built during the
-# scan_quantile_binning pass. Deliberately COARSER than the multiplicity grid so
-# each leaf holds enough pi0 to re-bin in phi_h (helicity-resolved). STRATIFIED
-# by default: split Q2 then xB then z then pT2 with a fixed count per level, so
-# every (Q2,xB) cell carries phi_nz x phi_npT2 bins — the structure an
-# A_LU-vs-z / pT2 series per (Q2,xB) needs. (The free phi_target_bins split
-# collapses z/pT2 to <=1 bin per (Q2,xB) box.) Cut positions are data quantiles
-# (equal stats per leaf). 5x5x3x3 = 225 leaves. Set any to 0 to fall back to the
-# free phi_target_bins split.
-phi_nQ2  = 5   # Q2 cells
-phi_nxB  = 5   # xB cells
-phi_nz   = 3   # z bins per (Q2,xB) cell
-phi_npT2 = 3   # pT2 bins per (Q2,xB,z) cell
+# Factorized 4D binning: two independent rectangular grids,
+#   Grid A over (Q2, xB)  -> Q2_edges x xB_edges
+#   Grid B over (z, pT2)  -> z_edges x pT2_edges
+# The 4D bin of a pi0 is (A cell) x (B cell); Grid B is the same for every
+# Grid A cell. All histogram groups derive from these two grids:
+#   * multiplicity 4D, same/mixed/enhanced mgg 4D, azimuthal 4D -> A x B
+#   * pT-broadening 3D                                          -> A x (z axis of B)
+# Leave the edges unset to use the built-in defaults, or paste equal-statistics
+# (quantile) edges below.
+#
+# To get equal-statistics edges from data: run once with
+#   scan_quantile_binning = true
+# which samples (Q2, xB, z, pT2) and writes quantile edges to
+#   quantile_binning_output  (default: pi0_equal_stat_binning.toml)
+# as a ready-to-paste [Pi0Analysis] block. Paste the four *_edges arrays here,
+# set scan_quantile_binning = false, and re-run for the real analysis.
+# scan_quantile_binning = false
+# Q2_edges  = [ ... ]
+# xB_edges  = [ ... ]
+# z_edges   = [ ... ]
+# pT2_edges = [ ... ]
