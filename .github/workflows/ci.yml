@@ -49,20 +49,25 @@ jobs:
     container: silkeh/clang:18
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
+      # Must run before actions/checkout: this image ships no git, and
+      # without it checkout silently falls back to a tarball download,
+      # leaving no .git for the merge-base diff below.
       - name: Install dependencies
         run: |
           apt-get update -qq
           apt-get install -y --no-install-recommends git ninja-build meson pkg-config python3
           apt-get install -y --no-install-recommends libeigen3-dev liblz4-dev libfmt-dev
 
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: clang-format
         run: |
           clang-format --version
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git ls-files '*.cpp' '*.hpp' | xargs -r clang-format --dry-run --Werror || true
 
       # ROOT is not in this image; we only need compile_commands.json to
