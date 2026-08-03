@@ -45,7 +45,7 @@ The CLAS12 Analysis Framework is a modern C++20 framework designed to make parti
 
 ```bash
 # Clone the repository
-git clone https://gitlab.com/MathieuOuillon/clas-analysis clas12-framework
+git clone https://github.com/mathieuouillon/clas-framework clas12-framework
 cd clas12-framework
 
 # Configure and build
@@ -206,4 +206,4 @@ meson compile -C build
 
 ## License
 
-MIT License - See [LICENSE](https://gitlab.com/MathieuOuillon/clas-framework/-/blob/main/LICENSE) for details.
+MIT License - See [LICENSE](https://github.com/mathieuouillon/clas-framework/blob/main/LICENSE) for details.

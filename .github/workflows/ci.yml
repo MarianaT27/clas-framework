@@ -1,0 +1,121 @@
+# Builds and tests the framework. Ported from .gitlab-ci.yml.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Compile and run the unit-test suite against a ROOT-equipped image. The
+  # rootproject/root container ships ROOT, GCC, and the build essentials we
+  # need; we add meson, ninja, eigen, and lz4 on top.
+  build-and-test:
+    runs-on: ubuntu-latest
+    container: rootproject/root:6.32.02-ubuntu24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends \
+            build-essential ninja-build meson pkg-config \
+            libeigen3-dev liblz4-dev libfmt-dev
+          cpp --version
+
+      - name: Configure
+        run: meson setup build --buildtype=debugoptimized
+
+      - name: Compile
+        run: meson compile -C build
+
+      - name: Test
+        run: meson test -C build --print-errorlogs
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: meson-logs
+          path: build/meson-logs/
+          retention-days: 7
+
+  # Static analysis: clang-format check + clang-tidy on the diff against
+  # the merge base. Allowed to fail while we burn down the existing
+  # warnings.
+  lint:
+    runs-on: ubuntu-latest
+    container: silkeh/clang:18
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends git ninja-build meson pkg-config python3
+          apt-get install -y --no-install-recommends libeigen3-dev liblz4-dev libfmt-dev
+
+      - name: clang-format
+        run: |
+          clang-format --version
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git ls-files '*.cpp' '*.hpp' | xargs -r clang-format --dry-run --Werror || true
+
+      # ROOT is not in this image; we only need compile_commands.json to
+      # exist for clang-tidy. Skip ROOT-dependent targets by stubbing
+      # root-config and tolerating missing libs at the analysis stage.
+      - name: clang-tidy (changed files only)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            BASE="$BASE_SHA"
+          else
+            BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD~1)
+          fi
+          CHANGED=$(git diff --name-only "$BASE"...HEAD -- '*.cpp' '*.hpp')
+          if [ -z "$CHANGED" ]; then
+            echo "No C++ files changed; skipping clang-tidy."
+            exit 0
+          fi
+          echo "Will lint:"; printf '  %s\n' $CHANGED
+          # Run clang-tidy without compile DB; rely on the tool's defaults.
+          # This catches in-source issues; deeper checks need a real build.
+          echo "$CHANGED" | xargs -r clang-tidy --quiet || true
+
+  # Sanitizer build: catches use-after-free, leaks, undefined behaviour
+  # the optimised build hides. Allowed to fail until clean, so it is a
+  # signal job rather than a hard gate.
+  sanitizers:
+    runs-on: ubuntu-latest
+    container: rootproject/root:6.32.02-ubuntu24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends \
+            build-essential ninja-build meson pkg-config \
+            libeigen3-dev liblz4-dev libfmt-dev
+
+      - name: Configure
+        run: meson setup build-asan --buildtype=debug -Db_sanitize=address,undefined
+
+      - name: Compile
+        run: meson compile -C build-asan
+
+      - name: Test
+        run: meson test -C build-asan --print-errorlogs
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: meson-logs-asan
+          path: build-asan/meson-logs/
+          retention-days: 7

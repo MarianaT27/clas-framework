@@ -26,7 +26,7 @@ Before installing the CLAS12 Analysis Framework, ensure you have the following:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://gitlab.com/MathieuOuillon/clas-analysis clas12-framework
+git clone https://github.com/mathieuouillon/clas-framework clas12-framework
 cd clas12-framework
 ```
 

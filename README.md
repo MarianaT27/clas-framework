@@ -6,9 +6,9 @@
 [![Framework Version](https://img.shields.io/badge/version-2.0-blue)]()
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-orange)]()
 [![License](https://img.shields.io/badge/license-MIT-green)]()
-[![Documentation](https://img.shields.io/badge/docs-GitLab%20Pages-blue)](https://mathieuouillon.gitlab.io/clas-framework)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://mathieuouillon.github.io/clas-framework)
 
-📚 **[Full Documentation](https://mathieuouillon.gitlab.io/clas-framework)** | 📖 **[API Reference](https://mathieuouillon.gitlab.io/clas-framework/api/)**
+📚 **[Full Documentation](https://mathieuouillon.github.io/clas-framework)** | 📖 **[API Reference](https://mathieuouillon.github.io/clas-framework/api/)**
 
 ---
 
@@ -25,7 +25,7 @@
 
 ```bash
 # Clone the repository
-git clone https://gitlab.com/MathieuOuillon/clas-framework.git
+git clone https://github.com/mathieuouillon/clas-framework.git
 cd clas-framework
 
 # Configure build
