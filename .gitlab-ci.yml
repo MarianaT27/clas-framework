@@ -20,7 +20,7 @@ cache:
 # need; we add meson, ninja, eigen, and lz4 on top.
 build-and-test:
   stage: test
-  image: rootproject/root:6.32.02-ubuntu24.04
+  image: rootproject/root:6.36.00-ubuntu25.04
   before_script:
     - apt-get update -qq
     - apt-get install -y --no-install-recommends
@@ -75,7 +75,7 @@ lint:
 # signal job rather than a hard gate.
 sanitizers:
   stage: test
-  image: rootproject/root:6.32.02-ubuntu24.04
+  image: rootproject/root:6.36.00-ubuntu25.04
   before_script:
     - apt-get update -qq
     - apt-get install -y --no-install-recommends
