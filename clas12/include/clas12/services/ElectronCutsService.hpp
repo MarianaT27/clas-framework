@@ -84,7 +84,7 @@ class ElectronCutsService : public Service {
 
     // Momentum Cuts
     static constexpr double HIGH_MOMENTUM_THRESHOLD = 4.5;  // GeV
-    static constexpr double MIN_ELECTRON_MOMENTUM = 2.0;    // GeV
+    static constexpr double MIN_ELECTRON_MOMENTUM = 1.8;    // GeV
 
     // Status Cuts
     static constexpr int MIN_FD_STATUS = 2000;
