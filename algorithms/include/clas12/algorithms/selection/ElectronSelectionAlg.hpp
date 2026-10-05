@@ -18,6 +18,7 @@
 #include <optional>
 #include <type_traits>
 #include <vector>
+#include <cmath>
 
 #include <clas12/Banks.hpp>
 #include <clas12/Detectors.hpp>
@@ -108,18 +109,19 @@ class ElectronSelectionAlg : public ConfigurableAlgorithm<ElectronSelectionConfi
 
         CalorimeterBank calorimeter = electron.calo();
         DCTrajBank traj = electron.traj();
-        const double sampling_fraction = (calorimeter.pcal_energy + calorimeter.inner_energy + calorimeter.outer_energy) / electron.p();
+        auto e = [](float x) { return std::isnan(x) ? 0.0 : static_cast<double>(x); };
+        const double sampling_fraction = (e(calorimeter.pcal_energy) + e(calorimeter.inner_energy) + e(calorimeter.outer_energy)) / electron.p();
         const double vz_corrected = m_electron_cuts->corrected_vz(electron.vz(), electron.p(), electron.theta(), electron.phi(), calorimeter.pcal_sector);
 
         h_before.fill(electron, calorimeter, sampling_fraction, vz_corrected);
 
         const bool kept = 
            m_cutflow.check("Chi2 PID", m_config.enable_chi2pid_cut, [&] { return m_electron_cuts->pass_chi2pid_cut(electron.chi2pid()); })
-        && m_cutflow.check("Momentum > 0.8 GeV", m_config.enable_momentum_cut, [&] { return m_electron_cuts->pass_momentum_cut(electron.p()); }) 
-        && m_cutflow.check("Vertex Z", m_config.enable_vz_cut, [&] { return m_electron_cuts->pass_vz_cut(electron.vz(), electron.p(), electron.theta(), electron.phi(), calorimeter.pcal_sector); }) 
+        && m_cutflow.check("Momentum > 1.8 GeV", m_config.enable_momentum_cut, [&] { return m_electron_cuts->pass_momentum_cut(electron.p()); }) 
         && m_cutflow.check("Sampling Fraction", m_config.enable_sf_cut, [&] { return m_electron_cuts->pass_sampling_fraction_cut(sampling_fraction, electron.p(), calorimeter.pcal_sector); }) 
         && m_cutflow.check("PCAL Fiducial", m_config.enable_pcal_fiducial_cut, [&] { return m_electron_cuts->pass_pcal_fiducial_cut(calorimeter.pcal_lv, calorimeter.pcal_lw); }) 
-        && m_cutflow.check("DC Edge", m_config.enable_dc_edge_cut, [&] { return m_electron_cuts->pass_dc_edge_cut(traj.region1_edge, traj.region2_edge, traj.region3_edge); });
+        && m_cutflow.check("DC Edge", m_config.enable_dc_edge_cut, [&] { return m_electron_cuts->pass_dc_edge_cut(traj.region1_edge, traj.region2_edge, traj.region3_edge); })
+        && m_cutflow.check("Vertex Z", m_config.enable_vz_cut, [&] { return m_electron_cuts->pass_vz_cut(electron.vz(), electron.p(), electron.theta(), electron.phi(), calorimeter.pcal_sector); });
         if (!kept) return StatusCode::FILTERED();
 
         h_after.fill(electron, calorimeter, sampling_fraction, vz_corrected);

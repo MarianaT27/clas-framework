@@ -109,7 +109,7 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         m_cutflow.add_cut("All Events");
         m_cutflow.add_cut("Trigger Electron");
         m_cutflow.add_cut("Chi2 PID");
-        m_cutflow.add_cut("Momentum > 0.8 GeV");
+        m_cutflow.add_cut("Momentum > 1.8 GeV");
         m_cutflow.add_cut("Vertex Z");
         m_cutflow.add_cut("Sampling Fraction");
         m_cutflow.add_cut("PCAL Fiducial");
