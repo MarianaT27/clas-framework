@@ -1,0 +1,35 @@
+# Configuration for the lean `baseline_CuSn_OB` baseline binary.
+#
+# Runs ONLY ElectronSelectionAlg, so its wall time / events-per-second is the
+# full-framework number compared against the chain-only tools/benchmark_electron.
+#
+# Run with:
+#     ./build/analyses/electron_selection --config config/baseline_CuSn_OB.toml
+#
+# tools/compare_electron_benchmark.sh patches [run].input / num_threads /
+# percentage at runtime, so the values here are just sensible defaults.
+
+[run]
+input       = "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/recon/018562/rec_clas_018562.evio.00000-00004.hipo"
+output      = "baseline_CuSn_018562.root"
+num_threads = 8
+percentage  = 100.0
+
+[analysis]
+target      = "CuSn"
+polarity    = "Outbending"
+beam_energy = 10.53
+version     = "2.0"
+
+# Baseline for the Table 5 check: all trigger electrons, no cuts,
+# ntuple on to get the raw momentum spectrum.
+# Run: ./build/analyses/electron_selection --config config/baseline_CuSn_OB.toml
+[ElectronSelection]
+enable_ntuple            = true
+enable_histograms        = true
+enable_chi2pid_cut       = true
+enable_momentum_cut      = true
+enable_vz_cut            = true
+enable_sf_cut            = true
+enable_pcal_fiducial_cut = true
+enable_dc_edge_cut       = true
