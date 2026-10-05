@@ -191,11 +191,6 @@ class Application {
      * @return StatusCode Success or failure
      */
     auto initialize() -> StatusCode {
-        // Initialize services first
-        auto sc = m_svc_mgr.initialize_all();
-        if (sc.is_failure()) {
-            return sc;
-        }
 
         // `m_quiet_mode` historically suppressed LoggingService console
         // output too, but in tools/local_batch's setup the child's
@@ -212,6 +207,14 @@ class Application {
                 Log::set_instance(log);
             }
         }
+        
+        // Initialize services first
+        auto sc = m_svc_mgr.initialize_all();
+        if (sc.is_failure()) {
+            return sc;
+        }
+
+    
 
         Log::info("Application", "═══════════════════════════════════════════════════════════════");
         Log::info("Application", "  Initializing Application: {}", m_name);
