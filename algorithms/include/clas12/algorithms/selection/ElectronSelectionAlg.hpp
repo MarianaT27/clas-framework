@@ -61,9 +61,9 @@ struct ElectronSelectionConfig {
     bool enable_dc_edge_cut = true;
     double pcal_lv_min = 9.0;
     double pcal_lw_min = 9.0;
-    double dc_r1_edge_min = 1.68;
-    double dc_r2_edge_min = 2.0;
-    double dc_r3_edge_min = 8.75;
+    double dc_r1_edge_min = 1.88;
+    double dc_r2_edge_min = 2.08;
+    double dc_r3_edge_min = 8.62;
 };
 
 static_assert(std::is_aggregate_v<ElectronSelectionConfig>, "ElectronSelectionConfig must stay a simple aggregate for PFR reflection");

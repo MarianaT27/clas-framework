@@ -48,9 +48,9 @@ enable_pcal_fiducial_cut = true
 enable_dc_edge_cut       = true
 pcal_lv_min              = 9.0
 pcal_lw_min              = 9.0
-dc_r1_edge_min           = 1.68
-dc_r2_edge_min           = 2.0
-dc_r3_edge_min           = 8.75
+dc_r1_edge_min           = 1.88
+dc_r2_edge_min           = 2.08
+dc_r3_edge_min           = 8.62
 
 # Pion analysis (pi+ / pi-). min_momentum is the active momentum cut
 # applied when enable_momentum_cut = true; min_calo_energy gates the

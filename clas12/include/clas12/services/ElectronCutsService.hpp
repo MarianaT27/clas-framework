@@ -107,9 +107,9 @@ class ElectronCutsService : public Service {
     static constexpr double MAX_CHI2PID = 5.0;
 
     // Drift Chamber Edge Cuts (cm)
-    static constexpr double MIN_EDGE_R1 = 1.680;
-    static constexpr double MIN_EDGE_R2 = 2.0;
-    static constexpr double MIN_EDGE_R3 = 8.750;
+    static constexpr double MIN_EDGE_R1 = 1.88;
+    static constexpr double MIN_EDGE_R2 = 2.08;
+    static constexpr double MIN_EDGE_R3 = 8.62;
 
     // Geometry
     static constexpr std::size_t NUM_SECTORS = 6;

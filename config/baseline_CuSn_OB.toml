@@ -10,8 +10,8 @@
 # percentage at runtime, so the values here are just sensible defaults.
 
 [run]
-input       = "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/recon/018562/rec_clas_018562.evio.00000-00004.hipo"
-output      = "baseline_CuSn_018562.root"
+input       = "/cache/clas12/rg-d/production/pass1/recon/CuSn/dst/recon/018561/rec_clas_018561.evio.00000-00004.hipo"
+output      = "baseline_CuSn_018561.root"
 num_threads = 8
 percentage  = 100.0
 

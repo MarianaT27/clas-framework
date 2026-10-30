@@ -101,6 +101,8 @@ class ElectronAnalysisAlg : public framework::Algorithm {
     auto on_initialize() -> StatusCode override {
         Log::subsection(fmt::format("{} Configuration", name()));
         Log::info(name(), "Initializing algorithm");
+        m_target = m_config.target; m_polarity = m_config.polarity;
+        m_target = m_config.target; m_polarity = m_config.polarity;
         Log::info(name(), "Target: {}, Polarity: {}", m_target, m_polarity);
 
         m_electron_cuts->set_target(m_target);

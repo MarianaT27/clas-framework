@@ -1,0 +1,22 @@
+[run]
+input       = "/cache/clas12/rg-d/production/pass1/recon/LD2/dst/recon/018310/*.evio.000[01]*.hipo"
+output      = "fid_IB.root"
+num_threads = 8
+percentage  = 100.0
+
+[analysis]
+target      = "LD2"
+polarity    = "Inbending"
+beam_energy = 10.54
+version     = "2.0"
+
+[EventMonitor]
+
+[ElectronAnalysis]
+polarity = "Inbending"
+enable_chi2pid_cut       = true
+enable_momentum_cut      = true
+enable_vz_cut            = true
+enable_sf_cut            = true
+enable_pcal_fiducial_cut = false
+enable_dc_chi2ndf_cut    = false
