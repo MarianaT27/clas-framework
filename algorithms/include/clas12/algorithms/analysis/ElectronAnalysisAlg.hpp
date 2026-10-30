@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <memory>
 #include <clas12/Banks.hpp>
 #include <clas12/Detectors.hpp>
@@ -146,7 +147,9 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         can.calorimeter = electron.calo();
         can.traj = electron.traj();
         can.track = electron.track();
-        can.total_energy = can.calorimeter.pcal_energy + can.calorimeter.inner_energy + can.calorimeter.outer_energy;
+        // A calorimeter layer without a hit is NaN in the bank: count it as zero energy (as in ElectronSelectionAlg).
+        can.total_energy = finite_or_zero(can.calorimeter.pcal_energy) + finite_or_zero(can.calorimeter.inner_energy) +
+                           finite_or_zero(can.calorimeter.outer_energy);
         can.sampling_fraction = can.total_energy / electron.p();
         can.sector = can.calorimeter.pcal_sector;
 
@@ -157,7 +160,7 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         if (m_config.enable_cut_stage_histograms) fill_after_cut("Chi2PID", can);
 
         if (m_config.enable_momentum_cut && !m_electron_cuts->pass_momentum_cut(electron.p())) return StatusCode::FILTERED();
-        m_cutflow.pass("Momentum > 0.8 GeV");
+        m_cutflow.pass("Momentum > 1.8 GeV");
         if (m_config.enable_cut_stage_histograms) fill_after_cut("Momentum", can);
 
         if (m_config.enable_vz_cut && !m_electron_cuts->pass_vz_cut(electron.vz())) return StatusCode::FILTERED();
@@ -375,6 +378,11 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         framework::PerSectorHist2D<6> Etot_vs_SF;
         framework::PerSectorHist2D<6> Etot_vs_SF_cut;
         framework::PerSectorHist2D<6> p_vs_SF;
+        framework::PerSectorHist2D<6> EPCal_vs_ECal_sfcut;      // N_phe > 2 and SF vs p cut (note Fig. 3.2b)
+        framework::PerSectorHist1D<6> EPCal_sfcut;              // N_phe > 2 and SF vs p cut (note Fig. 3.3)
+        framework::PerSectorHist2D<6> ECin_SF_vs_PCal_SF;       // E_ECin/p vs E_PCal/p, 5 < p < 6 GeV (note Fig. 3.9)
+        framework::PerSectorHist2D<6> p_vs_SF_pcalfid;          // SF vs p with PCAL v > 9 and w > 9 cm (SF fits)
+        framework::PerSectorHist2D<6> vz_raw_vs_vz_corr;        // raw vs corrected vz, before cuts (note Fig. 3.11)
         framework::PerSectorHist2D<6> lv_vs_SF;
         framework::PerSectorHist2D<6> lw_vs_SF;
         framework::PerSectorHist2D<6> lu_vs_SF_low;
@@ -503,7 +511,7 @@ class ElectronAnalysisAlg : public framework::Algorithm {
     auto book_track_histograms(TrackHistograms& h, const std::string& category) -> void {
         framework::SectorHistogramGroup<6> g(m_hist.get(), fmt::format("/Tracks/{}", category));
 
-        h.nphe = g.add_hist1D("nphe", "Cherenkov nphe;nphe;Tracks", 51, 0, 50);
+        h.nphe = g.add_hist1D("nphe", "Cherenkov nphe;nphe;Tracks", 75, 0, 75);
         h.EPCal_vs_ECal = g.add_hist2D("EPCal_vs_ECal", "E_{PCal} vs E_{Cal};E_{PCal} [GeV];E_{Cal} [GeV]", 200, 0, 0.6, 200, 0, 0.6);
         h.EPCal = g.add_hist1D("EPCal", "E_{PCal};E_{PCal} [GeV];Tracks", 200, 0, 1);
         h.EPCal_vs_ECal_cut = g.add_hist2D("EPCal_vs_ECal_cut", "E_{PCal} vs E_{Cal} (cut);E_{PCal} [GeV];E_{Cal} [GeV]", 200, 0, 0.6, 200, 0, 0.6);
@@ -511,6 +519,11 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         h.Etot_vs_SF = g.add_hist2D("Etot_vs_SF", "E_{tot} vs SF;E_{tot} [GeV];E/p", 200, 0, 2, 200, 0, 0.5);
         h.Etot_vs_SF_cut = g.add_hist2D("Etot_vs_SF_cut", "E_{tot} vs SF (cut);E_{tot} [GeV];E/p", 200, 0, 2, 200, 0, 0.5);
         h.p_vs_SF = g.add_hist2D("p_vs_SF", "p vs SF;p [GeV];E/p", 200, 0, 11, 200, 0, 0.4);
+        h.EPCal_vs_ECal_sfcut = g.add_hist2D("EPCal_vs_ECal_sfcut", "E_{PCal} vs E_{Cal} (nphe > 2, SF cut);E_{PCal} [GeV];E_{Cal} [GeV]", 200, 0, 0.6, 200, 0, 0.6);
+        h.EPCal_sfcut = g.add_hist1D("EPCal_sfcut", "E_{PCal} (nphe > 2, SF cut);E_{PCal} [GeV];Tracks", 200, 0, 1);
+        h.ECin_SF_vs_PCal_SF = g.add_hist2D("ECin_SF_vs_PCal_SF", "E_{ECin}/p vs E_{PCal}/p (5 < p < 6 GeV);E_{PCal}/p;E_{ECin}/p", 175, 0, 0.35, 175, 0, 0.35);
+        h.p_vs_SF_pcalfid = g.add_hist2D("p_vs_SF_pcalfid", "p vs SF (PCAL v > 9, w > 9 cm);p [GeV];E/p", 200, 0, 11, 200, 0, 0.4);
+        h.vz_raw_vs_vz_corr = g.add_hist2D("vz_raw_vs_vz_corr", "raw vs corrected v_{z};v_{z} raw [cm];v_{z} corrected [cm]", 260, -12, 1, 260, -12, 1);
 
         h.edge_vs_theta_r1 = g.add_hist2D("edge_vs_theta_r1", "Edge vs #theta (R1);edge [cm];#theta [deg]", 200, 0, 50, 200, 0, 40);
         h.edge_vs_theta_r2 = g.add_hist2D("edge_vs_theta_r2", "Edge vs #theta (R2);edge [cm];#theta [deg]", 200, 0, 50, 200, 0, 40);
@@ -526,6 +539,9 @@ class ElectronAnalysisAlg : public framework::Algorithm {
         h.lu_vs_SF_low_with_cut = g.add_hist2D("lu_vs_SF_low_with_cut", "lu vs SF with cut (low);lu;E/p", 100, 0, 170, 200, 0, 0.5);
         h.lu_vs_SF_high_with_cut = g.add_hist2D("lu_vs_SF_high_with_cut", "lu vs SF with cut (high);lu;E/p", 100, 350, 450, 200, 0, 0.5);
     }
+
+    /// A calorimeter layer without a hit is NaN in REC::Calorimeter: count it as zero energy.
+    static auto finite_or_zero(double x) -> double { return std::isnan(x) ? 0.0 : x; }
 
     /**
      * @brief Process tracks and fill per-sector histograms
@@ -544,13 +560,17 @@ class ElectronAnalysisAlg : public framework::Algorithm {
             if (sector < 1 || sector > 6) continue;
 
             // Calorimeter quantities
-            const double E_tot = calo.pcal_energy + calo.inner_energy + calo.outer_energy;
+            // A calorimeter layer without a hit is NaN in the bank: count it as zero energy (as in ElectronSelectionAlg).
+            const double E_pcal = finite_or_zero(calo.pcal_energy);
+            const double E_in = finite_or_zero(calo.inner_energy);
+            const double E_cal = E_in + finite_or_zero(calo.outer_energy);
+            const double E_tot = E_pcal + E_cal;
             const double SF = E_tot / track.p();
-            const double E_cal = calo.inner_energy + calo.outer_energy;
-            const double E_pcal = calo.pcal_energy;
             const int nphe = cherenkov.nphe;
 
-            if (E_pcal == 0) continue;  // Should not happen for electrons because of EB cut EPCal > 0.06 GeV
+            // Tested on the bank value, as before, so that tracks without a PCAL hit (NaN) still enter
+            // the non-SF histograms (N_phe, DC edges) exactly as before this change.
+            if (calo.pcal_energy == 0) continue;  // Should not happen for electrons because of EB cut EPCal > 0.06 GeV
 
             // Fill thread-safe calorimeter histograms for this sector
             histograms.nphe.fill(sector, nphe);
@@ -570,6 +590,23 @@ class ElectronAnalysisAlg : public framework::Algorithm {
             if (nphe > EB_MIN_CHERENKOV_NPHE && E_pcal > EB_MIN_PCAL_ENERGY) {
                 histograms.Etot_vs_SF_cut.fill(sector, E_tot, SF);
             }
+            // N_phe > 2 and the analysis SF vs p cut (mu +- n_sigma, IB/OB parameters from the run's polarity)
+            if (nphe > EB_MIN_CHERENKOV_NPHE && m_electron_cuts->pass_sampling_fraction_cut(SF, track.p(), sector)) {
+                histograms.EPCal_vs_ECal_sfcut.fill(sector, E_pcal, E_cal);
+                histograms.EPCal_sfcut.fill(sector, E_pcal);
+            }
+            // Fig. 3.9 of the note: inner-calorimeter vs PCAL sampling fraction in one momentum slice
+            if (track.p() > 5.0 && track.p() < 6.0) {
+                histograms.ECin_SF_vs_PCal_SF.fill(sector, E_pcal / track.p(), E_in / track.p());
+            }
+            // SF vs p with the PCAL fiducial cut only (no SF cut), for the SF parameter fits
+            if (calo.pcal_lv > 9 && calo.pcal_lw > 9) {
+                histograms.p_vs_SF_pcalfid.fill(sector, track.p(), SF);
+            }
+            // Vertex migration (Fig. 3.11): raw vz vs the corrected vz used by the vertex cut, before any cut.
+            // For LD2 (no corrector variant) the corrected value equals the raw one.
+            histograms.vz_raw_vs_vz_corr.fill(sector, track.vz(),
+                m_electron_cuts->corrected_vz(track.vz(), track.p(), track.theta(), track.phi(), sector));
 
             // DC fiducial: edge vs theta for each region
             auto compute_local_theta = [](double x, double y, double z, int sec) {
