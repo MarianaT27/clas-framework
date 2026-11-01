@@ -1,0 +1,11 @@
+=== 2026-10-30 16:55:30  waiting for the IB run to finish
+=== 2026-10-30 18:27:30  LD2 run 018543: 343 files
+    electron_analysis  exit code 0
+    electron_selection exit code 0
+=== 2026-10-30 19:03:29  CxC run 018465: 368 files
+    electron_analysis  exit code 0
+    electron_selection exit code 0
+=== 2026-10-30 19:46:43  CuSn run 018591: 361 files
+    electron_analysis  exit code 0
+    electron_selection exit code 0
+=== 2026-10-30 20:27:17  ALL DONE
