@@ -26,6 +26,14 @@ executable(
   dependencies: analysis_deps,
 )
 
+# Pion selection with cutflow (trigger electron -> DIS -> PionSelectionAlg), the pion
+# counterpart of electron_selection (IB/OB pion cut check).
+executable(
+  'pion_selection',
+  files('pion_selection/pion_selection.cpp'),
+  dependencies: analysis_deps,
+)
+
 # Pi0 reconstruction
 executable(
   'pi0',

@@ -25,6 +25,7 @@
 #include <clas12/framework/services/HistogramService.hpp>
 #include <clas12/framework/services/LoggingService.hpp>
 #include <clas12/framework/services/NTupleService.hpp>
+#include <clas12/services/ElectronCutsService.hpp>
 
 namespace algorithms {
 
@@ -64,7 +65,7 @@ class PionAnalysisAlg : public framework::Algorithm {
 
     explicit PionAnalysisAlg(std::string name = "PionAnalysis", const Config& config = Config{})
         : Algorithm(std::move(name)), m_config(config), m_cutflow_piplus("π⁺ Analysis"), m_cutflow_piminus("π⁻ Analysis") {
-        required_services(m_hist, m_ntuple);
+        required_services(m_hist, m_ntuple, m_electron_cuts);
         declare_banks("REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Traj", "REC::Track", "REC::Scintillator");
         // REC::CovMat (5x5 DC Kalman state cov: x, y, tx, ty, q/p) feeds the
         // slope/angle resolution histograms; optional so files without it
@@ -109,6 +110,15 @@ class PionAnalysisAlg : public framework::Algorithm {
         if (rec_event.rows() == 0) return StatusCode::FILTERED();
 
         const double start_time = rec_event.startTime(0);
+
+        if (!event.pions_plus().empty() || !event.pions_minus().empty()) {
+            const int e_sector = electron.calo().pcal_sector;
+            if (e_sector >= 1 && e_sector <= 6) {
+                h_electron_vz.vz_raw_vs_sector_fine.fill(static_cast<double>(e_sector), electron.vz());
+                h_electron_vz.vz_corr_vs_sector.fill(static_cast<double>(e_sector),
+                    m_electron_cuts->corrected_vz(electron.vz(), electron.p(), electron.theta(), electron.phi(), e_sector));
+            }
+        }
 
         for (const auto& pion : event.pions_plus()) process_pion(event, pion, electron, start_time, true);
         for (const auto& pion : event.pions_minus()) process_pion(event, pion, electron, start_time, false);
@@ -190,6 +200,9 @@ class PionAnalysisAlg : public framework::Algorithm {
 
 framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService> m_ntuple;
+    // Only used for the per-event Vz correction (ElectronCutsService::corrected_vz), so the
+    // pion vertex can be compared with the corrected-Vz windows of the common note (Table 8).
+    framework::ServiceRef<framework::ElectronCutsService> m_electron_cuts;
 
     struct PionCandidate {
         Particle pion;
@@ -278,6 +291,18 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         framework::H2<> vz_vs_p_2d{mh::regular(0, 10, 100), mh::regular(-40, 40, 100)};
         framework::H2<> vx_vs_vy{mh::regular(-2, 2, 100), mh::regular(-2, 2, 100)};
         framework::H1<> delta_vz{mh::regular(-20, 20, 200)};
+        // Delta vz = vz(e-) - vz(pi), common note Eq. 13 (raw vertices), 0.1 cm bins; all pions and split by
+        // foil with the pion raw vz (upstream < -5.5 cm, as in PionSelectionAlg) (common note Fig. 5.13).
+        framework::H1<> delta_vz_e_pi{mh::regular(-20, 20, 400)};
+        framework::H1<> delta_vz_e_pi_up{mh::regular(-20, 20, 400)};
+        framework::H1<> delta_vz_e_pi_down{mh::regular(-20, 20, 400)};
+        // Corrected vz (per-event Vz correction of the configured target/polarity; equals the raw
+        // vz when no correction variant is loaded, e.g. LD2). 0.05 cm bins for the foil fits.
+        framework::H1<> vz_corr{mh::regular(-12, 2, 280)};
+        // Raw and corrected vz per sector (x = sector 1..6), same tracks as vz_corr, 0.05 cm bins
+        // (common note Fig. 5.12).
+        framework::H2<> vz_raw_vs_sector_fine{mh::regular(0.5, 6.5, 6), mh::regular(-12, 1, 260)};
+        framework::H2<> vz_corr_vs_sector{mh::regular(0.5, 6.5, 6), mh::regular(-12, 1, 260)};
         framework::H2<> delta_vz_vs_p{mh::regular(0, 10, 100), mh::regular(-20, 20, 200)};
 
         framework::H1<> delta_t{mh::regular(-2, 2, 200)};
@@ -342,6 +367,14 @@ framework::ServiceRef<framework::HistogramService> m_hist;
     PionHistograms h_piplus;
     PionHistograms h_piminus;
 
+    // Trigger electron of the events with at least one pi+ or pi-: raw and corrected vz per sector
+    // (PCAL sector), same binning as the pion ones (common note Fig. 5.12).
+    struct ElectronVzHistograms {
+        framework::H2<> vz_raw_vs_sector_fine{mh::regular(0.5, 6.5, 6), mh::regular(-12, 1, 260)};
+        framework::H2<> vz_corr_vs_sector{mh::regular(0.5, 6.5, 6), mh::regular(-12, 1, 260)};
+    };
+    ElectronVzHistograms h_electron_vz;
+
     auto evaluate_cutflow(bool in_forward_detector, double p, double E_tot, bool has_dc, framework::Cutflow& cf) const -> bool {
         cf.pass("All Pions");
         if (m_config.enable_forward_detector_cut && !in_forward_detector) return false;
@@ -358,13 +391,15 @@ framework::ServiceRef<framework::HistogramService> m_hist;
     auto book_histograms() -> void {
         book_pion_histograms("/PionAnalysis/PiPlus", h_piplus, "#pi^{+}");
         book_pion_histograms("/PionAnalysis/PiMinus", h_piminus, "#pi^{-}");
+        m_hist->register_hist("/PionAnalysis/Electron/vz_raw_vs_sector_fine", "e^{-} raw v_{z} vs Sector;Sector;v_{z} [cm]", h_electron_vz.vz_raw_vs_sector_fine);
+        m_hist->register_hist("/PionAnalysis/Electron/vz_corr_vs_sector", "e^{-} corrected v_{z} vs Sector;Sector;v_{z} corrected [cm]", h_electron_vz.vz_corr_vs_sector);
     }
 
     auto book_pion_histograms(const std::string& dir, PionHistograms& h, const std::string& label) -> void {
         auto* svc = m_hist.get();
         svc->register_hist(dir + "/p", fmt::format("{} Momentum;p [GeV/c];Events", label), h.p);        svc->register_hist(dir + "/theta", fmt::format("{} #theta;#theta [deg];Events", label), h.theta);        svc->register_hist(dir + "/phi", fmt::format("{} #phi;#phi [deg];Events", label), h.phi);        svc->register_hist(dir + "/vz", fmt::format("{} v_{{z}};v_{{z}} [cm];Events", label), h.vz);        svc->register_hist(dir + "/chi2pid", fmt::format("{} #chi^{{2}}_{{PID}};#chi^{{2}}_{{PID}};Events", label), h.chi2pid);        svc->register_hist(dir + "/beta", fmt::format("{} #beta;#beta;Events", label), h.beta);
         svc->register_hist(dir + "/sigma_tx", fmt::format("{} #sigma(t_{{x}});#sigma(t_{{x}});Tracks", label), h.sigma_tx);        svc->register_hist(dir + "/sigma_ty", fmt::format("{} #sigma(t_{{y}});#sigma(t_{{y}});Tracks", label), h.sigma_ty);        svc->register_hist(dir + "/sigma_theta", fmt::format("{} #sigma(#theta);#sigma(#theta) [mrad];Tracks", label), h.sigma_theta);        svc->register_hist(dir + "/sigma_tx_vs_p", fmt::format("{} #sigma(t_{{x}}) vs p;p [GeV/c];#sigma(t_{{x}})", label), h.sigma_tx_vs_p);        svc->register_hist(dir + "/sigma_ty_vs_p", fmt::format("{} #sigma(t_{{y}}) vs p;p [GeV/c];#sigma(t_{{y}})", label), h.sigma_ty_vs_p);        svc->register_hist(dir + "/sigma_theta_vs_p", fmt::format("{} #sigma(#theta) vs p;p [GeV/c];#sigma(#theta) [mrad]", label), h.sigma_theta_vs_p);
-        svc->register_hist(dir + "/vz_vs_phi", fmt::format("{} v_{{z}} vs #phi;#phi [deg];v_{{z}} [cm]", label), h.vz_vs_phi);        svc->register_hist(dir + "/vz_vs_sector", fmt::format("{} v_{{z}} vs Sector;Sector;v_{{z}} [cm]", label), h.vz_vs_sector);        svc->register_hist(dir + "/vz_vs_p", fmt::format("{} v_{{z}} vs p;p [GeV/c];v_{{z}} [cm]", label), h.vz_vs_p_2d);        svc->register_hist(dir + "/vx_vs_vy", fmt::format("{} v_{{x}} vs v_{{y}};v_{{x}} [cm];v_{{y}} [cm]", label), h.vx_vs_vy);        svc->register_hist(dir + "/delta_vz", fmt::format("{} #Deltav_{{z}} (#pi - e);#Deltav_{{z}} [cm];Events", label), h.delta_vz);        svc->register_hist(dir + "/delta_vz_vs_p", fmt::format("{} #Deltav_{{z}} vs p;p [GeV/c];#Deltav_{{z}} [cm]", label), h.delta_vz_vs_p);
+        svc->register_hist(dir + "/vz_vs_phi", fmt::format("{} v_{{z}} vs #phi;#phi [deg];v_{{z}} [cm]", label), h.vz_vs_phi);        svc->register_hist(dir + "/vz_vs_sector", fmt::format("{} v_{{z}} vs Sector;Sector;v_{{z}} [cm]", label), h.vz_vs_sector);        svc->register_hist(dir + "/vz_vs_p", fmt::format("{} v_{{z}} vs p;p [GeV/c];v_{{z}} [cm]", label), h.vz_vs_p_2d);        svc->register_hist(dir + "/vx_vs_vy", fmt::format("{} v_{{x}} vs v_{{y}};v_{{x}} [cm];v_{{y}} [cm]", label), h.vx_vs_vy);        svc->register_hist(dir + "/delta_vz", fmt::format("{} #Deltav_{{z}} (#pi - e);#Deltav_{{z}} [cm];Events", label), h.delta_vz);        svc->register_hist(dir + "/vz_corr", fmt::format("{} corrected v_{{z}};v_{{z}} corrected [cm];Events", label), h.vz_corr);        svc->register_hist(dir + "/vz_raw_vs_sector_fine", fmt::format("{} raw v_{{z}} vs Sector;Sector;v_{{z}} [cm]", label), h.vz_raw_vs_sector_fine);        svc->register_hist(dir + "/vz_corr_vs_sector", fmt::format("{} corrected v_{{z}} vs Sector;Sector;v_{{z}} corrected [cm]", label), h.vz_corr_vs_sector);        svc->register_hist(dir + "/delta_vz_e_pi", fmt::format("{} #Deltav_{{z}} (e - #pi);#Deltav_{{z}} [cm];Events", label), h.delta_vz_e_pi);        svc->register_hist(dir + "/delta_vz_e_pi_up", fmt::format("{} #Deltav_{{z}} (e - #pi), #pi v_{{z}} < -5.5 cm;#Deltav_{{z}} [cm];Events", label), h.delta_vz_e_pi_up);        svc->register_hist(dir + "/delta_vz_e_pi_down", fmt::format("{} #Deltav_{{z}} (e - #pi), #pi v_{{z}} #geq -5.5 cm;#Deltav_{{z}} [cm];Events", label), h.delta_vz_e_pi_down);        svc->register_hist(dir + "/delta_vz_vs_p", fmt::format("{} #Deltav_{{z}} vs p;p [GeV/c];#Deltav_{{z}} [cm]", label), h.delta_vz_vs_p);
         svc->register_hist(dir + "/delta_t", fmt::format("{} #Deltat;#Deltat [ns];Events", label), h.delta_t);        svc->register_hist(dir + "/delta_t_vs_p_diag", fmt::format("{} #Deltat vs p;p [GeV/c];#Deltat [ns]", label), h.delta_t_vs_p_diag);        svc->register_hist(dir + "/tof_mass2", fmt::format("{} m^{{2}}_{{TOF}};m^{{2}} [GeV^{{2}}];Events", label), h.tof_mass2);        svc->register_hist(dir + "/tof_mass2_vs_p", fmt::format("{} m^{{2}}_{{TOF}} vs p;p [GeV/c];m^{{2}} [GeV^{{2}}]", label), h.tof_mass2_vs_p);        svc->register_hist(dir + "/tof_path", fmt::format("{} TOF Path Length;Path [cm];Events", label), h.tof_path);        svc->register_hist(dir + "/tof_path_vs_p", fmt::format("{} TOF Path vs p;p [GeV/c];Path [cm]", label), h.tof_path_vs_p);        svc->register_hist(dir + "/beta_vs_p", fmt::format("{} #beta vs p;p [GeV/c];#beta", label), h.beta_vs_p);        svc->register_hist(dir + "/beta_diff", fmt::format("{} #Delta#beta;#Delta#beta;Events", label), h.beta_diff);        svc->register_hist(dir + "/beta_diff_vs_p", fmt::format("{} #Delta#beta vs p;p [GeV/c];#Delta#beta", label), h.beta_diff_vs_p);
         svc->register_hist(dir + "/chi2pid_vs_p", fmt::format("{} #chi^{{2}}_{{PID}} vs p;p [GeV/c];#chi^{{2}}_{{PID}}", label), h.chi2pid_vs_p);        svc->register_hist(dir + "/chi2pid_vs_theta", fmt::format("{} #chi^{{2}}_{{PID}} vs #theta;#theta [deg];#chi^{{2}}_{{PID}}", label), h.chi2pid_vs_theta);        svc->register_hist(dir + "/chi2pid_vs_sector", fmt::format("{} #chi^{{2}}_{{PID}} vs Sector;Sector;#chi^{{2}}_{{PID}}", label), h.chi2pid_vs_sector);
         svc->register_hist(dir + "/phi_vs_theta", fmt::format("{} #phi vs #theta;#theta [deg];#phi [deg]", label), h.phi_vs_theta);        svc->register_hist(dir + "/p_vs_phi", fmt::format("{} p vs #phi;#phi [deg];p [GeV/c]", label), h.p_vs_phi);        svc->register_hist(dir + "/p_vs_theta_diag", fmt::format("{} p vs #theta;#theta [deg];p [GeV/c]", label), h.p_vs_theta_diag);
@@ -548,7 +583,19 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         h.vz_vs_p_2d.fill(p, pion.vz());
         h.vx_vs_vy.fill(pion.vx(), pion.vy());
         h.delta_vz.fill(dvz);
+        h.delta_vz_e_pi.fill(-dvz);
+        if (pion.vz() < -5.5) h.delta_vz_e_pi_up.fill(-dvz);
+        else                  h.delta_vz_e_pi_down.fill(-dvz);
         h.delta_vz_vs_p.fill(p, dvz);
+        {
+            const int vz_sector = (sector >= 1 && sector <= 6) ? sector : calo.pcal_sector;
+            if (vz_sector >= 1 && vz_sector <= 6) {
+                const double vzc = m_electron_cuts->corrected_vz(pion.vz(), p, pion.theta(), pion.phi(), vz_sector);
+                h.vz_corr.fill(vzc);
+                h.vz_raw_vs_sector_fine.fill(static_cast<double>(vz_sector), pion.vz());
+                h.vz_corr_vs_sector.fill(static_cast<double>(vz_sector), vzc);
+            }
+        }
 
         h.delta_t.fill(timing.delta_t);
         // Exclude TOF-less tracks (delta_t exactly 0.0) from the delta_t-vs-p

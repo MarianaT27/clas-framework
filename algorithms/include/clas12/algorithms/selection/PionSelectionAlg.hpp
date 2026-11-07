@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -53,9 +54,29 @@ struct PionSelectionConfig {
     bool enable_momentum_cut = true;
     bool enable_vz_cut = true;
     bool enable_delta_t_cut = true;
+    /// Delta-Vz = Vz(e-) - Vz(pi) coincidence cut (common note Sec. 5.3, Table 9). Off by
+    /// default so analyses that never applied it keep their selection unchanged.
+    bool enable_delta_vz_cut = false;
     bool enable_central_pions = false;
     double delta_t_sigma = 3.0;
     std::vector<double> sigma_scan_values = {};
+
+    // DC fiducial thresholds [cm] (edge > threshold in each region). Defaults: common note
+    // Sec. 5.4 (OB, LD2 values of Fig. 5.14), applied to every target and polarity.
+    double dc_piplus_r1_min  = 3.875;
+    double dc_piplus_r2_min  = 4.375;
+    double dc_piplus_r3_min  = 2.625;
+    double dc_piminus_r1_min = 2.125;
+    double dc_piminus_r2_min = 3.625;
+    double dc_piminus_r3_min = 9.625;
+
+    // Delta-Vz window [cm] override (Vz(e-) - Vz(pi)). NaN = use the built-in OB table (common
+    // note Table 9). There is no built-in IB table: with Inbending and enable_delta_vz_cut = true
+    // all four values must be set, otherwise the algorithm refuses to initialize.
+    double delta_vz_piplus_min  = std::numeric_limits<double>::quiet_NaN();
+    double delta_vz_piplus_max  = std::numeric_limits<double>::quiet_NaN();
+    double delta_vz_piminus_min = std::numeric_limits<double>::quiet_NaN();
+    double delta_vz_piminus_max = std::numeric_limits<double>::quiet_NaN();
 
     // Keep an explicit config_fields() so the TOML-binding surface is preserved
     // exactly: `target`, `sigma_scan`, etc. stay deliberately unbound. (Dropping
@@ -75,6 +96,17 @@ struct PionSelectionConfig {
             field("enable_momentum_cut",        &T::enable_momentum_cut),
             field("enable_vz_cut",              &T::enable_vz_cut),
             field("enable_delta_t_cut",         &T::enable_delta_t_cut),
+            field("enable_delta_vz_cut",        &T::enable_delta_vz_cut),
+            field("dc_piplus_r1_min",           &T::dc_piplus_r1_min),
+            field("dc_piplus_r2_min",           &T::dc_piplus_r2_min),
+            field("dc_piplus_r3_min",           &T::dc_piplus_r3_min),
+            field("dc_piminus_r1_min",          &T::dc_piminus_r1_min),
+            field("dc_piminus_r2_min",          &T::dc_piminus_r2_min),
+            field("dc_piminus_r3_min",          &T::dc_piminus_r3_min),
+            field("delta_vz_piplus_min",        &T::delta_vz_piplus_min),
+            field("delta_vz_piplus_max",        &T::delta_vz_piplus_max),
+            field("delta_vz_piminus_min",       &T::delta_vz_piminus_min),
+            field("delta_vz_piminus_max",       &T::delta_vz_piminus_max),
             field("enable_central_pions",       &T::enable_central_pions),
             field("delta_t_sigma",              &T::delta_t_sigma),
             field("sigma_scan_values",          &T::sigma_scan_values));
@@ -160,6 +192,8 @@ struct PionCandidate {
     bool passes_chi2pid = false;
     bool passes_momentum = false;
     bool passes_vz = false;
+    double delta_vz = 0.0;           ///< Vz(e-) - Vz(pi), raw vertices [cm]
+    bool passes_delta_vz = false;
     bool passes_delta_t = false;
     bool passes_all_cuts = false;
 };
@@ -185,6 +219,23 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
         log_info("Chi2PID range: [{}, {}], Momentum range: [{}, {}] GeV", m_config.chi2pid_min, m_config.chi2pid_max, m_config.momentum_min, m_config.momentum_max);
         log_info("Cut toggles: detector_region={}, fiducial={}, chi2pid={}, momentum={}, vz={}, delta_t={}", m_config.enable_detector_region_cut, m_config.enable_fiducial_cuts, m_config.enable_chi2pid_cut, m_config.enable_momentum_cut, m_config.enable_vz_cut, m_config.enable_delta_t_cut);
         log_info("Central pions: {}", m_config.enable_central_pions ? "enabled" : "disabled");
+        log_info("Polarity: {} (Delta-t coefficients: common note Table {})", to_string(m_config.polarity), m_config.polarity == Polarity::Outbending ? 6 : 7);
+        log_info("DC fiducial [cm]: pi+ R1>{} R2>{} R3>{}, pi- R1>{} R2>{} R3>{}", m_config.dc_piplus_r1_min, m_config.dc_piplus_r2_min, m_config.dc_piplus_r3_min, m_config.dc_piminus_r1_min, m_config.dc_piminus_r2_min, m_config.dc_piminus_r3_min);
+        if (m_config.enable_delta_vz_cut) {
+            const bool override_set = !std::isnan(m_config.delta_vz_piplus_min) && !std::isnan(m_config.delta_vz_piplus_max) && !std::isnan(m_config.delta_vz_piminus_min) && !std::isnan(m_config.delta_vz_piminus_max);
+            const bool any_set = !std::isnan(m_config.delta_vz_piplus_min) || !std::isnan(m_config.delta_vz_piplus_max) || !std::isnan(m_config.delta_vz_piminus_min) || !std::isnan(m_config.delta_vz_piminus_max);
+            if (any_set && !override_set) {
+                log_error("Delta-Vz override: set all four of delta_vz_pi{{plus,minus}}_{{min,max}}, or none");
+                return StatusCode::FAILURE();
+            }
+            if (m_config.polarity != Polarity::Outbending && !override_set) {
+                log_error("Delta-Vz cut enabled for Inbending, but there is no IB table: set delta_vz_pi{{plus,minus}}_{{min,max}} in the config");
+                return StatusCode::FAILURE();
+            }
+            log_info("Delta-Vz cut [cm] (e - pi): pi+ [{}, {}], pi- [{}, {}]{}", delta_vz_window(true, Target::LD2).min, delta_vz_window(true, Target::LD2).max, delta_vz_window(false, Target::LD2).min, delta_vz_window(false, Target::LD2).max, override_set ? " (config override, all targets)" : " (OB Table 9, LD2 row shown; per target)");
+        } else {
+            log_info("Delta-Vz cut: disabled");
+        }
         log_info("Delta-t sigma: {}", m_config.delta_t_sigma);
         if (!m_config.sigma_scan_values.empty()) log_info("Sigma scan enabled with values: [{}]", fmt::join(m_config.sigma_scan_values, ", "));
 
@@ -210,8 +261,11 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
         auto& rec_event = event.bank<bankdefs::REC_Event>();
         if (rec_event.rows() == 0) return StatusCode::SUCCESS();
         const double start_time = static_cast<double>(rec_event.startTime(0));
+        // Trigger-electron vertex for the Delta-Vz cut (raw vz, as in the common note).
+        const auto electron_opt = event.retrieve_typed(Keys::TriggerElectron);
+        const double electron_vz = electron_opt ? electron_opt->vz() : std::numeric_limits<double>::quiet_NaN();
 
-        auto piplus_candidates = build_pion_candidates(event.pions_plus(), start_time, true);
+        auto piplus_candidates = build_pion_candidates(event.pions_plus(), start_time, true, electron_vz);
         for (auto& cand : piplus_candidates) cand.passes_all_cuts = evaluate_cutflow(cand, m_cutflow_piplus);
         fill_pre_cut_histograms(piplus_candidates, true);
         fill_nminus1_histograms(piplus_candidates, true);
@@ -219,7 +273,7 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
         fill_ntuple(piplus_candidates, true);
         auto selected_piplus = collect_passing_particles(piplus_candidates);
 
-        auto piminus_candidates = build_pion_candidates(event.pions_minus(), start_time, false);
+        auto piminus_candidates = build_pion_candidates(event.pions_minus(), start_time, false, electron_vz);
         for (auto& cand : piminus_candidates) cand.passes_all_cuts = evaluate_cutflow(cand, m_cutflow_piminus);
         fill_pre_cut_histograms(piminus_candidates, false);
         fill_nminus1_histograms(piminus_candidates, false);
@@ -414,6 +468,7 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
             && cf.check("Chi2 PID", m_config.enable_chi2pid_cut, [&] { return c.passes_chi2pid; })
             && cf.check("Momentum", m_config.enable_momentum_cut, [&] { return c.passes_momentum; })
             && cf.check("Vertex Z", m_config.enable_vz_cut, [&] { return c.passes_vz; })
+            && cf.check("Delta Vz", m_config.enable_delta_vz_cut, [&] { return c.passes_delta_vz; })
             && cf.check("Delta-t", m_config.enable_delta_t_cut, [&] { return !c.is_forward_detector || c.passes_delta_t; });
     }
 
@@ -434,7 +489,7 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
         }
     }
 
-    auto build_pion_candidates(const std::vector<Particle>& pions, double start_time, bool is_piplus) -> std::vector<PionCandidate> {
+    auto build_pion_candidates(const std::vector<Particle>& pions, double start_time, bool is_piplus, double electron_vz) -> std::vector<PionCandidate> {
         std::vector<PionCandidate> candidates;
         if (pions.empty()) return candidates;
 
@@ -488,11 +543,14 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
                 else m_piminus_pcal_nan++;
             }
 
+            const Target foil = foil_target(cand.vz);
+            cand.delta_vz = electron_vz - cand.vz;
             cand.passes_dc_fiducial = pass_dc_fiducial_cut(traj, is_piplus);
             cand.passes_chi2pid = pass_chi2pid_cut(cand.chi2pid);
             cand.passes_momentum = pass_momentum_cut(cand.p);
             cand.passes_vz = pass_vz_cut(cand, is_piplus);
-            cand.passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t, is_piplus);
+            cand.passes_delta_vz = delta_vz_window(is_piplus, foil).contains(cand.delta_vz);  // false if electron_vz is NaN
+            cand.passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t, is_piplus, m_config.delta_t_sigma, foil);
 
             candidates.push_back(std::move(cand));
         }
@@ -594,7 +652,8 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
         bool pass_mom = (skip == 3) || !m_config.enable_momentum_cut || c.passes_momentum;
         bool pass_vz = (skip == 4) || !m_config.enable_vz_cut || c.passes_vz;
         bool pass_dt = (skip == 5) || !m_config.enable_delta_t_cut || !c.is_forward_detector || c.passes_delta_t;
-        return pass_det && pass_fid && pass_chi2 && pass_mom && pass_vz && pass_dt;
+        bool pass_dvz = (skip == 6) || !m_config.enable_delta_vz_cut || c.passes_delta_vz;
+        return pass_det && pass_fid && pass_chi2 && pass_mom && pass_vz && pass_dt && pass_dvz;
     }
 
     template <typename NM1H>
@@ -632,7 +691,8 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
             if (max_step >= 2 && m_config.enable_chi2pid_cut && !cand.passes_chi2pid) continue;
             if (max_step >= 3 && m_config.enable_momentum_cut && !cand.passes_momentum) continue;
             if (max_step >= 4 && m_config.enable_vz_cut && !cand.passes_vz) continue;
-            if (max_step >= 5 && m_config.enable_delta_t_cut && cand.is_forward_detector && !cand.passes_delta_t) continue;
+            if (max_step >= 5 && m_config.enable_delta_vz_cut && !cand.passes_delta_vz) continue;
+            if (max_step >= 6 && m_config.enable_delta_t_cut && cand.is_forward_detector && !cand.passes_delta_t) continue;
             selected.push_back(cand.pion);
         }
         return selected;
@@ -656,31 +716,78 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
         std::array<double, 3> sigma;  // (σ0, k, c_σ)
     };
 
-    auto get_piplus_delta_t_coefficients() const -> DeltaTCoefficients {
-        switch (m_config.target) {
-            case Target::LD2: return {{ 0.000944, -0.010445,  0.046100}, {0.076738, 0.054354, -0.000929}};
-            case Target::CxC: return {{ 0.001103, -0.011081,  0.046219}, {0.075224, 0.054430, -0.000447}};
-            case Target::Cu:  return {{ 0.001381, -0.013593,  0.049945}, {0.072581, 0.059173,  0.000113}};
-            case Target::Sn:  return {{ 0.001150, -0.010677,  0.041478}, {0.076579, 0.050554, -0.000595}};
-            default:          return {{ 0.000944, -0.010445,  0.046100}, {0.076738, 0.054354, -0.000929}};
-        }
-    }
-
-    auto get_piminus_delta_t_coefficients() const -> DeltaTCoefficients {
-        switch (m_config.target) {
-            case Target::LD2: return {{-0.001640,  0.009816, -0.025958}, {0.080510, 0.118046, -0.001205}};
-            case Target::CxC: return {{-0.001866,  0.010890, -0.026872}, {0.078231, 0.118102, -0.000447}};
-            case Target::Cu:  return {{-0.001433,  0.008117, -0.022846}, {0.076203, 0.117692,  0.000187}};
-            case Target::Sn:  return {{-0.001777,  0.010759, -0.029889}, {0.075510, 0.120755,  0.000220}};
-            default:          return {{-0.001640,  0.009816, -0.025958}, {0.080510, 0.118046, -0.001205}};
-        }
-    }
-
     struct VzCutRange {
         double min;
         double max;
         [[nodiscard]] auto contains(double vz) const -> bool { return vz >= min && vz <= max; }
     };
+
+    /// Target whose per-target parameters apply to this pion. For the two-foil CuSn
+    /// configuration the foil is chosen from the raw vertex (Cu upstream near -8 cm,
+    /// Sn downstream near -3 cm; boundary at -5.5 cm). Every other target maps to itself.
+    auto foil_target(double vz) const -> Target {
+        if (m_config.target == Target::CuSn) return vz < -5.5 ? Target::Cu : Target::Sn;
+        return m_config.target;
+    }
+
+    /// Delta-t centroid and resolution coefficients, per target and torus polarity:
+    /// OB = common note Table 6, IB = common note Table 7.
+    auto get_piplus_delta_t_coefficients(Target t) const -> DeltaTCoefficients {
+        if (m_config.polarity == Polarity::Outbending) {
+            switch (t) {
+                case Target::CxC: return {{ 0.001103, -0.011081,  0.046219}, {0.075224, 0.054430, -0.000447}};
+                case Target::Cu:  return {{ 0.001381, -0.013593,  0.049945}, {0.072581, 0.059173,  0.000113}};
+                case Target::Sn:  return {{ 0.001150, -0.010677,  0.041478}, {0.076579, 0.050554, -0.000595}};
+                default:          return {{ 0.000944, -0.010445,  0.046100}, {0.076738, 0.054354, -0.000929}};  // LD2
+            }
+        }
+        switch (t) {
+            case Target::CxC: return {{-0.001542,  0.009979, -0.054565}, {0.088016, 0.119062, -0.003361}};
+            case Target::Cu:  return {{-0.001792,  0.011443, -0.052059}, {0.087525, 0.118368, -0.003076}};
+            case Target::Sn:  return {{-0.001860,  0.012422, -0.059442}, {0.089254, 0.123236, -0.003298}};
+            default:          return {{-0.001731,  0.011267, -0.054537}, {0.085218, 0.120109, -0.003085}};  // LD2
+        }
+    }
+
+    auto get_piminus_delta_t_coefficients(Target t) const -> DeltaTCoefficients {
+        if (m_config.polarity == Polarity::Outbending) {
+            switch (t) {
+                case Target::CxC: return {{-0.001866,  0.010890, -0.026872}, {0.078231, 0.118102, -0.000447}};
+                case Target::Cu:  return {{-0.001433,  0.008117, -0.022846}, {0.076203, 0.117692,  0.000187}};
+                case Target::Sn:  return {{-0.001777,  0.010759, -0.029889}, {0.075510, 0.120755,  0.000220}};
+                default:          return {{-0.001640,  0.009816, -0.025958}, {0.080510, 0.118046, -0.001205}};  // LD2
+            }
+        }
+        switch (t) {
+            case Target::CxC: return {{ 0.000399, -0.006449,  0.004927}, {0.074921, 0.056532, -0.000445}};
+            case Target::Cu:  return {{ 0.000546, -0.007970,  0.012212}, {0.078201, 0.054772, -0.001775}};
+            case Target::Sn:  return {{ 0.001120, -0.010184,  0.008613}, {0.080358, 0.050856, -0.001380}};
+            default:          return {{ 0.000405, -0.006009,  0.004971}, {0.076147, 0.054397, -0.001330}};  // LD2
+        }
+    }
+
+    /// Delta-Vz = Vz(e-) - Vz(pi) window [cm]. A complete config override wins (all targets);
+    /// otherwise the OB mu +- 3 sigma windows of the common note, Table 9.
+    auto delta_vz_window(bool is_piplus, Target t) const -> VzCutRange {
+        const double lo = is_piplus ? m_config.delta_vz_piplus_min : m_config.delta_vz_piminus_min;
+        const double hi = is_piplus ? m_config.delta_vz_piplus_max : m_config.delta_vz_piminus_max;
+        if (!std::isnan(lo) && !std::isnan(hi)) return {lo, hi};
+        if (is_piplus) {
+            switch (t) {
+                case Target::CxC: return {-3.98, 2.30};
+                case Target::Cu:  return {-3.95, 2.26};
+                case Target::Sn:  return {-3.93, 2.30};
+                default:          return {-3.99, 2.29};  // LD2
+            }
+        }
+        switch (t) {
+            case Target::CxC: return {-3.81, 4.19};
+            case Target::Cu:  return {-3.82, 4.21};
+            case Target::Sn:  return {-3.60, 3.94};
+            default:          return {-3.85, 4.21};  // LD2
+        }
+    }
+
 
     auto get_piplus_vz_range() const -> VzCutRange {
         switch (m_config.target) {
@@ -702,10 +809,10 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
         }
     }
 
-    static auto pass_dc_fiducial_cut(const DCTrajBank& traj, bool is_piplus) -> bool {
-        double r1_min = is_piplus ? 3.875 : 2.125;
-        double r2_min = is_piplus ? 4.375 : 3.625;
-        double r3_min = is_piplus ? 2.625 : 9.625;
+    auto pass_dc_fiducial_cut(const DCTrajBank& traj, bool is_piplus) const -> bool {
+        const double r1_min = is_piplus ? m_config.dc_piplus_r1_min : m_config.dc_piminus_r1_min;
+        const double r2_min = is_piplus ? m_config.dc_piplus_r2_min : m_config.dc_piminus_r2_min;
+        const double r3_min = is_piplus ? m_config.dc_piplus_r3_min : m_config.dc_piminus_r3_min;
         return traj.region1_edge > r1_min && traj.region2_edge > r2_min && traj.region3_edge > r3_min;
     }
 
@@ -730,8 +837,8 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
         return vz_range.contains(cand.vz);
     }
 
-    auto pass_delta_t_cut(const double p, const double delta_t, bool is_piplus, double n_sigma) -> bool {
-        auto coeffs = is_piplus ? get_piplus_delta_t_coefficients() : get_piminus_delta_t_coefficients();
+    auto pass_delta_t_cut(const double p, const double delta_t, bool is_piplus, double n_sigma, Target foil) const -> bool {
+        auto coeffs = is_piplus ? get_piplus_delta_t_coefficients(foil) : get_piminus_delta_t_coefficients(foil);
         double mean  = delta_t_mean (p, coeffs.mean[0],  coeffs.mean[1],  coeffs.mean[2]);
         double sigma = delta_t_sigma(p, coeffs.sigma[0], coeffs.sigma[1], coeffs.sigma[2]);
         double cut_low  = mean - n_sigma * sigma;
@@ -739,9 +846,6 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
         return cut_low < delta_t && delta_t < cut_high;
     }
 
-    auto pass_delta_t_cut(const double p, const double delta_t, bool is_piplus) -> bool {
-        return pass_delta_t_cut(p, delta_t, is_piplus, m_config.delta_t_sigma);
-    }
 
     static auto format_sigma_label(double sigma) -> std::string { return fmt::format("sigma_{:.1f}", sigma); }
     static auto format_sigma_key(const std::string& base, double sigma) -> std::string { return fmt::format("{}_{}", base, format_sigma_label(sigma)); }
@@ -749,11 +853,11 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
     auto collect_passing_with_sigma(const std::vector<PionCandidate>& candidates, bool is_piplus, double n_sigma) -> std::vector<Particle> {
         std::vector<Particle> selected;
         for (const auto& cand : candidates) {
-            bool scan_passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t, is_piplus, n_sigma);
+            bool scan_passes_delta_t = pass_delta_t_cut(cand.p, cand.delta_t, is_piplus, n_sigma, foil_target(cand.vz));
             bool passes_detector_region = !m_config.enable_detector_region_cut || cand.is_forward_detector || (cand.is_central_detector && m_config.enable_central_pions);
             bool passes_fiducial = !m_config.enable_fiducial_cuts || !cand.is_forward_detector || cand.passes_dc_fiducial;
             bool passes_timing = !m_config.enable_delta_t_cut || (cand.is_forward_detector ? scan_passes_delta_t : true);
-            bool passes_all = passes_detector_region && passes_fiducial && (!m_config.enable_chi2pid_cut || cand.passes_chi2pid) && (!m_config.enable_momentum_cut || cand.passes_momentum) && (!m_config.enable_vz_cut || cand.passes_vz) && passes_timing;
+            bool passes_all = passes_detector_region && passes_fiducial && (!m_config.enable_chi2pid_cut || cand.passes_chi2pid) && (!m_config.enable_momentum_cut || cand.passes_momentum) && (!m_config.enable_vz_cut || cand.passes_vz) && (!m_config.enable_delta_vz_cut || cand.passes_delta_vz) && passes_timing;
             if (passes_all) selected.push_back(cand.pion);
         }
         return selected;

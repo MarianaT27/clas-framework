@@ -1,12 +1,13 @@
 """
-dc_figs.py : IB versions of the common-note Figs. 3.15 to 3.19 and Table 3 (DC fiducial cut on edge).  Version 4.
+dc_figs.py : common-note Figs. 3.15 to 3.19 and Table 3 (DC fiducial cut on edge), for IB or OB.  Version 5.
 
-Usage (from the clas-framework folder, where fid_OB.root is):
-    python3 /volatile/clas12/mtenorio/pi0/ib_check/dc/dc_figs.py /volatile/clas12/mtenorio/pi0/ib_check/root fid_OB.root /volatile/clas12/mtenorio/pi0/ib_check/dc
+Usage:
+    python3 dc_figs.py <root_dir> <IB|OB> <out_dir>
+    e.g. python3 dc_figs.py /volatile/clas12/mtenorio/pi0/ib_check/root_full IB /volatile/clas12/mtenorio/pi0/ib_check/figs_full/IB/dc
 
 Inputs:
-  <root_dir>/ib_fig_{LD2,CxC,CuSn}.root and <ob_ld2_file> (LD2 OB, Tuesday's fid_OB.root), all from electron_analysis
-  with the PCAL and DC cuts off.
+  <root_dir>/<ib|ob>_fig_{LD2,CxC,CuSn}.root from electron_analysis with the PCAL and DC cuts off.
+  IB runs 18335, 18344, 18384; OB runs 18543, 18465, 18591.
   Per sector : Tracks/ElectronTracks/edge_vs_chi2ndf_r<R>_S<s>  (trigger electrons, before cuts; chi2/ndf of the
                region's track segment; edge 0-50 cm in 0.25 cm bins, chi2/ndf 0-10)
   p and theta: DC/chi2ndf_vs_edge_vs_p_r<R>, DC/chi2ndf_vs_edge_vs_theta_r<R>  (full-track chi2/ndf, all sectors)
@@ -21,40 +22,34 @@ large to small edge; cut at the centre of the first window with variance > 0.05 
 The scan starts at 20 cm (R1, R2) or 30 cm (R3).
 
 Writes (<out_dir>):
-  fig3_15_moving_variance_LD2_R1_S1.png/.pdf  profile (blue) and moving variance (purple), LD2 IB, R1 S1, 0-25 cm
-  fig3_16_sectors_<sample>.png/.pdf            profile per sector, R1-R3, 0-25 cm   (IB targets and LD2 OB)
-  fig3_17_momentum_LD2.png/.pdf                profile per 1 GeV momentum bin, R1-R3, LD2 IB
-  fig3_18_theta_LD2.png/.pdf                   profile per 5 deg theta bin, R1-R3, LD2 IB
-  fig3_19_targets_S1.png/.pdf                  profile for sector 1, R1-R3, LD2 / CxC / CuSn IB
-  dc_occupancy_LD2.png/.pdf                   entries in (p, edge) and (theta, edge), R1-R3, LD2 IB (where the 3D histograms have data)
-  table3_dc_cuts.csv                           preliminary cuts per sample, region, sector
-Prints: entries per sector and region for each sample; the preliminary Table 3.
+  fig3_15_moving_variance_LD2_R1_S1.png/.pdf  profile (blue) and moving variance (purple), LD2, R1 S1, 0-25 cm
+  fig3_16_sectors_<T>.png/.pdf                 profile per sector, R1-R3, 0-25 cm, for LD2, CxC, CuSn
+  fig3_17_momentum_LD2.png/.pdf                profile per 1 GeV momentum bin, R1-R3, LD2
+  fig3_18_theta_LD2.png/.pdf                   profile per 5 deg theta bin, R1-R3, LD2
+  fig3_19_targets_S1.png/.pdf                  profile for sector 1, R1-R3, LD2 / CxC / CuSn
+  dc_occupancy_LD2.png/.pdf                    entries in (p, edge) and (theta, edge), R1-R3, LD2
+  table3_dc_cuts_<pol>.csv                     cut per target, region, sector, and the sector mean and std
+Prints: entries per sector and region for each target; Table 3 (sector mean +- sample std, as in the note).
 """
 import sys
 from pathlib import Path
 
 import numpy as np
 import uproot
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
-if len(sys.argv) != 4:
-    sys.exit("usage: python3 dc_figs.py <root_dir> <ob_ld2_file> <out_dir>")
-ROOT, OBFILE, OUT = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
-OUT.mkdir(parents=True, exist_ok=True)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common import args, fname, label, COLORS, SECTOR_COLORS, save as _save
 
-TARGETS = {"LD2": ("D (LD2), run 18335", "black"),
-           "CxC": ("C (CxC), run 18344", "#1f77b4"),
-           "CuSn": ("CuSn, run 18384", "#9467bd")}
-SECTOR_COLORS = plt.get_cmap("tab10").colors[:6]
+ROOT, POL, OUT = args()
+TARGETS = ["LD2", "CxC", "CuSn"]
 NOTE_CUT = {1: 1.88, 2: 2.08, 3: 8.62}
 WIN, VAR_MAX, MIN_N = 5, 0.05, 1
 EMAX = {1: 20.0, 2: 20.0, 3: 30.0}
 XMAX = 25.0
 
-samples = {t: uproot.open(ROOT / f"ib_fig_{t}.root") for t in TARGETS}
-samples["LD2_OB"] = uproot.open(OBFILE)
+samples = {t: uproot.open(fname(ROOT, POL, t)) for t in TARGETS}
 
 
 def profile_2d(v, ex, ey):
@@ -124,48 +119,49 @@ def note_line(ax, r):
 
 
 def save(fig, name):
-    fig.tight_layout()
-    for ext in ("png", "pdf"):
-        fig.savefig(OUT / f"{name}.{ext}", dpi=140)
-    plt.close(fig)
-    print(f"wrote {OUT / name}.png/.pdf")
+    _save(fig, OUT, name)
 
 
 # ---- entries per sector and region
-print("=== entries (trigger electrons) per sector, ElectronTracks/edge_vs_chi2ndf")
+print(f"=== {POL}: entries (trigger electrons) per sector, ElectronTracks/edge_vs_chi2ndf")
 for name, f in samples.items():
     for r in (1, 2, 3):
         ns = [int(sector_profile(f, r, s)[3].sum()) for s in range(1, 7)]
         print(f"    {name:8s} R{r}: " + "  ".join(f"S{s} {n:8d}" for s, n in enumerate(ns, 1)))
 
-# ---- preliminary cuts (printed and saved only)
+# ---- cuts per sector, and Table 3 (sector mean +- sample std, as in the note)
 cuts = {(name, r, s): moving_variance(*[a for i, a in enumerate(sector_profile(f, r, s)) if i != 2], r)[0]
         for name, f in samples.items() for r in (1, 2, 3) for s in range(1, 7)}
-rows = ["sample,region," + ",".join(f"S{s}" for s in range(1, 7)) + ",average,note_OB"]
-print("\n=== PRELIMINARY Table 3 (statistics too low, see figures): sector average [cm]")
+rows = ["target,run_pol,region," + ",".join(f"S{s}" for s in range(1, 7)) + ",mean,std,n_sectors,note_OB"]
+print(f"\n=== {POL} Table 3: sector mean +- sample std [cm] (sectors without a threshold are left out, count in brackets)")
 for name in samples:
-    av = []
+    out = []
     for r in (1, 2, 3):
-        cs = [cuts[(name, r, s)] for s in range(1, 7)]
-        av.append(np.nanmean(cs))
-        rows.append(f"{name},{r}," + ",".join(f"{c:.2f}" for c in cs) + f",{np.nanmean(cs):.2f},{NOTE_CUT[r]}")
-    print(f"    {name:8s} " + "   ".join(f"R{r} {a:6.2f}" for r, a in zip((1, 2, 3), av)))
-(OUT / "table3_dc_cuts.csv").write_text("\n".join(rows) + "\n")
-print(f"wrote {OUT / 'table3_dc_cuts.csv'}\n")
+        cs = np.array([cuts[(name, r, s)] for s in range(1, 7)])
+        ok = np.isfinite(cs)
+        mean = cs[ok].mean() if ok.any() else np.nan
+        std = cs[ok].std(ddof=1) if ok.sum() > 1 else np.nan
+        out.append(f"R{r} {mean:5.2f} +- {std:4.2f} ({ok.sum()})")
+        rows.append(f"{name},{POL},{r}," + ",".join(f"{c:.2f}" for c in cs) + f",{mean:.2f},{std:.2f},{ok.sum()},{NOTE_CUT[r]}")
+    print(f"    {name:5s} " + "   ".join(out))
+print(f"    note OB (LD2)  R1  1.88 +- 0.16 (6)   R2  2.08 +- 0.10 (6)   R3  8.62 +- 0.55 (6)")
+(OUT / f"table3_dc_cuts_{POL}.csv").write_text("\n".join(rows) + "\n")
+print(f"wrote {OUT / f'table3_dc_cuts_{POL}.csv'}\n")
 
 # ---- Fig. 3.15: method illustration, LD2 IB, R1 S1
 x, m, e, n = sector_profile(samples["LD2"], 1, 1)
 cut, xs, var = moving_variance(x, m, n, 1)
 fig, axs = plt.subplots(2, 1, figsize=(9, 7.5), sharex=True)
 draw(axs[0], x, m, e, n, "tab:blue", "Data")
-for ax in axs:
-    ax.axvspan(0, cut, color="red", alpha=0.08)
-    ax.axvspan(cut, XMAX, color="green", alpha=0.08)
-axs[0].axvline(cut, color="green", ls="--", label=f"cut from moving variance: {cut:.2f} cm")
+if np.isfinite(cut):
+    for ax in axs:
+        ax.axvspan(0, cut, color="red", alpha=0.08)
+        ax.axvspan(cut, XMAX, color="green", alpha=0.08)
+    axs[0].axvline(cut, color="green", ls="--", label=f"cut from moving variance: {cut:.2f} cm")
 axs[0].axvline(NOTE_CUT[1], color="gray", ls=":", label=f"note (OB): {NOTE_CUT[1]} cm")
 axs[0].plot([], [], "s", color="red", alpha=0.2, label="unreliable (cut)")
 axs[0].plot([], [], "s", color="green", alpha=0.2, label="reliable (keep)")
-style(axs[0], "D (LD2) IB run 18335, region 1, sector 1: profile")
+style(axs[0], f"{label(POL, 'LD2')}, region 1, sector 1: profile")
 axs[0].set_ylim(0, 7)
 axs[0].set_xlabel("")
 okd = (n > 0) & (x <= XMAX)
@@ -175,7 +171,8 @@ for i in range(len(xd) - WIN + 1):
     vd[i + WIN // 2] = np.var(md[i:i + WIN])
 axs[1].plot(xd, vd, "o-", ms=3, color="tab:purple", label="moving variance (window = 5 bins), all bins")
 axs[1].axhline(VAR_MAX, color="k", ls=":", label="threshold 0.05")
-axs[1].axvline(cut, color="green", ls="--")
+if np.isfinite(cut):
+    axs[1].axvline(cut, color="green", ls="--")
 axs[1].axvline(NOTE_CUT[1], color="gray", ls=":", label=f"note (OB): {NOTE_CUT[1]} cm")
 style(axs[1], "moving variance over every bin with entries, 0-25 cm", ylabel="variance")
 axs[1].set_ylim(-0.02, 1.1 * np.nanmax(vd))
@@ -183,7 +180,7 @@ save(fig, "fig3_15_moving_variance_LD2_R1_S1")
 
 # ---- Fig. 3.16: sectors per region, per sample
 for name, f in samples.items():
-    lab = TARGETS[name][0] + ", IB" if name in TARGETS else "D (LD2), OB (" + OBFILE.name + ")"
+    lab = label(POL, name)
     fig, axs = plt.subplots(1, 3, figsize=(18, 4.8))
     for r, ax in zip((1, 2, 3), axs):
         lines = []
@@ -199,7 +196,7 @@ for name, f in samples.items():
     save(fig, f"fig3_16_sectors_{name}")
 
 
-# ---- Figs. 3.17 and 3.18: every momentum and theta bin of the histogram, LD2 IB
+# ---- Figs. 3.17 and 3.18: every momentum and theta bin of the histogram, LD2
 def h3_profiles(f, kind, r):
     h = f[f"DC/chi2ndf_vs_edge_vs_{kind}_r{r}"]
     v, e0, e1, e2 = h.values(), h.axis(0).edges(), h.axis(1).edges(), h.axis(2).edges()
@@ -221,28 +218,27 @@ for kind, unit, sym, fname in (("p", "GeV", "p", "fig3_17_momentum_LD2"),
             lines.append(f"[{lo:g},{hi:g}): {fmt(c)}")
         note_line(ax, r)
         cut_box(ax, lines)
-        style(ax, f"D (LD2) IB run 18335, region {r}", ylabel=r"$\langle\chi^2/ndf\rangle$ (full track)")
+        style(ax, f"{label(POL, 'LD2')}, region {r}", ylabel=r"$\langle\chi^2/ndf\rangle$ (full track)")
     save(fig, fname)
 
 # ---- Fig. 3.19: targets, sector 1
 fig, axs = plt.subplots(1, 3, figsize=(18, 4.8))
 for r, ax in zip((1, 2, 3), axs):
     lines = []
-    for t, (lab, col) in TARGETS.items():
+    for t in TARGETS:
         prof = sector_profile(samples[t], r, 1)
         c = cut_of(prof, r)
-        draw(ax, *prof, col, lab)
-        cut_line(ax, c, col)
+        draw(ax, *prof, COLORS[t], label(POL, t))
+        cut_line(ax, c, COLORS[t])
         lines.append(f"{t:4s}: {fmt(c)}")
     note_line(ax, r)
     cut_box(ax, lines)
-    style(ax, f"Sector 1, IB: region {r}")
+    style(ax, f"Sector 1, {POL}: region {r}")
     if r == 3:
         ax.set_ylim(0, 4)
 save(fig, "fig3_19_targets_S1")
 
-# ---- occupancy: where the 3D histograms (Figs. 3.17, 3.18) have entries, LD2 IB
-from matplotlib.colors import LogNorm
+# ---- occupancy: where the 3D histograms (Figs. 3.17, 3.18) have entries, LD2
 fig, axs = plt.subplots(2, 3, figsize=(18, 9))
 for row, (kind, ylab) in enumerate((("p", "p [GeV]"), ("theta", r"$\theta$ [deg]"))):
     for r in (1, 2, 3):
@@ -256,6 +252,6 @@ for row, (kind, ylab) in enumerate((("p", "p [GeV]"), ("theta", r"$\theta$ [deg]
         ax.set_xlim(0, XMAX)
         ax.set_xlabel("edge [cm]")
         ax.set_ylabel(ylab)
-        ax.set_title(f"D (LD2) IB run 18335, region {r}: entries", fontsize=9)
+        ax.set_title(f"{label(POL, 'LD2')}, region {r}: entries", fontsize=9)
         ax.legend(fontsize=7, loc="upper right")
 save(fig, "dc_occupancy_LD2")
