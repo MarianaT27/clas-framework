@@ -7,7 +7,8 @@ Usage (from the clas-framework folder, after pion_analysis with the v1.1 histogr
 Reads   <dir>/root/pion_ana_<T>_<POL>.root, T = CxC, CuSn, POL = IB, OB
           PionAnalysis/Pi{Plus,Minus}/vz_raw_vs_sector_fine, vz_corr_vs_sector   (x = sector, y = vz, 0.05 cm bins)
           PionAnalysis/Electron/vz_raw_vs_sector_fine, vz_corr_vs_sector        (trigger electron, events with >= 1 pion)
-        The correction is the one in data/Vz/vz_corrector_params.txt (the only one in the repo) for all species.
+        Correction from data/Vz/vz_corrector_params.txt: electron blocks for the electron; since v1.3 the pion
+        blocks (<variant>_pim / _pip) for the pions when the file has them, otherwise the electron ones.
         LD2 is not drawn: no correction is applied there (corrected = raw) and Table 8 has no LD2 row.
 Writes  <dir>/vz/vz_fig5p12_<T>_<POL>.png/.pdf   layout of Fig. 5.12: sectors 1-6 and all sectors;
           e- black, pi- blue, pi+ orange; dashed = before, solid = after the correction; each curve normalized
@@ -23,10 +24,15 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 import uproot
 from scipy.optimize import curve_fit
 from scipy.special import voigt_profile
+
+plt.rcParams["font.family"] = "serif"
+plt.rcParams["mathtext.fontset"] = "cm"
+
 
 DIR = Path(sys.argv[1])
 OUT = DIR / "vz"
@@ -123,17 +129,57 @@ for t in TARGETS:
                 ours, chi2 = (np.nan,) * 4, np.nan
             rows.append((t, pol, sp, ours, tab, chi2))
         for i, ax in enumerate(panels):
-            ax.set_title("all sectors" if i == 6 else f"sector {i + 1}", fontsize=10)
+            ax.set_title("All Sectors" if i == 6 else f"Sector {i + 1}", fontsize=13)
             ax.set_xlim(-11.5, 0)
         for ax in axs[:, 0]:
-            ax.set_ylabel("normalized")
+            ax.set_ylabel("Normalized", fontsize=12)
+            ax.yaxis.set_label_coords(-0.08, 0.84)
         for ax in axs[1, :3]:
-            ax.set_xlabel(r"$v_z$ [cm]")
-        axs[0, 3].set_xlabel(r"$v_z$ [cm]")
+            ax.set_xlabel(r"$V_z$ [cm]", fontsize=13)
+            ax.xaxis.set_label_coords(0.94, -0.08)
+
+        axs[0, 3].set_xlabel(r"$V_z$ [cm]", fontsize=13)
+        axs[0, 3].xaxis.set_label_coords(0.94, -0.08)
+
+        axs[0, 3].set_xlabel(r"$V_z$ [cm]")
+        axs[0, 3].xaxis.set_label_coords(0.94, -0.08)
         axs[0, 3].tick_params(labelbottom=True)
-        axs[0, 3].legend(fontsize=8, loc="upper left")
-        fig.suptitle(f"{t} {pol}: $v_z$ before (dashed) and after (solid) the correction; gray lines = foil "
-                     f"centroids, Table 2 $e^-$ (solid), Table 8 $\\pi^-$ (dashed), $\\pi^+$ (dotted)", fontsize=11)
+        """
+        handles = [
+            Line2D([], [], color="black", ls="--", label=r"$e^-$ before"),
+            Line2D([], [], color="black", ls="-",  label=r"$e^-$ after"),
+
+            Line2D([], [], color="#1f77b4", ls="--", label=r"$\pi^-$ before"),
+            Line2D([], [], color="#1f77b4", ls="-",  label=r"$\pi^-$ after"),
+
+            Line2D([], [], color="#ff7f0e", ls="--", label=r"$\pi^+$ before"),
+            Line2D([], [], color="#ff7f0e", ls="-",  label=r"$\pi^+$ after"),
+        ]
+        """
+        handles = [
+            Line2D([], [], color="black", ls="--", label=r"$e^-$ before"),
+            Line2D([], [], color="#ff7f0e", ls="--", label=r"$\pi^+$ before"),
+            Line2D([], [], color="#1f77b4", ls="--", label=r"$\pi^-$ before"),
+            Line2D([], [], color="black", ls="-",  label=r"$e^-$ after"),
+            Line2D([], [], color="#1f77b4", ls="-",  label=r"$\pi^-$ after"),
+            Line2D([], [], color="#ff7f0e", ls="-",  label=r"$\pi^+$ after"),
+        ]
+
+        fig.suptitle(
+            f"{t} {pol} $V_z$ : $e^-$ vs. $\pi^+$ and $\pi^-$",
+            fontsize=14
+        )
+
+        fig.legend(
+            handles=handles,
+            loc="upper center",
+            bbox_to_anchor=(0.87, 0.35),
+            ncol=2,
+            frameon=False,
+            fontsize=12
+        )
+        
+                
         fig.tight_layout()
         for ext in ("png", "pdf"):
             fig.savefig(OUT / f"vz_fig5p12_{t}_{pol}.{ext}", dpi=140, bbox_inches="tight")

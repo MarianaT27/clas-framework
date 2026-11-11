@@ -7,6 +7,8 @@
 #   nohup bash ib_check/pion/run_ib_pion.sh >& /volatile/clas12/mtenorio/pi0/ib_check/pion/run_ib_pion.log &
 # Only one binary (v1.1): set BINS, e.g. in tcsh
 #   env BINS=pion_analysis nohup bash ib_check/pion/run_ib_pion.sh >& /volatile/clas12/mtenorio/pi0/ib_check/pion/run_vz.log &
+# All 6 target/polarity configurations at the same time (v1.4): set PARALLEL=1, e.g.
+#   env BINS=pion_analysis PARALLEL=1 nohup bash ib_check/pion/run_ib_pion.sh >& /volatile/clas12/mtenorio/pi0/ib_check/pion/run_dvz.log &
 #
 # Runs (all on Lamiaa's run lists, all DST files on /cache):
 #   IB : LD2 18335 18309 18310 | CxC 18344 18401 | CuSn 18384 18379
@@ -92,7 +94,8 @@ TOML
   fi
 }
 
-for key in LD2_IB CxC_IB CuSn_IB LD2_OB CxC_OB CuSn_OB; do
+run_key() {
+  local key=$1 t pol files bin short cfg r
   t=${key%_*}; pol=${key#*_}
   : > $OUT/logs/files_${key}.txt
   for r in ${RUNS[$key]}; do ls -d $DST/$t/dst/recon/0$r/*.hipo >> $OUT/logs/files_${key}.txt; done
@@ -103,7 +106,12 @@ for key in LD2_IB CxC_IB CuSn_IB LD2_OB CxC_OB CuSn_OB; do
     cfg=$OUT/config/${short}_${key}.toml
     write_config $bin $t $pol > $cfg
     ./build/analyses/$bin --config $cfg --input "$files" --output $OUT/root/${short}_${key}.root > $OUT/logs/${short}_${key}.log 2>&1
-    echo "    $bin exit code $?"
+    echo "    $key $bin exit code $?"
   done
+}
+
+for key in LD2_IB CxC_IB CuSn_IB LD2_OB CxC_OB CuSn_OB; do
+  if [ "${PARALLEL:-0}" = 1 ]; then run_key $key & else run_key $key; fi
 done
+wait
 echo "=== $(date '+%F %T')  ALL DONE"

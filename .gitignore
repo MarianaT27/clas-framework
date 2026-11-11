@@ -48,3 +48,4 @@ plots/
 .cache/
 .claude/
 *_service_graph.dot
+__pycache__/
