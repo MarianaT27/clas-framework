@@ -16,6 +16,13 @@
  * For LD2 the service stays disabled and `pass_vz_cut` falls back to the
  * legacy fixed range `[-15, 5] cm` on the raw vz.
  *
+ * Pions (v1.3): when the params file also holds the pion blocks
+ * `<variant>_pim` / `<variant>_pip` (produced by ib_check/pion/export_vz_params.py
+ * from the pion-mode npz of vz_correction.py), one extra corrector per pion
+ * charge is loaded, with the pion windows of common note Table 8
+ * (`corrected_vz_pion`, `pass_vz_cut_pion`). Without those blocks the pion
+ * functions fall back to the electron correction and windows (warning at init).
+ *
  * Thread safety: `set_variant` and `set_cut` are called once during
  * `initialize()`. After init we only call `apply` / `pass_any` /
  * `pass_lo` / `pass_hi`, which are const and read from the stable
@@ -23,6 +30,7 @@
  * service concurrently without external synchronisation.
  */
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -105,6 +113,33 @@ class VzCorrectorService : public Service {
             return StatusCode::FAILURE();
         }
 
+        // Pion correctors (one per charge), same file, keys <variant>_pim / <variant>_pip.
+        const auto keys = m_corrector->variants();
+        for (int i = 0; i < 2; ++i) {
+            const bool is_piplus = (i == 1);
+            const std::string pkey = *key + (is_piplus ? "_pip" : "_pim");
+            if (std::find(keys.begin(), keys.end(), pkey) == keys.end()) {
+                Log::warning(name(),
+                             "No pion variant '{}' in '{}' -> pi{} use the electron correction and windows",
+                             pkey, m_config.params_file, is_piplus ? "+" : "-");
+                continue;
+            }
+            try {
+                m_pion[i] = std::make_unique<VzCorrector>(
+                    VzCorrector::load_from_file(m_config.params_file, m_config.n_sigma));
+                m_pion[i]->set_variant(pkey);
+                const VoigtWindow w = pion_voigt_window(m_config.target, m_config.polarity, is_piplus);
+                m_pion[i]->set_cut(w.mu_lo, w.sigma_lo, w.mu_hi, w.sigma_hi);
+                Log::info(name(),
+                          "Loaded pion variant '{}': Table 8 cut lo=[{:.3f} +/- {} x {:.3f}], hi=[{:.3f} +/- {} x {:.3f}]",
+                          pkey, w.mu_lo, m_config.n_sigma, w.sigma_lo,
+                          w.mu_hi, m_config.n_sigma, w.sigma_hi);
+            } catch (const std::exception& e) {
+                Log::error(name(), "Failed to load pion variant '{}': {}", pkey, e.what());
+                return StatusCode::FAILURE();
+            }
+        }
+
         return StatusCode::SUCCESS();
     }
 
@@ -139,6 +174,39 @@ class VzCorrectorService : public Service {
             case Target::CuSn:
             case Target::CxC:  return m_corrector->pass_any(vz_c);
             default:           return m_corrector->pass_any(vz_c);
+        }
+    }
+
+    /// True when the pion correction of this charge was found in the params file.
+    [[nodiscard]] auto pion_loaded(bool is_piplus) const -> bool {
+        return m_loaded && m_pion[is_piplus ? 1 : 0] != nullptr;
+    }
+
+    /// Pion per-event correction (pion parameters of this charge; electron
+    /// correction if they are missing; raw vz when nothing is loaded).
+    [[nodiscard]] auto corrected_vz_pion(double vz, double p, double theta_deg,
+                                         double phi_deg, int sector, bool is_piplus) const -> double {
+        if (!m_loaded) return vz;
+        const auto& c = m_pion[is_piplus ? 1 : 0];
+        return c ? c->apply(vz, p, theta_deg, phi_deg, sector)
+                 : m_corrector->apply(vz, p, theta_deg, phi_deg, sector);
+    }
+
+    /// Pion Vz cut: pion correction + Table 8 windows (same target logic as
+    /// pass_vz_cut). Falls back to pass_vz_cut (electron) if the pion
+    /// parameters are missing, and to the LD2 window when nothing is loaded.
+    [[nodiscard]] auto pass_vz_cut_pion(double vz, double p, double theta_deg,
+                                        double phi_deg, int sector, bool is_piplus) const -> bool {
+        if (!m_loaded) return ld2_window_contains(vz);
+        const auto& c = m_pion[is_piplus ? 1 : 0];
+        if (!c) return pass_vz_cut(vz, p, theta_deg, phi_deg, sector);
+        const double vz_c = c->apply(vz, p, theta_deg, phi_deg, sector);
+        switch (m_config.target) {
+            case Target::Cu:   return c->pass_hi(vz_c);
+            case Target::Sn:   return c->pass_lo(vz_c);
+            case Target::CuSn:
+            case Target::CxC:  return c->pass_any(vz_c);
+            default:           return c->pass_any(vz_c);
         }
     }
 
@@ -179,9 +247,33 @@ class VzCorrectorService : public Service {
         }
     }
 
+    /// Pion windows, common note Table 8 (mu, sigma_eff per foil). lo = downstream
+    /// foil (less negative, Sn / C2 peak), hi = upstream foil (Cu / C1 peak),
+    /// same convention as voigt_window.
+    [[nodiscard]] static auto pion_voigt_window(Target target, Polarity polarity, bool is_piplus) -> VoigtWindow {
+        const bool ob = (polarity == Polarity::Outbending);
+        switch (target) {
+            case Target::CuSn:
+            case Target::Cu:
+            case Target::Sn:
+                if (ob) return is_piplus ? VoigtWindow{-2.821, 0.393, -7.782, 0.403}
+                                         : VoigtWindow{-2.823, 0.382, -7.777, 0.449};
+                return is_piplus ? VoigtWindow{-2.951, 0.401, -7.840, 0.426}
+                                 : VoigtWindow{-2.921, 0.425, -7.830, 0.463};
+            case Target::CxC:
+                if (ob) return is_piplus ? VoigtWindow{-2.802, 0.409, -7.783, 0.364}
+                                         : VoigtWindow{-2.805, 0.389, -7.815, 0.412};
+                return is_piplus ? VoigtWindow{-2.849, 0.410, -7.799, 0.421}
+                                 : VoigtWindow{-2.782, 0.437, -7.744, 0.463};
+            default:
+                return {0.0, 1.0, 0.0, 1.0};
+        }
+    }
+
    private:
     Config m_config;
     std::unique_ptr<VzCorrector> m_corrector;
+    std::unique_ptr<VzCorrector> m_pion[2];  // [0] = pi-, [1] = pi+
     bool m_loaded = false;
     std::string m_active_key;
 };

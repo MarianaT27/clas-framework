@@ -12,6 +12,7 @@
 #include <clas12/bankdefs/REC_CovMat.hpp>
 #include <clas12/bankdefs/REC_Event.hpp>
 #include <clas12/bankdefs/REC_Particle.hpp>
+#include <clas12/bankdefs/RUN_config.hpp>
 #include <clas12/framework/core/Algorithm.hpp>
 #include <clas12/framework/core/CandidateUtils.hpp>
 #include <clas12/framework/core/Cutflow.hpp>
@@ -200,8 +201,9 @@ class PionAnalysisAlg : public framework::Algorithm {
 
 framework::ServiceRef<framework::HistogramService> m_hist;
     framework::ServiceRef<framework::NTupleService> m_ntuple;
-    // Only used for the per-event Vz correction (ElectronCutsService::corrected_vz), so the
-    // pion vertex can be compared with the corrected-Vz windows of the common note (Table 8).
+    // Only used for the per-event Vz correction (through ElectronCutsService::vz_corrector(): pion
+    // correction for the pions, electron correction for the trigger electron), so the pion vertex
+    // can be compared with the corrected-Vz windows of the common note (Table 8).
     framework::ServiceRef<framework::ElectronCutsService> m_electron_cuts;
 
     struct PionCandidate {
@@ -238,6 +240,15 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         double pi_z_r2 = 0.0;
         double pi_delta_t = 0.0;
         double pi_tof_path = 0.0;
+        // Event and trigger electron of this pion (v1.4): lets Delta Vz, the Vz cut and other selections be
+        // done offline from the n-tuple. Raw electron vertex; e_sector = electron PCAL sector.
+        int run = 0;
+        int event = 0;
+        double e_p = 0.0;
+        double e_theta = 0.0;
+        double e_phi = 0.0;
+        double e_vz = 0.0;
+        int e_sector = 0;
 
         auto from(const PionCandidate& c) -> void {
             pi_p = c.pion.p();
@@ -258,7 +269,7 @@ framework::ServiceRef<framework::HistogramService> m_hist;
 
         static constexpr auto ntuple_fields() {
             using T = PionNTupleData;
-            return std::make_tuple(framework::field("pi_p", &T::pi_p), framework::field("pi_theta", &T::pi_theta), framework::field("pi_phi", &T::pi_phi), framework::field("pi_vz", &T::pi_vz), framework::field("pi_chi2pid", &T::pi_chi2pid), framework::field("pi_beta", &T::pi_beta), framework::field("pi_sampling_fraction", &T::pi_sampling_fraction), framework::field("pi_sector", &T::pi_sector), framework::field("pi_chi2ndf", &T::pi_chi2ndf), framework::field("pi_edge_r1", &T::pi_edge_r1), framework::field("pi_edge_r2", &T::pi_edge_r2), framework::field("pi_edge_r3", &T::pi_edge_r3), framework::field("pi_x_r1", &T::pi_x_r1), framework::field("pi_y_r1", &T::pi_y_r1), framework::field("pi_z_r1", &T::pi_z_r1), framework::field("pi_x_r2", &T::pi_x_r2), framework::field("pi_y_r2", &T::pi_y_r2), framework::field("pi_z_r2", &T::pi_z_r2), framework::field("pi_delta_t", &T::pi_delta_t), framework::field("pi_tof_path", &T::pi_tof_path));
+            return std::make_tuple(framework::field("pi_p", &T::pi_p), framework::field("pi_theta", &T::pi_theta), framework::field("pi_phi", &T::pi_phi), framework::field("pi_vz", &T::pi_vz), framework::field("pi_chi2pid", &T::pi_chi2pid), framework::field("pi_beta", &T::pi_beta), framework::field("pi_sampling_fraction", &T::pi_sampling_fraction), framework::field("pi_sector", &T::pi_sector), framework::field("pi_chi2ndf", &T::pi_chi2ndf), framework::field("pi_edge_r1", &T::pi_edge_r1), framework::field("pi_edge_r2", &T::pi_edge_r2), framework::field("pi_edge_r3", &T::pi_edge_r3), framework::field("pi_x_r1", &T::pi_x_r1), framework::field("pi_y_r1", &T::pi_y_r1), framework::field("pi_z_r1", &T::pi_z_r1), framework::field("pi_x_r2", &T::pi_x_r2), framework::field("pi_y_r2", &T::pi_y_r2), framework::field("pi_z_r2", &T::pi_z_r2), framework::field("pi_delta_t", &T::pi_delta_t), framework::field("pi_tof_path", &T::pi_tof_path), framework::field("run", &T::run), framework::field("event", &T::event), framework::field("e_p", &T::e_p), framework::field("e_theta", &T::e_theta), framework::field("e_phi", &T::e_phi), framework::field("e_vz", &T::e_vz), framework::field("e_sector", &T::e_sector));
         }
     };
 
@@ -590,7 +601,12 @@ framework::ServiceRef<framework::HistogramService> m_hist;
         {
             const int vz_sector = (sector >= 1 && sector <= 6) ? sector : calo.pcal_sector;
             if (vz_sector >= 1 && vz_sector <= 6) {
-                const double vzc = m_electron_cuts->corrected_vz(pion.vz(), p, pion.theta(), pion.phi(), vz_sector);
+                // Pion correction of this charge (electron correction if the pion
+                // parameters are missing; raw vz for LD2).
+                const auto* vzsvc = m_electron_cuts->vz_corrector();
+                const double vzc = vzsvc
+                    ? vzsvc->corrected_vz_pion(pion.vz(), p, pion.theta(), pion.phi(), vz_sector, is_piplus)
+                    : pion.vz();
                 h.vz_corr.fill(vzc);
                 h.vz_raw_vs_sector_fine.fill(static_cast<double>(vz_sector), pion.vz());
                 h.vz_corr_vs_sector.fill(static_cast<double>(vz_sector), vzc);
@@ -623,7 +639,17 @@ framework::ServiceRef<framework::HistogramService> m_hist;
 
         if (m_ntuple) {
             PionCandidate cand{pion, calo, traj, track, E_tot, SF, chi2ndf, timing.delta_t, tof_path, sector};
-            ntuple.data().from(cand);
+            auto& d = ntuple.data();
+            d.from(cand);
+            bankdefs::RUN_config run_cfg;
+            run_cfg.bind(event.get_bank("RUN::config"));
+            d.run = run_cfg.rows() > 0 ? run_cfg.run(0) : 0;
+            d.event = run_cfg.rows() > 0 ? run_cfg.event(0) : 0;
+            d.e_p = electron.p();
+            d.e_theta = electron.theta();
+            d.e_phi = electron.phi();
+            d.e_vz = electron.vz();
+            d.e_sector = electron.calo().pcal_sector;
             ntuple.fill();
         }
 

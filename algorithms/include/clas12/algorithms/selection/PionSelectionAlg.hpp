@@ -826,10 +826,10 @@ class PionSelectionAlg : public ConfigurableAlgorithm<PionSelectionConfig> {
 
     auto pass_vz_cut(const PionCandidate& cand, bool is_piplus) const -> bool {
         // Forward-detector tracks with a valid sector go through the
-        // per-event Voigt correction (or the legacy LD2 window when the
-        // corrector is configured for LD2).
+        // per-event pion Vz correction and the Table 8 pion windows (or the
+        // legacy LD2 window when the corrector is configured for LD2).
         if (cand.is_forward_detector && cand.sector >= 1 && cand.sector <= 6 && m_vz_corrector) {
-            return m_vz_corrector->pass_vz_cut(cand.vz, cand.p, cand.theta, cand.phi, cand.sector);
+            return m_vz_corrector->pass_vz_cut_pion(cand.vz, cand.p, cand.theta, cand.phi, cand.sector, is_piplus);
         }
         // Central or unknown detector region: fall back to the legacy
         // hard-coded ranges (they're already tuned per species).
