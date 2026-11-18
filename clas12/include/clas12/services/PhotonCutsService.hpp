@@ -16,6 +16,7 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <optional>
 #include <tuple>
 #include <vector>
 
@@ -149,6 +150,30 @@ class PhotonCutsService : public Service {
         }
 
         return good_photons;
+    }
+
+    /**
+     * @brief GBT score of every pid-22 row that passes the purity pre-filter
+     *
+     * Same features, model and pre-filter as select_photons_with_AI, which keeps a row
+     * when its score is > ai_threshold(). Rows with no calorimeter entry or failing the
+     * pre-filter (E >= 0.2 GeV, E_PCAL > 0, 5 <= theta <= 35 deg) are absent from the map.
+     *
+     * @return REC::Particle row -> sigmoid(model output), in [0, 1]
+     */
+    auto gbt_scores(
+        const hipo::bank& RUN_config,
+        const hipo::bank& REC_Particle,
+        const hipo::bank& REC_Calorimeter) const -> std::map<int, double> {
+
+        int run_number = RUN_config.getInt("run", 0);
+        auto calo_map = get_calo_map(REC_Calorimeter);
+        std::map<int, double> scores;
+        for (int i = 0; i < REC_Particle.getRows(); i++) {
+            if (REC_Particle.getInt("pid", i) != 22) continue;
+            if (auto score = score_photon(REC_Particle, calo_map, i, run_number, m_pass)) scores[i] = *score;
+        }
+        return scores;
     }
 
    private:
@@ -285,6 +310,20 @@ class PhotonCutsService : public Service {
         int row,
         int runnum,
         int pass) const -> bool {
+        // Kept as before: a photon passes when its score exists (calorimeter entry and
+        // pre-filter passed) and sigmoid(model output) > m_ai_threshold.
+        auto score = score_photon(particle_bank, calo_map, row, runnum, pass);
+        return score && *score > m_ai_threshold;
+    }
+
+    /// sigmoid(model output) for one photon row; nullopt when the row has no calorimeter
+    /// entry or fails the purity pre-filter (the two early exits of the old filter_photon).
+    auto score_photon(
+        const hipo::bank& particle_bank,
+        const std::map<int, CaloRowData>& calo_map,
+        int row,
+        int runnum,
+        int pass) const -> std::optional<double> {
 
         // Set variables native to the photon we are classifying
         double gPx = static_cast<double>(particle_bank.getFloat("px", row));
@@ -296,7 +335,7 @@ class PhotonCutsService : public Service {
         double gTheta = std::acos(gPz / gE);
 
         auto calo_it = calo_map.find(row);
-        if (calo_it == calo_map.end()) return false;
+        if (calo_it == calo_map.end()) return std::nullopt;
 
         const auto& calo_POI = calo_it->second;
         double gEpcal = calo_POI.pcal_e;
@@ -304,7 +343,7 @@ class PhotonCutsService : public Service {
         double gm2v = calo_POI.pcal_m2v;
 
         // Apply PID purity cuts on the photon
-        if (!pass_pid_purity_filter(gE, gEpcal, gTheta)) return false;
+        if (!pass_pid_purity_filter(gE, gEpcal, gTheta)) return std::nullopt;
 
         // Define the variables for nearest neighbors
         constexpr int m_g = 3;   // Number of neighboring gammas
@@ -464,7 +503,9 @@ class PhotonCutsService : public Service {
         input_data.push_back(static_cast<float>(num_photons_0_2));
         input_data.push_back(static_cast<float>(num_photons_0_35));
 
-        return classify_photon(input_data, runnum, pass);
+        auto model_func = get_model_function(runnum, pass);
+        double sigmoid_x = model_func(input_data);
+        return 1.0 / (1.0 + std::exp(-sigmoid_x));
     }
 };
 

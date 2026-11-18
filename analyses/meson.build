@@ -34,6 +34,14 @@ executable(
   dependencies: analysis_deps,
 )
 
+# Photon identification check (photon_check/): trigger electron -> DIS -> PhotonAnalysisAlg,
+# cutflow and the distributions of every photon cut.
+executable(
+  'photon_analysis',
+  files('photon/photon_analysis.cpp'),
+  dependencies: analysis_deps,
+)
+
 # Pi0 reconstruction
 executable(
   'pi0',
