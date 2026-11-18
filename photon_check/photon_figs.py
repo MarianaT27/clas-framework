@@ -16,7 +16,7 @@ Writes, for each polarity in runs.txt (<pol> = ob or ib), all targets of that po
         <out_dir>/loss_table.csv           cutflow of every target and polarity (also printed)
         (a .png next to every .pdf)
 Every distribution is the photons that REACH that cut, i.e. after all the previous ones (PhotonAnalysisAlg.hpp).
-Target overlays are normalized to unit area so runs of different size can be compared; the dashed lines are the cuts.
+All distributions are raw photon counts (not normalized); the dashed lines are the cuts.
 """
 import csv
 import sys
@@ -68,10 +68,8 @@ def h1(f, name):
     return h.values(), h.axis().edges()
 
 
-def norm_step(ax, v, e, **kw):
-    s = v.sum()
-    if s > 0:
-        ax.stairs(v / s, e, **kw)
+def draw(ax, v, e, **kw):
+    ax.stairs(v, e, **kw)
 
 
 def cut_lines(ax, *xs):
@@ -102,15 +100,13 @@ for pol, runs in RUNS.items():
         for ax, var in zip(axes, ("E", "Epcal", "theta")):
             vb, eb = h1(f, f"{var}_before")
             va, _ = h1(f, f"{var}_after")
-            norm = vb.sum()
-            if norm > 0:
-                ax.stairs(vb / norm, eb, color=COLORS.get(t), lw=1.2, label=f"{label(t, pol, run)}, pid 22")
-                ax.stairs(va / norm, eb, color=COLORS.get(t), lw=1.2, ls=":", label=f"{label(t, pol, run)}, after pre-filter")
+            ax.stairs(vb, eb, color=COLORS.get(t), lw=1.2, label=f"{label(t, pol, run)}, pid 22")
+            ax.stairs(va, eb, color=COLORS.get(t), lw=1.2, ls=":", label=f"{label(t, pol, run)}, after pre-filter")
     axes[0].set_xlabel(r"$E_\gamma$ [GeV]"); cut_lines(axes[0], E_MIN)
     axes[1].set_xlabel(r"$E_{PCAL}$ [GeV]")
     axes[2].set_xlabel(r"$\theta$ [deg]"); cut_lines(axes[2], THETA_MIN, THETA_MAX)
     for ax in axes:
-        ax.set_yscale("log"); ax.set_ylabel("photons (normalized to pid 22)")
+        ax.set_yscale("log"); ax.set_ylabel("photons")
     axes[0].legend(fontsize=7)
     fig.suptitle(f"{pol}: GBT pre-filter")
     save(fig, f"{p}_prefilter")
@@ -119,9 +115,9 @@ for pol, runs in RUNS.items():
     fig, ax = plt.subplots(figsize=(6.5, 4.5))
     for (t, run), f in files.items():
         v, e = h1(f, "score")
-        norm_step(ax, v, e, color=COLORS.get(t), lw=1.2, label=label(t, pol, run))
+        draw(ax, v, e, color=COLORS.get(t), lw=1.2, label=label(t, pol, run))
     cut_lines(ax, GBT_CUT)
-    ax.set_yscale("log"); ax.set_xlabel("GBT score"); ax.set_ylabel("photons (normalized)")
+    ax.set_yscale("log"); ax.set_xlabel("GBT score"); ax.set_ylabel("photons")
     ax.legend(fontsize=8); ax.set_title(f"{pol}: GBT score after the pre-filter")
     save(fig, f"{p}_gbt_score")
 
@@ -132,9 +128,9 @@ for pol, runs in RUNS.items():
             ax = axes[row, col]
             for s in range(1, 7):
                 v, e = h1(f, f"PCAL/{coord}_before_S{s}")
-                norm_step(ax, v, e, color=SECTOR_COLORS[s - 1], lw=1.0, label=f"sector {s}")
+                draw(ax, v, e, color=SECTOR_COLORS[s - 1], lw=1.0, label=f"sector {s}")
             cut_lines(ax, PCAL_MIN)
-            ax.set_xlabel(f"PCAL $l_{coord[1]}$ [cm]"); ax.set_ylabel("photons (normalized)")
+            ax.set_xlabel(f"PCAL $l_{coord[1]}$ [cm]"); ax.set_ylabel("photons")
             ax.set_title(f"{label(t, pol, run)}, {pol}", fontsize=10)
     axes[0, 0].legend(fontsize=7)
     save(fig, f"{p}_pcal_fiducial")
@@ -145,9 +141,9 @@ for pol, runs in RUNS.items():
         fig, ax = plt.subplots(figsize=(6.5, 4.5))
         for (t, run), f in files.items():
             v, e = h1(f, var)
-            norm_step(ax, v, e, color=COLORS.get(t), lw=1.2, label=label(t, pol, run))
+            draw(ax, v, e, color=COLORS.get(t), lw=1.2, label=label(t, pol, run))
         cut_lines(ax, *cuts)
-        ax.set_yscale("log"); ax.set_xlabel(xlabel); ax.set_ylabel("photons (normalized)")
+        ax.set_yscale("log"); ax.set_xlabel(xlabel); ax.set_ylabel("photons")
         ax.legend(fontsize=8); ax.set_title(f"{pol}: {xlabel}, before the cut")
         save(fig, f"{p}_{name}")
 

@@ -79,8 +79,8 @@ The same chain as the pi0 analysis (`analyses/pi0_multiplicity/pi0_multiplicity.
 
 ## What each figure shows
 
-Each distribution is the photons that **reach** that cut, after all the previous steps. Target
-overlays are normalized to unit area.
+Each distribution is the photons that **reach** that cut, after all the previous steps, as raw counts
+(not normalized).
 
 - **Pre-filter figure:** all pid-22 photons, and the photons left after the three pre-filter cuts.
 - **Loss table:** for each step, the photons that pass it, as a fraction of the previous step and
