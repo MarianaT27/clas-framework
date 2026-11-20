@@ -83,5 +83,8 @@ Each distribution is the photons that **reach** that cut, after all the previous
 (not normalized).
 
 - **Pre-filter figure:** all pid-22 photons, and the photons left after the three pre-filter cuts.
+- **PCAL energy figure (`<pol>_pcal_energy.pdf`):** the photons that reach the PCAL fiducial cut (passed
+  steps 1-5); for each sector, the mean E_PCAL/E_gamma in 1 cm bins of PCAL lv and of lw (bins with at
+  least 20 photons). E_gamma = |p| as in step 2. Same layout as Fig. 3.13 of the note for electrons.
 - **Loss table:** for each step, the photons that pass it, as a fraction of the previous step and
   of pid 22.

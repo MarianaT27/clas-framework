@@ -21,6 +21,8 @@
  * pass it ("after"), so a figure shows exactly what that cut removes after all the previous ones.
  * The cutflow is printed at the end of the run and stored as the histogram /PhotonAnalysis/cutflow
  * (bin i = photons passing step i, i = 1..8) for the loss tables.
+ * Step 6 also stores E_PCAL/E_gamma vs PCAL lv and vs lw, per sector, for the photons that reach the
+ * fiducial cut (E_gamma = |p| as in step 2), to see where the PCAL edge degrades the shower.
  *
  * Every cut can be switched off and every threshold changed from the [PhotonAnalysis] section of
  * the TOML; the defaults are the values of the production photon selection above. Switching a cut
@@ -203,6 +205,9 @@ class PhotonAnalysisAlg : public framework::Algorithm {
         framework::PerSectorHist1D<6> lw_before;
         framework::PerSectorHist1D<6> lv_after;
         framework::PerSectorHist1D<6> lw_after;
+        // E_PCAL / E_gamma vs PCAL lv and lw, per sector, photons passing 1-5 (before the fiducial cut)
+        framework::PerSectorHist2D<6> frac_vs_lv_before;
+        framework::PerSectorHist2D<6> frac_vs_lw_before;
         framework::H2<> pcal_xy_before{mh::regular(-450.0, 450.0, 300), mh::regular(-450.0, 450.0, 300)};
         framework::H2<> pcal_xy_after{mh::regular(-450.0, 450.0, 300), mh::regular(-450.0, 450.0, 300)};
 
@@ -267,6 +272,10 @@ class PhotonAnalysisAlg : public framework::Algorithm {
         h.lv_before.fill(sector, lv);
         h.lw_before.fill(sector, lw);
         h.pcal_xy_before.fill(calo.pcal_x, calo.pcal_y);
+        if (E > 0.0) {
+            h.frac_vs_lv_before.fill(sector, lv, E_pcal / E);
+            h.frac_vs_lw_before.fill(sector, lw, E_pcal / E);
+        }
         if (m_config.enable_pcal_fiducial_cut && !(lv > m_config.pcal_lv_min && lw > m_config.pcal_lw_min)) return false;
         m_cutflow.pass(kSteps[5]);
         h.cutflow.fill(6.0);
@@ -317,6 +326,8 @@ class PhotonAnalysisAlg : public framework::Algorithm {
         h.lw_before = g.add_hist1D("lw_before", "PCAL l_{w}, before the fiducial cut;l_{w} [cm];Photons", 200, 0, 100);
         h.lv_after = g.add_hist1D("lv_after", "PCAL l_{v}, after the fiducial cut;l_{v} [cm];Photons", 200, 0, 100);
         h.lw_after = g.add_hist1D("lw_after", "PCAL l_{w}, after the fiducial cut;l_{w} [cm];Photons", 200, 0, 100);
+        h.frac_vs_lv_before = g.add_hist2D("frac_vs_lv_before", "E_{PCAL}/E_{#gamma} vs PCAL l_{v}, before the fiducial cut;l_{v} [cm];E_{PCAL}/E_{#gamma}", 100, 0, 100, 200, 0, 1);
+        h.frac_vs_lw_before = g.add_hist2D("frac_vs_lw_before", "E_{PCAL}/E_{#gamma} vs PCAL l_{w}, before the fiducial cut;l_{w} [cm];E_{PCAL}/E_{#gamma}", 100, 0, 100, 200, 0, 1);
         svc->register_hist(d + "/PCAL/xy_before", "PCAL hit position, before the fiducial cut;x [cm];y [cm]", h.pcal_xy_before);
         svc->register_hist(d + "/PCAL/xy_after", "PCAL hit position, after the fiducial cut;x [cm];y [cm]", h.pcal_xy_after);
 

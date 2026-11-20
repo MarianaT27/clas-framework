@@ -11,6 +11,8 @@ Writes, for each polarity in runs.txt (<pol> = ob or ib), all targets of that po
         <out_dir>/<pol>_prefilter.pdf      GBT pre-filter: E_gamma, E_PCAL, theta (all pid 22, and after the pre-filter)
         <out_dir>/<pol>_gbt_score.pdf      GBT score of the photons passing the pre-filter
         <out_dir>/<pol>_pcal_fiducial.pdf  PCAL lv and lw per sector, before the fiducial cut (one row per target)
+        <out_dir>/<pol>_pcal_energy.pdf    mean E_PCAL/E_gamma vs PCAL lv and lw per sector, before the fiducial cut
+                                           (one row per target; mean of all entries in a 1 cm bin, bins with >= 20 photons)
         <out_dir>/<pol>_beta.pdf           beta, before the beta cut
         <out_dir>/<pol>_e_gamma_angle.pdf  angle between the selected electron and the photon, before the cut
         <out_dir>/loss_table.csv           cutflow of every target and polarity (also printed)
@@ -40,6 +42,7 @@ ORDER = ["LD2", "CxC", "CuSn"]
 
 # The cuts drawn on the figures: the PhotonAnalysisAlg defaults (photon_check/PROVENANCE.md).
 E_MIN, THETA_MIN, THETA_MAX, GBT_CUT, PCAL_MIN, BETA_MIN, BETA_MAX, EG_MIN = 0.2, 5.0, 35.0, 0.78, 14.0, 0.9, 1.1, 8.0
+PCAL_MIN_PHOTONS = 20   # E_PCAL/E_gamma figure: a 1 cm bin is drawn only with at least this many photons
 
 STEPS = ["pid 22", "E >= 0.2 GeV", "E_PCAL > 0", "5 <= theta <= 35 deg", "GBT score > 0.78",
          "PCAL lv, lw > 14 cm", "0.9 < beta < 1.1", "theta(e,gamma) > 8 deg"]
@@ -134,6 +137,28 @@ for pol, runs in RUNS.items():
             ax.set_title(f"{label(t, pol, run)}, {pol}", fontsize=10)
     axes[0, 0].legend(fontsize=7)
     save(fig, f"{p}_pcal_fiducial")
+
+    # 4b. PCAL fiducial: mean E_PCAL/E_gamma vs lv and lw, per sector
+    fig, axes = plt.subplots(len(files), 2, figsize=(10, 3.4 * len(files)), squeeze=False)
+    for row, ((t, run), f) in enumerate(files.items()):
+        for col, coord in enumerate(("lv", "lw")):
+            ax = axes[row, col]
+            for s in range(1, 7):
+                h = f[f"PhotonAnalysis/PCAL/frac_vs_{coord}_before_S{s}"]
+                w = h.values()                                   # shape (n_lv, n_frac)
+                xe, ye = h.axis(0).edges(), h.axis(1).edges()
+                xc, yc = 0.5 * (xe[1:] + xe[:-1]), 0.5 * (ye[1:] + ye[:-1])
+                n = w.sum(axis=1)
+                ok = n >= PCAL_MIN_PHOTONS
+                mean = (w[ok] * yc).sum(axis=1) / n[ok]
+                ax.plot(xc[ok], mean, marker="+", ms=4, lw=1, color=SECTOR_COLORS[s - 1], label=f"sector {s}")
+            cut_lines(ax, PCAL_MIN)
+            ax.set_xlim(0, 70)
+            ax.set_xlabel(f"PCAL $l_{coord[1]}$ [cm]"); ax.set_ylabel(r"mean $E_{PCAL}/E_\gamma$")
+            ax.set_title(rf"{label(t, pol, run)}, {pol}: $E_{{PCAL}}/E_\gamma$ vs $l_{coord[1]}$, all sectors", fontsize=9)
+            ax.grid(alpha=0.3)
+            ax.legend(loc="lower right", ncol=2, fontsize=6)
+    save(fig, f"{p}_pcal_energy")
 
     # 5. beta, 6. angle to the electron
     for var, xlabel, cuts, name in (("beta_before", r"$\beta$", (BETA_MIN, BETA_MAX), "beta"),
