@@ -50,3 +50,7 @@ plots/
 *_service_graph.dot
 __pycache__/
 __pycache__/
+ib_check/**/*.pdf
+ib_check/**/*.png
+ib_check/logs/
+ib_check/logs_full/

@@ -106,7 +106,7 @@ for pol, runs in RUNS.items():
     axes[1].set_xlabel(r"$E_{PCAL}$ [GeV]")
     axes[2].set_xlabel(r"$\theta$ [deg]"); cut_lines(axes[2], THETA_MIN, THETA_MAX)
     for ax in axes:
-        ax.set_yscale("log"); ax.set_ylabel("photons")
+        ax.set_ylabel("photons")
     axes[0].legend(fontsize=7)
     fig.suptitle(f"{pol}: GBT pre-filter")
     save(fig, f"{p}_prefilter")
@@ -117,7 +117,7 @@ for pol, runs in RUNS.items():
         v, e = h1(f, "score")
         draw(ax, v, e, color=COLORS.get(t), lw=1.2, label=label(t, pol, run))
     cut_lines(ax, GBT_CUT)
-    ax.set_yscale("log"); ax.set_xlabel("GBT score"); ax.set_ylabel("photons")
+    ax.set_xlabel("GBT score"); ax.set_ylabel("photons")
     ax.legend(fontsize=8); ax.set_title(f"{pol}: GBT score after the pre-filter")
     save(fig, f"{p}_gbt_score")
 
@@ -143,7 +143,7 @@ for pol, runs in RUNS.items():
             v, e = h1(f, var)
             draw(ax, v, e, color=COLORS.get(t), lw=1.2, label=label(t, pol, run))
         cut_lines(ax, *cuts)
-        ax.set_yscale("log"); ax.set_xlabel(xlabel); ax.set_ylabel("photons")
+        ax.set_xlabel(xlabel); ax.set_ylabel("photons")
         ax.legend(fontsize=8); ax.set_title(f"{pol}: {xlabel}, before the cut")
         save(fig, f"{p}_{name}")
 
